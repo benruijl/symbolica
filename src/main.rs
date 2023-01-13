@@ -1,7 +1,10 @@
-use symbolica::representations::{
-    default::OwnedAtom,
-    tree::{Atom, Number},
-    OwnedAtomT,
+use symbolica::{
+    representations::{
+        default::OwnedAtom,
+        tree::{Atom, Number},
+        OwnedAtomT,
+    },
+    state::{Workspace, ResettableBuffer},
 };
 
 fn main() {
@@ -30,7 +33,11 @@ fn main() {
 
     view.print_tree(0);
 
-    let normalized = view.normalize();
+    let mut workspace = Workspace::new();
+
+    let mut normalized = OwnedAtom::new();
+
+    view.normalize(&mut workspace, &mut normalized);
 
     normalized.to_view().print_tree(0);
 

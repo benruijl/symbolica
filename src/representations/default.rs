@@ -2,11 +2,11 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
 use std::{cmp::Ordering, io::Cursor};
 
-use crate::{representations::tree::Number, utils};
+use crate::{representations::tree::Number, state::ResettableBuffer, utils};
 
 use super::{
-    tree::Atom, AtomT, AtomView, FunctionT, ListIteratorT, NumberT, OwnedAtomT, OwnedNumberT,
-    OwnedTermT, OwnedVarT, TermT, VarT, number::RationalNumber,
+    number::RationalNumber, tree::Atom, AtomT, AtomView, FunctionT, ListIteratorT, NumberT,
+    OwnedAtomT, OwnedNumberT, OwnedTermT, OwnedVarT, TermT, VarT,
 };
 
 const NUM_ID: u8 = 1;
@@ -24,10 +24,6 @@ pub struct OwnedAtom {
 
 impl OwnedAtomT for OwnedAtom {
     type P = DefaultRepresentation;
-
-    fn new() -> Self {
-        OwnedAtom { data: vec![] }
-    }
 
     fn from_num(source: <Self::P as AtomT>::ON) -> Self {
         OwnedAtom { data: source.data }
@@ -68,6 +64,16 @@ impl OwnedAtomT for OwnedAtom {
     }
 }
 
+impl ResettableBuffer for OwnedAtom {
+    fn new() -> Self {
+        OwnedAtom { data: vec![] }
+    }
+
+    fn reset(&mut self) {
+        self.data.clear();
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OwnedNumber {
     data: Vec<u8>,
@@ -75,14 +81,6 @@ pub struct OwnedNumber {
 
 impl OwnedNumberT for OwnedNumber {
     type P = DefaultRepresentation;
-
-    fn new() -> Self {
-        let mut data = Vec::new();
-        data.put_u8(NUM_ID);
-        0u64.write_frac(1, &mut data);
-
-        OwnedNumber { data }
-    }
 
     fn from_view<'a>(a: NumberView<'a>) -> Self {
         OwnedNumber {
@@ -107,6 +105,22 @@ impl OwnedNumberT for OwnedNumber {
     }
 }
 
+impl ResettableBuffer for OwnedNumber {
+    fn new() -> Self {
+        let mut data = Vec::new();
+        data.put_u8(NUM_ID);
+        0u64.write_frac(1, &mut data);
+
+        OwnedNumber { data }
+    }
+
+    fn reset(&mut self) {
+        self.data.clear();
+        self.data.put_u8(NUM_ID);
+        0u64.write_frac(1, &mut self.data);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OwnedVar {
     data: Vec<u8>,
@@ -115,21 +129,28 @@ pub struct OwnedVar {
 impl OwnedVarT for OwnedVar {
     type P = DefaultRepresentation;
 
-    fn from_id_pow(id: usize, pow: OwnedNumber) -> Self {
-        let mut data = Vec::new();
-        data.put_u8(VAR_ID);
-        (id as u64).write_frac(1, &mut data);
-        data.extend(pow.data);
-
-        OwnedVar { data }
+    fn from_id_pow(&mut self, id: usize, pow: OwnedNumber) {
+        self.data.put_u8(VAR_ID);
+        (id as u64).write_frac(1, &mut self.data);
+        self.data.extend(pow.data);
     }
 
     fn to_var_view<'a>(&'a self) -> <Self::P as AtomT>::V<'a> {
         VarView { data: &self.data }
     }
 
-    fn to_atom(self) -> OwnedAtom {
-        OwnedAtom { data: self.data }
+    fn to_atom(&mut self, out: &mut OwnedAtom) {
+        out.data.clone_from(&self.data);
+    }
+}
+
+impl ResettableBuffer for OwnedVar {
+    fn new() -> Self {
+        OwnedVar { data: vec![] }
+    }
+
+    fn reset(&mut self) {
+        self.data.clear();
     }
 }
 
@@ -139,15 +160,6 @@ pub struct OwnedTerm {
 
 impl OwnedTermT for OwnedTerm {
     type P = DefaultRepresentation;
-
-    fn new() -> Self {
-        let mut data = Vec::new();
-        data.put_u8(TERM_ID);
-        data.put_u32_le(0 as u32);
-        0u64.write_frac(1, &mut data);
-
-        OwnedTerm { data }
-    }
 
     fn extend<'a>(&mut self, other: AtomView<'a, DefaultRepresentation>) {
         // may increase size of the num of args
@@ -184,8 +196,26 @@ impl OwnedTermT for OwnedTerm {
         TermView { data: &self.data }
     }
 
-    fn to_atom(self) -> OwnedAtom {
-        OwnedAtom { data: self.data }
+    fn to_atom(&mut self, out: &mut OwnedAtom) {
+        out.data.clone_from(&self.data);
+    }
+}
+
+impl ResettableBuffer for OwnedTerm {
+    fn new() -> Self {
+        let mut data = Vec::new();
+        data.put_u8(TERM_ID);
+        data.put_u32_le(0 as u32);
+        0u64.write_frac(1, &mut data);
+
+        OwnedTerm { data }
+    }
+
+    fn reset(&mut self) {
+        self.data.clear();
+        self.data.put_u8(TERM_ID);
+        self.data.put_u32_le(0 as u32);
+        0u64.write_frac(1, &mut self.data);
     }
 }
 

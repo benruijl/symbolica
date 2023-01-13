@@ -4,6 +4,8 @@ pub mod tree;
 
 use std::cmp::Ordering;
 
+use crate::state::ResettableBuffer;
+
 use self::tree::Atom;
 
 pub trait AtomT {
@@ -17,10 +19,9 @@ pub trait AtomT {
     type OT: OwnedTermT<P = Self>;
 }
 
-pub trait OwnedAtomT {
+pub trait OwnedAtomT: ResettableBuffer {
     type P: AtomT;
 
-    fn new() -> Self;
     fn from_num(source: <Self::P as AtomT>::ON) -> Self;
     fn write<'a>(&mut self, source: &AtomView<'a, Self::P>);
     fn write_tree(&mut self, source: &Atom);
@@ -30,30 +31,28 @@ pub trait OwnedAtomT {
     fn len(&self) -> usize;
 }
 
-pub trait OwnedNumberT {
+pub trait OwnedNumberT: ResettableBuffer {
     type P: AtomT;
 
-    fn new() -> Self;
     fn from_view<'a>(a: <Self::P as AtomT>::N<'a>) -> Self;
     fn add<'a>(&mut self, other: &<Self::P as AtomT>::N<'a>);
     fn to_num_view<'a>(&'a self) -> <Self::P as AtomT>::N<'a>;
 }
 
-pub trait OwnedVarT {
+pub trait OwnedVarT: ResettableBuffer {
     type P: AtomT;
 
-    fn from_id_pow(id: usize, pow: <Self::P as AtomT>::ON) -> Self;
+    fn from_id_pow(&mut self, id: usize, pow: <Self::P as AtomT>::ON);
     fn to_var_view<'a>(&'a self) -> <Self::P as AtomT>::V<'a>;
-    fn to_atom(self) -> <Self::P as AtomT>::O;
+    fn to_atom(&mut self, out: &mut <Self::P as AtomT>::O);
 }
 
-pub trait OwnedTermT {
+pub trait OwnedTermT: ResettableBuffer {
     type P: AtomT;
 
-    fn new() -> Self;
     fn extend(&mut self, other: AtomView<Self::P>);
     fn to_term_view<'a>(&'a self) -> <Self::P as AtomT>::T<'a>;
-    fn to_atom(self) -> <Self::P as AtomT>::O;
+    fn to_atom(&mut self, out: &mut <Self::P as AtomT>::O);
 }
 
 pub trait NumberT<'a>: Clone {
@@ -98,9 +97,7 @@ pub trait ListIteratorT<'a>: Clone {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum AtomView<'a, P>
-where
-    P: AtomT,
+pub enum AtomView<'a, P: AtomT>
 {
     Number(P::N<'a>),
     Var(P::V<'a>),

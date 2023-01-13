@@ -1,15 +1,22 @@
-use crate::representations::{
-    AtomT, AtomView, FunctionT, ListIteratorT, OwnedNumberT, OwnedTermT, OwnedVarT, TermT, VarT,
+use smallvec::SmallVec;
+
+use crate::{
+    representations::{
+        AtomT, AtomView, FunctionT, ListIteratorT, OwnedNumberT, OwnedTermT, OwnedVarT, TermT, VarT,
+    },
+    state::{ResettableBuffer, Workspace},
 };
 
 impl<'a, P: AtomT> AtomView<'a, P> {
-    pub fn normalize(&self) -> P::O {
-        let mut new_term = P::OT::new();
+    /// Normalize a term.
+    pub fn normalize(&self, workspace: &mut Workspace<P>, out: &mut P::O) {
+        let mut new_term_br = workspace.term_buf.get_buf_ref();
+        let new_term = new_term_br.get_buf();
 
-        // TODO: global workspace
-        let mut number_buf: Vec<P::N<'a>> = vec![];
-        let mut symbol_buf: Vec<P::V<'a>> = vec![];
-        let mut func_buf: Vec<P::F<'a>> = vec![];
+        // TODO: move to global workspace? hard because of references
+        let mut number_buf: SmallVec<[P::N<'a>; 20]> = SmallVec::new();
+        let mut symbol_buf: SmallVec<[P::V<'a>; 20]> = SmallVec::new();
+        let mut func_buf: SmallVec<[P::F<'a>; 20]> = SmallVec::new();
 
         match self {
             AtomView::Term(t) => {
@@ -37,7 +44,8 @@ impl<'a, P: AtomT> AtomView<'a, P> {
                 if name == last_name {
                     last_pow.add(&pow);
                 } else {
-                    let new_var = P::OV::from_id_pow(last_name, last_pow);
+                    let mut new_var = P::OV::new();
+                    new_var.from_id_pow(last_name, last_pow);
                     new_term.extend(AtomView::Var(new_var.to_var_view()));
 
                     last_name = name;
@@ -45,7 +53,9 @@ impl<'a, P: AtomT> AtomView<'a, P> {
                 }
             }
 
-            let new_var = P::OV::from_id_pow(last_name, last_pow);
+            let mut new_var_br = workspace.var_buf.get_buf_ref();
+            let new_var = new_var_br.get_buf();
+            new_var.from_id_pow(last_name, last_pow);
             new_term.extend(AtomView::Var(new_var.to_var_view()));
         }
 
@@ -67,6 +77,6 @@ impl<'a, P: AtomT> AtomView<'a, P> {
             new_term.extend(AtomView::Number(k));
         }
 
-        new_term.to_atom()
+        new_term.to_atom(out);
     }
 }

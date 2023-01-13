@@ -1,5 +1,16 @@
 use bytes::{Buf, BufMut};
 
+const U8_NUM: u8 = 0b00000001;
+const U16_NUM: u8 = 0b00000010;
+const U32_NUM: u8 = 0b00000011;
+const U64_NUM: u8 = 0b00000100;
+const U8_DEN: u8 = 0b00010000;
+const U16_DEN: u8 = 0b00100000;
+const U32_DEN: u8 = 0b00110000;
+const U64_DEN: u8 = 0b01000000;
+const NUM_MASK: u8 = 0b00001111;
+const DEN_MASK: u8 = 0b11110000;
+
 /// A generalized rational number. The first byte indicates the size and type of the numerator and denominator.
 /// The highest four bits give the byte size of the numerator and the lower bits of the denominator.
 /// Any size beyond 4 will have a special meaning, such as signaling that the number is a rational polynomial instead
@@ -11,7 +22,7 @@ pub trait RationalNumber {
 
     fn skip_rational(mut dest: &[u8]) -> &[u8] {
         let var_size = dest.get_u8();
-        let size = (var_size & 0b00001111) + ((var_size & 0b11110000) >> 4);
+        let size = (var_size & NUM_MASK) + ((var_size & DEN_MASK) >> 4);
         dest.advance(size as usize);
         dest
     }
@@ -23,32 +34,32 @@ impl RationalNumber for u64 {
         let p = dest.len();
 
         if *self < u8::MAX as u64 {
-            dest.put_u8(1);
+            dest.put_u8(U8_NUM);
             dest.put_u8(*self as u8);
         } else if *self < u16::MAX as u64 {
-            dest.put_u8(2);
+            dest.put_u8(U16_NUM);
             dest.put_u16_le(*self as u16);
         } else if *self < u32::MAX as u64 {
-            dest.put_u8(3);
+            dest.put_u8(U32_NUM);
             dest.put_u32_le(*self as u32);
         } else {
-            dest.put_u8(4);
+            dest.put_u8(U64_NUM);
             dest.put_u64_le(*self);
         }
 
         if den == 1 {
         } else if den < u8::MAX as u64 {
-            dest[p] |= 0b00010000;
+            dest[p] |= U8_DEN;
             dest.put_u8(den as u8);
         } else if den < u16::MAX as u64 {
-            dest[p] |= 0b00100000;
+            dest[p] |= U16_DEN;
             dest.put_u16_le(den as u16);
         } else if den < u32::MAX as u64 {
-            dest[p] |= 0b00110000;
+            dest[p] |= U32_DEN;
             dest.put_u8(3);
             dest.put_u32_le(den as u32);
         } else {
-            dest[p] |= 0b01000000;
+            dest[p] |= U64_DEN;
             dest.put_u64_le(den);
         }
     }
@@ -92,7 +103,7 @@ impl RationalNumber for u64 {
     fn get_frac_u64(mut source: &[u8]) -> (u64, u64, &[u8]) {
         let disc = source.get_u8();
         let num;
-        (num, source) = match disc & 0b00001111 {
+        (num, source) = match disc & NUM_MASK {
             1 => {
                 let v = source.get_u8();
                 (v as u64, source)
@@ -109,13 +120,13 @@ impl RationalNumber for u64 {
                 let v = source.get_u64_le();
                 (v as u64, source)
             }
-            _ => {
-                unreachable!("FAIL")
+            x => {
+                unreachable!("Unsupported numerator type {}", x)
             }
         };
 
         let den;
-        (den, source) = match (disc & 0b11110000) >> 4 {
+        (den, source) = match (disc & DEN_MASK) >> 4 {
             0 => (1u64, source),
             1 => {
                 let v = source.get_u8();
@@ -133,8 +144,8 @@ impl RationalNumber for u64 {
                 let v = source.get_u64_le();
                 (v as u64, source)
             }
-            _ => {
-                unreachable!("FAIL")
+            x => {
+                unreachable!("Unsupported denominator type {}", x)
             }
         };
 

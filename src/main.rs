@@ -1,26 +1,34 @@
 use symbolica::{
+    printer::AtomPrinter,
     representations::{
         default::OwnedAtom,
         tree::{Atom, Number},
         OwnedAtomT,
     },
-    state::{Workspace, ResettableBuffer},
+    state::{ResettableBuffer, State, Workspace},
 };
 
 fn main() {
+    let mut state = State::new();
+
+    // create variable names
+    let (x, y, z) = (
+        state.get_or_insert("x"),
+        state.get_or_insert("y"),
+        state.get_or_insert("z"),
+    );
+
+    // create term
     let a = Atom::Term(vec![
-        Atom::Var(15, Number::new(2, 1)),
+        Atom::Var(x, Number::new(2, 1)),
         Atom::Number(Number::new(2000, 1)),
-        Atom::Var(16, Number::new(2, 1)),
-        Atom::Var(15, Number::new(1, 2)),
+        Atom::Var(y, Number::new(2, 1)),
+        Atom::Var(x, Number::new(1, 2)),
         Atom::Number(Number::new(4, 4000)),
-        Atom::Fn(17, vec![Atom::Var(15, Number::new(3, 4))]),
+        Atom::Fn(z, vec![Atom::Var(x, Number::new(3, 4))]),
     ]);
-    println!("expr={:?} ,len = {} bytes", a, a.len());
 
     let b = OwnedAtom::from_tree(&a);
-
-    println!("lin size: {:?} bytes", b.len());
 
     assert!(
         a == b.to_tree(),
@@ -31,7 +39,12 @@ fn main() {
 
     let view = b.to_view();
 
-    view.print_tree(0);
+    println!(
+        "input = {}, atom bytes = {}, rep bytes = {}",
+        AtomPrinter::new(view, symbolica::printer::PrintMode::Form, &state),
+        a.len(),
+        b.len()
+    );
 
     let mut workspace = Workspace::new();
 
@@ -39,7 +52,13 @@ fn main() {
 
     view.normalize(&mut workspace, &mut normalized);
 
-    normalized.to_view().print_tree(0);
-
-    normalized.to_view().print();
+    println!(
+        "out = {}, rep bytes = {}",
+        AtomPrinter::new(
+            normalized.to_view(),
+            symbolica::printer::PrintMode::Form,
+            &state
+        ),
+        normalized.len()
+    );
 }

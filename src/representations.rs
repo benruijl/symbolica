@@ -8,6 +8,29 @@ use crate::state::ResettableBuffer;
 
 use self::tree::Atom;
 
+/// An identifier, for example for a variable or function.
+/// Should be created using `get_or_insert` of `State`.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Identifier(u32);
+
+impl std::fmt::Debug for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", self.0))
+    }
+}
+
+impl From<u32> for Identifier {
+    fn from(value: u32) -> Self {
+        Identifier(value)
+    }
+}
+
+impl Identifier {
+    pub fn to_u32(&self) -> u32 {
+        self.0
+    }
+}
+
 pub trait AtomT {
     type N<'a>: NumberT<'a, P = Self>;
     type V<'a>: VarT<'a, P = Self>;
@@ -16,6 +39,7 @@ pub trait AtomT {
     type O: OwnedAtomT<P = Self>;
     type ON: OwnedNumberT<P = Self>;
     type OV: OwnedVarT<P = Self>;
+    type OF: OwnedFunctionT<P = Self>;
     type OT: OwnedTermT<P = Self>;
 }
 
@@ -42,8 +66,18 @@ pub trait OwnedNumberT: ResettableBuffer {
 pub trait OwnedVarT: ResettableBuffer {
     type P: AtomT;
 
-    fn from_id_pow(&mut self, id: usize, pow: <Self::P as AtomT>::ON);
+    fn from_id_pow(&mut self, id: Identifier, pow: <Self::P as AtomT>::ON);
     fn to_var_view<'a>(&'a self) -> <Self::P as AtomT>::V<'a>;
+    fn to_atom(&mut self, out: &mut <Self::P as AtomT>::O);
+}
+
+pub trait OwnedFunctionT: ResettableBuffer {
+    type P: AtomT;
+
+    fn from_name(&mut self, id: Identifier);
+    fn set_dirty(&mut self, dirty: bool);
+    fn add_arg(&mut self, other: AtomView<Self::P>);
+    fn to_func_view<'a>(&'a self) -> <Self::P as AtomT>::F<'a>;
     fn to_atom(&mut self, out: &mut <Self::P as AtomT>::O);
 }
 
@@ -58,28 +92,27 @@ pub trait OwnedTermT: ResettableBuffer {
 pub trait NumberT<'a>: Clone {
     type P: AtomT;
 
+    fn is_one(&self) -> bool;
     fn add<'b>(&self, other: &Self, out: &mut <Self::P as AtomT>::O);
     fn get_numden(&self) -> (u64, u64);
-    fn print(&self);
 }
 
 pub trait VarT<'a>: Clone {
     type P: AtomT;
 
-    fn get_name(&self) -> usize;
+    fn get_name(&self) -> Identifier;
     fn get_pow(&self) -> <Self::P as AtomT>::N<'a>;
-    fn print(&self);
 }
 
 pub trait FunctionT<'a>: Clone {
     type P: AtomT;
     type I: ListIteratorT<'a, P = Self::P>;
 
-    fn get_name(&self) -> usize;
+    fn get_name(&self) -> Identifier;
     fn get_nargs(&self) -> usize;
+    fn is_dirty(&self) -> bool;
     fn cmp(&self, other: &Self) -> Ordering;
     fn into_iter(&self) -> Self::I;
-    fn print(&self);
 }
 
 pub trait TermT<'a>: Clone {
@@ -88,7 +121,6 @@ pub trait TermT<'a>: Clone {
 
     fn get_nargs(&self) -> usize;
     fn into_iter(&self) -> Self::I;
-    fn print(&self);
 }
 
 pub trait ListIteratorT<'a>: Clone {
@@ -97,8 +129,7 @@ pub trait ListIteratorT<'a>: Clone {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum AtomView<'a, P: AtomT>
-{
+pub enum AtomView<'a, P: AtomT> {
     Number(P::N<'a>),
     Var(P::V<'a>),
     Function(P::F<'a>),
@@ -106,16 +137,7 @@ pub enum AtomView<'a, P: AtomT>
 }
 
 impl<'a, P: AtomT> AtomView<'a, P> {
-    pub fn print(&self) {
-        match &self {
-            AtomView::Var(v) => v.print(),
-            AtomView::Function(f) => f.print(),
-            AtomView::Number(n) => n.print(),
-            AtomView::Term(t) => t.print(),
-        }
-    }
-
-    pub fn print_tree(&self, level: usize) {
+    pub fn dbg_print_tree(&self, level: usize) {
         let mut owned_atom = P::O::new();
         owned_atom.write(self);
 
@@ -129,7 +151,7 @@ impl<'a, P: AtomT> AtomView<'a, P> {
                 );
                 let mut f_it = f.into_iter();
                 while let Some(arg) = f_it.next() {
-                    arg.print_tree(level + 1);
+                    arg.dbg_print_tree(level + 1);
                 }
             }
             AtomView::Number(_) => println!("{}{:?}", " ".repeat(level), owned_atom.to_tree()),
@@ -141,7 +163,7 @@ impl<'a, P: AtomT> AtomView<'a, P> {
                 );
                 let mut t_it = t.into_iter();
                 while let Some(arg) = t_it.next() {
-                    arg.print_tree(level + 1);
+                    arg.dbg_print_tree(level + 1);
                 }
             }
         }

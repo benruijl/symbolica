@@ -5,14 +5,18 @@ use std::{cmp::Ordering, io::Cursor};
 use crate::{representations::tree::Number, state::ResettableBuffer, utils};
 
 use super::{
-    number::RationalNumber, tree::Atom, AtomT, AtomView, FunctionT, ListIteratorT, NumberT,
-    OwnedAtomT, OwnedNumberT, OwnedTermT, OwnedVarT, TermT, VarT,
+    number::{RationalNumberReader, RationalNumberWriter},
+    tree::Atom,
+    AtomT, AtomView, FunctionT, Identifier, ListIteratorT, NumberT, OwnedAtomT, OwnedFunctionT,
+    OwnedNumberT, OwnedTermT, OwnedVarT, TermT, VarT,
 };
 
 const NUM_ID: u8 = 1;
 const VAR_ID: u8 = 2;
 const FN_ID: u8 = 3;
 const TERM_ID: u8 = 4;
+const TYPE_MASK: u8 = 0b00000111;
+const DIRTY_FLAG: u8 = 0b10000000;
 
 #[derive(Debug, Copy, Clone)]
 pub struct DefaultRepresentation {}
@@ -50,7 +54,7 @@ impl OwnedAtomT for OwnedAtom {
     }
 
     fn to_view<'a>(&'a self) -> AtomView<'a, Self::P> {
-        match self.data[0] {
+        match self.data[0] & TYPE_MASK {
             VAR_ID => AtomView::Var(VarView { data: &self.data }),
             FN_ID => AtomView::Function(FunctionView { data: &self.data }),
             NUM_ID => AtomView::Number(NumberView { data: &self.data }),
@@ -100,7 +104,7 @@ impl OwnedNumberT for OwnedNumber {
     }
 
     fn to_num_view(&self) -> NumberView {
-        assert!(self.data[0] == NUM_ID);
+        assert!(self.data[0] & TYPE_MASK == NUM_ID);
         NumberView { data: &self.data }
     }
 }
@@ -109,7 +113,7 @@ impl ResettableBuffer for OwnedNumber {
     fn new() -> Self {
         let mut data = Vec::new();
         data.put_u8(NUM_ID);
-        0u64.write_frac(1, &mut data);
+        0u64.write_num(&mut data);
 
         OwnedNumber { data }
     }
@@ -117,7 +121,7 @@ impl ResettableBuffer for OwnedNumber {
     fn reset(&mut self) {
         self.data.clear();
         self.data.put_u8(NUM_ID);
-        0u64.write_frac(1, &mut self.data);
+        0u64.write_num(&mut self.data);
     }
 }
 
@@ -129,9 +133,9 @@ pub struct OwnedVar {
 impl OwnedVarT for OwnedVar {
     type P = DefaultRepresentation;
 
-    fn from_id_pow(&mut self, id: usize, pow: OwnedNumber) {
+    fn from_id_pow(&mut self, id: Identifier, pow: OwnedNumber) {
         self.data.put_u8(VAR_ID);
-        (id as u64).write_frac(1, &mut self.data);
+        (id.to_u32() as u64).write_frac(1, &mut self.data);
         self.data.extend(pow.data);
     }
 
@@ -154,6 +158,52 @@ impl ResettableBuffer for OwnedVar {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct OwnedFunction {
+    data: Vec<u8>,
+}
+
+impl OwnedFunctionT for OwnedFunction {
+    type P = DefaultRepresentation;
+
+    fn from_name(&mut self, id: Identifier) {
+        self.data.put_u8(VAR_ID);
+        (id.to_u32() as u64).write_num(&mut self.data);
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        if dirty {
+            self.data[0] &= DIRTY_FLAG;
+        } else {
+            self.data[0] &= !DIRTY_FLAG;
+        }
+    }
+
+    fn add_arg(&mut self, other: AtomView<Self::P>) {
+        // TODO: update the size
+        self.data.extend(other.get_data());
+        todo!()
+    }
+
+    fn to_func_view<'a>(&'a self) -> <Self::P as AtomT>::F<'a> {
+        FunctionView { data: &self.data }
+    }
+
+    fn to_atom(&mut self, out: &mut OwnedAtom) {
+        out.data.clone_from(&self.data);
+    }
+}
+
+impl ResettableBuffer for OwnedFunction {
+    fn new() -> Self {
+        OwnedFunction { data: vec![] }
+    }
+
+    fn reset(&mut self) {
+        self.data.clear();
+    }
+}
+
 pub struct OwnedTerm {
     data: Vec<u8>,
 }
@@ -168,7 +218,7 @@ impl OwnedTermT for OwnedTerm {
         let buf_pos = 1 + 4;
 
         let mut n_args;
-        (n_args, _, _) = u64::get_frac_u64(c);
+        (n_args, _, _) = c.get_frac_u64();
 
         match other {
             AtomView::Term(_t) => {
@@ -206,7 +256,7 @@ impl ResettableBuffer for OwnedTerm {
         let mut data = Vec::new();
         data.put_u8(TERM_ID);
         data.put_u32_le(0 as u32);
-        0u64.write_frac(1, &mut data);
+        0u64.write_num(&mut data);
 
         OwnedTerm { data }
     }
@@ -215,7 +265,7 @@ impl ResettableBuffer for OwnedTerm {
         self.data.clear();
         self.data.put_u8(TERM_ID);
         self.data.put_u32_le(0 as u32);
-        0u64.write_frac(1, &mut self.data);
+        0u64.write_num(&mut self.data);
     }
 }
 
@@ -227,25 +277,21 @@ impl AtomT for DefaultRepresentation {
     type O = OwnedAtom;
     type ON = OwnedNumber;
     type OV = OwnedVar;
+    type OF = OwnedFunction;
     type OT = OwnedTerm;
 }
 
 impl<'a> VarT<'a> for VarView<'a> {
     type P = DefaultRepresentation;
 
-    fn get_name(&self) -> usize {
-        u64::get_frac_u64(&self.data[1..]).0 as usize
+    fn get_name(&self) -> Identifier {
+        Identifier::from((&self.data[1..]).get_frac_u64().0 as u32)
     }
 
     fn get_pow(&self) -> NumberView<'a> {
         NumberView {
-            data: u64::skip_rational(&self.data[1..]),
+            data: (&self.data[1..]).skip_rational(),
         }
-    }
-
-    fn print(&self) {
-        print!("v_{}^", self.get_name());
-        self.get_pow().print();
     }
 }
 
@@ -254,7 +300,7 @@ impl OwnedAtom {
         match atom {
             Atom::Var(name, pow) => {
                 self.data.put_u8(VAR_ID);
-                (*name as u64).write_frac(1, &mut self.data);
+                (name.to_u32() as u64).write_frac(1, &mut self.data);
 
                 self.data.put_u8(NUM_ID);
                 pow.num.write_frac(pow.den, &mut self.data);
@@ -266,7 +312,7 @@ impl OwnedAtom {
                 let buf_pos = self.data.len();
 
                 // pack name and args
-                (*name as u64).write_frac(args.len() as u64, &mut self.data);
+                (name.to_u32() as u64).write_frac(args.len() as u64, &mut self.data);
 
                 for a in args {
                     self.linearize(a);
@@ -291,7 +337,7 @@ impl OwnedAtom {
                 self.data.put_u32_le(0 as u32); // length of entire fn without flag
                 let buf_pos = self.data.len();
 
-                (args.len() as u64).write_frac(1, &mut self.data);
+                (args.len() as u64).write_num(&mut self.data);
 
                 for a in args {
                     self.linearize(a);
@@ -308,22 +354,25 @@ impl OwnedAtom {
     }
 
     fn write_to_tree(mut source: &[u8]) -> (Atom, &[u8]) {
-        match source.get_u8() {
+        match source.get_u8() & TYPE_MASK {
             VAR_ID => {
                 let name;
-                (name, _, source) = u64::get_frac_u64(source);
+                (name, _, source) = source.get_frac_u64();
 
                 source.get_u8(); // num tag
                 let (num, den);
-                (num, den, source) = u64::get_frac_u64(source);
+                (num, den, source) = source.get_frac_u64();
 
-                (Atom::Var(name as u32, Number::new(num, den)), source)
+                (
+                    Atom::Var(Identifier::from(name as u32), Number::new(num, den)),
+                    source,
+                )
             }
             FN_ID => {
                 source.get_u32_le(); // size
 
                 let (name, n_args);
-                (name, n_args, source) = u64::get_frac_u64(source);
+                (name, n_args, source) = source.get_frac_u64();
 
                 let mut args = Vec::with_capacity(n_args as usize);
                 for _ in 0..n_args {
@@ -332,18 +381,18 @@ impl OwnedAtom {
                     args.push(a);
                 }
 
-                (Atom::Fn(name as u32, args), source)
+                (Atom::Fn(Identifier::from(name as u32), args), source)
             }
             NUM_ID => {
                 let (num, den);
-                (num, den, source) = u64::get_frac_u64(source);
+                (num, den, source) = source.get_frac_u64();
                 (Atom::Number(Number::new(num, den)), source)
             }
             TERM_ID => {
                 source.get_u32_le(); // size
 
                 let n_args;
-                (n_args, _, source) = u64::get_frac_u64(source);
+                (n_args, _, source) = source.get_frac_u64();
 
                 let mut args = Vec::with_capacity(n_args as usize);
                 for _ in 0..n_args {
@@ -373,6 +422,22 @@ impl<'a> FunctionT<'a> for FunctionView<'a> {
     type P = DefaultRepresentation;
     type I = ListIterator<'a>;
 
+    fn get_name(&self) -> Identifier {
+        Identifier::from((&self.data[1 + 4..]).get_frac_u64().0 as u32)
+    }
+
+    fn get_nargs(&self) -> usize {
+        (&self.data[1 + 4..]).get_frac_u64().1 as usize
+    }
+
+    fn is_dirty(&self) -> bool {
+        (self.data[0] & DIRTY_FLAG) != 0
+    }
+
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.get_name().cmp(&other.get_name())
+    }
+
     #[inline]
     fn into_iter(&self) -> Self::I {
         let mut c = self.data;
@@ -380,41 +445,12 @@ impl<'a> FunctionT<'a> for FunctionView<'a> {
         c.get_u32_le(); // size
 
         let n_args;
-        (_, n_args, c) = u64::get_frac_u64(c); // name
+        (_, n_args, c) = c.get_frac_u64(); // name
 
         ListIterator {
             data: c,
             length: n_args as u32,
         }
-    }
-
-    fn get_name(&self) -> usize {
-        u64::get_frac_u64(&self.data[1 + 4..]).0 as usize
-    }
-
-    fn get_nargs(&self) -> usize {
-        u64::get_frac_u64(&self.data[1 + 4..]).1 as usize
-    }
-
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.get_name().cmp(&other.get_name())
-    }
-
-    fn print(&self) {
-        print!("f_{}(", self.get_name());
-
-        let mut it = self.into_iter();
-        let mut first = true;
-        while let Some(x) = it.next() {
-            if !first {
-                print!(",");
-            }
-            first = false;
-
-            x.print();
-        }
-
-        print!(")")
     }
 }
 
@@ -426,16 +462,8 @@ pub struct NumberView<'a> {
 impl<'a> NumberT<'a> for NumberView<'a> {
     type P = DefaultRepresentation;
 
-    #[inline]
-    fn get_numden(&self) -> (u64, u64) {
-        let mut c = self.data;
-        c.get_u8();
-
-        let num;
-        let den;
-        (num, den, _) = u64::get_frac_u64(c);
-
-        (num, den)
+    fn is_one(&self) -> bool {
+        self.data.is_one()
     }
 
     fn add<'b>(&self, other: &Self, out: &mut OwnedAtom) {
@@ -450,13 +478,16 @@ impl<'a> NumberT<'a> for NumberView<'a> {
         (c.0 as u64 / gcd).write_frac(c.1 as u64 / gcd, &mut out.data);
     }
 
-    fn print(&self) {
-        let d = self.get_numden();
-        if d.1 != 1 {
-            print!("{}/{}", d.0, d.1);
-        } else {
-            print!("{}", d.0);
-        }
+    #[inline]
+    fn get_numden(&self) -> (u64, u64) {
+        let mut c = self.data;
+        c.get_u8();
+
+        let num;
+        let den;
+        (num, den, _) = c.get_frac_u64();
+
+        (num, den)
     }
 }
 
@@ -501,7 +532,7 @@ impl<'a> TermT<'a> for TermView<'a> {
         c.get_u32_le(); // size
 
         let n_args;
-        (n_args, _, c) = u64::get_frac_u64(c);
+        (n_args, _, c) = c.get_frac_u64();
 
         ListIterator {
             data: c,
@@ -510,20 +541,7 @@ impl<'a> TermT<'a> for TermView<'a> {
     }
 
     fn get_nargs(&self) -> usize {
-        u64::get_frac_u64(&self.data[1 + 4..]).0 as usize
-    }
-
-    fn print(&self) {
-        let mut it = self.into_iter();
-        let mut first = true;
-        while let Some(x) = it.next() {
-            if !first {
-                print!("*");
-            }
-            first = false;
-
-            x.print();
-        }
+        (&self.data[1 + 4..]).get_frac_u64().0 as usize
     }
 }
 
@@ -546,16 +564,16 @@ impl<'a> ListIteratorT<'a> for ListIterator<'a> {
 
         let start = self.data;
 
-        let cur_id = self.data.get_u8();
+        let cur_id = self.data.get_u8() & TYPE_MASK;
 
         match cur_id {
             VAR_ID => {
-                self.data = u64::skip_rational(self.data);
+                self.data = self.data.skip_rational();
                 self.data.advance(1); // also skip num tag
-                self.data = u64::skip_rational(self.data);
+                self.data = self.data.skip_rational();
             }
             NUM_ID => {
-                self.data = u64::skip_rational(self.data);
+                self.data = self.data.skip_rational();
             }
             FN_ID => {
                 let n_size = self.data.get_u32_le();
@@ -598,11 +616,11 @@ impl<'a> ListIteratorT<'a> for ListIterator<'a> {
 #[test]
 pub fn representation_size() {
     let a = Atom::Fn(
-        1,
+        Identifier::from(1),
         vec![
-            Atom::Var(2, Number::new(1, 1)),
+            Atom::Var(Identifier::from(2), Number::new(1, 1)),
             Atom::Fn(
-                3,
+                Identifier::from(3),
                 vec![
                     Atom::Term(vec![
                         Atom::Number(Number::new(3, 1)),
@@ -626,11 +644,11 @@ pub fn representation_size() {
                     Atom::Number(Number::new(4, 2)),
                 ],
             ),
-            Atom::Var(6, Number::new(1, 1)),
-            Atom::Var(2, Number::new(1, 1)),
-            Atom::Var(2, Number::new(1, 1)),
-            Atom::Var(2, Number::new(1, 1)),
-            Atom::Var(2, Number::new(1, 1)),
+            Atom::Var(Identifier::from(6), Number::new(1, 1)),
+            Atom::Var(Identifier::from(2), Number::new(1, 1)),
+            Atom::Var(Identifier::from(2), Number::new(1, 1)),
+            Atom::Var(Identifier::from(2), Number::new(1, 1)),
+            Atom::Var(Identifier::from(2), Number::new(1, 1)),
             Atom::Number(Number::new(2, 1)),
             Atom::Number(Number::new(2, 1)),
             Atom::Number(Number::new(2, 1)),
@@ -655,7 +673,5 @@ pub fn representation_size() {
         panic!("in and out is different: {:?} vs {:?}", a, c);
     }
 
-    b.to_view().print_tree(0);
-    b.to_view().print();
-    println!("");
+    b.to_view().dbg_print_tree(0);
 }

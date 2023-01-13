@@ -2,6 +2,7 @@ use std::mem::size_of;
 
 use crate::utils;
 
+use super::Identifier;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Number {
     pub num: u64,
@@ -26,8 +27,8 @@ impl Number {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Atom {
-    Var(u32, Number),      // name and power
-    Fn(u32, Vec<Atom>), // name and args
+    Var(Identifier, Number),   // name and power
+    Fn(Identifier, Vec<Atom>), // name and args
     Number(Number),
     Term(Vec<Atom>),
 }

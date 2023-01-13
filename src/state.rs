@@ -1,36 +1,43 @@
 use std::cell::RefCell;
 
-use ahash::HashMap;
+use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
 
-use crate::representations::AtomT;
+use crate::representations::{AtomT, Identifier};
 
 /// A global state, that stores mappings from variable and function names to ids.
 pub struct State {
     // get variable maps from here
-    str_to_var_id: HashMap<String, usize>,
+    str_to_var_id: HashMap<String, Identifier>,
     var_to_str_map: Vec<String>,
 }
 
 impl State {
+    pub fn new() -> State {
+        State {
+            str_to_var_id: HashMap::new(),
+            var_to_str_map: vec![],
+        }
+    }
+
     // note: could be made immutable by using frozen collections
     /// Get the id for a certain name if the name is already registered,
     /// else register it and return a new id.
-    pub fn get_or_insert(&mut self, name: String) -> usize {
-        match self.str_to_var_id.entry(name.clone()) {
+    pub fn get_or_insert<S: AsRef<str>>(&mut self, name: S) -> Identifier {
+        match self.str_to_var_id.entry(name.as_ref().into()) {
             std::collections::hash_map::Entry::Occupied(o) => *o.get(),
             std::collections::hash_map::Entry::Vacant(v) => {
-                let new_id = self.var_to_str_map.len();
+                let new_id = Identifier::from(self.var_to_str_map.len() as u32);
                 v.insert(new_id);
-                self.var_to_str_map.push(name);
+                self.var_to_str_map.push(name.as_ref().into());
                 new_id
             }
         }
     }
 
     /// Get the name for a given id.
-    pub fn get_name(&self, id: usize) -> Option<&String> {
-        self.var_to_str_map.get(id)
+    pub fn get_name(&self, id: Identifier) -> Option<&String> {
+        self.var_to_str_map.get(id.to_u32() as usize)
     }
 }
 

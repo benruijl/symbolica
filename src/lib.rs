@@ -1,4 +1,5 @@
-pub mod representations;
 pub mod normalize;
-pub mod utils;
+pub mod printer;
+pub mod representations;
 pub mod state;
+pub mod utils;

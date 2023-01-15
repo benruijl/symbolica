@@ -47,6 +47,8 @@ pub struct Workspace<P: AtomT> {
     pub var_buf: Stack<P::OV>,
     pub num_buf: Stack<P::ON>,
     pub term_buf: Stack<P::OT>,
+    pub pow_buf: Stack<P::OP>,
+    pub expr_buf: Stack<P::OE>,
 }
 
 impl<P: AtomT> Workspace<P> {
@@ -56,6 +58,8 @@ impl<P: AtomT> Workspace<P> {
             var_buf: Stack::new(),
             num_buf: Stack::new(),
             term_buf: Stack::new(),
+            pow_buf: Stack::new(),
+            expr_buf: Stack::new(),
         }
     }
 }

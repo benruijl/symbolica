@@ -20,12 +20,19 @@ fn main() {
 
     // create term
     let a = Atom::Term(vec![
-        Atom::Var(x, Number::new(2, 1)),
-        Atom::Number(Number::new(2000, 1)),
-        Atom::Var(y, Number::new(2, 1)),
-        Atom::Var(x, Number::new(1, 2)),
+        Atom::Pow(Box::new((Atom::Var(x), Atom::Number(Number::new(2, 1))))),
+        Atom::Number(Number::new(3, 1)),
+        Atom::Pow(Box::new((Atom::Var(x), Atom::Number(Number::new(1, 2))))),
+        Atom::Var(y),
         Atom::Number(Number::new(4, 4000)),
-        Atom::Fn(z, vec![Atom::Var(x, Number::new(3, 4))]),
+        Atom::Var(y),
+        Atom::Fn(
+            z,
+            vec![Atom::Expression(vec![
+                Atom::Number(Number::new(1, 1)),
+                Atom::Var(x),
+            ])],
+        ),
     ]);
 
     let b = OwnedAtom::from_tree(&a);

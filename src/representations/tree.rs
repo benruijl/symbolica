@@ -27,18 +27,22 @@ impl Number {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Atom {
-    Var(Identifier, Number),   // name and power
+    Var(Identifier),
     Fn(Identifier, Vec<Atom>), // name and args
     Number(Number),
+    Pow(Box<(Atom, Atom)>),
     Term(Vec<Atom>),
+    Expression(Vec<Atom>),
 }
 
 impl Atom {
     pub fn len(&self) -> usize {
         size_of::<Atom>()
             + match self {
-                Atom::Fn(_, args) => args.iter().map(|a| a.len()).sum(),
-                Atom::Term(args) => args.iter().map(|a| a.len()).sum(),
+                Atom::Fn(_, args) | Atom::Term(args) | Atom::Expression(args) => {
+                    args.iter().map(|a| a.len()).sum()
+                }
+                Atom::Pow(p) => p.0.len() + p.1.len(),
                 _ => 0,
             }
     }

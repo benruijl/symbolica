@@ -1,7 +1,9 @@
 use std::fmt::{self, Write};
 
 use crate::{
-    representations::{AtomT, AtomView, FunctionT, ListIteratorT, NumberT, TermT, VarT},
+    representations::{
+        AtomT, AtomView, ExprT, FunctionT, ListIteratorT, NumberT, PowT, TermT, VarT,
+    },
     state::State,
 };
 
@@ -29,7 +31,9 @@ define_formatters!(
     FormattedPrintVar,
     FormattedPrintNumber,
     FormattedPrintFunction,
-    FormattedPrintTerm
+    FormattedPrintPow,
+    FormattedPrintTerm,
+    FormattedPrintExpression
 );
 
 pub struct AtomPrinter<'a, 'b, P: AtomT> {
@@ -69,7 +73,9 @@ impl<'a, P: AtomT> AtomView<'a, P> {
             AtomView::Number(n) => n.fmt_output(fmt, print_mode, state),
             AtomView::Var(v) => v.fmt_output(fmt, print_mode, state),
             AtomView::Function(f) => f.fmt_output(fmt, print_mode, state),
+            AtomView::Pow(p) => p.fmt_output(fmt, print_mode, state),
             AtomView::Term(t) => t.fmt_output(fmt, print_mode, state),
+            AtomView::Expression(e) => e.fmt_output(fmt, print_mode, state),
         }
     }
 }
@@ -82,16 +88,6 @@ impl<'a, A: VarT<'a>> FormattedPrintVar for A {
         state: &State,
     ) -> fmt::Result {
         f.write_str(state.get_name(self.get_name()).unwrap())
-            .unwrap();
-
-        let pow = self.get_pow();
-
-        if !pow.is_one() {
-            f.write_char('^').unwrap();
-            pow.fmt_output(f, print_mode, state)
-        } else {
-            Ok(())
-        }
     }
 }
 
@@ -155,5 +151,55 @@ impl<'a, A: FunctionT<'a>> FormattedPrintFunction for A {
         }
 
         f.write_char(')')
+    }
+}
+
+impl<'a, A: PowT<'a>> FormattedPrintPow for A {
+    fn fmt_output(
+        &self,
+        f: &mut fmt::Formatter,
+        print_mode: PrintMode,
+        state: &State,
+    ) -> fmt::Result {
+        let b = self.get_base();
+        if let AtomView::Expression(_) = b {
+            f.write_char('(').unwrap();
+            b.fmt_output(f, print_mode, state).unwrap();
+            f.write_char(')').unwrap();
+        } else {
+            b.fmt_output(f, print_mode, state).unwrap();
+        }
+
+        f.write_char('^').unwrap();
+
+        let e = self.get_exp();
+        if let AtomView::Expression(_) = b {
+            f.write_char('(').unwrap();
+            e.fmt_output(f, print_mode, state).unwrap();
+            f.write_char(')')
+        } else {
+            e.fmt_output(f, print_mode, state)
+        }
+    }
+}
+
+impl<'a, A: ExprT<'a>> FormattedPrintExpression for A {
+    fn fmt_output(
+        &self,
+        f: &mut fmt::Formatter,
+        print_mode: PrintMode,
+        state: &State,
+    ) -> fmt::Result {
+        let mut it = self.into_iter();
+        let mut first = true;
+        while let Some(x) = it.next() {
+            if !first {
+                f.write_char('+').unwrap();
+            }
+            first = false;
+
+            x.fmt_output(f, print_mode, state).unwrap();
+        }
+        Ok(())
     }
 }

@@ -7,18 +7,20 @@ use crate::{representations::tree::Number, state::ResettableBuffer, utils};
 use super::{
     number::{RationalNumberReader, RationalNumberWriter},
     tree::Atom,
-    AtomT, AtomView, FunctionT, Identifier, ListIteratorT, NumberT, OwnedAtomT, OwnedFunctionT,
-    OwnedNumberT, OwnedTermT, OwnedVarT, TermT, VarT,
+    AtomT, AtomView, ExprT, FunctionT, Identifier, ListIteratorT, NumberT, OwnedAtomT, OwnedExprT,
+    OwnedFunctionT, OwnedNumberT, OwnedPowT, OwnedTermT, OwnedVarT, PowT, TermT, VarT,
 };
 
 const NUM_ID: u8 = 1;
 const VAR_ID: u8 = 2;
 const FN_ID: u8 = 3;
 const TERM_ID: u8 = 4;
+const POW_ID: u8 = 5;
+const EXPR_ID: u8 = 6;
 const TYPE_MASK: u8 = 0b00000111;
 const DIRTY_FLAG: u8 = 0b10000000;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DefaultRepresentation {}
 
 #[derive(Debug, Clone)]
@@ -59,6 +61,8 @@ impl OwnedAtomT for OwnedAtom {
             FN_ID => AtomView::Function(FunctionView { data: &self.data }),
             NUM_ID => AtomView::Number(NumberView { data: &self.data }),
             TERM_ID => AtomView::Term(TermView { data: &self.data }),
+            POW_ID => AtomView::Pow(PowView { data: &self.data }),
+            EXPR_ID => AtomView::Expression(ExpressionView { data: &self.data }),
             x => unreachable!("Bad id: {}", x),
         }
     }
@@ -86,10 +90,15 @@ pub struct OwnedNumber {
 impl OwnedNumberT for OwnedNumber {
     type P = DefaultRepresentation;
 
-    fn from_view<'a>(a: NumberView<'a>) -> Self {
-        OwnedNumber {
-            data: a.data.to_vec(),
-        }
+    fn from_u64_frac(&mut self, num: u64, den: u64) {
+        self.data.clear();
+        self.data.put_u8(NUM_ID);
+        num.write_frac(den, &mut self.data);
+    }
+
+    fn from_view<'a>(&mut self, a: NumberView<'a>) {
+        self.data.clear();
+        self.data.extend(a.data);
     }
 
     fn add<'a>(&mut self, other: &NumberView<'a>) {
@@ -113,7 +122,7 @@ impl ResettableBuffer for OwnedNumber {
     fn new() -> Self {
         let mut data = Vec::new();
         data.put_u8(NUM_ID);
-        0u64.write_num(&mut data);
+        0u64.write_num(&mut data); // TODO: should this be written?
 
         OwnedNumber { data }
     }
@@ -133,10 +142,9 @@ pub struct OwnedVar {
 impl OwnedVarT for OwnedVar {
     type P = DefaultRepresentation;
 
-    fn from_id_pow(&mut self, id: Identifier, pow: OwnedNumber) {
+    fn from_id(&mut self, id: Identifier) {
         self.data.put_u8(VAR_ID);
-        (id.to_u32() as u64).write_frac(1, &mut self.data);
-        self.data.extend(pow.data);
+        (id.to_u32() as u64).write_num(&mut self.data);
     }
 
     fn to_var_view<'a>(&'a self) -> <Self::P as AtomT>::V<'a> {
@@ -197,6 +205,47 @@ impl OwnedFunctionT for OwnedFunction {
 impl ResettableBuffer for OwnedFunction {
     fn new() -> Self {
         OwnedFunction { data: vec![] }
+    }
+
+    fn reset(&mut self) {
+        self.data.clear();
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OwnedPow {
+    data: Vec<u8>,
+}
+
+impl OwnedPowT for OwnedPow {
+    type P = DefaultRepresentation;
+
+    fn from_base_and_exp(&mut self, base: AtomView<Self::P>, exp: AtomView<Self::P>) {
+        self.data.put_u8(POW_ID);
+        self.data.extend(base.get_data());
+        self.data.extend(exp.get_data());
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        if dirty {
+            self.data[0] &= DIRTY_FLAG;
+        } else {
+            self.data[0] &= !DIRTY_FLAG;
+        }
+    }
+
+    fn to_pow_view<'a>(&'a self) -> <Self::P as AtomT>::P<'a> {
+        PowView { data: &self.data }
+    }
+
+    fn to_atom(&mut self, out: &mut OwnedAtom) {
+        out.data.clone_from(&self.data);
+    }
+}
+
+impl ResettableBuffer for OwnedPow {
+    fn new() -> Self {
+        OwnedPow { data: vec![] }
     }
 
     fn reset(&mut self) {
@@ -269,41 +318,102 @@ impl ResettableBuffer for OwnedTerm {
     }
 }
 
+pub struct OwnedExpression {
+    data: Vec<u8>,
+}
+
+impl OwnedExprT for OwnedExpression {
+    type P = DefaultRepresentation;
+
+    fn extend<'a>(&mut self, other: AtomView<'a, DefaultRepresentation>) {
+        // may increase size of the num of args
+        let c = &self.data[1 + 4..];
+
+        let buf_pos = 1 + 4;
+
+        let mut n_args;
+        (n_args, _, _) = c.get_frac_u64();
+
+        match other {
+            AtomView::Expression(_t) => {
+                todo!();
+            }
+            _ => {
+                n_args += 1;
+                self.data.extend(other.get_data());
+            }
+        }
+
+        // FIXME: this may overwrite the rest of the term
+        // assume for now it does not
+        n_args.write_frac_fixed(1, &mut self.data[1 + 4..]);
+
+        let new_buf_pos = self.data.len();
+
+        let mut cursor = &mut self.data[1..];
+        cursor
+            .write_u32::<LittleEndian>((new_buf_pos - buf_pos) as u32)
+            .unwrap();
+    }
+
+    fn to_expr_view<'a>(&'a self) -> <Self::P as AtomT>::E<'a> {
+        ExpressionView { data: &self.data }
+    }
+
+    fn to_atom(&mut self, out: &mut OwnedAtom) {
+        out.data.clone_from(&self.data);
+    }
+}
+
+impl ResettableBuffer for OwnedExpression {
+    fn new() -> Self {
+        let mut data = Vec::new();
+        data.put_u8(EXPR_ID);
+        data.put_u32_le(0 as u32);
+        0u64.write_num(&mut data);
+
+        OwnedExpression { data }
+    }
+
+    fn reset(&mut self) {
+        self.data.clear();
+        self.data.put_u8(EXPR_ID);
+        self.data.put_u32_le(0 as u32);
+        0u64.write_num(&mut self.data);
+    }
+}
+
 impl AtomT for DefaultRepresentation {
     type N<'a> = NumberView<'a>;
     type V<'a> = VarView<'a>;
     type F<'a> = FunctionView<'a>;
+    type P<'a> = PowView<'a>;
     type T<'a> = TermView<'a>;
+    type E<'a> = ExpressionView<'a>;
     type O = OwnedAtom;
     type ON = OwnedNumber;
     type OV = OwnedVar;
     type OF = OwnedFunction;
+    type OP = OwnedPow;
     type OT = OwnedTerm;
+    type OE = OwnedExpression;
 }
 
 impl<'a> VarT<'a> for VarView<'a> {
     type P = DefaultRepresentation;
 
+    #[inline]
     fn get_name(&self) -> Identifier {
         Identifier::from((&self.data[1..]).get_frac_u64().0 as u32)
-    }
-
-    fn get_pow(&self) -> NumberView<'a> {
-        NumberView {
-            data: (&self.data[1..]).skip_rational(),
-        }
     }
 }
 
 impl OwnedAtom {
     pub fn linearize(&mut self, atom: &Atom) {
         match atom {
-            Atom::Var(name, pow) => {
+            Atom::Var(name) => {
                 self.data.put_u8(VAR_ID);
-                (name.to_u32() as u64).write_frac(1, &mut self.data);
-
-                self.data.put_u8(NUM_ID);
-                pow.num.write_frac(pow.den, &mut self.data);
+                (name.to_u32() as u64).write_num(&mut self.data);
             }
             Atom::Fn(name, args) => {
                 self.data.put_u8(FN_ID);
@@ -327,11 +437,19 @@ impl OwnedAtom {
             }
             Atom::Number(n) => {
                 self.data.put_u8(NUM_ID);
-
                 n.num.write_frac(n.den, &mut self.data);
             }
-            Atom::Term(args) => {
-                self.data.put_u8(TERM_ID);
+            Atom::Pow(p) => {
+                self.data.put_u8(POW_ID);
+                self.linearize(&p.0);
+                self.linearize(&p.1);
+            }
+            Atom::Term(args) | Atom::Expression(args) => {
+                if let Atom::Term(_) = atom {
+                    self.data.put_u8(TERM_ID);
+                } else {
+                    self.data.put_u8(EXPR_ID);
+                }
 
                 let size_pos = self.data.len();
                 self.data.put_u32_le(0 as u32); // length of entire fn without flag
@@ -354,19 +472,12 @@ impl OwnedAtom {
     }
 
     fn write_to_tree(mut source: &[u8]) -> (Atom, &[u8]) {
-        match source.get_u8() & TYPE_MASK {
+        let d = source.get_u8() & TYPE_MASK;
+        match d {
             VAR_ID => {
                 let name;
                 (name, _, source) = source.get_frac_u64();
-
-                source.get_u8(); // num tag
-                let (num, den);
-                (num, den, source) = source.get_frac_u64();
-
-                (
-                    Atom::Var(Identifier::from(name as u32), Number::new(num, den)),
-                    source,
-                )
+                (Atom::Var(Identifier::from(name as u32)), source)
             }
             FN_ID => {
                 source.get_u32_le(); // size
@@ -388,7 +499,13 @@ impl OwnedAtom {
                 (num, den, source) = source.get_frac_u64();
                 (Atom::Number(Number::new(num, den)), source)
             }
-            TERM_ID => {
+            POW_ID => {
+                let (base, exp);
+                (base, source) = OwnedAtom::write_to_tree(source);
+                (exp, source) = OwnedAtom::write_to_tree(source);
+                (Atom::Pow(Box::new((base, exp))), source)
+            }
+            TERM_ID | EXPR_ID => {
                 source.get_u32_le(); // size
 
                 let n_args;
@@ -401,19 +518,23 @@ impl OwnedAtom {
                     args.push(a);
                 }
 
-                (Atom::Term(args), source)
+                if d == TERM_ID {
+                    (Atom::Term(args), source)
+                } else {
+                    (Atom::Expression(args), source)
+                }
             }
             x => unreachable!("Bad id: {}", x),
         }
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VarView<'a> {
     pub data: &'a [u8],
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FunctionView<'a> {
     pub data: &'a [u8],
 }
@@ -454,7 +575,7 @@ impl<'a> FunctionT<'a> for FunctionView<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NumberView<'a> {
     pub data: &'a [u8],
 }
@@ -491,34 +612,40 @@ impl<'a> NumberT<'a> for NumberView<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct TermView<'a> {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PowView<'a> {
     pub data: &'a [u8],
 }
 
-impl<'a> AtomView<'a, DefaultRepresentation> {
-    pub fn from(source: &'a [u8]) -> AtomView<'a, DefaultRepresentation> {
-        match source[0] {
-            VAR_ID => AtomView::Var(VarView { data: source }),
-            FN_ID => AtomView::Function(FunctionView { data: source }),
-            NUM_ID => AtomView::Number(NumberView { data: source }),
-            TERM_ID => AtomView::Term(TermView { data: source }),
-            x => unreachable!("Bad id: {}", x),
-        }
+impl<'a> PowT<'a> for PowView<'a> {
+    type P = DefaultRepresentation;
+
+    #[inline]
+    fn get_base(&self) -> AtomView<Self::P> {
+        let (b, _) = self.get_base_exp();
+        b
     }
 
-    pub fn to_atom(&self) -> Atom {
-        OwnedAtom::write_to_tree(self.get_data()).0
+    #[inline]
+    fn get_exp(&self) -> AtomView<Self::P> {
+        let (_, e) = self.get_base_exp();
+        e
     }
 
-    fn get_data(&self) -> &[u8] {
-        match self {
-            AtomView::Number(n) => n.data,
-            AtomView::Var(v) => v.data,
-            AtomView::Function(f) => f.data,
-            AtomView::Term(t) => t.data,
-        }
+    #[inline]
+    fn get_base_exp(&self) -> (AtomView<Self::P>, AtomView<Self::P>) {
+        let mut it = ListIterator {
+            data: &self.data[1..],
+            length: 2,
+        };
+
+        (it.next().unwrap(), it.next().unwrap())
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TermView<'a> {
+    pub data: &'a [u8],
 }
 
 impl<'a> TermT<'a> for TermView<'a> {
@@ -545,7 +672,65 @@ impl<'a> TermT<'a> for TermView<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExpressionView<'a> {
+    pub data: &'a [u8],
+}
+
+impl<'a> ExprT<'a> for ExpressionView<'a> {
+    type P = DefaultRepresentation;
+    type I = ListIterator<'a>;
+
+    #[inline]
+    fn into_iter(&self) -> Self::I {
+        let mut c = self.data;
+        c.get_u8();
+        c.get_u32_le(); // size
+
+        let n_args;
+        (n_args, _, c) = c.get_frac_u64();
+
+        ListIterator {
+            data: c,
+            length: n_args as u32,
+        }
+    }
+
+    fn get_nargs(&self) -> usize {
+        (&self.data[1 + 4..]).get_frac_u64().0 as usize
+    }
+}
+
+impl<'a> AtomView<'a, DefaultRepresentation> {
+    pub fn from(source: &'a [u8]) -> AtomView<'a, DefaultRepresentation> {
+        match source[0] {
+            VAR_ID => AtomView::Var(VarView { data: source }),
+            FN_ID => AtomView::Function(FunctionView { data: source }),
+            NUM_ID => AtomView::Number(NumberView { data: source }),
+            POW_ID => AtomView::Pow(PowView { data: source }),
+            TERM_ID => AtomView::Term(TermView { data: source }),
+            EXPR_ID => AtomView::Expression(ExpressionView { data: source }),
+            x => unreachable!("Bad id: {}", x),
+        }
+    }
+
+    pub fn to_atom(&self) -> Atom {
+        OwnedAtom::write_to_tree(self.get_data()).0
+    }
+
+    pub fn get_data(&self) -> &[u8] {
+        match self {
+            AtomView::Number(n) => n.data,
+            AtomView::Var(v) => v.data,
+            AtomView::Function(f) => f.data,
+            AtomView::Pow(p) => p.data,
+            AtomView::Term(t) => t.data,
+            AtomView::Expression(e) => e.data,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ListIterator<'a> {
     data: &'a [u8],
     length: u32,
@@ -564,35 +749,47 @@ impl<'a> ListIteratorT<'a> for ListIterator<'a> {
 
         let start = self.data;
 
-        let cur_id = self.data.get_u8() & TYPE_MASK;
+        let start_id = self.data.get_u8() & TYPE_MASK;
+        let mut cur_id = start_id;
 
-        match cur_id {
-            VAR_ID => {
-                self.data = self.data.skip_rational();
-                self.data.advance(1); // also skip num tag
-                self.data = self.data.skip_rational();
+        // store how many more atoms to read
+        // can be used instead of storing the byte length of an atom
+        let mut skip_count = 1;
+        loop {
+            match cur_id {
+                VAR_ID => {
+                    self.data = self.data.skip_rational();
+                }
+                NUM_ID => {
+                    self.data = self.data.skip_rational();
+                }
+                FN_ID => {
+                    let n_size = self.data.get_u32_le();
+                    self.data.advance(n_size as usize);
+                }
+                POW_ID => {
+                    skip_count += 2;
+                }
+                TERM_ID | EXPR_ID => {
+                    let n_size = self.data.get_u32_le();
+                    self.data.advance(n_size as usize);
+                }
+                x => unreachable!("Bad id {}", x),
             }
-            NUM_ID => {
-                self.data = self.data.skip_rational();
-            }
-            FN_ID => {
-                let n_size = self.data.get_u32_le();
-                self.data.advance(n_size as usize);
-            }
-            TERM_ID => {
-                let n_size = self.data.get_u32_le();
-                self.data.advance(n_size as usize);
-            }
-            //x => unreachable!("Bad id {}", x),
-            _ => {
-                return None;
+
+            skip_count -= 1;
+
+            if skip_count == 0 {
+                break;
+            } else {
+                cur_id = self.data.get_u8() & TYPE_MASK;
             }
         }
 
         let len = unsafe { self.data.as_ptr().offset_from(start.as_ptr()) } as usize;
 
         let data = unsafe { start.get_unchecked(..len) };
-        match cur_id {
+        match start_id {
             VAR_ID => {
                 return Some(AtomView::Var(VarView { data }));
             }
@@ -602,13 +799,16 @@ impl<'a> ListIteratorT<'a> for ListIterator<'a> {
             FN_ID => {
                 return Some(AtomView::Function(FunctionView { data }));
             }
+            POW_ID => {
+                return Some(AtomView::Pow(PowView { data }));
+            }
             TERM_ID => {
                 return Some(AtomView::Term(TermView { data }));
             }
-            //x => unreachable!("Bad id {}", x),
-            _ => {
-                return None;
+            EXPR_ID => {
+                return Some(AtomView::Expression(ExpressionView { data }));
             }
+            x => unreachable!("Bad id {}", x),
         }
     }
 }
@@ -618,7 +818,7 @@ pub fn representation_size() {
     let a = Atom::Fn(
         Identifier::from(1),
         vec![
-            Atom::Var(Identifier::from(2), Number::new(1, 1)),
+            Atom::Var(Identifier::from(2)),
             Atom::Fn(
                 Identifier::from(3),
                 vec![
@@ -626,7 +826,7 @@ pub fn representation_size() {
                         Atom::Number(Number::new(3, 1)),
                         Atom::Number(Number::new(13, 1)),
                     ]),
-                    Atom::Term(vec![
+                    Atom::Expression(vec![
                         Atom::Number(Number::new(3, 1)),
                         Atom::Number(Number::new(13, 1)),
                     ]),
@@ -644,21 +844,15 @@ pub fn representation_size() {
                     Atom::Number(Number::new(4, 2)),
                 ],
             ),
-            Atom::Var(Identifier::from(6), Number::new(1, 1)),
-            Atom::Var(Identifier::from(2), Number::new(1, 1)),
-            Atom::Var(Identifier::from(2), Number::new(1, 1)),
-            Atom::Var(Identifier::from(2), Number::new(1, 1)),
-            Atom::Var(Identifier::from(2), Number::new(1, 1)),
+            Atom::Var(Identifier::from(6)),
             Atom::Number(Number::new(2, 1)),
-            Atom::Number(Number::new(2, 1)),
-            Atom::Number(Number::new(2, 1)),
-            Atom::Number(Number::new(2, 1)),
-            Atom::Number(Number::new(2, 1)),
-            Atom::Number(Number::new(2, 1)),
-            Atom::Number(Number::new(2, 1)),
-            Atom::Number(Number::new(2, 1)),
-            Atom::Number(Number::new(2, 1)),
-            Atom::Number(Number::new(2, 1)),
+            Atom::Pow(Box::new((
+                Atom::Expression(vec![
+                    Atom::Number(Number::new(3, 1)),
+                    Atom::Number(Number::new(13, 1)),
+                ]),
+                Atom::Var(Identifier::from(2)),
+            ))),
         ],
     );
     println!("expr={:?}", a);

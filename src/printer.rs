@@ -1,9 +1,7 @@
 use std::fmt::{self, Write};
 
 use crate::{
-    representations::{
-        AtomT, AtomView, ExprT, FunctionT, ListIteratorT, NumberT, PowT, TermT, VarT,
-    },
+    representations::{Add, Atom, AtomView, Fn, ListIteratorT, Mul, Num, Pow, Var},
     state::State,
 };
 
@@ -29,20 +27,20 @@ macro_rules! define_formatters {
 
 define_formatters!(
     FormattedPrintVar,
-    FormattedPrintNumber,
-    FormattedPrintFunction,
+    FormattedPrintNum,
+    FormattedPrintFn,
     FormattedPrintPow,
-    FormattedPrintTerm,
-    FormattedPrintExpression
+    FormattedPrintMul,
+    FormattedPrintAdd
 );
 
-pub struct AtomPrinter<'a, 'b, P: AtomT> {
+pub struct AtomPrinter<'a, 'b, P: Atom> {
     pub atom: AtomView<'a, P>,
     pub state: &'b State,
     pub print_mode: PrintMode,
 }
 
-impl<'a, 'b, P: AtomT> AtomPrinter<'a, 'b, P> {
+impl<'a, 'b, P: Atom> AtomPrinter<'a, 'b, P> {
     pub fn new(
         atom: AtomView<'a, P>,
         print_mode: PrintMode,
@@ -56,13 +54,13 @@ impl<'a, 'b, P: AtomT> AtomPrinter<'a, 'b, P> {
     }
 }
 
-impl<'a, 'b, P: AtomT> fmt::Display for AtomPrinter<'a, 'b, P> {
+impl<'a, 'b, P: Atom> fmt::Display for AtomPrinter<'a, 'b, P> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.atom.fmt_output(f, self.print_mode, self.state)
     }
 }
 
-impl<'a, P: AtomT> AtomView<'a, P> {
+impl<'a, P: Atom> AtomView<'a, P> {
     fn fmt_output(
         &self,
         fmt: &mut fmt::Formatter,
@@ -70,28 +68,28 @@ impl<'a, P: AtomT> AtomView<'a, P> {
         state: &State,
     ) -> fmt::Result {
         match self {
-            AtomView::Number(n) => n.fmt_output(fmt, print_mode, state),
+            AtomView::Num(n) => n.fmt_output(fmt, print_mode, state),
             AtomView::Var(v) => v.fmt_output(fmt, print_mode, state),
-            AtomView::Function(f) => f.fmt_output(fmt, print_mode, state),
+            AtomView::Fn(f) => f.fmt_output(fmt, print_mode, state),
             AtomView::Pow(p) => p.fmt_output(fmt, print_mode, state),
-            AtomView::Term(t) => t.fmt_output(fmt, print_mode, state),
-            AtomView::Expression(e) => e.fmt_output(fmt, print_mode, state),
+            AtomView::Mul(t) => t.fmt_output(fmt, print_mode, state),
+            AtomView::Add(e) => e.fmt_output(fmt, print_mode, state),
         }
     }
 }
 
-impl<'a, A: VarT<'a>> FormattedPrintVar for A {
+impl<'a, A: Var<'a>> FormattedPrintVar for A {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
-        print_mode: PrintMode,
+        _print_mode: PrintMode,
         state: &State,
     ) -> fmt::Result {
         f.write_str(state.get_name(self.get_name()).unwrap())
     }
 }
 
-impl<'a, A: NumberT<'a>> FormattedPrintNumber for A {
+impl<'a, A: Num<'a>> FormattedPrintNum for A {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -107,7 +105,7 @@ impl<'a, A: NumberT<'a>> FormattedPrintNumber for A {
     }
 }
 
-impl<'a, A: TermT<'a>> FormattedPrintTerm for A {
+impl<'a, A: Mul<'a>> FormattedPrintMul for A {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -128,7 +126,7 @@ impl<'a, A: TermT<'a>> FormattedPrintTerm for A {
     }
 }
 
-impl<'a, A: FunctionT<'a>> FormattedPrintFunction for A {
+impl<'a, A: Fn<'a>> FormattedPrintFn for A {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -154,7 +152,7 @@ impl<'a, A: FunctionT<'a>> FormattedPrintFunction for A {
     }
 }
 
-impl<'a, A: PowT<'a>> FormattedPrintPow for A {
+impl<'a, A: Pow<'a>> FormattedPrintPow for A {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -162,7 +160,7 @@ impl<'a, A: PowT<'a>> FormattedPrintPow for A {
         state: &State,
     ) -> fmt::Result {
         let b = self.get_base();
-        if let AtomView::Expression(_) = b {
+        if let AtomView::Add(_) = b {
             f.write_char('(').unwrap();
             b.fmt_output(f, print_mode, state).unwrap();
             f.write_char(')').unwrap();
@@ -173,7 +171,7 @@ impl<'a, A: PowT<'a>> FormattedPrintPow for A {
         f.write_char('^').unwrap();
 
         let e = self.get_exp();
-        if let AtomView::Expression(_) = b {
+        if let AtomView::Add(_) = b {
             f.write_char('(').unwrap();
             e.fmt_output(f, print_mode, state).unwrap();
             f.write_char(')')
@@ -183,7 +181,7 @@ impl<'a, A: PowT<'a>> FormattedPrintPow for A {
     }
 }
 
-impl<'a, A: ExprT<'a>> FormattedPrintExpression for A {
+impl<'a, A: Add<'a>> FormattedPrintAdd for A {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,

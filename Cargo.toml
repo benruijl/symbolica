@@ -1,5 +1,4 @@
 [package]
-author = "Ben Ruijl"
 authors = ["Ben Ruijl <benruyl@gmail.com>"]
 categories = ["science"]
 description = "A symbolic manipulation toolkit which aims to handle expressions with billions of terms, taking up terabytes of diskspace."

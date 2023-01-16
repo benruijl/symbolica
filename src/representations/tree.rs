@@ -26,23 +26,23 @@ impl Number {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Atom {
+pub enum AtomTree {
     Var(Identifier),
-    Fn(Identifier, Vec<Atom>), // name and args
-    Number(Number),
-    Pow(Box<(Atom, Atom)>),
-    Term(Vec<Atom>),
-    Expression(Vec<Atom>),
+    Fn(Identifier, Vec<AtomTree>), // name and args
+    Num(Number),
+    Pow(Box<(AtomTree, AtomTree)>),
+    Mul(Vec<AtomTree>),
+    Add(Vec<AtomTree>),
 }
 
-impl Atom {
+impl AtomTree {
     pub fn len(&self) -> usize {
-        size_of::<Atom>()
+        size_of::<AtomTree>()
             + match self {
-                Atom::Fn(_, args) | Atom::Term(args) | Atom::Expression(args) => {
+                AtomTree::Fn(_, args) | AtomTree::Mul(args) | AtomTree::Add(args) => {
                     args.iter().map(|a| a.len()).sum()
                 }
-                Atom::Pow(p) => p.0.len() + p.1.len(),
+                AtomTree::Pow(p) => p.0.len() + p.1.len(),
                 _ => 0,
             }
     }

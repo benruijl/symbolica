@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 
 use crate::state::ResettableBuffer;
 
-use self::tree::Atom;
+use self::tree::AtomTree;
 
 /// An identifier, for example for a variable or function.
 /// Should be created using `get_or_insert` of `State`.
@@ -31,103 +31,102 @@ impl Identifier {
     }
 }
 
-// TODO: rename Expr to Plus and Term to Times ala Mathematica
-pub trait AtomT: PartialEq {
-    type N<'a>: NumberT<'a, P = Self>;
-    type V<'a>: VarT<'a, P = Self>;
-    type F<'a>: FunctionT<'a, P = Self>;
-    type P<'a>: PowT<'a, P = Self>;
-    type T<'a>: TermT<'a, P = Self>;
-    type E<'a>: ExprT<'a, P = Self>;
-    type O: OwnedAtomT<P = Self>;
-    type ON: OwnedNumberT<P = Self>;
-    type OV: OwnedVarT<P = Self>;
-    type OF: OwnedFunctionT<P = Self>;
-    type OP: OwnedPowT<P = Self>;
-    type OT: OwnedTermT<P = Self>;
-    type OE: OwnedExprT<P = Self>;
+pub trait Atom: PartialEq {
+    type N<'a>: Num<'a, P = Self>;
+    type V<'a>: Var<'a, P = Self>;
+    type F<'a>: Fn<'a, P = Self>;
+    type P<'a>: Pow<'a, P = Self>;
+    type M<'a>: Mul<'a, P = Self>;
+    type A<'a>: Add<'a, P = Self>;
+    type O: OwnedAtom<P = Self>;
+    type ON: OwnedNum<P = Self>;
+    type OV: OwnedVar<P = Self>;
+    type OF: OwnedFn<P = Self>;
+    type OP: OwnedPow<P = Self>;
+    type OM: OwnedMul<P = Self>;
+    type OA: OwnedAdd<P = Self>;
 }
 
-pub trait OwnedAtomT: ResettableBuffer {
-    type P: AtomT;
+pub trait OwnedAtom: ResettableBuffer {
+    type P: Atom;
 
-    fn from_num(source: <Self::P as AtomT>::ON) -> Self;
+    fn from_num(source: <Self::P as Atom>::ON) -> Self;
     fn write<'a>(&mut self, source: &AtomView<'a, Self::P>);
-    fn write_tree(&mut self, source: &Atom);
-    fn from_tree(a: &Atom) -> Self;
-    fn to_tree(&self) -> Atom;
+    fn write_tree(&mut self, source: &AtomTree);
+    fn from_tree(a: &AtomTree) -> Self;
+    fn to_tree(&self) -> AtomTree;
     fn to_view<'a>(&'a self) -> AtomView<'a, Self::P>;
     fn len(&self) -> usize;
 }
 
-pub trait OwnedNumberT: ResettableBuffer {
-    type P: AtomT;
+pub trait OwnedNum: ResettableBuffer {
+    type P: Atom;
 
     fn from_u64_frac(&mut self, num: u64, den: u64);
-    fn from_view<'a>(&mut self, a: <Self::P as AtomT>::N<'a>);
-    fn add<'a>(&mut self, other: &<Self::P as AtomT>::N<'a>);
-    fn to_num_view<'a>(&'a self) -> <Self::P as AtomT>::N<'a>;
+    fn from_view<'a>(&mut self, a: <Self::P as Atom>::N<'a>);
+    fn add<'a>(&mut self, other: &<Self::P as Atom>::N<'a>);
+    fn to_num_view<'a>(&'a self) -> <Self::P as Atom>::N<'a>;
 }
 
-pub trait OwnedVarT: ResettableBuffer {
-    type P: AtomT;
+pub trait OwnedVar: ResettableBuffer {
+    type P: Atom;
 
     fn from_id(&mut self, id: Identifier);
-    fn to_var_view<'a>(&'a self) -> <Self::P as AtomT>::V<'a>;
-    fn to_atom(&mut self, out: &mut <Self::P as AtomT>::O);
+    fn to_var_view<'a>(&'a self) -> <Self::P as Atom>::V<'a>;
+    fn to_atom(&mut self, out: &mut <Self::P as Atom>::O);
 }
 
-pub trait OwnedFunctionT: ResettableBuffer {
-    type P: AtomT;
+pub trait OwnedFn: ResettableBuffer {
+    type P: Atom;
 
     fn from_name(&mut self, id: Identifier);
     fn set_dirty(&mut self, dirty: bool);
     fn add_arg(&mut self, other: AtomView<Self::P>);
-    fn to_func_view<'a>(&'a self) -> <Self::P as AtomT>::F<'a>;
-    fn to_atom(&mut self, out: &mut <Self::P as AtomT>::O);
+    fn to_fn_view<'a>(&'a self) -> <Self::P as Atom>::F<'a>;
+    fn to_atom(&mut self, out: &mut <Self::P as Atom>::O);
 }
 
-pub trait OwnedPowT: ResettableBuffer {
-    type P: AtomT;
+pub trait OwnedPow: ResettableBuffer {
+    type P: Atom;
 
     fn from_base_and_exp(&mut self, base: AtomView<Self::P>, exp: AtomView<Self::P>);
     fn set_dirty(&mut self, dirty: bool);
-    fn to_pow_view<'a>(&'a self) -> <Self::P as AtomT>::P<'a>;
-    fn to_atom(&mut self, out: &mut <Self::P as AtomT>::O);
+    fn to_pow_view<'a>(&'a self) -> <Self::P as Atom>::P<'a>;
+    fn to_atom(&mut self, out: &mut <Self::P as Atom>::O);
 }
 
-pub trait OwnedTermT: ResettableBuffer {
-    type P: AtomT;
+pub trait OwnedMul: ResettableBuffer {
+    type P: Atom;
 
     fn extend(&mut self, other: AtomView<Self::P>);
-    fn to_term_view<'a>(&'a self) -> <Self::P as AtomT>::T<'a>;
-    fn to_atom(&mut self, out: &mut <Self::P as AtomT>::O);
+    fn to_mul_view<'a>(&'a self) -> <Self::P as Atom>::M<'a>;
+    fn to_atom(&mut self, out: &mut <Self::P as Atom>::O);
 }
 
-pub trait OwnedExprT: ResettableBuffer {
-    type P: AtomT;
+pub trait OwnedAdd: ResettableBuffer {
+    type P: Atom;
 
     fn extend(&mut self, other: AtomView<Self::P>);
-    fn to_expr_view<'a>(&'a self) -> <Self::P as AtomT>::E<'a>;
-    fn to_atom(&mut self, out: &mut <Self::P as AtomT>::O);
+    fn to_add_view<'a>(&'a self) -> <Self::P as Atom>::A<'a>;
+    fn to_atom(&mut self, out: &mut <Self::P as Atom>::O);
 }
 
-pub trait NumberT<'a>: Clone + PartialEq {
-    type P: AtomT;
+pub trait Num<'a>: Clone + PartialEq {
+    type P: Atom;
 
     fn is_one(&self) -> bool;
-    fn add<'b>(&self, other: &Self, out: &mut <Self::P as AtomT>::O);
+    fn add<'b>(&self, other: &Self, out: &mut <Self::P as Atom>::O);
     fn get_numden(&self) -> (u64, u64);
 }
 
-pub trait VarT<'a>: Clone + PartialEq {
-    type P: AtomT;
+pub trait Var<'a>: Clone + PartialEq {
+    type P: Atom;
 
     fn get_name(&self) -> Identifier;
 }
 
-pub trait FunctionT<'a>: Clone + PartialEq {
-    type P: AtomT;
+pub trait Fn<'a>: Clone + PartialEq {
+    type P: Atom;
     type I: ListIteratorT<'a, P = Self::P>;
 
     fn get_name(&self) -> Identifier;
@@ -137,24 +136,24 @@ pub trait FunctionT<'a>: Clone + PartialEq {
     fn into_iter(&self) -> Self::I;
 }
 
-pub trait PowT<'a>: Clone + PartialEq {
-    type P: AtomT;
+pub trait Pow<'a>: Clone + PartialEq {
+    type P: Atom;
 
     fn get_base(&self) -> AtomView<Self::P>;
     fn get_exp(&self) -> AtomView<Self::P>;
     fn get_base_exp(&self) -> (AtomView<Self::P>, AtomView<Self::P>);
 }
 
-pub trait TermT<'a>: Clone + PartialEq {
-    type P: AtomT;
+pub trait Mul<'a>: Clone + PartialEq {
+    type P: Atom;
     type I: ListIteratorT<'a, P = Self::P>;
 
     fn get_nargs(&self) -> usize;
     fn into_iter(&self) -> Self::I;
 }
 
-pub trait ExprT<'a>: Clone + PartialEq {
-    type P: AtomT;
+pub trait Add<'a>: Clone + PartialEq {
+    type P: Atom;
     type I: ListIteratorT<'a, P = Self::P>;
 
     fn get_nargs(&self) -> usize;
@@ -162,26 +161,26 @@ pub trait ExprT<'a>: Clone + PartialEq {
 }
 
 pub trait ListIteratorT<'a>: Clone {
-    type P: AtomT;
+    type P: Atom;
     fn next(&mut self) -> Option<AtomView<'a, Self::P>>;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum AtomView<'a, P: AtomT> {
-    Number(P::N<'a>),
+pub enum AtomView<'a, P: Atom> {
+    Num(P::N<'a>),
     Var(P::V<'a>),
-    Function(P::F<'a>),
+    Fn(P::F<'a>),
     Pow(P::P<'a>),
-    Term(P::T<'a>),
-    Expression(P::E<'a>),
+    Mul(P::M<'a>),
+    Add(P::A<'a>),
 }
 
-impl<'a, P: AtomT> PartialOrd for AtomView<'a, P> {
+impl<'a, P: Atom> PartialOrd for AtomView<'a, P> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
-            (AtomView::Number(_), AtomView::Number(_)) => Some(Ordering::Equal),
-            (AtomView::Number(_), _) => Some(Ordering::Greater),
-            (_, AtomView::Number(_)) => Some(Ordering::Less),
+            (AtomView::Num(_), AtomView::Num(_)) => Some(Ordering::Equal),
+            (AtomView::Num(_), _) => Some(Ordering::Greater),
+            (_, AtomView::Num(_)) => Some(Ordering::Less),
 
             (AtomView::Var(_), AtomView::Var(_)) => Some(Ordering::Equal), // FIXME
             (AtomView::Var(_), _) => Some(Ordering::Less),
@@ -191,27 +190,27 @@ impl<'a, P: AtomT> PartialOrd for AtomView<'a, P> {
             (AtomView::Pow(_), _) => Some(Ordering::Less),
             (_, AtomView::Pow(_)) => Some(Ordering::Greater),
 
-            (AtomView::Term(_), AtomView::Term(_)) => Some(Ordering::Equal), // FIXME
-            (AtomView::Term(_), _) => Some(Ordering::Less),
-            (_, AtomView::Term(_)) => Some(Ordering::Greater),
+            (AtomView::Mul(_), AtomView::Mul(_)) => Some(Ordering::Equal), // FIXME
+            (AtomView::Mul(_), _) => Some(Ordering::Less),
+            (_, AtomView::Mul(_)) => Some(Ordering::Greater),
 
-            (AtomView::Expression(_), AtomView::Expression(_)) => Some(Ordering::Equal), // FIXME
-            (AtomView::Expression(_), _) => Some(Ordering::Less),
-            (_, AtomView::Expression(_)) => Some(Ordering::Greater),
+            (AtomView::Add(_), AtomView::Add(_)) => Some(Ordering::Equal), // FIXME
+            (AtomView::Add(_), _) => Some(Ordering::Less),
+            (_, AtomView::Add(_)) => Some(Ordering::Greater),
 
-            (AtomView::Function(_), AtomView::Function(_)) => Some(Ordering::Equal), // FIXME
+            (AtomView::Fn(_), AtomView::Fn(_)) => Some(Ordering::Equal), // FIXME
         }
     }
 }
 
-impl<'a, P: AtomT> AtomView<'a, P> {
+impl<'a, P: Atom> AtomView<'a, P> {
     pub fn dbg_print_tree(&self, level: usize) {
         let mut owned_atom = P::O::new();
         owned_atom.write(self);
 
         match &self {
             AtomView::Var(_) => println!("{}{:?}", " ".repeat(level), owned_atom.to_tree()),
-            AtomView::Function(f) => {
+            AtomView::Fn(f) => {
                 println!(
                     "{}entering func {:?}",
                     " ".repeat(level),
@@ -222,8 +221,8 @@ impl<'a, P: AtomT> AtomView<'a, P> {
                     arg.dbg_print_tree(level + 1);
                 }
             }
-            AtomView::Number(_) => println!("{}{:?}", " ".repeat(level), owned_atom.to_tree()),
-            AtomView::Term(t) => {
+            AtomView::Num(_) => println!("{}{:?}", " ".repeat(level), owned_atom.to_tree()),
+            AtomView::Mul(t) => {
                 println!(
                     "{}entering term {:?}",
                     " ".repeat(level),
@@ -246,7 +245,7 @@ impl<'a, P: AtomT> AtomView<'a, P> {
                 let e = p.get_exp();
                 e.dbg_print_tree(level + 1);
             }
-            AtomView::Expression(t) => {
+            AtomView::Add(t) => {
                 println!(
                     "{}entering expr {:?}",
                     " ".repeat(level),

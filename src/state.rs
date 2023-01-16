@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
 
-use crate::representations::{AtomT, Identifier};
+use crate::representations::{Atom, Identifier};
 
 /// A global state, that stores mappings from variable and function names to ids.
 pub struct State {
@@ -42,31 +42,55 @@ impl State {
 }
 
 /// A workspace that stores reusable buffers.
-pub struct Workspace<P: AtomT> {
-    pub atom_buf: Stack<P::O>,
-    pub var_buf: Stack<P::OV>,
-    pub num_buf: Stack<P::ON>,
-    pub term_buf: Stack<P::OT>,
-    pub pow_buf: Stack<P::OP>,
-    pub expr_buf: Stack<P::OE>,
+pub struct Workspace<P: Atom> {
+    atom_buf: Stack<P::O>,
+    var_buf: Stack<P::OV>,
+    num_buf: Stack<P::ON>,
+    mul_buf: Stack<P::OM>,
+    pow_buf: Stack<P::OP>,
+    add_buf: Stack<P::OA>,
 }
 
-impl<P: AtomT> Workspace<P> {
+impl<P: Atom> Workspace<P> {
     pub fn new() -> Workspace<P> {
         Workspace {
             atom_buf: Stack::new(),
             var_buf: Stack::new(),
             num_buf: Stack::new(),
-            term_buf: Stack::new(),
+            mul_buf: Stack::new(),
             pow_buf: Stack::new(),
-            expr_buf: Stack::new(),
+            add_buf: Stack::new(),
         }
+    }
+
+    pub fn get_atom_buf(&self) -> BufferHandle<P::O> {
+        self.atom_buf.get_buf_ref()
+    }
+
+    pub fn get_var_buf(&self) -> BufferHandle<P::OV> {
+        self.var_buf.get_buf_ref()
+    }
+
+    pub fn get_num_buf(&self) -> BufferHandle<P::ON> {
+        self.num_buf.get_buf_ref()
+    }
+
+    pub fn get_mul_buf(&self) -> BufferHandle<P::OM> {
+        self.mul_buf.get_buf_ref()
+    }
+
+    pub fn get_pow_buf(&self) -> BufferHandle<P::OP> {
+        self.pow_buf.get_buf_ref()
+    }
+
+    pub fn get_add_buf(&self) -> BufferHandle<P::OA> {
+        self.add_buf.get_buf_ref()
     }
 }
 
 /// A buffer that can be reset to its initial state.
 /// The `new` function may allocate, but the `reset` function must not.
-pub trait ResettableBuffer {
+pub trait ResettableBuffer: Sized {
     /// Create a new resettable buffer. May allocate.
     fn new() -> Self;
     /// Reset the buffer to its initial state. Must not allocate.

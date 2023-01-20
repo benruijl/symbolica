@@ -31,7 +31,7 @@ pub struct OwnedNumD {
 impl OwnedNum for OwnedNumD {
     type P = DefaultRepresentation;
 
-    fn from_u64_frac(&mut self, num: u64, den: u64) {
+    fn from_i64_frac(&mut self, num: i64, den: i64) {
         self.data.clear();
         self.data.put_u8(NUM_ID);
         num.write_frac(den, &mut self.data);
@@ -43,10 +43,10 @@ impl OwnedNum for OwnedNumD {
     }
 
     fn add<'a>(&mut self, other: &NumViewD<'a>) {
-        let a = self.to_num_view().get_numden();
-        let b = other.get_numden();
+        let a = self.to_num_view().get_i64_num_den();
+        let b = other.get_i64_num_den();
 
-        let lcm = a.1 * (b.1 / utils::gcd_unsigned(a.1 as u64, b.1 as u64));
+        let lcm = a.1 * (b.1 / utils::gcd_signed(a.1 as i64, b.1 as i64));
         let n2 = b.0 * (lcm / b.1);
         let n1 = a.0 * (lcm / a.1);
         let num = n1 + n2;
@@ -60,11 +60,11 @@ impl OwnedNum for OwnedNumD {
     }
 
     fn mul<'a>(&mut self, other: &NumViewD<'a>) {
-        let a = self.to_num_view().get_numden();
-        let b = other.get_numden();
+        let a = self.to_num_view().get_i64_num_den();
+        let b = other.get_i64_num_den();
 
-        let gcd_nd = utils::gcd_unsigned(a.0 as u64, b.1 as u64);
-        let gcd_dn = utils::gcd_unsigned(a.1 as u64, b.0 as u64);
+        let gcd_nd = utils::gcd_signed(a.0 as i64, b.1 as i64);
+        let gcd_dn = utils::gcd_signed(a.1 as i64, b.0 as i64);
 
         let c = (
             (a.0 / gcd_nd) * (b.0 / gcd_dn),
@@ -80,11 +80,11 @@ impl OwnedNum for OwnedNumD {
         NumViewD { data: &self.data }
     }
 
-    fn add_u64_frac(&mut self, num: u64, den: u64) {
-        let a = self.to_num_view().get_numden();
+    fn add_i64_frac(&mut self, num: i64, den: i64) {
+        let a = self.to_num_view().get_i64_num_den();
         let b = (num, den);
 
-        let lcm = a.1 * (b.1 / utils::gcd_unsigned(a.1 as u64, b.1 as u64));
+        let lcm = a.1 * (b.1 / utils::gcd_signed(a.1 as i64, b.1 as i64));
         let n2 = b.0 * (lcm / b.1);
         let n1 = a.0 * (lcm / a.1);
         let num = n1 + n2;
@@ -98,7 +98,7 @@ impl OwnedNum for OwnedNumD {
     }
 
     fn normalize(&mut self) {
-        let a = self.to_num_view().get_numden();
+        let a = self.to_num_view().get_i64_num_den();
         let gcd = utils::gcd_unsigned(a.0 as u64, a.1 as u64);
         self.data.truncate(1);
         (a.0 as u64 / gcd).write_frac(a.1 as u64 / gcd, &mut self.data);
@@ -394,7 +394,7 @@ impl OwnedMul for OwnedMulD {
         let buf_pos = 1 + 4;
 
         let mut n_args;
-        (n_args, _, _) = c.get_frac_u64();
+        (n_args, _, _) = c.get_frac_i64();
 
         match other {
             AtomView::Mul(_t) => {
@@ -498,7 +498,7 @@ impl OwnedAdd for OwnedAddD {
         let buf_pos = 1 + 4;
 
         let mut n_args;
-        (n_args, _, _) = c.get_frac_u64();
+        (n_args, _, _) = c.get_frac_i64();
 
         match other {
             AtomView::Add(_t) => {
@@ -602,7 +602,7 @@ impl<'a> Var<'a> for VarViewD<'a> {
 
     #[inline]
     fn get_name(&self) -> Identifier {
-        Identifier::from((&self.data[1..]).get_frac_u64().0 as u32)
+        Identifier::from((&self.data[1..]).get_frac_i64().0 as u32)
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
@@ -727,14 +727,14 @@ impl OwnedAtom<DefaultRepresentation> {
         match d {
             VAR_ID => {
                 let name;
-                (name, _, source) = source.get_frac_u64();
+                (name, _, source) = source.get_frac_i64();
                 (AtomTree::Var(Identifier::from(name as u32)), source)
             }
             FUN_ID => {
                 source.get_u32_le(); // size
 
                 let (name, n_args);
-                (name, n_args, source) = source.get_frac_u64();
+                (name, n_args, source) = source.get_frac_i64();
 
                 let mut args = Vec::with_capacity(n_args as usize);
                 for _ in 0..n_args {
@@ -747,7 +747,7 @@ impl OwnedAtom<DefaultRepresentation> {
             }
             NUM_ID => {
                 let (num, den);
-                (num, den, source) = source.get_frac_u64();
+                (num, den, source) = source.get_frac_i64();
                 (AtomTree::Num(Number::new(num, den)), source)
             }
             POW_ID => {
@@ -760,7 +760,7 @@ impl OwnedAtom<DefaultRepresentation> {
                 source.get_u32_le(); // size
 
                 let n_args;
-                (n_args, _, source) = source.get_frac_u64();
+                (n_args, _, source) = source.get_frac_i64();
 
                 let mut args = Vec::with_capacity(n_args as usize);
                 for _ in 0..n_args {
@@ -807,11 +807,11 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     type I = ListIteratorD<'a>;
 
     fn get_name(&self) -> Identifier {
-        Identifier::from((&self.data[1 + 4..]).get_frac_u64().0 as u32)
+        Identifier::from((&self.data[1 + 4..]).get_frac_i64().0 as u32)
     }
 
     fn get_nargs(&self) -> usize {
-        (&self.data[1 + 4..]).get_frac_u64().1 as usize
+        (&self.data[1 + 4..]).get_frac_i64().1 as usize
     }
 
     fn is_dirty(&self) -> bool {
@@ -829,7 +829,7 @@ impl<'a> Fun<'a> for FnViewD<'a> {
         c.get_u32_le(); // size
 
         let n_args;
-        (_, n_args, c) = c.get_frac_u64(); // name
+        (_, n_args, c) = c.get_frac_i64(); // name
 
         ListIteratorD {
             data: c,
@@ -856,13 +856,17 @@ impl<'a, 'b> PartialEq<NumViewD<'b>> for NumViewD<'a> {
 impl<'a> Num<'a> for NumViewD<'a> {
     type P = DefaultRepresentation;
 
+    fn is_zero(&self) -> bool {
+        self.data.is_zero_rat()
+    }
+
     fn is_one(&self) -> bool {
-        self.data.is_one()
+        self.data.is_one_rat()
     }
 
     fn mul<'b>(&self, other: &Self, out: &mut OwnedNumD) {
-        let a = self.get_numden();
-        let b = other.get_numden();
+        let a = self.get_i64_num_den();
+        let b = other.get_i64_num_den();
 
         let c = (a.0 * b.0, a.1 * b.1);
         let gcd = utils::gcd_unsigned(c.0 as u64, c.1 as u64);
@@ -873,13 +877,13 @@ impl<'a> Num<'a> for NumViewD<'a> {
     }
 
     #[inline]
-    fn get_numden(&self) -> (u64, u64) {
+    fn get_i64_num_den(&self) -> (i64, i64) {
         let mut c = self.data;
         c.get_u8();
 
         let num;
         let den;
-        (num, den, _) = c.get_frac_u64();
+        (num, den, _) = c.get_frac_i64();
 
         (num, den)
     }
@@ -952,7 +956,7 @@ impl<'a> Mul<'a> for MulViewD<'a> {
         c.get_u32_le(); // size
 
         let n_args;
-        (n_args, _, c) = c.get_frac_u64();
+        (n_args, _, c) = c.get_frac_i64();
 
         ListIteratorD {
             data: c,
@@ -961,7 +965,7 @@ impl<'a> Mul<'a> for MulViewD<'a> {
     }
 
     fn get_nargs(&self) -> usize {
-        (&self.data[1 + 4..]).get_frac_u64().0 as usize
+        (&self.data[1 + 4..]).get_frac_i64().0 as usize
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
@@ -991,7 +995,7 @@ impl<'a> Add<'a> for AddViewD<'a> {
         c.get_u32_le(); // size
 
         let n_args;
-        (n_args, _, c) = c.get_frac_u64();
+        (n_args, _, c) = c.get_frac_i64();
 
         ListIteratorD {
             data: c,
@@ -1000,7 +1004,7 @@ impl<'a> Add<'a> for AddViewD<'a> {
     }
 
     fn get_nargs(&self) -> usize {
-        (&self.data[1 + 4..]).get_frac_u64().0 as usize
+        (&self.data[1 + 4..]).get_frac_i64().0 as usize
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {

@@ -113,7 +113,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
         _print_mode: PrintMode,
         _state: &State,
     ) -> fmt::Result {
-        let d = self.get_numden();
+        let d = self.get_i64_num_den();
         if d.1 != 1 {
             f.write_fmt(format_args!("{}/{}", d.0, d.1))
         } else {
@@ -122,7 +122,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
     }
 
     fn print(&self) {
-        let d = self.get_numden();
+        let d = self.get_i64_num_den();
         if d.1 != 1 {
             print!("{}/{}", d.0, d.1)
         } else {

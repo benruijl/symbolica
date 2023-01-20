@@ -57,11 +57,11 @@ pub trait Convert<P: Atom> {
 pub trait OwnedNum: ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
-    fn from_u64_frac(&mut self, num: u64, den: u64);
+    fn from_i64_frac(&mut self, num: i64, den: i64);
     fn from_view(&mut self, a: &<Self::P as Atom>::N<'_>);
     fn add<'a>(&mut self, other: &<Self::P as Atom>::N<'a>);
     fn mul<'a>(&mut self, other: &<Self::P as Atom>::N<'a>);
-    fn add_u64_frac(&mut self, num: u64, den: u64);
+    fn add_i64_frac(&mut self, num: i64, den: i64);
     fn normalize(&mut self);
     fn to_num_view<'a>(&'a self) -> <Self::P as Atom>::N<'a>;
 }
@@ -112,9 +112,10 @@ pub trait OwnedAdd: ResettableBuffer + Convert<Self::P> {
 pub trait Num<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
     type P: Atom;
 
+    fn is_zero(&self) -> bool;
     fn is_one(&self) -> bool;
     fn mul<'b>(&self, other: &Self, out: &mut <Self::P as Atom>::ON);
-    fn get_numden(&self) -> (u64, u64);
+    fn get_i64_num_den(&self) -> (i64, i64);
     fn to_view(&self) -> AtomView<'a, Self::P>;
 }
 

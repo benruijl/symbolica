@@ -5,18 +5,18 @@ use crate::utils;
 use super::Identifier;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Number {
-    pub num: u64,
-    pub den: u64,
+    pub num: i64,
+    pub den: i64,
 }
 
 impl Number {
-    pub fn new(num: u64, den: u64) -> Number {
+    pub fn new(num: i64, den: i64) -> Number {
         Number { num, den }
     }
 
     pub fn mul(&self, other: &Number) -> Number {
         let c = (self.num * other.num, self.den * other.den);
-        let gcd = utils::gcd_unsigned(c.0 as u64, c.1 as u64);
+        let gcd = utils::gcd_signed(c.0 as i64, c.1 as i64);
 
         Number {
             num: c.0 / gcd,

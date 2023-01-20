@@ -26,10 +26,10 @@ fn main() {
         AtomTree::Num(Number::new(3, 1)),
         AtomTree::Pow(Box::new((
             AtomTree::Var(x),
-            AtomTree::Num(Number::new(1, 2)),
+            AtomTree::Num(Number::new(-2, 1)),
         ))),
         AtomTree::Var(y),
-        AtomTree::Num(Number::new(5, 6000)),
+        AtomTree::Num(Number::new(-5, 6000)),
         AtomTree::Var(y),
         AtomTree::Fn(
             z,

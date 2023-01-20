@@ -15,8 +15,8 @@ crate-type = ["cdylib", "rlib"]
 name = "symbolica"
 
 [dependencies]
+ahash = "0.8"
 byteorder = "1.4"
 bytes = "1.3"
-smartstring = "1.0"
-ahash = "0.8"
 smallvec = "1.1"
+smartstring = "1.0"

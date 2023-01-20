@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
 
-use crate::representations::{Atom, Identifier};
+use crate::representations::{Atom, Identifier, OwnedAtom};
 
 /// A global state, that stores mappings from variable and function names to ids.
 pub struct State {
@@ -43,48 +43,18 @@ impl State {
 
 /// A workspace that stores reusable buffers.
 pub struct Workspace<P: Atom> {
-    atom_buf: Stack<P::O>,
-    var_buf: Stack<P::OV>,
-    num_buf: Stack<P::ON>,
-    mul_buf: Stack<P::OM>,
-    pow_buf: Stack<P::OP>,
-    add_buf: Stack<P::OA>,
+    atom_stack: Stack<OwnedAtom<P>>,
 }
 
 impl<P: Atom> Workspace<P> {
     pub fn new() -> Workspace<P> {
         Workspace {
-            atom_buf: Stack::new(),
-            var_buf: Stack::new(),
-            num_buf: Stack::new(),
-            mul_buf: Stack::new(),
-            pow_buf: Stack::new(),
-            add_buf: Stack::new(),
+            atom_stack: Stack::new(),
         }
     }
 
-    pub fn get_atom_buf(&self) -> BufferHandle<P::O> {
-        self.atom_buf.get_buf_ref()
-    }
-
-    pub fn get_var_buf(&self) -> BufferHandle<P::OV> {
-        self.var_buf.get_buf_ref()
-    }
-
-    pub fn get_num_buf(&self) -> BufferHandle<P::ON> {
-        self.num_buf.get_buf_ref()
-    }
-
-    pub fn get_mul_buf(&self) -> BufferHandle<P::OM> {
-        self.mul_buf.get_buf_ref()
-    }
-
-    pub fn get_pow_buf(&self) -> BufferHandle<P::OP> {
-        self.pow_buf.get_buf_ref()
-    }
-
-    pub fn get_add_buf(&self) -> BufferHandle<P::OA> {
-        self.add_buf.get_buf_ref()
+    pub fn get_atom_stack(&self) -> BufferHandle<OwnedAtom<P>> {
+        self.atom_stack.get_buf_ref()
     }
 }
 
@@ -146,8 +116,13 @@ pub struct BufferHandle<'a, T: ResettableBuffer> {
 }
 
 impl<'a, T: ResettableBuffer> BufferHandle<'a, T> {
+    /// Get an immutable reference to the underlying buffer.
+    pub fn get_buf(&self) -> &T {
+        self.buf.as_ref().unwrap()
+    }
+
     /// Get a mutable reference to the underlying buffer.
-    pub fn get_buf(&mut self) -> &mut T {
+    pub fn get_buf_mut(&mut self) -> &mut T {
         self.buf.as_mut().unwrap()
     }
 }

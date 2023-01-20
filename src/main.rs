@@ -1,9 +1,8 @@
 use symbolica::{
     printer::AtomPrinter,
     representations::{
-        default::OwnedAtomD,
         tree::{AtomTree, Number},
-        OwnedAtom,
+        Mul, OwnedAtom, OwnedMul,
     },
     state::{ResettableBuffer, State, Workspace},
 };
@@ -20,11 +19,17 @@ fn main() {
 
     // create term
     let a = AtomTree::Mul(vec![
-        AtomTree::Pow(Box::new((AtomTree::Var(x), AtomTree::Num(Number::new(2, 1))))),
+        AtomTree::Pow(Box::new((
+            AtomTree::Var(x),
+            AtomTree::Num(Number::new(2, 1)),
+        ))),
         AtomTree::Num(Number::new(3, 1)),
-        AtomTree::Pow(Box::new((AtomTree::Var(x), AtomTree::Num(Number::new(1, 2))))),
+        AtomTree::Pow(Box::new((
+            AtomTree::Var(x),
+            AtomTree::Num(Number::new(1, 2)),
+        ))),
         AtomTree::Var(y),
-        AtomTree::Num(Number::new(4, 4000)),
+        AtomTree::Num(Number::new(5, 6000)),
         AtomTree::Var(y),
         AtomTree::Fn(
             z,
@@ -35,7 +40,8 @@ fn main() {
         ),
     ]);
 
-    let b = OwnedAtomD::from_tree(&a);
+    let mut b = OwnedAtom::new();
+    b.from_tree(&a);
 
     assert!(
         a == b.to_tree(),
@@ -53,19 +59,21 @@ fn main() {
         b.len()
     );
 
-    let mut workspace = Workspace::new();
+    let workspace = Workspace::new();
 
-    let mut normalized = OwnedAtomD::new();
+    let mut normalized_handle = workspace.get_atom_stack();
 
-    view.normalize(&mut workspace, &mut normalized);
+    let normalized = normalized_handle.get_buf_mut().transform_to_mul();
 
-    println!(
-        "out = {}, rep bytes = {}",
+    view.normalize(&workspace, normalized);
+
+    print!(
+        "out = {}",
         AtomPrinter::new(
-            normalized.to_view(),
+            normalized.to_mul_view().to_view(),
             symbolica::printer::PrintMode::Form,
             &state
         ),
-        normalized.len()
     );
+    println!(", rep bytes = {}", normalized_handle.get_buf().len());
 }

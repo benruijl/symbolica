@@ -14,7 +14,7 @@ impl Number {
         Number { num, den }
     }
 
-    pub fn add(&self, other: &Number) -> Number {
+    pub fn mul(&self, other: &Number) -> Number {
         let c = (self.num * other.num, self.den * other.den);
         let gcd = utils::gcd_unsigned(c.0 as u64, c.1 as u64);
 

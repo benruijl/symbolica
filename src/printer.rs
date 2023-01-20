@@ -1,7 +1,7 @@
 use std::fmt::{self, Write};
 
 use crate::{
-    representations::{Add, Atom, AtomView, Fn, ListIteratorT, Mul, Num, Pow, Var},
+    representations::{Add, Atom, AtomView, Fun, ListIterator, Mul, Num, Pow, Var},
     state::State,
 };
 
@@ -15,6 +15,8 @@ macro_rules! define_formatters {
     ($($a:ident),*) => {
         $(
         trait $a {
+            fn print(&self);
+
             fn fmt_output(
                 &self,
                 f: &mut fmt::Formatter,
@@ -61,6 +63,17 @@ impl<'a, 'b, P: Atom> fmt::Display for AtomPrinter<'a, 'b, P> {
 }
 
 impl<'a, P: Atom> AtomView<'a, P> {
+    pub fn print(&self) {
+        match self {
+            AtomView::Num(n) => n.print(),
+            AtomView::Var(v) => v.print(),
+            AtomView::Fun(f) => f.print(),
+            AtomView::Pow(p) => p.print(),
+            AtomView::Mul(m) => m.print(),
+            AtomView::Add(a) => a.print(),
+        }
+    }
+
     fn fmt_output(
         &self,
         fmt: &mut fmt::Formatter,
@@ -70,7 +83,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
         match self {
             AtomView::Num(n) => n.fmt_output(fmt, print_mode, state),
             AtomView::Var(v) => v.fmt_output(fmt, print_mode, state),
-            AtomView::Fn(f) => f.fmt_output(fmt, print_mode, state),
+            AtomView::Fun(f) => f.fmt_output(fmt, print_mode, state),
             AtomView::Pow(p) => p.fmt_output(fmt, print_mode, state),
             AtomView::Mul(t) => t.fmt_output(fmt, print_mode, state),
             AtomView::Add(e) => e.fmt_output(fmt, print_mode, state),
@@ -87,6 +100,10 @@ impl<'a, A: Var<'a>> FormattedPrintVar for A {
     ) -> fmt::Result {
         f.write_str(state.get_name(self.get_name()).unwrap())
     }
+
+    fn print(&self) {
+        print!("v_{}", self.get_name().to_u32());
+    }
 }
 
 impl<'a, A: Num<'a>> FormattedPrintNum for A {
@@ -101,6 +118,15 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
             f.write_fmt(format_args!("{}/{}", d.0, d.1))
         } else {
             f.write_fmt(format_args!("{}", d.0))
+        }
+    }
+
+    fn print(&self) {
+        let d = self.get_numden();
+        if d.1 != 1 {
+            print!("{}/{}", d.0, d.1)
+        } else {
+            print!("{}", d.0)
         }
     }
 }
@@ -124,9 +150,22 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
         }
         Ok(())
     }
+
+    fn print(&self) {
+        let mut it = self.into_iter();
+        let mut first = true;
+        while let Some(x) = it.next() {
+            if !first {
+                print!("*");
+            }
+            first = false;
+
+            x.print();
+        }
+    }
 }
 
-impl<'a, A: Fn<'a>> FormattedPrintFn for A {
+impl<'a, A: Fun<'a>> FormattedPrintFn for A {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -149,6 +188,23 @@ impl<'a, A: Fn<'a>> FormattedPrintFn for A {
         }
 
         f.write_char(')')
+    }
+
+    fn print(&self) {
+        print!("f_{}(", self.get_name().to_u32());
+
+        let mut it = self.into_iter();
+        let mut first = true;
+        while let Some(x) = it.next() {
+            if !first {
+                print!(",");
+            }
+            first = false;
+
+            x.print();
+        }
+
+        print!(")")
     }
 }
 
@@ -179,6 +235,28 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
             e.fmt_output(f, print_mode, state)
         }
     }
+
+    fn print(&self) {
+        let b = self.get_base();
+        if let AtomView::Add(_) = b {
+            print!("(");
+            b.print();
+            print!(")");
+        } else {
+            b.print();
+        }
+
+        print!("^");
+
+        let e = self.get_exp();
+        if let AtomView::Add(_) = b {
+            print!("(");
+            e.print();
+            print!(")");
+        } else {
+            e.print();
+        }
+    }
 }
 
 impl<'a, A: Add<'a>> FormattedPrintAdd for A {
@@ -199,5 +277,18 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
             x.fmt_output(f, print_mode, state).unwrap();
         }
         Ok(())
+    }
+
+    fn print(&self) {
+        let mut it = self.into_iter();
+        let mut first = true;
+        while let Some(x) = it.next() {
+            if !first {
+                print!("+");
+            }
+            first = false;
+
+            x.print();
+        }
     }
 }

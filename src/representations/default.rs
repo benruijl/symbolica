@@ -2,10 +2,10 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
 use std::{cmp::Ordering, io::Cursor};
 
-use crate::{representations::tree::Number, state::ResettableBuffer, utils};
+use crate::state::ResettableBuffer;
 
 use super::{
-    number::{RationalNumberReader, RationalNumberWriter},
+    number::{BorrowedNumber, Number, PackedRationalNumberReader, PackedRationalNumberWriter},
     tree::AtomTree,
     Add, Atom, AtomView, Convert, Fun, Identifier, ListIterator, Mul, Num, OwnedAdd, OwnedAtom,
     OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
@@ -31,10 +31,10 @@ pub struct OwnedNumD {
 impl OwnedNum for OwnedNumD {
     type P = DefaultRepresentation;
 
-    fn from_i64_frac(&mut self, num: i64, den: i64) {
+    fn from_number(&mut self, num: Number) {
         self.data.clear();
         self.data.put_u8(NUM_ID);
-        num.write_frac(den, &mut self.data);
+        num.write_packed(&mut self.data);
     }
 
     fn from_view<'a>(&mut self, a: &NumViewD<'a>) {
@@ -43,65 +43,28 @@ impl OwnedNum for OwnedNumD {
     }
 
     fn add<'a>(&mut self, other: &NumViewD<'a>) {
-        let a = self.to_num_view().get_i64_num_den();
-        let b = other.get_i64_num_den();
-
-        let lcm = a.1 * (b.1 / utils::gcd_signed(a.1 as i64, b.1 as i64));
-        let n2 = b.0 * (lcm / b.1);
-        let n1 = a.0 * (lcm / a.1);
-        let num = n1 + n2;
+        let nv = self.to_num_view();
+        let a = nv.get_number_view();
+        let b = other.get_number_view();
+        let n = a.add(&b);
 
         self.data.truncate(1);
-        if num % lcm == 0 {
-            (num / lcm).write_num(&mut self.data);
-        } else {
-            (num).write_frac(lcm, &mut self.data);
-        }
+        n.write_packed(&mut self.data);
     }
 
     fn mul<'a>(&mut self, other: &NumViewD<'a>) {
-        let a = self.to_num_view().get_i64_num_den();
-        let b = other.get_i64_num_den();
-
-        let gcd_nd = utils::gcd_signed(a.0 as i64, b.1 as i64);
-        let gcd_dn = utils::gcd_signed(a.1 as i64, b.0 as i64);
-
-        let c = (
-            (a.0 / gcd_nd) * (b.0 / gcd_dn),
-            (a.1 / gcd_dn) * (b.1 / gcd_nd),
-        );
+        let nv = self.to_num_view();
+        let a = nv.get_number_view();
+        let b = other.get_number_view();
+        let n = a.mul(&b);
 
         self.data.truncate(1);
-        (c.0).write_frac(c.1, &mut self.data);
+        n.write_packed(&mut self.data);
     }
 
     fn to_num_view(&self) -> NumViewD {
         assert!(self.data[0] & TYPE_MASK == NUM_ID);
         NumViewD { data: &self.data }
-    }
-
-    fn add_i64_frac(&mut self, num: i64, den: i64) {
-        let a = self.to_num_view().get_i64_num_den();
-        let b = (num, den);
-
-        let lcm = a.1 * (b.1 / utils::gcd_signed(a.1 as i64, b.1 as i64));
-        let n2 = b.0 * (lcm / b.1);
-        let n1 = a.0 * (lcm / a.1);
-        let num = n1 + n2;
-
-        self.data.truncate(1);
-        if num % lcm == 0 {
-            (num / lcm).write_num(&mut self.data);
-        } else {
-            (num).write_frac(lcm, &mut self.data);
-        }
-    }
-
-    fn normalize(&mut self) {
-        let a = self.to_num_view().get_i64_num_den();
-        let gcd = utils::gcd_unsigned(a.0 as u64, a.1 as u64);
-        self.data.truncate(1);
-        (a.0 as u64 / gcd).write_frac(a.1 as u64 / gcd, &mut self.data);
     }
 }
 
@@ -141,7 +104,7 @@ impl ResettableBuffer for OwnedNumD {
     fn new() -> Self {
         let mut data = Vec::new();
         data.put_u8(NUM_ID);
-        0u64.write_num(&mut data); // TODO: should this be written?
+        (0u64, 1).write_packed(&mut data); // TODO: should this be written?
 
         OwnedNumD { data }
     }
@@ -149,7 +112,7 @@ impl ResettableBuffer for OwnedNumD {
     fn reset(&mut self) {
         self.data.clear();
         self.data.put_u8(NUM_ID);
-        0u64.write_num(&mut self.data);
+        (0u64, 1).write_packed(&mut self.data);
     }
 }
 
@@ -164,7 +127,7 @@ impl OwnedVar for OwnedVarD {
     fn from_id(&mut self, id: Identifier) {
         self.data.clear();
         self.data.put_u8(VAR_ID);
-        (id.to_u32() as u64).write_num(&mut self.data);
+        (id.to_u32() as u64, 1).write_packed(&mut self.data);
     }
 
     fn to_var_view<'a>(&'a self) -> <Self::P as Atom>::V<'a> {
@@ -230,7 +193,7 @@ impl OwnedFun for OwnedFunD {
     fn from_name(&mut self, id: Identifier) {
         self.data.clear();
         self.data.put_u8(VAR_ID);
-        (id.to_u32() as u64).write_num(&mut self.data);
+        (id.to_u32() as u64, 1).write_packed(&mut self.data);
     }
 
     fn set_dirty(&mut self, dirty: bool) {
@@ -385,7 +348,7 @@ impl OwnedMul for OwnedMulD {
         if self.data.is_empty() {
             self.data.put_u8(MUL_ID);
             self.data.put_u32_le(0 as u32);
-            0u64.write_num(&mut self.data);
+            (0u64, 1).write_packed(&mut self.data);
         }
 
         // may increase size of the num of args
@@ -408,7 +371,7 @@ impl OwnedMul for OwnedMulD {
 
         // FIXME: this may overwrite the rest of the term
         // assume for now it does not
-        n_args.write_frac_fixed(1, &mut self.data[1 + 4..]);
+        (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..]);
 
         let new_buf_pos = self.data.len();
 
@@ -465,7 +428,7 @@ impl ResettableBuffer for OwnedMulD {
         let mut data = Vec::new();
         data.put_u8(MUL_ID);
         data.put_u32_le(0 as u32);
-        0u64.write_num(&mut data);
+        (0u64, 1).write_packed(&mut data);
 
         OwnedMulD { data }
     }
@@ -474,7 +437,7 @@ impl ResettableBuffer for OwnedMulD {
         self.data.clear();
         self.data.put_u8(MUL_ID);
         self.data.put_u32_le(0 as u32);
-        0u64.write_num(&mut self.data);
+        (0u64, 1).write_packed(&mut self.data);
     }
 }
 
@@ -489,7 +452,7 @@ impl OwnedAdd for OwnedAddD {
         if self.data.is_empty() {
             self.data.put_u8(ADD_ID);
             self.data.put_u32_le(0 as u32);
-            0u64.write_num(&mut self.data);
+            (0u64, 1).write_packed(&mut self.data);
         }
 
         // may increase size of the num of args
@@ -512,7 +475,7 @@ impl OwnedAdd for OwnedAddD {
 
         // FIXME: this may overwrite the rest of the term
         // assume for now it does not
-        n_args.write_frac_fixed(1, &mut self.data[1 + 4..]);
+        (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..]);
 
         let new_buf_pos = self.data.len();
 
@@ -569,7 +532,7 @@ impl ResettableBuffer for OwnedAddD {
         let mut data = Vec::new();
         data.put_u8(ADD_ID);
         data.put_u32_le(0 as u32);
-        0u64.write_num(&mut data);
+        (0u64, 1).write_packed(&mut data);
 
         OwnedAddD { data }
     }
@@ -578,7 +541,7 @@ impl ResettableBuffer for OwnedAddD {
         self.data.clear();
         self.data.put_u8(ADD_ID);
         self.data.put_u32_le(0 as u32);
-        0u64.write_num(&mut self.data);
+        (0u64, 1).write_packed(&mut self.data);
     }
 }
 
@@ -664,7 +627,7 @@ impl OwnedAtom<DefaultRepresentation> {
         match atom {
             AtomTree::Var(name) => {
                 data.put_u8(VAR_ID);
-                (name.to_u32() as u64).write_num(data);
+                (name.to_u32() as u64, 1).write_packed(data);
             }
             AtomTree::Fn(name, args) => {
                 data.put_u8(FUN_ID);
@@ -673,7 +636,7 @@ impl OwnedAtom<DefaultRepresentation> {
                 let buf_pos = data.len();
 
                 // pack name and args
-                (name.to_u32() as u64).write_frac(args.len() as u64, data);
+                (name.to_u32() as u64, args.len() as u64).write_packed(data);
 
                 for a in args {
                     Self::linearize(data, a);
@@ -688,7 +651,7 @@ impl OwnedAtom<DefaultRepresentation> {
             }
             AtomTree::Num(n) => {
                 data.put_u8(NUM_ID);
-                n.num.write_frac(n.den, data);
+                n.clone().write_packed(data);
             }
             AtomTree::Pow(p) => {
                 data.put_u8(POW_ID);
@@ -706,7 +669,7 @@ impl OwnedAtom<DefaultRepresentation> {
                 data.put_u32_le(0 as u32); // length of entire fn without flag
                 let buf_pos = data.len();
 
-                (args.len() as u64).write_num(data);
+                (args.len() as u64, 1).write_packed(data);
 
                 for a in args {
                     Self::linearize(data, a);
@@ -746,9 +709,9 @@ impl OwnedAtom<DefaultRepresentation> {
                 (AtomTree::Fn(Identifier::from(name as u32), args), source)
             }
             NUM_ID => {
-                let (num, den);
-                (num, den, source) = source.get_frac_i64();
-                (AtomTree::Num(Number::new(num, den)), source)
+                let n;
+                (n, source) = source.get_number_view();
+                (AtomTree::Num(n.to_owned()), source)
             }
             POW_ID => {
                 let (base, exp);
@@ -864,28 +827,9 @@ impl<'a> Num<'a> for NumViewD<'a> {
         self.data.is_one_rat()
     }
 
-    fn mul<'b>(&self, other: &Self, out: &mut OwnedNumD) {
-        let a = self.get_i64_num_den();
-        let b = other.get_i64_num_den();
-
-        let c = (a.0 * b.0, a.1 * b.1);
-        let gcd = utils::gcd_unsigned(c.0 as u64, c.1 as u64);
-
-        out.data.put_u8(NUM_ID);
-
-        (c.0 as u64 / gcd).write_frac(c.1 as u64 / gcd, &mut out.data);
-    }
-
     #[inline]
-    fn get_i64_num_den(&self) -> (i64, i64) {
-        let mut c = self.data;
-        c.get_u8();
-
-        let num;
-        let den;
-        (num, den, _) = c.get_frac_i64();
-
-        (num, den)
+    fn get_number_view(&self) -> BorrowedNumber<'_> {
+        self.data[1..].get_number_view().0
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
@@ -1130,33 +1074,33 @@ pub fn representation_size() {
                 Identifier::from(3),
                 vec![
                     AtomTree::Mul(vec![
-                        AtomTree::Num(Number::new(3, 1)),
-                        AtomTree::Num(Number::new(13, 1)),
+                        AtomTree::Num(Number::Natural(3, 1)),
+                        AtomTree::Num(Number::Natural(13, 1)),
                     ]),
                     AtomTree::Add(vec![
-                        AtomTree::Num(Number::new(3, 1)),
-                        AtomTree::Num(Number::new(13, 1)),
+                        AtomTree::Num(Number::Natural(3, 1)),
+                        AtomTree::Num(Number::Natural(13, 1)),
                     ]),
                     AtomTree::Mul(vec![
-                        AtomTree::Num(Number::new(3, 1)),
-                        AtomTree::Num(Number::new(13, 1)),
+                        AtomTree::Num(Number::Natural(3, 1)),
+                        AtomTree::Num(Number::Natural(13, 1)),
                     ]),
                     AtomTree::Mul(vec![
-                        AtomTree::Num(Number::new(3, 1)),
-                        AtomTree::Num(Number::new(13, 1)),
+                        AtomTree::Num(Number::Natural(3, 1)),
+                        AtomTree::Num(Number::Natural(13, 1)),
                     ]),
-                    AtomTree::Num(Number::new(4, 2)),
-                    AtomTree::Num(Number::new(4, 2)),
-                    AtomTree::Num(Number::new(4, 2)),
-                    AtomTree::Num(Number::new(4, 2)),
+                    AtomTree::Num(Number::Natural(4, 2)),
+                    AtomTree::Num(Number::Natural(4, 2)),
+                    AtomTree::Num(Number::Natural(4, 2)),
+                    AtomTree::Num(Number::Natural(4, 2)),
                 ],
             ),
             AtomTree::Var(Identifier::from(6)),
-            AtomTree::Num(Number::new(2, 1)),
+            AtomTree::Num(Number::Natural(2, 1)),
             AtomTree::Pow(Box::new((
                 AtomTree::Add(vec![
-                    AtomTree::Num(Number::new(3, 1)),
-                    AtomTree::Num(Number::new(13, 1)),
+                    AtomTree::Num(Number::Natural(3, 1)),
+                    AtomTree::Num(Number::Natural(13, 1)),
                 ]),
                 AtomTree::Var(Identifier::from(2)),
             ))),

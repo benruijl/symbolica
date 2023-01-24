@@ -1,7 +1,9 @@
 use std::fmt::{self, Write};
 
 use crate::{
-    representations::{Add, Atom, AtomView, Fun, ListIterator, Mul, Num, Pow, Var},
+    representations::{
+        number::BorrowedNumber, Add, Atom, AtomView, Fun, ListIterator, Mul, Num, Pow, Var,
+    },
     state::State,
 };
 
@@ -113,20 +115,32 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
         _print_mode: PrintMode,
         _state: &State,
     ) -> fmt::Result {
-        let d = self.get_i64_num_den();
-        if d.1 != 1 {
-            f.write_fmt(format_args!("{}/{}", d.0, d.1))
-        } else {
-            f.write_fmt(format_args!("{}", d.0))
+        let d = self.get_number_view();
+
+        match d {
+            BorrowedNumber::Natural(num, den) => {
+                if den != 1 {
+                    f.write_fmt(format_args!("{}/{}", num, den))
+                } else {
+                    f.write_fmt(format_args!("{}", num))
+                }
+            }
+            BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r)),
         }
     }
 
     fn print(&self) {
-        let d = self.get_i64_num_den();
-        if d.1 != 1 {
-            print!("{}/{}", d.0, d.1)
-        } else {
-            print!("{}", d.0)
+        let d = self.get_number_view();
+
+        match d {
+            BorrowedNumber::Natural(num, den) => {
+                if den != 1 {
+                    print!("{}/{}", num, den)
+                } else {
+                    print!("{}", num)
+                }
+            }
+            BorrowedNumber::Large(r) => print!("{}", r),
         }
     }
 }

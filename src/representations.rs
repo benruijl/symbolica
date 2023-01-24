@@ -5,6 +5,8 @@ pub mod tree;
 use crate::state::ResettableBuffer;
 use std::cmp::Ordering;
 
+use self::number::{BorrowedNumber, Number};
+
 /// An identifier, for example for a variable or function.
 /// Should be created using `get_or_insert` of `State`.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -57,12 +59,10 @@ pub trait Convert<P: Atom> {
 pub trait OwnedNum: ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
-    fn from_i64_frac(&mut self, num: i64, den: i64);
+    fn from_number(&mut self, num: Number);
     fn from_view(&mut self, a: &<Self::P as Atom>::N<'_>);
     fn add<'a>(&mut self, other: &<Self::P as Atom>::N<'a>);
     fn mul<'a>(&mut self, other: &<Self::P as Atom>::N<'a>);
-    fn add_i64_frac(&mut self, num: i64, den: i64);
-    fn normalize(&mut self);
     fn to_num_view<'a>(&'a self) -> <Self::P as Atom>::N<'a>;
 }
 
@@ -114,8 +114,7 @@ pub trait Num<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
 
     fn is_zero(&self) -> bool;
     fn is_one(&self) -> bool;
-    fn mul<'b>(&self, other: &Self, out: &mut <Self::P as Atom>::ON);
-    fn get_i64_num_den(&self) -> (i64, i64);
+    fn get_number_view(&self) -> BorrowedNumber<'_>;
     fn to_view(&self) -> AtomView<'a, Self::P>;
 }
 

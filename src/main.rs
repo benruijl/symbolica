@@ -1,9 +1,7 @@
+use rug::Rational;
 use symbolica::{
     printer::AtomPrinter,
-    representations::{
-        tree::{AtomTree, Number},
-        Mul, OwnedAtom, OwnedMul,
-    },
+    representations::{number::Number, tree::AtomTree, Mul, OwnedAtom, OwnedMul},
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -21,20 +19,26 @@ fn main() {
     let a = AtomTree::Mul(vec![
         AtomTree::Pow(Box::new((
             AtomTree::Var(x),
-            AtomTree::Num(Number::new(2, 1)),
+            AtomTree::Num(Number::Natural(2, 1)),
         ))),
-        AtomTree::Num(Number::new(3, 1)),
+        AtomTree::Num(Number::Natural(3, 1)),
         AtomTree::Pow(Box::new((
             AtomTree::Var(x),
-            AtomTree::Num(Number::new(-2, 1)),
+            AtomTree::Num(Number::Natural(-2, 1)),
         ))),
         AtomTree::Var(y),
-        AtomTree::Num(Number::new(-5, 6000)),
+        AtomTree::Num(Number::Large(
+            Rational::from_str_radix(
+                "1723671261273182378912738921/128937127893761293712893712983712",
+                10,
+            )
+            .unwrap(),
+        )),
         AtomTree::Var(y),
         AtomTree::Fn(
             z,
             vec![AtomTree::Add(vec![
-                AtomTree::Num(Number::new(1, 1)),
+                AtomTree::Num(Number::Natural(1, 1)),
                 AtomTree::Var(x),
             ])],
         ),

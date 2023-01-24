@@ -4,8 +4,8 @@ use smallvec::SmallVec;
 
 use crate::{
     representations::{
-        Atom, AtomView, Fun, ListIterator, Mul, Num, OwnedAtom, OwnedMul, OwnedNum, OwnedPow, Pow,
-        Var,
+        number::Number, Atom, AtomView, Fun, ListIterator, Mul, Num, OwnedAtom, OwnedMul, OwnedNum,
+        OwnedPow, Pow, Var,
     },
     state::{BufferHandle, Workspace},
 };
@@ -82,7 +82,7 @@ impl<P: Atom> OwnedAtom<P> {
 
                     if new_exp.to_num_view().is_zero() {
                         let num = self.transform_to_num();
-                        num.from_i64_frac(1, 1);
+                        num.from_number(Number::Natural(1, 1));
                     } else if new_exp.to_num_view().is_one() {
                         self.from_view(&base2);
                     } else {
@@ -104,7 +104,7 @@ impl<P: Atom> OwnedAtom<P> {
             if self.to_view() == base {
                 if let AtomView::Num(n) = &exp {
                     let num = helper.transform_to_num();
-                    num.from_i64_frac(1, 1);
+                    num.from_number(Number::Natural(1, 1));
                     num.add(n);
                     let op = self.transform_to_pow();
                     op.from_base_and_exp(base, AtomView::Num(num.to_num_view()));
@@ -132,7 +132,7 @@ impl<P: Atom> OwnedAtom<P> {
         if self.to_view() == other.to_view() {
             // add powers
             let exp = other.transform_to_num();
-            exp.from_i64_frac(2, 1);
+            exp.from_number(Number::Natural(2, 1));
 
             //let mut a = workspace.get_atom_test_buf();
             let new_pow = helper.transform_to_pow();

@@ -14,6 +14,11 @@ version = "0.0.0"
 crate-type = ["cdylib", "rlib"]
 name = "symbolica"
 
+[dependencies.rug]
+default-features = false
+features = ["integer", "rational"]
+version = "1.19"
+
 [dependencies]
 ahash = "0.8"
 byteorder = "1.4"

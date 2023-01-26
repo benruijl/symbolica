@@ -1,3 +1,4 @@
+pub mod finite_field;
 pub mod normalize;
 pub mod printer;
 pub mod representations;

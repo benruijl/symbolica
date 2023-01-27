@@ -7,7 +7,7 @@ use crate::{
         number::Number, Atom, AtomView, Fun, ListIterator, Mul, Num, OwnedAtom, OwnedMul, OwnedNum,
         OwnedPow, Pow, Var,
     },
-    state::{BufferHandle, Workspace},
+    state::{BufferHandle, Workspace, State},
 };
 
 impl<'a, P: Atom> AtomView<'a, P> {
@@ -54,7 +54,7 @@ impl<P: Atom> OwnedAtom<P> {
     /// Merge two factors if possible. If this function returns `true`, `self`
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
-    fn merge_factors(&mut self, other: &mut Self, helper: &mut Self) -> bool {
+    fn merge_factors(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
         // x^a * x^b = x^(a + b)
         if let OwnedAtom::Pow(p1) = self {
             if let OwnedAtom::Pow(p2) = other {
@@ -78,7 +78,7 @@ impl<P: Atom> OwnedAtom<P> {
                 }
 
                 if let AtomView::Num(n2) = &exp2 {
-                    new_exp.add(n2);
+                    new_exp.add(n2, state);
 
                     if new_exp.to_num_view().is_zero() {
                         let num = self.transform_to_num();
@@ -105,7 +105,7 @@ impl<P: Atom> OwnedAtom<P> {
                 if let AtomView::Num(n) = &exp {
                     let num = helper.transform_to_num();
                     num.from_number(Number::Natural(1, 1));
-                    num.add(n);
+                    num.add(n, state);
                     let op = self.transform_to_pow();
                     op.from_base_and_exp(base, AtomView::Num(num.to_num_view()));
 
@@ -121,7 +121,7 @@ impl<P: Atom> OwnedAtom<P> {
         // simplify num1 * num2
         if let OwnedAtom::Num(n1) = self {
             if let OwnedAtom::Num(n2) = other {
-                n1.mul(&n2.to_num_view());
+                n1.mul(&n2.to_num_view(), state);
                 return true;
             } else {
                 return false;
@@ -151,7 +151,7 @@ impl<P: Atom> OwnedAtom<P> {
 
 impl<'a, P: Atom> AtomView<'a, P> {
     /// Normalize a term.
-    pub fn normalize(&self, workspace: &Workspace<P>, out: &mut P::OM) {
+    pub fn normalize(&self, workspace: &Workspace<P>, state: &State, out: &mut P::OM) {
         let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
         match self {
             AtomView::Mul(t) => {
@@ -185,7 +185,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
             for mut cur_buf in atom_test_buf.drain(..) {
                 if !last_buf
                     .get_buf_mut()
-                    .merge_factors(cur_buf.get_buf_mut(), helper)
+                    .merge_factors(cur_buf.get_buf_mut(), helper, state)
                 {
                     // we are done merging
                     {

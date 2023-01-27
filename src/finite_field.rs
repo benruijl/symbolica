@@ -10,10 +10,11 @@ const HENSEL_LIFTING_MASK: [u8; 128] = [
 
 /// A 64-bit number representing a number in Montgomory form.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct MontgomeryNumber(u64);
+pub struct MontgomeryNumber(pub(crate) u64);
 
 /// A finite field over a prime that uses Montgomery modular arithmetic
 /// to increase the performance of the multiplication operator.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct FiniteFieldU64 {
     p: u64,
     m: u64,
@@ -26,17 +27,31 @@ impl FiniteFieldU64 {
         assert!(p % 2 != 0);
 
         //println!("{} {} {}", p, Self::mod_2_64(p), 1 + u64::MAX as u128 % p as u128);
-        assert!(Self::mod_2_64(p) as u128 == 1 + u64::MAX as u128 % p as u128);
+        assert!(Self::get_one(p) as u128 == 1 + u64::MAX as u128 % p as u128);
 
         FiniteFieldU64 {
             p,
             m: Self::inv_2_64(p),
-            one: MontgomeryNumber(Self::mod_2_64(p)),
+            one: MontgomeryNumber(Self::get_one(p)),
         }
     }
 
+    /// Create a new finite field from a prime `p`, its corresponding magic `m`
+    /// and the unit element `one`. These values must be consistent.
+    pub(crate) fn from_raw(p: u64, m: u64, one: u64) -> FiniteFieldU64 {
+        FiniteFieldU64 { p, m, one: MontgomeryNumber(one) }
+    }
+
+    pub fn get_prime(&self) -> u64 {
+        self.p
+    }
+
+    pub fn get_magic(&self) -> u64 {
+        self.m
+    }
+
     /// Returns the unit element in Montgomory form, ie.e 1 + 2^64 mod a.
-    fn mod_2_64(a: u64) -> u64 {
+    fn get_one(a: u64) -> u64 {
         if a as u128 <= 1u128 << 63 {
             let res = (((1u128 << 63) % a as u128) << 1) as u64;
 

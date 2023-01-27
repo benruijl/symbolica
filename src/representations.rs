@@ -2,7 +2,7 @@ pub mod default;
 pub mod number;
 pub mod tree;
 
-use crate::state::ResettableBuffer;
+use crate::state::{ResettableBuffer, State};
 use std::cmp::Ordering;
 
 use self::number::{BorrowedNumber, Number};
@@ -61,8 +61,8 @@ pub trait OwnedNum: ResettableBuffer + Convert<Self::P> {
 
     fn from_number(&mut self, num: Number);
     fn from_view(&mut self, a: &<Self::P as Atom>::N<'_>);
-    fn add<'a>(&mut self, other: &<Self::P as Atom>::N<'a>);
-    fn mul<'a>(&mut self, other: &<Self::P as Atom>::N<'a>);
+    fn add<'a>(&mut self, other: &<Self::P as Atom>::N<'a>, state: &State);
+    fn mul<'a>(&mut self, other: &<Self::P as Atom>::N<'a>, state: &State);
     fn to_num_view<'a>(&'a self) -> <Self::P as Atom>::N<'a>;
 }
 

@@ -3,13 +3,20 @@ use std::cell::RefCell;
 use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
 
-use crate::representations::{Atom, Identifier, OwnedAtom};
+use crate::{
+    finite_field::FiniteFieldU64,
+    representations::{Atom, Identifier, OwnedAtom},
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FiniteFieldIndex(pub(crate) usize);
 
 /// A global state, that stores mappings from variable and function names to ids.
 pub struct State {
     // get variable maps from here
     str_to_var_id: HashMap<String, Identifier>,
     var_to_str_map: Vec<String>,
+    finite_fields: Vec<FiniteFieldU64>,
 }
 
 impl State {
@@ -17,13 +24,14 @@ impl State {
         State {
             str_to_var_id: HashMap::new(),
             var_to_str_map: vec![],
+            finite_fields: vec![],
         }
     }
 
     // note: could be made immutable by using frozen collections
     /// Get the id for a certain name if the name is already registered,
     /// else register it and return a new id.
-    pub fn get_or_insert<S: AsRef<str>>(&mut self, name: S) -> Identifier {
+    pub fn get_or_insert_var<S: AsRef<str>>(&mut self, name: S) -> Identifier {
         match self.str_to_var_id.entry(name.as_ref().into()) {
             std::collections::hash_map::Entry::Occupied(o) => *o.get(),
             std::collections::hash_map::Entry::Vacant(v) => {
@@ -38,6 +46,21 @@ impl State {
     /// Get the name for a given id.
     pub fn get_name(&self, id: Identifier) -> Option<&String> {
         self.var_to_str_map.get(id.to_u32() as usize)
+    }
+
+    pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteFieldU64 {
+        &self.finite_fields[fi.0 as usize]
+    }
+
+    pub fn get_or_insert_finite_field(&mut self, f: FiniteFieldU64) -> FiniteFieldIndex {
+        for (i, f2) in self.finite_fields.iter().enumerate() {
+            if f.get_prime() == f2.get_prime() {
+                return FiniteFieldIndex(i);
+            }
+        }
+
+        self.finite_fields.push(f);
+        FiniteFieldIndex(self.finite_fields.len() - 1)
     }
 }
 

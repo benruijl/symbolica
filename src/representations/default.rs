@@ -2,7 +2,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
 use std::{cmp::Ordering, io::Cursor};
 
-use crate::state::ResettableBuffer;
+use crate::state::{ResettableBuffer, State};
 
 use super::{
     number::{BorrowedNumber, Number, PackedRationalNumberReader, PackedRationalNumberWriter},
@@ -42,21 +42,21 @@ impl OwnedNum for OwnedNumD {
         self.data.extend(a.data);
     }
 
-    fn add<'a>(&mut self, other: &NumViewD<'a>) {
+    fn add<'a>(&mut self, other: &NumViewD<'a>, state: &State) {
         let nv = self.to_num_view();
         let a = nv.get_number_view();
         let b = other.get_number_view();
-        let n = a.add(&b);
+        let n = a.add(&b, state);
 
         self.data.truncate(1);
         n.write_packed(&mut self.data);
     }
 
-    fn mul<'a>(&mut self, other: &NumViewD<'a>) {
+    fn mul<'a>(&mut self, other: &NumViewD<'a>, state: &State) {
         let nv = self.to_num_view();
         let a = nv.get_number_view();
         let b = other.get_number_view();
-        let n = a.mul(&b);
+        let n = a.mul(&b, state);
 
         self.data.truncate(1);
         n.write_packed(&mut self.data);

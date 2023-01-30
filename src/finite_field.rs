@@ -36,12 +36,6 @@ impl FiniteFieldU64 {
         }
     }
 
-    /// Create a new finite field from a prime `p`, its corresponding magic `m`
-    /// and the unit element `one`. These values must be consistent.
-    pub(crate) fn from_raw(p: u64, m: u64, one: u64) -> FiniteFieldU64 {
-        FiniteFieldU64 { p, m, one: MontgomeryNumber(one) }
-    }
-
     pub fn get_prime(&self) -> u64 {
         self.p
     }

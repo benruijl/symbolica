@@ -22,6 +22,18 @@ const NUM_MASK: u8 = 0b00001111;
 const DEN_MASK: u8 = 0b01110000;
 const SIGN: u8 = 0b10000000;
 
+#[inline(always)]
+fn get_size_of_natural(num_type: u8) -> u8 {
+    match num_type {
+        0 => 0,
+        U8_NUM => 1,
+        U16_NUM => 2,
+        U32_NUM => 4,
+        U64_NUM => 8,
+        _ => unreachable!(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Number {
     Natural(i64, i64),
@@ -356,11 +368,12 @@ impl PackedRationalNumberReader for [u8] {
             dest
         } else if v_num == FIN_NUM {
             let var_size = dest.get_u8();
-            let size = (var_size & NUM_MASK) + ((var_size & DEN_MASK) >> 4);
+            let size = get_size_of_natural(var_size & NUM_MASK)
+                + get_size_of_natural((var_size & DEN_MASK) >> 4);
             dest.advance(size as usize);
             dest
         } else {
-            let size = (v_num) + ((var_size & DEN_MASK) >> 4);
+            let size = get_size_of_natural(v_num) + get_size_of_natural((var_size & DEN_MASK) >> 4);
             dest.advance(size as usize);
             dest
         }

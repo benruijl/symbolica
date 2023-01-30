@@ -1,12 +1,13 @@
 use rug::Rational;
 use symbolica::{
     finite_field::{FiniteFieldU64, PrimeIteratorU64},
+    parser::parse,
     printer::AtomPrinter,
     representations::{number::Number, tree::AtomTree, Mul, OwnedAtom, OwnedMul},
     state::{ResettableBuffer, State, Workspace},
 };
 
-fn test1() {
+fn expression_test() {
     let mut state = State::new();
 
     // create variable names
@@ -83,7 +84,7 @@ fn test1() {
     println!(", rep bytes = {}", normalized_handle.get_buf().len());
 }
 
-fn test2() {
+fn finite_field_test() {
     let mut state = State::new();
 
     let prime = PrimeIteratorU64::new(16).next().unwrap();
@@ -137,7 +138,54 @@ fn test2() {
     println!(", rep bytes = {}", normalized_handle.get_buf().len());
 }
 
+fn parse_test() {
+    let mut state = State::new();
+
+    // spaces and underscores are allowed in numbers are are all stripped
+    let token = parse("(1+  x^2/5  )*443_555*f(\t2*1,\n4* 44 5 + \r\n 2)^5\\*6").unwrap();
+
+    let a = token.to_atom_tree(&mut state).unwrap();
+
+    let mut b = OwnedAtom::new();
+    b.from_tree(&a);
+
+    assert!(
+        a == b.to_tree(),
+        "Not similar: {:?} vs {:?}",
+        a,
+        b.to_tree()
+    );
+
+    let view = b.to_view();
+
+    println!(
+        "input = {}, atom bytes = {}, rep bytes = {}",
+        AtomPrinter::new(view, symbolica::printer::PrintMode::Form, &state),
+        a.len(),
+        b.len()
+    );
+
+    let workspace = Workspace::new();
+
+    let mut normalized_handle = workspace.get_atom_stack();
+
+    let normalized = normalized_handle.get_buf_mut().transform_to_mul();
+
+    view.normalize(&workspace, &state, normalized);
+
+    print!(
+        "out = {}",
+        AtomPrinter::new(
+            normalized.to_mul_view().to_view(),
+            symbolica::printer::PrintMode::Form,
+            &state
+        ),
+    );
+    println!(", rep bytes = {}", normalized_handle.get_buf().len());
+}
+
 fn main() {
-    test1();
-    test2();
+    expression_test();
+    finite_field_test();
+    parse_test();
 }

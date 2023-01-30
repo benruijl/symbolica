@@ -2,7 +2,8 @@ use std::fmt::{self, Write};
 
 use crate::{
     representations::{
-        number::BorrowedNumber, Add, Atom, AtomView, Fun, ListIterator, Mul, Num, Pow, Var,
+        number::BorrowedNumber, Add, Atom, AtomView, Fun, ListIterator, Mul, Num, OwnedNum, Pow,
+        Var,
     },
     state::State,
 };
@@ -167,7 +168,13 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
             }
             first = false;
 
-            x.fmt_output(f, print_mode, state).unwrap();
+            if let AtomView::Add(_) = x {
+                f.write_char('(').unwrap();
+                x.fmt_output(f, print_mode, state).unwrap();
+                f.write_char(')').unwrap();
+            } else {
+                x.fmt_output(f, print_mode, state).unwrap();
+            }
         }
         Ok(())
     }
@@ -181,7 +188,13 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
             }
             first = false;
 
-            x.print();
+            if let AtomView::Add(_) = x {
+                print!("(");
+                x.print();
+                print!(")");
+            } else {
+                x.print();
+            }
         }
     }
 }
@@ -248,7 +261,7 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         f.write_char('^').unwrap();
 
         let e = self.get_exp();
-        if let AtomView::Add(_) = b {
+        if let AtomView::Add(_) = e {
             f.write_char('(').unwrap();
             e.fmt_output(f, print_mode, state).unwrap();
             f.write_char(')')
@@ -270,7 +283,7 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         print!("^");
 
         let e = self.get_exp();
-        if let AtomView::Add(_) = b {
+        if let AtomView::Add(_) = e {
             print!("(");
             e.print();
             print!(")");

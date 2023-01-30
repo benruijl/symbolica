@@ -102,17 +102,11 @@ impl Convert<DefaultRepresentation> for OwnedNumD {
 
 impl ResettableBuffer for OwnedNumD {
     fn new() -> Self {
-        let mut data = Vec::new();
-        data.put_u8(NUM_ID);
-        (0u64, 1).write_packed(&mut data); // TODO: should this be written?
-
-        OwnedNumD { data }
+        OwnedNumD { data: vec![] }
     }
 
     fn reset(&mut self) {
         self.data.clear();
-        self.data.put_u8(NUM_ID);
-        (0u64, 1).write_packed(&mut self.data);
     }
 }
 
@@ -425,19 +419,11 @@ impl Convert<DefaultRepresentation> for OwnedMulD {
 
 impl ResettableBuffer for OwnedMulD {
     fn new() -> Self {
-        let mut data = Vec::new();
-        data.put_u8(MUL_ID);
-        data.put_u32_le(0 as u32);
-        (0u64, 1).write_packed(&mut data);
-
-        OwnedMulD { data }
+        OwnedMulD { data: vec![] }
     }
 
     fn reset(&mut self) {
         self.data.clear();
-        self.data.put_u8(MUL_ID);
-        self.data.put_u32_le(0 as u32);
-        (0u64, 1).write_packed(&mut self.data);
     }
 }
 

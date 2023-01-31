@@ -3,7 +3,7 @@ use symbolica::{
     finite_field::{FiniteFieldU64, PrimeIteratorU64},
     parser::parse,
     printer::AtomPrinter,
-    representations::{number::Number, tree::AtomTree, Mul, OwnedAtom, OwnedMul},
+    representations::{number::Number, tree::AtomTree, OwnedAtom},
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -69,14 +69,14 @@ fn expression_test() {
 
     let mut normalized_handle = workspace.get_atom_stack();
 
-    let normalized = normalized_handle.get_buf_mut().transform_to_mul();
+    let normalized = normalized_handle.get_buf_mut();
 
     view.normalize(&workspace, &state, normalized);
 
     print!(
         "out = {}",
         AtomPrinter::new(
-            normalized.to_mul_view().to_view(),
+            normalized.to_view(),
             symbolica::printer::PrintMode::Form,
             &state
         ),
@@ -123,14 +123,14 @@ fn finite_field_test() {
 
     let mut normalized_handle = workspace.get_atom_stack();
 
-    let normalized = normalized_handle.get_buf_mut().transform_to_mul();
+    let normalized = normalized_handle.get_buf_mut();
 
     view.normalize(&workspace, &state, normalized);
 
     print!(
         "out = {}",
         AtomPrinter::new(
-            normalized.to_mul_view().to_view(),
+            normalized.to_view(),
             symbolica::printer::PrintMode::Form,
             &state
         ),
@@ -168,15 +168,14 @@ fn parse_test() {
     let workspace = Workspace::new();
 
     let mut normalized_handle = workspace.get_atom_stack();
-
-    let normalized = normalized_handle.get_buf_mut().transform_to_mul();
+    let normalized = normalized_handle.get_buf_mut();
 
     view.normalize(&workspace, &state, normalized);
 
     print!(
         "out = {}",
         AtomPrinter::new(
-            normalized.to_mul_view().to_view(),
+            normalized.to_view(),
             symbolica::printer::PrintMode::Form,
             &state
         ),

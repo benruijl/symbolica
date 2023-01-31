@@ -4,10 +4,10 @@ use smallvec::SmallVec;
 
 use crate::{
     representations::{
-        number::Number, Atom, AtomView, Fun, ListIterator, Mul, Num, OwnedAtom, OwnedMul, OwnedNum,
-        OwnedPow, Pow, Var,
+        number::Number, Add, Atom, AtomView, Fun, ListIterator, Mul, Num, OwnedAdd, OwnedAtom,
+        OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
-    state::{BufferHandle, Workspace, State},
+    state::{BufferHandle, ResettableBuffer, State, Workspace},
 };
 
 impl<'a, P: Atom> AtomView<'a, P> {
@@ -150,59 +150,131 @@ impl<P: Atom> OwnedAtom<P> {
 }
 
 impl<'a, P: Atom> AtomView<'a, P> {
-    /// Normalize a term.
-    pub fn normalize(&self, workspace: &Workspace<P>, state: &State, out: &mut P::OM) {
-        let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
+    #[inline(always)]
+    pub fn is_dirty(&self) -> bool {
+        match self {
+            AtomView::Num(n) => n.is_dirty(),
+            AtomView::Var(_) => false,
+            AtomView::Fun(f) => f.is_dirty(),
+            AtomView::Pow(p) => p.is_dirty(),
+            AtomView::Mul(m) => m.is_dirty(),
+            AtomView::Add(a) => a.is_dirty(),
+        }
+    }
+
+    /// Normalize an atom.
+    pub fn normalize(&self, workspace: &Workspace<P>, state: &State, out: &mut OwnedAtom<P>) {
+        // TODO: check dirty flag here too
+
         match self {
             AtomView::Mul(t) => {
+                let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
+
                 let mut it = t.into_iter();
                 while let Some(a) = it.next() {
                     let mut handle = workspace.get_atom_stack();
                     let new_at = handle.get_buf_mut();
-                    new_at.from_view(&a);
 
-                    // TODO: check dirty flag and normalize
+                    if a.is_dirty() {
+                        a.normalize(workspace, state, new_at);
+                    } else {
+                        new_at.from_view(&a);
+                    }
 
                     atom_test_buf.push(handle);
                 }
-            }
-            _ => unreachable!("Can only normalize term"),
-        }
 
-        atom_test_buf.sort_by(|a, b| {
-            a.get_buf()
-                .to_view()
-                .partial_cmp(&b.get_buf().to_view())
-                .unwrap()
-        });
+                atom_test_buf.sort_by(|a, b| {
+                    a.get_buf()
+                        .to_view()
+                        .partial_cmp(&b.get_buf().to_view())
+                        .unwrap()
+                });
 
-        if !atom_test_buf.is_empty() {
-            let mut last_buf = atom_test_buf.remove(0);
+                let out = out.transform_to_mul();
 
-            let mut handle = workspace.get_atom_stack();
-            let helper = handle.get_buf_mut();
+                if !atom_test_buf.is_empty() {
+                    let mut last_buf = atom_test_buf.remove(0);
 
-            for mut cur_buf in atom_test_buf.drain(..) {
-                if !last_buf
-                    .get_buf_mut()
-                    .merge_factors(cur_buf.get_buf_mut(), helper, state)
-                {
-                    // we are done merging
-                    {
-                        let v = last_buf.get_buf().to_view();
-                        if let AtomView::Num(n) = v {
-                            if !n.is_one() {
-                                out.extend(last_buf.get_buf().to_view());
+                    let mut handle = workspace.get_atom_stack();
+                    let helper = handle.get_buf_mut();
+
+                    for mut cur_buf in atom_test_buf.drain(..) {
+                        if !last_buf.get_buf_mut().merge_factors(
+                            cur_buf.get_buf_mut(),
+                            helper,
+                            state,
+                        ) {
+                            // we are done merging
+                            {
+                                let v = last_buf.get_buf().to_view();
+                                if let AtomView::Num(n) = v {
+                                    if !n.is_one() {
+                                        out.extend(last_buf.get_buf().to_view());
+                                    }
+                                } else {
+                                    out.extend(last_buf.get_buf().to_view());
+                                }
                             }
-                        } else {
-                            out.extend(last_buf.get_buf().to_view());
+                            last_buf = cur_buf;
                         }
                     }
-                    last_buf = cur_buf;
+
+                    out.extend(last_buf.get_buf().to_view());
                 }
             }
+            AtomView::Num(n) => {
+                // TODO: normalize and remove dirty flag
+                let nn = out.transform_to_num();
+                nn.from_view(n);
+            }
+            AtomView::Var(v) => {
+                let vv = out.transform_to_var();
+                vv.from_view(v);
+            }
+            AtomView::Fun(f) => {
+                let out = out.transform_to_fun();
+                out.from_name(f.get_name());
 
-            out.extend(last_buf.get_buf().to_view());
+                let mut it = f.into_iter();
+
+                let mut handle = workspace.get_atom_stack();
+                let new_at = handle.get_buf_mut();
+                while let Some(a) = it.next() {
+                    if a.is_dirty() {
+                        new_at.reset(); // TODO: needed?
+                        a.normalize(workspace, state, new_at);
+                        out.add_arg(new_at.to_view());
+                    } else {
+                        out.add_arg(a);
+                    }
+                }
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+
+                if base.is_dirty() || exp.is_dirty() {
+                    let mut base_handle = workspace.get_atom_stack();
+                    let mut exp_handle = workspace.get_atom_stack();
+
+                    let new_base = base_handle.get_buf_mut();
+                    let new_exp = exp_handle.get_buf_mut();
+
+                    base.normalize(workspace, state, new_base);
+                    exp.normalize(workspace, state, new_exp);
+                    let out = out.transform_to_pow();
+                    out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
+                } else {
+                    let pp = out.transform_to_pow();
+                    pp.from_view(p);
+                    pp.set_dirty(false);
+                }
+            }
+            AtomView::Add(a) => {
+                // TODO: normalize and remove dirty flag
+                let aa = out.transform_to_add();
+                aa.from_view(a);
+            }
         }
     }
 }

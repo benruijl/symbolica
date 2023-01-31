@@ -188,6 +188,14 @@ impl PackedRationalNumberWriter for Number {
             }
         }
     }
+
+    fn get_packed_size(&self) -> u64 {
+        match self {
+            Number::Natural(num, den) => (*num, *den).get_packed_size(),
+            Number::Large(_) => 1 + std::mem::size_of::<Rational>() as u64,
+            Number::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
+        }
+    }
 }
 
 /// A generalized rational number. The first byte indicates the sign, size and type of the numerator and denominator.
@@ -197,6 +205,8 @@ pub trait PackedRationalNumberWriter {
     fn write_packed(self, dest: &mut Vec<u8>);
     /// Write a fraction to a fixed-size buffer.
     fn write_packed_fixed(self, dest: &mut [u8]);
+    /// Get the number of bytes of the packed representation.
+    fn get_packed_size(&self) -> u64;
 }
 
 /// A reader for generalized rational numbers. See [`RationalNumberWriter`].
@@ -407,15 +417,17 @@ impl PackedRationalNumberWriter for (i64, i64) {
 
     #[inline(always)]
     fn write_packed_fixed(self, dest: &mut [u8]) {
-        let p = dest.len();
-
         let num_u64 = self.0.abs() as u64;
         let den_u64 = self.1.abs() as u64;
         (num_u64, den_u64).write_packed_fixed(dest);
 
         if self.0 >= 0 && self.1 < 0 || self.0 < 0 && self.1 >= 0 {
-            dest[p] |= SIGN;
+            dest[0] |= SIGN;
         }
+    }
+
+    fn get_packed_size(&self) -> u64 {
+        (self.0 as u64, self.1 as u64).get_packed_size()
     }
 }
 
@@ -456,37 +468,63 @@ impl PackedRationalNumberWriter for (u64, u64) {
     }
 
     #[inline(always)]
-    fn write_packed_fixed(self, mut dest: &mut [u8]) {
-        let p = dest.len();
+    fn write_packed_fixed(self, dest: &mut [u8]) {
+        let (tag, mut dest) = dest.split_first_mut().unwrap();
 
         if self.0 < u8::MAX as u64 {
-            dest.put_u8(U8_NUM);
+            *tag = U8_NUM;
             dest.put_u8(self.0 as u8);
         } else if self.0 < u16::MAX as u64 {
-            dest.put_u8(U16_NUM);
+            *tag = U16_NUM;
             dest.put_u16_le(self.0 as u16);
         } else if self.0 < u32::MAX as u64 {
-            dest.put_u8(U32_NUM);
+            *tag = U32_NUM;
             dest.put_u32_le(self.0 as u32);
         } else {
-            dest.put_u8(U64_NUM);
+            *tag = U64_NUM;
             dest.put_u64_le(self.0);
         }
 
         if self.1 == 1 {
         } else if self.1 < u8::MAX as u64 {
-            dest[p] |= U8_DEN;
+            *tag |= U8_DEN;
             dest.put_u8(self.1 as u8);
         } else if self.1 < u16::MAX as u64 {
-            dest[p] |= U16_DEN;
+            *tag |= U16_DEN;
             dest.put_u16_le(self.1 as u16);
         } else if self.1 < u32::MAX as u64 {
-            dest[p] |= U32_DEN;
+            *tag |= U32_DEN;
             dest.put_u8(3);
             dest.put_u32_le(self.1 as u32);
         } else {
-            dest[p] |= U64_DEN;
+            *tag |= U64_DEN;
             dest.put_u64_le(self.1);
         }
+    }
+
+    fn get_packed_size(&self) -> u64 {
+        let mut size = 1;
+        size += if self.0 < u8::MAX as u64 {
+            get_size_of_natural(U8_NUM)
+        } else if self.0 < u16::MAX as u64 {
+            get_size_of_natural(U16_NUM)
+        } else if self.0 < u32::MAX as u64 {
+            get_size_of_natural(U32_NUM)
+        } else {
+            get_size_of_natural(U64_NUM)
+        };
+
+        size += if self.1 == 1 {
+            0
+        } else if self.1 < u8::MAX as u64 {
+            get_size_of_natural(U8_NUM)
+        } else if self.1 < u16::MAX as u64 {
+            get_size_of_natural(U16_NUM)
+        } else if self.1 < u32::MAX as u64 {
+            get_size_of_natural(U32_NUM)
+        } else {
+            get_size_of_natural(U64_NUM)
+        };
+        size as u64
     }
 }

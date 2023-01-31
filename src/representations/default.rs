@@ -186,22 +186,69 @@ impl OwnedFun for OwnedFunD {
 
     fn from_name(&mut self, id: Identifier) {
         self.data.clear();
-        self.data.put_u8(VAR_ID);
-        (id.to_u32() as u64, 1).write_packed(&mut self.data);
+        self.data.put_u8(FUN_ID);
+        self.data.put_u32_le(0 as u32);
+
+        let buf_pos = self.data.len();
+
+        (id.to_u32() as u64, 0).write_packed(&mut self.data);
+
+        let new_buf_pos = self.data.len();
+        let mut cursor = &mut self.data[1..];
+        cursor
+            .write_u32::<LittleEndian>((new_buf_pos - buf_pos) as u32)
+            .unwrap();
     }
 
     fn set_dirty(&mut self, dirty: bool) {
         if dirty {
-            self.data[0] &= DIRTY_FLAG;
+            self.data[0] |= DIRTY_FLAG;
         } else {
             self.data[0] &= !DIRTY_FLAG;
         }
     }
 
     fn add_arg(&mut self, other: AtomView<Self::P>) {
-        // TODO: update the size
+        // may increase size of the num of args
+        let mut c = &self.data[1 + 4..];
+
+        let buf_pos = 1 + 4;
+
+        let name;
+        let mut n_args;
+        (name, n_args, c) = c.get_frac_u64();
+
+        let old_size = unsafe { c.as_ptr().offset_from(self.data.as_ptr()) } as usize - 1 - 4;
+
+        n_args += 1;
+
+        let new_size = (name, n_args).get_packed_size() as usize;
+
+        match new_size.cmp(&old_size) {
+            Ordering::Equal => {}
+            Ordering::Less => {
+                self.data.copy_within(1 + 4 + old_size.., 1 + 4 + new_size);
+                self.data.resize(self.data.len() - old_size + new_size, 0);
+            }
+            Ordering::Greater => {
+                let old_len = self.data.len();
+                self.data.resize(old_len + new_size - old_size, 0);
+                self.data
+                    .copy_within(1 + 4 + old_size..old_len, 1 + 4 + new_size);
+            }
+        }
+
+        // size should be ok now
+        (name, n_args).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
+
         self.data.extend(other.get_data());
-        todo!()
+
+        let new_buf_pos = self.data.len();
+
+        let mut cursor = &mut self.data[1..];
+        cursor
+            .write_u32::<LittleEndian>((new_buf_pos - buf_pos) as u32)
+            .unwrap();
     }
 
     fn to_fun_view<'a>(&'a self) -> <Self::P as Atom>::F<'a> {
@@ -273,7 +320,7 @@ impl OwnedPow for OwnedPowD {
 
     fn set_dirty(&mut self, dirty: bool) {
         if dirty {
-            self.data[0] &= DIRTY_FLAG;
+            self.data[0] |= DIRTY_FLAG;
         } else {
             self.data[0] &= !DIRTY_FLAG;
         }
@@ -338,6 +385,14 @@ pub struct OwnedMulD {
 impl OwnedMul for OwnedMulD {
     type P = DefaultRepresentation;
 
+    fn set_dirty(&mut self, dirty: bool) {
+        if dirty {
+            self.data[0] |= DIRTY_FLAG;
+        } else {
+            self.data[0] &= !DIRTY_FLAG;
+        }
+    }
+
     fn extend<'a>(&mut self, other: AtomView<'a, DefaultRepresentation>) {
         if self.data.is_empty() {
             self.data.put_u8(MUL_ID);
@@ -346,26 +401,45 @@ impl OwnedMul for OwnedMulD {
         }
 
         // may increase size of the num of args
-        let c = &self.data[1 + 4..];
+        let mut c = &self.data[1 + 4..];
 
         let buf_pos = 1 + 4;
 
         let mut n_args;
-        (n_args, _, _) = c.get_frac_i64();
+        (n_args, _, c) = c.get_frac_u64();
+
+        let old_size = unsafe { c.as_ptr().offset_from(self.data.as_ptr()) } as usize - 1 - 4;
 
         match other {
-            AtomView::Mul(_t) => {
+            AtomView::Mul(_m) => {
+                // should this happen?
                 todo!();
             }
             _ => {
                 n_args += 1;
-                self.data.extend(other.get_data());
             }
         }
 
-        // FIXME: this may overwrite the rest of the term
-        // assume for now it does not
-        (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..]);
+        let new_size = (n_args, 1).get_packed_size() as usize;
+
+        match new_size.cmp(&old_size) {
+            Ordering::Equal => {}
+            Ordering::Less => {
+                self.data.copy_within(1 + 4 + old_size.., 1 + 4 + new_size);
+                self.data.resize(self.data.len() - old_size + new_size, 0);
+            }
+            Ordering::Greater => {
+                let old_len = self.data.len();
+                self.data.resize(old_len + new_size - old_size, 0);
+                self.data
+                    .copy_within(1 + 4 + old_size..old_len, 1 + 4 + new_size);
+            }
+        }
+
+        // size should be ok now
+        (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
+
+        self.data.extend(other.get_data());
 
         let new_buf_pos = self.data.len();
 
@@ -434,6 +508,14 @@ pub struct OwnedAddD {
 impl OwnedAdd for OwnedAddD {
     type P = DefaultRepresentation;
 
+    fn set_dirty(&mut self, dirty: bool) {
+        if dirty {
+            self.data[0] |= DIRTY_FLAG;
+        } else {
+            self.data[0] &= !DIRTY_FLAG;
+        }
+    }
+
     fn extend<'a>(&mut self, other: AtomView<'a, DefaultRepresentation>) {
         if self.data.is_empty() {
             self.data.put_u8(ADD_ID);
@@ -442,26 +524,45 @@ impl OwnedAdd for OwnedAddD {
         }
 
         // may increase size of the num of args
-        let c = &self.data[1 + 4..];
+        let mut c = &self.data[1 + 4..];
 
         let buf_pos = 1 + 4;
 
         let mut n_args;
-        (n_args, _, _) = c.get_frac_i64();
+        (n_args, _, c) = c.get_frac_u64();
+
+        let old_size = unsafe { c.as_ptr().offset_from(self.data.as_ptr()) } as usize - 1 - 4;
 
         match other {
-            AtomView::Add(_t) => {
+            AtomView::Add(_a) => {
+                // should this happen?
                 todo!();
             }
             _ => {
                 n_args += 1;
-                self.data.extend(other.get_data());
             }
         }
 
-        // FIXME: this may overwrite the rest of the term
-        // assume for now it does not
-        (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..]);
+        let new_size = (n_args, 1).get_packed_size() as usize;
+
+        match new_size.cmp(&old_size) {
+            Ordering::Equal => {}
+            Ordering::Less => {
+                self.data.copy_within(1 + 4 + old_size.., 1 + 4 + new_size);
+                self.data.resize(self.data.len() - old_size + new_size, 0);
+            }
+            Ordering::Greater => {
+                let old_len = self.data.len();
+                self.data.resize(old_len + new_size - old_size, 0);
+                self.data
+                    .copy_within(1 + 4 + old_size..old_len, 1 + 4 + new_size);
+            }
+        }
+
+        // size should be ok now
+        (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
+
+        self.data.extend(other.get_data());
 
         let new_buf_pos = self.data.len();
 
@@ -616,7 +717,7 @@ impl OwnedAtom<DefaultRepresentation> {
                 (name.to_u32() as u64, 1).write_packed(data);
             }
             AtomTree::Fn(name, args) => {
-                data.put_u8(FUN_ID);
+                data.put_u8(FUN_ID | DIRTY_FLAG);
                 let size_pos = data.len();
                 data.put_u32_le(0 as u32); // length of entire fn without flag
                 let buf_pos = data.len();
@@ -636,19 +737,19 @@ impl OwnedAtom<DefaultRepresentation> {
                     .unwrap();
             }
             AtomTree::Num(n) => {
-                data.put_u8(NUM_ID);
+                data.put_u8(NUM_ID | DIRTY_FLAG);
                 n.clone().write_packed(data);
             }
             AtomTree::Pow(p) => {
-                data.put_u8(POW_ID);
+                data.put_u8(POW_ID | DIRTY_FLAG);
                 Self::linearize(data, &p.0);
                 Self::linearize(data, &p.1);
             }
             AtomTree::Mul(args) | AtomTree::Add(args) => {
                 if let AtomTree::Mul(_) = atom {
-                    data.put_u8(MUL_ID);
+                    data.put_u8(MUL_ID | DIRTY_FLAG);
                 } else {
-                    data.put_u8(ADD_ID);
+                    data.put_u8(ADD_ID | DIRTY_FLAG);
                 }
 
                 let size_pos = data.len();
@@ -813,6 +914,10 @@ impl<'a> Num<'a> for NumViewD<'a> {
         self.data.is_one_rat()
     }
 
+    fn is_dirty(&self) -> bool {
+        (self.data[0] & DIRTY_FLAG) != 0
+    }
+
     #[inline]
     fn get_number_view(&self) -> BorrowedNumber<'_> {
         self.data[1..].get_number_view().0
@@ -849,6 +954,10 @@ impl<'a> Pow<'a> for PowViewD<'a> {
         e
     }
 
+    fn is_dirty(&self) -> bool {
+        (self.data[0] & DIRTY_FLAG) != 0
+    }
+
     #[inline]
     fn get_base_exp(&self) -> (AtomView<'a, Self::P>, AtomView<'a, Self::P>) {
         let mut it = ListIteratorD {
@@ -879,6 +988,14 @@ impl<'a> Mul<'a> for MulViewD<'a> {
     type P = DefaultRepresentation;
     type I = ListIteratorD<'a>;
 
+    fn is_dirty(&self) -> bool {
+        (self.data[0] & DIRTY_FLAG) != 0
+    }
+
+    fn get_nargs(&self) -> usize {
+        (&self.data[1 + 4..]).get_frac_i64().0 as usize
+    }
+
     #[inline]
     fn into_iter(&self) -> Self::I {
         let mut c = self.data;
@@ -892,10 +1009,6 @@ impl<'a> Mul<'a> for MulViewD<'a> {
             data: c,
             length: n_args as u32,
         }
-    }
-
-    fn get_nargs(&self) -> usize {
-        (&self.data[1 + 4..]).get_frac_i64().0 as usize
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
@@ -918,6 +1031,14 @@ impl<'a> Add<'a> for AddViewD<'a> {
     type P = DefaultRepresentation;
     type I = ListIteratorD<'a>;
 
+    fn is_dirty(&self) -> bool {
+        (self.data[0] & DIRTY_FLAG) != 0
+    }
+
+    fn get_nargs(&self) -> usize {
+        (&self.data[1 + 4..]).get_frac_i64().0 as usize
+    }
+
     #[inline]
     fn into_iter(&self) -> Self::I {
         let mut c = self.data;
@@ -931,10 +1052,6 @@ impl<'a> Add<'a> for AddViewD<'a> {
             data: c,
             length: n_args as u32,
         }
-    }
-
-    fn get_nargs(&self) -> usize {
-        (&self.data[1 + 4..]).get_frac_i64().0 as usize
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {

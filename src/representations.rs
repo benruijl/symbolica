@@ -96,6 +96,7 @@ pub trait OwnedPow: ResettableBuffer + Convert<Self::P> {
 pub trait OwnedMul: ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
+    fn set_dirty(&mut self, dirty: bool);
     fn from_view<'a>(&mut self, view: &<Self::P as Atom>::M<'a>);
     fn extend(&mut self, other: AtomView<Self::P>);
     fn to_mul_view<'a>(&'a self) -> <Self::P as Atom>::M<'a>;
@@ -104,6 +105,7 @@ pub trait OwnedMul: ResettableBuffer + Convert<Self::P> {
 pub trait OwnedAdd: ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
+    fn set_dirty(&mut self, dirty: bool);
     fn from_view<'a>(&mut self, view: &<Self::P as Atom>::A<'a>);
     fn extend(&mut self, other: AtomView<Self::P>);
     fn to_add_view<'a>(&'a self) -> <Self::P as Atom>::A<'a>;
@@ -114,6 +116,7 @@ pub trait Num<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
 
     fn is_zero(&self) -> bool;
     fn is_one(&self) -> bool;
+    fn is_dirty(&self) -> bool;
     fn get_number_view(&self) -> BorrowedNumber<'_>;
     fn to_view(&self) -> AtomView<'a, Self::P>;
 }
@@ -142,6 +145,7 @@ pub trait Pow<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::P<'b>> {
 
     fn get_base(&self) -> AtomView<'a, Self::P>;
     fn get_exp(&self) -> AtomView<'a, Self::P>;
+    fn is_dirty(&self) -> bool;
     fn get_base_exp(&self) -> (AtomView<'a, Self::P>, AtomView<'a, Self::P>);
     fn to_view(&self) -> AtomView<'a, Self::P>;
 }
@@ -150,6 +154,7 @@ pub trait Mul<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
     type P: Atom;
     type I: ListIterator<'a, P = Self::P>;
 
+    fn is_dirty(&self) -> bool;
     fn get_nargs(&self) -> usize;
     fn into_iter(&self) -> Self::I;
     fn to_view(&self) -> AtomView<'a, Self::P>;
@@ -159,6 +164,7 @@ pub trait Add<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::A<'b>> {
     type P: Atom;
     type I: ListIterator<'a, P = Self::P>;
 
+    fn is_dirty(&self) -> bool;
     fn get_nargs(&self) -> usize;
     fn into_iter(&self) -> Self::I;
     fn to_view(&self) -> AtomView<'a, Self::P>;
@@ -206,10 +212,13 @@ pub enum OwnedAtom<P: Atom> {
 
 impl<P: Atom> OwnedAtom<P> {
     pub fn transform_to_num(&mut self) -> &mut P::ON {
-        let ov = std::mem::replace(self, OwnedAtom::Empty);
+        let mut ov = std::mem::replace(self, OwnedAtom::Empty);
 
         *self = match ov {
-            OwnedAtom::Num(_) => ov,
+            OwnedAtom::Num(_) => {
+                ov.reset();
+                ov
+            }
             OwnedAtom::Var(v) => OwnedAtom::Num(v.to_owned_num()),
             OwnedAtom::Fun(f) => OwnedAtom::Num(f.to_owned_num()),
             OwnedAtom::Pow(p) => OwnedAtom::Num(p.to_owned_num()),
@@ -225,10 +234,13 @@ impl<P: Atom> OwnedAtom<P> {
     }
 
     pub fn transform_to_pow(&mut self) -> &mut P::OP {
-        let ov = std::mem::replace(self, OwnedAtom::Empty);
+        let mut ov = std::mem::replace(self, OwnedAtom::Empty);
 
         *self = match ov {
-            OwnedAtom::Pow(_) => ov,
+            OwnedAtom::Pow(_) => {
+                ov.reset();
+                ov
+            }
             OwnedAtom::Num(n) => OwnedAtom::Pow(n.to_owned_pow()),
             OwnedAtom::Var(v) => OwnedAtom::Pow(v.to_owned_pow()),
             OwnedAtom::Fun(f) => OwnedAtom::Pow(f.to_owned_pow()),
@@ -244,10 +256,13 @@ impl<P: Atom> OwnedAtom<P> {
     }
 
     pub fn transform_to_var(&mut self) -> &mut P::OV {
-        let ov = std::mem::replace(self, OwnedAtom::Empty);
+        let mut ov = std::mem::replace(self, OwnedAtom::Empty);
 
         *self = match ov {
-            OwnedAtom::Var(_) => ov,
+            OwnedAtom::Var(_) => {
+                ov.reset();
+                ov
+            }
             OwnedAtom::Num(n) => OwnedAtom::Var(n.to_owned_var()),
             OwnedAtom::Pow(p) => OwnedAtom::Var(p.to_owned_var()),
             OwnedAtom::Fun(f) => OwnedAtom::Var(f.to_owned_var()),
@@ -263,10 +278,13 @@ impl<P: Atom> OwnedAtom<P> {
     }
 
     pub fn transform_to_fun(&mut self) -> &mut P::OF {
-        let of = std::mem::replace(self, OwnedAtom::Empty);
+        let mut of = std::mem::replace(self, OwnedAtom::Empty);
 
         *self = match of {
-            OwnedAtom::Fun(_) => of,
+            OwnedAtom::Fun(_) => {
+                of.reset();
+                of
+            }
             OwnedAtom::Num(n) => OwnedAtom::Fun(n.to_owned_fun()),
             OwnedAtom::Pow(p) => OwnedAtom::Fun(p.to_owned_fun()),
             OwnedAtom::Var(v) => OwnedAtom::Fun(v.to_owned_fun()),
@@ -282,10 +300,13 @@ impl<P: Atom> OwnedAtom<P> {
     }
 
     pub fn transform_to_mul(&mut self) -> &mut P::OM {
-        let om = std::mem::replace(self, OwnedAtom::Empty);
+        let mut om = std::mem::replace(self, OwnedAtom::Empty);
 
         *self = match om {
-            OwnedAtom::Mul(_) => om,
+            OwnedAtom::Mul(_) => {
+                om.reset();
+                om
+            }
             OwnedAtom::Num(n) => OwnedAtom::Mul(n.to_owned_mul()),
             OwnedAtom::Pow(p) => OwnedAtom::Mul(p.to_owned_mul()),
             OwnedAtom::Var(v) => OwnedAtom::Mul(v.to_owned_mul()),
@@ -301,10 +322,13 @@ impl<P: Atom> OwnedAtom<P> {
     }
 
     pub fn transform_to_add(&mut self) -> &mut P::OA {
-        let oa = std::mem::replace(self, OwnedAtom::Empty);
+        let mut oa = std::mem::replace(self, OwnedAtom::Empty);
 
         *self = match oa {
-            OwnedAtom::Add(_) => oa,
+            OwnedAtom::Add(_) => {
+                oa.reset();
+                oa
+            }
             OwnedAtom::Num(n) => OwnedAtom::Add(n.to_owned_add()),
             OwnedAtom::Pow(p) => OwnedAtom::Add(p.to_owned_add()),
             OwnedAtom::Var(v) => OwnedAtom::Add(v.to_owned_add()),

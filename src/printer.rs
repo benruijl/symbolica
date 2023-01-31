@@ -2,8 +2,7 @@ use std::fmt::{self, Write};
 
 use crate::{
     representations::{
-        number::BorrowedNumber, Add, Atom, AtomView, Fun, ListIterator, Mul, Num, OwnedNum, Pow,
-        Var,
+        number::BorrowedNumber, Add, Atom, AtomView, Fun, ListIterator, Mul, Num, Pow, Var,
     },
     state::State,
 };

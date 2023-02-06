@@ -4,14 +4,16 @@ use smallvec::SmallVec;
 
 use crate::{
     representations::{
-        number::Number, Add, Atom, AtomView, Fun, ListIterator, Mul, Num, OwnedAdd, OwnedAtom,
-        OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+        number::{BorrowedNumber, Number},
+        Add, Atom, AtomView, Fun, ListIterator, ListSlice, Mul, Num, OwnedAdd, OwnedAtom, OwnedFun,
+        OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
     state::{BufferHandle, ResettableBuffer, State, Workspace},
 };
 
 impl<'a, P: Atom> AtomView<'a, P> {
     /// Sort factors in a term. `x` and `pow(x,2)` are placed next to each other by sorting a pow based on the base only.
+    /// TODO: sort x and x*2 next to each other by ignoring coefficient
     fn partial_cmp<'b>(&self, other: &AtomView<'b, P>) -> Option<Ordering> {
         match (&self, other) {
             (AtomView::Num(_), AtomView::Num(_)) => Some(Ordering::Equal),
@@ -147,6 +149,146 @@ impl<P: Atom> OwnedAtom<P> {
 
         false
     }
+
+    /// Merge two terms if possible. If this function returns `true`, `self`
+    /// will have been updated by the merge from `other` and `other` should be discarded.
+    /// If the function return `false`, no merge was possible and no modifications were made.
+    fn merge_terms(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
+        if let OwnedAtom::Num(n1) = self {
+            if let OwnedAtom::Num(n2) = other {
+                n1.add(&n2.to_num_view(), state);
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // compare the non-coefficient part of terms and add the coefficients if they are the same
+        if let OwnedAtom::Mul(m) = self {
+            let slice = m.to_mul_view().to_slice();
+
+            let last_elem = slice.get(slice.len() - 1);
+
+            let (non_coeff1, has_coeff) = if let AtomView::Num(_) = &last_elem {
+                (slice.get_subslice(0..slice.len() - 1), true)
+            } else {
+                (m.to_mul_view().to_slice(), false)
+            };
+
+            if let OwnedAtom::Mul(m2) = other {
+                let slice2 = m2.to_mul_view().to_slice();
+                let last_elem2 = slice2.get(slice2.len() - 1);
+
+                let non_coeff2 = if let AtomView::Num(_) = &last_elem2 {
+                    slice2.get_subslice(0..slice2.len() - 1)
+                } else {
+                    m2.to_mul_view().to_slice()
+                };
+
+                if non_coeff1.eq(&non_coeff2) {
+                    // TODO: not correct for finite fields!
+                    let num = if let AtomView::Num(n) = &last_elem {
+                        n.get_number_view()
+                    } else {
+                        BorrowedNumber::Natural(1, 1)
+                    };
+
+                    let new_coeff = if let AtomView::Num(n) = &last_elem2 {
+                        num.add(&n.get_number_view(), state)
+                    } else {
+                        num.add(&BorrowedNumber::Natural(1, 1), state)
+                    };
+
+                    // help the borrow checker by dropping all references
+                    drop(last_elem);
+                    drop(non_coeff1);
+                    drop(non_coeff2);
+                    drop(last_elem2);
+                    drop(slice2);
+                    drop(slice);
+
+                    if new_coeff.is_zero() {
+                        let num = self.transform_to_num();
+                        num.from_number(new_coeff);
+
+                        return true;
+                    }
+
+                    let on = helper.transform_to_num();
+                    on.from_number(new_coeff);
+
+                    if has_coeff {
+                        m.replace_last(on.to_num_view().to_view());
+                    } else {
+                        m.extend(on.to_num_view().to_view());
+                    }
+
+                    return true;
+                }
+            }
+        } else {
+            if let OwnedAtom::Mul(m) = other {
+                let slice = m.to_mul_view().to_slice();
+
+                if slice.len() != 2 {
+                    return false; // no match
+                }
+
+                let last_elem = slice.get(slice.len() - 1);
+
+                if self.to_view() == slice.get(0) {
+                    let (new_coeff, has_num) = if let AtomView::Num(n) = &last_elem {
+                        (
+                            n.get_number_view()
+                                .add(&BorrowedNumber::Natural(1, 1), state),
+                            true,
+                        )
+                    } else {
+                        (Number::Natural(2, 1), false)
+                    };
+
+                    // help the borrow checker by dropping all references
+                    drop(last_elem);
+                    drop(slice);
+
+                    if new_coeff.is_zero() {
+                        let num = self.transform_to_num();
+                        num.from_number(new_coeff);
+
+                        return true;
+                    }
+
+                    let on = helper.transform_to_num();
+                    on.from_number(new_coeff);
+
+                    if has_num {
+                        m.replace_last(on.to_num_view().to_view());
+                    } else {
+                        m.extend(on.to_num_view().to_view());
+                    }
+
+                    std::mem::swap(self, other);
+
+                    return true;
+                }
+            } else {
+                if self.to_view() == other.to_view() {
+                    let mul = helper.transform_to_mul();
+
+                    let num = other.transform_to_num();
+                    num.from_number(Number::Natural(2, 1));
+
+                    mul.extend(self.to_view());
+                    mul.extend(other.to_view());
+
+                    std::mem::swap(self, helper);
+                    return true;
+                }
+            }
+        };
+
+        false
+    }
 }
 
 impl<'a, P: Atom> AtomView<'a, P> {
@@ -262,8 +404,25 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                     base.normalize(workspace, state, new_base);
                     exp.normalize(workspace, state, new_exp);
-                    let out = out.transform_to_pow();
-                    out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
+
+                    // simplyify a number to a power
+                    if let AtomView::Num(_n) = base {
+                        if let AtomView::Num(_e) = exp {
+                            //let out = out.transform_to_num();
+                            //out.from_view(&n);
+                            // TODO: implement pow
+                            //out.pow(&e, state);
+
+                            let out = out.transform_to_pow();
+                            out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
+                        } else {
+                            let out = out.transform_to_pow();
+                            out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
+                        }
+                    } else {
+                        let out = out.transform_to_pow();
+                        out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
+                    }
                 } else {
                     let pp = out.transform_to_pow();
                     pp.from_view(p);
@@ -271,9 +430,59 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 }
             }
             AtomView::Add(a) => {
-                // TODO: normalize and remove dirty flag
-                let aa = out.transform_to_add();
-                aa.from_view(a);
+                let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
+
+                let mut it = a.into_iter();
+                while let Some(a) = it.next() {
+                    let mut handle = workspace.get_atom_stack();
+                    let new_at = handle.get_buf_mut();
+
+                    if a.is_dirty() {
+                        a.normalize(workspace, state, new_at);
+                    } else {
+                        new_at.from_view(&a);
+                    }
+
+                    atom_test_buf.push(handle);
+                }
+
+                atom_test_buf.sort_by(|a, b| {
+                    a.get_buf()
+                        .to_view()
+                        .partial_cmp(&b.get_buf().to_view())
+                        .unwrap()
+                });
+
+                let out = out.transform_to_add();
+
+                if !atom_test_buf.is_empty() {
+                    let mut last_buf = atom_test_buf.remove(0);
+
+                    let mut handle = workspace.get_atom_stack();
+                    let helper = handle.get_buf_mut();
+
+                    for mut cur_buf in atom_test_buf.drain(..) {
+                        if !last_buf
+                            .get_buf_mut()
+                            .merge_terms(cur_buf.get_buf_mut(), helper, state)
+                        {
+                            // we are done merging
+                            {
+                                let v = last_buf.get_buf().to_view();
+                                if let AtomView::Num(n) = v {
+                                    if !n.is_zero() {
+                                        out.extend(last_buf.get_buf().to_view());
+                                    }
+                                } else {
+                                    out.extend(last_buf.get_buf().to_view());
+                                }
+                            }
+                            last_buf = cur_buf;
+                        }
+                    }
+
+                    out.extend(last_buf.get_buf().to_view());
+                }
             }
         }
     }

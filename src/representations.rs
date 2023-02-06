@@ -3,7 +3,7 @@ pub mod number;
 pub mod tree;
 
 use crate::state::{ResettableBuffer, State};
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::Range};
 
 use self::number::{BorrowedNumber, Number};
 
@@ -99,6 +99,7 @@ pub trait OwnedMul: ResettableBuffer + Convert<Self::P> {
     fn set_dirty(&mut self, dirty: bool);
     fn from_view<'a>(&mut self, view: &<Self::P as Atom>::M<'a>);
     fn extend(&mut self, other: AtomView<Self::P>);
+    fn replace_last(&mut self, other: AtomView<Self::P>);
     fn to_mul_view<'a>(&'a self) -> <Self::P as Atom>::M<'a>;
 }
 
@@ -153,11 +154,13 @@ pub trait Pow<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::P<'b>> {
 pub trait Mul<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
     type P: Atom;
     type I: ListIterator<'a, P = Self::P>;
+    type S: ListSlice<'a, P = Self::P>;
 
     fn is_dirty(&self) -> bool;
     fn get_nargs(&self) -> usize;
     fn into_iter(&self) -> Self::I;
     fn to_view(&self) -> AtomView<'a, Self::P>;
+    fn to_slice(&self) -> Self::S;
 }
 
 pub trait Add<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::A<'b>> {
@@ -173,6 +176,14 @@ pub trait Add<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::A<'b>> {
 pub trait ListIterator<'a>: Clone {
     type P: Atom;
     fn next(&mut self) -> Option<AtomView<'a, Self::P>>;
+}
+
+pub trait ListSlice<'a>: Clone {
+    type P: Atom;
+    fn len(&self) -> usize;
+    fn get(&self, index: usize) -> AtomView<'a, Self::P>;
+    fn get_subslice(&self, range: Range<usize>) -> Self;
+    fn eq(&self, other: &Self) -> bool;
 }
 
 #[derive(Debug, Copy, Clone)]

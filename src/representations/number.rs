@@ -41,6 +41,24 @@ pub enum Number {
     FiniteField(MontgomeryNumber, FiniteFieldIndex),
 }
 
+impl Number {
+    pub fn to_borrowed<'a>(&'a self) -> BorrowedNumber<'a> {
+        match self {
+            Number::Natural(num, den) => BorrowedNumber::Natural(*num, *den),
+            Number::Large(r) => BorrowedNumber::Large(r),
+            Number::FiniteField(num, field) => BorrowedNumber::FiniteField(*num, *field),
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Number::Natural(num, _den) => *num == 0,
+            Number::Large(_r) => false,
+            Number::FiniteField(num, _field) => num.0 == 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BorrowedNumber<'a> {
     Natural(i64, i64),

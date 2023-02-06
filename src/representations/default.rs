@@ -7,8 +7,8 @@ use crate::state::{ResettableBuffer, State};
 use super::{
     number::{BorrowedNumber, Number, PackedRationalNumberReader, PackedRationalNumberWriter},
     tree::AtomTree,
-    Add, Atom, AtomView, Convert, Fun, Identifier, ListIterator, Mul, Num, OwnedAdd, OwnedAtom,
-    OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+    Add, Atom, AtomView, Convert, Fun, Identifier, ListIterator, ListSlice, Mul, Num, OwnedAdd,
+    OwnedAtom, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
 };
 
 const NUM_ID: u8 = 1;
@@ -393,6 +393,11 @@ impl OwnedMul for OwnedMulD {
         }
     }
 
+    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::M<'a>) {
+        self.data.clear();
+        self.data.extend(view.data);
+    }
+
     fn extend<'a>(&mut self, other: AtomView<'a, DefaultRepresentation>) {
         if self.data.is_empty() {
             self.data.put_u8(MUL_ID);
@@ -406,7 +411,7 @@ impl OwnedMul for OwnedMulD {
         let buf_pos = 1 + 4;
 
         let mut n_args;
-        (n_args, _, c) = c.get_frac_u64();
+        (n_args, _, c) = c.get_frac_u64(); // TODO: pack size and n_args
 
         let old_size = unsafe { c.as_ptr().offset_from(self.data.as_ptr()) } as usize - 1 - 4;
 
@@ -439,7 +444,56 @@ impl OwnedMul for OwnedMulD {
         // size should be ok now
         (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
 
-        self.data.extend(other.get_data());
+        self.data.extend_from_slice(other.get_data());
+
+        let new_buf_pos = self.data.len();
+
+        let mut cursor = &mut self.data[1..];
+        cursor
+            .write_u32::<LittleEndian>((new_buf_pos - buf_pos) as u32)
+            .unwrap();
+    }
+
+    fn replace_last(&mut self, other: AtomView<Self::P>) {
+        if self.data.is_empty() {
+            panic!("Cannot pop empty mul");
+        }
+
+        let mut c = &self.data[1 + 4..];
+
+        let buf_pos = 1 + 4;
+
+        let n_args;
+        (n_args, _, c) = c.get_frac_u64(); // TODO: pack size and n_args
+
+        let old_size = unsafe { c.as_ptr().offset_from(self.data.as_ptr()) } as usize - 1 - 4;
+
+        let new_size = (n_args, 1).get_packed_size() as usize;
+
+        match new_size.cmp(&old_size) {
+            Ordering::Equal => {}
+            Ordering::Less => {
+                self.data.copy_within(1 + 4 + old_size.., 1 + 4 + new_size);
+                self.data.resize(self.data.len() - old_size + new_size, 0);
+            }
+            Ordering::Greater => {
+                let old_len = self.data.len();
+                self.data.resize(old_len + new_size - old_size, 0);
+                self.data
+                    .copy_within(1 + 4 + old_size..old_len, 1 + 4 + new_size);
+            }
+        }
+
+        // size should be ok now
+        (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
+
+        // remove the last entry
+        let s = self.to_mul_view().to_slice();
+        let last_index = s.get(s.len() - 1);
+        let start_pointer_of_last = last_index.get_data().as_ptr();
+        let dist = unsafe { start_pointer_of_last.offset_from(self.data.as_ptr()) } as usize;
+        self.data.drain(dist..);
+        self.data.extend_from_slice(other.get_data());
 
         let new_buf_pos = self.data.len();
 
@@ -451,11 +505,6 @@ impl OwnedMul for OwnedMulD {
 
     fn to_mul_view<'a>(&'a self) -> <Self::P as Atom>::M<'a> {
         MulViewD { data: &self.data }
-    }
-
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::M<'a>) {
-        self.data.clear();
-        self.data.extend(view.data);
     }
 }
 
@@ -987,6 +1036,7 @@ impl<'a, 'b> PartialEq<MulViewD<'b>> for MulViewD<'a> {
 impl<'a> Mul<'a> for MulViewD<'a> {
     type P = DefaultRepresentation;
     type I = ListIteratorD<'a>;
+    type S = ListSliceD<'a>;
 
     fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
@@ -1013,6 +1063,20 @@ impl<'a> Mul<'a> for MulViewD<'a> {
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Mul(self.clone())
+    }
+
+    fn to_slice(&self) -> Self::S {
+        let mut c = self.data;
+        c.get_u8();
+        c.get_u32_le(); // size
+
+        let n_args;
+        (n_args, _, c) = c.get_frac_i64();
+
+        ListSliceD {
+            data: c,
+            length: n_args as usize,
+        }
     }
 }
 
@@ -1164,6 +1228,129 @@ impl<'a> ListIterator<'a> for ListIteratorD<'a> {
             }
             x => unreachable!("Bad id {}", x),
         }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ListSliceD<'a> {
+    data: &'a [u8],
+    length: usize,
+}
+
+impl<'a> ListSliceD<'a> {
+    #[inline]
+    fn skip_one(mut pos: &[u8]) -> &[u8] {
+        let start_id = pos.get_u8() & TYPE_MASK;
+        let mut cur_id = start_id;
+
+        // store how many more atoms to read
+        // can be used instead of storing the byte length of an atom
+        let mut skip_count = 1;
+        loop {
+            match cur_id {
+                VAR_ID => {
+                    pos = pos.skip_rational();
+                }
+                NUM_ID => {
+                    pos = pos.skip_rational();
+                }
+                FUN_ID => {
+                    let n_size = pos.get_u32_le();
+                    pos.advance(n_size as usize);
+                }
+                POW_ID => {
+                    skip_count += 2;
+                }
+                MUL_ID | ADD_ID => {
+                    let n_size = pos.get_u32_le();
+                    pos.advance(n_size as usize);
+                }
+                x => unreachable!("Bad id {}", x),
+            }
+
+            skip_count -= 1;
+
+            if skip_count == 0 {
+                break;
+            } else {
+                cur_id = pos.get_u8() & TYPE_MASK;
+            }
+        }
+        pos
+    }
+
+    fn fast_forward(&self, index: usize) -> ListSliceD<'a> {
+        let mut pos = self.data;
+
+        for _ in 0..index {
+            pos = Self::skip_one(pos);
+        }
+
+        ListSliceD {
+            data: pos,
+            length: self.length - index,
+        }
+    }
+
+    fn get_entry(start: &'a [u8]) -> AtomView<'a, DefaultRepresentation> {
+        let start_id = start[0] & TYPE_MASK;
+        let end = Self::skip_one(start);
+        let len = unsafe { end.as_ptr().offset_from(start.as_ptr()) } as usize;
+
+        let data = unsafe { start.get_unchecked(..len) };
+        match start_id {
+            VAR_ID => {
+                return AtomView::Var(VarViewD { data });
+            }
+            NUM_ID => {
+                return AtomView::Num(NumViewD { data });
+            }
+            FUN_ID => {
+                return AtomView::Fun(FnViewD { data });
+            }
+            POW_ID => {
+                return AtomView::Pow(PowViewD { data });
+            }
+            MUL_ID => {
+                return AtomView::Mul(MulViewD { data });
+            }
+            ADD_ID => {
+                return AtomView::Add(AddViewD { data });
+            }
+            x => unreachable!("Bad id {}", x),
+        }
+    }
+}
+
+impl<'a> ListSlice<'a> for ListSliceD<'a> {
+    type P = DefaultRepresentation;
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn get(&self, index: usize) -> AtomView<'a, Self::P> {
+        let start = self.fast_forward(index);
+        Self::get_entry(start.data)
+    }
+
+    fn get_subslice(&self, range: std::ops::Range<usize>) -> Self {
+        let start = self.fast_forward(range.start);
+
+        let mut s = start.data;
+        for _ in 0..range.len() {
+            s = Self::skip_one(s);
+        }
+
+        let len = unsafe { s.as_ptr().offset_from(start.data.as_ptr()) } as usize;
+        ListSliceD {
+            data: &start.data[..len],
+            length: range.len(),
+        }
+    }
+
+    fn eq<'b>(&self, other: &ListSliceD<'b>) -> bool {
+        self.data == other.data
     }
 }
 

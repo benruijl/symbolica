@@ -249,7 +249,7 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         state: &State,
     ) -> fmt::Result {
         let b = self.get_base();
-        if let AtomView::Add(_) = b {
+        if let AtomView::Add(_) | AtomView::Mul(_) = b {
             f.write_char('(').unwrap();
             b.fmt_output(f, print_mode, state).unwrap();
             f.write_char(')').unwrap();
@@ -260,7 +260,7 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         f.write_char('^').unwrap();
 
         let e = self.get_exp();
-        if let AtomView::Add(_) = e {
+        if let AtomView::Add(_) | AtomView::Mul(_) = e {
             f.write_char('(').unwrap();
             e.fmt_output(f, print_mode, state).unwrap();
             f.write_char(')')

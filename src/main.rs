@@ -1,9 +1,13 @@
 use rug::Rational;
 use symbolica::{
     finite_field::{FiniteFieldU64, PrimeIteratorU64},
+    id::{MatchStack, Pattern, SubSliceIterator},
     parser::parse,
     printer::AtomPrinter,
-    representations::{number::Number, tree::AtomTree, OwnedAtom},
+    representations::{
+        default::DefaultRepresentation, number::Number, tree::AtomTree, AtomView, Identifier, Mul,
+        OwnedAtom,
+    },
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -183,8 +187,71 @@ fn parse_test() {
     println!(", rep bytes = {}", normalized_handle.get_buf().len());
 }
 
+fn pattern_test() {
+    let mut state = State::new();
+    let token = parse("x*y*w*z*f(x,y,x*y,z)").unwrap();
+
+    let pattern = vec![
+        Pattern::Var(state.get_or_insert_var("z")),
+        Pattern::Wildcard(Identifier::from(1), 1, 100),
+        Pattern::Wildcard(Identifier::from(2), 1, 100),
+        Pattern::Fn(
+            state.get_or_insert_var("f"),
+            vec![
+                Pattern::Wildcard(Identifier::from(3), 1, 100),
+                Pattern::Wildcard(Identifier::from(1), 1, 100),
+                Pattern::Wildcard(Identifier::from(4), 1, 100),
+            ],
+        ),
+    ];
+
+    let a = token.to_atom_tree(&mut state).unwrap();
+
+    let mut b = OwnedAtom::new();
+    b.from_tree(&a);
+
+    println!(
+        "Match pattern {:?} to {}:",
+        pattern,
+        AtomPrinter::new(b.to_view(), symbolica::printer::PrintMode::Form, &state),
+    );
+
+    if let AtomView::Mul(m) = b.to_view() {
+        let slice = m.to_slice();
+        let mut it =
+            SubSliceIterator::<DefaultRepresentation>::new(&pattern, slice, &state, false, false);
+
+        let mut matches = MatchStack::new();
+
+        while let Some(_) = it.next(&mut matches) {
+            println!("Match:");
+            for (id, v) in &matches {
+                print!("\t{}? = ", id.to_u32());
+                match v {
+                    symbolica::id::Match::Single(s) => print!(
+                        "{}",
+                        AtomPrinter::new(*s, symbolica::printer::PrintMode::Form, &state),
+                    ),
+                    symbolica::id::Match::Multiple(slice_type, mm) => {
+                        print!("{:?} ", slice_type);
+                        for vv in mm {
+                            print!(
+                                "{}",
+                                AtomPrinter::new(*vv, symbolica::printer::PrintMode::Form, &state),
+                            );
+                            print!(", ")
+                        }
+                    }
+                }
+                println!("");
+            }
+        }
+    }
+}
+
 fn main() {
     expression_test();
     finite_field_test();
     parse_test();
+    pattern_test();
 }

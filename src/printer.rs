@@ -17,7 +17,10 @@ macro_rules! define_formatters {
     ($($a:ident),*) => {
         $(
         trait $a {
-            fn print(&self);
+            fn fmt_debug(
+                &self,
+                f: &mut fmt::Formatter,
+            ) -> fmt::Result;
 
             fn fmt_output(
                 &self,
@@ -65,14 +68,14 @@ impl<'a, 'b, P: Atom> fmt::Display for AtomPrinter<'a, 'b, P> {
 }
 
 impl<'a, P: Atom> AtomView<'a, P> {
-    pub fn print(&self) {
+    fn fmt_debug(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            AtomView::Num(n) => n.print(),
-            AtomView::Var(v) => v.print(),
-            AtomView::Fun(f) => f.print(),
-            AtomView::Pow(p) => p.print(),
-            AtomView::Mul(m) => m.print(),
-            AtomView::Add(a) => a.print(),
+            AtomView::Num(n) => n.fmt_debug(fmt),
+            AtomView::Var(v) => v.fmt_debug(fmt),
+            AtomView::Fun(f) => f.fmt_debug(fmt),
+            AtomView::Pow(p) => p.fmt_debug(fmt),
+            AtomView::Mul(m) => m.fmt_debug(fmt),
+            AtomView::Add(a) => a.fmt_debug(fmt),
         }
     }
 
@@ -93,6 +96,12 @@ impl<'a, P: Atom> AtomView<'a, P> {
     }
 }
 
+impl<'a, P: Atom> fmt::Debug for AtomView<'a, P> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        self.fmt_debug(fmt)
+    }
+}
+
 impl<'a, A: Var<'a>> FormattedPrintVar for A {
     fn fmt_output(
         &self,
@@ -103,12 +112,30 @@ impl<'a, A: Var<'a>> FormattedPrintVar for A {
         f.write_str(state.get_name(self.get_name()).unwrap())
     }
 
-    fn print(&self) {
-        print!("v_{}", self.get_name().to_u32());
+    fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_fmt(format_args!("v_{}", self.get_name().to_u32()))
     }
 }
 
 impl<'a, A: Num<'a>> FormattedPrintNum for A {
+    fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let d = self.get_number_view();
+
+        match d {
+            BorrowedNumber::Natural(num, den) => {
+                if den != 1 {
+                    f.write_fmt(format_args!("{}/{}", num, den))
+                } else {
+                    f.write_fmt(format_args!("{}", num))
+                }
+            }
+            BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r)),
+            BorrowedNumber::FiniteField(num, fi) => {
+                f.write_fmt(format_args!("[m_{}%f_{}]", num.0, fi.0))
+            }
+        }
+    }
+
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -132,27 +159,29 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
             }
         }
     }
-
-    fn print(&self) {
-        let d = self.get_number_view();
-
-        match d {
-            BorrowedNumber::Natural(num, den) => {
-                if den != 1 {
-                    print!("{}/{}", num, den)
-                } else {
-                    print!("{}", num)
-                }
-            }
-            BorrowedNumber::Large(r) => print!("{}", r),
-            BorrowedNumber::FiniteField(num, fi) => {
-                print!("[m_{}%f_{}]", num.0, fi.0);
-            }
-        }
-    }
 }
 
 impl<'a, A: Mul<'a>> FormattedPrintMul for A {
+    fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut it = self.into_iter();
+        let mut first = true;
+        while let Some(x) = it.next() {
+            if !first {
+                f.write_char('*')?;
+            }
+            first = false;
+
+            if let AtomView::Add(_) = x {
+                f.write_char('(')?;
+                x.fmt_debug(f)?;
+                f.write_char(')')?;
+            } else {
+                x.fmt_debug(f)?;
+            }
+        }
+        Ok(())
+    }
+
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -163,38 +192,19 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
         let mut first = true;
         while let Some(x) = it.next() {
             if !first {
-                f.write_char('*').unwrap();
+                f.write_char('*')?;
             }
             first = false;
 
             if let AtomView::Add(_) = x {
-                f.write_char('(').unwrap();
-                x.fmt_output(f, print_mode, state).unwrap();
-                f.write_char(')').unwrap();
+                f.write_char('(')?;
+                x.fmt_output(f, print_mode, state)?;
+                f.write_char(')')?;
             } else {
-                x.fmt_output(f, print_mode, state).unwrap();
+                x.fmt_output(f, print_mode, state)?;
             }
         }
         Ok(())
-    }
-
-    fn print(&self) {
-        let mut it = self.into_iter();
-        let mut first = true;
-        while let Some(x) = it.next() {
-            if !first {
-                print!("*");
-            }
-            first = false;
-
-            if let AtomView::Add(_) = x {
-                print!("(");
-                x.print();
-                print!(")");
-            } else {
-                x.print();
-            }
-        }
     }
 }
 
@@ -205,9 +215,8 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         print_mode: PrintMode,
         state: &State,
     ) -> fmt::Result {
-        f.write_str(state.get_name(self.get_name()).unwrap())
-            .unwrap();
-        f.write_char('(').unwrap();
+        f.write_str(state.get_name(self.get_name()).unwrap())?;
+        f.write_char('(')?;
 
         let mut it = self.into_iter();
         let mut first = true;
@@ -217,14 +226,14 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
             }
             first = false;
 
-            x.fmt_output(f, print_mode, state).unwrap();
+            x.fmt_output(f, print_mode, state)?;
         }
 
         f.write_char(')')
     }
 
-    fn print(&self) {
-        print!("f_{}(", self.get_name().to_u32());
+    fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_fmt(format_args!("f_{}(", self.get_name().to_u32()))?;
 
         let mut it = self.into_iter();
         let mut first = true;
@@ -234,10 +243,10 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
             }
             first = false;
 
-            x.print();
+            x.fmt_debug(f)?;
         }
 
-        print!(")")
+        f.write_char(')')
     }
 }
 
@@ -250,44 +259,44 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
     ) -> fmt::Result {
         let b = self.get_base();
         if let AtomView::Add(_) | AtomView::Mul(_) = b {
-            f.write_char('(').unwrap();
-            b.fmt_output(f, print_mode, state).unwrap();
-            f.write_char(')').unwrap();
+            f.write_char('(')?;
+            b.fmt_output(f, print_mode, state)?;
+            f.write_char(')')?;
         } else {
-            b.fmt_output(f, print_mode, state).unwrap();
+            b.fmt_output(f, print_mode, state)?;
         }
 
-        f.write_char('^').unwrap();
+        f.write_char('^')?;
 
         let e = self.get_exp();
         if let AtomView::Add(_) | AtomView::Mul(_) = e {
-            f.write_char('(').unwrap();
-            e.fmt_output(f, print_mode, state).unwrap();
+            f.write_char('(')?;
+            e.fmt_output(f, print_mode, state)?;
             f.write_char(')')
         } else {
             e.fmt_output(f, print_mode, state)
         }
     }
 
-    fn print(&self) {
+    fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let b = self.get_base();
-        if let AtomView::Add(_) = b {
-            print!("(");
-            b.print();
-            print!(")");
+        if let AtomView::Add(_) | AtomView::Mul(_) = b {
+            f.write_char('(')?;
+            b.fmt_debug(f)?;
+            f.write_char(')')?;
         } else {
-            b.print();
+            b.fmt_debug(f)?;
         }
 
-        print!("^");
+        f.write_char('^')?;
 
         let e = self.get_exp();
-        if let AtomView::Add(_) = e {
-            print!("(");
-            e.print();
-            print!(")");
+        if let AtomView::Add(_) | AtomView::Mul(_) = e {
+            f.write_char('(')?;
+            e.fmt_debug(f)?;
+            f.write_char(')')
         } else {
-            e.print();
+            e.fmt_debug(f)
         }
     }
 }
@@ -303,25 +312,26 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
         let mut first = true;
         while let Some(x) = it.next() {
             if !first {
-                f.write_char('+').unwrap();
+                f.write_char('+')?;
             }
             first = false;
 
-            x.fmt_output(f, print_mode, state).unwrap();
+            x.fmt_output(f, print_mode, state)?;
         }
         Ok(())
     }
 
-    fn print(&self) {
+    fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut it = self.into_iter();
         let mut first = true;
         while let Some(x) = it.next() {
             if !first {
-                print!("+");
+                f.write_char('+')?;
             }
             first = false;
 
-            x.print();
+            x.fmt_debug(f)?;
         }
+        Ok(())
     }
 }

@@ -8,7 +8,7 @@ use super::{
     number::{BorrowedNumber, Number, PackedRationalNumberReader, PackedRationalNumberWriter},
     tree::AtomTree,
     Add, Atom, AtomView, Convert, Fun, Identifier, ListIterator, ListSlice, Mul, Num, OwnedAdd,
-    OwnedAtom, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+    OwnedAtom, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, SliceType, Var,
 };
 
 const NUM_ID: u8 = 1;
@@ -694,6 +694,7 @@ impl Atom for DefaultRepresentation {
     type OP = OwnedPowD;
     type OM = OwnedMulD;
     type OA = OwnedAddD;
+    type S<'a> = ListSliceD<'a>;
 }
 
 impl<'a> Var<'a> for VarViewD<'a> {
@@ -939,6 +940,21 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     fn to_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Fun(self.clone())
     }
+
+    fn to_slice(&self) -> ListSliceD<'a> {
+        let mut c = self.data;
+        c.get_u8();
+        c.get_u32_le(); // size
+
+        let n_args;
+        (_, n_args, c) = c.get_frac_i64(); // name
+
+        ListSliceD {
+            data: c,
+            length: n_args as usize,
+            slice_type: SliceType::Arg,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq)]
@@ -1036,7 +1052,6 @@ impl<'a, 'b> PartialEq<MulViewD<'b>> for MulViewD<'a> {
 impl<'a> Mul<'a> for MulViewD<'a> {
     type P = DefaultRepresentation;
     type I = ListIteratorD<'a>;
-    type S = ListSliceD<'a>;
 
     fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
@@ -1065,7 +1080,7 @@ impl<'a> Mul<'a> for MulViewD<'a> {
         AtomView::Mul(self.clone())
     }
 
-    fn to_slice(&self) -> Self::S {
+    fn to_slice(&self) -> ListSliceD<'a> {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -1076,6 +1091,7 @@ impl<'a> Mul<'a> for MulViewD<'a> {
         ListSliceD {
             data: c,
             length: n_args as usize,
+            slice_type: SliceType::Mul,
         }
     }
 }
@@ -1235,6 +1251,7 @@ impl<'a> ListIterator<'a> for ListIteratorD<'a> {
 pub struct ListSliceD<'a> {
     data: &'a [u8],
     length: usize,
+    slice_type: SliceType,
 }
 
 impl<'a> ListSliceD<'a> {
@@ -1289,6 +1306,7 @@ impl<'a> ListSliceD<'a> {
         ListSliceD {
             data: pos,
             length: self.length - index,
+            slice_type: self.slice_type,
         }
     }
 
@@ -1346,11 +1364,16 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
         ListSliceD {
             data: &start.data[..len],
             length: range.len(),
+            slice_type: self.slice_type,
         }
     }
 
     fn eq<'b>(&self, other: &ListSliceD<'b>) -> bool {
         self.data == other.data
+    }
+
+    fn get_type(&self) -> SliceType {
+        self.slice_type
     }
 }
 
@@ -1409,5 +1432,5 @@ pub fn representation_size() {
         panic!("in and out is different: {:?} vs {:?}", a, c);
     }
 
-    b.to_view().print();
+    println!("{:?}", b.to_view());
 }

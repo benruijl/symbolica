@@ -44,6 +44,7 @@ pub trait Atom: PartialEq {
     type OP: OwnedPow<P = Self>;
     type OM: OwnedMul<P = Self>;
     type OA: OwnedAdd<P = Self>;
+    type S<'a>: ListSlice<'a, P = Self>;
 }
 
 /// Convert the owned atoms by recycling and clearing their interal buffers.
@@ -112,7 +113,7 @@ pub trait OwnedAdd: ResettableBuffer + Convert<Self::P> {
     fn to_add_view<'a>(&'a self) -> <Self::P as Atom>::A<'a>;
 }
 
-pub trait Num<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
+pub trait Num<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
     type P: Atom;
 
     fn is_zero(&self) -> bool;
@@ -122,14 +123,14 @@ pub trait Num<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
     fn to_view(&self) -> AtomView<'a, Self::P>;
 }
 
-pub trait Var<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::V<'b>> {
+pub trait Var<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::V<'b>> {
     type P: Atom;
 
     fn get_name(&self) -> Identifier;
     fn to_view(&self) -> AtomView<'a, Self::P>;
 }
 
-pub trait Fun<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::F<'b>> {
+pub trait Fun<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::F<'b>> {
     type P: Atom;
     type I: ListIterator<'a, P = Self::P>;
 
@@ -139,9 +140,10 @@ pub trait Fun<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::F<'b>> {
     fn cmp(&self, other: &Self) -> Ordering;
     fn into_iter(&self) -> Self::I;
     fn to_view(&self) -> AtomView<'a, Self::P>;
+    fn to_slice(&self) -> <Self::P as Atom>::S<'a>;
 }
 
-pub trait Pow<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::P<'b>> {
+pub trait Pow<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::P<'b>> {
     type P: Atom;
 
     fn get_base(&self) -> AtomView<'a, Self::P>;
@@ -151,19 +153,18 @@ pub trait Pow<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::P<'b>> {
     fn to_view(&self) -> AtomView<'a, Self::P>;
 }
 
-pub trait Mul<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
+pub trait Mul<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
     type P: Atom;
     type I: ListIterator<'a, P = Self::P>;
-    type S: ListSlice<'a, P = Self::P>;
 
     fn is_dirty(&self) -> bool;
     fn get_nargs(&self) -> usize;
     fn into_iter(&self) -> Self::I;
     fn to_view(&self) -> AtomView<'a, Self::P>;
-    fn to_slice(&self) -> Self::S;
+    fn to_slice(&self) -> <Self::P as Atom>::S<'a>;
 }
 
-pub trait Add<'a>: Clone + for<'b> PartialEq<<Self::P as Atom>::A<'b>> {
+pub trait Add<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::A<'b>> {
     type P: Atom;
     type I: ListIterator<'a, P = Self::P>;
 
@@ -178,15 +179,22 @@ pub trait ListIterator<'a>: Clone {
     fn next(&mut self) -> Option<AtomView<'a, Self::P>>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SliceType {
+    Add,
+    Mul,
+    Arg,
+}
+
 pub trait ListSlice<'a>: Clone {
     type P: Atom;
+    fn get_type(&self) -> SliceType;
     fn len(&self) -> usize;
     fn get(&self, index: usize) -> AtomView<'a, Self::P>;
     fn get_subslice(&self, range: Range<usize>) -> Self;
     fn eq(&self, other: &Self) -> bool;
 }
 
-#[derive(Debug, Copy, Clone)]
 pub enum AtomView<'a, P: Atom> {
     Num(P::N<'a>),
     Var(P::V<'a>),
@@ -195,6 +203,21 @@ pub enum AtomView<'a, P: Atom> {
     Mul(P::M<'a>),
     Add(P::A<'a>),
 }
+
+impl<'a, P: Atom> Clone for AtomView<'a, P> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Num(arg0) => Self::Num(arg0.clone()),
+            Self::Var(arg0) => Self::Var(arg0.clone()),
+            Self::Fun(arg0) => Self::Fun(arg0.clone()),
+            Self::Pow(arg0) => Self::Pow(arg0.clone()),
+            Self::Mul(arg0) => Self::Mul(arg0.clone()),
+            Self::Add(arg0) => Self::Add(arg0.clone()),
+        }
+    }
+}
+
+impl<'a, P: Atom> Copy for AtomView<'a, P> {}
 
 impl<'a, 'b, P: Atom> PartialEq<AtomView<'b, P>> for AtomView<'a, P> {
     fn eq(&self, other: &AtomView<P>) -> bool {

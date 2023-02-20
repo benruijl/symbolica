@@ -1036,6 +1036,14 @@ impl<'a> Pow<'a> for PowViewD<'a> {
     fn to_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Pow(self.clone())
     }
+
+    fn to_slice(&self) -> ListSliceD<'a> {
+        ListSliceD {
+            data: &self.data[1..],
+            length: 2,
+            slice_type: SliceType::Pow,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq)]
@@ -1137,6 +1145,21 @@ impl<'a> Add<'a> for AddViewD<'a> {
     fn to_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Add(self.clone())
     }
+
+    fn to_slice(&self) -> ListSliceD<'a> {
+        let mut c = self.data;
+        c.get_u8();
+        c.get_u32_le(); // size
+
+        let n_args;
+        (n_args, _, c) = c.get_frac_i64();
+
+        ListSliceD {
+            data: c,
+            length: n_args as usize,
+            slice_type: SliceType::Add,
+        }
+    }
 }
 
 impl<'a> AtomView<'a, DefaultRepresentation> {
@@ -1152,7 +1175,7 @@ impl<'a> AtomView<'a, DefaultRepresentation> {
         }
     }
 
-    pub fn get_data(&self) -> &[u8] {
+    pub fn get_data(&self) -> &'a [u8] {
         match self {
             AtomView::Num(n) => n.data,
             AtomView::Var(v) => v.data,
@@ -1374,6 +1397,14 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
 
     fn get_type(&self) -> SliceType {
         self.slice_type
+    }
+
+    fn from_one(view: AtomView<'a, Self::P>) -> Self {
+        ListSliceD {
+            data: view.get_data(),
+            length: 1,
+            slice_type: SliceType::One,
+        }
     }
 }
 

@@ -5,8 +5,10 @@ use symbolica::{
     parser::parse,
     printer::AtomPrinter,
     representations::{
-        default::DefaultRepresentation, number::Number, tree::AtomTree, AtomView, Identifier, Mul,
-        OwnedAtom,
+        default::{DefaultRepresentation, OwnedVarD},
+        number::Number,
+        tree::AtomTree,
+        AtomView, Identifier, Mul, OwnedAtom, OwnedVar,
     },
     state::{ResettableBuffer, State, Workspace},
 };
@@ -191,16 +193,20 @@ fn pattern_test() {
     let mut state = State::new();
     let token = parse("x*y*w*z*f(x,y,x*y,z)").unwrap();
 
+    let mut ov = OwnedVarD::new();
+    ov.from_id(state.get_or_insert_var("z"));
+
     let pattern = vec![
-        Pattern::Var(state.get_or_insert_var("z")),
-        Pattern::Wildcard(Identifier::from(1), 1, 100),
-        Pattern::Wildcard(Identifier::from(2), 1, 100),
+        Pattern::Literal(OwnedAtom::<DefaultRepresentation>::Var(ov)),
+        Pattern::Wildcard(state.get_or_insert_var("x_"), 1, 100),
+        Pattern::Wildcard(state.get_or_insert_var("y_"), 1, 100),
         Pattern::Fn(
-            state.get_or_insert_var("f"),
+            state.get_or_insert_var("g"),
+            true, // name is wildcard
             vec![
-                Pattern::Wildcard(Identifier::from(3), 1, 100),
-                Pattern::Wildcard(Identifier::from(1), 1, 100),
-                Pattern::Wildcard(Identifier::from(4), 1, 100),
+                Pattern::Wildcard(state.get_or_insert_var("z_"), 1, 100),
+                Pattern::Wildcard(state.get_or_insert_var("x_"), 1, 100),
+                Pattern::Wildcard(state.get_or_insert_var("w_"), 1, 100),
             ],
         ),
     ];
@@ -242,6 +248,7 @@ fn pattern_test() {
                             print!(", ")
                         }
                     }
+                    symbolica::id::Match::FunctionName(f) => print!("Fn {}", f.to_u32()),
                 }
                 println!("");
             }

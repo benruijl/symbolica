@@ -190,6 +190,7 @@ pub enum SliceType {
     Arg,
     One,
     Pow,
+    Empty,
 }
 
 pub trait ListSlice<'a>: Clone {

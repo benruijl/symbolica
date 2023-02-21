@@ -113,6 +113,7 @@ impl<'a, 'b, P: Atom> IntoIterator for &'b MatchStack<'a, P> {
 }
 
 struct WildcardIter {
+    initialized: bool,
     name: Identifier,
     indices: SmallVec<[u32; 10]>,
     size_target: u32,
@@ -176,7 +177,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
             })
             .sum();
 
-        if pattern.len() > target.len() + min_length {
+        if min_length > target.len() {
             shortcut_done = true;
         };
 
@@ -236,6 +237,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                 // add new iterator
                 let it = match &self.pattern[self.iterators.len()] {
                     Pattern::Wildcard(name, min, max) => PatternIter::Wildcard(WildcardIter {
+                        initialized: false,
                         name: *name,
                         indices: SmallVec::new(),
                         size_target: *min as u32,
@@ -272,12 +274,12 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
             match self.iterators.last_mut().unwrap() {
                 PatternIter::Wildcard(w) => {
                     // using empty list as toggle for initialized state of iterator
-                    // TODO: does not work when empty list is valid solution
-                    let mut wildcard_forward_pass = w.indices.is_empty();
+                    let mut wildcard_forward_pass = !w.initialized;
 
                     'next_wildcard_match: while !wildcard_forward_pass
-                        || w.indices.len() < w.max_size as usize
+                        || w.indices.len() <= w.max_size as usize
                     {
+                        w.initialized = true;
                         // a wildcard collects indices in increasing order
                         let start_index = w.indices.last().map(|x| *x as usize + 1).unwrap_or(0);
 
@@ -303,6 +305,19 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                             } else if self.ordered_gapless {
                                 // after the first match, fall back to an empty iterator
                                 // then a size increase will be performed
+                                continue 'next_wildcard_match;
+                            }
+                        }
+
+                        // check for an empty slice match
+                        if w.size_target == 0 && w.indices.is_empty() {
+                            if let Some(new_stack_len) = match_stack
+                                .insert(w.name, Match::Multiple(SliceType::Empty, SmallVec::new()))
+                            {
+                                self.matches.push(new_stack_len);
+                                continue 'next_match;
+                            } else {
+                                wildcard_forward_pass = false;
                                 continue 'next_wildcard_match;
                             }
                         }

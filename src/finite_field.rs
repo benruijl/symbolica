@@ -194,6 +194,10 @@ pub fn is_prime_u64(n: u64) -> bool {
     // shortest SPRP basis from Jim Sinclair for testing primality of u64
     let witnesses: [u64; 7] = [2, 325, 9375, 28178, 450775, 9780504, 1795265022];
 
+    if n < 2 {
+        return false;
+    }
+
     if n % 2 == 0 {
         return n == 2;
     }

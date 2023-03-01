@@ -9,7 +9,7 @@ use self::number::{BorrowedNumber, Number};
 
 /// An identifier, for example for a variable or function.
 /// Should be created using `get_or_insert` of `State`.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Identifier(u32);
 
 impl std::fmt::Debug for Identifier {

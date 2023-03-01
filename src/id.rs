@@ -1,3 +1,4 @@
+use ahash::HashMap;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
 };
 
 pub enum Pattern<P: Atom> {
-    Wildcard(Identifier, usize, usize),    // min range, max range
+    Wildcard(Identifier),
     Fn(Identifier, bool, Vec<Pattern<P>>), // bool signifies that the identifier is a wildcard
     Pow(Box<[Pattern<P>; 2]>),
     Mul(Vec<Pattern<P>>),
@@ -65,7 +66,7 @@ impl<P: Atom> Pattern<P> {
     pub fn from_view(atom: AtomView<'_, P>, state: &State) -> Pattern<P> {
         if Self::has_wildcard(atom, state) {
             match atom {
-                AtomView::Var(v) => Pattern::Wildcard(v.get_name(), 1, 100), // TODO: move restrictions
+                AtomView::Var(v) => Pattern::Wildcard(v.get_name()),
                 AtomView::Fun(f) => {
                     let name = f.get_name();
 
@@ -119,12 +120,7 @@ impl<P: Atom> Pattern<P> {
 impl<P: Atom> std::fmt::Debug for Pattern<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Wildcard(arg0, arg1, arg2) => f
-                .debug_tuple("Wildcard")
-                .field(arg0)
-                .field(arg1)
-                .field(arg2)
-                .finish(),
+            Self::Wildcard(arg0) => f.debug_tuple("Wildcard").field(arg0).finish(),
             Self::Fn(arg0, arg1, arg2) => f
                 .debug_tuple("Fn")
                 .field(arg0)
@@ -137,6 +133,23 @@ impl<P: Atom> std::fmt::Debug for Pattern<P> {
             Self::Literal(arg0) => f.debug_tuple("Literal").field(arg0).finish(),
         }
     }
+}
+
+/// Restrictions for a wildcard. Note that a length restriction
+/// applies at any level and therefore
+/// `x_*f(x_) : length(x) == 2`
+/// does not match to `x*y*f(x*y)`, since the pattern `x_` has length
+/// 1 inside the function argument.
+pub enum PatternRestriction<P>
+where
+    P: Atom,
+{
+    Length(usize, Option<usize>), // min-max range
+    Filter(Box<dyn Fn(&Match<'_, P>) -> bool>),
+    Cmp(
+        Identifier,
+        Box<dyn Fn(&Match<'_, P>, &Match<'_, P>) -> bool>,
+    ),
 }
 
 #[derive(Clone, PartialEq)]
@@ -157,48 +170,140 @@ impl<'a, P: Atom> std::fmt::Debug for Match<'a, P> {
 }
 
 /// An insertion-ordered map of wildcard identifiers to a subexpressions.
-pub struct MatchStack<'a, P: Atom>(Vec<(Identifier, Match<'a, P>)>);
+/// It keeps track of all restrictions on wilcards and will check them
+/// before inserting.
+pub struct MatchStack<'a, P: Atom> {
+    stack: Vec<(Identifier, Match<'a, P>)>,
+    restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
+}
 
 impl<'a, P: Atom> std::fmt::Debug for MatchStack<'a, P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("MatchStack").field(&self.0).finish()
+        f.debug_struct("MatchStack")
+            .field("stack", &self.stack)
+            .finish()
     }
 }
 
 impl<'a, P: Atom> MatchStack<'a, P> {
     /// Create a new match stack.
-    pub fn new() -> MatchStack<'a, P> {
-        MatchStack(Vec::new())
+    pub fn new(
+        restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
+    ) -> MatchStack<'a, P> {
+        MatchStack {
+            stack: Vec::new(),
+            restrictions,
+        }
     }
 
     /// Add a new map of identifier `key` to value `value` to the stack and return the size the stack had inserting this new entry.
     /// If the entry `(key, value)` already exists, it is not inserted again and therefore the returned size is the actual size.
     /// If the `key` exists in the map, but the `value` is different, the insertion is ignored and `None` is returned.
     pub fn insert(&mut self, key: Identifier, value: Match<'a, P>) -> Option<usize> {
-        for (rk, rv) in self.0.iter() {
+        for (rk, rv) in self.stack.iter() {
             if rk == &key {
                 if rv == &value {
-                    return Some(self.0.len());
+                    return Some(self.stack.len());
                 } else {
                     return None;
                 }
             }
         }
 
-        self.0.push((key, value));
-        Some(self.0.len() - 1)
+        // test whether the current value passes all restrictions
+        if let Some(res) = self.restrictions.get(&key) {
+            for r in res {
+                match r {
+                    PatternRestriction::Length(min, max) => match &value {
+                        Match::Single(_) | Match::FunctionName(_) => {
+                            if *min <= 1 && max.map(|m| m >= 1).unwrap_or(true) {
+                                continue;
+                            }
+                        }
+                        Match::Multiple(_, slice) => {
+                            if *min <= slice.len() && max.map(|m| m >= slice.len()).unwrap_or(true)
+                            {
+                                continue;
+                            }
+                        }
+                    },
+                    PatternRestriction::Filter(f) => {
+                        if f(&value) {
+                            continue;
+                        }
+                    }
+                    PatternRestriction::Cmp(other_id, f) => {
+                        // get match stack to get the value of other_id
+                        if let Some((_, value2)) = self.stack.iter().find(|(k, _)| k == other_id) {
+                            if f(&value, value2) {
+                                continue;
+                            }
+                        } else {
+                            // TODO: if the value does not exist, add this check to a list of TODOs
+                            continue;
+                        }
+                    }
+                }
+
+                return None;
+            }
+        }
+
+        self.stack.push((key, value));
+        Some(self.stack.len() - 1)
     }
 
     /// Return the length of the stack.
     #[inline]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.stack.len()
     }
 
     /// Truncate the stack to `len`.
     #[inline]
     pub fn truncate(&mut self, len: usize) {
-        self.0.truncate(len)
+        self.stack.truncate(len)
+    }
+
+    /// Get the range of an identifier based on previous matches and based
+    /// on restrictions.
+    pub fn get_range(&self, identifier: Identifier) -> (usize, Option<usize>) {
+        for (rk, rv) in self.stack.iter() {
+            if rk == &identifier {
+                return match rv {
+                    Match::Single(_) => (1, Some(1)),
+                    Match::Multiple(slice_type, slice) => {
+                        match slice_type {
+                            SliceType::Empty => (0, Some(0)),
+                            SliceType::Arg => (slice.len(), Some(slice.len())),
+                            _ => {
+                                // the length needs to include 1 since for example x*y is only
+                                // length one in f(x*y)
+                                // TODO: the length can only be 1 or slice.len() and no values in between
+                                // so we could optimize this
+                                (1, Some(slice.len()))
+                            }
+                        }
+                    }
+                    Match::FunctionName(_) => (1, Some(1)),
+                };
+            }
+        }
+
+        let mut minimal = None;
+        let mut maximal = None;
+
+        if let Some(res) = self.restrictions.get(&identifier) {
+            for r in res {
+                if let PatternRestriction::Length(min, max) = r {
+                    minimal = Some(minimal.map_or(*min, |v: usize| v.max(*min)));
+                    maximal = max.map_or(maximal, |v| Some(maximal.map_or(v, |v1| v.min(v1))));
+                }
+            }
+        }
+
+        // defaulft the minimum to 1
+        (minimal.unwrap_or(1), maximal)
     }
 }
 
@@ -207,7 +312,7 @@ impl<'a, 'b, P: Atom> IntoIterator for &'b MatchStack<'a, P> {
     type IntoIter = std::slice::Iter<'b, (Identifier, Match<'a, P>)>;
 
     fn into_iter(self) -> Self::IntoIter {
-        (&self.0).into_iter()
+        (&self.stack).into_iter()
     }
 }
 
@@ -262,6 +367,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
         pattern: &'b Pattern<P>,
         target: AtomView<'a, P>,
         state: &'a State,
+        match_stack: &MatchStack<'a, P>,
     ) -> SubSliceIterator<'a, 'b, P> {
         let mut shortcut_done = false;
 
@@ -285,7 +391,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
         let min_length: usize = pat_list
             .iter()
             .map(|x| match x {
-                Pattern::Wildcard(_, min_size, _) => *min_size,
+                Pattern::Wildcard(id) => match_stack.get_range(*id).0,
                 _ => 1,
             })
             .sum();
@@ -312,6 +418,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
         pattern: &'b [Pattern<P>],
         target: P::S<'a>,
         state: &'a State,
+        match_stack: &MatchStack<'a, P>,
         complete: bool,
         ordered: bool,
     ) -> SubSliceIterator<'a, 'b, P> {
@@ -321,7 +428,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
         let min_length: usize = pattern
             .iter()
             .map(|x| match x {
-                Pattern::Wildcard(_, min_size, _) => *min_size,
+                Pattern::Wildcard(id) => match_stack.get_range(*id).0,
                 _ => 1,
             })
             .sum();
@@ -333,7 +440,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
         let max_length: usize = pattern
             .iter()
             .map(|x| match x {
-                Pattern::Wildcard(_, _, max_size) => *max_size,
+                Pattern::Wildcard(id) => match_stack.get_range(*id).1.unwrap_or(target.len()),
                 _ => 1,
             })
             .sum();
@@ -385,13 +492,17 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
             if forward_pass {
                 // add new iterator
                 let it = match &self.pattern[self.iterators.len()] {
-                    Pattern::Wildcard(name, min, max) => PatternIter::Wildcard(WildcardIter {
-                        initialized: false,
-                        name: *name,
-                        indices: SmallVec::new(),
-                        size_target: *min as u32,
-                        max_size: *max as u32,
-                    }),
+                    Pattern::Wildcard(name) => {
+                        let range = match_stack.get_range(*name);
+
+                        PatternIter::Wildcard(WildcardIter {
+                            initialized: false,
+                            name: *name,
+                            indices: SmallVec::new(),
+                            size_target: range.0 as u32,
+                            max_size: range.1.unwrap_or(self.target.len()) as u32,
+                        })
+                    }
                     Pattern::Fn(name, is_wildcard, args) => {
                         PatternIter::Fn(None, *name, *is_wildcard, args, Box::new(None))
                     }
@@ -597,6 +708,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                                     args,
                                     f.to_slice(),
                                     &self.state,
+                                    &match_stack,
                                     true,
                                     true,
                                 );
@@ -699,8 +811,14 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                             _ => unreachable!(),
                         };
 
-                        let mut it =
-                            SubSliceIterator::from_list(pattern, slice, &self.state, true, ordered);
+                        let mut it = SubSliceIterator::from_list(
+                            pattern,
+                            slice,
+                            &self.state,
+                            &match_stack,
+                            true,
+                            ordered,
+                        );
 
                         if let Some(x) = it.next(match_stack) {
                             *index = Some(ii);
@@ -779,6 +897,7 @@ impl<'a, 'b, P: Atom> PatternAtomTreeIterator<'a, 'b, P> {
         pattern: &'b Pattern<P>,
         target: AtomView<'a, P>,
         state: &'a State,
+        restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
     ) -> PatternAtomTreeIterator<'a, 'b, P> {
         PatternAtomTreeIterator {
             pattern,
@@ -786,7 +905,7 @@ impl<'a, 'b, P: Atom> PatternAtomTreeIterator<'a, 'b, P> {
             current_target: None,
             pattern_iter: None,
             state,
-            match_stack: MatchStack::new(),
+            match_stack: MatchStack::new(restrictions),
             level: 0,
         }
     }
@@ -804,7 +923,12 @@ impl<'a, 'b, P: Atom> PatternAtomTreeIterator<'a, 'b, P> {
                         continue;
                     }
                 } else {
-                    self.pattern_iter = Some(SubSliceIterator::new(self.pattern, ct, self.state));
+                    self.pattern_iter = Some(SubSliceIterator::new(
+                        self.pattern,
+                        ct,
+                        self.state,
+                        &self.match_stack,
+                    ));
                 }
             } else {
                 let tree_pos = self.atom_tree_iterator.next();

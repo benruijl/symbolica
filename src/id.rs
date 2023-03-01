@@ -121,19 +121,19 @@ struct WildcardIter {
 }
 
 enum PatternIter<'a, 'b, P: Atom> {
-    Literal(Option<usize>, AtomView<'a, P>),
+    Literal(Option<usize>, AtomView<'b, P>),
     Wildcard(WildcardIter),
     Fn(
         Option<usize>,
         Identifier,
         bool,
-        &'a [Pattern<P>],
+        &'b [Pattern<P>],
         Box<Option<SubSliceIterator<'a, 'b, P>>>,
     ), // index first
     Sequence(
         Option<usize>,
         SliceType,
-        &'a [Pattern<P>],
+        &'b [Pattern<P>],
         Box<Option<SubSliceIterator<'a, 'b, P>>>,
     ),
 }
@@ -146,23 +146,73 @@ enum PatternIter<'a, 'b, P: Atom> {
 /// may match the slice of atoms in any order. For a non-symmetric function, this
 /// flag should likely be set.
 pub struct SubSliceIterator<'a, 'b, P: Atom> {
-    pattern: &'a [Pattern<P>], // input term
-    target: P::S<'b>,
+    pattern: &'b [Pattern<P>], // input term
+    target: P::S<'a>,
     iterators: SmallVec<[PatternIter<'a, 'b, P>; 10]>,
     used_flag: SmallVec<[bool; 10]>,
     initialized: bool,
     matches: SmallVec<[usize; 10]>, // track match stack length
-    state: &'b State,
+    state: &'a State,
     complete: bool,        // match needs to consume entire target
     ordered_gapless: bool, // pattern should appear ordered and have no gaps
 }
 
 impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
-    /// Create a new sub-slice iterator.
+    /// Create an iterator over a pattern applied to a target.
     pub fn new(
-        pattern: &'a [Pattern<P>],
-        target: P::S<'b>,
-        state: &'b State,
+        pattern: &'b Pattern<P>,
+        target: AtomView<'a, P>,
+        state: &'a State,
+    ) -> SubSliceIterator<'a, 'b, P> {
+        let mut shortcut_done = false;
+
+        // a pattern and target can either be a single atom or a list
+        // for (list, list)  create a subslice iterator on the lists that is not complete
+        // for (single, list), upgrade single to a slice with one element
+
+        let (pat_list, target_list) = match (pattern, target) {
+            (Pattern::Mul(m1), AtomView::Mul(m2)) => (m1.as_slice(), m2.to_slice()),
+            (Pattern::Add(a1), AtomView::Add(a2)) => (a1.as_slice(), a2.to_slice()),
+            (Pattern::Mul(arg) | Pattern::Add(arg), _) => {
+                shortcut_done = true; // cannot match
+                (arg.as_slice(), ListSlice::from_one(target))
+            }
+            (_, AtomView::Mul(m2)) => (std::slice::from_ref(pattern), m2.to_slice()),
+            (_, AtomView::Add(a2)) => (std::slice::from_ref(pattern), a2.to_slice()),
+            (_, _) => (std::slice::from_ref(pattern), ListSlice::from_one(target)),
+        };
+
+        // shortcut if the number of arguments is wrong
+        let min_length: usize = pat_list
+            .iter()
+            .map(|x| match x {
+                Pattern::Wildcard(_, min_size, _) => *min_size,
+                _ => 1,
+            })
+            .sum();
+
+        if min_length > target_list.len() {
+            shortcut_done = true;
+        };
+
+        SubSliceIterator {
+            pattern: pat_list,
+            iterators: SmallVec::new(),
+            matches: SmallVec::new(),
+            used_flag: smallvec![false; target_list.len()],
+            target: target_list,
+            state,
+            initialized: shortcut_done,
+            complete: false,
+            ordered_gapless: false,
+        }
+    }
+
+    /// Create a new sub-slice iterator.
+    pub fn from_list(
+        pattern: &'b [Pattern<P>],
+        target: P::S<'a>,
+        state: &'a State,
         complete: bool,
         ordered: bool,
     ) -> SubSliceIterator<'a, 'b, P> {
@@ -211,7 +261,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
     /// matched. This value can be ignored by the end-user. If `None` is returned,
     /// all potential matches will have been generated and the iterator will generate
     /// `None` if called again.
-    pub fn next(&mut self, match_stack: &mut MatchStack<'b, P>) -> Option<usize> {
+    pub fn next(&mut self, match_stack: &mut MatchStack<'a, P>) -> Option<usize> {
         let mut forward_pass = !self.initialized;
 
         'next_match: loop {
@@ -444,7 +494,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                             };
 
                             if name_match {
-                                let mut it = SubSliceIterator::new(
+                                let mut it = SubSliceIterator::from_list(
                                     args,
                                     f.to_slice(),
                                     &self.state,
@@ -551,7 +601,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                         };
 
                         let mut it =
-                            SubSliceIterator::new(pattern, slice, &self.state, true, ordered);
+                            SubSliceIterator::from_list(pattern, slice, &self.state, true, ordered);
 
                         if let Some(x) = it.next(match_stack) {
                             *index = Some(ii);
@@ -570,6 +620,103 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
             // no match, so fall back one level
             forward_pass = false;
             self.iterators.pop();
+        }
+    }
+}
+
+pub struct AtomTreeIterator<'a, P: Atom> {
+    stack: SmallVec<[(Option<usize>, AtomView<'a, P>); 10]>,
+}
+
+impl<'a, P: Atom> AtomTreeIterator<'a, P> {
+    pub fn new(target: AtomView<'a, P>) -> AtomTreeIterator<'a, P> {
+        AtomTreeIterator {
+            stack: smallvec![(None, target)],
+        }
+    }
+
+    pub fn next(&mut self) -> Option<(usize, AtomView<'a, P>)> {
+        while let Some((ind, atom)) = self.stack.pop() {
+            if let Some(ind) = ind {
+                let slice = match atom {
+                    AtomView::Fun(f) => f.to_slice(),
+                    AtomView::Pow(p) => p.to_slice(),
+                    AtomView::Mul(m) => m.to_slice(),
+                    AtomView::Add(a) => a.to_slice(),
+                    _ => {
+                        continue; // not iterable
+                    }
+                };
+
+                if ind < slice.len() {
+                    let new_atom = slice.get(ind);
+
+                    self.stack.push((Some(ind + 1), atom));
+                    self.stack.push((None, new_atom)); // push the new element on the stack
+                }
+            } else {
+                // return full match and set the position to the first sub element
+                self.stack.push((Some(0), atom));
+                return Some((self.stack.len(), atom));
+            }
+        }
+
+        None
+    }
+}
+
+pub struct PatternAtomTreeIterator<'a, 'b, P: Atom> {
+    pattern: &'b Pattern<P>,
+    atom_tree_iterator: AtomTreeIterator<'a, P>,
+    current_target: Option<AtomView<'a, P>>,
+    pattern_iter: Option<SubSliceIterator<'a, 'b, P>>,
+    state: &'a State,
+    match_stack: MatchStack<'a, P>,
+    level: usize,
+}
+
+impl<'a, 'b, P: Atom> PatternAtomTreeIterator<'a, 'b, P> {
+    pub fn new(
+        pattern: &'b Pattern<P>,
+        target: AtomView<'a, P>,
+        state: &'a State,
+    ) -> PatternAtomTreeIterator<'a, 'b, P> {
+        PatternAtomTreeIterator {
+            pattern,
+            atom_tree_iterator: AtomTreeIterator::new(target),
+            current_target: None,
+            pattern_iter: None,
+            state,
+            match_stack: MatchStack::new(),
+            level: 0,
+        }
+    }
+
+    pub fn next(&mut self) -> Option<(usize, AtomView<'a, P>, &MatchStack<'a, P>)> {
+        loop {
+            if let Some(ct) = self.current_target {
+                if let Some(it) = self.pattern_iter.as_mut() {
+                    if let Some(_) = it.next(&mut self.match_stack) {
+                        return Some((self.level, ct, &self.match_stack));
+                    } else {
+                        // no match: bail
+                        self.current_target = None;
+                        self.pattern_iter = None;
+                        continue;
+                    }
+                } else {
+                    self.pattern_iter = Some(SubSliceIterator::new(self.pattern, ct, self.state));
+                }
+            } else {
+                let tree_pos = self.atom_tree_iterator.next();
+
+                if let Some(t) = tree_pos {
+                    self.level = t.0;
+                    self.current_target = Some(t.1);
+                } else {
+                    return None;
+                }
+            }
         }
     }
 }

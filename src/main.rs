@@ -1,15 +1,10 @@
 use rug::Rational;
 use symbolica::{
     finite_field::{FiniteFieldU64, PrimeIteratorU64},
-    id::{AtomTreeIterator, MatchStack, Pattern, PatternAtomTreeIterator, SubSliceIterator},
+    id::{Pattern, PatternAtomTreeIterator},
     parser::parse,
     printer::AtomPrinter,
-    representations::{
-        default::{DefaultRepresentation, OwnedVarD},
-        number::Number,
-        tree::AtomTree,
-        AtomView, Identifier, Mul, OwnedAtom, OwnedVar,
-    },
+    representations::{number::Number, tree::AtomTree, OwnedAtom},
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -191,37 +186,31 @@ fn parse_test() {
 
 fn pattern_test() {
     let mut state = State::new();
+
     let token = parse("x*y*w*z*f(x,y,x*y,z)").unwrap();
-
-    let mut ov = OwnedVarD::new();
-    ov.from_id(state.get_or_insert_var("z"));
-
-    let pattern = Pattern::Mul(vec![
-        Pattern::Literal(OwnedAtom::<DefaultRepresentation>::Var(ov)),
-        Pattern::Wildcard(state.get_or_insert_var("x_"), 1, 100),
-        Pattern::Wildcard(state.get_or_insert_var("y_"), 1, 100),
-        Pattern::Fn(
-            state.get_or_insert_var("g"),
-            true, // name is wildcard
-            vec![
-                Pattern::Wildcard(state.get_or_insert_var("z_"), 1, 100),
-                Pattern::Wildcard(state.get_or_insert_var("x_"), 1, 100),
-                Pattern::Wildcard(state.get_or_insert_var("w_"), 1, 100),
-            ],
-        ),
-    ]);
-
     let a = token.to_atom_tree(&mut state).unwrap();
-
     let mut b = OwnedAtom::new();
     b.from_tree(&a);
 
+    let pattern_token = parse("z*x_*y_*g_(z_,x_,w_)").unwrap();
+    let pat_a = pattern_token.to_atom_tree(&mut state).unwrap();
+    let mut pat_b = OwnedAtom::new();
+    pat_b.from_tree(&pat_a);
+
+    let pattern = Pattern::from_view(pat_b.to_view(), &state);
+
     let mut it = PatternAtomTreeIterator::new(&pattern, b.to_view(), &state);
+
+    println!(
+        "Matching pattern {} to {}:",
+        AtomPrinter::new(pat_b.to_view(), symbolica::printer::PrintMode::Form, &state),
+        AtomPrinter::new(b.to_view(), symbolica::printer::PrintMode::Form, &state)
+    );
 
     while let Some((level, _atom, match_stack)) = it.next() {
         println!("Match at level {}:", level);
         for (id, v) in match_stack {
-            print!("\t{}? = ", id.to_u32());
+            print!("\t{}? = ", state.get_name(*id).unwrap());
             match v {
                 symbolica::id::Match::Single(s) => print!(
                     "{}",
@@ -237,7 +226,9 @@ fn pattern_test() {
                         print!(", ")
                     }
                 }
-                symbolica::id::Match::FunctionName(f) => print!("Fn {}", f.to_u32()),
+                symbolica::id::Match::FunctionName(f) => {
+                    print!("Fn {}", state.get_name(*f).unwrap())
+                }
             }
             println!("");
         }

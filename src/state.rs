@@ -48,6 +48,10 @@ impl State {
         self.var_to_str_map.get(id.to_u32() as usize)
     }
 
+    pub fn is_wildcard(&self, id: Identifier) -> Option<bool> {
+        self.get_name(id).map(|n| n.ends_with('_'))
+    }
+
     pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteFieldU64 {
         &self.finite_fields[fi.0 as usize]
     }

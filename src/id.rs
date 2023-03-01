@@ -3,9 +3,9 @@ use smallvec::{smallvec, SmallVec};
 use crate::{
     representations::{
         Add, Atom, AtomView, Fun, Identifier, ListIterator, ListSlice, Mul, OwnedAtom, Pow,
-        SliceType,
+        SliceType, Var,
     },
-    state::State,
+    state::{ResettableBuffer, State},
 };
 
 pub enum Pattern<P: Atom> {
@@ -15,6 +15,105 @@ pub enum Pattern<P: Atom> {
     Mul(Vec<Pattern<P>>),
     Add(Vec<Pattern<P>>),
     Literal(OwnedAtom<P>), // a literal
+}
+
+impl<P: Atom> Pattern<P> {
+    /// Check if the expression `atom` contains a wildcard.
+    fn has_wildcard(atom: AtomView<'_, P>, state: &State) -> bool {
+        match atom {
+            AtomView::Num(_) => false,
+            AtomView::Var(v) => state.is_wildcard(v.get_name()).unwrap(),
+            AtomView::Fun(f) => {
+                if state.is_wildcard(f.get_name()).unwrap() {
+                    return true;
+                }
+
+                let mut it = f.into_iter();
+                while let Some(arg) = it.next() {
+                    if Self::has_wildcard(arg, state) {
+                        return true;
+                    }
+                }
+                false
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+
+                Self::has_wildcard(base, state) || Self::has_wildcard(exp, state)
+            }
+            AtomView::Mul(m) => {
+                let mut it = m.into_iter();
+                while let Some(arg) = it.next() {
+                    if Self::has_wildcard(arg, state) {
+                        return true;
+                    }
+                }
+                false
+            }
+            AtomView::Add(a) => {
+                let mut it = a.into_iter();
+                while let Some(arg) = it.next() {
+                    if Self::has_wildcard(arg, state) {
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    pub fn from_view(atom: AtomView<'_, P>, state: &State) -> Pattern<P> {
+        if Self::has_wildcard(atom, state) {
+            match atom {
+                AtomView::Var(v) => Pattern::Wildcard(v.get_name(), 1, 100), // TODO: move restrictions
+                AtomView::Fun(f) => {
+                    let name = f.get_name();
+
+                    let mut args = Vec::with_capacity(f.get_nargs());
+                    let mut it = f.into_iter();
+
+                    while let Some(arg) = it.next() {
+                        args.push(Self::from_view(arg, state));
+                    }
+
+                    Pattern::Fn(name, state.is_wildcard(name).unwrap(), args)
+                }
+                AtomView::Pow(p) => {
+                    let (base, exp) = p.get_base_exp();
+
+                    Pattern::Pow(Box::new([
+                        Self::from_view(base, state),
+                        Self::from_view(exp, state),
+                    ]))
+                }
+                AtomView::Mul(m) => {
+                    let mut args = Vec::with_capacity(m.get_nargs());
+                    let mut it = m.into_iter();
+
+                    while let Some(arg) = it.next() {
+                        args.push(Self::from_view(arg, state));
+                    }
+
+                    Pattern::Mul(args)
+                }
+                AtomView::Add(a) => {
+                    let mut args = Vec::with_capacity(a.get_nargs());
+                    let mut it = a.into_iter();
+
+                    while let Some(arg) = it.next() {
+                        args.push(Self::from_view(arg, state));
+                    }
+
+                    Pattern::Add(args)
+                }
+                AtomView::Num(_) => unreachable!("Number cannot have wildcard"),
+            }
+        } else {
+            let mut oa = OwnedAtom::new();
+            oa.from_view(&atom);
+            Pattern::Literal(oa)
+        }
+    }
 }
 
 impl<P: Atom> std::fmt::Debug for Pattern<P> {

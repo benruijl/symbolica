@@ -392,6 +392,13 @@ impl<P: Atom> OwnedAtom<P> {
         }
     }
 
+    /// This function allocates a new OwnedAtom with the same content as `view`.
+    pub fn new_from_view(view: &AtomView<P>) -> OwnedAtom<P> {
+        let mut owned = OwnedAtom::new();
+        owned.from_view(view);
+        owned
+    }
+
     pub fn from_view(&mut self, view: &AtomView<P>) {
         match view {
             AtomView::Num(n) => {

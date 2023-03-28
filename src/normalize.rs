@@ -314,7 +314,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                 let mut it = t.into_iter();
                 while let Some(a) = it.next() {
-                    let mut handle = workspace.get_atom_stack();
+                    let mut handle = workspace.new_atom();
                     let new_at = handle.get_buf_mut();
 
                     if a.is_dirty() {
@@ -338,7 +338,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 if !atom_test_buf.is_empty() {
                     let mut last_buf = atom_test_buf.remove(0);
 
-                    let mut handle = workspace.get_atom_stack();
+                    let mut handle = workspace.new_atom();
                     let helper = handle.get_buf_mut();
 
                     for mut cur_buf in atom_test_buf.drain(..) {
@@ -380,7 +380,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                 let mut it = f.into_iter();
 
-                let mut handle = workspace.get_atom_stack();
+                let mut handle = workspace.new_atom();
                 let new_at = handle.get_buf_mut();
                 while let Some(a) = it.next() {
                     if a.is_dirty() {
@@ -396,8 +396,8 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 let (base, exp) = p.get_base_exp();
 
                 if base.is_dirty() || exp.is_dirty() {
-                    let mut base_handle = workspace.get_atom_stack();
-                    let mut exp_handle = workspace.get_atom_stack();
+                    let mut base_handle = workspace.new_atom();
+                    let mut exp_handle = workspace.new_atom();
 
                     let new_base = base_handle.get_buf_mut();
                     let new_exp = exp_handle.get_buf_mut();
@@ -434,7 +434,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                 let mut it = a.into_iter();
                 while let Some(a) = it.next() {
-                    let mut handle = workspace.get_atom_stack();
+                    let mut handle = workspace.new_atom();
                     let new_at = handle.get_buf_mut();
 
                     if a.is_dirty() {
@@ -458,7 +458,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 if !atom_test_buf.is_empty() {
                     let mut last_buf = atom_test_buf.remove(0);
 
-                    let mut handle = workspace.get_atom_stack();
+                    let mut handle = workspace.new_atom();
                     let helper = handle.get_buf_mut();
 
                     for mut cur_buf in atom_test_buf.drain(..) {

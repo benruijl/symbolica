@@ -80,7 +80,7 @@ impl<P: Atom> Workspace<P> {
         }
     }
 
-    pub fn get_atom_stack(&self) -> BufferHandle<OwnedAtom<P>> {
+    pub fn new_atom(&self) -> BufferHandle<OwnedAtom<P>> {
         self.atom_stack.get_buf_ref()
     }
 }

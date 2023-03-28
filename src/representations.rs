@@ -195,7 +195,9 @@ pub enum SliceType {
 
 pub trait ListSlice<'a>: Clone {
     type P: Atom;
+    type ListSliceIterator: Iterator<Item = AtomView<'a, Self::P>>;
 
+    fn into_iter(&self) -> Self::ListSliceIterator;
     fn from_one(view: AtomView<'a, Self::P>) -> Self;
     fn get_type(&self) -> SliceType;
     fn len(&self) -> usize;

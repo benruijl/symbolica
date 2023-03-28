@@ -1333,38 +1333,30 @@ impl<'a> ListSliceD<'a> {
         }
     }
 
-    fn get_entry(start: &'a [u8]) -> AtomView<'a, DefaultRepresentation> {
+    fn get_entry(start: &'a [u8]) -> (AtomView<'a, DefaultRepresentation>, &[u8]) {
         let start_id = start[0] & TYPE_MASK;
         let end = Self::skip_one(start);
         let len = unsafe { end.as_ptr().offset_from(start.as_ptr()) } as usize;
 
         let data = unsafe { start.get_unchecked(..len) };
-        match start_id {
-            VAR_ID => {
-                return AtomView::Var(VarViewD { data });
-            }
-            NUM_ID => {
-                return AtomView::Num(NumViewD { data });
-            }
-            FUN_ID => {
-                return AtomView::Fun(FnViewD { data });
-            }
-            POW_ID => {
-                return AtomView::Pow(PowViewD { data });
-            }
-            MUL_ID => {
-                return AtomView::Mul(MulViewD { data });
-            }
-            ADD_ID => {
-                return AtomView::Add(AddViewD { data });
-            }
-            x => unreachable!("Bad id {}", x),
-        }
+        (
+            match start_id {
+                VAR_ID => AtomView::Var(VarViewD { data }),
+                NUM_ID => AtomView::Num(NumViewD { data }),
+                FUN_ID => AtomView::Fun(FnViewD { data }),
+                POW_ID => AtomView::Pow(PowViewD { data }),
+                MUL_ID => AtomView::Mul(MulViewD { data }),
+                ADD_ID => AtomView::Add(AddViewD { data }),
+                x => unreachable!("Bad id {}", x),
+            },
+            end,
+        )
     }
 }
 
 impl<'a> ListSlice<'a> for ListSliceD<'a> {
     type P = DefaultRepresentation;
+    type ListSliceIterator = ListSliceIteratorD<'a>;
 
     fn len(&self) -> usize {
         self.length
@@ -1372,7 +1364,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
 
     fn get(&self, index: usize) -> AtomView<'a, Self::P> {
         let start = self.fast_forward(index);
-        Self::get_entry(start.data)
+        Self::get_entry(start.data).0
     }
 
     fn get_subslice(&self, range: std::ops::Range<usize>) -> Self {
@@ -1404,6 +1396,33 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
             data: view.get_data(),
             length: 1,
             slice_type: SliceType::One,
+        }
+    }
+
+    fn into_iter(&self) -> Self::ListSliceIterator {
+        ListSliceIteratorD { data: self.clone() }
+    }
+}
+
+pub struct ListSliceIteratorD<'a> {
+    data: ListSliceD<'a>,
+}
+
+impl<'a> Iterator for ListSliceIteratorD<'a> {
+    type Item = AtomView<'a, DefaultRepresentation>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.data.length > 0 {
+            let (res, end) = ListSliceD::get_entry(self.data.data);
+            self.data = ListSliceD {
+                data: end,
+                length: self.data.length - 1,
+                slice_type: self.data.slice_type,
+            };
+
+            Some(res)
+        } else {
+            None
         }
     }
 }

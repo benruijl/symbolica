@@ -7,8 +7,8 @@ use crate::state::{ResettableBuffer, State};
 use super::{
     number::{BorrowedNumber, Number, PackedRationalNumberReader, PackedRationalNumberWriter},
     tree::AtomTree,
-    Add, Atom, AtomView, Convert, Fun, Identifier, ListIterator, ListSlice, Mul, Num, OwnedAdd,
-    OwnedAtom, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, SliceType, Var,
+    Add, Atom, AtomView, Convert, Fun, Identifier, ListSlice, Mul, Num, OwnedAdd, OwnedAtom,
+    OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, SliceType, Var,
 };
 
 const NUM_ID: u8 = 1;
@@ -695,6 +695,12 @@ impl Atom for DefaultRepresentation {
     type OM = OwnedMulD;
     type OA = OwnedAddD;
     type S<'a> = ListSliceD<'a>;
+
+    fn from_tree(tree: &AtomTree) -> OwnedAtom<DefaultRepresentation> {
+        let mut oa = OwnedAtom::new();
+        oa.from_tree(tree);
+        oa
+    }
 }
 
 impl<'a> Var<'a> for VarViewD<'a> {
@@ -1193,11 +1199,11 @@ pub struct ListIteratorD<'a> {
     length: u32,
 }
 
-impl<'a> ListIterator<'a> for ListIteratorD<'a> {
-    type P = DefaultRepresentation;
+impl<'a> Iterator for ListIteratorD<'a> {
+    type Item = AtomView<'a, DefaultRepresentation>;
 
     #[inline(always)]
-    fn next(&mut self) -> Option<AtomView<'a, Self::P>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.length == 0 {
             return None;
         }

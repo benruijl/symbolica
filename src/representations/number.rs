@@ -1,5 +1,5 @@
 use bytes::{Buf, BufMut};
-use rug::{Integer, Rational};
+use rug::{ops::Pow, Integer, Rational};
 
 use crate::{
     finite_field::MontgomeryNumber,
@@ -67,6 +67,16 @@ pub enum BorrowedNumber<'a> {
 }
 
 impl BorrowedNumber<'_> {
+    pub fn normalize(&self) -> Number {
+        match self {
+            BorrowedNumber::Natural(num, den) => {
+                let gcd = utils::gcd_signed(*num, *den);
+                Number::Natural(*num / gcd, *den / gcd)
+            }
+            BorrowedNumber::Large(_) | BorrowedNumber::FiniteField(_, _) => self.to_owned(),
+        }
+    }
+
     pub fn to_owned(&self) -> Number {
         match self {
             BorrowedNumber::Natural(num, den) => Number::Natural(*num, *den),
@@ -74,9 +84,7 @@ impl BorrowedNumber<'_> {
             BorrowedNumber::FiniteField(num, field) => Number::FiniteField(*num, *field),
         }
     }
-}
 
-impl BorrowedNumber<'_> {
     pub fn add(&self, other: &BorrowedNumber<'_>, state: &State) -> Number {
         match (self, other) {
             (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
@@ -169,6 +177,40 @@ impl BorrowedNumber<'_> {
             }
             (_, BorrowedNumber::FiniteField(_, _)) => {
                 panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+            }
+        }
+    }
+
+    pub fn pow(&self, other: &BorrowedNumber<'_>, _state: &State) -> (Number, Number) {
+        match (self, other) {
+            (&BorrowedNumber::Natural(mut n1, mut d1), &BorrowedNumber::Natural(mut n2, d2)) => {
+                if n2 < 0 {
+                    n2 = -n2;
+                    (n1, d1) = (d1, n1);
+                }
+
+                if n2 < u32::MAX as i64 {
+                    if let Some(pn) = n1.checked_pow(n2 as u32) {
+                        if let Some(pd) = d1.checked_pow(n2 as u32) {
+                            // TODO: simplify 4^(1/2)
+                            return (Number::Natural(pn, pd), Number::Natural(1, d2));
+                        }
+                    }
+
+                    (
+                        Number::Large(Rational::from((n1, d1)).pow(n2 as u32)),
+                        Number::Natural(1, d2),
+                    )
+                } else {
+                    panic!("Power is too large: {}", n2);
+                }
+            }
+            _ => {
+                unimplemented!(
+                    "Power of configuration {:?}^{:?} is not implemented",
+                    self,
+                    other
+                );
             }
         }
     }

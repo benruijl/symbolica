@@ -5,8 +5,8 @@ use smallvec::SmallVec;
 use crate::{
     representations::{
         number::{BorrowedNumber, Number},
-        Add, Atom, AtomView, Fun, ListIterator, ListSlice, Mul, Num, OwnedAdd, OwnedAtom, OwnedFun,
-        OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+        Add, Atom, AtomView, Fun, ListSlice, Mul, Num, OwnedAdd, OwnedAtom, OwnedFun, OwnedMul,
+        OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
     state::{BufferHandle, ResettableBuffer, State, Workspace},
 };
@@ -312,8 +312,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
             AtomView::Mul(t) => {
                 let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
 
-                let mut it = t.into_iter();
-                while let Some(a) = it.next() {
+                for a in t.into_iter() {
                     let mut handle = workspace.new_atom();
                     let new_at = handle.get_buf_mut();
 
@@ -333,13 +332,14 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         .unwrap()
                 });
 
-                let out = out.transform_to_mul();
-
                 if !atom_test_buf.is_empty() {
+                    let out_mul = out.transform_to_mul();
+
                     let mut last_buf = atom_test_buf.remove(0);
 
                     let mut handle = workspace.new_atom();
                     let helper = handle.get_buf_mut();
+                    let mut cur_len = 0;
 
                     for mut cur_buf in atom_test_buf.drain(..) {
                         if !last_buf.get_buf_mut().merge_factors(
@@ -352,23 +352,32 @@ impl<'a, P: Atom> AtomView<'a, P> {
                                 let v = last_buf.get_buf().to_view();
                                 if let AtomView::Num(n) = v {
                                     if !n.is_one() {
-                                        out.extend(last_buf.get_buf().to_view());
+                                        out_mul.extend(last_buf.get_buf().to_view());
+                                        cur_len += 1;
                                     }
                                 } else {
-                                    out.extend(last_buf.get_buf().to_view());
+                                    out_mul.extend(last_buf.get_buf().to_view());
+                                    cur_len += 1;
                                 }
                             }
                             last_buf = cur_buf;
                         }
                     }
 
-                    out.extend(last_buf.get_buf().to_view());
+                    if cur_len == 0 {
+                        out.from_view(&last_buf.get_buf().to_view());
+                    } else {
+                        out_mul.extend(last_buf.get_buf().to_view());
+                    }
+                } else {
+                    let on = out.transform_to_num();
+                    on.from_number(Number::Natural(0, 1));
                 }
             }
             AtomView::Num(n) => {
-                // TODO: normalize and remove dirty flag
+                let normalized_num = n.get_number_view().normalize();
                 let nn = out.transform_to_num();
-                nn.from_view(n);
+                nn.from_number(normalized_num);
             }
             AtomView::Var(v) => {
                 let vv = out.transform_to_var();
@@ -378,11 +387,9 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 let out = out.transform_to_fun();
                 out.from_name(f.get_name());
 
-                let mut it = f.into_iter();
-
                 let mut handle = workspace.new_atom();
                 let new_at = handle.get_buf_mut();
-                while let Some(a) = it.next() {
+                for a in f.into_iter() {
                     if a.is_dirty() {
                         new_at.reset(); // TODO: needed?
                         a.normalize(workspace, state, new_at);
@@ -406,15 +413,24 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     exp.normalize(workspace, state, new_exp);
 
                     // simplyify a number to a power
-                    if let AtomView::Num(_n) = base {
-                        if let AtomView::Num(_e) = exp {
-                            //let out = out.transform_to_num();
-                            //out.from_view(&n);
-                            // TODO: implement pow
-                            //out.pow(&e, state);
+                    if let AtomView::Num(n) = new_base.to_view() {
+                        if let AtomView::Num(e) = new_exp.to_view() {
+                            let (new_base_num, new_exp_num) =
+                                n.get_number_view().pow(&e.get_number_view(), state);
 
-                            let out = out.transform_to_pow();
-                            out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
+                            if let Number::Natural(1, 1) = &new_exp_num {
+                                let out = out.transform_to_num();
+                                out.from_number(new_base_num);
+                            } else {
+                                let nb = new_base.transform_to_num();
+                                nb.from_number(new_base_num);
+
+                                let ne = new_exp.transform_to_num();
+                                ne.from_number(new_exp_num);
+
+                                let out = out.transform_to_pow();
+                                out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
+                            }
                         } else {
                             let out = out.transform_to_pow();
                             out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
@@ -432,8 +448,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
             AtomView::Add(a) => {
                 let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
 
-                let mut it = a.into_iter();
-                while let Some(a) = it.next() {
+                for a in a.into_iter() {
                     let mut handle = workspace.new_atom();
                     let new_at = handle.get_buf_mut();
 
@@ -453,13 +468,14 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         .unwrap()
                 });
 
-                let out = out.transform_to_add();
-
                 if !atom_test_buf.is_empty() {
+                    let out_add = out.transform_to_add();
+
                     let mut last_buf = atom_test_buf.remove(0);
 
                     let mut handle = workspace.new_atom();
                     let helper = handle.get_buf_mut();
+                    let mut cur_len = 0;
 
                     for mut cur_buf in atom_test_buf.drain(..) {
                         if !last_buf
@@ -471,17 +487,27 @@ impl<'a, P: Atom> AtomView<'a, P> {
                                 let v = last_buf.get_buf().to_view();
                                 if let AtomView::Num(n) = v {
                                     if !n.is_zero() {
-                                        out.extend(last_buf.get_buf().to_view());
+                                        out_add.extend(last_buf.get_buf().to_view());
+                                        cur_len += 1;
                                     }
                                 } else {
-                                    out.extend(last_buf.get_buf().to_view());
+                                    out_add.extend(last_buf.get_buf().to_view());
+                                    cur_len += 1;
                                 }
                             }
                             last_buf = cur_buf;
                         }
                     }
 
-                    out.extend(last_buf.get_buf().to_view());
+                    if cur_len == 0 {
+                        out.from_view(&last_buf.get_buf().to_view());
+                    } else {
+                        out_add.extend(last_buf.get_buf().to_view());
+                    }
+                } else {
+                    // TODO: check if correct
+                    let on = out.transform_to_num();
+                    on.from_number(Number::Natural(1, 1));
                 }
             }
         }

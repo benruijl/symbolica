@@ -1,9 +1,9 @@
 use std::fmt::{self, Write};
 
+use colored::Colorize;
+
 use crate::{
-    representations::{
-        number::BorrowedNumber, Add, Atom, AtomView, Fun, ListIterator, Mul, Num, Pow, Var,
-    },
+    representations::{number::BorrowedNumber, Add, Atom, AtomView, Fun, Mul, Num, Pow, Var},
     state::State,
 };
 
@@ -109,7 +109,12 @@ impl<'a, A: Var<'a>> FormattedPrintVar for A {
         _print_mode: PrintMode,
         state: &State,
     ) -> fmt::Result {
-        f.write_str(state.get_name(self.get_name()).unwrap())
+        let name = state.get_name(self.get_name()).unwrap();
+        if name.ends_with('_') {
+            f.write_fmt(format_args!("{}", name.as_str().cyan()))
+        } else {
+            f.write_str(name)
+        }
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -163,9 +168,8 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
 
 impl<'a, A: Mul<'a>> FormattedPrintMul for A {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut it = self.into_iter();
         let mut first = true;
-        while let Some(x) = it.next() {
+        for x in self.into_iter() {
             if !first {
                 f.write_char('*')?;
             }
@@ -188,9 +192,8 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
         print_mode: PrintMode,
         state: &State,
     ) -> fmt::Result {
-        let mut it = self.into_iter();
         let mut first = true;
-        while let Some(x) = it.next() {
+        for x in self.into_iter() {
             if !first {
                 f.write_char('*')?;
             }
@@ -218,9 +221,8 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         f.write_str(state.get_name(self.get_name()).unwrap())?;
         f.write_char('(')?;
 
-        let mut it = self.into_iter();
         let mut first = true;
-        while let Some(x) = it.next() {
+        for x in self.into_iter() {
             if !first {
                 print!(",");
             }
@@ -235,9 +237,8 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_fmt(format_args!("f_{}(", self.get_name().to_u32()))?;
 
-        let mut it = self.into_iter();
         let mut first = true;
-        while let Some(x) = it.next() {
+        for x in self.into_iter() {
             if !first {
                 print!(",");
             }
@@ -308,9 +309,8 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
         print_mode: PrintMode,
         state: &State,
     ) -> fmt::Result {
-        let mut it = self.into_iter();
         let mut first = true;
-        while let Some(x) = it.next() {
+        for x in self.into_iter() {
             if !first {
                 f.write_char('+')?;
             }
@@ -322,9 +322,8 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut it = self.into_iter();
         let mut first = true;
-        while let Some(x) = it.next() {
+        for x in self.into_iter() {
             if !first {
                 f.write_char('+')?;
             }

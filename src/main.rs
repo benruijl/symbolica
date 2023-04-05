@@ -59,12 +59,7 @@ fn expression_test() {
     let mut b = OwnedAtom::new();
     b.from_tree(&a);
 
-    assert!(
-        a == b.to_tree(),
-        "Not similar: {:?} vs {:?}",
-        a,
-        b.to_tree()
-    );
+    assert_eq!(a, b.to_tree());
 
     let view = b.to_view();
 
@@ -113,12 +108,7 @@ fn finite_field_test() {
     let mut b = OwnedAtom::new();
     b.from_tree(&a);
 
-    assert!(
-        a == b.to_tree(),
-        "Not similar: {:?} vs {:?}",
-        a,
-        b.to_tree()
-    );
+    assert_eq!(a, b.to_tree(),);
 
     let view = b.to_view();
 
@@ -159,12 +149,7 @@ fn parse_test() {
     let mut b = OwnedAtom::new();
     b.from_tree(&a);
 
-    assert!(
-        a == b.to_tree(),
-        "Not similar: {:?} vs {:?}",
-        a,
-        b.to_tree()
-    );
+    assert_eq!(a, b.to_tree());
 
     let view = b.to_view();
 
@@ -196,35 +181,34 @@ fn parse_test() {
 fn pattern_test_1() {
     let mut state = State::new();
 
-    let token = parse("x*y*w*z*f(x,y,x*y,z)").unwrap();
-    let a = token.to_atom_tree(&mut state).unwrap();
-    let mut b = OwnedAtom::new();
-    b.from_tree(&a);
+    let expr: OwnedAtom<DefaultRepresentation> = parse("x*y*w*z*f(x,y,x*y,z)")
+        .unwrap()
+        .to_atom(&mut state)
+        .unwrap();
 
-    let pattern_token = parse("z*x_*y_*g_(z_,x_,w_)").unwrap();
-    let pat_a = pattern_token.to_atom_tree(&mut state).unwrap();
-    let mut pat_b = OwnedAtom::new();
-    pat_b.from_tree(&pat_a);
+    let pat_expr = parse("z*x_*y_*g_(z_,x_,w_)")
+        .unwrap()
+        .to_atom(&mut state)
+        .unwrap();
 
-    let pattern = Pattern::from_view(pat_b.to_view(), &state);
+    let pattern = Pattern::from_view(pat_expr.to_view(), &state);
     let mut restrictions = HashMap::default();
     restrictions.insert(
         state.get_or_insert_var("x_"),
         vec![PatternRestriction::Length(1, Some(100))],
-        /*  vec![PatternRestriction::Filter(Box::new(|x| match x {
-            Match::Single(_) => true,
-            _ => false,
-        }))],*/
     );
-
-    let mut it = PatternAtomTreeIterator::new(&pattern, b.to_view(), &state, &restrictions);
 
     println!(
         "> Matching pattern {} to {}:",
-        AtomPrinter::new(pat_b.to_view(), symbolica::printer::PrintMode::Form, &state),
-        AtomPrinter::new(b.to_view(), symbolica::printer::PrintMode::Form, &state)
+        AtomPrinter::new(
+            pat_expr.to_view(),
+            symbolica::printer::PrintMode::Form,
+            &state
+        ),
+        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::Form, &state)
     );
 
+    let mut it = PatternAtomTreeIterator::new(&pattern, expr.to_view(), &state, &restrictions);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\t Match at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {
@@ -256,17 +240,17 @@ fn pattern_test_1() {
 fn pattern_test_2() {
     let mut state = State::new();
 
-    let token = parse("f(1,2,3,4,5,6,7)").unwrap();
-    let a = token.to_atom_tree(&mut state).unwrap();
-    let mut b = OwnedAtom::new();
-    b.from_tree(&a);
+    let expr: OwnedAtom<DefaultRepresentation> = parse("f(1,2,3,4,5,6,7)")
+        .unwrap()
+        .to_atom(&mut state)
+        .unwrap();
 
-    let pattern_token = parse("f(x_,y_,z_,w_)").unwrap();
-    let pat_a = pattern_token.to_atom_tree(&mut state).unwrap();
-    let mut pat_b = OwnedAtom::new();
-    pat_b.from_tree(&pat_a);
+    let pat_expr = parse("f(x_,y_,z_,w_)")
+        .unwrap()
+        .to_atom(&mut state)
+        .unwrap();
 
-    let pattern = Pattern::from_view(pat_b.to_view(), &state);
+    let pattern = Pattern::from_view(pat_expr.to_view(), &state);
     let mut restrictions = HashMap::default();
     restrictions.insert(
         state.get_or_insert_var("x_"),
@@ -279,17 +263,14 @@ fn pattern_test_2() {
             PatternRestriction::Cmp(
                 state.get_or_insert_var("x_"),
                 Box::new(|y, x| {
-                    let len_x = if let Match::Multiple(_, s) = x {
-                        s.len()
-                    } else {
-                        1
+                    let len_x = match x {
+                        Match::Multiple(_, s) => s.len(),
+                        _ => 1,
                     };
-                    let len_y = if let Match::Multiple(_, s) = y {
-                        s.len()
-                    } else {
-                        1
+                    let len_y = match y {
+                        Match::Multiple(_, s) => s.len(),
+                        _ => 1,
                     };
-
                     len_x >= len_y
                 }),
             ),
@@ -320,14 +301,13 @@ fn pattern_test_2() {
         vec![PatternRestriction::Length(0, None)],
     );
 
-    let mut it = PatternAtomTreeIterator::new(&pattern, b.to_view(), &state, &restrictions);
-
     println!(
         "> Matching pattern {} : 0 <= len(x) <= 2, 0 <= len(y) <= 4, len(x) >= len(y) & is_prime(z) to {}:",
-        AtomPrinter::new(pat_b.to_view(), symbolica::printer::PrintMode::Form, &state),
-        AtomPrinter::new(b.to_view(), symbolica::printer::PrintMode::Form, &state)
+        AtomPrinter::new(pat_expr.to_view(), symbolica::printer::PrintMode::Form, &state),
+        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::Form, &state)
     );
 
+    let mut it = PatternAtomTreeIterator::new(&pattern, expr.to_view(), &state, &restrictions);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\tMatch at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {
@@ -359,18 +339,17 @@ fn pattern_test_2() {
 fn tree_walk_test() {
     let mut state = State::new();
 
-    let token = parse("f(z)*f(f(x),z)*f(y)").unwrap();
-    let a = token.to_atom_tree(&mut state).unwrap();
-    let mut b = OwnedAtom::new();
-    b.from_tree(&a);
+    let expr: OwnedAtom<DefaultRepresentation> = parse("f(z)*f(f(x),z)*f(y)")
+        .unwrap()
+        .to_atom(&mut state)
+        .unwrap();
 
     println!(
         "> Tree walk of {}:",
-        AtomPrinter::new(b.to_view(), symbolica::printer::PrintMode::Form, &state)
+        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::Form, &state)
     );
 
-    let mut it = AtomTreeIterator::new(b.to_view());
-    while let Some((loc, view)) = it.next() {
+    for (loc, view) in AtomTreeIterator::new(expr.to_view()) {
         println!(
             "\tAtom at location {:?}: {}",
             loc,
@@ -382,27 +361,22 @@ fn tree_walk_test() {
 fn tree_replace_test() {
     let mut state = State::new();
 
-    let token = parse("f(z)*f(f(x))*f(y)").unwrap();
-    let a = token.to_atom_tree(&mut state).unwrap();
-    let mut b = OwnedAtom::new();
-    b.from_tree(&a);
+    let expr: OwnedAtom<DefaultRepresentation> = parse("f(z)*f(f(x))*f(y)")
+        .unwrap()
+        .to_atom(&mut state)
+        .unwrap();
+    let pat_expr = parse("f(x_)").unwrap().to_atom(&mut state).unwrap();
 
-    let pattern_token = parse("f(x_)").unwrap();
-    let pat_a = pattern_token.to_atom_tree(&mut state).unwrap();
-    let mut pat_b = OwnedAtom::new();
-    pat_b.from_tree(&pat_a);
-
-    let pattern = Pattern::from_view(pat_b.to_view(), &state);
+    let pattern = Pattern::from_view(pat_expr.to_view(), &state);
     let restrictions = HashMap::default();
-
-    let mut it = PatternAtomTreeIterator::new(&pattern, b.to_view(), &state, &restrictions);
 
     println!(
         "> Matching pattern {} to {}:",
-        AtomPrinter::new(pat_b.to_view(), symbolica::printer::PrintMode::Form, &state),
-        AtomPrinter::new(b.to_view(), symbolica::printer::PrintMode::Form, &state)
+        AtomPrinter::new(pat_expr.to_view(), symbolica::printer::PrintMode::Form, &state),
+        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::Form, &state)
     );
 
+    let mut it = PatternAtomTreeIterator::new(&pattern, expr.to_view(), &state, &restrictions);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\tMatch at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {
@@ -434,41 +408,33 @@ fn tree_replace_test() {
 fn replace_once_test() {
     let mut state = State::new();
 
-    let token = parse("f(z)*f(f(x))*f(y)").unwrap();
-    let a = token.to_atom_tree(&mut state).unwrap();
-    let mut b = OwnedAtom::new();
-    b.from_tree(&a);
+    let expr: OwnedAtom<DefaultRepresentation> = parse("f(z)*f(f(x))*f(y)")
+        .unwrap()
+        .to_atom(&mut state)
+        .unwrap();
+    let pat_expr = parse("f(x_)").unwrap().to_atom(&mut state).unwrap();
 
-    let pattern_token = parse("f(x_)").unwrap();
-    let pat_a = pattern_token.to_atom_tree(&mut state).unwrap();
-    let mut pat_b = OwnedAtom::new();
-    pat_b.from_tree(&pat_a);
+    let rhs_expr = parse("g(x_)").unwrap().to_atom(&mut state).unwrap();
+    let rhs = Pattern::from_view(rhs_expr.to_view(), &state);
 
-    let rhs_token = parse("g(x_)").unwrap();
-    let pat_rhs = rhs_token.to_atom_tree(&mut state).unwrap();
-    let mut at_rhs = OwnedAtom::new();
-    at_rhs.from_tree(&pat_rhs);
-    let rhs = Pattern::from_view(at_rhs.to_view(), &state);
-
-    let pattern = Pattern::from_view(pat_b.to_view(), &state);
+    let pattern = Pattern::from_view(pat_expr.to_view(), &state);
     let restrictions = HashMap::default();
-
-    let mut it = ReplaceIterator::new(&pattern, b.to_view(), &rhs, &state, &restrictions);
 
     println!(
         "> Replace once {}={} in {}:",
-        AtomPrinter::new(pat_b.to_view(), symbolica::printer::PrintMode::Form, &state),
+        AtomPrinter::new(pat_expr.to_view(), symbolica::printer::PrintMode::Form, &state),
         AtomPrinter::new(
-            at_rhs.to_view(),
+            rhs_expr.to_view(),
             symbolica::printer::PrintMode::Form,
             &state
         ),
-        AtomPrinter::new(b.to_view(), symbolica::printer::PrintMode::Form, &state),
+        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::Form, &state),
     );
 
     let workspace = Workspace::new();
     let mut replaced = OwnedAtom::new();
 
+    let mut it = ReplaceIterator::new(&pattern, expr.to_view(), &rhs, &state, &restrictions);
     while let Some(()) = it.next(&workspace, &mut replaced) {
         println!(
             "\t{}",
@@ -484,31 +450,24 @@ fn replace_once_test() {
 fn replace_all_test() {
     let mut state = State::new();
 
-    let token = parse("f(z)*f(f(x))*h(f(3))").unwrap();
-    let a = token.to_atom_tree(&mut state).unwrap();
-    let mut b = OwnedAtom::new();
-    b.from_tree(&a);
+    let expr: OwnedAtom<DefaultRepresentation> = parse("f(z)*f(f(x))*h(f(3))")
+        .unwrap()
+        .to_atom(&mut state)
+        .unwrap();
+    let pat_expr = parse("f(x_)").unwrap().to_atom(&mut state).unwrap();
 
-    let pattern_token = parse("f(x_)").unwrap();
-    let pat_a = pattern_token.to_atom_tree(&mut state).unwrap();
-    let mut pat_b = OwnedAtom::new();
-    pat_b.from_tree(&pat_a);
-
-    let pattern = Pattern::from_view(pat_b.to_view(), &state);
+    let pattern = Pattern::from_view(pat_expr.to_view(), &state);
     let restrictions = HashMap::default();
 
-    let rhs_token = parse("g(x_)").unwrap();
-    let pat_rhs = rhs_token.to_atom_tree(&mut state).unwrap();
-    let mut at_rhs = OwnedAtom::new();
-    at_rhs.from_tree(&pat_rhs);
-    let rhs = Pattern::from_view(at_rhs.to_view(), &state);
+    let rhs_expr = parse("g(x_)").unwrap().to_atom(&mut state).unwrap();
+    let rhs = Pattern::from_view(rhs_expr.to_view(), &state);
 
     let workspace = Workspace::new();
 
     let mut out = OwnedAtom::new();
 
     pattern.replace_all(
-        b.to_view(),
+        expr.to_view(),
         &rhs,
         &state,
         &workspace,
@@ -518,13 +477,13 @@ fn replace_all_test() {
 
     println!(
         "> Replace all {}={} in {}: {}",
-        AtomPrinter::new(pat_b.to_view(), symbolica::printer::PrintMode::Form, &state),
+        AtomPrinter::new(pat_expr.to_view(), symbolica::printer::PrintMode::Form, &state),
         AtomPrinter::new(
-            at_rhs.to_view(),
+            rhs_expr.to_view(),
             symbolica::printer::PrintMode::Form,
             &state
         ),
-        AtomPrinter::new(b.to_view(), symbolica::printer::PrintMode::Form, &state),
+        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::Form, &state),
         AtomPrinter::new(out.to_view(), symbolica::printer::PrintMode::Form, &state)
     );
 }

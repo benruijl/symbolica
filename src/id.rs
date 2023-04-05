@@ -3,8 +3,8 @@ use smallvec::{smallvec, SmallVec};
 
 use crate::{
     representations::{
-        Add, Atom, AtomView, Fun, Identifier, ListIterator, ListSlice, Mul, OwnedAdd, OwnedAtom,
-        OwnedFun, OwnedMul, OwnedPow, Pow, SliceType, Var,
+        Add, Atom, AtomView, Fun, Identifier, ListSlice, Mul, OwnedAdd, OwnedAtom, OwnedFun,
+        OwnedMul, OwnedPow, Pow, SliceType, Var,
     },
     state::{ResettableBuffer, State, Workspace},
 };
@@ -29,8 +29,7 @@ impl<P: Atom> Pattern<P> {
                     return true;
                 }
 
-                let mut it = f.into_iter();
-                while let Some(arg) = it.next() {
+                for arg in f.into_iter() {
                     if Self::has_wildcard(arg, state) {
                         return true;
                     }
@@ -43,18 +42,16 @@ impl<P: Atom> Pattern<P> {
                 Self::has_wildcard(base, state) || Self::has_wildcard(exp, state)
             }
             AtomView::Mul(m) => {
-                let mut it = m.into_iter();
-                while let Some(arg) = it.next() {
-                    if Self::has_wildcard(arg, state) {
+                for child in m.into_iter() {
+                    if Self::has_wildcard(child, state) {
                         return true;
                     }
                 }
                 false
             }
             AtomView::Add(a) => {
-                let mut it = a.into_iter();
-                while let Some(arg) = it.next() {
-                    if Self::has_wildcard(arg, state) {
+                for child in a.into_iter() {
+                    if Self::has_wildcard(child, state) {
                         return true;
                     }
                 }
@@ -72,9 +69,7 @@ impl<P: Atom> Pattern<P> {
                     let name = f.get_name();
 
                     let mut args = Vec::with_capacity(f.get_nargs());
-                    let mut it = f.into_iter();
-
-                    while let Some(arg) = it.next() {
+                    for arg in f.into_iter() {
                         args.push(Self::from_view(arg, state));
                     }
 
@@ -90,20 +85,17 @@ impl<P: Atom> Pattern<P> {
                 }
                 AtomView::Mul(m) => {
                     let mut args = Vec::with_capacity(m.get_nargs());
-                    let mut it = m.into_iter();
 
-                    while let Some(arg) = it.next() {
-                        args.push(Self::from_view(arg, state));
+                    for child in m.into_iter() {
+                        args.push(Self::from_view(child, state));
                     }
 
                     Pattern::Mul(args)
                 }
                 AtomView::Add(a) => {
                     let mut args = Vec::with_capacity(a.get_nargs());
-                    let mut it = a.into_iter();
-
-                    while let Some(arg) = it.next() {
-                        args.push(Self::from_view(arg, state));
+                    for child in a.into_iter() {
+                        args.push(Self::from_view(child, state));
                     }
 
                     Pattern::Add(args)
@@ -330,8 +322,7 @@ impl<P: Atom> Pattern<P> {
                     let out = out.transform_to_mul();
 
                     let mut index = 0;
-                    let mut it = m.into_iter();
-                    while let Some(child) = it.next() {
+                    for child in m.into_iter() {
                         if !used_flags[index] {
                             out.extend(child);
                         }
@@ -344,8 +335,7 @@ impl<P: Atom> Pattern<P> {
                     let out = out.transform_to_add();
 
                     let mut index = 0;
-                    let mut it = a.into_iter();
-                    while let Some(child) = it.next() {
+                    for child in a.into_iter() {
                         if !used_flags[index] {
                             out.extend(child);
                         }
@@ -365,8 +355,7 @@ impl<P: Atom> Pattern<P> {
                     let out = out.transform_to_fun();
                     out.from_name(f.get_name());
 
-                    let mut it = f.into_iter();
-                    while let Some(child) = it.next() {
+                    for child in f.into_iter() {
                         let mut child_handle = workspace.new_atom();
                         let child_buf = child_handle.get_buf_mut();
 
@@ -393,8 +382,7 @@ impl<P: Atom> Pattern<P> {
                 AtomView::Mul(m) => {
                     let out = out.transform_to_mul();
 
-                    let mut it = m.into_iter();
-                    while let Some(child) = it.next() {
+                    for child in m.into_iter() {
                         let mut child_handle = workspace.new_atom();
                         let child_buf = child_handle.get_buf_mut();
 
@@ -406,8 +394,7 @@ impl<P: Atom> Pattern<P> {
                 AtomView::Add(a) => {
                     let out = out.transform_to_add();
 
-                    let mut it = a.into_iter();
-                    while let Some(child) = it.next() {
+                    for child in a.into_iter() {
                         let mut child_handle = workspace.new_atom();
                         let child_buf = child_handle.get_buf_mut();
 
@@ -1004,17 +991,15 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                                 let matched = if w.indices.len() == 1 {
                                     match self.target.get(w.indices[0] as usize) {
                                         AtomView::Mul(m) => Match::Multiple(SliceType::Mul, {
-                                            let mut iter = m.into_iter();
                                             let mut v = SmallVec::new();
-                                            while let Some(x) = iter.next() {
+                                            for x in m.into_iter() {
                                                 v.push(x);
                                             }
                                             v
                                         }),
                                         AtomView::Add(a) => Match::Multiple(SliceType::Add, {
-                                            let mut iter = a.into_iter();
                                             let mut v = SmallVec::new();
-                                            while let Some(x) = iter.next() {
+                                            for x in a.into_iter() {
                                                 v.push(x);
                                             }
                                             v
@@ -1255,9 +1240,13 @@ impl<'a, P: Atom> AtomTreeIterator<'a, P> {
             stack: smallvec![(None, target)],
         }
     }
+}
+
+impl<'a, P: Atom> Iterator for AtomTreeIterator<'a, P> {
+    type Item = (SmallVec<[usize; 10]>, AtomView<'a, P>);
 
     /// Return the next position and atom in the tree.
-    pub fn next(&mut self) -> Option<(SmallVec<[usize; 10]>, AtomView<'a, P>)> {
+    fn next(&mut self) -> Option<Self::Item> {
         while let Some((ind, atom)) = self.stack.pop() {
             if let Some(ind) = ind {
                 let slice = match atom {
@@ -1485,8 +1474,7 @@ impl<'a, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                     let out = out.transform_to_mul();
 
                     let mut index = 0;
-                    let mut it = m.into_iter();
-                    while let Some(child) = it.next() {
+                    for child in m.into_iter() {
                         if !used_flags[index] {
                             out.extend(child);
                         }
@@ -1499,8 +1487,7 @@ impl<'a, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                     let out = out.transform_to_add();
 
                     let mut index = 0;
-                    let mut it = a.into_iter();
-                    while let Some(child) = it.next() {
+                    for child in a.into_iter() {
                         if !used_flags[index] {
                             out.extend(child);
                         }

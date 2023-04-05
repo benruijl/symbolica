@@ -5,7 +5,10 @@ pub mod tree;
 use crate::state::{ResettableBuffer, State};
 use std::{cmp::Ordering, ops::Range};
 
-use self::number::{BorrowedNumber, Number};
+use self::{
+    number::{BorrowedNumber, Number},
+    tree::AtomTree,
+};
 
 /// An identifier, for example for a variable or function.
 /// Should be created using `get_or_insert` of `State`.
@@ -45,6 +48,10 @@ pub trait Atom: PartialEq {
     type OM: OwnedMul<P = Self>;
     type OA: OwnedAdd<P = Self>;
     type S<'a>: ListSlice<'a, P = Self>;
+
+    fn from_tree(tree: &AtomTree) -> OwnedAtom<Self>
+    where
+        Self: Sized;
 }
 
 /// Convert the owned atoms by recycling and clearing their interal buffers.
@@ -132,7 +139,7 @@ pub trait Var<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::V<'b>> {
 
 pub trait Fun<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::F<'b>> {
     type P: Atom;
-    type I: ListIterator<'a, P = Self::P>;
+    type I: Iterator<Item = AtomView<'a, Self::P>>;
 
     fn get_name(&self) -> Identifier;
     fn get_nargs(&self) -> usize;
@@ -158,7 +165,7 @@ pub trait Pow<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::P<'b>> {
 
 pub trait Mul<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
     type P: Atom;
-    type I: ListIterator<'a, P = Self::P>;
+    type I: Iterator<Item = AtomView<'a, Self::P>>;
 
     fn is_dirty(&self) -> bool;
     fn get_nargs(&self) -> usize;
@@ -169,18 +176,13 @@ pub trait Mul<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
 
 pub trait Add<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::A<'b>> {
     type P: Atom;
-    type I: ListIterator<'a, P = Self::P>;
+    type I: Iterator<Item = AtomView<'a, Self::P>>;
 
     fn is_dirty(&self) -> bool;
     fn get_nargs(&self) -> usize;
     fn into_iter(&self) -> Self::I;
     fn to_view(&self) -> AtomView<'a, Self::P>;
     fn to_slice(&self) -> <Self::P as Atom>::S<'a>;
-}
-
-pub trait ListIterator<'a>: Clone {
-    type P: Atom;
-    fn next(&mut self) -> Option<AtomView<'a, Self::P>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

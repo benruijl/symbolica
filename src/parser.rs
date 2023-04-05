@@ -3,7 +3,7 @@ use std::fmt::Write;
 use rug::{Complete, Integer};
 
 use crate::{
-    representations::{number::Number, tree::AtomTree},
+    representations::{number::Number, tree::AtomTree, Atom, OwnedAtom},
     state::State,
 };
 
@@ -175,6 +175,11 @@ impl Token {
             }
             x => Err(format!("Unexpected token {}", x)),
         }
+    }
+
+    pub fn to_atom<P: Atom>(self, state: &mut State) -> Result<OwnedAtom<P>, String> {
+        let a = self.to_atom_tree(state)?;
+        Ok(P::from_tree(&a))
     }
 }
 

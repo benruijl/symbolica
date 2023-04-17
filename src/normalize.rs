@@ -12,42 +12,269 @@ use crate::{
 };
 
 impl<'a, P: Atom> AtomView<'a, P> {
-    /// Sort factors in a term. `x` and `pow(x,2)` are placed next to each other by sorting a pow based on the base only.
-    /// TODO: sort x and x*2 next to each other by ignoring coefficient
-    fn partial_cmp<'b>(&self, other: &AtomView<'b, P>) -> Option<Ordering> {
+    /// Compare two atoms.
+    fn cmp<'b>(&self, other: &AtomView<'b, P>) -> Ordering {
         match (&self, other) {
-            (AtomView::Num(_), AtomView::Num(_)) => Some(Ordering::Equal),
-            (AtomView::Num(_), _) => Some(Ordering::Greater),
-            (_, AtomView::Num(_)) => Some(Ordering::Less),
+            (AtomView::Num(n1), AtomView::Num(n2)) => {
+                n1.get_number_view().cmp(&n2.get_number_view())
+            }
+            (AtomView::Num(_), _) => Ordering::Greater,
+            (_, AtomView::Num(_)) => Ordering::Less,
+            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
+            (AtomView::Var(_), _) => Ordering::Less,
+            (_, AtomView::Var(_)) => Ordering::Greater,
+            (AtomView::Pow(p1), AtomView::Pow(p2)) => {
+                let (b1, e1) = p1.get_base_exp();
+                let (b2, e2) = p2.get_base_exp();
+                b1.cmp(&b2).then_with(|| e1.cmp(&e2))
+            }
+            (_, AtomView::Pow(_)) => Ordering::Greater,
+            (AtomView::Pow(_), _) => Ordering::Less,
+            (AtomView::Mul(m1), AtomView::Mul(m2)) => {
+                let it1 = m1.to_slice();
+                let it2 = m2.to_slice();
 
-            (AtomView::Var(v1), AtomView::Var(v2)) => Some(v1.get_name().cmp(&v2.get_name())),
+                let len_cmp = it1.len().cmp(&it2.len());
+                if len_cmp != Ordering::Equal {
+                    return len_cmp;
+                }
+
+                for (t1, t2) in it1.into_iter().zip(it2.into_iter()) {
+                    let argcmp = t1.cmp(&t2);
+                    if argcmp != Ordering::Equal {
+                        return argcmp;
+                    }
+                }
+
+                Ordering::Equal
+            }
+            (AtomView::Mul(_), _) => Ordering::Less,
+            (_, AtomView::Mul(_)) => Ordering::Greater,
+            (AtomView::Add(a1), AtomView::Add(a2)) => {
+                let it1 = a1.to_slice();
+                let it2 = a2.to_slice();
+
+                let len_cmp = it1.len().cmp(&it2.len());
+                if len_cmp != Ordering::Equal {
+                    return len_cmp;
+                }
+
+                for (t1, t2) in it1.into_iter().zip(it2.into_iter()) {
+                    let argcmp = t1.cmp(&t2);
+                    if argcmp != Ordering::Equal {
+                        return argcmp;
+                    }
+                }
+
+                Ordering::Equal
+            }
+            (AtomView::Add(_), _) => Ordering::Less,
+            (_, AtomView::Add(_)) => Ordering::Greater,
+
+            (AtomView::Fun(f1), AtomView::Fun(f2)) => {
+                let name_comp = f1.get_name().cmp(&f2.get_name());
+                if name_comp != Ordering::Equal {
+                    return name_comp;
+                }
+
+                let len_cmp = f1.get_nargs().cmp(&f2.get_nargs());
+                if len_cmp != Ordering::Equal {
+                    return len_cmp;
+                }
+
+                for (arg1, arg2) in f1.into_iter().zip(f2.into_iter()) {
+                    let argcmp = arg1.cmp(&arg2);
+                    if argcmp != Ordering::Equal {
+                        return argcmp;
+                    }
+                }
+
+                Ordering::Equal
+            }
+        }
+    }
+
+    /// Compare factors in a term. `x` and `x^2` are placed next to each other by sorting a power based on the base only.
+    fn cmp_factors<'b>(&self, other: &AtomView<'b, P>) -> Ordering {
+        match (&self, other) {
+            (AtomView::Num(_), AtomView::Num(_)) => Ordering::Equal,
+            (AtomView::Num(_), _) => Ordering::Greater,
+            (_, AtomView::Num(_)) => Ordering::Less,
+
+            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
             (AtomView::Pow(p1), AtomView::Pow(p2)) => {
                 // TODO: inline partial_cmp call by creating an inlined version
-                Some(p1.get_base().partial_cmp(&p2.get_base()).unwrap())
+                p1.get_base().cmp(&p2.get_base())
             }
             (_, AtomView::Pow(p2)) => {
                 let base = p2.get_base();
-                Some(self.partial_cmp(&base).unwrap())
+                self.cmp(&base)
             }
             (AtomView::Pow(p1), _) => {
                 let base = p1.get_base();
-                Some(base.partial_cmp(other).unwrap())
+                base.cmp(other)
             }
-            (AtomView::Var(_), _) => Some(Ordering::Less),
-            (_, AtomView::Var(_)) => Some(Ordering::Greater),
+            (AtomView::Var(_), _) => Ordering::Less,
+            (_, AtomView::Var(_)) => Ordering::Greater,
 
-            (AtomView::Mul(_), AtomView::Mul(_)) => Some(Ordering::Equal), // TODO
-            (AtomView::Mul(_), _) => Some(Ordering::Less),
-            (_, AtomView::Mul(_)) => Some(Ordering::Greater),
+            (AtomView::Mul(_), _) | (_, AtomView::Mul(_)) => {
+                unreachable!("Cannot have a submul in a factor");
+            }
+            (AtomView::Add(a1), AtomView::Add(a2)) => {
+                let it1 = a1.to_slice();
+                let it2 = a2.to_slice();
 
-            (AtomView::Add(_), AtomView::Add(_)) => Some(Ordering::Equal), // TODO
-            (AtomView::Add(_), _) => Some(Ordering::Less),
-            (_, AtomView::Add(_)) => Some(Ordering::Greater),
+                let len_cmp = it1.len().cmp(&it2.len());
+                if len_cmp != Ordering::Equal {
+                    return len_cmp;
+                }
+
+                for (t1, t2) in it1.into_iter().zip(it2.into_iter()) {
+                    let argcmp = t1.cmp(&t2);
+                    if argcmp != Ordering::Equal {
+                        return argcmp;
+                    }
+                }
+
+                Ordering::Equal
+            }
+            (AtomView::Add(_), _) => Ordering::Less,
+            (_, AtomView::Add(_)) => Ordering::Greater,
 
             (AtomView::Fun(f1), AtomView::Fun(f2)) => {
-                // TODO: on equality the arguments have to be compared too
-                Some(f1.get_name().cmp(&f2.get_name()))
+                // TODO: implement cmp for Fun instead and call that
+                let name_comp = f1.get_name().cmp(&f2.get_name());
+                if name_comp != Ordering::Equal {
+                    return name_comp;
+                }
+
+                let len_cmp = f1.get_nargs().cmp(&f2.get_nargs());
+                if len_cmp != Ordering::Equal {
+                    return len_cmp;
+                }
+
+                for (arg1, arg2) in f1.into_iter().zip(f2.into_iter()) {
+                    let argcmp = arg1.cmp(&arg2);
+                    if argcmp != Ordering::Equal {
+                        return argcmp;
+                    }
+                }
+
+                Ordering::Equal
             }
+        }
+    }
+
+    /// Compare terms in an expression. `x` and `x*2` are placed next to each other.
+    fn cmp_terms<'b>(&self, other: &AtomView<'b, P>) -> Ordering {
+        debug_assert!(if let AtomView::Add(_) = self {
+            false
+        } else {
+            true
+        });
+        debug_assert!(if let AtomView::Add(_) = other {
+            false
+        } else {
+            true
+        });
+        match (&self, other) {
+            (AtomView::Num(_), AtomView::Num(_)) => Ordering::Equal,
+            (AtomView::Num(_), _) => Ordering::Greater,
+            (_, AtomView::Num(_)) => Ordering::Less,
+
+            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
+            (AtomView::Pow(p1), AtomView::Pow(p2)) => {
+                let (b1, e1) = p1.get_base_exp();
+                let (b2, e2) = p2.get_base_exp();
+                b1.cmp(&b2).then_with(|| e1.cmp(&e2))
+            }
+            (AtomView::Mul(m1), AtomView::Mul(m2)) => {
+                let it1 = m1.to_slice();
+                let it2 = m2.to_slice();
+
+                let actual_len1 = if let AtomView::Num(_) = it1.get(it1.len() - 1) {
+                    it1.len() - 1
+                } else {
+                    it1.len()
+                };
+
+                let actual_len2 = if let AtomView::Num(_) = it2.get(it2.len() - 1) {
+                    it2.len() - 1
+                } else {
+                    it2.len()
+                };
+
+                let len_cmp = actual_len1.cmp(&actual_len2);
+                if len_cmp != Ordering::Equal {
+                    return len_cmp;
+                }
+
+                for (t1, t2) in it1.into_iter().zip(it2.into_iter()) {
+                    if let AtomView::Num(_) = t1 {
+                        break;
+                    }
+                    if let AtomView::Num(_) = t2 {
+                        break;
+                    }
+
+                    let argcmp = t1.cmp(&t2);
+                    if argcmp != Ordering::Equal {
+                        return argcmp;
+                    }
+                }
+
+                Ordering::Equal
+            }
+            (AtomView::Mul(m1), a2) => {
+                let it1 = m1.to_slice();
+                if it1.len() != 2 {
+                    return Ordering::Greater;
+                }
+                if let AtomView::Num(_) = it1.get(it1.len() - 1) {
+                } else {
+                    return Ordering::Greater;
+                };
+
+                it1.get(0).cmp(a2)
+            }
+            (a1, AtomView::Mul(m2)) => {
+                let it2 = m2.to_slice();
+                if it2.len() != 2 {
+                    return Ordering::Less;
+                }
+                if let AtomView::Num(_) = it2.get(it2.len() - 1) {
+                } else {
+                    return Ordering::Less;
+                };
+
+                a1.cmp(&it2.get(0))
+            }
+            (AtomView::Var(_), _) => Ordering::Less,
+            (_, AtomView::Var(_)) => Ordering::Greater,
+            (_, AtomView::Pow(_)) => Ordering::Greater,
+            (AtomView::Pow(_), _) => Ordering::Less,
+
+            (AtomView::Fun(f1), AtomView::Fun(f2)) => {
+                let name_comp = f1.get_name().cmp(&f2.get_name());
+                if name_comp != Ordering::Equal {
+                    return name_comp;
+                }
+
+                let len_cmp = f1.get_nargs().cmp(&f2.get_nargs());
+                if len_cmp != Ordering::Equal {
+                    return len_cmp;
+                }
+
+                for (arg1, arg2) in f1.into_iter().zip(f2.into_iter()) {
+                    let argcmp = arg1.cmp(&arg2);
+                    if argcmp != Ordering::Equal {
+                        return argcmp;
+                    }
+                }
+
+                Ordering::Equal
+            }
+            (AtomView::Add(_), _) | (_, AtomView::Add(_)) => unreachable!("Cannot have nested add"),
         }
     }
 }
@@ -225,6 +452,36 @@ impl<P: Atom> OwnedAtom<P> {
 
                     return true;
                 }
+            } else {
+                if non_coeff1.len() != 1 || other.to_view() != slice.get(0) {
+                    return false;
+                }
+
+                let new_coeff = if let AtomView::Num(n) = &last_elem {
+                    n.get_number_view()
+                        .add(&BorrowedNumber::Natural(1, 1), state)
+                } else {
+                    return false;
+                };
+
+                // help the borrow checker by dropping all references
+                drop(last_elem);
+                drop(slice);
+                drop(non_coeff1);
+
+                if new_coeff.is_zero() {
+                    let num = self.transform_to_num();
+                    num.from_number(new_coeff);
+
+                    return true;
+                }
+
+                let on = helper.transform_to_num();
+                on.from_number(new_coeff);
+
+                m.replace_last(on.to_num_view().to_view());
+
+                return true;
             }
         } else {
             if let OwnedAtom::Mul(m) = other {
@@ -314,7 +571,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                 for a in t.into_iter() {
                     let mut handle = workspace.new_atom();
-                    let new_at = handle.get_buf_mut();
+                    let new_at = handle.get_mut();
 
                     if a.is_dirty() {
                         a.normalize(workspace, state, new_at);
@@ -322,15 +579,20 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         new_at.from_view(&a);
                     }
 
-                    atom_test_buf.push(handle);
+                    if let OwnedAtom::Mul(mul) = new_at {
+                        for c in mul.to_mul_view().into_iter() {
+                            // TODO: remove this copy
+                            let mut handle = workspace.new_atom();
+                            let child_copy = handle.get_mut();
+                            child_copy.from_view(&c);
+                            atom_test_buf.push(handle);
+                        }
+                    } else {
+                        atom_test_buf.push(handle);
+                    }
                 }
 
-                atom_test_buf.sort_by(|a, b| {
-                    a.get_buf()
-                        .to_view()
-                        .partial_cmp(&b.get_buf().to_view())
-                        .unwrap()
-                });
+                atom_test_buf.sort_by(|a, b| a.get().to_view().cmp_factors(&b.get().to_view()));
 
                 if !atom_test_buf.is_empty() {
                     let out_mul = out.transform_to_mul();
@@ -338,25 +600,24 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     let mut last_buf = atom_test_buf.remove(0);
 
                     let mut handle = workspace.new_atom();
-                    let helper = handle.get_buf_mut();
+                    let helper = handle.get_mut();
                     let mut cur_len = 0;
 
                     for mut cur_buf in atom_test_buf.drain(..) {
-                        if !last_buf.get_buf_mut().merge_factors(
-                            cur_buf.get_buf_mut(),
-                            helper,
-                            state,
-                        ) {
+                        if !last_buf
+                            .get_mut()
+                            .merge_factors(cur_buf.get_mut(), helper, state)
+                        {
                             // we are done merging
                             {
-                                let v = last_buf.get_buf().to_view();
+                                let v = last_buf.get().to_view();
                                 if let AtomView::Num(n) = v {
                                     if !n.is_one() {
-                                        out_mul.extend(last_buf.get_buf().to_view());
+                                        out_mul.extend(last_buf.get().to_view());
                                         cur_len += 1;
                                     }
                                 } else {
-                                    out_mul.extend(last_buf.get_buf().to_view());
+                                    out_mul.extend(last_buf.get().to_view());
                                     cur_len += 1;
                                 }
                             }
@@ -365,9 +626,9 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     }
 
                     if cur_len == 0 {
-                        out.from_view(&last_buf.get_buf().to_view());
+                        out.from_view(&last_buf.get().to_view());
                     } else {
-                        out_mul.extend(last_buf.get_buf().to_view());
+                        out_mul.extend(last_buf.get().to_view());
                     }
                 } else {
                     let on = out.transform_to_num();
@@ -388,7 +649,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 out.from_name(f.get_name());
 
                 let mut handle = workspace.new_atom();
-                let new_at = handle.get_buf_mut();
+                let new_at = handle.get_mut();
                 for a in f.into_iter() {
                     if a.is_dirty() {
                         new_at.reset(); // TODO: needed?
@@ -406,8 +667,8 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     let mut base_handle = workspace.new_atom();
                     let mut exp_handle = workspace.new_atom();
 
-                    let new_base = base_handle.get_buf_mut();
-                    let new_exp = exp_handle.get_buf_mut();
+                    let new_base = base_handle.get_mut();
+                    let new_exp = exp_handle.get_mut();
 
                     base.normalize(workspace, state, new_base);
                     exp.normalize(workspace, state, new_exp);
@@ -450,7 +711,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                 for a in a.into_iter() {
                     let mut handle = workspace.new_atom();
-                    let new_at = handle.get_buf_mut();
+                    let new_at = handle.get_mut();
 
                     if a.is_dirty() {
                         a.normalize(workspace, state, new_at);
@@ -458,15 +719,20 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         new_at.from_view(&a);
                     }
 
-                    atom_test_buf.push(handle);
+                    if let OwnedAtom::Add(new_add) = new_at {
+                        for c in new_add.to_add_view().into_iter() {
+                            // TODO: remove this copy
+                            let mut handle = workspace.new_atom();
+                            let child_copy = handle.get_mut();
+                            child_copy.from_view(&c);
+                            atom_test_buf.push(handle);
+                        }
+                    } else {
+                        atom_test_buf.push(handle);
+                    }
                 }
 
-                atom_test_buf.sort_by(|a, b| {
-                    a.get_buf()
-                        .to_view()
-                        .partial_cmp(&b.get_buf().to_view())
-                        .unwrap()
-                });
+                atom_test_buf.sort_by(|a, b| a.get().to_view().cmp_terms(&b.get().to_view()));
 
                 if !atom_test_buf.is_empty() {
                     let out_add = out.transform_to_add();
@@ -474,24 +740,24 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     let mut last_buf = atom_test_buf.remove(0);
 
                     let mut handle = workspace.new_atom();
-                    let helper = handle.get_buf_mut();
+                    let helper = handle.get_mut();
                     let mut cur_len = 0;
 
                     for mut cur_buf in atom_test_buf.drain(..) {
                         if !last_buf
-                            .get_buf_mut()
-                            .merge_terms(cur_buf.get_buf_mut(), helper, state)
+                            .get_mut()
+                            .merge_terms(cur_buf.get_mut(), helper, state)
                         {
                             // we are done merging
                             {
-                                let v = last_buf.get_buf().to_view();
+                                let v = last_buf.get().to_view();
                                 if let AtomView::Num(n) = v {
                                     if !n.is_zero() {
-                                        out_add.extend(last_buf.get_buf().to_view());
+                                        out_add.extend(last_buf.get().to_view());
                                         cur_len += 1;
                                     }
                                 } else {
-                                    out_add.extend(last_buf.get_buf().to_view());
+                                    out_add.extend(last_buf.get().to_view());
                                     cur_len += 1;
                                 }
                             }
@@ -500,9 +766,9 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     }
 
                     if cur_len == 0 {
-                        out.from_view(&last_buf.get_buf().to_view());
+                        out.from_view(&last_buf.get().to_view());
                     } else {
-                        out_add.extend(last_buf.get_buf().to_view());
+                        out_add.extend(last_buf.get().to_view());
                     }
                 } else {
                     // TODO: check if correct

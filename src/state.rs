@@ -104,6 +104,7 @@ pub struct Stack<T: ResettableBuffer> {
 
 impl<T: ResettableBuffer> Stack<T> {
     /// Create a new stack.
+    #[inline]
     pub fn new() -> Self {
         Self {
             buffers: RefCell::new(vec![]),
@@ -112,6 +113,7 @@ impl<T: ResettableBuffer> Stack<T> {
 
     /// Get a buffer from the stack if the stack is not empty,
     /// else create a new one.
+    #[inline]
     pub fn get_buf_ref(&self) -> BufferHandle<T> {
         let b = self
             .buffers
@@ -130,6 +132,7 @@ impl<T: ResettableBuffer> Stack<T> {
     }
 
     /// Return a buffer to the stack.
+    #[inline]
     fn return_arg(&self, b: T) {
         self.buffers.borrow_mut().push(b);
     }
@@ -144,18 +147,21 @@ pub struct BufferHandle<'a, T: ResettableBuffer> {
 
 impl<'a, T: ResettableBuffer> BufferHandle<'a, T> {
     /// Get an immutable reference to the underlying buffer.
-    pub fn get_buf(&self) -> &T {
+    #[inline]
+    pub fn get(&self) -> &T {
         self.buf.as_ref().unwrap()
     }
 
     /// Get a mutable reference to the underlying buffer.
-    pub fn get_buf_mut(&mut self) -> &mut T {
+    #[inline]
+    pub fn get_mut(&mut self) -> &mut T {
         self.buf.as_mut().unwrap()
     }
 }
 
 impl<'a, T: ResettableBuffer> Drop for BufferHandle<'a, T> {
     /// Upon dropping the handle, the buffer is returned to the stack it was created by.
+    #[inline]
     fn drop(&mut self) {
         self.parent
             .return_arg(std::mem::take(&mut self.buf).unwrap())

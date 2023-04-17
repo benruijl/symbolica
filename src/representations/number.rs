@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use bytes::{Buf, BufMut};
 use rug::{ops::Pow, Integer, Rational};
 
@@ -212,6 +214,40 @@ impl BorrowedNumber<'_> {
                     other
                 );
             }
+        }
+    }
+
+    pub fn cmp(&self, other: &BorrowedNumber) -> Ordering {
+        match (self, other) {
+            (&BorrowedNumber::Natural(n1, d1), &BorrowedNumber::Natural(n2, d2)) => {
+                // TODO: improve
+                if n1 < 0 && n2 > 0 {
+                    return Ordering::Less;
+                }
+                if n1 > 0 && n2 < 0 {
+                    return Ordering::Greater;
+                }
+
+                match n1.checked_mul(d2) {
+                    Some(a1) => match n2.checked_mul(d1) {
+                        Some(a2) => a1.cmp(&a2),
+                        None => Integer::from(a1).cmp(&(Integer::from(n2) * Integer::from(d1))),
+                    },
+                    None => (Integer::from(n1) * Integer::from(d2))
+                        .cmp(&(Integer::from(n2) * Integer::from(d1))),
+                }
+            }
+            (BorrowedNumber::Large(n1), BorrowedNumber::Large(n2)) => n1.cmp(n2),
+            (BorrowedNumber::FiniteField(n1, _), BorrowedNumber::FiniteField(n2, _)) => {
+                n1.0.cmp(&n2.0)
+            }
+            (&BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(n2)) => {
+                Rational::from((n1, d1)).cmp(&n2)
+            }
+            (BorrowedNumber::Large(n1), &BorrowedNumber::Natural(n2, d2)) => {
+                n1.cmp(&&Rational::from((n2, d2)))
+            }
+            _ => unreachable!(),
         }
     }
 }

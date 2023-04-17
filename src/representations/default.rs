@@ -2,7 +2,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
 use std::{cmp::Ordering, io::Cursor};
 
-use crate::state::{ResettableBuffer, State};
+use crate::state::{ResettableBuffer, State, Workspace};
 
 use super::{
     number::{BorrowedNumber, Number, PackedRationalNumberReader, PackedRationalNumberWriter},
@@ -415,15 +415,12 @@ impl OwnedMul for OwnedMulD {
 
         let old_size = unsafe { c.as_ptr().offset_from(self.data.as_ptr()) } as usize - 1 - 4;
 
-        match other {
-            AtomView::Mul(_m) => {
-                // should this happen?
-                todo!();
-            }
-            _ => {
-                n_args += 1;
-            }
-        }
+        let new_slice = match other {
+            AtomView::Mul(m) => m.to_slice(),
+            _ => ListSliceD::from_one(other),
+        };
+
+        n_args += new_slice.len() as u64;
 
         let new_size = (n_args, 1).get_packed_size() as usize;
 
@@ -444,7 +441,9 @@ impl OwnedMul for OwnedMulD {
         // size should be ok now
         (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
 
-        self.data.extend_from_slice(other.get_data());
+        for child in new_slice.into_iter() {
+            self.data.extend_from_slice(child.get_data());
+        }
 
         let new_buf_pos = self.data.len();
 
@@ -582,15 +581,12 @@ impl OwnedAdd for OwnedAddD {
 
         let old_size = unsafe { c.as_ptr().offset_from(self.data.as_ptr()) } as usize - 1 - 4;
 
-        match other {
-            AtomView::Add(_a) => {
-                // should this happen?
-                todo!();
-            }
-            _ => {
-                n_args += 1;
-            }
-        }
+        let new_slice = match other {
+            AtomView::Add(m) => m.to_slice(),
+            _ => ListSliceD::from_one(other),
+        };
+
+        n_args += new_slice.len() as u64;
 
         let new_size = (n_args, 1).get_packed_size() as usize;
 
@@ -611,7 +607,9 @@ impl OwnedAdd for OwnedAddD {
         // size should be ok now
         (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
 
-        self.data.extend(other.get_data());
+        for child in new_slice.into_iter() {
+            self.data.extend_from_slice(child.get_data());
+        }
 
         let new_buf_pos = self.data.len();
 
@@ -696,10 +694,18 @@ impl Atom for DefaultRepresentation {
     type OA = OwnedAddD;
     type S<'a> = ListSliceD<'a>;
 
-    fn from_tree(tree: &AtomTree) -> OwnedAtom<DefaultRepresentation> {
+    fn from_tree(
+        tree: &AtomTree,
+        state: &State,
+        workspace: &Workspace<Self>,
+    ) -> OwnedAtom<DefaultRepresentation> {
         let mut oa = OwnedAtom::new();
         oa.from_tree(tree);
-        oa
+
+        let mut oa_norm = OwnedAtom::new();
+        oa.to_view().normalize(workspace, state, &mut oa_norm);
+
+        oa_norm
     }
 }
 

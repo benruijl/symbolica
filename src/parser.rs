@@ -4,7 +4,7 @@ use rug::{Complete, Integer};
 
 use crate::{
     representations::{number::Number, tree::AtomTree, Atom, OwnedAtom},
-    state::State,
+    state::{State, Workspace},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -18,6 +18,7 @@ enum ParseState {
 pub enum BinaryOperator {
     Mul,
     Add,
+    Sub,
     Pow,
     Div,
     Argument, // comma
@@ -29,6 +30,7 @@ impl BinaryOperator {
             BinaryOperator::Mul => 8,
             BinaryOperator::Div => 8,
             BinaryOperator::Add => 7,
+            BinaryOperator::Sub => 7,
             BinaryOperator::Pow => 9,
             BinaryOperator::Argument => 6,
         }
@@ -151,9 +153,28 @@ impl Token {
 
                         Ok(pow)
                     }
+                    BinaryOperator::Sub => {
+                        let base = atom_args.remove(0);
+
+                        let sub_args = if atom_args.len() == 1 {
+                            atom_args.pop().unwrap()
+                        } else {
+                            AtomTree::Add(atom_args)
+                        };
+
+                        Ok(AtomTree::Add(vec![
+                            base,
+                            AtomTree::Mul(vec![sub_args, AtomTree::Num(Number::Natural(-1, 1))]),
+                        ]))
+                    }
                     BinaryOperator::Div => {
                         let base = atom_args.remove(0);
-                        let inv_args = AtomTree::Mul(atom_args);
+
+                        let inv_args = if atom_args.len() == 1 {
+                            atom_args.pop().unwrap()
+                        } else {
+                            AtomTree::Mul(atom_args)
+                        };
 
                         Ok(AtomTree::Mul(vec![
                             base,
@@ -177,9 +198,9 @@ impl Token {
         }
     }
 
-    pub fn to_atom<P: Atom>(self, state: &mut State) -> Result<OwnedAtom<P>, String> {
+    pub fn to_atom<P: Atom>(self, state: &mut State, workspace: &Workspace<P>) -> Result<OwnedAtom<P>, String> {
         let a = self.to_atom_tree(state)?;
-        Ok(P::from_tree(&a))
+        Ok(P::from_tree(&a, state, workspace))
     }
 }
 
@@ -197,6 +218,7 @@ impl std::fmt::Display for Token {
                         match o {
                             BinaryOperator::Mul => f.write_char('*')?,
                             BinaryOperator::Div => f.write_char('/')?,
+                            BinaryOperator::Sub => f.write_char('-')?,
                             BinaryOperator::Add => f.write_char('+')?,
                             BinaryOperator::Pow => f.write_char('^')?,
                             BinaryOperator::Argument => f.write_char(',')?,
@@ -284,10 +306,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                 '+' => {
                     if matches!(
                         stack.last().unwrap(),
-                        Token::Start
-                            | Token::OpenParenthesis
-                            | Token::Fn(_, _, _)
-                            | Token::BinaryOp(_, _, _, _)
+                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, _, _, _)
                     ) {
                         // unary operator, can be ignored as plus is the default
                     } else {
@@ -299,11 +318,9 @@ pub fn parse(input: &str) -> Result<Token, String> {
                 '-' => {
                     if matches!(
                         stack.last().unwrap(),
-                        Token::Start
-                            | Token::OpenParenthesis
-                            | Token::Fn(_, _, _)
-                            | Token::BinaryOp(_, _, _, _)
+                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, _, _, _)
                     ) {
+                        // unary minus
                         stack.push(Token::BinaryOp(
                             false,
                             true,
@@ -311,13 +328,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                             vec![Token::Number("-1".to_owned())],
                         ));
                     } else {
-                        stack.push(Token::BinaryOp(true, true, BinaryOperator::Add, vec![]));
-                        stack.push(Token::BinaryOp(
-                            false,
-                            true,
-                            BinaryOperator::Mul,
-                            vec![Token::Number("-1".to_owned())],
-                        ));
+                        stack.push(Token::BinaryOp(true, true, BinaryOperator::Sub, vec![]));
                     }
                 }
                 '(' => {

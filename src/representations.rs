@@ -2,7 +2,7 @@ pub mod default;
 pub mod number;
 pub mod tree;
 
-use crate::state::{ResettableBuffer, State};
+use crate::state::{ResettableBuffer, State, Workspace};
 use std::{cmp::Ordering, ops::Range};
 
 use self::{
@@ -49,7 +49,7 @@ pub trait Atom: PartialEq {
     type OA: OwnedAdd<P = Self>;
     type S<'a>: ListSlice<'a, P = Self>;
 
-    fn from_tree(tree: &AtomTree) -> OwnedAtom<Self>
+    fn from_tree(tree: &AtomTree, state: &State, workspace: &Workspace<Self>) -> OwnedAtom<Self>
     where
         Self: Sized;
 }

@@ -4,8 +4,8 @@ use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
 
 use crate::{
-    finite_field::FiniteFieldU64,
     representations::{Atom, Identifier, OwnedAtom},
+    rings::finite_field::FiniteFieldU64,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

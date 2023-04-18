@@ -1,7 +1,6 @@
 use ahash::HashMap;
 use rug::Rational;
 use symbolica::{
-    finite_field::{self, FiniteFieldU64, PrimeIteratorU64},
     id::{
         AtomTreeIterator, Match, Pattern, PatternAtomTreeIterator, PatternRestriction,
         ReplaceIterator,
@@ -14,6 +13,7 @@ use symbolica::{
         tree::AtomTree,
         AtomView, Num, OwnedAtom,
     },
+    rings::finite_field::{self, FiniteFieldU64, PrimeIteratorU64},
     state::{ResettableBuffer, State, Workspace},
 };
 

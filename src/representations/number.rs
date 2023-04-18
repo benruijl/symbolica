@@ -4,7 +4,7 @@ use bytes::{Buf, BufMut};
 use rug::{ops::Pow, Integer, Rational};
 
 use crate::{
-    finite_field::MontgomeryNumber,
+    rings::{finite_field::MontgomeryNumber, Ring},
     state::{FiniteFieldIndex, State},
     utils,
 };
@@ -94,11 +94,8 @@ impl BorrowedNumber<'_> {
                     if let Some(num2) = n2.checked_mul(lcm / d2) {
                         if let Some(num1) = n1.checked_mul(lcm / d1) {
                             if let Some(num) = num1.checked_add(num2) {
-                                if num % lcm == 0 {
-                                    return Number::Natural(num / lcm, 1);
-                                } else {
-                                    return Number::Natural(num, lcm);
-                                }
+                                let g = utils::gcd_signed(num, lcm);
+                                return Number::Natural(num / g, lcm / g);
                             }
                         }
                     }
@@ -123,7 +120,7 @@ impl BorrowedNumber<'_> {
                     );
                 }
                 let f = state.get_finite_field(*i1);
-                Number::FiniteField(f.add(*n1, *n2), *i1)
+                Number::FiniteField(f.add(n1, n2), *i1)
             }
             (BorrowedNumber::FiniteField(_, _), _) => {
                 panic!("Cannot add finite field to non-finite number. Convert other number first?");
@@ -172,7 +169,7 @@ impl BorrowedNumber<'_> {
                     );
                 }
                 let f = state.get_finite_field(*i1);
-                Number::FiniteField(f.mul(*n1, *n2), *i1)
+                Number::FiniteField(f.mul(n1, n2), *i1)
             }
             (BorrowedNumber::FiniteField(_, _), _) => {
                 panic!("Cannot multiply finite field to non-finite number. Convert other number first?");

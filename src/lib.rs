@@ -1,8 +1,9 @@
-pub mod finite_field;
+pub mod rings;
+pub mod id;
 pub mod normalize;
+pub mod parser;
+pub mod poly;
 pub mod printer;
 pub mod representations;
 pub mod state;
 pub mod utils;
-pub mod parser;
-pub mod id;

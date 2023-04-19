@@ -1,11 +1,12 @@
 use ahash::HashMap;
-use rug::Rational;
+use rug::Rational as ArbitraryPrecisionRational;
 use symbolica::{
     id::{
         AtomTreeIterator, Match, Pattern, PatternAtomTreeIterator, PatternRestriction,
         ReplaceIterator,
     },
     parser::parse,
+    poly::polynomial::MultivariatePolynomial,
     printer::AtomPrinter,
     representations::{
         default::DefaultRepresentation,
@@ -13,7 +14,10 @@ use symbolica::{
         tree::AtomTree,
         AtomView, Num, OwnedAtom,
     },
-    rings::finite_field::{self, FiniteFieldU64, PrimeIteratorU64},
+    rings::{
+        finite_field::{self, FiniteFieldU64, PrimeIteratorU64},
+        rational::{Rational, RationalField},
+    },
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -41,7 +45,7 @@ fn expression_test() {
         ))),
         AtomTree::Var(y),
         AtomTree::Num(Number::Large(
-            Rational::from_str_radix(
+            ArbitraryPrecisionRational::from_str_radix(
                 "1723671261273182378912738921/128937127893761293712893712983712",
                 10,
             )
@@ -584,87 +588,116 @@ fn fibonacci_test() {
         .to_atom(&mut state, &workspace)
         .unwrap();
 
-    for _ in 0..1 {
-        let mut target = workspace.new_atom();
-        target.get_mut().from_view(&expr.to_view());
+    let mut target = workspace.new_atom();
+    target.get_mut().from_view(&expr.to_view());
+
+    println!(
+        "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {}:",
+        AtomPrinter::new(
+            target.get().to_view(),
+            symbolica::printer::PrintMode::Form,
+            &state
+        ),
+    );
+
+    for _ in 0..9 {
+        let mut out = workspace.new_atom();
+        pattern.replace_all(
+            target.get().to_view(),
+            &rhs,
+            &state,
+            &workspace,
+            &restrictions,
+            out.get_mut(),
+        );
+
+        // expand (f(1)+f(2))*4
+        let mut out2 = workspace.new_atom();
+        expand_pat.replace_all(
+            out.get().to_view(),
+            &expand_rhs,
+            &state,
+            &workspace,
+            &HashMap::default(),
+            out2.get_mut(),
+        );
+
+        // sort the expression
+        let mut out_renom = workspace.new_atom();
+        out2.get()
+            .to_view()
+            .normalize(&workspace, &state, out_renom.get_mut());
+        out2 = out_renom;
+
+        let mut out_renom2 = workspace.new_atom();
+        lhs_zero_pat.replace_all(
+            out2.get().to_view(),
+            &rhs_one,
+            &state,
+            &workspace,
+            &HashMap::default(),
+            out_renom2.get_mut(),
+        );
+
+        let mut out3 = workspace.new_atom();
+        lhs_one_pat.replace_all(
+            out_renom2.get().to_view(),
+            &rhs_one,
+            &state,
+            &workspace,
+            &HashMap::default(),
+            out3.get_mut(),
+        );
+
+        // sort expression
+        let mut out_renom = workspace.new_atom();
+        out3.get()
+            .to_view()
+            .normalize(&workspace, &state, out_renom.get_mut());
 
         println!(
-            "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {}:",
+            "\t{}",
             AtomPrinter::new(
-                target.get().to_view(),
+                out_renom.get().to_view(),
                 symbolica::printer::PrintMode::Form,
                 &state
             ),
         );
 
-        for _ in 0..9 {
-            let mut out = workspace.new_atom();
-            pattern.replace_all(
-                target.get().to_view(),
-                &rhs,
-                &state,
-                &workspace,
-                &restrictions,
-                out.get_mut(),
-            );
-
-            // expand (f(1)+f(2))*4
-            let mut out2 = workspace.new_atom();
-            expand_pat.replace_all(
-                out.get().to_view(),
-                &expand_rhs,
-                &state,
-                &workspace,
-                &HashMap::default(),
-                out2.get_mut(),
-            );
-
-            // sort the expression
-            let mut out_renom = workspace.new_atom();
-            out2.get()
-                .to_view()
-                .normalize(&workspace, &state, out_renom.get_mut());
-            out2 = out_renom;
-
-            let mut out_renom2 = workspace.new_atom();
-            lhs_zero_pat.replace_all(
-                out2.get().to_view(),
-                &rhs_one,
-                &state,
-                &workspace,
-                &HashMap::default(),
-                out_renom2.get_mut(),
-            );
-
-            let mut out3 = workspace.new_atom();
-            lhs_one_pat.replace_all(
-                out_renom2.get().to_view(),
-                &rhs_one,
-                &state,
-                &workspace,
-                &HashMap::default(),
-                out3.get_mut(),
-            );
-
-            // sort expression
-            let mut out_renom = workspace.new_atom();
-            out3.get()
-                .to_view()
-                .normalize(&workspace, &state, out_renom.get_mut());
-
-            println!(
-                "\t{}",
-                AtomPrinter::new(
-                    out_renom.get().to_view(),
-                    symbolica::printer::PrintMode::Form,
-                    &state
-                ),
-            );
-
-            target = out_renom;
-        }
+        target = out_renom;
     }
 }
+
+fn polynomial_test() {
+    let field = RationalField::new();
+    let mut a = MultivariatePolynomial::<RationalField, u8>::with_nvars(3, field);
+    a.append_monomial(Rational::Natural(3, 4), &[1, 0, 0]);
+    a.append_monomial(Rational::Natural(5, 1), &[1, 1, 0]);
+    a.append_monomial(Rational::Natural(7, 3), &[1, 1, 2]);
+
+    let mut b = MultivariatePolynomial::<RationalField, u8>::with_nvars(3, field);
+    b.append_monomial(Rational::Natural(6, 7), &[0, 1, 0]);
+    b.append_monomial(Rational::Natural(5, 1), &[1, 1, 0]);
+    b.append_monomial(Rational::Natural(7, 3), &[1, 1, 2]);
+
+    println!("> Polynomial multiplication: {} * {} =", a, b);
+    println!("\t{}", a * b);
+
+    let finite_field = FiniteFieldU64::new(17);
+    let mut a = MultivariatePolynomial::<FiniteFieldU64, u8>::with_nvars(3, finite_field);
+    a.append_monomial(finite_field.to_montgomery(4), &[1, 0, 0]);
+    a.append_monomial(finite_field.to_montgomery(6), &[1, 1, 0]);
+    a.append_monomial(finite_field.to_montgomery(13), &[1, 1, 2]);
+
+    let mut b = MultivariatePolynomial::<FiniteFieldU64, u8>::with_nvars(3, finite_field);
+    b.append_monomial(finite_field.to_montgomery(2), &[0, 1, 0]);
+    b.append_monomial(finite_field.to_montgomery(1), &[1, 1, 0]);
+    b.append_monomial(finite_field.to_montgomery(16), &[1, 1, 2]);
+
+    println!("> Polynomial multiplication: {} * {} =", a, b);
+    println!("\t{}", a * b);
+}
+
 fn main() {
     expression_test();
     finite_field_test();
@@ -676,4 +709,5 @@ fn main() {
     replace_once_test();
     replace_all_test();
     fibonacci_test();
+    polynomial_test();
 }

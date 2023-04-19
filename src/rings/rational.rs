@@ -1,10 +1,10 @@
-use std::ops::Neg;
+use std::{fmt::Display, ops::Neg};
 
 use rug::{ops::Pow, Integer, Rational as ArbitraryPrecisionRational};
 
 use crate::utils;
 
-use super::{Field, Ring};
+use super::{EuclideanDomain, Field, Ring};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct RationalField;
@@ -25,6 +25,27 @@ pub enum Rational {
 impl Rational {
     pub fn new(num: i64, den: i64) -> Rational {
         Rational::Natural(num, den)
+    }
+}
+
+impl Display for Rational {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rational::Natural(n, d) => {
+                if *d == 1 {
+                    f.write_fmt(format_args!("{}", n))
+                } else {
+                    f.write_fmt(format_args!("{}/{}", n, d))
+                }
+            }
+            Rational::Large(r) => r.fmt(f),
+        }
+    }
+}
+
+impl Display for RationalField {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
     }
 }
 
@@ -116,7 +137,7 @@ impl Ring for RationalField {
         }
     }
 
-    fn zero(&self) -> Self::Element {
+    fn zero() -> Self::Element {
         Rational::Natural(0, 1)
     }
 
@@ -158,6 +179,49 @@ impl Ring for RationalField {
             Rational::Large(r) => {
                 r.numer().to_u8().map(|x| x == 1).unwrap_or(false)
                     && r.denom().to_u8().map(|x| x == 1).unwrap_or(false)
+            }
+        }
+    }
+}
+
+impl EuclideanDomain for RationalField {
+    fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        Rational::Natural(0, 0)
+    }
+
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        (self.div(a, b), Rational::Natural(0, 0))
+    }
+
+    fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        match (a, b) {
+            (Rational::Natural(n1, d1), Rational::Natural(n2, d2)) => {
+                let gcd1 = utils::gcd_signed(*n1 as i64, *d2 as i64);
+                let gcd2 = utils::gcd_signed(*d1 as i64, *n2 as i64);
+
+                if let Some(lcm) = d2.checked_mul(d1 / gcd2) {
+                    Rational::Natural(gcd1, lcm)
+                } else {
+                    Rational::Large(ArbitraryPrecisionRational::from((
+                        Integer::from(gcd1),
+                        Integer::from(*d2) * Integer::from(d1 / gcd2),
+                    )))
+                }
+            }
+            // FIXME: downcast
+            (Rational::Natural(n1, d1), Rational::Large(r2))
+            | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
+                let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
+                Rational::Large(ArbitraryPrecisionRational::from((
+                    r1.numer().clone().gcd(r2.numer()),
+                    r1.denom().clone().lcm(r2.denom()),
+                )))
+            }
+            (Rational::Large(r1), Rational::Large(r2)) => {
+                Rational::Large(ArbitraryPrecisionRational::from((
+                    r1.numer().clone().gcd(r2.numer()),
+                    r1.denom().clone().lcm(r2.denom()),
+                )))
             }
         }
     }

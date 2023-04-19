@@ -15,7 +15,7 @@ impl<F: Field> Matrix<F> {
         Matrix {
             shape: (rows, cols),
             data: (0..rows as usize * cols as usize)
-                .map(|_| field.zero())
+                .map(|_| F::zero())
                 .collect(),
             field,
         }
@@ -87,7 +87,7 @@ impl<F: Field> Matrix<F> {
             for k in i + 1..neqs {
                 if !F::is_zero(&self[(k, j)]) {
                     let s = self.field.mul(&self[(k, j)], &inv_x);
-                    self[(k, j)] = self.field.zero();
+                    self[(k, j)] = F::zero();
                     for l in j + 1..ncols {
                         self[(k, l)] = self
                             .field
@@ -173,7 +173,7 @@ impl<F: Field> Matrix<F> {
                         .sub(&m[(k, nvars)], &m.field.mul(&m[(i, nvars)], &m[(k, j)]));
                     #[cfg(debug_assertions)]
                     {
-                        m[(k, j)] = m.field.zero();
+                        m[(k, j)] = F::zero();
                     }
                 }
             }

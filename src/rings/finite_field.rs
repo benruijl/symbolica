@@ -1,4 +1,6 @@
-use super::{Field, Ring};
+use std::fmt::{Display, Error, Formatter};
+
+use super::{EuclideanDomain, Field, Ring};
 
 const HENSEL_LIFTING_MASK: [u8; 128] = [
     255, 85, 51, 73, 199, 93, 59, 17, 15, 229, 195, 89, 215, 237, 203, 33, 31, 117, 83, 105, 231,
@@ -13,6 +15,12 @@ const HENSEL_LIFTING_MASK: [u8; 128] = [
 /// A 64-bit number representing a number in Montgomory form.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct MontgomeryNumber(pub(crate) u64);
+
+impl Display for MontgomeryNumber {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// A finite field over a prime that uses Montgomery modular arithmetic
 /// to increase the performance of the multiplication operator.
@@ -84,6 +92,12 @@ impl FiniteFieldU64 {
     }
 }
 
+impl Display for FiniteFieldU64 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, " % {}", self.p)
+    }
+}
+
 impl Ring for FiniteFieldU64 {
     type Element = MontgomeryNumber;
 
@@ -142,7 +156,7 @@ impl Ring for FiniteFieldU64 {
         MontgomeryNumber(self.p - a.0)
     }
 
-    fn zero(&self) -> Self::Element {
+    fn zero() -> Self::Element {
         MontgomeryNumber(0)
     }
 
@@ -173,6 +187,20 @@ impl Ring for FiniteFieldU64 {
 
     fn is_one(&self, a: &Self::Element) -> bool {
         a == &self.one
+    }
+}
+
+impl EuclideanDomain for FiniteFieldU64 {
+    fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        MontgomeryNumber(0)
+    }
+
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        (self.mul(a, &self.inv(b)), MontgomeryNumber(0))
+    }
+
+    fn gcd(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        self.one()
     }
 }
 

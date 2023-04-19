@@ -196,59 +196,67 @@ impl<F: Field> Matrix<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rings::finite_field::FiniteFieldU64;
+    use crate::rings::finite_field::FiniteField;
     use crate::rings::rational::{Rational, RationalField};
 
     #[test]
     fn test_solve_trivial() {
-        let field = FiniteFieldU64::new(17);
+        let field = FiniteField::<u32>::new(17);
         let a = Matrix {
             shape: (1, 1),
-            data: [12].into_iter().map(|n| field.to_montgomery(n)).collect(),
+            data: [12].into_iter().map(|n| field.to_element(n)).collect(),
             field,
         };
         let b = Matrix {
             shape: (1, 1),
-            data: [7].into_iter().map(|n| field.to_montgomery(n)).collect(),
+            data: [7].into_iter().map(|n| field.to_element(n)).collect(),
             field,
         };
         let r = a.solve(&b).unwrap();
 
-        let res: Vec<_> = r.data.into_iter().map(|i| a.field.to_u64(i)).collect();
+        let res: Vec<_> = r
+            .data
+            .into_iter()
+            .map(|i| a.field.from_element(i))
+            .collect();
         assert_eq!(&res, &[2]);
     }
 
     #[test]
     fn test_solve_easy() {
-        let field = FiniteFieldU64::new(17);
+        let field = FiniteField::<u32>::new(17);
         let a = Matrix {
             shape: (2, 2),
             data: [1, 0, 0, 1]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
         let b = Matrix {
             shape: (2, 1),
-            data: [5, 6].into_iter().map(|n| field.to_montgomery(n)).collect(),
+            data: [5, 6].into_iter().map(|n| field.to_element(n)).collect(),
             field,
         };
         println!("b={:?}", b.data);
         let r = a.solve(&b).unwrap();
 
-        let res: Vec<_> = r.data.into_iter().map(|i| a.field.to_u64(i)).collect();
+        let res: Vec<_> = r
+            .data
+            .into_iter()
+            .map(|i| a.field.from_element(i))
+            .collect();
         assert_eq!(&res, &[5, 6]);
     }
 
     #[test]
     fn test_solve() {
-        let field = FiniteFieldU64::new(17);
+        let field = FiniteField::<u32>::new(17);
         let a = Matrix {
             shape: (3, 3),
             data: [1, 1, 2, 3, 4, 3, 16, 5, 5]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
@@ -256,25 +264,29 @@ mod tests {
             shape: (3, 1),
             data: [3, 15, 8]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
         let r = a.solve(&b).unwrap();
 
-        let res: Vec<_> = r.data.into_iter().map(|i| a.field.to_u64(i)).collect();
+        let res: Vec<_> = r
+            .data
+            .into_iter()
+            .map(|i| a.field.from_element(i))
+            .collect();
         assert_eq!(&res, &[2, 3, 16]);
     }
 
     #[test]
     #[should_panic]
     fn test_solve_bad_shape() {
-        let field = FiniteFieldU64::new(17);
+        let field = FiniteField::<u32>::new(17);
         let a = Matrix {
             shape: (3, 3),
             data: [1, 1, 2, 3, 4, 3, 16, 5, 5]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
@@ -282,7 +294,7 @@ mod tests {
             shape: (4, 1),
             data: [3, 15, 8, 1]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
@@ -291,21 +303,18 @@ mod tests {
 
     #[test]
     fn test_solve_underdetermined1() {
-        let field = FiniteFieldU64::new(17);
+        let field = FiniteField::<u32>::new(17);
         let a = Matrix {
             shape: (2, 3),
             data: [1, 1, 2, 3, 4, 3]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
         let b = Matrix {
             shape: (2, 1),
-            data: [3, 15]
-                .into_iter()
-                .map(|n| field.to_montgomery(n))
-                .collect(),
+            data: [3, 15].into_iter().map(|n| field.to_element(n)).collect(),
             field,
         };
         let r = a.solve(&b);
@@ -320,12 +329,12 @@ mod tests {
 
     #[test]
     fn test_solve_underdetermined2() {
-        let field = FiniteFieldU64::new(17);
+        let field = FiniteField::<u32>::new(17);
         let a = Matrix {
             shape: (4, 4),
             data: [1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 2]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
@@ -333,7 +342,7 @@ mod tests {
             shape: (4, 1),
             data: [1, 15, 1, 2]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
@@ -349,12 +358,12 @@ mod tests {
 
     #[test]
     fn test_solve_underdetermined3() {
-        let field = FiniteFieldU64::new(17);
+        let field = FiniteField::<u32>::new(17);
         let a = Matrix {
             shape: (3, 3),
             data: [1, 1, 2, 3, 4, 3, 10, 7, 12]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
@@ -362,7 +371,7 @@ mod tests {
             shape: (3, 1),
             data: [3, 15, 12]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
@@ -378,12 +387,12 @@ mod tests {
 
     #[test]
     fn test_solve_overdetermined() {
-        let field = FiniteFieldU64::new(17);
+        let field = FiniteField::<u32>::new(17);
         let a = Matrix {
             shape: (5, 3),
             data: [1, 1, 2, 3, 4, 3, 9, 0, 11, 1, 1, 7, 2, 3, 8]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
@@ -391,24 +400,28 @@ mod tests {
             shape: (5, 1),
             data: [3, 15, 7, 6, 6]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
         let r = a.solve(&b).unwrap();
 
-        let res: Vec<_> = r.data.into_iter().map(|i| a.field.to_u64(i)).collect();
+        let res: Vec<_> = r
+            .data
+            .into_iter()
+            .map(|i| a.field.from_element(i))
+            .collect();
         assert_eq!(&res, &[11, 1, 4]);
     }
 
     #[test]
     fn test_solve_inconsistent() {
-        let field = FiniteFieldU64::new(17);
+        let field = FiniteField::<u32>::new(17);
         let a = Matrix {
             shape: (4, 3),
             data: [1, 1, 2, 3, 4, 3, 16, 5, 5, 14, 2, 4]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };
@@ -416,7 +429,7 @@ mod tests {
             shape: (4, 1),
             data: [3, 15, 8, 3]
                 .into_iter()
-                .map(|n| field.to_montgomery(n))
+                .map(|n| field.to_element(n))
                 .collect(),
             field,
         };

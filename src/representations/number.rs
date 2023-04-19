@@ -4,7 +4,7 @@ use bytes::{Buf, BufMut};
 use rug::{ops::Pow, Integer, Rational};
 
 use crate::{
-    rings::{finite_field::MontgomeryNumber, Ring},
+    rings::{finite_field::FiniteFieldElement, Ring},
     state::{FiniteFieldIndex, State},
     utils,
 };
@@ -40,7 +40,7 @@ fn get_size_of_natural(num_type: u8) -> u8 {
 pub enum Number {
     Natural(i64, i64),
     Large(Rational),
-    FiniteField(MontgomeryNumber, FiniteFieldIndex),
+    FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
 }
 
 impl Number {
@@ -65,7 +65,7 @@ impl Number {
 pub enum BorrowedNumber<'a> {
     Natural(i64, i64),
     Large(&'a Rational),
-    FiniteField(MontgomeryNumber, FiniteFieldIndex),
+    FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
 }
 
 impl BorrowedNumber<'_> {
@@ -327,7 +327,7 @@ impl PackedRationalNumberReader for [u8] {
             let (num, fi);
             (num, fi, source) = source.get_frac_u64();
             (
-                BorrowedNumber::FiniteField(MontgomeryNumber(num), FiniteFieldIndex(fi as usize)),
+                BorrowedNumber::FiniteField(FiniteFieldElement(num), FiniteFieldIndex(fi as usize)),
                 source,
             )
         } else {

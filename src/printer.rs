@@ -160,7 +160,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
             BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r)),
             BorrowedNumber::FiniteField(num, fi) => {
                 let ff = state.get_finite_field(fi);
-                f.write_fmt(format_args!("[{}%{}]", ff.to_u64(num), ff.get_prime()))
+                f.write_fmt(format_args!("[{}%{}]", ff.from_element(num), ff.get_prime()))
             }
         }
     }

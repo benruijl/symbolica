@@ -12,11 +12,11 @@ const HENSEL_LIFTING_MASK: [u8; 128] = [
     183, 205, 171, 1,
 ];
 
-/// A 64-bit number representing a number in Montgomory form.
+/// A number in a finite field.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct MontgomeryNumber(pub(crate) u64);
+pub struct FiniteFieldElement<UField>(pub(crate) UField);
 
-impl Display for MontgomeryNumber {
+impl<UField: Display> Display for FiniteFieldElement<UField> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}", self.0)
     }
@@ -25,24 +25,233 @@ impl Display for MontgomeryNumber {
 /// A finite field over a prime that uses Montgomery modular arithmetic
 /// to increase the performance of the multiplication operator.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct FiniteFieldU64 {
-    p: u64,
-    m: u64,
-    one: MontgomeryNumber,
+pub struct FiniteField<UField> {
+    p: UField,
+    m: UField,
+    one: FiniteFieldElement<UField>,
 }
 
-impl FiniteFieldU64 {
+impl FiniteField<u32> {
     /// Create a new finite field. `n` must be a prime larger than 2.
-    pub fn new(p: u64) -> FiniteFieldU64 {
+    pub fn new(p: u32) -> FiniteField<u32> {
         assert!(p % 2 != 0);
 
-        //println!("{} {} {}", p, Self::mod_2_64(p), 1 + u64::MAX as u128 % p as u128);
-        assert!(Self::get_one(p) as u128 == 1 + u64::MAX as u128 % p as u128);
+        FiniteField {
+            p,
+            m: Self::inv_2_32(p),
+            one: FiniteFieldElement(Self::get_one(p)),
+        }
+    }
 
-        FiniteFieldU64 {
+    pub fn get_prime(&self) -> u32 {
+        self.p
+    }
+
+    pub fn get_magic(&self) -> u32 {
+        self.m
+    }
+
+    /// Returns the unit element in Montgomory form, ie.e 1 + 2^32 mod a.
+    fn get_one(a: u32) -> u32 {
+        if a as u64 <= 1u64 << 31 {
+            let res = (((1u64 << 31) % a as u64) << 1) as u32;
+
+            if res < a {
+                res
+            } else {
+                res - a
+            }
+        } else {
+            a.wrapping_neg()
+        }
+    }
+
+    /// Returns -a^-1 mod 2^32.
+    fn inv_2_32(a: u32) -> u32 {
+        let mut ret: u32 = HENSEL_LIFTING_MASK[((a >> 1) & 127) as usize] as u32;
+        ret = ret.wrapping_mul(a.wrapping_mul(ret).wrapping_add(2));
+        ret = ret.wrapping_mul(a.wrapping_mul(ret).wrapping_add(2));
+        ret
+    }
+
+    /// Convert a number in a prime field a % n to Montgomory form.
+    #[inline(always)]
+    pub fn to_element(&self, a: u32) -> FiniteFieldElement<u32> {
+        // TODO: slow, faster alternatives may need assembly
+        FiniteFieldElement((((a as u64) << 32) % self.p as u64) as u32)
+    }
+
+    /// Convert a number from Montgomory form to standard form.
+    #[inline(always)]
+    pub fn from_element(&self, a: FiniteFieldElement<u32>) -> u32 {
+        self.mul(&a, &FiniteFieldElement(1)).0
+    }
+}
+
+impl Ring for FiniteField<u32> {
+    type Element = FiniteFieldElement<u32>;
+
+    /// Add two numbers in Montgomory form.
+    #[inline(always)]
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        let mut t = a.0 as u64 + b.0 as u64;
+
+        if t > self.p as u64 {
+            t -= self.p as u64;
+        }
+
+        FiniteFieldElement(t as u32)
+    }
+
+    /// Subtract `b` from `a`, where `a` and `b` are in Montgomory form.
+    #[inline(always)]
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        if a.0 >= b.0 {
+            FiniteFieldElement(a.0 - b.0)
+        } else {
+            FiniteFieldElement(a.0 + (self.p - b.0))
+        }
+    }
+
+    /// Multiply two numbers in Montgomory form.
+    #[inline(always)]
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        let t = a.0 as u64 * b.0 as u64;
+        let m = (t as u32).wrapping_mul(self.m);
+        let u = ((t.wrapping_add(m as u64 * self.p as u64)) >> 32) as u32;
+
+        // correct for overflow
+        if u < (t >> 32) as u32 {
+            return FiniteFieldElement(u.wrapping_sub(self.p));
+        }
+
+        if u >= self.p {
+            FiniteFieldElement(u - self.p)
+        } else {
+            FiniteFieldElement(u)
+        }
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.add(a, b);
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, b);
+    }
+
+    /// Computes -x mod n.
+    #[inline]
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        FiniteFieldElement(self.p - a.0)
+    }
+
+    fn zero() -> Self::Element {
+        FiniteFieldElement(0)
+    }
+
+    /// Return the unit element in Montgomory form.
+    fn one(&self) -> Self::Element {
+        self.one
+    }
+
+    /// Compute b^e % n.
+    #[inline]
+    fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
+        let mut b = *b;
+        let mut x = self.one();
+        while e != 0 {
+            if e & 1 != 0 {
+                x = self.mul(&x, &b);
+            }
+            b = self.mul(&b, &b);
+            e /= 2;
+        }
+
+        x
+    }
+
+    fn is_zero(a: &Self::Element) -> bool {
+        a.0 == 0
+    }
+
+    fn is_one(&self, a: &Self::Element) -> bool {
+        a == &self.one
+    }
+}
+
+impl EuclideanDomain for FiniteField<u32> {
+    fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        FiniteFieldElement(0)
+    }
+
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        (self.mul(a, &self.inv(b)), FiniteFieldElement(0))
+    }
+
+    fn gcd(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        self.one()
+    }
+}
+
+impl Field for FiniteField<u32> {
+    fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        self.mul(a, &self.inv(b))
+    }
+
+    fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, &self.inv(b));
+    }
+
+    /// Computes x^-1 mod n.
+    fn inv(&self, a: &Self::Element) -> Self::Element {
+        assert!(a.0 != 0, "0 is not invertible");
+
+        // apply multiplication with 1 twice to get the correct scaling of R=2^32
+        // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
+        let x_mont = self
+            .mul(
+                &self.mul(&a, &FiniteFieldElement(1)),
+                &FiniteFieldElement(1),
+            )
+            .0;
+
+        // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
+        let mut u1: u32 = 1;
+        let mut u3 = x_mont;
+        let mut v1: u32 = 0;
+        let mut v3 = self.p;
+        let mut even_iter: bool = true;
+
+        while v3 != 0 {
+            let q = u3 / v3;
+            let t3 = u3 % v3;
+            let t1 = u1 + q * v1;
+            u1 = v1;
+            v1 = t1;
+            u3 = v3;
+            v3 = t3;
+            even_iter = !even_iter;
+        }
+
+        debug_assert!(u3 == 1);
+        if even_iter {
+            FiniteFieldElement(u1)
+        } else {
+            FiniteFieldElement(self.p - u1)
+        }
+    }
+}
+
+impl FiniteField<u64> {
+    /// Create a new finite field. `n` must be a prime larger than 2.
+    pub fn new(p: u64) -> FiniteField<u64> {
+        assert!(p % 2 != 0);
+
+        FiniteField {
             p,
             m: Self::inv_2_64(p),
-            one: MontgomeryNumber(Self::get_one(p)),
+            one: FiniteFieldElement(Self::get_one(p)),
         }
     }
 
@@ -80,26 +289,26 @@ impl FiniteFieldU64 {
 
     /// Convert a number in a prime field a % n to Montgomory form.
     #[inline(always)]
-    pub fn to_montgomery(&self, a: u64) -> MontgomeryNumber {
+    pub fn to_element(&self, a: u64) -> FiniteFieldElement<u64> {
         // TODO: slow, faster alternatives may need assembly
-        MontgomeryNumber((((a as u128) << 64) % self.p as u128) as u64)
+        FiniteFieldElement((((a as u128) << 64) % self.p as u128) as u64)
     }
 
     /// Convert a number from Montgomory form to standard form.
     #[inline(always)]
-    pub fn to_u64(&self, a: MontgomeryNumber) -> u64 {
-        self.mul(&a, &MontgomeryNumber(1)).0
+    pub fn from_element(&self, a: FiniteFieldElement<u64>) -> u64 {
+        self.mul(&a, &FiniteFieldElement(1)).0
     }
 }
 
-impl Display for FiniteFieldU64 {
+impl<UField: Display> Display for FiniteField<UField> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, " % {}", self.p)
     }
 }
 
-impl Ring for FiniteFieldU64 {
-    type Element = MontgomeryNumber;
+impl Ring for FiniteField<u64> {
+    type Element = FiniteFieldElement<u64>;
 
     /// Add two numbers in Montgomory form.
     #[inline(always)]
@@ -110,16 +319,16 @@ impl Ring for FiniteFieldU64 {
             t -= self.p as u128;
         }
 
-        MontgomeryNumber(t as u64)
+        FiniteFieldElement(t as u64)
     }
 
     /// Subtract `b` from `a`, where `a` and `b` are in Montgomory form.
     #[inline(always)]
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         if a.0 >= b.0 {
-            MontgomeryNumber(a.0 - b.0)
+            FiniteFieldElement(a.0 - b.0)
         } else {
-            MontgomeryNumber(a.0 + (self.p - b.0))
+            FiniteFieldElement(a.0 + (self.p - b.0))
         }
     }
 
@@ -132,13 +341,13 @@ impl Ring for FiniteFieldU64 {
 
         // correct for overflow
         if u < (t >> 64) as u64 {
-            return MontgomeryNumber(u.wrapping_sub(self.p));
+            return FiniteFieldElement(u.wrapping_sub(self.p));
         }
 
         if u >= self.p {
-            MontgomeryNumber(u - self.p)
+            FiniteFieldElement(u - self.p)
         } else {
-            MontgomeryNumber(u)
+            FiniteFieldElement(u)
         }
     }
 
@@ -153,11 +362,11 @@ impl Ring for FiniteFieldU64 {
     /// Computes -x mod n.
     #[inline]
     fn neg(&self, a: &Self::Element) -> Self::Element {
-        MontgomeryNumber(self.p - a.0)
+        FiniteFieldElement(self.p - a.0)
     }
 
     fn zero() -> Self::Element {
-        MontgomeryNumber(0)
+        FiniteFieldElement(0)
     }
 
     /// Return the unit element in Montgomory form.
@@ -190,13 +399,13 @@ impl Ring for FiniteFieldU64 {
     }
 }
 
-impl EuclideanDomain for FiniteFieldU64 {
+impl EuclideanDomain for FiniteField<u64> {
     fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
-        MontgomeryNumber(0)
+        FiniteFieldElement(0)
     }
 
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
-        (self.mul(a, &self.inv(b)), MontgomeryNumber(0))
+        (self.mul(a, &self.inv(b)), FiniteFieldElement(0))
     }
 
     fn gcd(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
@@ -204,7 +413,7 @@ impl EuclideanDomain for FiniteFieldU64 {
     }
 }
 
-impl Field for FiniteFieldU64 {
+impl Field for FiniteField<u64> {
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.mul(a, &self.inv(b))
     }
@@ -220,7 +429,10 @@ impl Field for FiniteFieldU64 {
         // apply multiplication with 1 twice to get the correct scaling of R=2^64
         // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
         let x_mont = self
-            .mul(&self.mul(&a, &MontgomeryNumber(1)), &MontgomeryNumber(1))
+            .mul(
+                &self.mul(&a, &FiniteFieldElement(1)),
+                &FiniteFieldElement(1),
+            )
             .0;
 
         // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
@@ -243,9 +455,9 @@ impl Field for FiniteFieldU64 {
 
         debug_assert!(u3 == 1);
         if even_iter {
-            MontgomeryNumber(u1)
+            FiniteFieldElement(u1)
         } else {
-            MontgomeryNumber(self.p - u1)
+            FiniteFieldElement(self.p - u1)
         }
     }
 }
@@ -273,11 +485,11 @@ pub fn is_prime_u64(n: u64) -> bool {
         s += 1;
     }
 
-    let f = FiniteFieldU64::new(n);
-    let neg_one = MontgomeryNumber(n.wrapping_sub(f.one().0));
+    let f = FiniteField::<u64>::new(n);
+    let neg_one = FiniteFieldElement(n.wrapping_sub(f.one().0));
 
     'test: for a in witnesses {
-        let a = f.to_montgomery(a);
+        let a = f.to_element(a);
 
         if a.0 == 0 {
             continue;

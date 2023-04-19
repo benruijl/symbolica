@@ -5,7 +5,7 @@ use smartstring::alias::String;
 
 use crate::{
     representations::{Atom, Identifier, OwnedAtom},
-    rings::finite_field::FiniteFieldU64,
+    rings::finite_field::FiniteField,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,7 +16,7 @@ pub struct State {
     // get variable maps from here
     str_to_var_id: HashMap<String, Identifier>,
     var_to_str_map: Vec<String>,
-    finite_fields: Vec<FiniteFieldU64>,
+    finite_fields: Vec<FiniteField<u64>>,
 }
 
 impl State {
@@ -52,11 +52,11 @@ impl State {
         self.get_name(id).map(|n| n.ends_with('_'))
     }
 
-    pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteFieldU64 {
+    pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteField<u64> {
         &self.finite_fields[fi.0 as usize]
     }
 
-    pub fn get_or_insert_finite_field(&mut self, f: FiniteFieldU64) -> FiniteFieldIndex {
+    pub fn get_or_insert_finite_field(&mut self, f: FiniteField<u64>) -> FiniteFieldIndex {
         for (i, f2) in self.finite_fields.iter().enumerate() {
             if f.get_prime() == f2.get_prime() {
                 return FiniteFieldIndex(i);

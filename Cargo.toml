@@ -23,6 +23,10 @@ version = "1.19"
 ahash = "0.8"
 byteorder = "1.4"
 bytes = "1.3"
+colored = "2.0"
+rand = "0.8"
 smallvec = "1.1"
 smartstring = "1.0"
-colored = "2.0"
+tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_warn"] }
+regex = { version = "1", features = ["unicode-case"] } # workaround for problem in tracing-subscriber
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1,10 +1,14 @@
-use std::{fmt::Display, ops::Neg};
+use std::{
+    fmt::{Display, Write},
+    ops::Neg,
+};
 
+use rand::Rng;
 use rug::{ops::Pow, Integer, Rational as ArbitraryPrecisionRational};
 
 use crate::utils;
 
-use super::{EuclideanDomain, Field, Ring};
+use super::{finite_field::FiniteField, EuclideanDomain, Field, Ring};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct RationalField;
@@ -26,6 +30,119 @@ impl Rational {
     pub fn new(num: i64, den: i64) -> Rational {
         Rational::Natural(num, den)
     }
+
+    pub fn to_finite_field_u32(
+        &self,
+        field: FiniteField<u32>,
+    ) -> <FiniteField<u32> as Ring>::Element {
+        match self {
+            &Rational::Natural(n, d) => {
+                let mut ff = if n < u32::MAX as i64 {
+                    field.to_element(n.abs() as u32)
+                } else {
+                    field.to_element((n.abs() as u64 % field.get_prime() as u64) as u32)
+                };
+
+                if n < 0 {
+                    ff = field.neg(&ff);
+                }
+
+                if d != 1 {
+                    let df = if d < u32::MAX as i64 {
+                        field.to_element(d as u32)
+                    } else {
+                        field.to_element((d as u64 % field.get_prime() as u64) as u32)
+                    };
+
+                    field.div_assign(&mut ff, &df);
+                }
+
+                ff
+            }
+            Rational::Large(r) => field.div(
+                &field.to_element(r.numer().mod_u(field.get_prime())),
+                &field.to_element(r.denom().mod_u(field.get_prime())),
+            ),
+        }
+    }
+
+    pub fn from_finite_field_u32(
+        field: FiniteField<u32>,
+        element: &<FiniteField<u32> as Ring>::Element,
+    ) -> Rational {
+        Rational::Natural(field.from_element(*element) as i64, 1)
+    }
+
+    pub fn is_negative(&self) -> bool {
+        match self {
+            Rational::Natural(n, _) => *n < 0,
+            Rational::Large(r) => Integer::from(r.numer().signum_ref()) == -1,
+        }
+    }
+
+    pub fn is_integer(&self) -> bool {
+        match self {
+            Rational::Natural(_, d) => *d == 1,
+            Rational::Large(r) => r.is_integer(),
+        }
+    }
+
+    /// Use Garner's algorithm for the Chinese remainder theorem
+    /// to reconstruct an x that satisfies n1 = x % p1 and n2 = x % p2.
+    /// The x will be in the range [-p1*p2/2,p1*p2/2].
+    // FIXME: introduce an Integer class and use that instead of Rational
+    pub fn chinese_remainder(n1: Rational, n2: Rational, p1: Rational, p2: Rational) -> Rational {
+        // make sure n1 < n2
+        if match (&n1, &n2) {
+            (Rational::Natural(n1, _), Rational::Natural(n2, _)) => n1 > n2,
+            (Rational::Natural(_, _), Rational::Large(_)) => false,
+            (Rational::Large(_), Rational::Natural(_, _)) => true,
+            (Rational::Large(r1), Rational::Large(r2)) => r1 > r2,
+        } {
+            return Self::chinese_remainder(n2, n1, p2, p1);
+        }
+
+        let p1 = match p1 {
+            Rational::Natural(n, _) => Integer::from(n),
+            Rational::Large(r) => r.numer().clone(),
+        };
+        let p2 = match p2 {
+            Rational::Natural(n, _) => Integer::from(n),
+            Rational::Large(r) => r.numer().clone(),
+        };
+
+        let n1 = match n1 {
+            Rational::Natural(n, _) => Integer::from(n),
+            Rational::Large(r) => r.numer().clone(),
+        };
+        let n2 = match n2 {
+            Rational::Natural(n, _) => Integer::from(n),
+            Rational::Large(r) => r.numer().clone(),
+        };
+
+        // convert to mixed-radix notation
+        let gamma1 = (p1.clone() % p2.clone())
+            .invert(&p2)
+            .expect(&format!("Could not invert {} in {}", p1, p2));
+
+        let v1 = ((n2.clone() - n1.clone()) * gamma1.clone()) % p2.clone();
+
+        // convert to standard representation
+        let r = v1 * p1.clone() + n1;
+
+        let res = if r.clone() * 2 > p1.clone() * p2.clone() {
+            r - p1 * p2
+        } else {
+            r
+        };
+
+        // potentially downgrade from bigint
+        if let Some(r) = res.to_i64() {
+            Rational::Natural(r, 1)
+        } else {
+            Rational::Large(ArbitraryPrecisionRational::from(res))
+        }
+    }
 }
 
 impl Display for Rational {
@@ -33,9 +150,11 @@ impl Display for Rational {
         match self {
             Rational::Natural(n, d) => {
                 if *d == 1 {
-                    f.write_fmt(format_args!("{}", n))
+                    n.fmt(f)
                 } else {
-                    f.write_fmt(format_args!("{}/{}", n, d))
+                    n.fmt(f)?;
+                    f.write_char('/')?;
+                    write!(f, "{}", d)
                 }
             }
             Rational::Large(r) => r.fmt(f),
@@ -120,6 +239,10 @@ impl Ring for RationalField {
         *a = self.add(a, b);
     }
 
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.sub(a, b);
+    }
+
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, b);
     }
@@ -182,6 +305,11 @@ impl Ring for RationalField {
             }
         }
     }
+
+    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
+        let r = rng.gen_range(range.0..range.1);
+        Rational::Natural(r, 1)
+    }
 }
 
 impl EuclideanDomain for RationalField {
@@ -196,15 +324,15 @@ impl EuclideanDomain for RationalField {
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         match (a, b) {
             (Rational::Natural(n1, d1), Rational::Natural(n2, d2)) => {
-                let gcd1 = utils::gcd_signed(*n1 as i64, *d2 as i64);
-                let gcd2 = utils::gcd_signed(*d1 as i64, *n2 as i64);
+                let gcd_num = utils::gcd_signed(*n1 as i64, *n2 as i64);
+                let gcd_den = utils::gcd_signed(*d1 as i64, *d2 as i64);
 
-                if let Some(lcm) = d2.checked_mul(d1 / gcd2) {
-                    Rational::Natural(gcd1, lcm)
+                if let Some(lcm) = d2.checked_mul(d1 / gcd_den) {
+                    Rational::Natural(gcd_num, lcm)
                 } else {
                     Rational::Large(ArbitraryPrecisionRational::from((
-                        Integer::from(gcd1),
-                        Integer::from(*d2) * Integer::from(d1 / gcd2),
+                        Integer::from(gcd_num),
+                        Integer::from(*d2) * Integer::from(d1 / gcd_den),
                     )))
                 }
             }

@@ -1,5 +1,7 @@
 use std::fmt::{Display, Error, Formatter};
 
+use rand::Rng;
+
 use super::{EuclideanDomain, Field, Ring};
 
 const HENSEL_LIFTING_MASK: [u8; 128] = [
@@ -18,7 +20,11 @@ pub struct FiniteFieldElement<UField>(pub(crate) UField);
 
 impl<UField: Display> Display for FiniteFieldElement<UField> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.0)
+        if f.sign_plus() {
+            write!(f, "+{}", self.0)
+        } else {
+            write!(f, "{}", self.0)
+        }
     }
 }
 
@@ -31,6 +37,12 @@ pub struct FiniteField<UField> {
     one: FiniteFieldElement<UField>,
 }
 
+impl<UField: Copy> FiniteField<UField> {
+    pub fn get_prime(&self) -> UField {
+        self.p
+    }
+}
+
 impl FiniteField<u32> {
     /// Create a new finite field. `n` must be a prime larger than 2.
     pub fn new(p: u32) -> FiniteField<u32> {
@@ -41,14 +53,6 @@ impl FiniteField<u32> {
             m: Self::inv_2_32(p),
             one: FiniteFieldElement(Self::get_one(p)),
         }
-    }
-
-    pub fn get_prime(&self) -> u32 {
-        self.p
-    }
-
-    pub fn get_magic(&self) -> u32 {
-        self.m
     }
 
     /// Returns the unit element in Montgomory form, ie.e 1 + 2^32 mod a.
@@ -96,7 +100,7 @@ impl Ring for FiniteField<u32> {
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         let mut t = a.0 as u64 + b.0 as u64;
 
-        if t > self.p as u64 {
+        if t >= self.p as u64 {
             t -= self.p as u64;
         }
 
@@ -134,6 +138,10 @@ impl Ring for FiniteField<u32> {
 
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.add(a, b);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.sub(a, b);
     }
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
@@ -177,6 +185,11 @@ impl Ring for FiniteField<u32> {
 
     fn is_one(&self, a: &Self::Element) -> bool {
         a == &self.one
+    }
+
+    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
+        let r = rng.gen_range(range.0.max(0)..range.1.min(self.p as i64));
+        FiniteFieldElement(r as u32)
     }
 }
 
@@ -255,14 +268,6 @@ impl FiniteField<u64> {
         }
     }
 
-    pub fn get_prime(&self) -> u64 {
-        self.p
-    }
-
-    pub fn get_magic(&self) -> u64 {
-        self.m
-    }
-
     /// Returns the unit element in Montgomory form, ie.e 1 + 2^64 mod a.
     fn get_one(a: u64) -> u64 {
         if a as u128 <= 1u128 << 63 {
@@ -315,7 +320,7 @@ impl Ring for FiniteField<u64> {
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         let mut t = a.0 as u128 + b.0 as u128;
 
-        if t > self.p as u128 {
+        if t >= self.p as u128 {
             t -= self.p as u128;
         }
 
@@ -353,6 +358,10 @@ impl Ring for FiniteField<u64> {
 
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.add(a, b);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.sub(a, b);
     }
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
@@ -396,6 +405,11 @@ impl Ring for FiniteField<u64> {
 
     fn is_one(&self, a: &Self::Element) -> bool {
         a == &self.one
+    }
+
+    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
+        let r = rng.gen_range(range.0.max(0)..range.1.min(self.p as i64));
+        FiniteFieldElement(r as u64)
     }
 }
 

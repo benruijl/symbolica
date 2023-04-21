@@ -1,5 +1,6 @@
 pub mod monomial;
 pub mod polynomial;
+pub mod gcd;
 
 use std::fmt::{Debug, Display};
 use std::hash::Hash;

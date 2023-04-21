@@ -1,5 +1,9 @@
 use smallvec::SmallVec;
-use std::ops::{Index, IndexMut};
+use std::{
+    fmt::{Display, Write},
+    ops::{Index, IndexMut},
+    slice::Chunks,
+};
 
 use super::Field;
 
@@ -20,6 +24,18 @@ impl<F: Field> Matrix<F> {
             field,
         }
     }
+
+    pub fn rows(&self) -> usize {
+        self.shape.0 as usize
+    }
+
+    pub fn cols(&self) -> usize {
+        self.shape.1 as usize
+    }
+
+    pub fn row_iter(&self) -> Chunks<'_, F::Element> {
+        self.data.chunks(self.shape.1 as usize)
+    }
 }
 
 impl<F: Field> Index<(u32, u32)> for Matrix<F> {
@@ -36,6 +52,26 @@ impl<F: Field> IndexMut<(u32, u32)> for Matrix<F> {
     }
 }
 
+impl<F: Field> Display for Matrix<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char('{')?;
+        for (ri, r) in self.row_iter().enumerate() {
+            f.write_char('{')?;
+            for (ci, c) in r.iter().enumerate() {
+                write!(f, "{}", c)?;
+                if ci + 1 < self.shape.1 as usize {
+                    f.write_char(',')?;
+                }
+            }
+            f.write_char('}')?;
+            if ri + 1 < self.shape.0 as usize {
+                f.write_char(',')?;
+            }
+        }
+        f.write_char('}')
+    }
+}
+
 /// Error from linear solver.
 #[derive(Debug, Eq, PartialEq)]
 pub enum LinearSolverError {
@@ -46,7 +82,7 @@ pub enum LinearSolverError {
 impl<F: Field> Matrix<F> {
     /// Solves `A * x = 0` for the first `max_col` columns in x.
     /// The other columns are augmented.
-    fn solve_subsystem(&mut self, max_col: u32) -> Result<u32, LinearSolverError> {
+    pub fn solve_subsystem(&mut self, max_col: u32) -> Result<u32, LinearSolverError> {
         let (neqs, ncols) = self.shape;
 
         // A fast check.

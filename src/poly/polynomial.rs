@@ -6,13 +6,15 @@ use std::fmt::Display;
 use std::mem;
 use std::ops::{Add, Mul, Neg, Sub};
 
-use crate::rings::{EuclideanDomain, Ring};
+use crate::rings::finite_field::FiniteField;
+use crate::rings::{EuclideanDomain, Field, Ring};
 
 use super::monomial::{Monomial, MonomialView};
 use super::Exponent;
 use smallvec::smallvec;
 
 /// Multivariate polynomial with a sparse degree and variable dense representation.
+// TODO: implement EuclideanDomain for MultivariatePolynomial
 #[derive(Clone, Hash)]
 pub struct MultivariatePolynomial<F: Ring, E: Exponent> {
     // Data format: the i-th monomial is stored as coefficients[i] and
@@ -130,7 +132,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     }
 
     #[inline]
-    fn is_one(&self) -> bool {
+    pub fn is_one(&self) -> bool {
         self.nterms == 1
             && self.field.is_one(&self.coefficients[0])
             && self.exponents.iter().all(|x| x.is_zero())
@@ -383,7 +385,7 @@ impl<F: Ring + Display, E: Exponent> Display for MultivariatePolynomial<F, E> {
                 if is_first_term {
                     write!(f, "{}", monomial.coefficient)?;
                 } else {
-                    write!(f, "+{}", monomial.coefficient)?;
+                    write!(f, "{:+}", monomial.coefficient)?;
                 }
                 is_first_factor = false;
             }
@@ -845,15 +847,15 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     pub fn to_univariate_polynomial_list(
         &self,
         x: usize,
-    ) -> Vec<(MultivariatePolynomial<F, E>, u32)> {
+    ) -> Vec<(MultivariatePolynomial<F, E>, E)> {
         if self.coefficients.is_empty() {
             return vec![];
         }
 
         // get maximum degree for variable x
-        let mut maxdeg = 0;
+        let mut maxdeg = E::zero();
         for t in 0..self.nterms {
-            let d = self.exponents(t)[x].to_u32();
+            let d = self.exponents(t)[x];
             if d > maxdeg {
                 maxdeg = d.clone();
             }
@@ -862,7 +864,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         // construct the coefficient per power of x
         let mut result = vec![];
         let mut e = vec![E::zero(); self.nvars];
-        for d in 0..maxdeg + 1 {
+        for d in 0..maxdeg.to_u32() + 1 {
             // TODO: add bounds estimate
             let mut a = MultivariatePolynomial::with_nvars(self.nvars, self.field);
             for t in 0..self.nterms {
@@ -876,7 +878,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             }
 
             if !a.is_zero() {
-                result.push((a, d));
+                result.push((a, E::from_u32(d)));
             }
         }
 
@@ -1200,11 +1202,11 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         h.push((
             Monomial {
                 coefficient: self.field.neg(&self.lcoeff()),
-                exponents: div.last_exponents().iter().cloned().collect(),
+                exponents: self.last_exponents().iter().cloned().collect(),
                 field: self.field,
             },
-            0,                  // index in self/div viewed from the back (due to our poly ordering)
-            usize::max_value(), // index in q, we set it out of bounds to signal we need new terms from f
+            0,          // index in self/div viewed from the back (due to our poly ordering)
+            usize::MAX, // index in q, we set it out of bounds to signal we need new terms from f
         ));
 
         while h.len() > 0 {
@@ -1223,7 +1225,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 }
 
                 // TODO: recycle memory from x for new element in h?
-                if j == usize::max_value() {
+                if j == usize::MAX {
                     if i + 1 < self.nterms {
                         // we need a new term from self
                         h.push((
@@ -1256,20 +1258,21 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     break;
                 }
             }
-            if !F::is_zero(&t.coefficient) && t.try_div_assign(&lm) {
-                // add t to q
-                q.coefficients.push(t.coefficient.clone());
-                q.exponents.extend_from_slice(&t.exponents);
-                q.nterms += 1;
 
-                for i in div.nterms - s - 1..div.nterms - 1 {
-                    h.push((div.to_monomial(i) * &t, div.nterms - i - 1, q.nterms - 1));
-                }
+            if !F::is_zero(&t.coefficient) {
+                if t.try_div_assign(&lm) {
+                    // add t to q
+                    q.coefficients.push(t.coefficient.clone());
+                    q.exponents.extend_from_slice(&t.exponents);
+                    q.nterms += 1;
 
-                s = 0;
-            } else {
-                // add t to r
-                if !F::is_zero(&t.coefficient) {
+                    for i in div.nterms - s - 1..div.nterms - 1 {
+                        h.push((div.to_monomial(i) * &t, div.nterms - i - 1, q.nterms - 1));
+                    }
+
+                    s = 0;
+                } else {
+                    // add t to r
                     r.exponents.extend_from_slice(&t.exponents);
                     r.coefficients.push(t.coefficient);
                     r.nterms += 1;
@@ -1289,5 +1292,84 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         (q, r)
+    }
+}
+
+impl<UField, E: Exponent> MultivariatePolynomial<FiniteField<UField>, E>
+where
+    FiniteField<UField>: Field,
+{
+    /// Optimized division routine for the univariate case in a finite field.
+    pub fn fast_divmod(
+        &self,
+        div: &mut MultivariatePolynomial<FiniteField<UField>, E>,
+    ) -> (
+        MultivariatePolynomial<FiniteField<UField>, E>,
+        MultivariatePolynomial<FiniteField<UField>, E>,
+    ) {
+        if div.nterms == 1 {
+            // calculate inverse once
+            let inv = self.field.inv(&div.coefficients[0]);
+
+            if div.is_constant() {
+                let mut q = self.clone();
+                for c in &mut q.coefficients {
+                    self.field.mul_assign(c, &inv);
+                }
+
+                return (
+                    q,
+                    MultivariatePolynomial::with_nvars(self.nvars, self.field),
+                );
+            }
+
+            let mut q = MultivariatePolynomial::with_nvars_and_capacity(
+                self.nvars,
+                self.nterms,
+                self.field,
+            );
+            let mut r = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+            let dive = div.exponents(0);
+
+            for m in self.into_iter() {
+                if m.exponents.iter().zip(dive).all(|(a, b)| a >= b) {
+                    q.coefficients.push(self.field.mul(m.coefficient, &inv));
+
+                    for (ee, ed) in m.exponents.iter().zip(dive) {
+                        q.exponents.push(*ee - *ed);
+                    }
+                    q.nterms += 1;
+                } else {
+                    r.coefficients.push(m.coefficient.clone());
+                    r.exponents.extend(m.exponents);
+                    r.nterms += 1;
+                }
+            }
+            return (q, r);
+        }
+
+        // normalize the lcoeff to 1 to prevent a costly inversion
+        if !self.field.is_one(&div.lcoeff()) {
+            let o = div.lcoeff();
+            let inv = self.field.inv(&div.lcoeff());
+
+            for c in &mut div.coefficients {
+                self.field.mul_assign(c, &inv);
+            }
+
+            let mut res = self.synthetic_division(div);
+
+            for c in &mut res.0.coefficients {
+                self.field.mul_assign(c, &o);
+            }
+
+            for c in &mut div.coefficients {
+                self.field.mul_assign(c, &o);
+            }
+            return res;
+        }
+
+        // fall back to generic case
+        self.synthetic_division(div)
     }
 }

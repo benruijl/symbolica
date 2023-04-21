@@ -21,6 +21,8 @@ use symbolica::{
     state::{ResettableBuffer, State, Workspace},
 };
 
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
 fn expression_test() {
     let mut state = State::new();
     let workspace = Workspace::new();
@@ -698,7 +700,31 @@ fn polynomial_test() {
     println!("\t{}", a * b);
 }
 
+fn polynomial_gcd_test() {
+    let field = RationalField::new();
+    let mut a = MultivariatePolynomial::<RationalField, u8>::with_nvars(3, field);
+    a.append_monomial(Rational::Natural(5, 1), &[0, 0, 0]);
+    a.append_monomial(Rational::Natural(8, 1), &[1, 0, 0]);
+    a.append_monomial(Rational::Natural(3, 1), &[2, 0, 0]);
+    a.append_monomial(Rational::Natural(-5, 1), &[0, 1, 0]);
+    a.append_monomial(Rational::Natural(-3, 1), &[1, 1, 0]);
+
+    let mut b = MultivariatePolynomial::<RationalField, u8>::with_nvars(3, field);
+    b.append_monomial(Rational::Natural(5, 1), &[0, 0, 0]);
+    b.append_monomial(Rational::Natural(5, 1), &[1, 0, 0]);
+    b.append_monomial(Rational::Natural(-2, 1), &[0, 1, 0]);
+    b.append_monomial(Rational::Natural(3, 1), &[1, 1, 0]);
+    b.append_monomial(Rational::Natural(-3, 1), &[0, 2, 0]);
+    println!("> Polynomial gcd of {} and {} =", a, b);
+    println!("\t{}", MultivariatePolynomial::gcd(&a, &b));
+}
+
 fn main() {
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_env("SYMBOLICA_LOG"))
+        .init();
+
     expression_test();
     finite_field_test();
     parse_test();
@@ -710,4 +736,5 @@ fn main() {
     replace_all_test();
     fibonacci_test();
     polynomial_test();
+    polynomial_gcd_test();
 }

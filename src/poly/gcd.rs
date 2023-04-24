@@ -6,9 +6,10 @@ use std::mem;
 use std::ops::Add;
 use tracing::{debug, instrument, trace};
 
-use crate::rings::finite_field::{FiniteField, FiniteFieldElement};
+use crate::rings::finite_field::{FiniteField, FiniteFieldElement, ToFiniteField};
+use crate::rings::integer::{Integer, IntegerRing};
 use crate::rings::linear_system::{LinearSolverError, Matrix};
-use crate::rings::rational::{Rational, RationalField};
+use crate::rings::rational::RationalField;
 use crate::rings::{EuclideanDomain, Field, Ring};
 
 use super::polynomial::MultivariatePolynomial;
@@ -1341,7 +1342,7 @@ where
 
         // find better upper bounds for all variables
         // these bounds could actually be wrong due to an unfortunate prime or sampling points
-        let mut tight_bounds = MultivariatePolynomial::get_gcd_var_bounds(&a, &b, &vars);
+        let mut tight_bounds = MultivariatePolynomial::get_gcd_var_bounds(&a, &b, &vars, &bounds);
 
         // Determine a good variable ordering based on the estimated degree (decreasing) in the gcd.
         // If it is different from the input, make a copy and rearrange so that the
@@ -1403,7 +1404,10 @@ where
     }
 }
 
-impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
+impl<R: Ring, E: Exponent> MultivariatePolynomial<R, E>
+where
+    R::Element: ToFiniteField<u32>,
+{
     /// Convert the coefficient from the current field to the given field.
     pub fn to_finite_field_u32(
         &self,
@@ -1413,7 +1417,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
         let mut newe = Vec::with_capacity(self.exponents.len());
 
         for m in self.into_iter() {
-            let nc = m.coefficient.to_finite_field_u32(field);
+            let nc = m.coefficient.to_finite_field(field);
             if !FiniteField::<u32>::is_zero(&nc) {
                 newc.push(nc);
                 newe.extend(m.exponents);
@@ -1426,17 +1430,19 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
         a.coefficients = newc;
         a
     }
+}
 
+impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
     /// Compute the gcd of two multivariate polynomials using Zippel's algorithm.
     /// TODO: provide a parallel implementation?
     #[instrument(level = "debug", skip_all)]
     fn gcd_zippel(
-        a: &MultivariatePolynomial<RationalField, E>,
-        b: &MultivariatePolynomial<RationalField, E>,
+        a: &Self,
+        b: &Self,
         vars: &[usize], // variables
         bounds: &mut [E],
         tight_bounds: &mut [E],
-    ) -> MultivariatePolynomial<RationalField, E> {
+    ) -> Self {
         debug!("Zippel gcd of {} and {}", a, b);
         #[cfg(debug_assertions)]
         {
@@ -1466,7 +1472,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
 
             let mut p = LARGE_U32_PRIMES[pi];
             let mut finite_field = FiniteField::<u32>::new(p);
-            let mut gammap = gamma.to_finite_field_u32(finite_field);
+            let mut gammap = gamma.to_finite_field(finite_field);
 
             if FiniteField::<u32>::is_zero(&gammap) {
                 continue 'newfirstprime;
@@ -1540,12 +1546,10 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
             gm.coefficients = gp
                 .coefficients
                 .iter()
-                .map(|x| {
-                    Rational::from_finite_field_u32(gp.field, &gp.field.mul(x, &lcoeff_factor))
-                })
+                .map(|x| Integer::from_finite_field_u32(gp.field, &gp.field.mul(x, &lcoeff_factor)))
                 .collect();
 
-            let mut m = Rational::Natural(p as i64, 1); // size of finite field
+            let mut m = Integer::Natural(p as i64); // size of finite field
 
             debug!("GCD suggestion with gamma: {} mod {} ", gm, p);
 
@@ -1560,7 +1564,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
                     gc.coefficients = gc
                         .coefficients
                         .iter()
-                        .map(|x| gc.field.div(x, &gmc))
+                        .map(|x| gc.field.quot_rem(x, &gmc).0)
                         .collect();
 
                     debug!("Final suggested gcd: {}", gc);
@@ -1589,7 +1593,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
                     p = LARGE_U32_PRIMES[pi];
                     finite_field = FiniteField::<u32>::new(p);
 
-                    gammap = gamma.to_finite_field_u32(finite_field);
+                    gammap = gamma.to_finite_field(finite_field);
 
                     if !FiniteField::<u32>::is_zero(&gammap) {
                         break;
@@ -1668,17 +1672,15 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
                         gmc.clone()
                     };
 
-                    // TODO: replace by routine over the integers
-                    assert!(coeff.is_integer() && m.is_integer());
-                    *gmc = Rational::chinese_remainder(
+                    *gmc = Integer::chinese_remainder(
                         coeff,
-                        Rational::Natural(gp.field.from_element(gpc) as i64, 1),
+                        Integer::Natural(gp.field.from_element(gpc) as i64),
                         m.clone(),
-                        Rational::Natural(p as i64, 1),
+                        Integer::Natural(p as i64),
                     );
                 }
 
-                a.field.mul_assign(&mut m, &Rational::Natural(p as i64, 1));
+                a.field.mul_assign(&mut m, &Integer::Natural(p as i64));
 
                 debug!("gm: {} from ring {}", gm, m);
             }
@@ -1688,26 +1690,85 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
 
 pub trait PolynomialGCD<E: Exponent> {
     fn gcd(a: &Self, b: &Self, vars: &[usize], bounds: &mut [E], tight_bounds: &mut [E]) -> Self;
-    fn get_gcd_var_bounds(a: &Self, b: &Self, vars: &[usize]) -> Vec<E>;
+    fn get_gcd_var_bounds(a: &Self, b: &Self, vars: &[usize], loose_bounds: &[E]) -> Vec<E>;
 }
 
-impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<RationalField, E> {
-    fn gcd(
-        a: &MultivariatePolynomial<RationalField, E>,
-        b: &MultivariatePolynomial<RationalField, E>,
-        vars: &[usize],
-        bounds: &mut [E],
-        tight_bounds: &mut [E],
-    ) -> MultivariatePolynomial<RationalField, E> {
+impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<IntegerRing, E> {
+    fn gcd(a: &Self, b: &Self, vars: &[usize], bounds: &mut [E], tight_bounds: &mut [E]) -> Self {
         MultivariatePolynomial::gcd_zippel(&a, &b, vars, bounds, tight_bounds)
     }
 
-    fn get_gcd_var_bounds(
-        a: &MultivariatePolynomial<RationalField, E>,
-        b: &MultivariatePolynomial<RationalField, E>,
-        vars: &[usize],
-    ) -> Vec<E> {
-        let mut tight_bounds = vec![E::zero(); vars.len()];
+    fn get_gcd_var_bounds(a: &Self, b: &Self, vars: &[usize], loose_bounds: &[E]) -> Vec<E> {
+        let mut tight_bounds = loose_bounds.to_owned();
+        let mut i = 0;
+        loop {
+            let ap = a.to_finite_field_u32(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
+            let bp = b.to_finite_field_u32(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
+            if ap.nterms > 0
+                && bp.nterms > 0
+                && ap.last_exponents() == a.last_exponents()
+                && bp.last_exponents() == b.last_exponents()
+            {
+                for var in vars.iter() {
+                    let vvars = vars
+                        .iter()
+                        .filter(|i| *i != var)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    tight_bounds[*var] =
+                        MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
+                }
+                break;
+            } else {
+                debug!("Variable bounds failed due to unlucky prime");
+                i += 1;
+            }
+        }
+        tight_bounds
+    }
+}
+
+impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<RationalField, E> {
+    fn gcd(a: &Self, b: &Self, vars: &[usize], bounds: &mut [E], tight_bounds: &mut [E]) -> Self {
+        // remove the content so that the polynomials have integer coefficients
+        let content = a.field.gcd(&a.content(), &b.content());
+
+        let mut a_int =
+            MultivariatePolynomial::with_nvars_and_capacity(a.nvars, a.nterms, IntegerRing::new());
+
+        for t in a {
+            let coeff = a.field.div(t.coefficient, &content);
+            debug_assert!(coeff.is_integer());
+            a_int.append_monomial(coeff.numerator(), t.exponents);
+        }
+
+        let mut b_int =
+            MultivariatePolynomial::with_nvars_and_capacity(a.nvars, a.nterms, IntegerRing::new());
+
+        for t in b {
+            let coeff = b.field.div(t.coefficient, &content);
+            debug_assert!(coeff.is_integer());
+            b_int.append_monomial(coeff.numerator(), t.exponents);
+        }
+
+        let res_int =
+            MultivariatePolynomial::gcd_zippel(&a_int, &b_int, vars, bounds, tight_bounds);
+
+        let mut res =
+            MultivariatePolynomial::with_nvars_and_capacity(res_int.nvars, res_int.nterms, a.field);
+
+        for t in &res_int {
+            res.append_monomial(
+                a.field.mul(&t.coefficient.to_rational(), &content),
+                t.exponents,
+            );
+        }
+
+        res
+    }
+
+    fn get_gcd_var_bounds(a: &Self, b: &Self, vars: &[usize], loose_bounds: &[E]) -> Vec<E> {
+        let mut tight_bounds = loose_bounds.to_owned();
         let mut i = 0;
         loop {
             let ap = a.to_finite_field_u32(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
@@ -1737,23 +1798,13 @@ impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<RationalField, E> 
 }
 
 impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<FiniteField<u32>, E> {
-    fn gcd(
-        a: &MultivariatePolynomial<FiniteField<u32>, E>,
-        b: &MultivariatePolynomial<FiniteField<u32>, E>,
-        vars: &[usize],
-        bounds: &mut [E],
-        tight_bounds: &mut [E],
-    ) -> MultivariatePolynomial<FiniteField<u32>, E> {
+    fn gcd(a: &Self, b: &Self, vars: &[usize], bounds: &mut [E], tight_bounds: &mut [E]) -> Self {
         assert!(!a.is_zero() || !b.is_zero());
         MultivariatePolynomial::gcd_shape_modular(&a, &b, vars, bounds, tight_bounds).unwrap()
     }
 
-    fn get_gcd_var_bounds(
-        a: &MultivariatePolynomial<FiniteField<u32>, E>,
-        b: &MultivariatePolynomial<FiniteField<u32>, E>,
-        vars: &[usize],
-    ) -> Vec<E> {
-        let mut tight_bounds = vec![E::zero(); vars.len()];
+    fn get_gcd_var_bounds(a: &Self, b: &Self, vars: &[usize], loose_bounds: &[E]) -> Vec<E> {
+        let mut tight_bounds = loose_bounds.to_owned();
         for var in vars {
             let vvars = vars
                 .iter()

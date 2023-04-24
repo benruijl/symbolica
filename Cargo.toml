@@ -10,9 +10,16 @@ readme = "Readme.md"
 repository = "https://github/benruijl/symbolica"
 version = "0.0.0"
 
+[profile.dev-optim]
+inherits = "dev"
+opt-level = 2
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 name = "symbolica"
+
+[dev-dependencies]
+tracing-subscriber = {version = "0.3.17", features = ["env-filter"]}
 
 [dependencies.rug]
 default-features = false
@@ -27,6 +34,4 @@ colored = "2.0"
 rand = "0.8"
 smallvec = "1.1"
 smartstring = "1.0"
-tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_warn"] }
-regex = { version = "1", features = ["unicode-case"] } # workaround for problem in tracing-subscriber
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = {version = "0.1", features = ["max_level_trace", "release_max_level_warn"]}

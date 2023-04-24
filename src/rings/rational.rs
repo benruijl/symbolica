@@ -4,11 +4,15 @@ use std::{
 };
 
 use rand::Rng;
-use rug::{ops::Pow, Integer, Rational as ArbitraryPrecisionRational};
+use rug::{ops::Pow, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryPrecisionRational};
 
 use crate::utils;
 
-use super::{finite_field::FiniteField, EuclideanDomain, Field, Ring};
+use super::{
+    finite_field::{FiniteField, ToFiniteField},
+    integer::Integer,
+    EuclideanDomain, Field, Ring,
+};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct RationalField;
@@ -26,15 +30,8 @@ pub enum Rational {
     Large(ArbitraryPrecisionRational),
 }
 
-impl Rational {
-    pub fn new(num: i64, den: i64) -> Rational {
-        Rational::Natural(num, den)
-    }
-
-    pub fn to_finite_field_u32(
-        &self,
-        field: FiniteField<u32>,
-    ) -> <FiniteField<u32> as Ring>::Element {
+impl ToFiniteField<u32> for Rational {
+    fn to_finite_field(&self, field: FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
         match self {
             &Rational::Natural(n, d) => {
                 let mut ff = if n < u32::MAX as i64 {
@@ -65,6 +62,12 @@ impl Rational {
             ),
         }
     }
+}
+
+impl Rational {
+    pub fn new(num: i64, den: i64) -> Rational {
+        Rational::Natural(num, den)
+    }
 
     pub fn from_finite_field_u32(
         field: FiniteField<u32>,
@@ -76,7 +79,7 @@ impl Rational {
     pub fn is_negative(&self) -> bool {
         match self {
             Rational::Natural(n, _) => *n < 0,
-            Rational::Large(r) => Integer::from(r.numer().signum_ref()) == -1,
+            Rational::Large(r) => ArbitraryPrecisionInteger::from(r.numer().signum_ref()) == -1,
         }
     }
 
@@ -87,60 +90,10 @@ impl Rational {
         }
     }
 
-    /// Use Garner's algorithm for the Chinese remainder theorem
-    /// to reconstruct an x that satisfies n1 = x % p1 and n2 = x % p2.
-    /// The x will be in the range [-p1*p2/2,p1*p2/2].
-    // FIXME: introduce an Integer class and use that instead of Rational
-    pub fn chinese_remainder(n1: Rational, n2: Rational, p1: Rational, p2: Rational) -> Rational {
-        // make sure n1 < n2
-        if match (&n1, &n2) {
-            (Rational::Natural(n1, _), Rational::Natural(n2, _)) => n1 > n2,
-            (Rational::Natural(_, _), Rational::Large(_)) => false,
-            (Rational::Large(_), Rational::Natural(_, _)) => true,
-            (Rational::Large(r1), Rational::Large(r2)) => r1 > r2,
-        } {
-            return Self::chinese_remainder(n2, n1, p2, p1);
-        }
-
-        let p1 = match p1 {
-            Rational::Natural(n, _) => Integer::from(n),
-            Rational::Large(r) => r.numer().clone(),
-        };
-        let p2 = match p2 {
-            Rational::Natural(n, _) => Integer::from(n),
-            Rational::Large(r) => r.numer().clone(),
-        };
-
-        let n1 = match n1 {
-            Rational::Natural(n, _) => Integer::from(n),
-            Rational::Large(r) => r.numer().clone(),
-        };
-        let n2 = match n2 {
-            Rational::Natural(n, _) => Integer::from(n),
-            Rational::Large(r) => r.numer().clone(),
-        };
-
-        // convert to mixed-radix notation
-        let gamma1 = (p1.clone() % p2.clone())
-            .invert(&p2)
-            .expect(&format!("Could not invert {} in {}", p1, p2));
-
-        let v1 = ((n2.clone() - n1.clone()) * gamma1.clone()) % p2.clone();
-
-        // convert to standard representation
-        let r = v1 * p1.clone() + n1;
-
-        let res = if r.clone() * 2 > p1.clone() * p2.clone() {
-            r - p1 * p2
-        } else {
-            r
-        };
-
-        // potentially downgrade from bigint
-        if let Some(r) = res.to_i64() {
-            Rational::Natural(r, 1)
-        } else {
-            Rational::Large(ArbitraryPrecisionRational::from(res))
+    pub fn numerator(&self) -> Integer {
+        match self {
+            Rational::Natural(n, _) => Integer::Natural(*n),
+            Rational::Large(r) => Integer::Large(r.numer().clone()),
         }
     }
 }
@@ -215,12 +168,15 @@ impl Ring for RationalField {
                         Some(nd) => Rational::Natural(nn, nd),
                         None => Rational::Large(ArbitraryPrecisionRational::from((
                             nn,
-                            Integer::from(d1 / gcd2) * Integer::from(d2 / gcd1),
+                            ArbitraryPrecisionInteger::from(d1 / gcd2)
+                                * ArbitraryPrecisionInteger::from(d2 / gcd1),
                         ))),
                     },
                     None => Rational::Large(ArbitraryPrecisionRational::from((
-                        Integer::from(n1 / gcd1) * Integer::from(n2 / gcd2),
-                        Integer::from(d1 / gcd2) * Integer::from(d2 / gcd1),
+                        ArbitraryPrecisionInteger::from(n1 / gcd1)
+                            * ArbitraryPrecisionInteger::from(n2 / gcd2),
+                        ArbitraryPrecisionInteger::from(d1 / gcd2)
+                            * ArbitraryPrecisionInteger::from(d2 / gcd1),
                     ))),
                 }
             }
@@ -331,8 +287,9 @@ impl EuclideanDomain for RationalField {
                     Rational::Natural(gcd_num, lcm)
                 } else {
                     Rational::Large(ArbitraryPrecisionRational::from((
-                        Integer::from(gcd_num),
-                        Integer::from(*d2) * Integer::from(d1 / gcd_den),
+                        ArbitraryPrecisionInteger::from(gcd_num),
+                        ArbitraryPrecisionInteger::from(*d2)
+                            * ArbitraryPrecisionInteger::from(d1 / gcd_den),
                     )))
                 }
             }

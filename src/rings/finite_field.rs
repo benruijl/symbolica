@@ -14,6 +14,10 @@ const HENSEL_LIFTING_MASK: [u8; 128] = [
     183, 205, 171, 1,
 ];
 
+pub trait ToFiniteField<UField> {
+    fn to_finite_field(&self, field: FiniteField<UField>) -> FiniteFieldElement<UField>;
+}
+
 /// A number in a finite field.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct FiniteFieldElement<UField>(pub(crate) UField);

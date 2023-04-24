@@ -64,7 +64,7 @@ pub trait Convert<P: Atom> {
     fn to_owned_mul(self) -> P::OM;
 }
 
-pub trait OwnedNum: ResettableBuffer + Convert<Self::P> {
+pub trait OwnedNum: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn from_number(&mut self, num: Number);
@@ -74,7 +74,7 @@ pub trait OwnedNum: ResettableBuffer + Convert<Self::P> {
     fn to_num_view<'a>(&'a self) -> <Self::P as Atom>::N<'a>;
 }
 
-pub trait OwnedVar: ResettableBuffer + Convert<Self::P> {
+pub trait OwnedVar: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn from_id(&mut self, id: Identifier);
@@ -82,7 +82,7 @@ pub trait OwnedVar: ResettableBuffer + Convert<Self::P> {
     fn to_var_view<'a>(&'a self) -> <Self::P as Atom>::V<'a>;
 }
 
-pub trait OwnedFun: ResettableBuffer + Convert<Self::P> {
+pub trait OwnedFun: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn from_view<'a>(&mut self, view: &<Self::P as Atom>::F<'a>);
@@ -92,7 +92,7 @@ pub trait OwnedFun: ResettableBuffer + Convert<Self::P> {
     fn to_fun_view<'a>(&'a self) -> <Self::P as Atom>::F<'a>;
 }
 
-pub trait OwnedPow: ResettableBuffer + Convert<Self::P> {
+pub trait OwnedPow: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn from_view<'a>(&mut self, view: &<Self::P as Atom>::P<'a>);
@@ -101,7 +101,7 @@ pub trait OwnedPow: ResettableBuffer + Convert<Self::P> {
     fn to_pow_view(&self) -> <Self::P as Atom>::P<'_>;
 }
 
-pub trait OwnedMul: ResettableBuffer + Convert<Self::P> {
+pub trait OwnedMul: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_dirty(&mut self, dirty: bool);
@@ -111,7 +111,7 @@ pub trait OwnedMul: ResettableBuffer + Convert<Self::P> {
     fn to_mul_view<'a>(&'a self) -> <Self::P as Atom>::M<'a>;
 }
 
-pub trait OwnedAdd: ResettableBuffer + Convert<Self::P> {
+pub trait OwnedAdd: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_dirty(&mut self, dirty: bool);

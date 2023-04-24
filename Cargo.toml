@@ -18,6 +18,15 @@ opt-level = 2
 crate-type = ["cdylib", "rlib"]
 name = "symbolica"
 
+[features]
+default = ["python_api"]
+python_api = ["pyo3", "once_cell", "ouroboros"]
+
+[dependencies.pyo3]
+features = ["extension-module"]
+optional = true
+version = "0.18"
+
 [dev-dependencies]
 tracing-subscriber = {version = "0.3.17", features = ["env-filter"]}
 
@@ -35,3 +44,5 @@ rand = "0.8"
 smallvec = "1.1"
 smartstring = "1.0"
 tracing = {version = "0.1", features = ["max_level_trace", "release_max_level_warn"]}
+once_cell = {version = "1.17", optional = true}
+ouroboros = {version = "0.15", optional = true}

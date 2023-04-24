@@ -224,7 +224,7 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         let mut first = true;
         for x in self.into_iter() {
             if !first {
-                print!(",");
+                f.write_char(',')?;
             }
             first = false;
 
@@ -240,7 +240,7 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         let mut first = true;
         for x in self.into_iter() {
             if !first {
-                print!(",");
+                f.write_char(',')?;
             }
             first = false;
 

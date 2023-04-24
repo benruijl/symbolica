@@ -378,6 +378,7 @@ impl ResettableBuffer for OwnedPowD {
     }
 }
 
+#[derive(Clone)]
 pub struct OwnedMulD {
     data: Vec<u8>,
 }
@@ -549,6 +550,7 @@ impl ResettableBuffer for OwnedMulD {
     }
 }
 
+#[derive(Clone)]
 pub struct OwnedAddD {
     data: Vec<u8>,
 }

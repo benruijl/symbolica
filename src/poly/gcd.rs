@@ -1710,11 +1710,8 @@ impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<IntegerRing, E> {
                 && bp.last_exponents() == b.last_exponents()
             {
                 for var in vars.iter() {
-                    let vvars = vars
-                        .iter()
-                        .filter(|i| *i != var)
-                        .cloned()
-                        .collect::<Vec<_>>();
+                    let vvars: SmallVec<[usize; 5]> =
+                        vars.iter().filter(|i| *i != var).cloned().collect();
                     tight_bounds[*var] =
                         MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
                 }
@@ -1779,11 +1776,8 @@ impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<RationalField, E> 
                 && bp.last_exponents() == b.last_exponents()
             {
                 for var in vars.iter() {
-                    let vvars = vars
-                        .iter()
-                        .filter(|i| *i != var)
-                        .cloned()
-                        .collect::<Vec<_>>();
+                    let vvars: SmallVec<[usize; 5]> =
+                        vars.iter().filter(|i| *i != var).cloned().collect();
                     tight_bounds[*var] =
                         MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
                 }
@@ -1806,11 +1800,7 @@ impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<FiniteField<u32>, 
     fn get_gcd_var_bounds(a: &Self, b: &Self, vars: &[usize], loose_bounds: &[E]) -> Vec<E> {
         let mut tight_bounds = loose_bounds.to_owned();
         for var in vars {
-            let vvars = vars
-                .iter()
-                .filter(|i| *i != var)
-                .cloned()
-                .collect::<Vec<_>>();
+            let vvars: SmallVec<[usize; 5]> = vars.iter().filter(|i| *i != var).cloned().collect();
             tight_bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(&a, &b, &vvars, *var);
         }
         tight_bounds

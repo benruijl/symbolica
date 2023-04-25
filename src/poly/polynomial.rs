@@ -6,12 +6,13 @@ use std::fmt::Display;
 use std::mem;
 use std::ops::{Add, Mul, Neg, Sub};
 
+use crate::representations::Identifier;
 use crate::rings::finite_field::FiniteField;
 use crate::rings::{EuclideanDomain, Field, Ring};
 
 use super::monomial::{Monomial, MonomialView};
-use super::Exponent;
-use smallvec::smallvec;
+use super::{Exponent, INLINED_EXPONENTS};
+use smallvec::{smallvec, SmallVec};
 
 /// Multivariate polynomial with a sparse degree and variable dense representation.
 // TODO: implement EuclideanDomain for MultivariatePolynomial
@@ -26,50 +27,47 @@ pub struct MultivariatePolynomial<F: Ring, E: Exponent> {
     pub nterms: usize,
     pub nvars: usize,
     pub field: F,
+    pub var_map: Option<SmallVec<[Identifier; INLINED_EXPONENTS]>>,
 }
 
 impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Constructs a zero polynomial.
     #[inline]
-    pub fn new(field: F) -> Self {
+    pub fn new(
+        nvars: usize,
+        field: F,
+        cap: Option<usize>,
+        var_map: Option<SmallVec<[Identifier; INLINED_EXPONENTS]>>,
+    ) -> Self {
         Self {
-            coefficients: Vec::new(),
-            exponents: Vec::new(),
-            nterms: 0,
-            nvars: 0,
-            field,
-        }
-    }
-
-    /// Constructs a zero polynomial with the given number of variables.
-    #[inline]
-    pub fn with_nvars(nvars: usize, field: F) -> Self {
-        Self {
-            coefficients: Vec::new(),
-            exponents: Vec::new(),
+            coefficients: Vec::with_capacity(cap.unwrap_or(0)),
+            exponents: Vec::with_capacity(cap.unwrap_or(0) * nvars),
             nterms: 0,
             nvars,
             field,
+            var_map,
         }
     }
 
-    /// Constructs a zero polynomial with the given number of variables and capacity.
+    /// Constructs a zero polynomial with the given number of variables and capacity,
+    /// inheriting the field and variable map from `self`.
     #[inline]
-    pub fn with_nvars_and_capacity(nvars: usize, cap: usize, field: F) -> Self {
+    pub fn new_from(&self, cap: Option<usize>) -> Self {
         Self {
-            coefficients: Vec::with_capacity(cap),
-            exponents: Vec::with_capacity(cap * nvars),
+            coefficients: Vec::with_capacity(cap.unwrap_or(0)),
+            exponents: Vec::with_capacity(cap.unwrap_or(0) * self.nvars),
             nterms: 0,
-            nvars,
-            field,
+            nvars: self.nvars,
+            field: self.field,
+            var_map: self.var_map.clone(),
         }
     }
 
     /// Constructs a constant polynomial with the given number of variables.
     #[inline]
-    pub fn from_constant_with_nvars(constant: F::Element, nvars: usize, field: F) -> Self {
+    pub fn from_constant(constant: F::Element, nvars: usize, field: F) -> Self {
         if F::is_zero(&constant) {
-            return Self::with_nvars(nvars, field);
+            return Self::new(nvars, field, None, None);
         }
         Self {
             coefficients: vec![constant],
@@ -77,6 +75,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             nterms: 1,
             nvars,
             field,
+            var_map: None,
         }
     }
 
@@ -84,7 +83,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     #[inline]
     pub fn from_monomial(coefficient: F::Element, exponents: Vec<E>, field: F) -> Self {
         if F::is_zero(&coefficient) {
-            return Self::with_nvars(exponents.len(), field);
+            return Self::new(exponents.len(), field, None, None);
         }
         Self {
             coefficients: vec![coefficient],
@@ -92,6 +91,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             exponents,
             nterms: 1,
             field,
+            var_map: None,
         }
     }
 
@@ -117,8 +117,15 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     }
 
     #[inline]
+    pub fn reserve(&mut self, cap: usize) -> &mut Self {
+        self.coefficients.reserve(cap);
+        self.exponents.reserve(cap * self.nvars);
+        self
+    }
+
+    #[inline]
     pub fn zero(field: F) -> Self {
-        Self::new(field)
+        Self::new(0, field, None, None)
     }
 
     #[inline]
@@ -128,7 +135,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
     #[inline]
     pub fn one(field: F) -> Self {
-        MultivariatePolynomial::from_constant_with_nvars(field.one(), 0, field)
+        MultivariatePolynomial::from_constant(field.one(), 0, field)
     }
 
     #[inline]
@@ -138,19 +145,19 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             && self.exponents.iter().all(|x| x.is_zero())
     }
 
-    /// F::Elementeturns the number of terms in the polynomial.
+    /// Returns the number of terms in the polynomial.
     #[inline]
     pub fn nterms(&self) -> usize {
         return self.nterms;
     }
 
-    /// F::Elementeturns the number of variables in the polynomial.
+    /// Returns the number of variables in the polynomial.
     #[inline]
     pub fn nvars(&self) -> usize {
         return self.nvars;
     }
 
-    /// F::Elementeturns true if the polynomial is constant.
+    /// Returns true if the polynomial is constant.
     #[inline]
     pub fn is_constant(&self) -> bool {
         if self.is_zero() {
@@ -163,7 +170,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         return self.exponents.iter().all(|e| e.is_zero());
     }
 
-    /// F::Elementeturns the slice for the exponents of the specified monomial.
+    /// Returns the slice for the exponents of the specified monomial.
     #[inline]
     pub fn exponents(&self, index: usize) -> &[E] {
         &self.exponents[index * self.nvars..(index + 1) * self.nvars]
@@ -174,18 +181,70 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         &self.exponents[(self.nterms - 1) * self.nvars..self.nterms * self.nvars]
     }
 
-    /// F::Elementeturns the mutable slice for the exponents of the specified monomial.
+    /// Returns the mutable slice for the exponents of the specified monomial.
     #[inline]
     fn exponents_mut(&mut self, index: usize) -> &mut [E] {
         &mut self.exponents[index * self.nvars..(index + 1) * self.nvars]
     }
 
-    /// F::Elementeturns the number of variables in the polynomial.
+    /// Returns the number of variables in the polynomial.
     #[inline]
     pub fn clear(&mut self) {
         self.nterms = 0;
         self.coefficients.clear();
         self.exponents.clear();
+    }
+
+    /// Unify the variable maps of two polynomials, i.e.
+    /// rewrite a polynomial in `x` and one in `y` to a
+    /// two polynomial in `x` and `y`.
+    pub fn unify_var_map(&mut self, other: &mut Self) {
+        assert!(self.var_map.is_some() && other.var_map.is_some());
+
+        let mut new_var_map = self.var_map.clone().unwrap();
+        let mut new_var_pos_other = vec![0; other.nvars];
+        for (pos, v) in new_var_pos_other
+            .iter_mut()
+            .zip(other.var_map.as_ref().unwrap())
+        {
+            if let Some(p) = new_var_map.iter().position(|x| x == v) {
+                *pos = p;
+            } else {
+                *pos = new_var_map.len();
+                new_var_map.push(*v);
+            }
+        }
+
+        let mut newexp = vec![E::zero(); new_var_map.len() * self.nterms];
+
+        for t in 0..self.nterms {
+            newexp[t * new_var_map.len()..t * new_var_map.len() + self.nvars]
+                .copy_from_slice(self.exponents(t));
+        }
+
+        self.var_map = Some(new_var_map.clone());
+        self.exponents = newexp;
+        self.nvars = new_var_map.len();
+
+        // reconstruct 'other' with correct monomial ordering
+        let mut newother = Self::new(
+            new_var_map.len(),
+            other.field.clone(),
+            Some(other.nterms),
+            Some(new_var_map.clone()),
+        );
+        let mut newexp: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); new_var_map.len()];
+        for t in other.into_iter() {
+            for c in &mut newexp {
+                *c = E::zero();
+            }
+
+            for (var, e) in t.exponents.iter().enumerate() {
+                newexp[new_var_pos_other[var]] = *e;
+            }
+            newother.append_monomial(t.coefficient.clone(), &newexp);
+        }
+        *other = newother;
     }
 
     /// F::Elementeverse the monomial ordering in-place.
@@ -444,6 +503,7 @@ impl<F: Ring, E: Exponent> Add for MultivariatePolynomial<F, E> {
 
     fn add(mut self, mut other: Self) -> Self::Output {
         debug_assert_eq!(self.field, other.field);
+        debug_assert!(other.var_map.is_none() || self.var_map == other.var_map);
 
         if self.is_zero() {
             return other;
@@ -518,6 +578,7 @@ impl<F: Ring, E: Exponent> Add for MultivariatePolynomial<F, E> {
             nterms: new_nterms,
             nvars: self.nvars,
             field: self.field,
+            var_map: self.var_map,
         }
     }
 }
@@ -556,17 +617,18 @@ impl<'a, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E>>
 
     fn mul(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
         debug_assert_eq!(self.field, other.field);
+        debug_assert!(other.var_map.is_none() || self.var_map == other.var_map);
         if self.is_zero() {
-            return Self::with_nvars(other.nvars, self.field);
+            return other.new_from(None);
         }
         if other.is_zero() {
-            return Self::with_nvars(self.nvars, self.field);
+            return self.new_from(None);
         }
         if self.nvars != other.nvars {
             panic!("nvars mismatched");
         }
         // TODO: this is a quick implementation. To be improved.
-        let mut new_poly = Self::with_nvars(self.nvars, self.field);
+        let mut new_poly = self.new_from(None);
         for m in other {
             let p = self.clone().mul_monomial(m.coefficient, m.exponents);
             new_poly = new_poly.add(p);
@@ -693,7 +755,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         // so the last term should still be the lcoeff
         let last = self.last_exponents();
 
-        let mut res = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+        let mut res = self.new_from(None);
         let mut e = vec![E::zero(); self.nvars];
         for t in (0..self.nterms()).rev() {
             if (0..self.nvars - 1).all(|i| self.exponents(t)[i] == last[i] || i == n) {
@@ -747,7 +809,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             indices.push(i);
         }
 
-        let mut res = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+        let mut res = self.new_from(None);
         let mut e = vec![E::zero(); self.nvars];
         for i in indices {
             e[lastvar[0]] = self.exponents(i)[lastvar[0]];
@@ -760,7 +822,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Change the order of the variables in the polynomial, using `varmap`.
     /// The map can also be reversed, by setting `inverse` to `true`.
     pub fn rearrange(&self, varmap: &[usize], inverse: bool) -> MultivariatePolynomial<F, E> {
-        let mut res = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+        let mut res = self.new_from(None);
         let mut newe = vec![E::zero(); self.nvars];
         for m in self.into_iter() {
             for x in 0..varmap.len() {
@@ -779,8 +841,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Replace a variable `n' in the polynomial by an element from
     /// the ring `v'.
     pub fn replace(&self, n: usize, v: F::Element) -> MultivariatePolynomial<F, E> {
-        let mut res =
-            MultivariatePolynomial::with_nvars_and_capacity(self.nvars, self.nterms, self.field);
+        let mut res = self.new_from(Some(self.nterms));
         let mut e = vec![E::zero(); self.nvars];
         for t in 0..self.nterms {
             let c = self.field.mul(
@@ -831,7 +892,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                 .or_insert(c);
         }
 
-        let mut res = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+        let mut res = self.new_from(None);
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm {
             e[v] = k;
@@ -843,7 +904,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     }
 
     /// Create a univariate polynomial out of a multivariate one.
-    /// TODO: allow a MultivariatePolynomial as a coefficient
+    // TODO: allow a MultivariatePolynomial as a coefficient
     pub fn to_univariate_polynomial_list(
         &self,
         x: usize,
@@ -866,7 +927,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         let mut e = vec![E::zero(); self.nvars];
         for d in 0..maxdeg.to_u32() + 1 {
             // TODO: add bounds estimate
-            let mut a = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+            let mut a = self.new_from(None);
             for t in 0..self.nterms {
                 if self.exponents(t)[x].to_u32() == d {
                     for (i, ee) in self.exponents(t).iter().enumerate() {
@@ -978,12 +1039,8 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         let mut dividendpos = self.nterms - 1; // work from the back
         let norm = div.coefficients.last().unwrap();
 
-        let mut q = MultivariatePolynomial::<F, E>::with_nvars_and_capacity(
-            self.nvars,
-            self.nterms,
-            self.field,
-        );
-        let mut r = MultivariatePolynomial::<F, E>::with_nvars(self.nvars, self.field);
+        let mut q = self.new_from(Some(self.nterms));
+        let mut r = self.new_from(None);
 
         // determine the variable
         let mut var = 0;
@@ -1091,7 +1148,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
             panic!("Cannot divide by 0 polynomial");
         }
 
-        let mut q = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+        let mut q = self.new_from(None);
         let mut r = self.clone();
         let divdeg = div.last_exponents();
 
@@ -1139,19 +1196,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         if div.is_one() {
-            return (
-                self.clone(),
-                MultivariatePolynomial::with_nvars(self.nvars, self.field),
-            );
+            return (self.clone(), self.new_from(None));
         }
 
         if div.nterms == 1 {
-            let mut q = MultivariatePolynomial::with_nvars_and_capacity(
-                self.nvars,
-                self.nterms,
-                self.field,
-            );
-            let mut r = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+            let mut q = self.new_from(Some(self.nterms));
+            let mut r = self.new_from(None);
             let dive = div.to_monomial(0);
 
             for i in 0..self.nterms {
@@ -1182,9 +1232,8 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         &self,
         div: &MultivariatePolynomial<F, E>,
     ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
-        let mut q =
-            MultivariatePolynomial::with_nvars_and_capacity(self.nvars, self.nterms, self.field);
-        let mut r = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+        let mut q = self.new_from(Some(self.nterms));
+        let mut r = self.new_from(None);
         let mut s = div.nterms - 1; // index viewed from the back
         let mut h = BinaryHeap::with_capacity(div.nterms);
         let mut t = Monomial {
@@ -1317,18 +1366,11 @@ where
                     self.field.mul_assign(c, &inv);
                 }
 
-                return (
-                    q,
-                    MultivariatePolynomial::with_nvars(self.nvars, self.field),
-                );
+                return (q, self.new_from(None));
             }
 
-            let mut q = MultivariatePolynomial::with_nvars_and_capacity(
-                self.nvars,
-                self.nterms,
-                self.field,
-            );
-            let mut r = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+            let mut q = self.new_from(Some(self.nterms));
+            let mut r = self.new_from(None);
             let dive = div.exponents(0);
 
             for m in self.into_iter() {

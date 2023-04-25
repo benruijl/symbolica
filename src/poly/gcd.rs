@@ -84,9 +84,7 @@ where
     let mut u = v[v.len() - 1].clone();
     for k in (0..v.len() - 1).rev() {
         // TODO: prevent cloning
-        u = u
-            * (xp.clone()
-                - MultivariatePolynomial::from_constant_with_nvars(a[k].clone(), xp.nvars, field))
+        u = u * (xp.clone() - MultivariatePolynomial::from_constant(a[k].clone(), xp.nvars, field))
             + v[k].clone();
     }
     u
@@ -276,7 +274,7 @@ fn construct_new_image<E: Exponent>(
         // for single scaling, we split the matrix into (potentially overdetermined) block-submatrices
         if let Some(..) = single_scale {
             // construct the gcd
-            let mut gp = MultivariatePolynomial::with_nvars(ap.nvars, ap.field);
+            let mut gp = MultivariatePolynomial::new(ap.nvars, ap.field, None, None);
 
             for (i, (c, ex)) in gfu.iter().enumerate() {
                 let mut gfm = smallvec![];
@@ -521,7 +519,7 @@ fn construct_new_image<E: Exponent>(
                     Ok(x) => {
                         debug!("Solved scaling constants: {:?}", x);
 
-                        let mut gp = MultivariatePolynomial::with_nvars(ap.nvars, ap.field);
+                        let mut gp = MultivariatePolynomial::new(ap.nvars, ap.field, None, None);
 
                         // now we fill in the constants in the subsystems and solve it
                         let mut si = 0;
@@ -595,7 +593,9 @@ fn construct_new_image<E: Exponent>(
                                         // update the rank and get new images
                                         rank_failure_count = 0;
                                         last_rank = (min_rank, max_rank);
-                                        gp = MultivariatePolynomial::with_nvars(ap.nvars, ap.field);
+                                        gp = MultivariatePolynomial::new(
+                                            ap.nvars, ap.field, None, None,
+                                        );
                                         break;
                                     }
                                 }
@@ -711,7 +711,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
                 .or_insert(c);
         }
 
-        let mut res = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+        let mut res = MultivariatePolynomial::new(self.nvars, self.field, None, None);
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm.drain() {
             if !FiniteField::<u32>::is_zero(&c) {
@@ -756,7 +756,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
         }
 
         // TODO: add bounds estimate
-        let mut res = MultivariatePolynomial::with_nvars(self.nvars, self.field);
+        let mut res = MultivariatePolynomial::new(self.nvars, self.field, None, None);
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm.iter_mut().enumerate() {
             if !FiniteField::<u32>::is_zero(&c) {
@@ -864,7 +864,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
             debug!("Content in last variable is not 1, but {}", c);
             // TODO: we assume that a content of -1 is also allowed
             // like in the special case gcd_(-x0*x1,-x0-x0*x1)
-            if c != MultivariatePolynomial::from_constant_with_nvars(
+            if c != MultivariatePolynomial::from_constant(
                 a.field.neg(&a.field.one()),
                 a.nvars,
                 a.field,
@@ -1162,8 +1162,7 @@ where
             let a = f.swap_remove(index_smallest);
 
             let term_bound = f.iter().map(|x| x.nterms).sum();
-            let mut b =
-                MultivariatePolynomial::with_nvars_and_capacity(a.nvars, term_bound, a.field);
+            let mut b = a.new_from(Some(term_bound));
 
             // Add all the monomials to a vector, sort them and build a new polynomial.
             // The last step will merge equal monomials.
@@ -1262,7 +1261,7 @@ where
 
         // if we have two numbers, use the integer gcd
         if a.is_constant() && b.is_constant() {
-            return MultivariatePolynomial::from_constant_with_nvars(
+            return MultivariatePolynomial::from_constant(
                 a.field.gcd(&a.coefficients[0], &b.coefficients[0]),
                 a.nvars,
                 a.field,
@@ -1324,7 +1323,7 @@ where
             assert!(x1.1.is_zero());
             assert!(x2.1.is_zero());
 
-            return c * MultivariatePolynomial::gcd(&x1.0, &x2.0);
+            return MultivariatePolynomial::gcd(&x1.0, &x2.0) * c;
         }
 
         // determine safe bounds for variables in the gcd
@@ -1380,13 +1379,13 @@ where
                     assert!(x1.1.is_zero());
                     assert!(x2.1.is_zero());
 
-                    let gcd = c * PolynomialGCD::gcd(
+                    let gcd = PolynomialGCD::gcd(
                         &x1.0,
                         &x2.0,
                         &(0..vars.len()).collect::<Vec<_>>(),
                         &mut newbounds,
                         &mut newtight_bounds,
-                    );
+                    ) * c;
                     return gcd.rearrange(&vars, true);
                 }
             }
@@ -1424,7 +1423,7 @@ where
             }
         }
 
-        let mut a = MultivariatePolynomial::with_nvars(self.nvars, field);
+        let mut a = MultivariatePolynomial::new(self.nvars, field, None, None);
         a.nterms = newc.len();
         a.exponents = newe;
         a.coefficients = newc;
@@ -1540,7 +1539,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let lcoeff_factor = gp.field.div(&gammap, &gpc);
 
             // construct the gcd suggestion in Z
-            let mut gm = MultivariatePolynomial::with_nvars(gp.nvars, a.field);
+            let mut gm = a.new_from(Some(gp.nterms));
             gm.nterms = gp.nterms;
             gm.exponents = gp.exponents.clone();
             gm.coefficients = gp
@@ -1553,7 +1552,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
             debug!("GCD suggestion with gamma: {} mod {} ", gm, p);
 
-            let mut old_gm = MultivariatePolynomial::with_nvars(a.nvars, a.field);
+            let mut old_gm = a.new_from(None);
 
             // add new primes until we can reconstruct the full gcd
             'newprime: loop {
@@ -1731,7 +1730,7 @@ impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<RationalField, E> 
         let content = a.field.gcd(&a.content(), &b.content());
 
         let mut a_int =
-            MultivariatePolynomial::with_nvars_and_capacity(a.nvars, a.nterms, IntegerRing::new());
+            MultivariatePolynomial::new(a.nvars, IntegerRing::new(), Some(a.nterms), None);
 
         for t in a {
             let coeff = a.field.div(t.coefficient, &content);
@@ -1740,7 +1739,7 @@ impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<RationalField, E> 
         }
 
         let mut b_int =
-            MultivariatePolynomial::with_nvars_and_capacity(a.nvars, a.nterms, IntegerRing::new());
+            MultivariatePolynomial::new(b.nvars, IntegerRing::new(), Some(b.nterms), None);
 
         for t in b {
             let coeff = b.field.div(t.coefficient, &content);
@@ -1751,8 +1750,7 @@ impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<RationalField, E> 
         let res_int =
             MultivariatePolynomial::gcd_zippel(&a_int, &b_int, vars, bounds, tight_bounds);
 
-        let mut res =
-            MultivariatePolynomial::with_nvars_and_capacity(res_int.nvars, res_int.nterms, a.field);
+        let mut res = a.new_from(Some(res_int.nterms));
 
         for t in &res_int {
             res.append_monomial(

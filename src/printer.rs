@@ -1,9 +1,11 @@
-use std::fmt::{self, Write};
+use std::fmt::{self, Display, Write};
 
 use colored::Colorize;
 
 use crate::{
+    poly::{polynomial::MultivariatePolynomial, Exponent},
     representations::{number::BorrowedNumber, Add, Atom, AtomView, Fun, Mul, Num, Pow, Var},
+    rings::Ring,
     state::State,
 };
 
@@ -160,7 +162,11 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
             BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r)),
             BorrowedNumber::FiniteField(num, fi) => {
                 let ff = state.get_finite_field(fi);
-                f.write_fmt(format_args!("[{}%{}]", ff.from_element(num), ff.get_prime()))
+                f.write_fmt(format_args!(
+                    "[{}%{}]",
+                    ff.from_element(num),
+                    ff.get_prime()
+                ))
             }
         }
     }
@@ -332,5 +338,83 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
             x.fmt_debug(f)?;
         }
         Ok(())
+    }
+}
+
+pub struct PolynomialPrinter<'a, 'b, F: Ring + Display, E: Exponent> {
+    pub poly: &'a MultivariatePolynomial<F, E>,
+    pub state: &'b State,
+    pub print_mode: PrintMode,
+}
+
+impl<'a, 'b, F: Ring + Display, E: Exponent> PolynomialPrinter<'a, 'b, F, E> {
+    pub fn new(
+        poly: &'a MultivariatePolynomial<F, E>,
+        state: &'b State,
+        print_mode: PrintMode,
+    ) -> PolynomialPrinter<'a, 'b, F, E> {
+        PolynomialPrinter {
+            poly,
+            state,
+            print_mode,
+        }
+    }
+}
+
+impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, 'b, F, E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let var_map = match self.poly.var_map.as_ref() {
+            Some(v) => v,
+            None => {
+                return write!(f, "{}", self.poly);
+            }
+        };
+
+        let mut is_first_term = true;
+        for monomial in self.poly {
+            let mut is_first_factor = true;
+            if self.poly.field.is_one(&monomial.coefficient) {
+                if !is_first_term {
+                    write!(f, "+")?;
+                }
+            } else if monomial
+                .coefficient
+                .eq(&self.poly.field.neg(&self.poly.field.one()))
+            {
+                write!(f, "-")?;
+            } else {
+                if is_first_term {
+                    write!(f, "{}", monomial.coefficient)?;
+                } else {
+                    write!(f, "{:+}", monomial.coefficient)?;
+                }
+                is_first_factor = false;
+            }
+            is_first_term = false;
+            for (var_id, e) in var_map.iter().zip(monomial.exponents) {
+                if e.is_zero() {
+                    continue;
+                }
+                if is_first_factor {
+                    is_first_factor = false;
+                } else {
+                    write!(f, "*")?;
+                }
+
+                f.write_str(self.state.get_name(*var_id).unwrap())?;
+
+                if e.to_u32() != 1 {
+                    write!(f, "^{}", e)?;
+                }
+            }
+            if is_first_factor {
+                write!(f, "1")?;
+            }
+        }
+        if is_first_term {
+            write!(f, "0")?;
+        }
+
+        Display::fmt(&self.poly.field, f)
     }
 }

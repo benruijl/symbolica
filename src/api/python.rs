@@ -1,5 +1,6 @@
 use std::{
     borrow::{Borrow, BorrowMut},
+    ops::Neg,
     sync::{Arc, RwLock},
 };
 
@@ -11,11 +12,13 @@ use pyo3::{
     types::{PyModule, PyTuple, PyType},
     FromPyObject, PyResult, Python,
 };
+use smallvec::SmallVec;
 
 use crate::{
     id::Pattern,
     parser::parse,
-    printer::{AtomPrinter, PrintMode},
+    poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
+    printer::{AtomPrinter, PolynomialPrinter, PrintMode},
     representations::{
         default::{
             DefaultRepresentation, ListIteratorD, OwnedAddD, OwnedFunD, OwnedMulD, OwnedNumD,
@@ -25,6 +28,7 @@ use crate::{
         Add, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedAtom, OwnedFun, OwnedMul, OwnedNum,
         OwnedPow, OwnedVar, Var,
     },
+    rings::rational::RationalField,
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -35,6 +39,7 @@ const WORKSPACE: Lazy<Workspace<DefaultRepresentation>> = Lazy::new(|| Workspace
 fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonExpression>()?;
     m.add_class::<PythonFunction>()?;
+    m.add_class::<PythonPolynomial>()?;
 
     Ok(())
 }
@@ -71,8 +76,10 @@ impl ConvertibleToExpression {
 impl PythonExpression {
     #[staticmethod]
     pub fn var(name: &str) -> PyResult<PythonExpression> {
+        let mut guard = STATE.write().unwrap();
+        let state = guard.borrow_mut();
         // TODO: check if the name meets the requirements
-        let id = STATE.write().unwrap().borrow_mut().get_or_insert_var(name);
+        let id = state.get_or_insert_var(name);
         let mut var = OwnedAtom::new();
         let o: &mut OwnedVarD = var.transform_to_var();
         o.from_id(id);
@@ -82,9 +89,44 @@ impl PythonExpression {
         })
     }
 
+    #[pyo3(signature = (*args,))]
+    #[staticmethod]
+    pub fn vars(args: &PyTuple) -> PyResult<Vec<PythonExpression>> {
+        let mut guard = STATE.write().unwrap();
+        let state = guard.borrow_mut();
+        let mut result = Vec::with_capacity(args.len());
+
+        for a in args {
+            // TODO: check if the name meets the requirements
+            let name = a.extract::<&str>()?;
+            let id = state.get_or_insert_var(name);
+            let mut var = OwnedAtom::new();
+            let o: &mut OwnedVarD = var.transform_to_var();
+            o.from_id(id);
+
+            result.push(PythonExpression {
+                expr: Arc::new(var),
+            });
+        }
+
+        Ok(result)
+    }
+
     #[staticmethod]
     pub fn fun(name: &str) -> PyResult<PythonFunction> {
         PythonFunction::__new__(name)
+    }
+
+    #[pyo3(signature = (*args,))]
+    #[staticmethod]
+    pub fn funs(args: &PyTuple) -> PyResult<Vec<PythonFunction>> {
+        let mut result = Vec::with_capacity(args.len());
+        for a in args {
+            let name = a.extract::<&str>()?;
+            result.push(PythonFunction::__new__(name)?);
+        }
+
+        Ok(result)
     }
 
     #[classmethod]
@@ -122,35 +164,45 @@ impl PythonExpression {
     ///
     #[getter]
     fn get_w(&self) -> PyResult<PythonExpression> {
-        let state = STATE.borrow().read().unwrap();
-        match self.expr.to_view() {
+        let mut guard = STATE.write().unwrap();
+        let state = guard.borrow_mut();
+        let mut var_name = match self.expr.to_view() {
             AtomView::Var(v) => {
                 if let Some(true) = state.is_wildcard(v.get_name()) {
-                    Ok(self.clone())
+                    return Ok(self.clone());
                 } else {
                     // create name with underscore
-                    let mut name = state.get_name(v.get_name()).unwrap().to_string();
-                    name.push('_');
-                    drop(state);
-                    PythonExpression::var(&name)
+                    state.get_name(v.get_name()).unwrap().to_string()
                 }
             }
             AtomView::Fun(f) => {
                 if let Some(true) = state.is_wildcard(f.get_name()) {
-                    Ok(self.clone())
+                    return Ok(self.clone());
                 } else {
                     // create name with underscore
-                    let mut name = state.get_name(f.get_name()).unwrap().to_string();
-                    name.push('_');
-                    drop(state);
-                    PythonExpression::var(&name)
+                    state.get_name(f.get_name()).unwrap().to_string()
                 }
             }
-            x => Err(exceptions::PyValueError::new_err(format!(
-                "Cannot convert to wildcard: {:?}",
-                x
-            ))),
-        }
+            x => {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "Cannot convert to wildcard: {:?}",
+                    x
+                )));
+            }
+        };
+
+        // create name with underscore
+        var_name.push('_');
+
+        // TODO: check if the name meets the requirements
+        let id = state.get_or_insert_var(var_name);
+        let mut var = OwnedAtom::new();
+        let o: &mut OwnedVarD = var.transform_to_var();
+        o.from_id(id);
+
+        Ok(PythonExpression {
+            expr: Arc::new(var),
+        })
     }
 
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
@@ -191,6 +243,29 @@ impl PythonExpression {
         PythonExpression { expr: Arc::new(b) }
     }
 
+    pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
+        let workspace = WORKSPACE;
+        let mut pow = workspace.new_atom();
+        let pow_num = pow.get_mut().transform_to_num();
+        pow_num.from_number(Number::Natural(-1, 1));
+
+        let mut e = workspace.new_atom();
+        let a: &mut OwnedPowD = e.get_mut().transform_to_pow();
+        a.from_base_and_exp(rhs.to_expression().expr.to_view(), pow.get().to_view());
+
+        let mut m = workspace.new_atom();
+        let md: &mut OwnedMulD = m.get_mut().transform_to_mul();
+
+        md.extend(self.expr.to_view());
+        md.extend(e.get().to_view());
+
+        let mut b = OwnedAtom::new();
+        m.get()
+            .to_view()
+            .normalize(&WORKSPACE, &STATE.read().unwrap().borrow(), &mut b);
+        PythonExpression { expr: Arc::new(b) }
+    }
+
     pub fn __pow__(
         &self,
         rhs: ConvertibleToExpression,
@@ -217,11 +292,11 @@ impl PythonExpression {
     }
 
     pub fn __neg__(&self) -> PythonExpression {
-        let b = WORKSPACE;
-        let mut e = b.new_atom();
+        let workspace = WORKSPACE;
+        let mut e = workspace.new_atom();
         let a: &mut OwnedMulD = e.get_mut().transform_to_mul();
 
-        let mut sign = b.new_atom();
+        let mut sign = workspace.new_atom();
         let sign_num = sign.get_mut().transform_to_num();
         sign_num.from_number(Number::Natural(-1, 1));
 
@@ -248,6 +323,39 @@ impl PythonExpression {
         };
 
         Ok(PythonAtomIterator::from_expr(self.clone()))
+    }
+
+    pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {
+        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+
+        if let Some(vm) = vars {
+            for v in vm {
+                match v.expr.to_view() {
+                    AtomView::Var(v) => var_map.push(v.get_name()),
+                    e => {
+                        Err(exceptions::PyValueError::new_err(format!(
+                            "Expected variable instead of {:?}",
+                            e
+                        )))?;
+                    }
+                }
+            }
+        }
+
+        self.expr
+            .to_view()
+            .to_polynomial(if var_map.is_empty() {
+                None
+            } else {
+                Some(var_map.as_slice())
+            })
+            .map(|x| PythonPolynomial { poly: Arc::new(x) })
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!(
+                    "Could not convert to poynomial: {:?}",
+                    e
+                ))
+            })
     }
 
     pub fn replace_all(
@@ -366,5 +474,120 @@ impl PythonAtomIterator {
                 }),
             })
         })
+    }
+}
+
+#[pyclass(name = "Polynomial")]
+#[derive(Clone)]
+pub struct PythonPolynomial {
+    pub poly: Arc<MultivariatePolynomial<RationalField, u32>>,
+}
+
+#[pymethods]
+impl PythonPolynomial {
+    pub fn __copy__(&self) -> PythonPolynomial {
+        PythonPolynomial {
+            poly: Arc::new((*self.poly).clone()),
+        }
+    }
+
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                state: &STATE.read().unwrap(),
+                print_mode: PrintMode::Form
+            }
+        ))
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{:?}", self.poly))
+    }
+
+    pub fn __add__(&self, rhs: PythonPolynomial) -> PythonPolynomial {
+        if self.poly.var_map == rhs.poly.var_map {
+            PythonPolynomial {
+                poly: Arc::new((*self.poly).clone() + (*rhs.poly).clone()),
+            }
+        } else {
+            let mut new_self = (*self.poly).clone();
+            let mut new_rhs = (*rhs.poly).clone();
+            new_self.unify_var_map(&mut new_rhs);
+            PythonPolynomial {
+                poly: Arc::new(new_self + new_rhs),
+            }
+        }
+    }
+
+    pub fn __sub__(&self, rhs: PythonPolynomial) -> PythonPolynomial {
+        self.__add__(rhs.__neg__())
+    }
+
+    pub fn __mul__(&self, rhs: PythonPolynomial) -> PythonPolynomial {
+        if self.poly.var_map == rhs.poly.var_map {
+            PythonPolynomial {
+                poly: Arc::new((*self.poly).clone() * (*rhs.poly).clone()),
+            }
+        } else {
+            let mut new_self = (*self.poly).clone();
+            let mut new_rhs = (*rhs.poly).clone();
+            new_self.unify_var_map(&mut new_rhs);
+            PythonPolynomial {
+                poly: Arc::new(new_self * new_rhs),
+            }
+        }
+    }
+
+    pub fn quot_rem(&self, rhs: PythonPolynomial) -> (PythonPolynomial, PythonPolynomial) {
+        if self.poly.var_map == rhs.poly.var_map {
+            let (q, r) = self.poly.divmod(&rhs.poly);
+
+            (
+                PythonPolynomial { poly: Arc::new(q) },
+                PythonPolynomial { poly: Arc::new(r) },
+            )
+        } else {
+            let mut new_self = (*self.poly).clone();
+            let mut new_rhs = (*rhs.poly).clone();
+            new_self.unify_var_map(&mut new_rhs);
+
+            let (q, r) = new_self.divmod(&new_rhs);
+
+            (
+                PythonPolynomial { poly: Arc::new(q) },
+                PythonPolynomial { poly: Arc::new(r) },
+            )
+        }
+    }
+
+    pub fn __neg__(&self) -> PythonPolynomial {
+        PythonPolynomial {
+            poly: Arc::new((*self.poly).clone().neg()),
+        }
+    }
+
+    pub fn gcd(&self, rhs: PythonPolynomial) -> PythonPolynomial {
+        if self.poly.var_map == rhs.poly.var_map {
+            PythonPolynomial {
+                poly: Arc::new(MultivariatePolynomial::gcd(&self.poly, &rhs.poly)),
+            }
+        } else {
+            let mut new_self = (*self.poly).clone();
+            let mut new_rhs = (*rhs.poly).clone();
+            new_self.unify_var_map(&mut new_rhs);
+            PythonPolynomial {
+                poly: Arc::new(MultivariatePolynomial::gcd(&new_self, &new_rhs)),
+            }
+        }
+    }
+
+    pub fn to_expression(&self) -> PythonExpression {
+        let mut expr = OwnedAtom::new();
+        expr.from_polynomial(&WORKSPACE, &self.poly);
+        PythonExpression {
+            expr: Arc::new(expr),
+        }
     }
 }

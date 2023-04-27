@@ -198,7 +198,11 @@ impl Token {
         }
     }
 
-    pub fn to_atom<P: Atom>(self, state: &mut State, workspace: &Workspace<P>) -> Result<OwnedAtom<P>, String> {
+    pub fn to_atom<P: Atom>(
+        self,
+        state: &mut State,
+        workspace: &Workspace<P>,
+    ) -> Result<OwnedAtom<P>, String> {
         let a = self.to_atom_tree(state)?;
         Ok(P::from_tree(&a, state, workspace))
     }
@@ -258,12 +262,14 @@ pub fn parse(input: &str) -> Result<Token, String> {
     let delims = ['\0', '^', '+', '*', '-', '(', ')', '/', ','];
     let whitespace = [' ', '\t', '\n', '\r', '\\'];
 
+    let mut char_iter = input.chars();
+    let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token
+
     let mut i = 0;
     loop {
-        let c = input.chars().nth(i).unwrap_or('\0'); // add EOF as a token
-
         if whitespace.contains(&c) {
             i += 1;
+            c = char_iter.next().unwrap_or('\0');
             continue;
         }
 
@@ -459,6 +465,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
         }
 
         i += 1;
+        c = char_iter.next().unwrap_or('\0');
     }
 
     if stack.len() == 1 {

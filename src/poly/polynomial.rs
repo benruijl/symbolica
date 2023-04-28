@@ -1,5 +1,5 @@
 use ahash::{HashMap, HashMapExt};
-use std::cmp::Ordering;
+use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::fmt;
 use std::fmt::Display;
@@ -627,13 +627,8 @@ impl<'a, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E>>
         if self.nvars != other.nvars {
             panic!("nvars mismatched");
         }
-        // TODO: this is a quick implementation. To be improved.
-        let mut new_poly = self.new_from(None);
-        for m in other {
-            let p = self.clone().mul_monomial(m.coefficient, m.exponents);
-            new_poly = new_poly.add(p);
-        }
-        new_poly
+
+        self.heap_mul(other)
     }
 }
 
@@ -1014,6 +1009,93 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         tm
+    }
+
+    /// Multiplication for multivariate polynomials using a custom variation of the heap method
+    /// described in "Sparse polynomial division using a heap" by Monagan, Pearce (2011).
+    /// It uses a heap to obtain the next monomial of the result in an ordered fashion.
+    /// Additionally, this method uses a hashmap with the monomial exponent as a key and a vector of all pairs
+    /// of indices in `self` and `other` that have that monomial exponent when multiplied together.
+    /// When a multiplication of two monomials is considered, its indices are added to the hashmap,
+    /// but they are only added to the heap if the monomial exponent is new. As a result, the heap
+    /// only has new monomials, and by taking (and removing) the corresponding entry from the hashmap, all
+    /// monomials that have that exponent can be summed. Then, new monomials combinations are added that
+    /// should be considered next as they are smaller than the current monomial.
+    pub fn heap_mul(&self, other: &MultivariatePolynomial<F, E>) -> MultivariatePolynomial<F, E> {
+        let mut res = self.new_from(Some(self.nterms));
+
+        let mut cache: HashMap<SmallVec<[E; INLINED_EXPONENTS]>, SmallVec<[(usize, usize); 5]>> =
+            HashMap::with_capacity(self.nterms);
+
+        // create a min-heap since our polynomials are sorted smallest to largest
+        let mut h: BinaryHeap<Reverse<SmallVec<[E; INLINED_EXPONENTS]>>> =
+            BinaryHeap::with_capacity(self.nterms + other.nterms);
+
+        let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
+            .exponents(0)
+            .iter()
+            .zip(other.exponents(0))
+            .map(|(e1, e2)| *e1 + *e2)
+            .collect();
+        cache.insert(monom.clone(), smallvec![(0, 0)]);
+        h.push(Reverse(monom));
+
+        while h.len() > 0 {
+            let cur_mon = h.pop().unwrap();
+
+            let mut coefficient = F::zero();
+
+            for (i, j) in cache.remove(&cur_mon.0).unwrap() {
+                self.field.add_assign(
+                    &mut coefficient,
+                    &self
+                        .field
+                        .mul(&self.coefficients[i], &other.coefficients[j]),
+                );
+
+                if j + 1 < other.nterms {
+                    let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
+                        .exponents(i)
+                        .iter()
+                        .zip(other.exponents(j + 1))
+                        .map(|(e1, e2)| *e1 + *e2)
+                        .collect();
+
+                    cache
+                        .entry(monom.clone())
+                        .or_insert_with(|| {
+                            h.push(Reverse(monom)); // only add when new
+                            smallvec![]
+                        })
+                        .push((i, j + 1));
+                }
+
+                // only increment i when (i, 0) has been extracted since this
+                // new term is necessarily smaller
+                if j == 0 && i + 1 < self.nterms {
+                    let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
+                        .exponents(i + 1)
+                        .iter()
+                        .zip(other.exponents(j))
+                        .map(|(e1, e2)| *e1 + *e2)
+                        .collect();
+                    cache
+                        .entry(monom.clone())
+                        .or_insert_with(|| {
+                            h.push(Reverse(monom)); // only add when new
+                            smallvec![]
+                        })
+                        .push((i + 1, 0));
+                }
+            }
+
+            if !F::is_zero(&coefficient) {
+                res.coefficients.push(coefficient);
+                res.exponents.extend_from_slice(&cur_mon.0);
+                res.nterms += 1;
+            }
+        }
+        res
     }
 }
 

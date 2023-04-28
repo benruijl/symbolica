@@ -28,6 +28,7 @@ use crate::{
         Add, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedAtom, OwnedFun, OwnedMul, OwnedNum,
         OwnedPow, OwnedVar, Var,
     },
+    rings::integer::IntegerRing,
     rings::rational::RationalField,
     state::{ResettableBuffer, State, Workspace},
 };
@@ -40,6 +41,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonExpression>()?;
     m.add_class::<PythonFunction>()?;
     m.add_class::<PythonPolynomial>()?;
+    m.add_class::<PythonIntegerPolynomial>()?;
 
     Ok(())
 }
@@ -485,109 +487,148 @@ pub struct PythonPolynomial {
 
 #[pymethods]
 impl PythonPolynomial {
-    pub fn __copy__(&self) -> PythonPolynomial {
-        PythonPolynomial {
-            poly: Arc::new((*self.poly).clone()),
-        }
-    }
+    pub fn to_integer_polynomial(&self) -> PyResult<PythonIntegerPolynomial> {
+        let mut poly_int = MultivariatePolynomial::new(
+            self.poly.nvars,
+            IntegerRing::new(),
+            Some(self.poly.nterms),
+            None,
+        );
 
-    pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                state: &STATE.read().unwrap(),
-                print_mode: PrintMode::Form
+        let mut new_exponent = SmallVec::<[u8; 5]>::new();
+
+        for t in self.poly.into_iter() {
+            if !t.coefficient.is_integer() {
+                Err(exceptions::PyValueError::new_err(format!(
+                    "Coefficient {} is not an integer",
+                    t.coefficient
+                )))?;
             }
-        ))
-    }
 
-    pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self.poly))
-    }
-
-    pub fn __add__(&self, rhs: PythonPolynomial) -> PythonPolynomial {
-        if self.poly.var_map == rhs.poly.var_map {
-            PythonPolynomial {
-                poly: Arc::new((*self.poly).clone() + (*rhs.poly).clone()),
+            new_exponent.clear();
+            for e in t.exponents {
+                if *e > u8::MAX as u32 {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Exponent {} is too large",
+                        e
+                    )))?;
+                }
+                new_exponent.push(*e as u8);
             }
-        } else {
-            let mut new_self = (*self.poly).clone();
-            let mut new_rhs = (*rhs.poly).clone();
-            new_self.unify_var_map(&mut new_rhs);
-            PythonPolynomial {
-                poly: Arc::new(new_self + new_rhs),
-            }
+
+            poly_int.append_monomial(t.coefficient.numerator(), &new_exponent);
         }
-    }
 
-    pub fn __sub__(&self, rhs: PythonPolynomial) -> PythonPolynomial {
-        self.__add__(rhs.__neg__())
-    }
-
-    pub fn __mul__(&self, rhs: PythonPolynomial) -> PythonPolynomial {
-        if self.poly.var_map == rhs.poly.var_map {
-            PythonPolynomial {
-                poly: Arc::new((*self.poly).clone() * (*rhs.poly).clone()),
-            }
-        } else {
-            let mut new_self = (*self.poly).clone();
-            let mut new_rhs = (*rhs.poly).clone();
-            new_self.unify_var_map(&mut new_rhs);
-            PythonPolynomial {
-                poly: Arc::new(new_self * new_rhs),
-            }
-        }
-    }
-
-    pub fn quot_rem(&self, rhs: PythonPolynomial) -> (PythonPolynomial, PythonPolynomial) {
-        if self.poly.var_map == rhs.poly.var_map {
-            let (q, r) = self.poly.divmod(&rhs.poly);
-
-            (
-                PythonPolynomial { poly: Arc::new(q) },
-                PythonPolynomial { poly: Arc::new(r) },
-            )
-        } else {
-            let mut new_self = (*self.poly).clone();
-            let mut new_rhs = (*rhs.poly).clone();
-            new_self.unify_var_map(&mut new_rhs);
-
-            let (q, r) = new_self.divmod(&new_rhs);
-
-            (
-                PythonPolynomial { poly: Arc::new(q) },
-                PythonPolynomial { poly: Arc::new(r) },
-            )
-        }
-    }
-
-    pub fn __neg__(&self) -> PythonPolynomial {
-        PythonPolynomial {
-            poly: Arc::new((*self.poly).clone().neg()),
-        }
-    }
-
-    pub fn gcd(&self, rhs: PythonPolynomial) -> PythonPolynomial {
-        if self.poly.var_map == rhs.poly.var_map {
-            PythonPolynomial {
-                poly: Arc::new(MultivariatePolynomial::gcd(&self.poly, &rhs.poly)),
-            }
-        } else {
-            let mut new_self = (*self.poly).clone();
-            let mut new_rhs = (*rhs.poly).clone();
-            new_self.unify_var_map(&mut new_rhs);
-            PythonPolynomial {
-                poly: Arc::new(MultivariatePolynomial::gcd(&new_self, &new_rhs)),
-            }
-        }
-    }
-
-    pub fn to_expression(&self) -> PythonExpression {
-        let mut expr = OwnedAtom::new();
-        expr.from_polynomial(&WORKSPACE, &self.poly);
-        PythonExpression {
-            expr: Arc::new(expr),
-        }
+        Ok(PythonIntegerPolynomial {
+            poly: Arc::new(poly_int),
+        })
     }
 }
+
+#[pyclass(name = "IntegerPolynomial")]
+#[derive(Clone)]
+pub struct PythonIntegerPolynomial {
+    pub poly: Arc<MultivariatePolynomial<IntegerRing, u8>>,
+}
+
+macro_rules! generate_methods {
+    ($type:ty) => {
+        #[pymethods]
+        impl $type {
+            pub fn __copy__(&self) -> Self {
+                Self {
+                    poly: Arc::new((*self.poly).clone()),
+                }
+            }
+
+            pub fn __str__(&self) -> PyResult<String> {
+                Ok(format!(
+                    "{}",
+                    PolynomialPrinter {
+                        poly: &self.poly,
+                        state: &STATE.read().unwrap(),
+                        print_mode: PrintMode::Form
+                    }
+                ))
+            }
+
+            pub fn __repr__(&self) -> PyResult<String> {
+                Ok(format!("{:?}", self.poly))
+            }
+
+            pub fn __add__(&self, rhs: Self) -> Self {
+                if self.poly.var_map == rhs.poly.var_map {
+                    Self {
+                        poly: Arc::new((*self.poly).clone() + (*rhs.poly).clone()),
+                    }
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+                    Self {
+                        poly: Arc::new(new_self + new_rhs),
+                    }
+                }
+            }
+
+            pub fn __sub__(&self, rhs: Self) -> Self {
+                self.__add__(rhs.__neg__())
+            }
+
+            pub fn __mul__(&self, rhs: Self) -> Self {
+                if self.poly.var_map == rhs.poly.var_map {
+                    Self {
+                        poly: Arc::new((*self.poly).clone() * (*rhs.poly).clone()),
+                    }
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+                    Self {
+                        poly: Arc::new(new_self * new_rhs),
+                    }
+                }
+            }
+
+            pub fn quot_rem(&self, rhs: Self) -> (Self, Self) {
+                if self.poly.var_map == rhs.poly.var_map {
+                    let (q, r) = self.poly.divmod(&rhs.poly);
+
+                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+
+                    let (q, r) = new_self.divmod(&new_rhs);
+
+                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                }
+            }
+
+            pub fn __neg__(&self) -> Self {
+                Self {
+                    poly: Arc::new((*self.poly).clone().neg()),
+                }
+            }
+
+            pub fn gcd(&self, rhs: Self) -> Self {
+                if self.poly.var_map == rhs.poly.var_map {
+                    Self {
+                        poly: Arc::new(MultivariatePolynomial::gcd(&self.poly, &rhs.poly)),
+                    }
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+                    Self {
+                        poly: Arc::new(MultivariatePolynomial::gcd(&new_self, &new_rhs)),
+                    }
+                }
+            }
+        }
+    };
+}
+
+generate_methods!(PythonPolynomial);
+generate_methods!(PythonIntegerPolynomial);

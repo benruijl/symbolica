@@ -23,7 +23,7 @@ default = ["python_api"]
 python_api = ["pyo3", "once_cell", "ouroboros"]
 
 [dependencies.pyo3]
-features = ["extension-module"]
+features = ["extension-module", "multiple-pymethods"]
 optional = true
 version = "0.18"
 

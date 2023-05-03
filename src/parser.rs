@@ -312,7 +312,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                 '+' => {
                     if matches!(
                         stack.last().unwrap(),
-                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, _, _, _)
+                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
                     ) {
                         // unary operator, can be ignored as plus is the default
                     } else {
@@ -324,7 +324,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                 '-' => {
                     if matches!(
                         stack.last().unwrap(),
-                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, _, _, _)
+                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
                     ) {
                         // unary minus
                         stack.push(Token::BinaryOp(

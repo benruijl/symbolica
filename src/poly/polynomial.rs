@@ -4,7 +4,7 @@ use std::collections::BinaryHeap;
 use std::fmt;
 use std::fmt::Display;
 use std::mem;
-use std::ops::{Add, Mul, Neg, Sub};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use crate::representations::Identifier;
 use crate::rings::finite_field::FiniteField;
@@ -207,6 +207,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         self.nterms = 0;
         self.coefficients.clear();
         self.exponents.clear();
+    }
+
+    /// Get the variable map.
+    pub fn get_var_map(
+        &self,
+    ) -> &Option<smallvec::SmallVec<[crate::representations::Identifier; INLINED_EXPONENTS]>> {
+        &self.var_map
     }
 
     /// Unify the variable maps of two polynomials, i.e.
@@ -597,11 +604,31 @@ impl<F: Ring, E: Exponent> Add for MultivariatePolynomial<F, E> {
     }
 }
 
+impl<'a, 'b, F: Ring, E: Exponent> Add<&'a MultivariatePolynomial<F, E>>
+    for &'b MultivariatePolynomial<F, E>
+{
+    type Output = MultivariatePolynomial<F, E>;
+
+    fn add(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
+        (self.clone()).add(other.clone())
+    }
+}
+
 impl<F: Ring, E: Exponent> Sub for MultivariatePolynomial<F, E> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
         self.add(other.neg())
+    }
+}
+
+impl<'a, 'b, F: Ring, E: Exponent> Sub<&'a MultivariatePolynomial<F, E>>
+    for &'b MultivariatePolynomial<F, E>
+{
+    type Output = MultivariatePolynomial<F, E>;
+
+    fn sub(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
+        (self.clone()).add(other.clone().neg())
     }
 }
 
@@ -616,33 +643,54 @@ impl<F: Ring, E: Exponent> Neg for MultivariatePolynomial<F, E> {
     }
 }
 
-impl<F: Ring, E: Exponent> Mul for MultivariatePolynomial<F, E> {
-    type Output = Self;
+impl<'a, 'b, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E>>
+    for &'b MultivariatePolynomial<F, E>
+{
+    type Output = MultivariatePolynomial<F, E>;
 
-    fn mul(self, other: Self) -> Self::Output {
-        self * &other
+    fn mul(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
+        self.heap_mul(other)
     }
 }
 
 impl<'a, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E>>
     for MultivariatePolynomial<F, E>
 {
-    type Output = Self;
+    type Output = MultivariatePolynomial<F, E>;
 
     fn mul(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
-        debug_assert_eq!(self.field, other.field);
-        debug_assert!(other.var_map.is_none() || self.var_map == other.var_map);
-        if self.is_zero() {
-            return other.new_from(None);
-        }
-        if other.is_zero() {
-            return self.new_from(None);
-        }
-        if self.nvars != other.nvars {
-            panic!("nvars mismatched");
-        }
+        (&self).heap_mul(other)
+    }
+}
 
-        self.heap_mul(other)
+impl<'a, 'b, F: EuclideanDomain, E: Exponent> Div<&'a MultivariatePolynomial<F, E>>
+    for &'b MultivariatePolynomial<F, E>
+{
+    type Output = MultivariatePolynomial<F, E>;
+
+    fn div(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
+        let (r, q) = self.quot_rem(&other);
+        if q.is_zero() {
+            r
+        } else {
+            panic!(
+                "No clean division of {} by {} possible: rest = {}",
+                self, other, r
+            );
+        }
+    }
+}
+
+impl<'a, F: EuclideanDomain, E: Exponent> Div<&'a MultivariatePolynomial<F, E>>
+    for MultivariatePolynomial<F, E>
+{
+    type Output = MultivariatePolynomial<F, E>;
+
+    fn div(
+        self: MultivariatePolynomial<F, E>,
+        other: &'a MultivariatePolynomial<F, E>,
+    ) -> Self::Output {
+        (&self).div(other)
     }
 }
 
@@ -1224,7 +1272,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
         #[cfg(debug_assertions)]
         {
-            if !(q.clone() * div.clone() + r.clone() - self.clone()).is_zero() {
+            if !(&q * &div + r.clone() - self.clone()).is_zero() {
                 panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
             }
         }
@@ -1279,7 +1327,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
     }
 
     /// Divide two multivariate polynomials and return the quotient and remainder.
-    pub fn divmod(
+    pub fn quot_rem(
         &self,
         div: &MultivariatePolynomial<F, E>,
     ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
@@ -1513,7 +1561,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
         #[cfg(debug_assertions)]
         {
-            if !(q.clone() * div.clone() + r.clone() - self.clone()).is_zero() {
+            if !(&q * &div + r.clone() - self.clone()).is_zero() {
                 panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
             }
         }

@@ -2,6 +2,7 @@ pub mod finite_field;
 pub mod linear_system;
 pub mod integer;
 pub mod rational;
+pub mod rational_polynomial;
 
 use std::fmt::{Debug, Display};
 

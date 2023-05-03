@@ -5,7 +5,7 @@ use colored::Colorize;
 use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent},
     representations::{number::BorrowedNumber, Add, Atom, AtomView, Fun, Mul, Num, Pow, Var},
-    rings::Ring,
+    rings::{rational_polynomial::RationalPolynomial, Ring},
     state::State,
 };
 
@@ -338,6 +338,44 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
             x.fmt_debug(f)?;
         }
         Ok(())
+    }
+}
+
+pub struct RationalPolynomialPrinter<'a, 'b, E: Exponent> {
+    pub poly: &'a RationalPolynomial<E>,
+    pub state: &'b State,
+    pub print_mode: PrintMode,
+}
+
+impl<'a, 'b, E: Exponent> RationalPolynomialPrinter<'a, 'b, E> {
+    pub fn new(
+        poly: &'a RationalPolynomial<E>,
+        state: &'b State,
+        print_mode: PrintMode,
+    ) -> RationalPolynomialPrinter<'a, 'b, E> {
+        RationalPolynomialPrinter {
+            poly,
+            state,
+            print_mode,
+        }
+    }
+}
+
+impl<'a, 'b, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b, E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_fmt(format_args!(
+            "({})/({})",
+            PolynomialPrinter {
+                poly: &self.poly.numerator,
+                state: self.state,
+                print_mode: self.print_mode,
+            },
+            PolynomialPrinter {
+                poly: &self.poly.denominator,
+                state: self.state,
+                print_mode: self.print_mode,
+            }
+        ))
     }
 }
 

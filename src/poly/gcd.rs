@@ -84,7 +84,8 @@ where
     let mut u = v[v.len() - 1].clone();
     for k in (0..v.len() - 1).rev() {
         // TODO: prevent cloning
-        u = u * (xp.clone() - MultivariatePolynomial::from_constant(a[k].clone(), xp.nvars, field))
+        u = u * &(xp.clone()
+            - MultivariatePolynomial::from_constant(a[k].clone(), xp.nvars, field))
             + v[k].clone();
     }
     u
@@ -1042,7 +1043,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
             let cont = gc.multivariate_content(lastvar);
             if !cont.is_one() {
                 debug!("Removing content in x{}: {}", lastvar, cont);
-                let cc = gc.divmod(&cont);
+                let cc = gc.quot_rem(&cont);
                 debug_assert!(cc.1.is_zero());
                 gc = cc.0;
             }
@@ -1082,7 +1083,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
                 }
             };
 
-            if g1.is_one() || (a1.divmod(&g1).1.is_zero() && b1.divmod(&g1).1.is_zero()) {
+            if g1.is_one() || (a1.quot_rem(&g1).1.is_zero() && b1.quot_rem(&g1).1.is_zero()) {
                 return Some(gc);
             }
 
@@ -1190,7 +1191,7 @@ where
 
             let mut newf: Vec<MultivariatePolynomial<R, E>> = Vec::with_capacity(f.len());
             for x in f.drain(..) {
-                if !x.divmod(&gcd).1.is_zero() {
+                if !x.quot_rem(&gcd).1.is_zero() {
                     newf.push(x);
                 }
             }
@@ -1317,13 +1318,13 @@ where
         debug!("GCD of content: {}", c);
 
         if !c.is_one() {
-            let x1 = a.divmod(&c);
-            let x2 = b.divmod(&c);
+            let x1 = a.quot_rem(&c);
+            let x2 = b.quot_rem(&c);
 
             assert!(x1.1.is_zero());
             assert!(x2.1.is_zero());
 
-            return MultivariatePolynomial::gcd(&x1.0, &x2.0) * c;
+            return MultivariatePolynomial::gcd(&x1.0, &x2.0) * &c;
         }
 
         // determine safe bounds for variables in the gcd
@@ -1373,8 +1374,8 @@ where
                 let c = MultivariatePolynomial::univariate_content_gcd(&aa, &bb, 0);
                 debug!("New content: {}", c);
                 if !c.is_one() {
-                    let x1 = aa.divmod(&c);
-                    let x2 = bb.divmod(&c);
+                    let x1 = aa.quot_rem(&c);
+                    let x2 = bb.quot_rem(&c);
 
                     assert!(x1.1.is_zero());
                     assert!(x2.1.is_zero());
@@ -1385,7 +1386,7 @@ where
                         &(0..vars.len()).collect::<Vec<_>>(),
                         &mut newbounds,
                         &mut newtight_bounds,
-                    ) * c;
+                    ) * &c;
                     return gcd.rearrange(&vars, true);
                 }
             }
@@ -1567,7 +1568,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                         .collect();
 
                     debug!("Final suggested gcd: {}", gc);
-                    if gc.is_one() || (a.divmod(&gc).1.is_zero() && b.divmod(&gc).1.is_zero()) {
+                    if gc.is_one() || (a.quot_rem(&gc).1.is_zero() && b.quot_rem(&gc).1.is_zero()) {
                         return gc;
                     }
 

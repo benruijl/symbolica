@@ -18,7 +18,7 @@ use crate::state::Workspace;
 
 use self::polynomial::MultivariatePolynomial;
 
-pub const INLINED_EXPONENTS: usize = 5;
+pub const INLINED_EXPONENTS: usize = 6;
 
 pub trait Exponent:
     Hash + Debug + Display + Ord + Sub<Output = Self> + OpAdd<Output = Self> + Clone + Copy

@@ -772,6 +772,27 @@ macro_rules! generate_methods {
                 }
             }
 
+            pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+                let (q, r) = if self.poly.var_map == rhs.poly.var_map {
+                    self.poly.divmod(&rhs.poly)
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+
+                    new_self.divmod(&new_rhs)
+                };
+
+                if r.is_zero() {
+                    Ok(Self { poly: Arc::new(q) })
+                } else {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "The division has a remainder: {}",
+                        r
+                    )))
+                }
+            }
+
             pub fn quot_rem(&self, rhs: Self) -> (Self, Self) {
                 if self.poly.var_map == rhs.poly.var_map {
                     let (q, r) = self.poly.divmod(&rhs.poly);

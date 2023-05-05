@@ -462,6 +462,15 @@ impl PythonExpression {
         Ok(PythonAtomIterator::from_expr(self.clone()))
     }
 
+    pub fn expand(&self) -> PythonExpression {
+        let mut b = OwnedAtom::new();
+        self.expr
+            .to_view()
+            .expand(&WORKSPACE, &STATE.read().unwrap().borrow(), &mut b);
+
+        PythonExpression { expr: Arc::new(b) }
+    }
+
     pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {
         let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
 

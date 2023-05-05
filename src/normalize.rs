@@ -563,7 +563,10 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
     /// Normalize an atom.
     pub fn normalize(&self, workspace: &Workspace<P>, state: &State, out: &mut OwnedAtom<P>) {
-        // TODO: check dirty flag here too
+        if !self.is_dirty() {
+            out.from_view(self);
+            return;
+        }
 
         match self {
             AtomView::Mul(t) => {
@@ -663,47 +666,53 @@ impl<'a, P: Atom> AtomView<'a, P> {
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
-                if base.is_dirty() || exp.is_dirty() {
-                    let mut base_handle = workspace.new_atom();
-                    let mut exp_handle = workspace.new_atom();
+                let mut base_handle = workspace.new_atom();
+                let mut exp_handle = workspace.new_atom();
 
-                    let new_base = base_handle.get_mut();
-                    let new_exp = exp_handle.get_mut();
+                if base.is_dirty() {
+                    base.normalize(workspace, state, base_handle.get_mut());
+                } else {
+                    // TODO: prevent copy
+                    base_handle.get_mut().from_view(&base);
+                };
 
-                    base.normalize(workspace, state, new_base);
-                    exp.normalize(workspace, state, new_exp);
+                if exp.is_dirty() {
+                    exp.normalize(workspace, state, exp_handle.get_mut());
+                } else {
+                    // TODO: prevent copy
+                    exp_handle.get_mut().from_view(&exp);
+                };
 
-                    // simplyify a number to a power
-                    if let AtomView::Num(n) = new_base.to_view() {
-                        if let AtomView::Num(e) = new_exp.to_view() {
+                'pow_simplify: {
+                    if let AtomView::Num(e) = exp_handle.get().to_view() {
+                        // remove power of 1
+                        if let BorrowedNumber::Natural(1, 1) = &e.get_number_view() {
+                            out.from_view(&base_handle.get().to_view());
+                            break 'pow_simplify;
+                        } else if let AtomView::Num(n) = base_handle.get().to_view() {
+                            // simplify a number to a numerical power
                             let (new_base_num, new_exp_num) =
                                 n.get_number_view().pow(&e.get_number_view(), state);
 
                             if let Number::Natural(1, 1) = &new_exp_num {
                                 let out = out.transform_to_num();
                                 out.from_number(new_base_num);
-                            } else {
-                                let nb = new_base.transform_to_num();
-                                nb.from_number(new_base_num);
-
-                                let ne = new_exp.transform_to_num();
-                                ne.from_number(new_exp_num);
-
-                                let out = out.transform_to_pow();
-                                out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
+                                break 'pow_simplify;
                             }
-                        } else {
-                            let out = out.transform_to_pow();
-                            out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
+
+                            let nb = base_handle.get_mut().transform_to_num();
+                            nb.from_number(new_base_num);
+
+                            let ne = exp_handle.get_mut().transform_to_num();
+                            ne.from_number(new_exp_num);
+                        } else if let AtomView::Mul(_) = base_handle.get().to_view() {
+                            // TODO: turn (x*y)^2 into x^2*y^2?
+                            // for now, expand() needs to be used
                         }
-                    } else {
-                        let out = out.transform_to_pow();
-                        out.from_base_and_exp(new_base.to_view(), new_exp.to_view());
                     }
-                } else {
-                    let pp = out.transform_to_pow();
-                    pp.from_view(p);
-                    pp.set_dirty(false);
+
+                    let out = out.transform_to_pow();
+                    out.from_base_and_exp(base_handle.get().to_view(), exp_handle.get().to_view());
                 }
             }
             AtomView::Add(a) => {

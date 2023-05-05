@@ -1,4 +1,5 @@
 pub mod api;
+pub mod expand;
 pub mod id;
 pub mod normalize;
 pub mod parser;

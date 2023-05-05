@@ -1,5 +1,4 @@
 pub mod gcd;
-pub mod monomial;
 pub mod polynomial;
 
 use std::fmt::{Debug, Display};

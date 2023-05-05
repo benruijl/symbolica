@@ -10,7 +10,6 @@ use crate::representations::Identifier;
 use crate::rings::finite_field::FiniteField;
 use crate::rings::{EuclideanDomain, Field, Ring};
 
-use super::monomial::{Monomial, MonomialView};
 use super::{Exponent, INLINED_EXPONENTS};
 use smallvec::{smallvec, SmallVec};
 
@@ -93,17 +92,6 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             field,
             var_map: None,
         }
-    }
-
-    /// Get the ith monomial
-    pub fn to_monomial(&self, i: usize) -> Monomial<F, E> {
-        assert!(i < self.nterms);
-
-        Monomial::new(
-            self.coefficients[i].clone(),
-            self.exponents(i).iter().cloned().collect(),
-            self.field,
-        )
     }
 
     /// Get the ith monomial
@@ -268,7 +256,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         *other = newother;
     }
 
-    /// F::Elementeverse the monomial ordering in-place.
+    /// Reverse the monomial ordering in-place.
     fn reverse(&mut self) {
         self.coefficients.reverse();
 
@@ -1345,23 +1333,32 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
         if div.nterms == 1 {
             let mut q = self.new_from(Some(self.nterms));
-            let mut r = self.new_from(None);
-            let dive = div.to_monomial(0);
+            let dive = div.to_monomial_view(0);
 
-            for i in 0..self.nterms {
-                let mut m = self.to_monomial(i);
-                if m.try_div_assign(&dive) {
-                    q.coefficients.push(m.coefficient);
-                    q.exponents.extend_from_slice(&m.exponents);
-                    q.nterms += 1;
-                } else {
-                    r.coefficients.push(m.coefficient);
-                    r.exponents.extend_from_slice(&m.exponents);
-                    r.nterms += 1;
+            for t in self {
+                let (quot, rem) = self.field.quot_rem(t.coefficient, dive.coefficient);
+                if !F::is_zero(&rem)
+                    || t.exponents
+                        .iter()
+                        .zip(dive.exponents)
+                        .any(|(te, de)| te < de)
+                {
+                    // TODO: support upgrade to a RationalField
+                    return (MultivariatePolynomial::new_from(&self, None), self.clone());
                 }
+
+                q.coefficients.push(quot);
+                q.exponents.extend_from_slice(
+                    &t.exponents
+                        .iter()
+                        .zip(dive.exponents)
+                        .map(|(te, de)| *te - *de)
+                        .collect::<SmallVec<[E; INLINED_EXPONENTS]>>(),
+                );
+                q.nterms += 1;
             }
 
-            return (q, r);
+            return (q, self.new_from(None));
         }
 
         // TODO: use other algorithm for univariate div
@@ -1482,7 +1479,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 }
             }
 
-            if !F::is_zero(&c) && div.last_exponents().iter().zip(&m).any(|(ge, me)| me >= ge) {
+            if !F::is_zero(&c) && div.last_exponents().iter().zip(&m).all(|(ge, me)| me >= ge) {
                 let (quot, rem) = self.field.quot_rem(&c, &div.lcoeff());
                 if !F::is_zero(&rem) {
                     // TODO: support upgrade to a RationalField
@@ -1639,5 +1636,49 @@ where
 
         // fall back to generic case
         self.synthetic_division(div)
+    }
+}
+
+/// View object for a term in a multivariate polynomial.
+#[derive(Copy, Clone, Debug)]
+pub struct MonomialView<'a, F: 'a + Ring, E: 'a + Exponent> {
+    pub coefficient: &'a F::Element,
+    pub exponents: &'a [E],
+}
+
+/// Iterator over terms in a multivariate polynomial.
+pub struct MonomialViewIterator<'a, F: Ring, E: Exponent> {
+    poly: &'a MultivariatePolynomial<F, E>,
+    index: usize,
+}
+
+impl<'a, F: Ring, E: Exponent> Iterator for MonomialViewIterator<'a, F, E> {
+    type Item = MonomialView<'a, F, E>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.poly.nterms {
+            None
+        } else {
+            let view = MonomialView {
+                coefficient: &self.poly.coefficients[self.index],
+                exponents: self.poly.exponents(self.index),
+            };
+            self.index += 1;
+            Some(view)
+        }
+    }
+}
+
+impl<'a, F: Ring, E: Exponent> IntoIterator for &'a MultivariatePolynomial<F, E> {
+    type Item = MonomialView<'a, F, E>;
+    type IntoIter = MonomialViewIterator<'a, F, E>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter {
+            poly: self,
+            index: 0,
+        }
     }
 }

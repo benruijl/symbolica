@@ -33,15 +33,15 @@ fn main() {
         "> Replace once {}={} in {}:",
         AtomPrinter::new(
             pat_expr.to_view(),
-            symbolica::printer::PrintMode::Form,
+            symbolica::printer::PrintMode::default(),
             &state
         ),
         AtomPrinter::new(
             rhs_expr.to_view(),
-            symbolica::printer::PrintMode::Form,
+            symbolica::printer::PrintMode::default(),
             &state
         ),
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::Form, &state),
+        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state),
     );
 
     let mut replaced = OwnedAtom::new();
@@ -52,7 +52,7 @@ fn main() {
             "\t{}",
             AtomPrinter::new(
                 replaced.to_view(),
-                symbolica::printer::PrintMode::Form,
+                symbolica::printer::PrintMode::default(),
                 &state
             ),
         );

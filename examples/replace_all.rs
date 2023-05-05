@@ -44,15 +44,15 @@ fn main() {
         "> Replace all {}={} in {}: {}",
         AtomPrinter::new(
             pat_expr.to_view(),
-            symbolica::printer::PrintMode::Form,
+            symbolica::printer::PrintMode::default(),
             &state
         ),
         AtomPrinter::new(
             rhs_expr.to_view(),
-            symbolica::printer::PrintMode::Form,
+            symbolica::printer::PrintMode::default(),
             &state
         ),
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::Form, &state),
-        AtomPrinter::new(out.to_view(), symbolica::printer::PrintMode::Form, &state)
+        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state),
+        AtomPrinter::new(out.to_view(), symbolica::printer::PrintMode::default(), &state)
     );
 }

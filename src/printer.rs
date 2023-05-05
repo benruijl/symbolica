@@ -10,9 +10,73 @@ use crate::{
 };
 
 #[derive(Debug, Copy, Clone)]
+pub struct SymbolicaPrintOptions {
+    pub terms_on_new_line: bool,
+    pub color_top_level_sum: bool,
+}
+
+impl Default for SymbolicaPrintOptions {
+    fn default() -> Self {
+        Self {
+            terms_on_new_line: false,
+            color_top_level_sum: true,
+        }
+    }
+}
+
+// TODO: make the printer generic over the print mode,
+// as the modes will deviate quite a bit
+#[derive(Debug, Copy, Clone)]
 pub enum PrintMode {
-    Form,
+    Symbolica(SymbolicaPrintOptions),
     Mathematica,
+}
+
+impl PrintMode {
+    pub fn get_terms_on_new_line(&self) -> bool {
+        match self {
+            PrintMode::Symbolica(options) => options.terms_on_new_line,
+            PrintMode::Mathematica => false,
+        }
+    }
+
+    pub fn set_terms_on_new_line(self, terms_on_new_line: bool) -> PrintMode {
+        match self {
+            PrintMode::Symbolica(mut options) => {
+                options.terms_on_new_line = terms_on_new_line;
+                PrintMode::Symbolica(options)
+            }
+            PrintMode::Mathematica => PrintMode::Mathematica,
+        }
+    }
+
+    pub fn get_color_top_level_sum(&self) -> bool {
+        match self {
+            PrintMode::Symbolica(options) => options.color_top_level_sum,
+            PrintMode::Mathematica => false,
+        }
+    }
+
+    pub fn set_color_top_level_sum(self, color_top_level_sum: bool) -> PrintMode {
+        match self {
+            PrintMode::Symbolica(mut options) => {
+                options.color_top_level_sum = color_top_level_sum;
+                PrintMode::Symbolica(options)
+            }
+            PrintMode::Mathematica => PrintMode::Mathematica,
+        }
+    }
+}
+
+impl Default for PrintMode {
+    fn default() -> Self {
+        Self::Symbolica(SymbolicaPrintOptions::default())
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct PrintState {
+    pub level: usize,
 }
 
 macro_rules! define_formatters {
@@ -29,6 +93,7 @@ macro_rules! define_formatters {
                 f: &mut fmt::Formatter,
                 print_mode: PrintMode,
                 state: &State,
+                print_state: PrintState,
             ) -> fmt::Result;
         })+
     };
@@ -65,7 +130,9 @@ impl<'a, 'b, P: Atom> AtomPrinter<'a, 'b, P> {
 
 impl<'a, 'b, P: Atom> fmt::Display for AtomPrinter<'a, 'b, P> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.atom.fmt_output(f, self.print_mode, self.state)
+        let print_state = PrintState { level: 0 };
+        self.atom
+            .fmt_output(f, self.print_mode, self.state, print_state)
     }
 }
 
@@ -86,14 +153,15 @@ impl<'a, P: Atom> AtomView<'a, P> {
         fmt: &mut fmt::Formatter,
         print_mode: PrintMode,
         state: &State,
+        print_state: PrintState,
     ) -> fmt::Result {
         match self {
-            AtomView::Num(n) => n.fmt_output(fmt, print_mode, state),
-            AtomView::Var(v) => v.fmt_output(fmt, print_mode, state),
-            AtomView::Fun(f) => f.fmt_output(fmt, print_mode, state),
-            AtomView::Pow(p) => p.fmt_output(fmt, print_mode, state),
-            AtomView::Mul(t) => t.fmt_output(fmt, print_mode, state),
-            AtomView::Add(e) => e.fmt_output(fmt, print_mode, state),
+            AtomView::Num(n) => n.fmt_output(fmt, print_mode, state, print_state),
+            AtomView::Var(v) => v.fmt_output(fmt, print_mode, state, print_state),
+            AtomView::Fun(f) => f.fmt_output(fmt, print_mode, state, print_state),
+            AtomView::Pow(p) => p.fmt_output(fmt, print_mode, state, print_state),
+            AtomView::Mul(t) => t.fmt_output(fmt, print_mode, state, print_state),
+            AtomView::Add(e) => e.fmt_output(fmt, print_mode, state, print_state),
         }
     }
 }
@@ -110,10 +178,11 @@ impl<'a, A: Var<'a>> FormattedPrintVar for A {
         f: &mut fmt::Formatter,
         _print_mode: PrintMode,
         state: &State,
+        _print_state: PrintState,
     ) -> fmt::Result {
         let name = state.get_name(self.get_name()).unwrap();
         if name.ends_with('_') {
-            f.write_fmt(format_args!("{}", name.as_str().cyan()))
+            f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))
         } else {
             f.write_str(name)
         }
@@ -148,6 +217,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
         f: &mut fmt::Formatter,
         _print_mode: PrintMode,
         state: &State,
+        _print_state: PrintState,
     ) -> fmt::Result {
         let d = self.get_number_view();
 
@@ -197,8 +267,10 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
         f: &mut fmt::Formatter,
         print_mode: PrintMode,
         state: &State,
+        mut print_state: PrintState,
     ) -> fmt::Result {
         let mut first = true;
+        print_state.level += 1;
         for x in self.into_iter() {
             if !first {
                 f.write_char('*')?;
@@ -207,10 +279,10 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
 
             if let AtomView::Add(_) = x {
                 f.write_char('(')?;
-                x.fmt_output(f, print_mode, state)?;
+                x.fmt_output(f, print_mode, state, print_state)?;
                 f.write_char(')')?;
             } else {
-                x.fmt_output(f, print_mode, state)?;
+                x.fmt_output(f, print_mode, state, print_state)?;
             }
         }
         Ok(())
@@ -223,10 +295,12 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         f: &mut fmt::Formatter,
         print_mode: PrintMode,
         state: &State,
+        mut print_state: PrintState,
     ) -> fmt::Result {
         f.write_str(state.get_name(self.get_name()).unwrap())?;
         f.write_char('(')?;
 
+        print_state.level += 1;
         let mut first = true;
         for x in self.into_iter() {
             if !first {
@@ -234,7 +308,7 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
             }
             first = false;
 
-            x.fmt_output(f, print_mode, state)?;
+            x.fmt_output(f, print_mode, state, print_state)?;
         }
 
         f.write_char(')')
@@ -263,14 +337,17 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         f: &mut fmt::Formatter,
         print_mode: PrintMode,
         state: &State,
+        mut print_state: PrintState,
     ) -> fmt::Result {
         let b = self.get_base();
+
+        print_state.level += 1;
         if let AtomView::Add(_) | AtomView::Mul(_) = b {
             f.write_char('(')?;
-            b.fmt_output(f, print_mode, state)?;
+            b.fmt_output(f, print_mode, state, print_state)?;
             f.write_char(')')?;
         } else {
-            b.fmt_output(f, print_mode, state)?;
+            b.fmt_output(f, print_mode, state, print_state)?;
         }
 
         f.write_char('^')?;
@@ -278,10 +355,10 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         let e = self.get_exp();
         if let AtomView::Add(_) | AtomView::Mul(_) = e {
             f.write_char('(')?;
-            e.fmt_output(f, print_mode, state)?;
+            e.fmt_output(f, print_mode, state, print_state)?;
             f.write_char(')')
         } else {
-            e.fmt_output(f, print_mode, state)
+            e.fmt_output(f, print_mode, state, print_state)
         }
     }
 
@@ -314,15 +391,26 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
         f: &mut fmt::Formatter,
         print_mode: PrintMode,
         state: &State,
+        mut print_state: PrintState,
     ) -> fmt::Result {
         let mut first = true;
+        print_state.level += 1;
         for x in self.into_iter() {
             if !first {
-                f.write_char('+')?;
+                if print_state.level == 1 && print_mode.get_terms_on_new_line() {
+                    f.write_char('\n')?;
+                    f.write_char('\t')?;
+                }
+
+                if print_state.level == 1 && print_mode.get_color_top_level_sum() {
+                    f.write_fmt(format_args!("{}", "+".yellow()))?;
+                } else {
+                    f.write_char('+')?;
+                }
             }
             first = false;
 
-            x.fmt_output(f, print_mode, state)?;
+            x.fmt_output(f, print_mode, state, print_state)?;
         }
         Ok(())
     }

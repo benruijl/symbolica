@@ -27,10 +27,10 @@ fn main() {
         "> Matching pattern {} to {}:",
         AtomPrinter::new(
             pat_expr.to_view(),
-            symbolica::printer::PrintMode::Form,
+            symbolica::printer::PrintMode::default(),
             &state
         ),
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::Form, &state)
+        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state)
     );
 
     let mut it = PatternAtomTreeIterator::new(&pattern, expr.to_view(), &state, &restrictions);
@@ -41,14 +41,14 @@ fn main() {
             match v {
                 Match::Single(s) => print!(
                     "{}",
-                    AtomPrinter::new(*s, symbolica::printer::PrintMode::Form, &state),
+                    AtomPrinter::new(*s, symbolica::printer::PrintMode::default(), &state),
                 ),
                 Match::Multiple(slice_type, mm) => {
                     print!("{:?} ", slice_type);
                     for vv in mm {
                         print!(
                             "{}",
-                            AtomPrinter::new(*vv, symbolica::printer::PrintMode::Form, &state),
+                            AtomPrinter::new(*vv, symbolica::printer::PrintMode::default(), &state),
                         );
                         print!(", ")
                     }

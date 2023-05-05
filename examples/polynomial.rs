@@ -19,7 +19,7 @@ fn main() {
     b.append_monomial(Rational::Natural(7, 3), &[1, 1, 2]);
 
     println!("> Polynomial multiplication: {} * {} =", a, b);
-    println!("\t{}", a * b);
+    println!("\t{}", a * &b);
 
     let finite_field = FiniteField::<u32>::new(17);
     let mut a = MultivariatePolynomial::<FiniteField<u32>, u8>::new(3, finite_field, Some(3), None);
@@ -33,5 +33,5 @@ fn main() {
     b.append_monomial(finite_field.to_element(16), &[1, 1, 2]);
 
     println!("> Polynomial multiplication: {} * {} =", a, b);
-    println!("\t{}", a * b);
+    println!("\t{}", a * &b);
 }

@@ -190,7 +190,7 @@ impl PythonExpression {
             AtomPrinter {
                 atom: self.expr.to_view(),
                 state: &STATE.read().unwrap(),
-                print_mode: PrintMode::Form
+                print_mode: PrintMode::default(),
             }
         ))
     }
@@ -734,7 +734,7 @@ macro_rules! generate_methods {
                     PolynomialPrinter {
                         poly: &self.poly,
                         state: &STATE.read().unwrap(),
-                        print_mode: PrintMode::Form
+                        print_mode: PrintMode::default()
                     }
                 ))
             }
@@ -888,7 +888,7 @@ impl PythonRationalPolynomial {
             RationalPolynomialPrinter {
                 poly: &self.poly,
                 state: &STATE.read().unwrap(),
-                print_mode: PrintMode::Form
+                print_mode: PrintMode::default()
             }
         ))
     }

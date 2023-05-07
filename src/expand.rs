@@ -7,7 +7,7 @@ use crate::{
         Add, Atom, AtomView, Mul, Num, OwnedAdd, OwnedAtom, OwnedMul, OwnedNum, OwnedPow, Pow,
     },
     rings::integer::Integer,
-    state::{State, Workspace},
+    state::{BufferHandle, State, Workspace},
     utils::CombinationIterator,
 };
 
@@ -100,13 +100,18 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             if let OwnedAtom::Mul(m) = expanded_child.get_mut() {
                                 m.extend(coeff_h.get().to_view());
                                 m.set_dirty(true);
+                                add.extend(expanded_child.get().to_view());
                             } else {
-                                // may be unreachable
-                                todo!()
+                                let mut mul_h = workspace.new_atom();
+                                let mul = mul_h.get_mut().transform_to_mul();
+                                mul.extend(expanded_child.get().to_view());
+                                mul.extend(coeff_h.get().to_view());
+                                mul.set_dirty(true);
+                                add.extend(mul_h.get().to_view());
                             }
+                        } else {
+                            add.extend(expanded_child.get().to_view());
                         }
-
-                        add.extend(expanded_child.get().to_view());
                     }
                     add.set_dirty(true);
 
@@ -143,18 +148,81 @@ impl<'a, P: Atom> AtomView<'a, P> {
             AtomView::Mul(m) => {
                 let mut changed = false;
 
-                let mut mul_h = workspace.new_atom();
-                let mul = mul_h.get_mut().transform_to_mul();
+                let mut sum: SmallVec<[BufferHandle<OwnedAtom<P>>; 10]> = SmallVec::new();
+                let mut new_sum: SmallVec<[BufferHandle<OwnedAtom<P>>; 10]> = SmallVec::new();
 
-                // TODO: expand (1+x)*y
                 for arg in m.into_iter() {
                     let mut new_arg = workspace.new_atom();
                     changed |= arg.expand(workspace, state, new_arg.get_mut());
-                    mul.extend(new_arg.get().to_view());
+
+                    // expand (1+x)*y
+                    if let AtomView::Add(a) = new_arg.get().to_view() {
+                        changed = true;
+
+                        for child in a.into_iter() {
+                            for s in &sum {
+                                let mut b = workspace.new_atom();
+                                b.get_mut().from_view(&s.get().to_view());
+
+                                if let OwnedAtom::Mul(m) = b.get_mut() {
+                                    m.extend(child);
+                                    m.set_dirty(true);
+                                    new_sum.push(b);
+                                } else {
+                                    let mut mul_h = workspace.new_atom();
+                                    let mul = mul_h.get_mut().transform_to_mul();
+                                    mul.extend(b.get().to_view());
+                                    mul.extend(child);
+                                    mul.set_dirty(true);
+                                    new_sum.push(mul_h);
+                                }
+                            }
+
+                            if sum.is_empty() {
+                                let mut b = workspace.new_atom();
+                                b.get_mut().from_view(&child);
+                                new_sum.push(b);
+                            }
+                        }
+
+                        std::mem::swap(&mut sum, &mut new_sum);
+                        new_sum.clear();
+                    } else {
+                        if sum.is_empty() {
+                            sum.push(new_arg);
+                        } else {
+                            for summand in &mut sum {
+                                if let OwnedAtom::Mul(m) = summand.get_mut() {
+                                    m.extend(new_arg.get().to_view());
+                                    m.set_dirty(true);
+                                } else {
+                                    let mut mul_h = workspace.new_atom();
+                                    let mul = mul_h.get_mut().transform_to_mul();
+                                    mul.extend(summand.get().to_view());
+                                    mul.extend(new_arg.get().to_view());
+                                    mul.set_dirty(true);
+                                    *summand = mul_h;
+                                }
+                            }
+                        }
+                    }
                 }
 
-                mul.set_dirty(changed);
-                mul_h.get().to_view().normalize(workspace, state, out);
+                debug_assert!(!sum.is_empty());
+
+                if sum.len() == 1 {
+                    sum[0].get().to_view().normalize(workspace, state, out);
+                } else {
+                    let mut add_h = workspace.new_atom();
+                    let add = add_h.get_mut().transform_to_add();
+                    for x in sum {
+                        add.extend(x.get().to_view());
+                    }
+
+                    add.set_dirty(true);
+                    add_h.get().to_view().normalize(workspace, state, out);
+                }
+
                 changed
             }
             AtomView::Add(a) => {

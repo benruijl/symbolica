@@ -498,7 +498,7 @@ impl PythonExpression {
             .map(|x| PythonPolynomial { poly: Arc::new(x) })
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!(
-                    "Could not convert to poynomial: {:?}",
+                    "Could not convert to polynomial: {:?}",
                     e
                 ))
             })

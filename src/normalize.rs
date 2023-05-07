@@ -108,11 +108,11 @@ impl<'a, P: Atom> AtomView<'a, P> {
             }
             (_, AtomView::Pow(p2)) => {
                 let base = p2.get_base();
-                self.cmp(&base)
+                self.cmp(&base).then(Ordering::Less) // sort x^2*x -> x*x^2
             }
             (AtomView::Pow(p1), _) => {
                 let base = p1.get_base();
-                base.cmp(other)
+                base.cmp(other).then(Ordering::Greater)
             }
             (AtomView::Var(_), _) => Ordering::Less,
             (_, AtomView::Var(_)) => Ordering::Greater,
@@ -501,7 +501,7 @@ impl<P: Atom> OwnedAtom<P> {
                             true,
                         )
                     } else {
-                        (Number::Natural(2, 1), false)
+                        return false; // last elem is not a coefficient
                     };
 
                     // help the borrow checker by dropping all references
@@ -588,9 +588,22 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             let mut handle = workspace.new_atom();
                             let child_copy = handle.get_mut();
                             child_copy.from_view(&c);
+
+                            if let AtomView::Num(n) = c {
+                                if n.is_one() {
+                                    continue;
+                                }
+                            }
+
                             atom_test_buf.push(handle);
                         }
                     } else {
+                        if let AtomView::Num(n) = handle.get().to_view() {
+                            if n.is_one() {
+                                continue;
+                            }
+                        }
+
                         atom_test_buf.push(handle);
                     }
                 }
@@ -635,7 +648,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     }
                 } else {
                     let on = out.transform_to_num();
-                    on.from_number(Number::Natural(0, 1));
+                    on.from_number(Number::Natural(1, 1));
                 }
             }
             AtomView::Num(n) => {
@@ -734,9 +747,21 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             let mut handle = workspace.new_atom();
                             let child_copy = handle.get_mut();
                             child_copy.from_view(&c);
+
+                            if let AtomView::Num(n) = c {
+                                if n.is_zero() {
+                                    continue;
+                                }
+                            }
+
                             atom_test_buf.push(handle);
                         }
                     } else {
+                        if let AtomView::Num(n) = handle.get().to_view() {
+                            if n.is_zero() {
+                                continue;
+                            }
+                        }
                         atom_test_buf.push(handle);
                     }
                 }
@@ -780,9 +805,8 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         out_add.extend(last_buf.get().to_view());
                     }
                 } else {
-                    // TODO: check if correct
                     let on = out.transform_to_num();
-                    on.from_number(Number::Natural(1, 1));
+                    on.from_number(Number::Natural(0, 1));
                 }
             }
         }

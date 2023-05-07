@@ -21,7 +21,8 @@ pub enum BinaryOperator {
     Sub,
     Pow,
     Div,
-    Argument, // comma
+    Argument,   // comma
+    UnaryMinus, // has to be constructed with the left side tagged as 'finished'
 }
 
 impl BinaryOperator {
@@ -33,6 +34,7 @@ impl BinaryOperator {
             BinaryOperator::Sub => 7,
             BinaryOperator::Pow => 9,
             BinaryOperator::Argument => 6,
+            BinaryOperator::UnaryMinus => 10,
         }
     }
 }
@@ -55,9 +57,7 @@ impl Token {
         match self {
             Token::Number(_) => true,
             Token::ID(_) => true,
-            Token::BinaryOp(more_left, more_right, _, a) => {
-                a.len() > 1 && !more_left && !more_right
-            }
+            Token::BinaryOp(more_left, more_right, _, _) => !more_left && !more_right,
             Token::Fn(more_right, _, _) => !more_right,
             _ => false,
         }
@@ -185,6 +185,13 @@ impl Token {
                         ]))
                     }
                     BinaryOperator::Argument => Err(format!("Unexpected argument operator")),
+                    BinaryOperator::UnaryMinus => {
+                        debug_assert!(atom_args.len() == 1);
+                        Ok(AtomTree::Mul(vec![
+                            atom_args.pop().unwrap(),
+                            AtomTree::Num(Number::Natural(-1, 1)),
+                        ]))
+                    }
                 }
             }
             Token::Fn(_, name, args) => {
@@ -226,6 +233,7 @@ impl std::fmt::Display for Token {
                             BinaryOperator::Add => f.write_char('+')?,
                             BinaryOperator::Pow => f.write_char('^')?,
                             BinaryOperator::Argument => f.write_char(',')?,
+                            BinaryOperator::UnaryMinus => f.write_char('-')?,
                         }
                     }
                     first = false;
@@ -326,12 +334,12 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         stack.last().unwrap(),
                         Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
                     ) {
-                        // unary minus
+                        // unary minus only requires an argument to the right
                         stack.push(Token::BinaryOp(
                             false,
                             true,
-                            BinaryOperator::Mul,
-                            vec![Token::Number("-1".to_owned())],
+                            BinaryOperator::UnaryMinus,
+                            vec![],
                         ));
                     } else {
                         stack.push(Token::BinaryOp(true, true, BinaryOperator::Sub, vec![]));

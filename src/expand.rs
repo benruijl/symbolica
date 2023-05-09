@@ -25,11 +25,11 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 let mut new_exp = workspace.new_atom();
                 changed |= exp.expand(workspace, state, new_exp.get_mut());
 
-                let num = 'get_num: {
+                let (negative, num) = 'get_num: {
                     if let AtomView::Num(n) = new_exp.get().to_view() {
                         if let BorrowedNumber::Natural(n, 1) = n.get_number_view() {
-                            if n >= 0 && n < u32::MAX as i64 {
-                                break 'get_num n as u32;
+                            if n.abs() < u32::MAX as i64 {
+                                break 'get_num (n < 0, n.abs() as u32);
                             }
                         }
                     }
@@ -115,7 +115,22 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     }
                     add.set_dirty(true);
 
-                    add_h.get().to_view().normalize(workspace, state, out);
+                    if negative {
+                        let mut pow_h = workspace.new_atom();
+                        let pow = pow_h.get_mut().transform_to_pow();
+
+                        let mut num_h = workspace.new_atom();
+                        let num = num_h.get_mut().transform_to_num();
+                        num.from_number(Number::Natural(-1, 1));
+
+                        pow.from_base_and_exp(add_h.get().to_view(), num_h.get().to_view());
+                        pow.set_dirty(true);
+
+                        pow_h.get().to_view().normalize(workspace, state, out);
+                    } else {
+                        add_h.get().to_view().normalize(workspace, state, out);
+                    }
+
                     true
                 } else if let AtomView::Mul(m) = new_base.get().to_view() {
                     let mut mul_h = workspace.new_atom();
@@ -132,9 +147,22 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         pow.set_dirty(true);
                         mul.extend(pow_h.get().to_view());
                     }
-
                     mul.set_dirty(true);
-                    mul_h.get().to_view().normalize(workspace, state, out);
+
+                    if negative {
+                        let mut pow_h = workspace.new_atom();
+                        let pow = pow_h.get_mut().transform_to_pow();
+
+                        let mut num_h = workspace.new_atom();
+                        let num = num_h.get_mut().transform_to_num();
+                        num.from_number(Number::Natural(-1, 1));
+
+                        pow.from_base_and_exp(mul_h.get().to_view(), num_h.get().to_view());
+                        pow.set_dirty(true);
+                        pow_h.get().to_view().normalize(workspace, state, out);
+                    } else {
+                        mul_h.get().to_view().normalize(workspace, state, out);
+                    }
                     true
                 } else {
                     let mut pow_h = workspace.new_atom();

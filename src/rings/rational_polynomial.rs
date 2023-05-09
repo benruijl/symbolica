@@ -1,15 +1,19 @@
 use std::{
-    fmt::Display,
+    fmt::{Display, Error, Formatter},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
 use rand::Rng;
 
-use crate::poly::{polynomial::MultivariatePolynomial, Exponent, INLINED_EXPONENTS};
+use crate::{
+    poly::{polynomial::MultivariatePolynomial, Exponent, INLINED_EXPONENTS},
+    representations::Identifier,
+};
 
 use super::{
     integer::{Integer, IntegerRing},
+    rational::RationalField,
     EuclideanDomain, Field, Ring,
 };
 
@@ -33,6 +37,75 @@ pub struct RationalPolynomial<E: Exponent> {
 }
 
 impl<E: Exponent> RationalPolynomial<E> {
+    pub fn new(var_map: Option<&[Identifier]>) -> RationalPolynomial<E> {
+        RationalPolynomial {
+            numerator: MultivariatePolynomial::new(
+                var_map.map(|x| x.len()).unwrap_or(0),
+                IntegerRing::new(),
+                None,
+                var_map.map(|x| x.iter().cloned().collect()),
+            ),
+            denominator: {
+                let d = MultivariatePolynomial::new(
+                    var_map.map(|x| x.len()).unwrap_or(0),
+                    IntegerRing::new(),
+                    None,
+                    var_map.map(|x| x.iter().cloned().collect()),
+                );
+                d.add_monomial(Integer::Natural(1))
+            },
+        }
+    }
+
+    pub fn from_rat_num_and_den(
+        num: &MultivariatePolynomial<RationalField, E>,
+        den: &MultivariatePolynomial<RationalField, E>,
+    ) -> RationalPolynomial<E> {
+        let content = num.field.gcd(&num.content(), &den.content());
+
+        let mut num_int = MultivariatePolynomial::new(
+            num.nvars,
+            IntegerRing::new(),
+            Some(num.nterms),
+            num.var_map.clone(),
+        );
+
+        for t in num.into_iter() {
+            let coeff = num.field.div(t.coefficient, &content);
+            debug_assert!(coeff.is_integer());
+            num_int.append_monomial(coeff.numerator(), t.exponents);
+        }
+
+        let mut den_int = MultivariatePolynomial::new(
+            den.nvars,
+            IntegerRing::new(),
+            Some(den.nterms),
+            den.var_map.clone(),
+        );
+
+        for t in den.into_iter() {
+            let coeff = den.field.div(t.coefficient, &content);
+            debug_assert!(coeff.is_integer());
+            den_int.append_monomial(coeff.numerator(), t.exponents);
+        }
+
+        Self::from_num_and_den(num_int, den_int)
+    }
+
+    pub fn from_num_and_den(
+        mut num: MultivariatePolynomial<IntegerRing, E>,
+        mut den: MultivariatePolynomial<IntegerRing, E>,
+    ) -> RationalPolynomial<E> {
+        num.unify_var_map(&mut den);
+
+        let gcd = MultivariatePolynomial::gcd(&num, &den);
+
+        RationalPolynomial {
+            numerator: num / &gcd,
+            denominator: den / &gcd,
+        }
+    }
+
     pub fn get_var_map(
         &self,
     ) -> &Option<smallvec::SmallVec<[crate::representations::Identifier; INLINED_EXPONENTS]>> {
@@ -41,10 +114,8 @@ impl<E: Exponent> RationalPolynomial<E> {
 
     pub fn unify_var_map(&mut self, other: &mut Self) {
         assert!(
-            self.numerator.var_map.is_some()
-                && self.numerator.var_map.is_some() == self.denominator.var_map.is_some()
-                && other.numerator.var_map.is_some()
-                && other.numerator.var_map.is_some() == other.denominator.var_map.is_some()
+            self.numerator.var_map == self.denominator.var_map
+                && other.numerator.var_map == other.denominator.var_map
         );
 
         self.numerator.unify_var_map(&mut other.numerator);
@@ -96,7 +167,7 @@ impl<E: Exponent> Ring for RationalPolynomialField<E> {
 
         RationalPolynomial {
             numerator: (&a.numerator / &gcd1) * &(&b.numerator / &gcd2),
-            denominator: (&a.denominator / &gcd2) * &(&b.numerator / &gcd1),
+            denominator: (&a.denominator / &gcd2) * &(&b.denominator / &gcd1),
         }
     }
 
@@ -157,8 +228,11 @@ impl<E: Exponent> Ring for RationalPolynomialField<E> {
             numerator: MultivariatePolynomial::new_from(&b.numerator, None),
             denominator: MultivariatePolynomial::new_from(&b.denominator, None),
         };
-        for _ in 1..e {
-            poly = self.mul(&poly, &poly);
+        poly.numerator = poly.numerator.add_monomial(Integer::Natural(1));
+        poly.denominator = poly.denominator.add_monomial(Integer::Natural(1));
+
+        for _ in 0..e {
+            poly = self.mul(&poly, &b);
         }
         poly
     }
@@ -181,6 +255,10 @@ impl<E: Exponent> Ring for RationalPolynomialField<E> {
                 IntegerRing::new(),
             ),
         }
+    }
+
+    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
+        element.fmt(f)
     }
 }
 
@@ -251,7 +329,7 @@ impl<'a, 'b, E: Exponent> Sub<&'a RationalPolynomial<E>> for &'b RationalPolynom
     type Output = RationalPolynomial<E>;
 
     fn sub(self, other: &'a RationalPolynomial<E>) -> Self::Output {
-        (self.clone()).add(&other.clone())
+        (self.clone()).sub(other.clone())
     }
 }
 
@@ -266,7 +344,7 @@ impl<'a, 'b, E: Exponent> Mul<&'a RationalPolynomial<E>> for &'b RationalPolynom
     type Output = RationalPolynomial<E>;
 
     fn mul(self, other: &'a RationalPolynomial<E>) -> Self::Output {
-        RationalPolynomialField::new().add(self, other)
+        RationalPolynomialField::new().mul(self, other)
     }
 }
 

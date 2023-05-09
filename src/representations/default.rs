@@ -616,6 +616,9 @@ impl OwnedAdd for OwnedAddD {
         let new_buf_pos = self.data.len();
 
         let mut cursor = &mut self.data[1..];
+
+        assert!(new_buf_pos - buf_pos < u32::MAX as usize, "Term too large");
+
         cursor
             .write_u32::<LittleEndian>((new_buf_pos - buf_pos) as u32)
             .unwrap();

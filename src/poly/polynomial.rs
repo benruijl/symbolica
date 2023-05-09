@@ -8,7 +8,7 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use crate::representations::Identifier;
 use crate::rings::finite_field::FiniteField;
-use crate::rings::{EuclideanDomain, Field, Ring};
+use crate::rings::{EuclideanDomain, Field, Ring, RingPrinter};
 
 use super::{Exponent, INLINED_EXPONENTS};
 use smallvec::{smallvec, SmallVec};
@@ -208,13 +208,20 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// rewrite a polynomial in `x` and one in `y` to a
     /// two polynomial in `x` and `y`.
     pub fn unify_var_map(&mut self, other: &mut Self) {
-        assert!(self.var_map.is_some() && other.var_map.is_some());
+        assert!(
+            (self.var_map.is_some() || self.nvars == 0)
+                && (other.var_map.is_some() || other.nvars == 0)
+        );
 
-        let mut new_var_map = self.var_map.clone().unwrap();
+        if self.var_map == other.var_map {
+            return;
+        }
+
+        let mut new_var_map = self.var_map.clone().unwrap_or(SmallVec::new());
         let mut new_var_pos_other = vec![0; other.nvars];
         for (pos, v) in new_var_pos_other
             .iter_mut()
-            .zip(other.var_map.as_ref().unwrap())
+            .zip(other.var_map.as_ref().unwrap_or(&SmallVec::new()))
         {
             if let Some(p) = new_var_map.iter().position(|x| x == v) {
                 *pos = p;
@@ -451,9 +458,16 @@ impl<F: Ring + Display, E: Exponent> Display for MultivariatePolynomial<F, E> {
                 write!(f, "-")?;
             } else {
                 if is_first_term {
-                    write!(f, "{}", monomial.coefficient)?;
+                    self.field.fmt_display(monomial.coefficient, f)?;
                 } else {
-                    write!(f, "{:+}", monomial.coefficient)?;
+                    write!(
+                        f,
+                        "{:+}",
+                        RingPrinter {
+                            ring: &self.field,
+                            element: &monomial.coefficient
+                        }
+                    )?;
                 }
                 is_first_factor = false;
             }
@@ -1072,6 +1086,10 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// monomials that have that exponent can be summed. Then, new monomials combinations are added that
     /// should be considered next as they are smaller than the current monomial.
     pub fn heap_mul(&self, other: &MultivariatePolynomial<F, E>) -> MultivariatePolynomial<F, E> {
+        if self.nterms == 0 || other.nterms == 0 {
+            return MultivariatePolynomial::new_from(&self, None);
+        }
+
         let mut res = self.new_from(Some(self.nterms));
 
         let mut cache: HashMap<SmallVec<[E; INLINED_EXPONENTS]>, SmallVec<[(usize, usize); 5]>> =

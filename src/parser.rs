@@ -32,9 +32,21 @@ impl BinaryOperator {
             BinaryOperator::Div => 8,
             BinaryOperator::Add => 7,
             BinaryOperator::Sub => 7,
-            BinaryOperator::Pow => 9,
-            BinaryOperator::Argument => 6,
-            BinaryOperator::UnaryMinus => 10,
+            BinaryOperator::Pow => 10,
+            BinaryOperator::Argument => 5,
+            BinaryOperator::UnaryMinus => 9,
+        }
+    }
+
+    fn right_associative(&self) -> bool {
+        match self {
+            BinaryOperator::Mul => true,
+            BinaryOperator::Div => false,
+            BinaryOperator::Add => true,
+            BinaryOperator::Sub => false,
+            BinaryOperator::Pow => false,
+            BinaryOperator::Argument => true,
+            BinaryOperator::UnaryMinus => true,
         }
     }
 }
@@ -84,8 +96,9 @@ impl Token {
                 if let Token::BinaryOp(ml, mr, o2, mut args2) = other {
                     assert!(!ml && !mr);
                     if *o1 == o2 {
+                        // add from the left by swapping and then extending from the right
                         std::mem::swap(args, &mut args2);
-                        args2.extend(args.drain(..));
+                        args.extend(args2.drain(..));
                     } else {
                         args.insert(0, Token::BinaryOp(false, false, o2, args2));
                     }
@@ -106,8 +119,14 @@ impl Token {
 
                 if let Token::BinaryOp(ml, mr, o2, mut args2) = other {
                     assert!(!ml && !mr);
-                    if *o1 == o2 {
-                        args.extend(args2.drain(..))
+                    if *o1 == o2 && o2.right_associative() {
+                        if o2 == BinaryOperator::UnaryMinus {
+                            // twice unary minus cancels out
+                            assert!(args2.len() == 1);
+                            *self = args2.pop().unwrap();
+                        } else {
+                            args.extend(args2.drain(..))
+                        }
                     } else {
                         args.push(Token::BinaryOp(false, false, o2, args2));
                     }
@@ -433,9 +452,10 @@ pub fn parse(input: &str) -> Result<Token, String> {
                             assert!(*mr1 && ml2);
                             // same precedence, so left associate
 
-                            // flatten if middle identifier is also a binary operator of the same type
+                            // flatten if middle identifier is also a binary operator of the same type that
+                            // is also right associative
                             if let Token::BinaryOp(_, _, o_mid, mut m_mid) = mid {
-                                if o_mid == *o1 {
+                                if o_mid == *o1 && o_mid.right_associative() {
                                     m.extend(m_mid.drain(..));
                                 } else {
                                     m.push(Token::BinaryOp(false, false, o_mid, m_mid));

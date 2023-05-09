@@ -1,13 +1,13 @@
 pub mod finite_field;
-pub mod linear_system;
 pub mod integer;
+pub mod linear_system;
 pub mod rational;
 pub mod rational_polynomial;
 
-use std::fmt::{Debug, Display};
+use std::fmt::{Debug, Display, Error, Formatter};
 
 pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
-    type Element: Clone + PartialEq + Debug + Display;
+    type Element: Clone + PartialEq + Debug;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
@@ -23,6 +23,7 @@ pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
     fn is_one(&self, a: &Self::Element) -> bool;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
+    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error>;
 }
 
 pub trait EuclideanDomain: Ring {
@@ -35,4 +36,15 @@ pub trait Field: EuclideanDomain {
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element);
     fn inv(&self, a: &Self::Element) -> Self::Element;
+}
+
+pub struct RingPrinter<'a, R: Ring> {
+    pub ring: &'a R,
+    pub element: &'a R::Element,
+}
+
+impl<'a, R: Ring> Display for RingPrinter<'a, R> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.ring.fmt_display(self.element, f)
+    }
 }

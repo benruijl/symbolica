@@ -1,6 +1,6 @@
 use std::{
-    fmt::{Display, Write},
-    ops::Neg,
+    fmt::{Display, Error, Formatter, Write},
+    ops::{Add, Div, Mul, Neg, Sub},
 };
 
 use rand::Rng;
@@ -34,23 +34,10 @@ impl ToFiniteField<u32> for Rational {
     fn to_finite_field(&self, field: FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
         match self {
             &Rational::Natural(n, d) => {
-                let mut ff = if n < u32::MAX as i64 {
-                    field.to_element(n.abs() as u32)
-                } else {
-                    field.to_element((n.abs() as u64 % field.get_prime() as u64) as u32)
-                };
-
-                if n < 0 {
-                    ff = field.neg(&ff);
-                }
+                let mut ff = field.to_element(n.rem_euclid(field.get_prime() as i64) as u32);
 
                 if d != 1 {
-                    let df = if d < u32::MAX as i64 {
-                        field.to_element(d as u32)
-                    } else {
-                        field.to_element((d as u64 % field.get_prime() as u64) as u32)
-                    };
-
+                    let df = field.to_element(d.rem_euclid(field.get_prime() as i64) as u32);
                     field.div_assign(&mut ff, &df);
                 }
 
@@ -266,6 +253,10 @@ impl Ring for RationalField {
         let r = rng.gen_range(range.0..range.1);
         Rational::Natural(r, 1)
     }
+
+    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
+        element.fmt(f)
+    }
 }
 
 impl EuclideanDomain for RationalField {
@@ -337,5 +328,52 @@ impl Field for RationalField {
             }
             Rational::Large(r) => Rational::Large(r.clone().recip()),
         }
+    }
+}
+
+impl<'a, 'b> Add<&'a Rational> for &'b Rational {
+    type Output = Rational;
+
+    fn add(self, other: &'a Rational) -> Self::Output {
+        RationalField::new().add(self, other)
+    }
+}
+
+impl Sub for Rational {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self::Output {
+        self.add(&other.neg())
+    }
+}
+
+impl<'a, 'b> Sub<&'a Rational> for &'b Rational {
+    type Output = Rational;
+
+    fn sub(self, other: &'a Rational) -> Self::Output {
+        (self.clone()).sub(other.clone())
+    }
+}
+
+impl Neg for Rational {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        RationalField::new().neg(&self)
+    }
+}
+
+impl<'a, 'b> Mul<&'a Rational> for &'b Rational {
+    type Output = Rational;
+
+    fn mul(self, other: &'a Rational) -> Self::Output {
+        RationalField::new().mul(self, other)
+    }
+}
+
+impl<'a, 'b> Div<&'a Rational> for &'b Rational {
+    type Output = Rational;
+
+    fn div(self, other: &'a Rational) -> Self::Output {
+        RationalField::new().div(self, other)
     }
 }

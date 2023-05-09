@@ -1,10 +1,10 @@
 use std::cmp::Ordering;
 
 use bytes::{Buf, BufMut};
-use rug::{ops::Pow, Integer, Rational};
+use rug::{ops::Pow, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryPrecisionRational};
 
 use crate::{
-    rings::{finite_field::FiniteFieldElement, Ring},
+    rings::{finite_field::FiniteFieldElement, rational::Rational, Ring},
     state::{FiniteFieldIndex, State},
     utils,
 };
@@ -39,7 +39,7 @@ fn get_size_of_natural(num_type: u8) -> u8 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Number {
     Natural(i64, i64),
-    Large(Rational),
+    Large(ArbitraryPrecisionRational),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
 }
 
@@ -64,7 +64,7 @@ impl Number {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BorrowedNumber<'a> {
     Natural(i64, i64),
-    Large(&'a Rational),
+    Large(&'a ArbitraryPrecisionRational),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
 }
 
@@ -90,22 +90,16 @@ impl BorrowedNumber<'_> {
     pub fn add(&self, other: &BorrowedNumber<'_>, state: &State) -> Number {
         match (self, other) {
             (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
-                if let Some(lcm) = d2.checked_mul(d1 / utils::gcd_signed(*d1, *d2)) {
-                    if let Some(num2) = n2.checked_mul(lcm / d2) {
-                        if let Some(num1) = n1.checked_mul(lcm / d1) {
-                            if let Some(num) = num1.checked_add(num2) {
-                                let g = utils::gcd_signed(num, lcm);
-                                return Number::Natural(num / g, lcm / g);
-                            }
-                        }
-                    }
+                let r = &Rational::Natural(*n1, *d1) + &Rational::Natural(*n2, *d2);
+                match r {
+                    Rational::Natural(n, d) => Number::Natural(n, d),
+                    Rational::Large(r) => Number::Large(r),
                 }
-                Number::Large(Rational::from((*n1, *d1)) + Rational::from((*n2, *d2)))
             }
             // TODO: check downcast
             (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(r2))
             | (BorrowedNumber::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
-                let r1 = Rational::from((*n1, *d1));
+                let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
                 Number::Large(r1 + *r2)
             }
             (BorrowedNumber::Large(r1), BorrowedNumber::Large(r2)) => {
@@ -134,27 +128,16 @@ impl BorrowedNumber<'_> {
     pub fn mul(&self, other: &BorrowedNumber<'_>, state: &State) -> Number {
         match (self, other) {
             (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
-                let gcd1 = utils::gcd_signed(*n1 as i64, *d2 as i64);
-                let gcd2 = utils::gcd_signed(*d1 as i64, *n2 as i64);
-
-                match (n2 / gcd2).checked_mul(n1 / gcd1) {
-                    Some(nn) => match (d1 / gcd2).checked_mul(d2 / gcd1) {
-                        Some(nd) => Number::Natural(nn, nd),
-                        None => Number::Large(Rational::from((
-                            nn,
-                            Integer::from(d1 / gcd2) * Integer::from(d2 / gcd1),
-                        ))),
-                    },
-                    None => Number::Large(Rational::from((
-                        Integer::from(n1 / gcd1) * Integer::from(n2 / gcd2),
-                        Integer::from(d1 / gcd2) * Integer::from(d2 / gcd1),
-                    ))),
+                let r = &Rational::Natural(*n1, *d1) * &Rational::Natural(*n2, *d2);
+                match r {
+                    Rational::Natural(n, d) => Number::Natural(n, d),
+                    Rational::Large(r) => Number::Large(r),
                 }
             }
             // TODO: check downcast
             (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(r2))
             | (BorrowedNumber::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
-                let r1 = Rational::from((*n1, *d1));
+                let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
                 Number::Large(r1 * *r2)
             }
             (BorrowedNumber::Large(r1), BorrowedNumber::Large(r2)) => {
@@ -181,6 +164,7 @@ impl BorrowedNumber<'_> {
     }
 
     pub fn pow(&self, other: &BorrowedNumber<'_>, _state: &State) -> (Number, Number) {
+        // TODO: normalize 4^1/3 to 2^(2/3)?
         match (self, other) {
             (&BorrowedNumber::Natural(mut n1, mut d1), &BorrowedNumber::Natural(mut n2, d2)) => {
                 if n2 < 0 {
@@ -197,7 +181,7 @@ impl BorrowedNumber<'_> {
                     }
 
                     (
-                        Number::Large(Rational::from((n1, d1)).pow(n2 as u32)),
+                        Number::Large(ArbitraryPrecisionRational::from((n1, d1)).pow(n2 as u32)),
                         Number::Natural(1, d2),
                     )
                 } else {
@@ -228,10 +212,17 @@ impl BorrowedNumber<'_> {
                 match n1.checked_mul(d2) {
                     Some(a1) => match n2.checked_mul(d1) {
                         Some(a2) => a1.cmp(&a2),
-                        None => Integer::from(a1).cmp(&(Integer::from(n2) * Integer::from(d1))),
+                        None => ArbitraryPrecisionInteger::from(a1).cmp(
+                            &(ArbitraryPrecisionInteger::from(n2)
+                                * ArbitraryPrecisionInteger::from(d1)),
+                        ),
                     },
-                    None => (Integer::from(n1) * Integer::from(d2))
-                        .cmp(&(Integer::from(n2) * Integer::from(d1))),
+                    None => (ArbitraryPrecisionInteger::from(n1)
+                        * ArbitraryPrecisionInteger::from(d2))
+                    .cmp(
+                        &(ArbitraryPrecisionInteger::from(n2)
+                            * ArbitraryPrecisionInteger::from(d1)),
+                    ),
                 }
             }
             (BorrowedNumber::Large(n1), BorrowedNumber::Large(n2)) => n1.cmp(n2),
@@ -239,10 +230,10 @@ impl BorrowedNumber<'_> {
                 n1.0.cmp(&n2.0)
             }
             (&BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(n2)) => {
-                Rational::from((n1, d1)).cmp(&n2)
+                ArbitraryPrecisionRational::from((n1, d1)).cmp(&n2)
             }
             (BorrowedNumber::Large(n1), &BorrowedNumber::Natural(n2, d2)) => {
-                n1.cmp(&&Rational::from((n2, d2)))
+                n1.cmp(&&ArbitraryPrecisionRational::from((n2, d2)))
             }
             _ => unreachable!(),
         }
@@ -285,7 +276,7 @@ impl PackedRationalNumberWriter for Number {
     fn get_packed_size(&self) -> u64 {
         match self {
             Number::Natural(num, den) => (*num, *den).get_packed_size(),
-            Number::Large(_) => 1 + std::mem::size_of::<Rational>() as u64,
+            Number::Large(_) => 1 + std::mem::size_of::<ArbitraryPrecisionRational>() as u64,
             Number::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
         }
     }
@@ -302,7 +293,7 @@ pub trait PackedRationalNumberWriter {
     fn get_packed_size(&self) -> u64;
 }
 
-/// A reader for generalized rational numbers. See [`RationalNumberWriter`].
+/// A reader for generalized rational numbers. See [`ArbitraryPrecisionRationalNumberWriter`].
 pub trait PackedRationalNumberReader {
     fn get_number_view(&self) -> (BorrowedNumber, &[u8]);
     fn get_frac_u64(&self) -> (u64, u64, &[u8]);
@@ -318,10 +309,10 @@ impl PackedRationalNumberReader for [u8] {
         let mut source = self;
         let disc = source.get_u8();
         if (disc & NUM_MASK) == ARB_NUM {
-            let rat: &Rational = unsafe { std::mem::transmute(&source[0]) };
+            let rat: &ArbitraryPrecisionRational = unsafe { std::mem::transmute(&source[0]) };
             (
                 BorrowedNumber::Large(rat),
-                &source[std::mem::size_of::<Rational>()..],
+                &source[std::mem::size_of::<ArbitraryPrecisionRational>()..],
             )
         } else if (disc & NUM_MASK) == FIN_NUM {
             let (num, fi);
@@ -467,7 +458,7 @@ impl PackedRationalNumberReader for [u8] {
 
         let v_num = var_size & NUM_MASK;
         if v_num == ARB_NUM {
-            dest.advance(std::mem::size_of::<Rational>());
+            dest.advance(std::mem::size_of::<ArbitraryPrecisionRational>());
             dest
         } else if v_num == FIN_NUM {
             let var_size = dest.get_u8();
@@ -499,7 +490,7 @@ impl PackedRationalNumberWriter for (i64, i64) {
     fn write_packed(self, dest: &mut Vec<u8>) {
         let p = dest.len();
 
-        let num_u64 = self.0.abs() as u64;
+        let num_u64 = self.0.abs() as u64; // FIXME: may overflow
         let den_u64 = self.1.abs() as u64;
         (num_u64, den_u64).write_packed(dest);
 
@@ -552,7 +543,6 @@ impl PackedRationalNumberWriter for (u64, u64) {
             dest.put_u16_le(self.1 as u16);
         } else if self.1 < u32::MAX as u64 {
             dest[p] |= U32_DEN;
-            dest.put_u8(3);
             dest.put_u32_le(self.1 as u32);
         } else {
             dest[p] |= U64_DEN;
@@ -587,7 +577,6 @@ impl PackedRationalNumberWriter for (u64, u64) {
             dest.put_u16_le(self.1 as u16);
         } else if self.1 < u32::MAX as u64 {
             *tag |= U32_DEN;
-            dest.put_u8(3);
             dest.put_u32_le(self.1 as u32);
         } else {
             *tag |= U64_DEN;

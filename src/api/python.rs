@@ -49,6 +49,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonPolynomial>()?;
     m.add_class::<PythonIntegerPolynomial>()?;
     m.add_class::<PythonRationalPolynomial>()?;
+    m.add_class::<PythonRationalPolynomialSmallExponent>()?;
 
     Ok(())
 }
@@ -504,6 +505,87 @@ impl PythonExpression {
             })
     }
 
+    pub fn to_rational_polynomial(
+        &self,
+        vars: Option<Vec<PythonExpression>>,
+    ) -> PyResult<PythonRationalPolynomial> {
+        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+
+        if let Some(vm) = vars {
+            for v in vm {
+                match v.expr.to_view() {
+                    AtomView::Var(v) => var_map.push(v.get_name()),
+                    e => {
+                        Err(exceptions::PyValueError::new_err(format!(
+                            "Expected variable instead of {:?}",
+                            e
+                        )))?;
+                    }
+                }
+            }
+        }
+
+        self.expr
+            .to_view()
+            .to_rational_polynomial(
+                &WORKSPACE,
+                &STATE.read().unwrap(),
+                if var_map.is_empty() {
+                    None
+                } else {
+                    Some(var_map.as_slice())
+                },
+            )
+            .map(|x| PythonRationalPolynomial { poly: Arc::new(x) })
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!(
+                    "Could not convert to polynomial: {:?}",
+                    e
+                ))
+            })
+    }
+
+    // TODO: use macro as the body is the same as for to_rational_polynomial
+    pub fn to_rational_polynomial_small_exponent(
+        &self,
+        vars: Option<Vec<PythonExpression>>,
+    ) -> PyResult<PythonRationalPolynomialSmallExponent> {
+        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+
+        if let Some(vm) = vars {
+            for v in vm {
+                match v.expr.to_view() {
+                    AtomView::Var(v) => var_map.push(v.get_name()),
+                    e => {
+                        Err(exceptions::PyValueError::new_err(format!(
+                            "Expected variable instead of {:?}",
+                            e
+                        )))?;
+                    }
+                }
+            }
+        }
+
+        self.expr
+            .to_view()
+            .to_rational_polynomial(
+                &WORKSPACE,
+                &STATE.read().unwrap(),
+                if var_map.is_empty() {
+                    None
+                } else {
+                    Some(var_map.as_slice())
+                },
+            )
+            .map(|x| PythonRationalPolynomialSmallExponent { poly: Arc::new(x) })
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!(
+                    "Could not convert to polynomial: {:?}",
+                    e
+                ))
+            })
+    }
+
     pub fn replace_all(
         &self,
         lhs: ConvertibleToExpression,
@@ -853,148 +935,158 @@ generate_methods!(PythonIntegerPolynomial);
 #[pyclass(name = "RationalPolynomial")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomial {
+    pub poly: Arc<RationalPolynomial<u32>>,
+}
+
+#[pymethods]
+impl PythonRationalPolynomial {
+    #[new]
+    pub fn __new__(num: &PythonPolynomial, den: &PythonPolynomial) -> Self {
+        Self {
+            poly: Arc::new(RationalPolynomial::from_rat_num_and_den(
+                &*num.poly, &*den.poly,
+            )),
+        }
+    }
+}
+
+#[pyclass(name = "RationalPolynomialSmallExponent")]
+#[derive(Clone)]
+pub struct PythonRationalPolynomialSmallExponent {
     pub poly: Arc<RationalPolynomial<u8>>,
 }
 
 // TODO: unify with polynomial methods
-#[pymethods]
-impl PythonRationalPolynomial {
-    #[new]
-    pub fn __new__(num: &PythonIntegerPolynomial, den: &PythonIntegerPolynomial) -> Self {
-        if num.poly.get_var_map() == den.poly.get_var_map() {
-            let gcd = MultivariatePolynomial::gcd(&num.poly, &den.poly);
-
-            Self {
-                poly: Arc::new(RationalPolynomial {
-                    numerator: &*num.poly / &gcd,
-                    denominator: &*den.poly / &gcd,
-                }),
+macro_rules! generate_rat_methods {
+    ($type:ty) => {
+        #[pymethods]
+        impl $type {
+            pub fn __copy__(&self) -> Self {
+                Self {
+                    poly: Arc::new((*self.poly).clone()),
+                }
             }
-        } else {
-            let mut new_num = (*num.poly).clone();
-            let mut new_den = (*den.poly).clone();
-            new_num.unify_var_map(&mut new_den);
-            let gcd = MultivariatePolynomial::gcd(&new_num, &new_den);
 
-            Self {
-                poly: Arc::new(RationalPolynomial {
-                    numerator: &new_num / &gcd,
-                    denominator: &new_den / &gcd,
-                }),
+            pub fn __str__(&self) -> PyResult<String> {
+                Ok(format!(
+                    "{}",
+                    RationalPolynomialPrinter {
+                        poly: &self.poly,
+                        state: &STATE.read().unwrap(),
+                        print_mode: PrintMode::default()
+                    }
+                ))
             }
-        }
-    }
 
-    pub fn __copy__(&self) -> Self {
-        Self {
-            poly: Arc::new((*self.poly).clone()),
-        }
-    }
-
-    pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            RationalPolynomialPrinter {
-                poly: &self.poly,
-                state: &STATE.read().unwrap(),
-                print_mode: PrintMode::default()
+            pub fn __repr__(&self) -> PyResult<String> {
+                Ok(format!("{:?}", self.poly))
             }
-        ))
-    }
 
-    pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self.poly))
-    }
-
-    pub fn __add__(&self, rhs: Self) -> Self {
-        if self.poly.get_var_map() == rhs.poly.get_var_map() {
-            Self {
-                poly: Arc::new(&*self.poly + &*rhs.poly),
+            pub fn __add__(&self, rhs: Self) -> Self {
+                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                    Self {
+                        poly: Arc::new(&*self.poly + &*rhs.poly),
+                    }
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+                    Self {
+                        poly: Arc::new(&new_self + &new_rhs),
+                    }
+                }
             }
-        } else {
-            let mut new_self = (*self.poly).clone();
-            let mut new_rhs = (*rhs.poly).clone();
-            new_self.unify_var_map(&mut new_rhs);
-            Self {
-                poly: Arc::new(&new_self + &new_rhs),
+
+            pub fn __sub__(&self, rhs: Self) -> Self {
+                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                    Self {
+                        poly: Arc::new(&*self.poly - &*rhs.poly),
+                    }
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+                    Self {
+                        poly: Arc::new(&new_self - &new_rhs),
+                    }
+                }
             }
-        }
-    }
 
-    pub fn __sub__(&self, rhs: Self) -> Self {
-        self.__add__(rhs.__neg__())
-    }
-
-    pub fn __mul__(&self, rhs: Self) -> Self {
-        if self.poly.get_var_map() == rhs.poly.get_var_map() {
-            Self {
-                poly: Arc::new(&*self.poly * &*rhs.poly),
+            pub fn __mul__(&self, rhs: Self) -> Self {
+                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                    Self {
+                        poly: Arc::new(&*self.poly * &*rhs.poly),
+                    }
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+                    Self {
+                        poly: Arc::new(&new_self * &new_rhs),
+                    }
+                }
             }
-        } else {
-            let mut new_self = (*self.poly).clone();
-            let mut new_rhs = (*rhs.poly).clone();
-            new_self.unify_var_map(&mut new_rhs);
-            Self {
-                poly: Arc::new(&new_self * &new_rhs),
+
+            pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+                let (q, r) = if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                    RationalPolynomialField::new().quot_rem(&self.poly, &rhs.poly)
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+
+                    RationalPolynomialField::new().quot_rem(&new_self, &new_rhs)
+                };
+
+                if RationalPolynomialField::is_zero(&r) {
+                    Ok(Self { poly: Arc::new(q) })
+                } else {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "The division has a remainder: {}",
+                        r
+                    )))
+                }
             }
-        }
-    }
 
-    pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-        let (q, r) = if self.poly.get_var_map() == rhs.poly.get_var_map() {
-            RationalPolynomialField::new().quot_rem(&self.poly, &rhs.poly)
-        } else {
-            let mut new_self = (*self.poly).clone();
-            let mut new_rhs = (*rhs.poly).clone();
-            new_self.unify_var_map(&mut new_rhs);
+            pub fn quot_rem(&self, rhs: Self) -> (Self, Self) {
+                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                    let (q, r) = RationalPolynomialField::new().quot_rem(&self.poly, &rhs.poly);
 
-            RationalPolynomialField::new().quot_rem(&new_self, &new_rhs)
-        };
+                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
 
-        if RationalPolynomialField::is_zero(&r) {
-            Ok(Self { poly: Arc::new(q) })
-        } else {
-            Err(exceptions::PyValueError::new_err(format!(
-                "The division has a remainder: {}",
-                r
-            )))
-        }
-    }
+                    let (q, r) = RationalPolynomialField::new().quot_rem(&new_self, &new_rhs);
 
-    pub fn quot_rem(&self, rhs: Self) -> (Self, Self) {
-        if self.poly.get_var_map() == rhs.poly.get_var_map() {
-            let (q, r) = RationalPolynomialField::new().quot_rem(&self.poly, &rhs.poly);
-
-            (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
-        } else {
-            let mut new_self = (*self.poly).clone();
-            let mut new_rhs = (*rhs.poly).clone();
-            new_self.unify_var_map(&mut new_rhs);
-
-            let (q, r) = RationalPolynomialField::new().quot_rem(&new_self, &new_rhs);
-
-            (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
-        }
-    }
-
-    pub fn __neg__(&self) -> Self {
-        Self {
-            poly: Arc::new((*self.poly).clone().neg()),
-        }
-    }
-
-    pub fn gcd(&self, rhs: Self) -> Self {
-        if self.poly.get_var_map() == rhs.poly.get_var_map() {
-            Self {
-                poly: Arc::new(RationalPolynomialField::new().gcd(&self.poly, &rhs.poly)),
+                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                }
             }
-        } else {
-            let mut new_self = (*self.poly).clone();
-            let mut new_rhs = (*rhs.poly).clone();
-            new_self.unify_var_map(&mut new_rhs);
-            Self {
-                poly: Arc::new(RationalPolynomialField::new().gcd(&new_self, &new_rhs)),
+
+            pub fn __neg__(&self) -> Self {
+                Self {
+                    poly: Arc::new((*self.poly).clone().neg()),
+                }
+            }
+
+            pub fn gcd(&self, rhs: Self) -> Self {
+                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                    Self {
+                        poly: Arc::new(RationalPolynomialField::new().gcd(&self.poly, &rhs.poly)),
+                    }
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+                    Self {
+                        poly: Arc::new(RationalPolynomialField::new().gcd(&new_self, &new_rhs)),
+                    }
+                }
             }
         }
-    }
+    };
 }
+
+generate_rat_methods!(PythonRationalPolynomial);
+generate_rat_methods!(PythonRationalPolynomialSmallExponent);

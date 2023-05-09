@@ -333,10 +333,21 @@ impl<P: Atom> OwnedAtom<P> {
             if self.to_view() == base {
                 if let AtomView::Num(n) = &exp {
                     let num = helper.transform_to_num();
-                    num.from_number(Number::Natural(1, 1));
-                    num.add(n, state);
-                    let op = self.transform_to_pow();
-                    op.from_base_and_exp(base, AtomView::Num(num.to_num_view()));
+
+                    let new_exp = n
+                        .get_number_view()
+                        .add(&BorrowedNumber::Natural(1, 1), state);
+
+                    if new_exp.is_zero() {
+                        let num = self.transform_to_num();
+                        num.from_number(Number::Natural(1, 1));
+                    } else if Number::Natural(1, 1) == new_exp {
+                        self.from_view(&base);
+                    } else {
+                        num.from_number(new_exp);
+                        let op = self.transform_to_pow();
+                        op.from_base_and_exp(base, AtomView::Num(num.to_num_view()));
+                    }
 
                     return true;
                 } else {
@@ -698,8 +709,13 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                 'pow_simplify: {
                     if let AtomView::Num(e) = exp_handle.get().to_view() {
-                        // remove power of 1
-                        if let BorrowedNumber::Natural(1, 1) = &e.get_number_view() {
+                        if let BorrowedNumber::Natural(0, 1) = &e.get_number_view() {
+                            // x^0 = 1
+                            let n = out.transform_to_num();
+                            n.from_number(Number::Natural(1, 1));
+                            break 'pow_simplify;
+                        } else if let BorrowedNumber::Natural(1, 1) = &e.get_number_view() {
+                            // remove power of 1
                             out.from_view(&base_handle.get().to_view());
                             break 'pow_simplify;
                         } else if let AtomView::Num(n) = base_handle.get().to_view() {
@@ -718,6 +734,25 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                             let ne = exp_handle.get_mut().transform_to_num();
                             ne.from_number(new_exp_num);
+                        } else if let AtomView::Pow(p_base) = base_handle.get().to_view() {
+                            // simplify x^2^3
+                            let (p_base_base, p_base_exp) = p_base.get_base_exp();
+                            if let AtomView::Num(n) = p_base_exp {
+                                let new_exp = n.get_number_view().mul(&e.get_number_view(), state);
+
+                                if let Number::Natural(1, 1) = &new_exp {
+                                    out.from_view(&p_base_base);
+                                    break 'pow_simplify;
+                                }
+
+                                let ne = exp_handle.get_mut().transform_to_num();
+                                ne.from_number(new_exp);
+
+                                let out = out.transform_to_pow();
+                                out.from_base_and_exp(p_base_base, exp_handle.get().to_view());
+
+                                break 'pow_simplify;
+                            }
                         } else if let AtomView::Mul(_) = base_handle.get().to_view() {
                             // TODO: turn (x*y)^2 into x^2*y^2?
                             // for now, expand() needs to be used

@@ -902,7 +902,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
                 }
             };
 
-            debug!("Chosen variable: {}", v);
+            debug!("Chosen variable: {}", a.field.from_element(v));
             let av = a.replace(lastvar, v);
             let bv = b.replace(lastvar, v);
 
@@ -929,7 +929,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
 
             debug!(
                 "GCD shape suggestion for sample point {} and gamma {}: {}",
-                v, gamma, gv
+                a.field.from_element(v), gamma, gv
             );
 
             // construct a new assumed form
@@ -1257,6 +1257,11 @@ where
             return b.clone();
         }
         if b.is_zero() {
+            return a.clone();
+        }
+
+        // TODO: remove integer content first
+        if a == b {
             return a.clone();
         }
 
@@ -1730,8 +1735,12 @@ impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<RationalField, E> 
         // remove the content so that the polynomials have integer coefficients
         let content = a.field.gcd(&a.content(), &b.content());
 
-        let mut a_int =
-            MultivariatePolynomial::new(a.nvars, IntegerRing::new(), Some(a.nterms), None);
+        let mut a_int = MultivariatePolynomial::new(
+            a.nvars,
+            IntegerRing::new(),
+            Some(a.nterms),
+            a.var_map.clone(),
+        );
 
         for t in a {
             let coeff = a.field.div(t.coefficient, &content);
@@ -1739,8 +1748,12 @@ impl<E: Exponent> PolynomialGCD<E> for MultivariatePolynomial<RationalField, E> 
             a_int.append_monomial(coeff.numerator(), t.exponents);
         }
 
-        let mut b_int =
-            MultivariatePolynomial::new(b.nvars, IntegerRing::new(), Some(b.nterms), None);
+        let mut b_int = MultivariatePolynomial::new(
+            b.nvars,
+            IntegerRing::new(),
+            Some(b.nterms),
+            b.var_map.clone(),
+        );
 
         for t in b {
             let coeff = b.field.div(t.coefficient, &content);

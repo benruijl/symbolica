@@ -22,16 +22,6 @@ pub trait ToFiniteField<UField> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct FiniteFieldElement<UField>(pub(crate) UField);
 
-impl<UField: Display> Display for FiniteFieldElement<UField> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        if f.sign_plus() {
-            write!(f, "+{}", self.0)
-        } else {
-            write!(f, "{}", self.0)
-        }
-    }
-}
-
 /// A finite field over a prime that uses Montgomery modular arithmetic
 /// to increase the performance of the multiplication operator.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -194,6 +184,14 @@ impl Ring for FiniteField<u32> {
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0.max(0)..range.1.min(self.p as i64));
         FiniteFieldElement(r as u32)
+    }
+
+    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
+        if f.sign_plus() {
+            write!(f, "+{}", self.from_element(*element))
+        } else {
+            write!(f, "{}", self.from_element(*element))
+        }
     }
 }
 
@@ -414,6 +412,14 @@ impl Ring for FiniteField<u64> {
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0.max(0)..range.1.min(self.p as i64));
         FiniteFieldElement(r as u64)
+    }
+
+    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
+        if f.sign_plus() {
+            write!(f, "+{}", self.from_element(*element))
+        } else {
+            write!(f, "{}", self.from_element(*element))
+        }
     }
 }
 

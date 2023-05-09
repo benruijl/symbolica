@@ -5,7 +5,7 @@ use colored::Colorize;
 use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent},
     representations::{number::BorrowedNumber, Add, Atom, AtomView, Fun, Mul, Num, Pow, Var},
-    rings::{rational_polynomial::RationalPolynomial, Ring},
+    rings::{rational_polynomial::RationalPolynomial, Ring, RingPrinter},
     state::State,
 };
 
@@ -342,7 +342,7 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         let b = self.get_base();
 
         print_state.level += 1;
-        if let AtomView::Add(_) | AtomView::Mul(_) = b {
+        if let AtomView::Add(_) | AtomView::Mul(_) | AtomView::Pow(_) = b {
             f.write_char('(')?;
             b.fmt_output(f, print_mode, state, print_state)?;
             f.write_char(')')?;
@@ -364,7 +364,7 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let b = self.get_base();
-        if let AtomView::Add(_) | AtomView::Mul(_) = b {
+        if let AtomView::Add(_) | AtomView::Mul(_) | AtomView::Pow(_) = b {
             f.write_char('(')?;
             b.fmt_debug(f)?;
             f.write_char(')')?;
@@ -510,9 +510,16 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, '
                 write!(f, "-")?;
             } else {
                 if is_first_term {
-                    write!(f, "{}", monomial.coefficient)?;
+                    self.poly.field.fmt_display(monomial.coefficient, f)?;
                 } else {
-                    write!(f, "{:+}", monomial.coefficient)?;
+                    write!(
+                        f,
+                        "{:+}",
+                        RingPrinter {
+                            ring: &self.poly.field,
+                            element: &monomial.coefficient
+                        }
+                    )?;
                 }
                 is_first_factor = false;
             }

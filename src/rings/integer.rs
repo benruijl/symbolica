@@ -1,5 +1,5 @@
 use std::{
-    fmt::Display,
+    fmt::{Display, Error, Formatter},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
@@ -36,19 +36,7 @@ pub enum Integer {
 impl ToFiniteField<u32> for Integer {
     fn to_finite_field(&self, field: FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
         match self {
-            &Integer::Natural(n) => {
-                let mut ff = if n < u32::MAX as i64 {
-                    field.to_element(n.abs() as u32)
-                } else {
-                    field.to_element((n.abs() as u64 % field.get_prime() as u64) as u32)
-                };
-
-                if n < 0 {
-                    ff = field.neg(&ff);
-                }
-
-                ff
-            }
+            &Integer::Natural(n) => field.to_element(n.rem_euclid(field.get_prime() as i64) as u32),
             Integer::Large(r) => field.to_element(r.mod_u(field.get_prime())),
         }
     }
@@ -267,6 +255,14 @@ impl Ring for IntegerRing {
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0..range.1);
         Integer::Natural(r)
+    }
+
+    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
+        if f.sign_plus() {
+            write!(f, "+{}", *element)
+        } else {
+            write!(f, "{}", *element)
+        }
     }
 }
 

@@ -258,11 +258,7 @@ impl Ring for IntegerRing {
     }
 
     fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
-        if f.sign_plus() {
-            write!(f, "+{}", *element)
-        } else {
-            write!(f, "{}", *element)
-        }
+        element.fmt(f)
     }
 }
 

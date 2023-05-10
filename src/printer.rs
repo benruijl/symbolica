@@ -451,19 +451,56 @@ impl<'a, 'b, E: Exponent> RationalPolynomialPrinter<'a, 'b, E> {
 
 impl<'a, 'b, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!(
-            "({})/({})",
-            PolynomialPrinter {
-                poly: &self.poly.numerator,
-                state: self.state,
-                print_mode: self.print_mode,
-            },
-            PolynomialPrinter {
-                poly: &self.poly.denominator,
-                state: self.state,
-                print_mode: self.print_mode,
+        if self.poly.denominator.is_one() {
+            f.write_fmt(format_args!(
+                "{}",
+                PolynomialPrinter {
+                    poly: &self.poly.numerator,
+                    state: self.state,
+                    print_mode: self.print_mode,
+                }
+            ))
+        } else {
+            if self.poly.numerator.nterms < 2 {
+                f.write_fmt(format_args!(
+                    "{}",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        print_mode: self.print_mode,
+                    }
+                ))?;
+            } else {
+                f.write_fmt(format_args!(
+                    "({})",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        print_mode: self.print_mode,
+                    }
+                ))?;
             }
-        ))
+
+            if self.poly.denominator.nterms < 2 {
+                f.write_fmt(format_args!(
+                    "/{}",
+                    PolynomialPrinter {
+                        poly: &self.poly.denominator,
+                        state: self.state,
+                        print_mode: self.print_mode,
+                    }
+                ))
+            } else {
+                f.write_fmt(format_args!(
+                    "/({})",
+                    PolynomialPrinter {
+                        poly: &self.poly.denominator,
+                        state: self.state,
+                        print_mode: self.print_mode,
+                    }
+                ))
+            }
+        }
     }
 }
 

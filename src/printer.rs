@@ -5,7 +5,7 @@ use colored::Colorize;
 use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent},
     representations::{number::BorrowedNumber, Add, Atom, AtomView, Fun, Mul, Num, Pow, Var},
-    rings::{rational_polynomial::RationalPolynomial, Ring, RingPrinter},
+    rings::{integer::IntegerRing, rational_polynomial::RationalPolynomial, Ring, RingPrinter},
     state::State,
 };
 
@@ -481,7 +481,17 @@ impl<'a, 'b, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b, E> {
                 ))?;
             }
 
-            if self.poly.denominator.nterms < 2 {
+            if self.poly.denominator.nterms == 1
+                && IntegerRing::new().is_one(&self.poly.denominator.coefficients[0])
+                && self
+                    .poly
+                    .denominator
+                    .exponents
+                    .iter()
+                    .filter(|x| !x.is_zero())
+                    .count()
+                    < 2
+            {
                 f.write_fmt(format_args!(
                     "/{}",
                     PolynomialPrinter {

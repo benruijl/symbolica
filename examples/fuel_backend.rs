@@ -54,16 +54,16 @@ fn main() {
             .to_rational_polynomial(&workspace, &state, Some(&vars))
             .unwrap();
 
-        writeln!(
-            &mut stdout,
+        let out_str = format!(
             "{}",
             RationalPolynomialPrinter {
                 poly: &r,
                 state: &state,
                 print_mode: PrintMode::default()
             }
-        )
-        .unwrap();
+        );
+
+        writeln!(&mut stdout, "{}", out_str).unwrap();
 
         buffer.clear();
     }

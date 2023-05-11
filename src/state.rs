@@ -5,7 +5,7 @@ use smartstring::alias::String;
 
 use crate::{
     representations::{Atom, Identifier, OwnedAtom},
-    rings::finite_field::FiniteField,
+    rings::finite_field::{FiniteField, FiniteFieldCore},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

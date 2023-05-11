@@ -5,7 +5,9 @@ use rug::{ops::Pow, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryP
 
 use crate::{
     rings::{
-        finite_field::{FiniteField, FiniteFieldElement, ToFiniteField},
+        finite_field::{
+            FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
+        },
         integer::{Integer, IntegerRing},
         rational::{Rational, RationalField},
         Field, Ring,
@@ -108,8 +110,12 @@ impl<'a> ConvertToRing for IntegerRing {
     }
 }
 
-impl<'a> ConvertToRing for FiniteField<u32> {
-    fn from_number(&self, number: BorrowedNumber<'_>) -> FiniteFieldElement<u32> {
+impl<'a, UField: FiniteFieldWorkspace> ConvertToRing for FiniteField<UField>
+where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+    Integer: ToFiniteField<UField>,
+{
+    fn from_number(&self, number: BorrowedNumber<'_>) -> <FiniteField<UField> as Ring>::Element {
         match number {
             BorrowedNumber::Natural(n, d) => self.div(
                 &Integer::new(n).to_finite_field(self),

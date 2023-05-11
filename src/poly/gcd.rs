@@ -6,7 +6,9 @@ use std::mem;
 use std::ops::Add;
 use tracing::{debug, instrument, trace};
 
-use crate::rings::finite_field::{FiniteField, FiniteFieldElement, ToFiniteField};
+use crate::rings::finite_field::{
+    FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
+};
 use crate::rings::integer::{Integer, IntegerRing};
 use crate::rings::linear_system::{LinearSolverError, Matrix};
 use crate::rings::rational::RationalField;
@@ -44,13 +46,13 @@ enum GCDError {
     BadCurrentImage,
 }
 
-fn newton_interpolation<UField, E: Exponent>(
+fn newton_interpolation<UField: FiniteFieldWorkspace, E: Exponent>(
     a: &[<FiniteField<UField> as Ring>::Element],
     u: &[MultivariatePolynomial<FiniteField<UField>, E>],
     x: usize, // the variable index to extend the polynomial by
 ) -> MultivariatePolynomial<FiniteField<UField>, E>
 where
-    FiniteField<UField>: Field,
+    FiniteField<UField>: FiniteFieldCore<UField>,
 {
     let field = u[0].field;
 
@@ -92,9 +94,9 @@ where
 }
 
 #[instrument(level = "trace", fields(%ap, %bp))]
-fn construct_new_image<E: Exponent>(
-    ap: &MultivariatePolynomial<FiniteField<u32>, E>,
-    bp: &MultivariatePolynomial<FiniteField<u32>, E>,
+fn construct_new_image<UField: FiniteFieldWorkspace, E: Exponent>(
+    ap: &MultivariatePolynomial<FiniteField<UField>, E>,
+    bp: &MultivariatePolynomial<FiniteField<UField>, E>,
     aldegree: E,
     bldegree: E,
     bounds: &mut [E],
@@ -102,8 +104,12 @@ fn construct_new_image<E: Exponent>(
     nx: usize,
     vars: &[usize],
     var: usize,
-    gfu: &[(MultivariatePolynomial<FiniteField<u32>, E>, E)],
-) -> Result<MultivariatePolynomial<FiniteField<u32>, E>, GCDError> {
+    gfu: &[(MultivariatePolynomial<FiniteField<UField>, E>, E)],
+) -> Result<MultivariatePolynomial<FiniteField<UField>, E>, GCDError>
+where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+    <FiniteField<UField> as Ring>::Element: Copy,
+{
     let mut rng = rand::thread_rng();
 
     let mut system = vec![]; // coefficients for the linear system
@@ -160,7 +166,8 @@ fn construct_new_image<E: Exponent>(
                 .map(|i| {
                     (
                         *i,
-                        ap.field.sample(&mut rng, (1, ap.field.get_prime() as i64)),
+                        ap.field
+                            .sample(&mut rng, (1, ap.field.get_prime().to_u64() as i64)),
                     )
                 })
                 .collect();
@@ -231,10 +238,10 @@ fn construct_new_image<E: Exponent>(
             // construct the scaling coefficient
             let mut coeff = ap.field.one();
             let (c, d) = &gfu[scaling_index];
-            for &(n, v) in r.iter() {
+            for (n, v) in r.iter() {
                 ap.field.mul_assign(
                     &mut coeff,
-                    &ap.field.pow(&v, c.exponents(0)[n].to_u32() as u64),
+                    &ap.field.pow(v, c.exponents(0)[*n].to_u32() as u64),
                 );
             }
 
@@ -287,10 +294,10 @@ fn construct_new_image<E: Exponent>(
                     // note that we ignore the coefficient of the shape
                     for t in 0..c.nterms {
                         let mut coeff = ap.field.one();
-                        for &(n, v) in r.iter() {
+                        for (n, v) in r.iter() {
                             ap.field.mul_assign(
                                 &mut coeff,
-                                &ap.field.pow(&v, c.exponents(t)[n].to_u32() as u64),
+                                &ap.field.pow(v, c.exponents(t)[*n].to_u32() as u64),
                             );
                         }
                         row.push(coeff);
@@ -488,7 +495,7 @@ fn construct_new_image<E: Exponent>(
                         // only include rows that only depend on scaling constants
                         if r.iter()
                             .take(s.cols() - system.len())
-                            .any(|x| !FiniteField::<u32>::is_zero(x))
+                            .any(|x| !FiniteField::<UField>::is_zero(x))
                         {
                             continue;
                         }
@@ -532,7 +539,7 @@ fn construct_new_image<E: Exponent>(
                             for r in s.row_iter() {
                                 if r.iter()
                                     .take(s.cols() - system.len())
-                                    .all(|x| FiniteField::<u32>::is_zero(x))
+                                    .all(|x| FiniteField::<UField>::is_zero(x))
                                 {
                                     continue;
                                 }
@@ -643,12 +650,13 @@ fn construct_new_image<E: Exponent>(
     }
 }
 
-impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
+impl<UField: FiniteFieldWorkspace, E: Exponent> MultivariatePolynomial<FiniteField<UField>, E>
+where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+    <FiniteField<UField> as Ring>::Element: Copy,
+{
     /// Compute the univariate GCD using Euclid's algorithm. The result is normalized to 1.
-    fn univariate_gcd(
-        a: &MultivariatePolynomial<FiniteField<u32>, E>,
-        b: &MultivariatePolynomial<FiniteField<u32>, E>,
-    ) -> MultivariatePolynomial<FiniteField<u32>, E> {
+    fn univariate_gcd(a: &Self, b: &Self) -> Self {
         if a.is_zero() {
             return b.clone();
         }
@@ -685,17 +693,17 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
     pub fn sample_polynomial(
         &self,
         v: usize,
-        r: &[(usize, FiniteFieldElement<u32>)],
-        cache: &mut [Vec<FiniteFieldElement<u32>>],
-        tm: &mut HashMap<E, FiniteFieldElement<u32>>,
-    ) -> MultivariatePolynomial<FiniteField<u32>, E> {
+        r: &[(usize, <FiniteField<UField> as Ring>::Element)],
+        cache: &mut [Vec<<FiniteField<UField> as Ring>::Element>],
+        tm: &mut HashMap<E, <FiniteField<UField> as Ring>::Element>,
+    ) -> Self {
         for mv in self.into_iter() {
             let mut c = mv.coefficient.clone();
             for &(n, vv) in r {
                 let exp = mv.exponents[n].to_u32() as usize;
                 if exp > 0 {
                     if n < cache[n].len() {
-                        if FiniteField::<u32>::is_zero(&cache[n][exp]) {
+                        if FiniteField::<UField>::is_zero(&cache[n][exp]) {
                             cache[n][exp] = self.field.pow(&vv, exp as u64);
                         }
 
@@ -715,7 +723,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
         let mut res = MultivariatePolynomial::new(self.nvars, self.field, None, None);
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm.drain() {
-            if !FiniteField::<u32>::is_zero(&c) {
+            if !FiniteField::<UField>::is_zero(&c) {
                 e[v] = k;
                 res.append_monomial(c, &e);
                 e[v] = E::zero();
@@ -730,17 +738,17 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
     pub fn sample_polynomial_small_exponent(
         &self,
         v: usize,
-        r: &[(usize, <FiniteField<u32> as Ring>::Element)],
-        cache: &mut [Vec<<FiniteField<u32> as Ring>::Element>],
-        tm: &mut [<FiniteField<u32> as Ring>::Element],
-    ) -> MultivariatePolynomial<FiniteField<u32>, E> {
+        r: &[(usize, <FiniteField<UField> as Ring>::Element)],
+        cache: &mut [Vec<<FiniteField<UField> as Ring>::Element>],
+        tm: &mut [<FiniteField<UField> as Ring>::Element],
+    ) -> MultivariatePolynomial<FiniteField<UField>, E> {
         for mv in self.into_iter() {
             let mut c = mv.coefficient.clone();
             for &(n, vv) in r {
                 let exp = mv.exponents[n].to_u32() as usize;
                 if exp > 0 {
                     if n < cache[n].len() {
-                        if FiniteField::<u32>::is_zero(&cache[n][exp]) {
+                        if FiniteField::<UField>::is_zero(&cache[n][exp]) {
                             cache[n][exp] = self.field.pow(&vv, exp as u64);
                         }
 
@@ -760,7 +768,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
         let mut res = MultivariatePolynomial::new(self.nvars, self.field, None, None);
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm.iter_mut().enumerate() {
-            if !FiniteField::<u32>::is_zero(&c) {
+            if !FiniteField::<UField>::is_zero(&c) {
                 e[v] = E::from_u32(k as u32);
                 res.append_monomial_back(mem::replace(c, self.field.zero()), &e);
                 e[v] = E::zero();
@@ -775,12 +783,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
     /// substituting all variables except `var`. This
     /// upper bound could be too tight due to an unfortunate
     /// sample point, but this is rare.
-    fn get_gcd_var_bound(
-        ap: &MultivariatePolynomial<FiniteField<u32>, E>,
-        bp: &MultivariatePolynomial<FiniteField<u32>, E>,
-        vars: &[usize],
-        var: usize,
-    ) -> E {
+    fn get_gcd_var_bound(ap: &Self, bp: &Self, vars: &[usize], var: usize) -> E {
         let mut rng = rand::thread_rng();
 
         // store a table for variables raised to a certain power
@@ -814,7 +817,8 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
                 .map(|i| {
                     (
                         *i,
-                        ap.field.sample(&mut rng, (1, ap.field.get_prime() as i64)),
+                        ap.field
+                            .sample(&mut rng, (1, ap.field.get_prime().to_u64() as i64)),
                     )
                 })
                 .collect();
@@ -840,12 +844,12 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
     /// numbers.
     #[instrument(level = "debug", skip_all)]
     fn gcd_shape_modular(
-        a: &MultivariatePolynomial<FiniteField<u32>, E>,
-        b: &MultivariatePolynomial<FiniteField<u32>, E>,
+        a: &Self,
+        b: &Self,
         vars: &[usize],         // variables
         bounds: &mut [E],       // degree bounds
         tight_bounds: &mut [E], // tighter degree bounds
-    ) -> Option<MultivariatePolynomial<FiniteField<u32>, E>> {
+    ) -> Option<Self> {
         let lastvar = vars.last().unwrap().clone();
 
         // if we are in the univariate case, return the univariate gcd
@@ -896,7 +900,9 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
             failure_count += 1;
 
             let v = loop {
-                let a = a.field.sample(&mut rng, (1, a.field.get_prime() as i64));
+                let a = a
+                    .field
+                    .sample(&mut rng, (1, a.field.get_prime().to_u64() as i64));
                 if !gamma.replace(lastvar, a).is_zero() {
                     break a;
                 }
@@ -985,7 +991,9 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
                 }
 
                 let v = loop {
-                    let v = a.field.sample(&mut rng, (1, a.field.get_prime() as i64));
+                    let v = a
+                        .field
+                        .sample(&mut rng, (1, a.field.get_prime().to_u64() as i64));
                     if !gamma.replace(lastvar, v).is_zero() {
                         // we need unique sampling points
                         if !vseq.contains(&v) {
@@ -1071,7 +1079,8 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<u32>, E> {
                     .map(|i| {
                         (
                             *i,
-                            a.field.sample(&mut rng, (1, a.field.get_prime() as i64)),
+                            a.field
+                                .sample(&mut rng, (1, a.field.get_prime().to_u64() as i64)),
                         )
                     })
                     .collect();
@@ -1833,21 +1842,25 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
     }
 }
 
-impl<E: Exponent> PolynomialGCD<E> for FiniteField<u32> {
+impl<UField: FiniteFieldWorkspace, E: Exponent> PolynomialGCD<E> for FiniteField<UField>
+where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+    <FiniteField<UField> as Ring>::Element: Copy,
+{
     fn gcd(
-        a: &MultivariatePolynomial<FiniteField<u32>, E>,
-        b: &MultivariatePolynomial<FiniteField<u32>, E>,
+        a: &MultivariatePolynomial<FiniteField<UField>, E>,
+        b: &MultivariatePolynomial<FiniteField<UField>, E>,
         vars: &[usize],
         bounds: &mut [E],
         tight_bounds: &mut [E],
-    ) -> MultivariatePolynomial<FiniteField<u32>, E> {
+    ) -> MultivariatePolynomial<FiniteField<UField>, E> {
         assert!(!a.is_zero() || !b.is_zero());
         MultivariatePolynomial::gcd_shape_modular(&a, &b, vars, bounds, tight_bounds).unwrap()
     }
 
     fn get_gcd_var_bounds(
-        a: &MultivariatePolynomial<FiniteField<u32>, E>,
-        b: &MultivariatePolynomial<FiniteField<u32>, E>,
+        a: &MultivariatePolynomial<FiniteField<UField>, E>,
+        b: &MultivariatePolynomial<FiniteField<UField>, E>,
         vars: &[usize],
         loose_bounds: &[E],
     ) -> Vec<E> {

@@ -5,7 +5,7 @@ use colored::Colorize;
 use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent},
     representations::{number::BorrowedNumber, Add, Atom, AtomView, Fun, Mul, Num, Pow, Var},
-    rings::{rational_polynomial::RationalPolynomial, Ring, RingPrinter},
+    rings::{rational_polynomial::RationalPolynomial, Ring, RingPrinter, finite_field::FiniteFieldCore},
     state::State,
 };
 

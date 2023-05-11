@@ -14,13 +14,33 @@ const HENSEL_LIFTING_MASK: [u8; 128] = [
     183, 205, 171, 1,
 ];
 
-pub trait ToFiniteField<UField> {
-    fn to_finite_field(&self, field: &FiniteField<UField>) -> FiniteFieldElement<UField>;
+pub trait ToFiniteField<UField: FiniteFieldWorkspace>
+where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+{
+    fn to_finite_field(
+        &self,
+        field: &FiniteField<UField>,
+    ) -> <FiniteField<UField> as Ring>::Element;
 }
 
 /// A number in a finite field.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct FiniteFieldElement<UField>(pub(crate) UField);
+
+pub trait FiniteFieldWorkspace: Clone + Copy + Display {
+    /// Convert to u64.
+    fn to_u64(&self) -> u64;
+}
+
+pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
+    fn new(p: UField) -> FiniteField<UField>;
+    fn get_prime(&self) -> UField;
+    /// Convert a number in a prime field a % n to Montgomory form.
+    fn to_element(&self, a: UField) -> Self::Element;
+    /// Convert a number from Montgomory form to standard form.
+    fn from_element(&self, a: Self::Element) -> UField;
+}
 
 /// A finite field over a prime that uses Montgomery modular arithmetic
 /// to increase the performance of the multiplication operator.
@@ -31,24 +51,7 @@ pub struct FiniteField<UField> {
     one: FiniteFieldElement<UField>,
 }
 
-impl<UField: Copy> FiniteField<UField> {
-    pub fn get_prime(&self) -> UField {
-        self.p
-    }
-}
-
 impl FiniteField<u32> {
-    /// Create a new finite field. `n` must be a prime larger than 2.
-    pub fn new(p: u32) -> FiniteField<u32> {
-        assert!(p % 2 != 0);
-
-        FiniteField {
-            p,
-            m: Self::inv_2_32(p),
-            one: FiniteFieldElement(Self::get_one(p)),
-        }
-    }
-
     /// Returns the unit element in Montgomory form, ie.e 1 + 2^32 mod a.
     fn get_one(a: u32) -> u32 {
         if a as u64 <= 1u64 << 31 {
@@ -71,17 +74,40 @@ impl FiniteField<u32> {
         ret = ret.wrapping_mul(a.wrapping_mul(ret).wrapping_add(2));
         ret
     }
+}
+
+impl FiniteFieldWorkspace for u32 {
+    fn to_u64(&self) -> u64 {
+        *self as u64
+    }
+}
+
+impl FiniteFieldCore<u32> for FiniteField<u32> {
+    /// Create a new finite field. `n` must be a prime larger than 2.
+    fn new(p: u32) -> FiniteField<u32> {
+        assert!(p % 2 != 0);
+
+        FiniteField {
+            p,
+            m: Self::inv_2_32(p),
+            one: FiniteFieldElement(Self::get_one(p)),
+        }
+    }
+
+    fn get_prime(&self) -> u32 {
+        self.p
+    }
 
     /// Convert a number in a prime field a % n to Montgomory form.
     #[inline(always)]
-    pub fn to_element(&self, a: u32) -> FiniteFieldElement<u32> {
+    fn to_element(&self, a: u32) -> FiniteFieldElement<u32> {
         // TODO: slow, faster alternatives may need assembly
         FiniteFieldElement((((a as u64) << 32) % self.p as u64) as u32)
     }
 
     /// Convert a number from Montgomory form to standard form.
     #[inline(always)]
-    pub fn from_element(&self, a: FiniteFieldElement<u32>) -> u32 {
+    fn from_element(&self, a: FiniteFieldElement<u32>) -> u32 {
         self.mul(&a, &FiniteFieldElement(1)).0
     }
 }
@@ -258,18 +284,13 @@ impl Field for FiniteField<u32> {
     }
 }
 
-impl FiniteField<u64> {
-    /// Create a new finite field. `n` must be a prime larger than 2.
-    pub fn new(p: u64) -> FiniteField<u64> {
-        assert!(p % 2 != 0);
-
-        FiniteField {
-            p,
-            m: Self::inv_2_64(p),
-            one: FiniteFieldElement(Self::get_one(p)),
-        }
+impl FiniteFieldWorkspace for u64 {
+    fn to_u64(&self) -> u64 {
+        *self
     }
+}
 
+impl FiniteField<u64> {
     /// Returns the unit element in Montgomory form, ie.e 1 + 2^64 mod a.
     fn get_one(a: u64) -> u64 {
         if a as u128 <= 1u128 << 63 {
@@ -293,17 +314,34 @@ impl FiniteField<u64> {
         ret = ret.wrapping_mul(a.wrapping_mul(ret).wrapping_add(2));
         ret
     }
+}
+
+impl FiniteFieldCore<u64> for FiniteField<u64> {
+    /// Create a new finite field. `n` must be a prime larger than 2.
+    fn new(p: u64) -> FiniteField<u64> {
+        assert!(p % 2 != 0);
+
+        FiniteField {
+            p,
+            m: Self::inv_2_64(p),
+            one: FiniteFieldElement(Self::get_one(p)),
+        }
+    }
+
+    fn get_prime(&self) -> u64 {
+        self.p
+    }
 
     /// Convert a number in a prime field a % n to Montgomory form.
     #[inline(always)]
-    pub fn to_element(&self, a: u64) -> FiniteFieldElement<u64> {
+    fn to_element(&self, a: u64) -> FiniteFieldElement<u64> {
         // TODO: slow, faster alternatives may need assembly
         FiniteFieldElement((((a as u128) << 64) % self.p as u128) as u64)
     }
 
     /// Convert a number from Montgomory form to standard form.
     #[inline(always)]
-    pub fn from_element(&self, a: FiniteFieldElement<u64>) -> u64 {
+    fn from_element(&self, a: FiniteFieldElement<u64>) -> u64 {
         self.mul(&a, &FiniteFieldElement(1)).0
     }
 }

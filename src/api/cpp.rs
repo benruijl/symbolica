@@ -3,7 +3,7 @@ use std::fmt::Write;
 use std::os::raw::c_ulonglong;
 
 use crate::printer::SymbolicaPrintOptions;
-use crate::rings::finite_field::FiniteField;
+use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
 use crate::rings::integer::IntegerRing;
 use crate::rings::rational::RationalField;
 use crate::{
@@ -103,7 +103,27 @@ pub extern "C" fn simplify(
             )
             .unwrap();
         } else {
-            panic!("Prime is too large");
+            let field = FiniteField::<u64>::new(prime as u64);
+            let rf: RationalPolynomial<FiniteField<u64>, u8> = atom
+                .to_view()
+                .to_rational_polynomial(&symbolica.workspace, &symbolica.state, field, field, None)
+                .unwrap();
+
+            symbolica.local_state.buffer.clear();
+            write!(
+                &mut symbolica.local_state.buffer,
+                "{}\0", // add the NUL character
+                RationalPolynomialPrinter {
+                    poly: &rf,
+                    state: &symbolica.state,
+                    print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                        terms_on_new_line: false,
+                        color_top_level_sum: false,
+                        print_finite_field: false
+                    })
+                }
+            )
+            .unwrap();
         }
     }
 

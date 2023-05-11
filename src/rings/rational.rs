@@ -9,7 +9,7 @@ use rug::{ops::Pow, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryP
 use crate::utils;
 
 use super::{
-    finite_field::{FiniteField, ToFiniteField},
+    finite_field::{FiniteField, ToFiniteField, FiniteFieldCore},
     integer::Integer,
     EuclideanDomain, Field, Ring,
 };

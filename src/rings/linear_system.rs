@@ -232,7 +232,7 @@ impl<F: Field> Matrix<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rings::finite_field::FiniteField;
+    use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
     use crate::rings::rational::{Rational, RationalField};
 
     #[test]

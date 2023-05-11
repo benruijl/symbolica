@@ -160,6 +160,25 @@ impl<E: Exponent> FromNumeratorAndDenominator<FiniteField<u32>, FiniteField<u32>
     }
 }
 
+impl<E: Exponent> FromNumeratorAndDenominator<FiniteField<u64>, FiniteField<u64>, E>
+    for RationalPolynomial<FiniteField<u64>, E>
+{
+    fn from_num_den(
+        mut num: MultivariatePolynomial<FiniteField<u64>, E>,
+        mut den: MultivariatePolynomial<FiniteField<u64>, E>,
+        _field: FiniteField<u64>,
+    ) -> Self {
+        num.unify_var_map(&mut den);
+
+        let gcd = MultivariatePolynomial::gcd(&num, &den);
+
+        RationalPolynomial {
+            numerator: num / &gcd,
+            denominator: den / &gcd,
+        }
+    }
+}
+
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E> {
     pub fn inv(&self) -> Self {
         // TODO: normalize the leading monomial

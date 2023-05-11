@@ -1,7 +1,7 @@
 use symbolica::{
     poly::polynomial::MultivariatePolynomial,
     rings::{
-        finite_field::FiniteField,
+        finite_field::{FiniteField, FiniteFieldCore},
         rational::{Rational, RationalField},
     },
 };

@@ -2,7 +2,9 @@ use symbolica::{
     parser::parse,
     printer::{PrintMode, RationalPolynomialPrinter},
     representations::{default::DefaultRepresentation, OwnedAtom},
-    rings::rational_polynomial::RationalPolynomial,
+    rings::{
+        integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
+    },
     state::{State, Workspace},
 };
 
@@ -14,9 +16,15 @@ fn main() {
         .unwrap()
         .to_atom(&mut state, &workspace)
         .unwrap();
-    let rat: RationalPolynomial<u8> = expr
+    let rat: RationalPolynomial<IntegerRing, u8> = expr
         .to_view()
-        .to_rational_polynomial(&workspace, &state, None)
+        .to_rational_polynomial(
+            &workspace,
+            &state,
+            RationalField::new(),
+            IntegerRing::new(),
+            None,
+        )
         .unwrap();
     println!(
         "{}",

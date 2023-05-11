@@ -1,6 +1,9 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{c_char, c_uint, CStr};
 use std::fmt::Write;
 
+use crate::rings::finite_field::FiniteField;
+use crate::rings::integer::IntegerRing;
+use crate::rings::rational::RationalField;
 use crate::{
     parser::parse,
     printer::{PrintMode, RationalPolynomialPrinter},
@@ -36,7 +39,11 @@ pub extern "C" fn init() -> *mut Symbolica {
 /// Simplify a rational polynomial. The return value is only valid until the next call to
 /// `simplify`.
 #[no_mangle]
-pub extern "C" fn simplify(symbolica: *mut Symbolica, input: *const c_char) -> *const c_char {
+pub extern "C" fn simplify(
+    symbolica: *mut Symbolica,
+    input: *const c_char,
+    prime: c_uint,
+) -> *const c_char {
     let c = unsafe { CStr::from_ptr(input) };
     let cstr = c.to_str().unwrap();
 
@@ -46,22 +53,49 @@ pub extern "C" fn simplify(symbolica: *mut Symbolica, input: *const c_char) -> *
         .unwrap()
         .to_atom(&mut symbolica.state, &symbolica.workspace)
         .unwrap();
-    let r: RationalPolynomial<u8> = atom
-        .to_view()
-        .to_rational_polynomial(&symbolica.workspace, &symbolica.state, None)
-        .unwrap();
 
-    symbolica.local_state.buffer.clear();
-    write!(
-        &mut symbolica.local_state.buffer,
-        "{}\0", // add the NUL character
-        RationalPolynomialPrinter {
-            poly: &r,
-            state: &symbolica.state,
-            print_mode: PrintMode::default()
-        }
-    )
-    .unwrap();
+    if prime == 0 {
+        let r: RationalPolynomial<IntegerRing, u8> = atom
+            .to_view()
+            .to_rational_polynomial::<RationalField, IntegerRing, u8>(
+                &symbolica.workspace,
+                &symbolica.state,
+                RationalField::new(),
+                IntegerRing::new(),
+                None,
+            )
+            .unwrap();
+
+        symbolica.local_state.buffer.clear();
+        write!(
+            &mut symbolica.local_state.buffer,
+            "{}\0", // add the NUL character
+            RationalPolynomialPrinter {
+                poly: &r,
+                state: &symbolica.state,
+                print_mode: PrintMode::default()
+            }
+        )
+        .unwrap();
+    } else {
+        let field = FiniteField::<u32>::new(prime as u32);
+        let rf: RationalPolynomial<FiniteField<u32>, u8> = atom
+            .to_view()
+            .to_rational_polynomial(&symbolica.workspace, &symbolica.state, field, field, None)
+            .unwrap();
+
+        symbolica.local_state.buffer.clear();
+        write!(
+            &mut symbolica.local_state.buffer,
+            "{}\0", // add the NUL character
+            RationalPolynomialPrinter {
+                poly: &rf,
+                state: &symbolica.state,
+                print_mode: PrintMode::default()
+            }
+        )
+        .unwrap();
+    }
 
     unsafe { CStr::from_bytes_with_nul_unchecked(symbolica.local_state.buffer.as_bytes()) }.as_ptr()
 }

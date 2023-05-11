@@ -4,7 +4,9 @@ use symbolica::{
     parser::parse,
     printer::{PrintMode, RationalPolynomialPrinter},
     representations::default::DefaultRepresentation,
-    rings::rational_polynomial::RationalPolynomial,
+    rings::{
+        integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
+    },
     state::{State, Workspace},
 };
 
@@ -49,9 +51,15 @@ fn main() {
             .unwrap()
             .to_atom(&mut state, &workspace)
             .unwrap();
-        let r: RationalPolynomial<u8> = atom
+        let r: RationalPolynomial<IntegerRing, u8> = atom
             .to_view()
-            .to_rational_polynomial(&workspace, &state, Some(&vars))
+            .to_rational_polynomial(
+                &workspace,
+                &state,
+                RationalField::new(),
+                IntegerRing::new(),
+                Some(&vars),
+            )
             .unwrap();
 
         let out_str = format!(

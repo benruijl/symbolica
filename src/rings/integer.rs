@@ -34,7 +34,7 @@ pub enum Integer {
 }
 
 impl ToFiniteField<u32> for Integer {
-    fn to_finite_field(&self, field: FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
+    fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
         match self {
             &Integer::Natural(n) => field.to_element(n.rem_euclid(field.get_prime() as i64) as u32),
             Integer::Large(r) => field.to_element(r.mod_u(field.get_prime())),
@@ -225,7 +225,7 @@ impl Ring for IntegerRing {
         -a
     }
 
-    fn zero() -> Self::Element {
+    fn zero(&self) -> Self::Element {
         Integer::Natural(0)
     }
 

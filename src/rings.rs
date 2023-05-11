@@ -16,7 +16,7 @@ pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element);
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element);
     fn neg(&self, a: &Self::Element) -> Self::Element;
-    fn zero() -> Self::Element;
+    fn zero(&self) -> Self::Element;
     fn one(&self) -> Self::Element;
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element;
     fn is_zero(a: &Self::Element) -> bool;

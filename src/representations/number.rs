@@ -4,7 +4,12 @@ use bytes::{Buf, BufMut};
 use rug::{ops::Pow, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryPrecisionRational};
 
 use crate::{
-    rings::{finite_field::FiniteFieldElement, rational::Rational, Ring},
+    rings::{
+        finite_field::{FiniteField, FiniteFieldElement, ToFiniteField},
+        integer::{Integer, IntegerRing},
+        rational::{Rational, RationalField},
+        Field, Ring,
+    },
     state::{FiniteFieldIndex, State},
     utils,
 };
@@ -34,6 +39,11 @@ fn get_size_of_natural(num_type: u8) -> u8 {
         U64_NUM => 8,
         _ => unreachable!(),
     }
+}
+
+pub trait ConvertToRing: Ring {
+    /// Convert from a Symbolica Number to a Ring.
+    fn from_number(&self, number: BorrowedNumber<'_>) -> Self::Element;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +76,52 @@ pub enum BorrowedNumber<'a> {
     Natural(i64, i64),
     Large(&'a ArbitraryPrecisionRational),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
+}
+
+impl<'a> ConvertToRing for RationalField {
+    fn from_number(&self, number: BorrowedNumber<'_>) -> Rational {
+        match number {
+            BorrowedNumber::Natural(r, d) => Rational::Natural(r, d),
+            BorrowedNumber::Large(r) => Rational::Large(r.clone()),
+            BorrowedNumber::FiniteField(_, _) => panic!("Cannot convert finite field to rational"),
+        }
+    }
+}
+
+impl<'a> ConvertToRing for IntegerRing {
+    fn from_number(&self, number: BorrowedNumber<'_>) -> Integer {
+        match number {
+            BorrowedNumber::Natural(r, d) => {
+                if d != 1 {
+                    panic!("Cannot convert fraction to integer")
+                }
+                Integer::Natural(r)
+            }
+            BorrowedNumber::Large(r) => {
+                if r.denom() != &1 {
+                    panic!("Cannot convert fraction to integer")
+                }
+                Integer::Large(r.numer().clone())
+            }
+            BorrowedNumber::FiniteField(_, _) => panic!("Cannot convert finite field to integer"),
+        }
+    }
+}
+
+impl<'a> ConvertToRing for FiniteField<u32> {
+    fn from_number(&self, number: BorrowedNumber<'_>) -> FiniteFieldElement<u32> {
+        match number {
+            BorrowedNumber::Natural(n, d) => self.div(
+                &Integer::new(n).to_finite_field(self),
+                &Integer::new(d).to_finite_field(self),
+            ),
+            BorrowedNumber::Large(r) => self.div(
+                &Integer::Large(r.numer().clone()).to_finite_field(self),
+                &Integer::Large(r.denom().clone()).to_finite_field(self),
+            ),
+            BorrowedNumber::FiniteField(_, _) => panic!("Cannot convert finite field to other one"),
+        }
+    }
 }
 
 impl BorrowedNumber<'_> {

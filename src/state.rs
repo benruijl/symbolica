@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, ops::{Deref, DerefMut}};
 
 use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
@@ -143,6 +143,20 @@ impl<T: ResettableBuffer> Stack<T> {
 pub struct BufferHandle<'a, T: ResettableBuffer> {
     buf: Option<T>,
     parent: &'a Stack<T>,
+}
+
+impl<'a, T: ResettableBuffer> Deref for BufferHandle<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.get()
+    }
+}
+
+impl<'a, T: ResettableBuffer> DerefMut for BufferHandle<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.get_mut()
+    }
 }
 
 impl<'a, T: ResettableBuffer> BufferHandle<'a, T> {

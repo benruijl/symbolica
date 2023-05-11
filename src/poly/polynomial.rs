@@ -540,7 +540,7 @@ impl<F: Ring, E: Exponent> Add for MultivariatePolynomial<F, E> {
 
         // Merge the two polynomials, which are assumed to be already sorted.
 
-        let mut new_coefficients = vec![F::zero(); self.nterms + other.nterms];
+        let mut new_coefficients = vec![self.field.zero(); self.nterms + other.nterms];
         let mut new_exponents: Vec<E> = vec![E::zero(); self.nvars * (self.nterms + other.nterms)];
         let mut new_nterms = 0;
         let mut i = 0;
@@ -765,7 +765,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Get the leading coefficient.
     pub fn lcoeff(&self) -> F::Element {
         if self.is_zero() {
-            return F::zero();
+            return self.field.zero();
         }
         self.coefficients.last().unwrap().clone()
     }
@@ -778,7 +778,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         let mut highest = vec![E::zero(); self.nvars];
-        let mut highestc = &F::zero();
+        let mut highestc = &self.field.zero();
 
         'nextmon: for m in self.into_iter() {
             let mut more = false;
@@ -1111,7 +1111,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         while h.len() > 0 {
             let cur_mon = h.pop().unwrap();
 
-            let mut coefficient = F::zero();
+            let mut coefficient = self.field.zero();
 
             for (i, j) in cache.remove(&cur_mon.0).unwrap() {
                 self.field.add_assign(
@@ -1171,7 +1171,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
     /// Get the content from the coefficients.
     pub fn content(&self) -> F::Element {
         if self.coefficients.is_empty() {
-            return F::zero();
+            return self.field.zero();
         }
         let mut c = self.coefficients.first().unwrap().clone();
         for cc in self.coefficients.iter().skip(1) {
@@ -1211,7 +1211,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     break self.coefficients[dividendpos].clone();
                 }
                 if dividendpos == 0 || self.exponents(dividendpos)[var] < pow {
-                    break F::zero();
+                    break self.field.zero();
                 }
                 dividendpos -= 1;
             };
@@ -1416,7 +1416,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 k += 1;
             } else {
                 m.extend_from_slice(h.peek().unwrap().as_slice());
-                c = F::zero();
+                c = self.field.zero();
             }
 
             if let Some(monomial) = h.peek() {

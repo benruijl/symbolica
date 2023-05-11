@@ -15,7 +15,7 @@ const HENSEL_LIFTING_MASK: [u8; 128] = [
 ];
 
 pub trait ToFiniteField<UField> {
-    fn to_finite_field(&self, field: FiniteField<UField>) -> FiniteFieldElement<UField>;
+    fn to_finite_field(&self, field: &FiniteField<UField>) -> FiniteFieldElement<UField>;
 }
 
 /// A number in a finite field.
@@ -148,7 +148,7 @@ impl Ring for FiniteField<u32> {
         FiniteFieldElement(self.p - a.0)
     }
 
-    fn zero() -> Self::Element {
+    fn zero(&self) -> Self::Element {
         FiniteFieldElement(0)
     }
 
@@ -376,7 +376,7 @@ impl Ring for FiniteField<u64> {
         FiniteFieldElement(self.p - a.0)
     }
 
-    fn zero() -> Self::Element {
+    fn zero(&self) -> Self::Element {
         FiniteFieldElement(0)
     }
 

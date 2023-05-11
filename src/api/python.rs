@@ -33,8 +33,7 @@ use crate::{
     rings::integer::IntegerRing,
     rings::{
         rational::RationalField,
-        rational_polynomial::{RationalPolynomial, RationalPolynomialField},
-        EuclideanDomain, Ring,
+        rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
     },
     state::{ResettableBuffer, State, Workspace},
 };
@@ -491,11 +490,14 @@ impl PythonExpression {
 
         self.expr
             .to_view()
-            .to_polynomial(if var_map.is_empty() {
-                None
-            } else {
-                Some(var_map.as_slice())
-            })
+            .to_polynomial(
+                RationalField::new(),
+                if var_map.is_empty() {
+                    None
+                } else {
+                    Some(var_map.as_slice())
+                },
+            )
             .map(|x| PythonPolynomial { poly: Arc::new(x) })
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!(
@@ -530,6 +532,8 @@ impl PythonExpression {
             .to_rational_polynomial(
                 &WORKSPACE,
                 &STATE.read().unwrap(),
+                RationalField::new(),
+                IntegerRing::new(),
                 if var_map.is_empty() {
                     None
                 } else {
@@ -571,6 +575,8 @@ impl PythonExpression {
             .to_rational_polynomial(
                 &WORKSPACE,
                 &STATE.read().unwrap(),
+                RationalField::new(),
+                IntegerRing::new(),
                 if var_map.is_empty() {
                     None
                 } else {
@@ -935,7 +941,7 @@ generate_methods!(PythonIntegerPolynomial);
 #[pyclass(name = "RationalPolynomial")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomial {
-    pub poly: Arc<RationalPolynomial<u32>>,
+    pub poly: Arc<RationalPolynomial<IntegerRing, u32>>,
 }
 
 #[pymethods]
@@ -943,8 +949,10 @@ impl PythonRationalPolynomial {
     #[new]
     pub fn __new__(num: &PythonPolynomial, den: &PythonPolynomial) -> Self {
         Self {
-            poly: Arc::new(RationalPolynomial::from_rat_num_and_den(
-                &*num.poly, &*den.poly,
+            poly: Arc::new(RationalPolynomial::from_num_den(
+                (*num.poly).clone(),
+                (*den.poly).clone(),
+                IntegerRing::new(),
             )),
         }
     }
@@ -953,7 +961,7 @@ impl PythonRationalPolynomial {
 #[pyclass(name = "RationalPolynomialSmallExponent")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomialSmallExponent {
-    pub poly: Arc<RationalPolynomial<u8>>,
+    pub poly: Arc<RationalPolynomial<IntegerRing, u8>>,
 }
 
 // TODO: unify with polynomial methods
@@ -1027,40 +1035,18 @@ macro_rules! generate_rat_methods {
                 }
             }
 
-            pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-                let (q, r) = if self.poly.get_var_map() == rhs.poly.get_var_map() {
-                    RationalPolynomialField::new().quot_rem(&self.poly, &rhs.poly)
-                } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
-
-                    RationalPolynomialField::new().quot_rem(&new_self, &new_rhs)
-                };
-
-                if RationalPolynomialField::is_zero(&r) {
-                    Ok(Self { poly: Arc::new(q) })
-                } else {
-                    Err(exceptions::PyValueError::new_err(format!(
-                        "The division has a remainder: {}",
-                        r
-                    )))
-                }
-            }
-
-            pub fn quot_rem(&self, rhs: Self) -> (Self, Self) {
+            pub fn __truediv__(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
-                    let (q, r) = RationalPolynomialField::new().quot_rem(&self.poly, &rhs.poly);
-
-                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                    Self {
+                        poly: Arc::new(&*self.poly * &*rhs.poly),
+                    }
                 } else {
                     let mut new_self = (*self.poly).clone();
                     let mut new_rhs = (*rhs.poly).clone();
                     new_self.unify_var_map(&mut new_rhs);
-
-                    let (q, r) = RationalPolynomialField::new().quot_rem(&new_self, &new_rhs);
-
-                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                    Self {
+                        poly: Arc::new(&new_self / &new_rhs),
+                    }
                 }
             }
 
@@ -1073,14 +1059,14 @@ macro_rules! generate_rat_methods {
             pub fn gcd(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
-                        poly: Arc::new(RationalPolynomialField::new().gcd(&self.poly, &rhs.poly)),
+                        poly: Arc::new(self.poly.gcd(&rhs.poly)),
                     }
                 } else {
                     let mut new_self = (*self.poly).clone();
                     let mut new_rhs = (*rhs.poly).clone();
                     new_self.unify_var_map(&mut new_rhs);
                     Self {
-                        poly: Arc::new(RationalPolynomialField::new().gcd(&new_self, &new_rhs)),
+                        poly: Arc::new(new_self.gcd(&new_rhs)),
                     }
                 }
             }

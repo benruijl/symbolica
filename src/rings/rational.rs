@@ -31,7 +31,7 @@ pub enum Rational {
 }
 
 impl ToFiniteField<u32> for Rational {
-    fn to_finite_field(&self, field: FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
+    fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
         match self {
             &Rational::Natural(n, d) => {
                 let mut ff = field.to_element(n.rem_euclid(field.get_prime() as i64) as u32);
@@ -203,7 +203,7 @@ impl Ring for RationalField {
         }
     }
 
-    fn zero() -> Self::Element {
+    fn zero(&self) -> Self::Element {
         Rational::Natural(0, 1)
     }
 

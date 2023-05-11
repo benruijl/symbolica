@@ -5,7 +5,7 @@ use colored::Colorize;
 use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent},
     representations::{number::BorrowedNumber, Add, Atom, AtomView, Fun, Mul, Num, Pow, Var},
-    rings::{integer::IntegerRing, rational_polynomial::RationalPolynomial, Ring, RingPrinter},
+    rings::{rational_polynomial::RationalPolynomial, Ring, RingPrinter},
     state::State,
 };
 
@@ -429,18 +429,18 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
     }
 }
 
-pub struct RationalPolynomialPrinter<'a, 'b, E: Exponent> {
-    pub poly: &'a RationalPolynomial<E>,
+pub struct RationalPolynomialPrinter<'a, 'b, R: Ring, E: Exponent> {
+    pub poly: &'a RationalPolynomial<R, E>,
     pub state: &'b State,
     pub print_mode: PrintMode,
 }
 
-impl<'a, 'b, E: Exponent> RationalPolynomialPrinter<'a, 'b, E> {
+impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
     pub fn new(
-        poly: &'a RationalPolynomial<E>,
+        poly: &'a RationalPolynomial<R, E>,
         state: &'b State,
         print_mode: PrintMode,
-    ) -> RationalPolynomialPrinter<'a, 'b, E> {
+    ) -> RationalPolynomialPrinter<'a, 'b, R, E> {
         RationalPolynomialPrinter {
             poly,
             state,
@@ -449,68 +449,21 @@ impl<'a, 'b, E: Exponent> RationalPolynomialPrinter<'a, 'b, E> {
     }
 }
 
-impl<'a, 'b, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b, E> {
+impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b, R, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.poly.denominator.is_one() {
-            f.write_fmt(format_args!(
-                "{}",
-                PolynomialPrinter {
-                    poly: &self.poly.numerator,
-                    state: self.state,
-                    print_mode: self.print_mode,
-                }
-            ))
-        } else {
-            if self.poly.numerator.nterms < 2 {
-                f.write_fmt(format_args!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        state: self.state,
-                        print_mode: self.print_mode,
-                    }
-                ))?;
-            } else {
-                f.write_fmt(format_args!(
-                    "({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        state: self.state,
-                        print_mode: self.print_mode,
-                    }
-                ))?;
+        f.write_fmt(format_args!(
+            "({})/({})",
+            PolynomialPrinter {
+                poly: &self.poly.numerator,
+                state: self.state,
+                print_mode: self.print_mode,
+            },
+            PolynomialPrinter {
+                poly: &self.poly.denominator,
+                state: self.state,
+                print_mode: self.print_mode,
             }
-
-            if self.poly.denominator.nterms == 1
-                && IntegerRing::new().is_one(&self.poly.denominator.coefficients[0])
-                && self
-                    .poly
-                    .denominator
-                    .exponents
-                    .iter()
-                    .filter(|x| !x.is_zero())
-                    .count()
-                    < 2
-            {
-                f.write_fmt(format_args!(
-                    "/{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.denominator,
-                        state: self.state,
-                        print_mode: self.print_mode,
-                    }
-                ))
-            } else {
-                f.write_fmt(format_args!(
-                    "/({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.denominator,
-                        state: self.state,
-                        print_mode: self.print_mode,
-                    }
-                ))
-            }
-        }
+        ))
     }
 }
 

@@ -15,7 +15,7 @@ inherits = "dev"
 opt-level = 2
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "rlib", "staticlib"]
 name = "symbolica"
 
 [features]

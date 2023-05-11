@@ -1,6 +1,9 @@
-use std::fmt::Write;
+use std::{fmt::Write, string::String};
 
 use rug::{Complete, Integer};
+
+use smallvec::{smallvec, SmallVec};
+use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     representations::{number::Number, tree::AtomTree, Atom, OwnedAtom},
@@ -18,45 +21,42 @@ enum ParseState {
 pub enum BinaryOperator {
     Mul,
     Add,
-    Sub,
     Pow,
-    Div,
-    Argument,   // comma
-    UnaryMinus, // has to be constructed with the left side tagged as 'finished'
+    Argument, // comma
+    Neg,      // left side should be tagged as 'finished'
+    Inv,      // left side should be tagged as 'finished', for internal use
 }
 
 impl BinaryOperator {
     fn get_precedence(&self) -> u8 {
         match self {
             BinaryOperator::Mul => 8,
-            BinaryOperator::Div => 8,
             BinaryOperator::Add => 7,
-            BinaryOperator::Sub => 7,
-            BinaryOperator::Pow => 10,
+            BinaryOperator::Pow => 11,
             BinaryOperator::Argument => 5,
-            BinaryOperator::UnaryMinus => 9,
+            BinaryOperator::Neg => 10,
+            BinaryOperator::Inv => 9,
         }
     }
 
     fn right_associative(&self) -> bool {
         match self {
             BinaryOperator::Mul => true,
-            BinaryOperator::Div => false,
             BinaryOperator::Add => true,
-            BinaryOperator::Sub => false,
             BinaryOperator::Pow => false,
             BinaryOperator::Argument => true,
-            BinaryOperator::UnaryMinus => true,
+            BinaryOperator::Neg => true,
+            BinaryOperator::Inv => true,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
-    Number(String),
-    ID(String),
+    Number(SmartString<LazyCompact>),
+    ID(SmartString<LazyCompact>),
     BinaryOp(bool, bool, BinaryOperator, Vec<Token>),
-    Fn(bool, String, Vec<Token>),
+    Fn(bool, SmartString<LazyCompact>, Vec<Token>),
     Start,
     OpenParenthesis,
     CloseParenthesis,
@@ -120,8 +120,8 @@ impl Token {
                 if let Token::BinaryOp(ml, mr, o2, mut args2) = other {
                     assert!(!ml && !mr);
                     if *o1 == o2 && o2.right_associative() {
-                        if o2 == BinaryOperator::UnaryMinus {
-                            // twice unary minus cancels out
+                        if o2 == BinaryOperator::Neg || o2 == BinaryOperator::Inv {
+                            // twice unary minus or inv cancels out
                             assert!(args2.len() == 1);
                             *self = args2.pop().unwrap();
                         } else {
@@ -172,44 +172,20 @@ impl Token {
 
                         Ok(pow)
                     }
-                    BinaryOperator::Sub => {
-                        let base = atom_args.remove(0);
-
-                        let sub_args = if atom_args.len() == 1 {
-                            atom_args.pop().unwrap()
-                        } else {
-                            AtomTree::Add(atom_args)
-                        };
-
-                        Ok(AtomTree::Add(vec![
-                            base,
-                            AtomTree::Mul(vec![sub_args, AtomTree::Num(Number::Natural(-1, 1))]),
-                        ]))
-                    }
-                    BinaryOperator::Div => {
-                        let base = atom_args.remove(0);
-
-                        let inv_args = if atom_args.len() == 1 {
-                            atom_args.pop().unwrap()
-                        } else {
-                            AtomTree::Mul(atom_args)
-                        };
-
-                        Ok(AtomTree::Mul(vec![
-                            base,
-                            AtomTree::Pow(Box::new((
-                                inv_args,
-                                AtomTree::Num(Number::Natural(-1, 1)),
-                            ))),
-                        ]))
-                    }
-                    BinaryOperator::Argument => Err(format!("Unexpected argument operator")),
-                    BinaryOperator::UnaryMinus => {
+                    BinaryOperator::Argument => Err("Unexpected argument operator".into()),
+                    BinaryOperator::Neg => {
                         debug_assert!(atom_args.len() == 1);
                         Ok(AtomTree::Mul(vec![
                             atom_args.pop().unwrap(),
                             AtomTree::Num(Number::Natural(-1, 1)),
                         ]))
+                    }
+                    BinaryOperator::Inv => {
+                        debug_assert!(atom_args.len() == 1);
+                        Ok(AtomTree::Pow(Box::new((
+                            atom_args.pop().unwrap(),
+                            AtomTree::Num(Number::Natural(-1, 1)),
+                        ))))
                     }
                 }
             }
@@ -224,11 +200,26 @@ impl Token {
         }
     }
 
+    pub fn count_depth(&self, cur_depth: u16) -> u16 {
+        match self {
+            Token::BinaryOp(_, _, _, args) => {
+                let mut max_depth = cur_depth;
+                for x in args {
+                    let v = x.count_depth(cur_depth + 1);
+                    max_depth = max_depth.max(v);
+                }
+                max_depth
+            }
+            _ => cur_depth,
+        }
+    }
+
     pub fn to_atom<P: Atom>(
         self,
         state: &mut State,
         workspace: &Workspace<P>,
     ) -> Result<OwnedAtom<P>, String> {
+        //println!("depth {}", self.count_depth(1));
         let a = self.to_atom_tree(state)?;
         Ok(P::from_tree(&a, state, workspace))
     }
@@ -247,13 +238,16 @@ impl std::fmt::Display for Token {
                     if !first {
                         match o {
                             BinaryOperator::Mul => f.write_char('*')?,
-                            BinaryOperator::Div => f.write_char('/')?,
-                            BinaryOperator::Sub => f.write_char('-')?,
                             BinaryOperator::Add => f.write_char('+')?,
                             BinaryOperator::Pow => f.write_char('^')?,
                             BinaryOperator::Argument => f.write_char(',')?,
-                            BinaryOperator::UnaryMinus => f.write_char('-')?,
+                            BinaryOperator::Neg => f.write_char('-')?,
+                            BinaryOperator::Inv => f.write_str("1/")?,
                         }
+                    } else if *o == BinaryOperator::Neg {
+                        f.write_char('-')?;
+                    } else if *o == BinaryOperator::Inv {
+                        f.write_str("1/")?;
                     }
                     first = false;
 
@@ -283,7 +277,7 @@ impl std::fmt::Display for Token {
 }
 
 pub fn parse(input: &str) -> Result<Token, String> {
-    let mut stack: Vec<Token> = vec![Token::Start];
+    let mut stack: SmallVec<[Token; 64]> = smallvec![Token::Start];
     let mut state = ParseState::Any;
 
     let delims = ['\0', '^', '+', '*', '-', '(', ')', '/', ','];
@@ -291,6 +285,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
 
     let mut char_iter = input.chars();
     let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token
+    let mut extra_ops: SmallVec<[char; 6]> = SmallVec::new();
 
     let mut i = 0;
     loop {
@@ -308,7 +303,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         input[token_start..i]
                             .chars()
                             .filter(|a| !whitespace.contains(a))
-                            .collect::<String>(),
+                            .collect(),
                     ));
                 }
             }
@@ -323,11 +318,22 @@ pub fn parse(input: &str) -> Result<Token, String> {
 
                     // number is over
                     state = ParseState::Any;
+
+                    // drag in the neg operator
+                    let start = if let Some(Token::BinaryOp(false, true, BinaryOperator::Neg, _)) =
+                        stack.last_mut()
+                    {
+                        stack.pop();
+                        token_start - 1
+                    } else {
+                        token_start
+                    };
+
                     stack.push(Token::Number(
-                        input[token_start..i]
+                        input[start..i]
                             .chars()
                             .filter(|a| *a >= '0' && *a <= '9')
-                            .collect::<String>(),
+                            .collect(),
                     ));
                 }
             }
@@ -354,14 +360,10 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
                     ) {
                         // unary minus only requires an argument to the right
-                        stack.push(Token::BinaryOp(
-                            false,
-                            true,
-                            BinaryOperator::UnaryMinus,
-                            vec![],
-                        ));
+                        stack.push(Token::BinaryOp(false, true, BinaryOperator::Neg, vec![]));
                     } else {
-                        stack.push(Token::BinaryOp(true, true, BinaryOperator::Sub, vec![]));
+                        stack.push(Token::BinaryOp(true, true, BinaryOperator::Add, vec![]));
+                        extra_ops.push('-'); // push a unary minus
                     }
                 }
                 '(' => {
@@ -377,7 +379,18 @@ pub fn parse(input: &str) -> Result<Token, String> {
                     }
                 }
                 ')' => stack.push(Token::CloseParenthesis),
-                '/' => stack.push(Token::BinaryOp(true, true, BinaryOperator::Div, vec![])),
+                '/' => {
+                    if matches!(
+                        stack.last().unwrap(),
+                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
+                    ) {
+                        // unary inv only requires an argument to the right
+                        stack.push(Token::BinaryOp(false, true, BinaryOperator::Inv, vec![]));
+                    } else {
+                        stack.push(Token::BinaryOp(true, true, BinaryOperator::Mul, vec![]));
+                        extra_ops.push('/'); // push a (unary) inverse
+                    }
+                }
                 ',' => stack.push(Token::BinaryOp(
                     true,
                     true,
@@ -492,8 +505,13 @@ pub fn parse(input: &str) -> Result<Token, String> {
             break;
         }
 
-        i += 1;
-        c = char_iter.next().unwrap_or('\0');
+        // first drain the queue of extra operators
+        if !extra_ops.is_empty() {
+            c = extra_ops.remove(0);
+        } else {
+            i += 1;
+            c = char_iter.next().unwrap_or('\0');
+        }
     }
 
     if stack.len() == 1 {

@@ -200,26 +200,11 @@ impl Token {
         }
     }
 
-    pub fn count_depth(&self, cur_depth: u16) -> u16 {
-        match self {
-            Token::BinaryOp(_, _, _, args) => {
-                let mut max_depth = cur_depth;
-                for x in args {
-                    let v = x.count_depth(cur_depth + 1);
-                    max_depth = max_depth.max(v);
-                }
-                max_depth
-            }
-            _ => cur_depth,
-        }
-    }
-
     pub fn to_atom<P: Atom>(
         self,
         state: &mut State,
         workspace: &Workspace<P>,
     ) -> Result<OwnedAtom<P>, String> {
-        //println!("depth {}", self.count_depth(1));
         let a = self.to_atom_tree(state)?;
         Ok(P::from_tree(&a, state, workspace))
     }
@@ -332,7 +317,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                     stack.push(Token::Number(
                         input[start..i]
                             .chars()
-                            .filter(|a| *a >= '0' && *a <= '9')
+                            .filter(|a| *a == '-' || *a >= '0' && *a <= '9')
                             .collect(),
                     ));
                 }

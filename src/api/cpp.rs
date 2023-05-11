@@ -1,6 +1,8 @@
-use std::ffi::{c_char, c_uint, CStr};
+use std::ffi::{c_char, CStr};
 use std::fmt::Write;
+use std::os::raw::c_ulonglong;
 
+use crate::printer::SymbolicaPrintOptions;
 use crate::rings::finite_field::FiniteField;
 use crate::rings::integer::IntegerRing;
 use crate::rings::rational::RationalField;
@@ -42,7 +44,7 @@ pub extern "C" fn init() -> *mut Symbolica {
 pub extern "C" fn simplify(
     symbolica: *mut Symbolica,
     input: *const c_char,
-    prime: c_uint,
+    prime: c_ulonglong,
 ) -> *const c_char {
     let c = unsafe { CStr::from_ptr(input) };
     let cstr = c.to_str().unwrap();
@@ -78,23 +80,31 @@ pub extern "C" fn simplify(
         )
         .unwrap();
     } else {
-        let field = FiniteField::<u32>::new(prime as u32);
-        let rf: RationalPolynomial<FiniteField<u32>, u8> = atom
-            .to_view()
-            .to_rational_polynomial(&symbolica.workspace, &symbolica.state, field, field, None)
-            .unwrap();
+        if prime < u32::MAX as c_ulonglong {
+            let field = FiniteField::<u32>::new(prime as u32);
+            let rf: RationalPolynomial<FiniteField<u32>, u8> = atom
+                .to_view()
+                .to_rational_polynomial(&symbolica.workspace, &symbolica.state, field, field, None)
+                .unwrap();
 
-        symbolica.local_state.buffer.clear();
-        write!(
-            &mut symbolica.local_state.buffer,
-            "{}\0", // add the NUL character
-            RationalPolynomialPrinter {
-                poly: &rf,
-                state: &symbolica.state,
-                print_mode: PrintMode::default()
-            }
-        )
-        .unwrap();
+            symbolica.local_state.buffer.clear();
+            write!(
+                &mut symbolica.local_state.buffer,
+                "{}\0", // add the NUL character
+                RationalPolynomialPrinter {
+                    poly: &rf,
+                    state: &symbolica.state,
+                    print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                        terms_on_new_line: false,
+                        color_top_level_sum: false,
+                        print_finite_field: false
+                    })
+                }
+            )
+            .unwrap();
+        } else {
+            panic!("Prime is too large");
+        }
     }
 
     unsafe { CStr::from_bytes_with_nul_unchecked(symbolica.local_state.buffer.as_bytes()) }.as_ptr()

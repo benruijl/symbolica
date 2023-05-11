@@ -13,6 +13,7 @@ use crate::{
 pub struct SymbolicaPrintOptions {
     pub terms_on_new_line: bool,
     pub color_top_level_sum: bool,
+    pub print_finite_field: bool,
 }
 
 impl Default for SymbolicaPrintOptions {
@@ -20,6 +21,7 @@ impl Default for SymbolicaPrintOptions {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: true,
+            print_finite_field: true,
         }
     }
 }
@@ -548,6 +550,12 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, '
             write!(f, "0")?;
         }
 
-        Display::fmt(&self.poly.field, f)
+        if let PrintMode::Symbolica(s) = self.print_mode {
+            if s.print_finite_field {
+                Display::fmt(&self.poly.field, f)?;
+            }
+        }
+
+        Ok(())
     }
 }

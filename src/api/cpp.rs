@@ -1,4 +1,5 @@
 use std::ffi::{c_char, CStr};
+use std::fmt::Write;
 
 use crate::{
     parser::parse,
@@ -8,9 +9,14 @@ use crate::{
     state::{State, Workspace},
 };
 
+pub struct LocalState {
+    buffer: String,
+}
+
 pub struct Symbolica {
     state: State,
     workspace: Workspace<DefaultRepresentation>,
+    local_state: LocalState,
 }
 
 /// Create a new Symbolica handle.
@@ -19,14 +25,18 @@ pub extern "C" fn init() -> *mut Symbolica {
     let s = Symbolica {
         state: State::new(),
         workspace: Workspace::new(),
+        local_state: LocalState {
+            buffer: String::with_capacity(2048),
+        },
     };
     let p = Box::into_raw(Box::new(s));
     p
 }
 
-/// Simplify a rational polynomial.
+/// Simplify a rational polynomial. The return value is only valid until the next call to
+/// `simplify`.
 #[no_mangle]
-pub extern "C" fn simplify(symbolica: *mut Symbolica, input: *const c_char, out: *mut c_char) {
+pub extern "C" fn simplify(symbolica: *mut Symbolica, input: *const c_char) -> *const c_char {
     let c = unsafe { CStr::from_ptr(input) };
     let cstr = c.to_str().unwrap();
 
@@ -41,19 +51,19 @@ pub extern "C" fn simplify(symbolica: *mut Symbolica, input: *const c_char, out:
         .to_rational_polynomial(&symbolica.workspace, &symbolica.state, None)
         .unwrap();
 
-    let out_str = format!(
-        "{}",
+    symbolica.local_state.buffer.clear();
+    write!(
+        &mut symbolica.local_state.buffer,
+        "{}\0", // add the NUL character
         RationalPolynomialPrinter {
             poly: &r,
             state: &symbolica.state,
             print_mode: PrintMode::default()
         }
-    );
+    )
+    .unwrap();
 
-    unsafe {
-        std::ptr::copy(out_str.as_bytes().as_ptr().cast(), out, out_str.len());
-        std::ptr::write(out.offset(out_str.len() as isize) as *mut u8, 0u8);
-    }
+    unsafe { CStr::from_bytes_with_nul_unchecked(symbolica.local_state.buffer.as_bytes()) }.as_ptr()
 }
 
 /// Free the Symbolica handle.

@@ -1,12 +1,15 @@
 pub mod gcd;
 pub mod polynomial;
 
+use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::ops::{Add as OpAdd, AddAssign, Sub};
 
+use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
 
+use crate::parser::{BinaryOperator, Token};
 use crate::representations::number::{BorrowedNumber, ConvertToRing, Number};
 use crate::representations::{
     Add, Atom, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedAtom, OwnedMul, OwnedNum, OwnedPow,
@@ -293,7 +296,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
         field: R,
         out_field: RO,
         var_map: Option<&[Identifier]>,
-    ) -> Result<RationalPolynomial<RO, E>, &'static str>
+    ) -> Result<RationalPolynomial<RO, E>, Cow<'static, str>>
     where
         RationalPolynomial<RO, E>: FromNumeratorAndDenominator<R, RO, E>,
     {
@@ -426,6 +429,266 @@ impl<P: Atom> OwnedAtom<P> {
             mul.extend(num_h.get().to_view());
 
             add.extend(mul_h.get().to_view());
+        }
+    }
+}
+
+impl Token {
+    pub fn to_polynomial<R: Ring + ConvertToRing, E: Exponent>(
+        &self,
+        field: R,
+        state: &mut State,
+        var_map: &[Identifier],
+    ) -> Result<MultivariatePolynomial<R, E>, Cow<'static, str>> {
+        fn parse_factor<R: Ring + ConvertToRing, E: Exponent>(
+            factor: &Token,
+            state: &mut State,
+            vars: &[Identifier],
+            coefficient: &mut R::Element,
+            exponents: &mut SmallVec<[E; INLINED_EXPONENTS]>,
+            field: R,
+        ) -> Result<(), Cow<'static, str>> {
+            match factor {
+                Token::Number(n) => {
+                    let num = if let Ok(x) = n.parse::<i64>() {
+                        field.from_number(BorrowedNumber::Natural(x, 1))
+                    } else {
+                        match ArbitraryPrecisionInteger::parse(n) {
+                            Ok(x) => {
+                                let p = x.complete().into();
+                                field.from_number(BorrowedNumber::Large(&p)) // TODO: prevent copy?
+                            }
+                            Err(e) => Err(format!("Could not parse number: {}", e))?,
+                        }
+                    };
+                    field.mul_assign(coefficient, &num);
+                }
+                Token::ID(x) => {
+                    let id = state.get_or_insert_var(x);
+                    exponents[vars.iter().position(|v| *v == id).unwrap()] += E::from_u32(1);
+                }
+                Token::BinaryOp(_, _, BinaryOperator::Neg, args) => {
+                    if args.len() != 1 {
+                        Err("Wrong args for neg")?;
+                    }
+
+                    *coefficient = field.neg(coefficient);
+                    parse_factor(&args[0], state, vars, coefficient, exponents, field)?;
+                }
+                Token::BinaryOp(_, _, BinaryOperator::Pow, args) => {
+                    if args.len() != 2 {
+                        Err("Wrong args for pow")?;
+                    }
+
+                    let var_index = match &args[0] {
+                        Token::ID(v) => {
+                            let id = state.get_or_insert_var(v);
+                            vars.iter().position(|v| *v == id).unwrap()
+                        }
+                        _ => Err("Unsupported base")?,
+                    };
+
+                    match &args[1] {
+                        Token::Number(n) => {
+                            if let Ok(x) = n.parse::<i64>() {
+                                if x < 1 || x > u32::MAX as i64 {
+                                    Err("Invalid exponent")?;
+                                }
+                                exponents[var_index] += E::from_u32(x as u32);
+                            } else {
+                                match ArbitraryPrecisionInteger::parse(n) {
+                                    Ok(x) => {
+                                        let p: ArbitraryPrecisionInteger = x.complete().into();
+                                        let exp = p.to_u32().ok_or("Cannot convert to u32")?;
+                                        exponents[var_index] += E::from_u32(exp);
+                                    }
+                                    Err(e) => Err(format!("Could not parse number: {}", e))?,
+                                }
+                            };
+                        }
+                        _ => Err("Unsupported exponent")?,
+                    }
+                }
+                _ => Err("Unsupported expression")?,
+            }
+
+            Ok(())
+        }
+
+        fn parse_term<R: Ring + ConvertToRing, E: Exponent>(
+            term: &Token,
+            state: &mut State,
+            vars: &[Identifier],
+            poly: &mut MultivariatePolynomial<R, E>,
+            field: R,
+        ) -> Result<(), Cow<'static, str>> {
+            let mut coefficient = poly.field.one();
+            let mut exponents = smallvec![E::zero(); vars.len()];
+
+            match term {
+                Token::BinaryOp(_, _, BinaryOperator::Mul, args) => {
+                    for factor in args {
+                        parse_factor(
+                            &factor,
+                            state,
+                            vars,
+                            &mut coefficient,
+                            &mut exponents,
+                            field,
+                        )?;
+                    }
+                }
+                Token::BinaryOp(_, _, BinaryOperator::Neg, args) => {
+                    if args.len() != 1 {
+                        Err("Wrong args for neg")?;
+                    }
+
+                    coefficient = field.neg(&coefficient);
+
+                    match &args[0] {
+                        Token::BinaryOp(_, _, BinaryOperator::Mul, args) => {
+                            for factor in args {
+                                parse_factor(
+                                    &factor,
+                                    state,
+                                    vars,
+                                    &mut coefficient,
+                                    &mut exponents,
+                                    field,
+                                )?;
+                            }
+                        }
+                        _ => parse_factor(
+                            &args[0],
+                            state,
+                            vars,
+                            &mut coefficient,
+                            &mut exponents,
+                            field,
+                        )?,
+                    }
+                }
+                _ => parse_factor(term, state, vars, &mut coefficient, &mut exponents, field)?,
+            }
+
+            poly.append_monomial(coefficient, &exponents);
+            Ok(())
+        }
+
+        match self {
+            Token::BinaryOp(_, _, BinaryOperator::Add, args) => {
+                let mut poly = MultivariatePolynomial::<R, E>::new(
+                    var_map.len(),
+                    field,
+                    Some(args.len()),
+                    Some(var_map.into()),
+                );
+
+                for term in args {
+                    parse_term(&term, state, &var_map, &mut poly, field)?;
+                }
+                Ok(poly)
+            }
+            _ => {
+                let mut poly = MultivariatePolynomial::<R, E>::new(
+                    var_map.len(),
+                    field,
+                    Some(1),
+                    Some(var_map.into()),
+                );
+                parse_term(self, state, &var_map, &mut poly, field)?;
+                Ok(poly)
+            }
+        }
+    }
+
+    /// Convert a parsed expression to a rational polynomial if possible,
+    /// skipping the conversion to a Symbolica expression. This method
+    /// is faster if the parsed expression is already in the same format
+    /// i.e. the ordering is the same
+    pub fn to_rational_polynomial<
+        P: Atom,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
+        E: Exponent,
+    >(
+        &self,
+        workspace: &Workspace<P>,
+        state: &mut State,
+        field: R,
+        out_field: RO,
+        var_map: &[Identifier],
+    ) -> Result<RationalPolynomial<RO, E>, Cow<'static, str>>
+    where
+        RationalPolynomial<RO, E>: FromNumeratorAndDenominator<R, RO, E>,
+    {
+        // see if the current term can be cast into a polynomial using a fast routine
+        if let Ok(num) = self.to_polynomial(field, state, var_map) {
+            let den = MultivariatePolynomial::one(field);
+            return Ok(RationalPolynomial::from_num_den(num, den, out_field));
+        }
+
+        match self {
+            Token::Number(_) | Token::ID(_) => {
+                let num = self.to_polynomial(field, state, var_map)?;
+                let den = MultivariatePolynomial::one(field);
+                Ok(RationalPolynomial::from_num_den(num, den, out_field))
+            }
+            Token::BinaryOp(_, _, BinaryOperator::Inv, args) => {
+                assert!(args.len() == 1);
+                let r =
+                    args[0].to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                Ok(r.inv())
+            }
+            Token::BinaryOp(_, _, BinaryOperator::Pow, args) => {
+                // we have a pow that could not be parsed by to_polynomial
+                // if the exponent is not -1, we pass the subexpression to
+                // the general routine
+                if Token::Number("-1".into()) == args[1] {
+                    let r = args[0]
+                        .to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                    Ok(r.inv())
+                } else {
+                    let atom = self.to_atom(state, workspace)?;
+                    atom.to_view().to_rational_polynomial(
+                        workspace,
+                        state,
+                        field,
+                        out_field,
+                        Some(var_map),
+                    )
+                }
+            }
+            Token::BinaryOp(_, _, BinaryOperator::Mul, args) => {
+                let mut r = RationalPolynomialField::new(out_field).one();
+                for arg in args {
+                    let mut arg_r =
+                        arg.to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                    r.unify_var_map(&mut arg_r);
+                    r = &r * &arg_r;
+                }
+                Ok(r)
+            }
+            Token::BinaryOp(_, _, BinaryOperator::Add, args) => {
+                let mut r = RationalPolynomial::new(out_field, Some(var_map));
+                for arg in args {
+                    let mut arg_r =
+                        arg.to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                    r.unify_var_map(&mut arg_r);
+                    r = &r + &arg_r;
+                }
+                return Ok(r);
+            }
+            _ => {
+                let atom = self.to_atom(state, workspace)?;
+                atom.to_view().to_rational_polynomial(
+                    workspace,
+                    state,
+                    field,
+                    out_field,
+                    Some(var_map),
+                )
+            }
         }
     }
 }

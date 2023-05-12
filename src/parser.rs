@@ -111,11 +111,56 @@ impl Token {
     }
 
     /// Add `other` to right side of `self`, where `self` is a binary operation.
-    fn add_right(&mut self, other: Token) {
+    fn add_right(&mut self, mut other: Token) {
         match self {
             Token::BinaryOp(_, mr, o1, args) => {
                 assert!(*mr);
                 *mr = false;
+
+                if *o1 == BinaryOperator::Neg {
+                    // use distribution law to rewrite -(x*y) to (-x)*y and -(-(a)+b) = a + (-b)
+                    match &mut other {
+                        Token::BinaryOp(_, _, BinaryOperator::Mul, args2) => {
+                            match &mut args2[0] {
+                                Token::BinaryOp(_, _, BinaryOperator::Neg, args3) => {
+                                    assert_eq!(args3.len(), 1);
+                                    args2[0] = args3.pop().unwrap();
+                                }
+                                _ => {
+                                    let t = std::mem::replace(&mut args2[0], Token::EOF);
+                                    args2[0] =
+                                        Token::BinaryOp(false, false, BinaryOperator::Neg, vec![t]);
+                                }
+                            }
+
+                            *self = other;
+                            return;
+                        }
+                        Token::BinaryOp(_, _, BinaryOperator::Add, args2) => {
+                            for a in args2 {
+                                match a {
+                                    Token::BinaryOp(_, _, BinaryOperator::Neg, args3) => {
+                                        assert_eq!(args3.len(), 1);
+                                        *a = args3.pop().unwrap();
+                                    }
+                                    _ => {
+                                        let t = std::mem::replace(a, Token::EOF);
+                                        *a = Token::BinaryOp(
+                                            false,
+                                            false,
+                                            BinaryOperator::Neg,
+                                            vec![t],
+                                        );
+                                    }
+                                }
+                            }
+
+                            *self = other;
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
 
                 if let Token::BinaryOp(ml, mr, o2, mut args2) = other {
                     assert!(!ml && !mr);
@@ -138,7 +183,7 @@ impl Token {
         }
     }
 
-    pub fn to_atom_tree(self, state: &mut State) -> Result<AtomTree, String> {
+    pub fn to_atom_tree(&self, state: &mut State) -> Result<AtomTree, String> {
         match self {
             Token::Number(n) => {
                 if let Ok(x) = n.parse::<i64>() {
@@ -201,7 +246,7 @@ impl Token {
     }
 
     pub fn to_atom<P: Atom>(
-        self,
+        &self,
         state: &mut State,
         workspace: &Workspace<P>,
     ) -> Result<OwnedAtom<P>, String> {

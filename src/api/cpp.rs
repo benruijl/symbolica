@@ -3,6 +3,7 @@ use std::fmt::Write;
 use std::os::raw::c_ulonglong;
 
 use crate::printer::SymbolicaPrintOptions;
+use crate::representations::Identifier;
 use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
 use crate::rings::integer::IntegerRing;
 use crate::rings::rational::RationalField;
@@ -16,6 +17,7 @@ use crate::{
 
 pub struct LocalState {
     buffer: String,
+    var_map: Vec<Identifier>,
 }
 
 pub struct Symbolica {
@@ -32,10 +34,28 @@ pub extern "C" fn init() -> *mut Symbolica {
         workspace: Workspace::new(),
         local_state: LocalState {
             buffer: String::with_capacity(2048),
+            var_map: vec![],
         },
     };
     let p = Box::into_raw(Box::new(s));
     p
+}
+
+#[no_mangle]
+pub extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
+    let c = unsafe { CStr::from_ptr(vars) };
+    let cstr = c.to_str().unwrap();
+
+    let symbolica = unsafe { &mut *symbolica };
+
+    symbolica.local_state.var_map.clear();
+
+    for var in cstr.split(',') {
+        symbolica
+            .local_state
+            .var_map
+            .push(symbolica.state.get_or_insert_var(var));
+    }
 }
 
 /// Simplify a rational polynomial. The return value is only valid until the next call to
@@ -51,20 +71,16 @@ pub extern "C" fn simplify(
 
     let symbolica = unsafe { &mut *symbolica };
 
-    let atom = parse(cstr)
-        .unwrap()
-        .to_atom(&mut symbolica.state, &symbolica.workspace)
-        .unwrap();
+    let token = parse(cstr).unwrap();
 
     if prime == 0 {
-        let r: RationalPolynomial<IntegerRing, u8> = atom
-            .to_view()
-            .to_rational_polynomial::<RationalField, IntegerRing, u8>(
+        let r: RationalPolynomial<IntegerRing, u8> = token
+            .to_rational_polynomial(
                 &symbolica.workspace,
-                &symbolica.state,
+                &mut symbolica.state,
                 RationalField::new(),
                 IntegerRing::new(),
-                None,
+                &symbolica.local_state.var_map,
             )
             .unwrap();
 
@@ -82,9 +98,14 @@ pub extern "C" fn simplify(
     } else {
         if prime < u32::MAX as c_ulonglong {
             let field = FiniteField::<u32>::new(prime as u32);
-            let rf: RationalPolynomial<FiniteField<u32>, u8> = atom
-                .to_view()
-                .to_rational_polynomial(&symbolica.workspace, &symbolica.state, field, field, None)
+            let rf: RationalPolynomial<FiniteField<u32>, u8> = token
+                .to_rational_polynomial(
+                    &symbolica.workspace,
+                    &mut symbolica.state,
+                    field,
+                    field,
+                    &symbolica.local_state.var_map,
+                )
                 .unwrap();
 
             symbolica.local_state.buffer.clear();
@@ -104,9 +125,14 @@ pub extern "C" fn simplify(
             .unwrap();
         } else {
             let field = FiniteField::<u64>::new(prime as u64);
-            let rf: RationalPolynomial<FiniteField<u64>, u8> = atom
-                .to_view()
-                .to_rational_polynomial(&symbolica.workspace, &symbolica.state, field, field, None)
+            let rf: RationalPolynomial<FiniteField<u64>, u8> = token
+                .to_rational_polynomial(
+                    &symbolica.workspace,
+                    &mut symbolica.state,
+                    field,
+                    field,
+                    &symbolica.local_state.var_map,
+                )
                 .unwrap();
 
             symbolica.local_state.buffer.clear();

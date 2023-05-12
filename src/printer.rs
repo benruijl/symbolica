@@ -5,7 +5,9 @@ use colored::Colorize;
 use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent},
     representations::{number::BorrowedNumber, Add, Atom, AtomView, Fun, Mul, Num, Pow, Var},
-    rings::{rational_polynomial::RationalPolynomial, Ring, RingPrinter, finite_field::FiniteFieldCore},
+    rings::{
+        finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
+    },
     state::State,
 };
 
@@ -453,22 +455,75 @@ impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
 
 impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b, R, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!(
-            "({})/({})",
-            PolynomialPrinter {
-                poly: &self.poly.numerator,
-                state: self.state,
-                print_mode: self.print_mode,
-            },
-            PolynomialPrinter {
-                poly: &self.poly.denominator,
-                state: self.state,
-                print_mode: self.print_mode,
+        if self.poly.denominator.is_one() {
+            f.write_fmt(format_args!(
+                "{}",
+                PolynomialPrinter {
+                    poly: &self.poly.numerator,
+                    state: self.state,
+                    print_mode: self.print_mode,
+                }
+            ))
+        } else {
+            if self.poly.numerator.nterms < 2 {
+                f.write_fmt(format_args!(
+                    "{}",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        print_mode: self.print_mode,
+                    }
+                ))?;
+            } else {
+                f.write_fmt(format_args!(
+                    "({})",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        print_mode: self.print_mode,
+                    }
+                ))?;
             }
-        ))
+
+            if self.poly.denominator.nterms == 1 {
+                let var_count = self
+                    .poly
+                    .denominator
+                    .exponents
+                    .iter()
+                    .filter(|x| !x.is_zero())
+                    .count();
+
+                if var_count == 0
+                    || self
+                        .poly
+                        .denominator
+                        .field
+                        .is_one(&self.poly.denominator.coefficients[0])
+                        && var_count == 1
+                {
+                    return f.write_fmt(format_args!(
+                        "/{}",
+                        PolynomialPrinter {
+                            poly: &self.poly.denominator,
+                            state: self.state,
+                            print_mode: self.print_mode,
+                        }
+                    ));
+                }
+            }
+
+            f.write_fmt(format_args!(
+                "/({})",
+                PolynomialPrinter {
+                    poly: &self.poly.denominator,
+                    state: self.state,
+                    print_mode: self.print_mode,
+                }
+            ))
+        }
     }
 }
-
 pub struct PolynomialPrinter<'a, 'b, F: Ring + Display, E: Exponent> {
     pub poly: &'a MultivariatePolynomial<F, E>,
     pub state: &'b State,

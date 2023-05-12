@@ -181,6 +181,10 @@ impl<E: Exponent> FromNumeratorAndDenominator<FiniteField<u64>, FiniteField<u64>
 
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E> {
     pub fn inv(&self) -> Self {
+        if self.numerator.is_zero() {
+            panic!("Cannot invert 0");
+        }
+
         // TODO: normalize the leading monomial
         RationalPolynomial {
             numerator: self.denominator.clone(),

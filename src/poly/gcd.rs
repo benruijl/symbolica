@@ -166,8 +166,13 @@ where
                 .map(|i| {
                     (
                         *i,
-                        ap.field
-                            .sample(&mut rng, (1, ap.field.get_prime().to_u64() as i64)),
+                        ap.field.sample(
+                            &mut rng,
+                            (
+                                1,
+                                ap.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
+                            ),
+                        ),
                     )
                 })
                 .collect();
@@ -817,8 +822,13 @@ where
                 .map(|i| {
                     (
                         *i,
-                        ap.field
-                            .sample(&mut rng, (1, ap.field.get_prime().to_u64() as i64)),
+                        ap.field.sample(
+                            &mut rng,
+                            (
+                                1,
+                                ap.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
+                            ),
+                        ),
                     )
                 })
                 .collect();
@@ -900,9 +910,13 @@ where
             failure_count += 1;
 
             let v = loop {
-                let a = a
-                    .field
-                    .sample(&mut rng, (1, a.field.get_prime().to_u64() as i64));
+                let a = a.field.sample(
+                    &mut rng,
+                    (
+                        1,
+                        a.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
+                    ),
+                );
                 if !gamma.replace(lastvar, a).is_zero() {
                     break a;
                 }
@@ -991,9 +1005,13 @@ where
                 }
 
                 let v = loop {
-                    let v = a
-                        .field
-                        .sample(&mut rng, (1, a.field.get_prime().to_u64() as i64));
+                    let v = a.field.sample(
+                        &mut rng,
+                        (
+                            1,
+                            a.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
+                        ),
+                    );
                     if !gamma.replace(lastvar, v).is_zero() {
                         // we need unique sampling points
                         if !vseq.contains(&v) {
@@ -1079,8 +1097,14 @@ where
                     .map(|i| {
                         (
                             *i,
-                            a.field
-                                .sample(&mut rng, (1, a.field.get_prime().to_u64() as i64)),
+                            a.field.sample(
+                                &mut rng,
+                                (
+                                    1,
+                                    a.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64)
+                                        as i64,
+                                ),
+                            ),
                         )
                     })
                     .collect();

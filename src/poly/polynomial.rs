@@ -370,6 +370,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             return;
         }
 
+        if self.exponents(0) > exponents {
+            self.coefficients.insert(0, coefficient);
+            self.exponents.splice(0..0, exponents.iter().cloned());
+            self.nterms += 1;
+            return;
+        }
+
         // Binary search to find the insert-point.
         let mut l = 0;
         let mut r = self.nterms;
@@ -526,7 +533,7 @@ impl<F: Ring, E: Exponent> Add for MultivariatePolynomial<F, E> {
 
     fn add(mut self, mut other: Self) -> Self::Output {
         debug_assert_eq!(self.field, other.field);
-        debug_assert!(other.var_map.is_none() || self.var_map == other.var_map);
+        debug_assert!(other.var_map.is_none() || self.var_map == other.var_map); // TODO: remove?
 
         if self.is_zero() {
             return other;
@@ -747,7 +754,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         if self.is_zero() {
             return E::zero();
         }
-        self.last_exponents()[v].clone()
+        self.last_exponents()[v]
     }
 
     /// Get the highest degree of the leading monomial.
@@ -755,11 +762,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         if self.is_zero() {
             return E::zero();
         }
-        self.last_exponents()
-            .iter()
-            .max()
-            .unwrap_or(&E::zero())
-            .clone()
+        *self.last_exponents().iter().max().unwrap_or(&E::zero())
     }
 
     /// Get the leading coefficient.
@@ -897,15 +900,15 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         res
     }
 
-    /// Replace a variable `n' in the polynomial by an element from
-    /// the ring `v'.
-    pub fn replace(&self, n: usize, v: F::Element) -> MultivariatePolynomial<F, E> {
+    /// Replace a variable `n` in the polynomial by an element from
+    /// the ring `v`.
+    pub fn replace(&self, n: usize, v: &F::Element) -> MultivariatePolynomial<F, E> {
         let mut res = self.new_from(Some(self.nterms));
         let mut e = vec![E::zero(); self.nvars];
         for t in 0..self.nterms {
             let c = self.field.mul(
                 &self.coefficients[t],
-                &self.field.pow(&v, self.exponents(t)[n].to_u32() as u64),
+                &self.field.pow(v, self.exponents(t)[n].to_u32() as u64),
             );
 
             for (i, ee) in self.exponents(t).iter().enumerate() {
@@ -977,13 +980,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         for t in 0..self.nterms {
             let d = self.exponents(t)[x];
             if d > maxdeg {
-                maxdeg = d.clone();
+                maxdeg = d;
             }
         }
 
         // construct the coefficient per power of x
         let mut result = vec![];
-        let mut e = vec![E::zero(); self.nvars];
+        let mut e: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); self.nvars];
         for d in 0..maxdeg.to_u32() + 1 {
             // TODO: add bounds estimate
             let mut a = self.new_from(None);
@@ -1011,14 +1014,15 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         &self,
         xs: &[usize],
         include: bool,
-    ) -> HashMap<Vec<E>, MultivariatePolynomial<F, E>> {
+    ) -> HashMap<SmallVec<[E; INLINED_EXPONENTS]>, MultivariatePolynomial<F, E>> {
         if self.coefficients.is_empty() {
             return HashMap::new();
         }
 
-        let mut tm: HashMap<Vec<E>, MultivariatePolynomial<F, E>> = HashMap::new();
-        let mut e = vec![E::zero(); self.nvars];
-        let mut me = vec![E::zero(); self.nvars];
+        let mut tm: HashMap<SmallVec<[E; INLINED_EXPONENTS]>, MultivariatePolynomial<F, E>> =
+            HashMap::new();
+        let mut e = smallvec![E::zero(); self.nvars];
+        let mut me = smallvec![E::zero(); self.nvars];
         for t in 0..self.nterms {
             for (i, ee) in self.exponents(t).iter().enumerate() {
                 e[i] = *ee;
@@ -1026,7 +1030,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             }
 
             for x in xs {
-                me[*x] = e[*x].clone();
+                me[*x] = e[*x];
                 e[*x] = E::zero();
             }
 
@@ -1045,7 +1049,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                         // TODO: add nterms estimate
                         MultivariatePolynomial::from_monomial(
                             self.coefficients[t].clone(),
-                            e.clone(),
+                            e.to_vec(),
                             self.field,
                         ),
                     );
@@ -1064,7 +1068,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                         e.clone(),
                         MultivariatePolynomial::from_monomial(
                             self.coefficients[t].clone(),
-                            me.clone(),
+                            e.to_vec(),
                             self.field,
                         ),
                     );
@@ -1178,6 +1182,16 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
             c = self.field.gcd(&c, cc);
         }
         c
+    }
+
+    /// Divide every coefficient with `other`.
+    pub fn div_coeff(mut self, other: &F::Element) -> Self {
+        for c in &mut self.coefficients {
+            let (quot, rem) = self.field.quot_rem(c, other);
+            debug_assert!(F::is_zero(&rem));
+            *c = quot;
+        }
+        self
     }
 
     /// Synthetic division for univariate polynomials

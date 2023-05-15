@@ -1,11 +1,12 @@
 use ahash::HashMap;
 use rand;
 use smallvec::{smallvec, SmallVec};
-use std::cmp::{max, min};
+use std::cmp::{max, min, Ordering};
 use std::mem;
 use std::ops::Add;
 use tracing::{debug, instrument, trace};
 
+use crate::poly::INLINED_EXPONENTS;
 use crate::rings::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
 };
@@ -57,7 +58,7 @@ where
     let field = u[0].field;
 
     // compute inverses
-    let mut gammas = vec![];
+    let mut gammas = Vec::with_capacity(a.len());
     for k in 1..a.len() {
         let mut pr = field.sub(&a[k], &a[0]);
         for i in 1..k {
@@ -161,7 +162,7 @@ where
                 }
             }
 
-            let r: SmallVec<[_; 5]> = vars
+            let r: SmallVec<[_; INLINED_EXPONENTS]> = vars
                 .iter()
                 .map(|i| {
                     (
@@ -917,14 +918,14 @@ where
                         a.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
                     ),
                 );
-                if !gamma.replace(lastvar, a).is_zero() {
+                if !gamma.replace(lastvar, &a).is_zero() {
                     break a;
                 }
             };
 
             debug!("Chosen variable: {}", a.field.from_element(v));
-            let av = a.replace(lastvar, v);
-            let bv = b.replace(lastvar, v);
+            let av = a.replace(lastvar, &v);
+            let bv = b.replace(lastvar, &v);
 
             // performance dense reconstruction
             let mut gv = if vars.len() > 2 {
@@ -992,7 +993,7 @@ where
             let mut gseq = vec![gv.clone().mul_coeff(
                 gamma
                     .field
-                    .div(&gamma.replace(lastvar, v).coefficients[0], &lc),
+                    .div(&gamma.replace(lastvar, &v).coefficients[0], &lc),
             )];
             let mut vseq = vec![v];
 
@@ -1012,7 +1013,7 @@ where
                             a.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
                         ),
                     );
-                    if !gamma.replace(lastvar, v).is_zero() {
+                    if !gamma.replace(lastvar, &v).is_zero() {
                         // we need unique sampling points
                         if !vseq.contains(&v) {
                             break v;
@@ -1020,8 +1021,8 @@ where
                     }
                 };
 
-                let av = a.replace(lastvar, v);
-                let bv = b.replace(lastvar, v);
+                let av = a.replace(lastvar, &v);
+                let bv = b.replace(lastvar, &v);
 
                 match construct_new_image(
                     &av,
@@ -1057,7 +1058,7 @@ where
                     gv.clone().mul_coeff(
                         gamma
                             .field
-                            .div(&gamma.replace(lastvar, v).coefficients[0], &lc),
+                            .div(&gamma.replace(lastvar, &v).coefficients[0], &lc),
                     ),
                 );
                 vseq.push(v);
@@ -1136,9 +1137,9 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
     pub fn univariate_content(&self, x: usize) -> MultivariatePolynomial<R, E> {
         let a = self.to_univariate_polynomial_list(x);
 
-        let mut f = vec![];
-        for (c, _) in &a {
-            f.push(c.clone());
+        let mut f = Vec::with_capacity(a.len());
+        for (c, _) in a {
+            f.push(c);
         }
 
         MultivariatePolynomial::gcd_multiple(f)
@@ -1148,7 +1149,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
     /// multivariate polynomial in all variables except `x`.
     pub fn multivariate_content(&self, x: usize) -> MultivariatePolynomial<R, E> {
         let af = self.to_multivariate_polynomial_list(&[x], false);
-        MultivariatePolynomial::gcd_multiple(af.values().cloned().collect())
+        MultivariatePolynomial::gcd_multiple(af.into_values().collect())
     }
 
     /// Compute the gcd of multiple polynomials efficiently.
@@ -1250,9 +1251,9 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         let af = a.to_univariate_polynomial_list(x);
         let bf = b.to_univariate_polynomial_list(x);
 
-        let mut f = vec![];
-        for (c, _) in af.iter().chain(bf.iter()) {
-            f.push(c.clone());
+        let mut f = Vec::with_capacity(af.len() + bf.len());
+        for (c, _) in af.into_iter().chain(bf.into_iter()) {
+            f.push(c);
         }
 
         MultivariatePolynomial::gcd_multiple(f)
@@ -1268,8 +1269,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         let af = a.to_multivariate_polynomial_list(&[x], false);
         let bf = b.to_multivariate_polynomial_list(&[x], false);
 
-        // TODO: drain?
-        let f = af.values().cloned().chain(bf.values().cloned()).collect();
+        let f = af.into_values().chain(bf.into_values()).collect();
 
         MultivariatePolynomial::gcd_multiple(f)
     }
@@ -1289,26 +1289,39 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             return a.clone();
         }
 
-        // TODO: remove integer content first
-        if a == b {
+        if a.is_one() {
             return a.clone();
         }
 
-        // if we have two numbers, use the integer gcd
-        if a.is_constant() && b.is_constant() {
-            return MultivariatePolynomial::from_constant(
-                a.field.gcd(&a.coefficients[0], &b.coefficients[0]),
-                a.nvars,
-                a.field,
-            );
+        if b.is_one() {
+            return b.clone();
         }
 
-        debug!("Compute gcd({}, {})", a, b);
+        if a.is_constant() {
+            let mut gcd = a.coefficients[0].clone();
+            for c in &b.coefficients {
+                gcd = a.field.gcd(&gcd, c);
+                if a.field.is_one(&gcd) {
+                    break;
+                }
+            }
+            return MultivariatePolynomial::from_constant(gcd, a.nvars, a.field);
+        }
 
-        // compute the gcd efficiently if some variables do not occur in both
-        // polynomials
-        let mut scratch = vec![0i32; a.nvars];
-        for (p, inc) in vec![(a, 1), (b, 2)] {
+        if b.is_constant() {
+            let mut gcd = b.coefficients[0].clone();
+            for c in &a.coefficients {
+                gcd = a.field.gcd(&gcd, c);
+                if a.field.is_one(&gcd) {
+                    break;
+                }
+            }
+            return MultivariatePolynomial::from_constant(gcd, a.nvars, a.field);
+        }
+
+        // store which variables appear in which expression
+        let mut scratch: SmallVec<[i32; INLINED_EXPONENTS]> = smallvec![0i32; a.nvars];
+        for (p, inc) in [(a, 1), (b, 2)] {
             for t in 0..p.nterms {
                 for (e, ee) in scratch.iter_mut().zip(p.exponents(t)) {
                     if !ee.is_zero() {
@@ -1318,6 +1331,52 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             }
         }
 
+        // get the content in the first shared variable
+        let (a_no_c, b_no_c, content) =
+            if let Some(first_var_in_both) = scratch.iter().position(|x| *x == 3) {
+                if scratch.iter().filter(|x| **x == 3).count() > 1 {
+                    let uca = a.univariate_content(first_var_in_both);
+                    let ucb = b.univariate_content(first_var_in_both);
+                    debug!("Starting univariate content computation");
+                    let content = MultivariatePolynomial::gcd(&uca, &ucb);
+                    debug!("GCD of content: {}", content);
+
+                    let a_no_c = a / &uca;
+                    let b_no_c = b / &ucb;
+                    (a_no_c, b_no_c, content)
+                } else {
+                    // get the integer content for univariate polynomials
+                    let uca = a.content();
+                    let ucb = b.content();
+                    let content = a.field.gcd(&a.content(), &b.content());
+                    let p = MultivariatePolynomial::new_from(a, Some(1));
+
+                    let a_no_c = a.clone().div_coeff(&uca);
+                    let b_no_c = b.clone().div_coeff(&ucb);
+                    (a_no_c, b_no_c, p.add_monomial(content))
+                }
+            } else {
+                let content_gcd = a.field.gcd(&a.content(), &b.content());
+                let p = MultivariatePolynomial::new_from(a, Some(1));
+                return p.add_monomial(content_gcd);
+            };
+
+        let a = &a_no_c;
+        let b = &b_no_c;
+
+        if a == b {
+            return a.clone() * &content;
+        }
+
+        if let Some(gcd) = PolynomialGCD::heuristic_gcd(a, b) {
+            debug!("Heuristic gcd succeeded: {}", gcd);
+            return gcd * &content;
+        }
+
+        debug!("Compute gcd({}, {})", a, b);
+
+        // compute the gcd efficiently if some variables do not occur in both
+        // polynomials
         if scratch.iter().any(|x| *x > 0 && *x < 3) {
             let inca: Vec<_> = scratch
                 .iter()
@@ -1335,34 +1394,18 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             let a1 = a.to_multivariate_polynomial_list(&incb, false);
             let b1 = b.to_multivariate_polynomial_list(&inca, false);
 
-            let f = a1.values().cloned().chain(b1.values().cloned()).collect();
-            return MultivariatePolynomial::gcd_multiple(f);
+            let f = a1.into_values().chain(b1.into_values()).collect();
+            return MultivariatePolynomial::gcd_multiple(f) * &content;
         }
 
-        let mut vars: Vec<_> = scratch
+        let mut vars: SmallVec<[_; INLINED_EXPONENTS]> = scratch
             .iter()
             .enumerate()
             .filter_map(|(i, v)| if *v == 3 { Some(i) } else { None })
             .collect();
 
-        // remove the gcd of the content wrt the first variable
-        // TODO: don't do for univariate poly
-        debug!("Starting content computation");
-        let c = MultivariatePolynomial::univariate_content_gcd(a, b, vars[0]);
-        debug!("GCD of content: {}", c);
-
-        if !c.is_one() {
-            let x1 = a.quot_rem(&c);
-            let x2 = b.quot_rem(&c);
-
-            assert!(x1.1.is_zero());
-            assert!(x2.1.is_zero());
-
-            return MultivariatePolynomial::gcd(&x1.0, &x2.0) * &c;
-        }
-
         // determine safe bounds for variables in the gcd
-        let mut bounds: Vec<_> = (0..a.nvars)
+        let mut bounds: SmallVec<[_; INLINED_EXPONENTS]> = (0..a.nvars)
             .map(|i| {
                 let da = a.degree(i);
                 let db = b.degree(i);
@@ -1386,18 +1429,20 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         if vars.len() == 1 || vars.windows(2).all(|s| s[0] < s[1]) {
             debug!("Computing gcd without map");
-            PolynomialGCD::gcd(&a, &b, &vars, &mut bounds, &mut tight_bounds)
+            PolynomialGCD::gcd(&a, &b, &vars, &mut bounds, &mut tight_bounds) * &content
         } else {
             debug!("Rearranging variables with map: {:?}", vars);
             let aa = a.rearrange(&vars, false);
             let bb = b.rearrange(&vars, false);
 
-            let mut newbounds = vec![E::zero(); bounds.len()];
+            let mut newbounds: SmallVec<[_; INLINED_EXPONENTS]> =
+                smallvec![E::zero(); bounds.len()];
             for x in 0..vars.len() {
                 newbounds[x] = bounds[vars[x]];
             }
 
-            let mut newtight_bounds = vec![E::zero(); bounds.len()];
+            let mut newtight_bounds: SmallVec<[_; INLINED_EXPONENTS]> =
+                smallvec![E::zero(); bounds.len()];
             for x in 0..vars.len() {
                 newtight_bounds[x] = tight_bounds[vars[x]];
             }
@@ -1417,10 +1462,11 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     let gcd = PolynomialGCD::gcd(
                         &x1.0,
                         &x2.0,
-                        &(0..vars.len()).collect::<Vec<_>>(),
+                        &(0..vars.len()).collect::<SmallVec<[usize; INLINED_EXPONENTS]>>(),
                         &mut newbounds,
                         &mut newtight_bounds,
-                    ) * &c;
+                    ) * &c
+                        * &content;
                     return gcd.rearrange(&vars, true);
                 }
             }
@@ -1428,10 +1474,10 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             let gcd = PolynomialGCD::gcd(
                 &aa,
                 &bb,
-                &(0..vars.len()).collect::<Vec<_>>(),
+                &(0..vars.len()).collect::<SmallVec<[usize; INLINED_EXPONENTS]>>(),
                 &mut newbounds,
                 &mut newtight_bounds,
-            );
+            ) * &content;
 
             gcd.rearrange(&vars, true)
         }
@@ -1466,7 +1512,135 @@ where
     }
 }
 
+#[derive(Debug)]
+pub enum HeuristicGCDError {
+    MaxSizeExceeded,
+    BadReconstruction,
+}
+
 impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
+    /// Perform a heuristic GCD algorithm.
+    #[instrument(level = "debug", skip_all)]
+    pub fn heuristic_gcd(&self, b: &Self) -> Result<Self, HeuristicGCDError> {
+        debug!("a={}; b={}", self, b);
+
+        if let Some(var) =
+            (0..self.nvars).position(|x| self.degree(x) > E::zero() && b.degree(x) > E::zero())
+        {
+            let max_a = self
+                .coefficients
+                .iter()
+                .max_by(|x1, x2| x1.abs_cmp(x2))
+                .unwrap_or(&Integer::Natural(0));
+
+            let max_b = b
+                .coefficients
+                .iter()
+                .max_by(|x1, x2| x1.abs_cmp(x2))
+                .unwrap_or(&Integer::Natural(0));
+
+            let min = if max_a.abs_cmp(max_b) == Ordering::Greater {
+                max_b.abs()
+            } else {
+                max_a.abs()
+            };
+
+            let mut xi = &(&min * &Integer::Natural(2)) + &Integer::Natural(2);
+
+            for i in 0..6 {
+                debug!("round i={}, xi={}", i, xi);
+                match &xi * &Integer::Natural(self.degree(var).max(b.degree(var)).to_u32() as i64) {
+                    Integer::Natural(_) => {}
+                    Integer::Large(r) => {
+                        if r.as_limbs().len() > 100 {
+                            debug!("big num {}", r);
+                            return Err(HeuristicGCDError::MaxSizeExceeded);
+                        }
+                    }
+                }
+
+                let aa = self.replace(var, &xi);
+                let bb = b.replace(var, &xi);
+
+                let mut gamma = match aa.heuristic_gcd(&bb) {
+                    Ok(gamma) => gamma,
+                    Err(HeuristicGCDError::MaxSizeExceeded) => {
+                        return Err(HeuristicGCDError::MaxSizeExceeded);
+                    }
+                    Err(HeuristicGCDError::BadReconstruction) => {
+                        xi = IntegerRing::new()
+                            .quot_rem(&(&xi * &Integer::Natural(73794)), &Integer::Natural(27011))
+                            .0;
+                        continue;
+                    }
+                };
+
+                debug!("gamma={}", gamma);
+
+                let mut g = MultivariatePolynomial::new_from(self, None);
+                let mut i = 0;
+                while !gamma.is_zero() {
+                    // create xi-adic representation using the symmetric modulus
+                    let mut g_i = MultivariatePolynomial::new_from(&gamma, Some(gamma.nterms));
+                    for m in &gamma {
+                        let mut c = IntegerRing::new().quot_rem(m.coefficient, &xi).1;
+                        let r = &xi / &Integer::Natural(2);
+
+                        if c > r {
+                            c = &c - &xi;
+                        }
+
+                        if !IntegerRing::is_zero(&c) {
+                            g_i.append_monomial(c, m.exponents);
+                        }
+                    }
+
+                    for c in &mut g_i.coefficients {
+                        *c = IntegerRing::new().quot_rem(c, &xi).1;
+                        let r = &xi / &Integer::Natural(2);
+
+                        if *c > r {
+                            *c = (&*c) - &xi;
+                        }
+                    }
+
+                    debug!("g_i={}", g_i);
+
+                    // multiply with var^i
+                    let mut g_i_2 = g_i.clone();
+                    for x in g_i_2.exponents.chunks_mut(g_i_2.nvars) {
+                        x[var] = E::from_u32(i);
+                    }
+
+                    g = g.add(g_i_2);
+
+                    gamma = (gamma - g_i).div_coeff(&xi);
+                    debug!("g={}, gamma={}", g, gamma);
+                    i += 1;
+                }
+
+                let gc = g.clone().div_coeff(&g.content());
+
+                if gc.is_one() || (self.quot_rem(&gc).1.is_zero() && b.quot_rem(&gc).1.is_zero()) {
+                    return Ok(g);
+                }
+
+                xi = IntegerRing::new()
+                    .quot_rem(&(&xi * &Integer::Natural(73794)), &Integer::Natural(27011))
+                    .0;
+            }
+
+            Err(HeuristicGCDError::BadReconstruction)
+        } else {
+            // do integer GCD
+            let gamma = self.field.gcd(&self.content(), &b.content());
+            debug!("integer gcd {}", gamma);
+            Ok(MultivariatePolynomial::from_constant(
+                gamma, self.nvars, self.field,
+            ))
+        }
+    }
+
     /// Compute the gcd of two multivariate polynomials using Zippel's algorithm.
     /// TODO: provide a parallel implementation?
     #[instrument(level = "debug", skip_all)]
@@ -1724,6 +1898,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
 /// Polynomial GCD functions for a certain coefficient type `Self`.
 pub trait PolynomialGCD<E: Exponent>: Ring {
+    fn heuristic_gcd(
+        a: &MultivariatePolynomial<Self, E>,
+        b: &MultivariatePolynomial<Self, E>,
+    ) -> Option<MultivariatePolynomial<Self, E>>;
     fn gcd(
         a: &MultivariatePolynomial<Self, E>,
         b: &MultivariatePolynomial<Self, E>,
@@ -1736,10 +1914,23 @@ pub trait PolynomialGCD<E: Exponent>: Ring {
         b: &MultivariatePolynomial<Self, E>,
         vars: &[usize],
         loose_bounds: &[E],
-    ) -> Vec<E>;
+    ) -> SmallVec<[E; INLINED_EXPONENTS]>;
 }
 
 impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
+    fn heuristic_gcd(
+        a: &MultivariatePolynomial<Self, E>,
+        b: &MultivariatePolynomial<Self, E>,
+    ) -> Option<MultivariatePolynomial<Self, E>> {
+        if let Ok(g) = a.heuristic_gcd(b) {
+            // remove content
+            let c = g.content();
+            Some(g.div_coeff(&c))
+        } else {
+            None
+        }
+    }
+
     fn gcd(
         a: &MultivariatePolynomial<IntegerRing, E>,
         b: &MultivariatePolynomial<IntegerRing, E>,
@@ -1755,8 +1946,8 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         b: &MultivariatePolynomial<IntegerRing, E>,
         vars: &[usize],
         loose_bounds: &[E],
-    ) -> Vec<E> {
-        let mut tight_bounds = loose_bounds.to_owned();
+    ) -> SmallVec<[E; INLINED_EXPONENTS]> {
+        let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
         let mut i = 0;
         loop {
             let ap = a.to_finite_field_u32(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
@@ -1767,7 +1958,7 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
                 && bp.last_exponents() == b.last_exponents()
             {
                 for var in vars.iter() {
-                    let vvars: SmallVec<[usize; 5]> =
+                    let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
                         vars.iter().filter(|i| *i != var).cloned().collect();
                     tight_bounds[*var] =
                         MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
@@ -1783,6 +1974,14 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
 }
 
 impl<E: Exponent> PolynomialGCD<E> for RationalField {
+    fn heuristic_gcd(
+        _a: &MultivariatePolynomial<Self, E>,
+        _b: &MultivariatePolynomial<Self, E>,
+    ) -> Option<MultivariatePolynomial<Self, E>> {
+        // TODO: restructure
+        None
+    }
+
     fn gcd(
         a: &MultivariatePolynomial<RationalField, E>,
         b: &MultivariatePolynomial<RationalField, E>,
@@ -1839,8 +2038,8 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         b: &MultivariatePolynomial<RationalField, E>,
         vars: &[usize],
         loose_bounds: &[E],
-    ) -> Vec<E> {
-        let mut tight_bounds = loose_bounds.to_owned();
+    ) -> SmallVec<[E; INLINED_EXPONENTS]> {
+        let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
         let mut i = 0;
         loop {
             let ap = a.to_finite_field_u32(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
@@ -1851,7 +2050,7 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
                 && bp.last_exponents() == b.last_exponents()
             {
                 for var in vars.iter() {
-                    let vvars: SmallVec<[usize; 5]> =
+                    let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
                         vars.iter().filter(|i| *i != var).cloned().collect();
                     tight_bounds[*var] =
                         MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
@@ -1871,6 +2070,13 @@ where
     FiniteField<UField>: FiniteFieldCore<UField>,
     <FiniteField<UField> as Ring>::Element: Copy,
 {
+    fn heuristic_gcd(
+        _a: &MultivariatePolynomial<Self, E>,
+        _b: &MultivariatePolynomial<Self, E>,
+    ) -> Option<MultivariatePolynomial<Self, E>> {
+        None
+    }
+
     fn gcd(
         a: &MultivariatePolynomial<FiniteField<UField>, E>,
         b: &MultivariatePolynomial<FiniteField<UField>, E>,
@@ -1887,10 +2093,11 @@ where
         b: &MultivariatePolynomial<FiniteField<UField>, E>,
         vars: &[usize],
         loose_bounds: &[E],
-    ) -> Vec<E> {
-        let mut tight_bounds = loose_bounds.to_owned();
+    ) -> SmallVec<[E; INLINED_EXPONENTS]> {
+        let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
         for var in vars {
-            let vvars: SmallVec<[usize; 5]> = vars.iter().filter(|i| *i != var).cloned().collect();
+            let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
+                vars.iter().filter(|i| *i != var).cloned().collect();
             tight_bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(&a, &b, &vvars, *var);
         }
         tight_bounds

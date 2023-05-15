@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fmt::{Display, Error, Formatter},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -28,7 +29,7 @@ impl IntegerRing {
 }
 
 // FIXME: PartialEq can only work when Large simplifies to Natural whenever possible
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Integer {
     Natural(i64),
     Large(ArbitraryPrecisionInteger),
@@ -81,6 +82,54 @@ impl Integer {
         match self {
             Integer::Natural(n) => *n < 0,
             Integer::Large(r) => ArbitraryPrecisionInteger::from(r.signum_ref()) == -1,
+        }
+    }
+
+    pub fn abs(&self) -> Integer {
+        match self {
+            Integer::Natural(n) => {
+                if *n == i64::MIN {
+                    Integer::Large(ArbitraryPrecisionInteger::from(*n).abs())
+                } else {
+                    Integer::Natural(n.abs())
+                }
+            }
+            Integer::Large(n) => Integer::Large(n.clone().abs()),
+        }
+    }
+
+    pub fn abs_cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Integer::Natural(n1), Integer::Natural(n2)) => {
+                if n1 == n2 {
+                    Ordering::Equal
+                } else if *n1 == i64::MIN {
+                    Ordering::Greater
+                } else {
+                    n1.abs().cmp(&n2.abs())
+                }
+            }
+            (Integer::Natural(n1), Integer::Large(n2)) => {
+                if *n1 == i64::MIN {
+                    ArbitraryPrecisionInteger::from(*n1).as_abs().cmp(n2)
+                } else {
+                    n2.as_abs()
+                        .partial_cmp(&n1.abs())
+                        .unwrap_or(Ordering::Equal)
+                        .reverse()
+                }
+            }
+            (Integer::Large(n1), Integer::Natural(n2)) => {
+                if *n1 == i64::MIN {
+                    n1.as_abs()
+                        .cmp(&ArbitraryPrecisionInteger::from(*n2).as_abs())
+                } else {
+                    n1.as_abs()
+                        .partial_cmp(&n2.abs())
+                        .unwrap_or(Ordering::Equal)
+                }
+            }
+            (Integer::Large(n1), Integer::Large(n2)) => n1.as_abs().cmp(&n2.as_abs()),
         }
     }
 
@@ -207,6 +256,23 @@ impl Display for Integer {
 impl Display for IntegerRing {
     fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
+    }
+}
+
+impl PartialOrd for Integer {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Integer::Natural(n1), Integer::Natural(n2)) => n1.partial_cmp(n2),
+            (Integer::Natural(n1), Integer::Large(n2)) => n1.partial_cmp(n2),
+            (Integer::Large(n1), Integer::Natural(n2)) => n1.partial_cmp(n2),
+            (Integer::Large(n1), Integer::Large(n2)) => n1.partial_cmp(n2),
+        }
+    }
+}
+
+impl Ord for Integer {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
 
@@ -417,11 +483,11 @@ impl<'a, 'b> Div<&'b Integer> for &'a Integer {
     fn div(self, rhs: &'b Integer) -> Integer {
         match (self, rhs) {
             (Integer::Natural(n1), Integer::Natural(n2)) => {
-                if let Some(nn) = n1.checked_mul(*n2) {
+                if let Some(nn) = n1.checked_div(*n2) {
                     Integer::Natural(nn)
                 } else {
                     Integer::Large(
-                        ArbitraryPrecisionInteger::from(*n1) * ArbitraryPrecisionInteger::from(*n2),
+                        ArbitraryPrecisionInteger::from(*n1) / ArbitraryPrecisionInteger::from(*n2),
                     )
                 }
             }

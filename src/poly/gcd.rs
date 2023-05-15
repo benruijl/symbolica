@@ -252,9 +252,9 @@ where
             }
 
             let mut found = false;
-            for t in 0..g1.nterms {
-                if g1.exponents(t)[var] == *d {
-                    scale_factor = g1.field.div(&coeff, &g1.coefficients[t]);
+            for t in &g1 {
+                if g1.exponents[var] == *d {
+                    scale_factor = g1.field.div(&coeff, &t.coefficient);
                     found = true;
                     break;
                 }
@@ -298,12 +298,12 @@ where
                     let mut row = vec![];
 
                     // note that we ignore the coefficient of the shape
-                    for t in 0..c.nterms {
+                    for t in c {
                         let mut coeff = ap.field.one();
                         for (n, v) in r.iter() {
                             ap.field.mul_assign(
                                 &mut coeff,
-                                &ap.field.pow(v, c.exponents(t)[*n].to_u32() as u64),
+                                &ap.field.pow(v, t.exponents[*n].to_u32() as u64),
                             );
                         }
                         row.push(coeff);
@@ -1207,6 +1207,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     k = p.field.sample(&mut rng, (2, MAX_RNG_PREFACTOR as i64));
                 }
 
+                // TODO: instead of sort, find smallest
                 c.sort_unstable_by(|a, b| a.1.cmp(b.1));
                 for m in c {
                     b.append_monomial_back(m.0, m.1);
@@ -1319,11 +1320,46 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             return MultivariatePolynomial::from_constant(gcd, a.nvars, a.field);
         }
 
+        // determine the maximum shared power of every variable
+        let mut shared_degree: SmallVec<[E; INLINED_EXPONENTS]> = a.exponents(0).into();
+        for p in [a, b] {
+            for e in p.exponents.chunks(p.nvars) {
+                for (md, v) in shared_degree.iter_mut().zip(e) {
+                    *md = (*md).min(*v);
+                }
+            }
+        }
+
+        // divide out the common factors
+        if shared_degree.iter().any(|d| *d != E::zero()) {
+            let mut aa = a.clone();
+            for e in aa.exponents.chunks_mut(aa.nvars) {
+                for (v, d) in e.iter_mut().zip(&shared_degree) {
+                    *v = *v - *d;
+                }
+            }
+
+            let mut bb = b.clone();
+            for e in bb.exponents.chunks_mut(bb.nvars) {
+                for (v, d) in e.iter_mut().zip(&shared_degree) {
+                    *v = *v - *d;
+                }
+            }
+
+            let mut g = MultivariatePolynomial::gcd(&aa, &bb);
+            for e in g.exponents.chunks_mut(g.nvars) {
+                for (v, d) in e.iter_mut().zip(&shared_degree) {
+                    *v = *v + *d;
+                }
+            }
+            return g;
+        };
+
         // store which variables appear in which expression
         let mut scratch: SmallVec<[i32; INLINED_EXPONENTS]> = smallvec![0i32; a.nvars];
         for (p, inc) in [(a, 1), (b, 2)] {
-            for t in 0..p.nterms {
-                for (e, ee) in scratch.iter_mut().zip(p.exponents(t)) {
+            for t in p {
+                for (e, ee) in scratch.iter_mut().zip(t.exponents) {
                     if !ee.is_zero() {
                         *e |= inc;
                     }

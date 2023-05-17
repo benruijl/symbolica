@@ -253,7 +253,7 @@ where
 
             let mut found = false;
             for t in &g1 {
-                if g1.exponents[var] == *d {
+                if t.exponents[var] == *d {
                     scale_factor = g1.field.div(&coeff, &t.coefficient);
                     found = true;
                     break;

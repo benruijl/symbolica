@@ -818,7 +818,8 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         let last = self.last_exponents();
 
         let mut res = self.new_from(None);
-        let mut e = vec![E::zero(); self.nvars];
+        let mut e: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); self.nvars];
+
         for t in (0..self.nterms()).rev() {
             if (0..self.nvars - 1).all(|i| self.exponents(t)[i] == last[i] || i == n) {
                 e[n] = self.exponents(t)[n];
@@ -1021,58 +1022,35 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
         let mut tm: HashMap<SmallVec<[E; INLINED_EXPONENTS]>, MultivariatePolynomial<F, E>> =
             HashMap::new();
-        let mut e = smallvec![E::zero(); self.nvars];
-        let mut me = smallvec![E::zero(); self.nvars];
-        for t in 0..self.nterms {
-            for (i, ee) in self.exponents(t).iter().enumerate() {
-                e[i] = *ee;
-                me[i] = E::zero();
+        let mut e_not_in_xs = smallvec![E::zero(); self.nvars];
+        let mut e_in_xs = smallvec![E::zero(); self.nvars];
+        for t in self {
+            for (i, ee) in t.exponents.iter().enumerate() {
+                e_not_in_xs[i] = *ee;
+                e_in_xs[i] = E::zero();
             }
 
             for x in xs {
-                me[*x] = e[*x];
-                e[*x] = E::zero();
+                e_in_xs[*x] = e_not_in_xs[*x];
+                e_not_in_xs[*x] = E::zero();
             }
 
             if include {
-                let add = match tm.get_mut(&me) {
-                    Some(x) => {
-                        x.append_monomial(self.coefficients[t].clone(), &e);
-                        false
-                    }
-                    None => true,
-                };
-
-                if add {
-                    tm.insert(
-                        me.clone(),
-                        // TODO: add nterms estimate
-                        MultivariatePolynomial::from_monomial(
-                            self.coefficients[t].clone(),
-                            e.to_vec(),
-                            self.field,
-                        ),
-                    );
-                }
+                tm.entry(e_in_xs.clone())
+                    .and_modify(|x| x.append_monomial(t.coefficient.clone(), &e_not_in_xs))
+                    .or_insert(MultivariatePolynomial::from_monomial(
+                        t.coefficient.clone(),
+                        e_not_in_xs.to_vec(),
+                        self.field,
+                    ));
             } else {
-                let add = match tm.get_mut(&e) {
-                    Some(x) => {
-                        x.append_monomial(self.coefficients[t].clone(), &me);
-                        false
-                    }
-                    None => true,
-                };
-
-                if add {
-                    tm.insert(
-                        e.clone(),
-                        MultivariatePolynomial::from_monomial(
-                            self.coefficients[t].clone(),
-                            e.to_vec(),
-                            self.field,
-                        ),
-                    );
-                }
+                tm.entry(e_not_in_xs.clone())
+                    .and_modify(|x| x.append_monomial(t.coefficient.clone(), &e_in_xs))
+                    .or_insert(MultivariatePolynomial::from_monomial(
+                        t.coefficient.clone(),
+                        e_in_xs.to_vec(),
+                        self.field,
+                    ));
             }
         }
 

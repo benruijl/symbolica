@@ -9,7 +9,10 @@ use crate::{
     representations::Identifier,
 };
 
-use super::{integer::IntegerRing, rational::RationalField, EuclideanDomain, Field, Ring, finite_field::FiniteField};
+use super::{
+    finite_field::FiniteField, integer::IntegerRing, rational::RationalField, EuclideanDomain,
+    Field, Ring,
+};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct RationalPolynomialField<R: Ring, E: Exponent> {
@@ -132,11 +135,18 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
     ) -> Self {
         num.unify_var_map(&mut den);
 
-        let gcd = MultivariatePolynomial::gcd(&num, &den);
+        if den.is_one() {
+            RationalPolynomial {
+                numerator: num,
+                denominator: den,
+            }
+        } else {
+            let gcd = MultivariatePolynomial::gcd(&num, &den);
 
-        RationalPolynomial {
-            numerator: num / &gcd,
-            denominator: den / &gcd,
+            RationalPolynomial {
+                numerator: num / &gcd,
+                denominator: den / &gcd,
+            }
         }
     }
 }
@@ -368,14 +378,15 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
     fn add(self, other: &'a RationalPolynomial<R, E>) -> Self::Output {
         let denom_gcd = MultivariatePolynomial::gcd(&self.denominator, &other.denominator);
         let a_denom_red = &self.denominator / &denom_gcd;
-        let lcm = &a_denom_red * &other.denominator;
-        let num1 = (&other.denominator / &denom_gcd) * &self.numerator;
-        let num2 = a_denom_red * &other.numerator;
+        let b_denom_red = &other.denominator / &denom_gcd;
+        let num1 = b_denom_red * &self.numerator;
+        let num2 = &a_denom_red * &other.numerator;
         let num = num1 + num2;
-        let g = MultivariatePolynomial::gcd(&num, &lcm);
+        let den = a_denom_red * &other.denominator;
+        let g = MultivariatePolynomial::gcd(&num, &denom_gcd);
         RationalPolynomial {
             numerator: num / &g,
-            denominator: lcm / &g,
+            denominator: den / &g,
         }
     }
 }

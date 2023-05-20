@@ -2,7 +2,7 @@ use std::{fmt::Write, string::String};
 
 use rug::{Complete, Integer};
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
@@ -12,8 +12,8 @@ use crate::{
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ParseState {
-    Identifier(usize),
-    Number(usize),
+    Identifier,
+    Number,
     Any,
 }
 
@@ -90,11 +90,11 @@ impl Token {
     fn add_left(&mut self, other: Token) {
         match self {
             Token::BinaryOp(ml, _, o1, args) => {
-                assert!(*ml);
+                debug_assert!(*ml);
                 *ml = false;
 
                 if let Token::BinaryOp(ml, mr, o2, mut args2) = other {
-                    assert!(!ml && !mr);
+                    debug_assert!(!ml && !mr);
                     if *o1 == o2 {
                         // add from the left by swapping and then extending from the right
                         std::mem::swap(args, &mut args2);
@@ -106,7 +106,7 @@ impl Token {
                     args.insert(0, other);
                 }
             }
-            _ => unreachable!(),
+            _ => unreachable!("Cannot left-append to non-operator"),
         }
     }
 
@@ -135,7 +135,7 @@ impl Token {
     fn add_right(&mut self, mut other: Token) {
         match self {
             Token::BinaryOp(_, mr, o1, args) => {
-                assert!(*mr);
+                debug_assert!(*mr);
                 *mr = false;
 
                 if *o1 == BinaryOperator::Neg {
@@ -145,11 +145,11 @@ impl Token {
                 }
 
                 if let Token::BinaryOp(ml, mr, o2, mut args2) = other {
-                    assert!(!ml && !mr);
+                    debug_assert!(!ml && !mr);
                     if *o1 == o2 && o2.right_associative() {
                         if o2 == BinaryOperator::Neg || o2 == BinaryOperator::Inv {
                             // twice unary minus or inv cancels out
-                            assert!(args2.len() == 1);
+                            debug_assert!(args2.len() == 1);
                             *self = args2.pop().unwrap();
                         } else {
                             args.extend(args2.drain(..))
@@ -161,7 +161,7 @@ impl Token {
                     args.push(other);
                 }
             }
-            _ => unreachable!(),
+            _ => unreachable!("Cannot right-append to non-operator"),
         }
     }
 
@@ -289,7 +289,8 @@ impl std::fmt::Display for Token {
 }
 
 pub fn parse(input: &str) -> Result<Token, String> {
-    let mut stack: SmallVec<[Token; 64]> = smallvec![Token::Start];
+    let mut stack: Vec<_> = Vec::with_capacity(20);
+    stack.push(Token::Start);
     let mut state = ParseState::Any;
 
     let delims = ['\0', '^', '+', '*', '-', '(', ')', '/', ','];
@@ -298,6 +299,8 @@ pub fn parse(input: &str) -> Result<Token, String> {
     let mut char_iter = input.chars();
     let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token
     let mut extra_ops: SmallVec<[char; 6]> = SmallVec::new();
+
+    let mut id_buffer = String::with_capacity(30);
 
     let mut i = 0;
     loop {
@@ -308,18 +311,16 @@ pub fn parse(input: &str) -> Result<Token, String> {
         }
 
         match state {
-            ParseState::Identifier(token_start) => {
+            ParseState::Identifier => {
                 if delims.contains(&c) {
                     state = ParseState::Any;
-                    stack.push(Token::ID(
-                        input[token_start..i]
-                            .chars()
-                            .filter(|a| !whitespace.contains(a))
-                            .collect(),
-                    ));
+                    stack.push(Token::ID(id_buffer.as_str().into()));
+                    id_buffer.clear();
+                } else {
+                    id_buffer.push(c);
                 }
             }
-            ParseState::Number(token_start) => {
+            ParseState::Number => {
                 if c != '_' && (c < '0' || c > '9') {
                     if !delims.contains(&c) {
                         return Err(format!(
@@ -332,21 +333,17 @@ pub fn parse(input: &str) -> Result<Token, String> {
                     state = ParseState::Any;
 
                     // drag in the neg operator
-                    let start = if let Some(Token::BinaryOp(false, true, BinaryOperator::Neg, _)) =
+                    if let Some(Token::BinaryOp(false, true, BinaryOperator::Neg, _)) =
                         stack.last_mut()
                     {
                         stack.pop();
-                        token_start - 1
-                    } else {
-                        token_start
-                    };
+                        id_buffer.insert(0, '-');
+                    }
 
-                    stack.push(Token::Number(
-                        input[start..i]
-                            .chars()
-                            .filter(|a| *a == '-' || *a >= '0' && *a <= '9')
-                            .collect(),
-                    ));
+                    stack.push(Token::Number(id_buffer.as_str().into()));
+                    id_buffer.clear();
+                } else {
+                    id_buffer.push(c);
                 }
             }
             ParseState::Any => {}
@@ -361,20 +358,45 @@ pub fn parse(input: &str) -> Result<Token, String> {
                     ) {
                         // unary operator, can be ignored as plus is the default
                     } else {
-                        stack.push(Token::BinaryOp(true, true, BinaryOperator::Add, vec![]))
+                        stack.push(Token::BinaryOp(
+                            true,
+                            true,
+                            BinaryOperator::Add,
+                            Vec::with_capacity(2),
+                        ))
                     }
                 }
-                '^' => stack.push(Token::BinaryOp(true, true, BinaryOperator::Pow, vec![])),
-                '*' => stack.push(Token::BinaryOp(true, true, BinaryOperator::Mul, vec![])),
+                '^' => stack.push(Token::BinaryOp(
+                    true,
+                    true,
+                    BinaryOperator::Pow,
+                    Vec::with_capacity(2),
+                )),
+                '*' => stack.push(Token::BinaryOp(
+                    true,
+                    true,
+                    BinaryOperator::Mul,
+                    Vec::with_capacity(2),
+                )),
                 '-' => {
                     if matches!(
                         stack.last().unwrap(),
                         Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
                     ) {
                         // unary minus only requires an argument to the right
-                        stack.push(Token::BinaryOp(false, true, BinaryOperator::Neg, vec![]));
+                        stack.push(Token::BinaryOp(
+                            false,
+                            true,
+                            BinaryOperator::Neg,
+                            Vec::with_capacity(1),
+                        ));
                     } else {
-                        stack.push(Token::BinaryOp(true, true, BinaryOperator::Add, vec![]));
+                        stack.push(Token::BinaryOp(
+                            true,
+                            true,
+                            BinaryOperator::Add,
+                            Vec::with_capacity(2),
+                        ));
                         extra_ops.push('-'); // push a unary minus
                     }
                 }
@@ -397,9 +419,19 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
                     ) {
                         // unary inv only requires an argument to the right
-                        stack.push(Token::BinaryOp(false, true, BinaryOperator::Inv, vec![]));
+                        stack.push(Token::BinaryOp(
+                            false,
+                            true,
+                            BinaryOperator::Inv,
+                            Vec::with_capacity(1),
+                        ));
                     } else {
-                        stack.push(Token::BinaryOp(true, true, BinaryOperator::Mul, vec![]));
+                        stack.push(Token::BinaryOp(
+                            true,
+                            true,
+                            BinaryOperator::Mul,
+                            Vec::with_capacity(2),
+                        ));
                         extra_ops.push('/'); // push a (unary) inverse
                     }
                 }
@@ -412,9 +444,11 @@ pub fn parse(input: &str) -> Result<Token, String> {
                 '\0' => stack.push(Token::EOF),
                 x => {
                     if c >= '0' && c <= '9' {
-                        state = ParseState::Number(i);
+                        state = ParseState::Number;
+                        id_buffer.push(c);
                     } else if c >= 'a' && c <= 'z' {
-                        state = ParseState::Identifier(i);
+                        state = ParseState::Identifier;
+                        id_buffer.push(c);
                     } else {
                         return Err(format!("Unknown token {}", x));
                     }
@@ -424,38 +458,32 @@ pub fn parse(input: &str) -> Result<Token, String> {
 
         // match on triplets of type operator identifier operator
         while stack.len() > 2 && state == ParseState::Any {
-            let mut last = stack.pop().unwrap();
-            let middle = stack.pop().unwrap();
-            let mut first = stack.pop().unwrap();
-
-            if !middle.is_normal() {
+            if !unsafe { stack.get_unchecked(stack.len() - 2) }.is_normal() {
                 // no simplification, get new token
-                stack.push(first);
-                stack.push(middle);
-                stack.push(last);
                 break;
             }
+
+            let mut last = unsafe { stack.pop().unwrap_unchecked() };
+            let middle = unsafe { stack.pop().unwrap_unchecked() };
+            let mut first = unsafe { stack.last_mut().unwrap_unchecked() };
 
             match first.get_precedence().cmp(&last.get_precedence()) {
                 std::cmp::Ordering::Greater => {
                     first.add_right(middle);
-                    stack.push(first);
                     stack.push(last);
                 }
                 std::cmp::Ordering::Less => {
-                    stack.push(first);
                     last.add_left(middle);
                     stack.push(last);
                 }
                 std::cmp::Ordering::Equal => {
                     // same degree, special merges!
-                    let mut add_first = false;
                     match (&mut first, middle, last) {
                         (Token::Start, mid, Token::EOF) => {
-                            stack.push(mid);
+                            *first = mid;
                         }
                         (Token::Fn(mr, _name, args), mid, Token::CloseParenthesis) => {
-                            assert!(*mr);
+                            debug_assert!(*mr);
                             *mr = false;
 
                             if let Token::BinaryOp(_, _, BinaryOperator::Argument, arg2) = mid {
@@ -463,18 +491,17 @@ pub fn parse(input: &str) -> Result<Token, String> {
                             } else {
                                 args.push(mid);
                             }
-                            add_first = true;
                         }
                         (Token::OpenParenthesis, mid, Token::CloseParenthesis) => {
-                            stack.push(mid);
+                            *first = mid;
                         }
                         (
                             Token::BinaryOp(ml1, mr1, o1, m),
                             mid,
                             Token::BinaryOp(ml2, mr2, mut o2, mut mm),
                         ) => {
-                            assert!(!*ml1);
-                            assert!(*mr1 && ml2);
+                            debug_assert!(!*ml1);
+                            debug_assert!(*mr1 && ml2);
                             // same precedence, so left associate
 
                             // flatten if middle identifier is also a binary operator of the same type that
@@ -500,14 +527,8 @@ pub fn parse(input: &str) -> Result<Token, String> {
                                 std::mem::swap(m, &mut mm);
                                 m.insert(0, Token::BinaryOp(false, false, o2, mm));
                             }
-
-                            add_first = true;
                         }
-                        _ => unreachable!(),
-                    }
-
-                    if add_first {
-                        stack.push(first);
+                        _ => return Err(format!("Cannot merge operator")),
                     }
                 }
             }

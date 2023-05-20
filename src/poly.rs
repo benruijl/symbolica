@@ -4,7 +4,7 @@ pub mod polynomial;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::ops::{Add as OpAdd, AddAssign, Sub};
+use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Sub};
 
 use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
@@ -21,6 +21,7 @@ use crate::rings::rational_polynomial::{
 };
 use crate::rings::{EuclideanDomain, Ring};
 use crate::state::{State, Workspace};
+use crate::utils;
 
 use self::gcd::PolynomialGCD;
 use self::polynomial::MultivariatePolynomial;
@@ -28,7 +29,17 @@ use self::polynomial::MultivariatePolynomial;
 pub const INLINED_EXPONENTS: usize = 6;
 
 pub trait Exponent:
-    Hash + Debug + Display + Ord + Sub<Output = Self> + OpAdd<Output = Self> + AddAssign + Clone + Copy
+    Hash
+    + Debug
+    + Display
+    + Ord
+    + OpMul<Output = Self>
+    + Div<Output = Self>
+    + Sub<Output = Self>
+    + OpAdd<Output = Self>
+    + AddAssign
+    + Clone
+    + Copy
 {
     fn zero() -> Self;
     /// Convert the exponent to `u32`. This is always possible, as `u32` is the largest supported exponent type.
@@ -37,6 +48,7 @@ pub trait Exponent:
     fn from_u32(n: u32) -> Self;
     fn is_zero(&self) -> bool;
     fn checked_add(&self, other: &Self) -> Option<Self>;
+    fn gcd(&self, other: &Self) -> Self;
 }
 
 impl Exponent for u32 {
@@ -58,6 +70,10 @@ impl Exponent for u32 {
 
     fn checked_add(&self, other: &Self) -> Option<Self> {
         u32::checked_add(*self, *other)
+    }
+
+    fn gcd(&self, other: &Self) -> Self {
+        utils::gcd_unsigned(*self as u64, *other as u64) as Self
     }
 }
 
@@ -85,6 +101,10 @@ impl Exponent for u8 {
 
     fn checked_add(&self, other: &Self) -> Option<Self> {
         u8::checked_add(*self, *other)
+    }
+
+    fn gcd(&self, other: &Self) -> Self {
+        utils::gcd_unsigned(*self as u64, *other as u64) as Self
     }
 }
 

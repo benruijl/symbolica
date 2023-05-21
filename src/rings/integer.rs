@@ -68,6 +68,14 @@ impl Integer {
         Integer::Natural(num)
     }
 
+    pub fn from_large(n: ArbitraryPrecisionInteger) -> Integer {
+        if let Some(n) = n.to_i64() {
+            Integer::Natural(n)
+        } else {
+            Integer::Large(n)
+        }
+    }
+
     pub fn from_finite_field_u32(
         field: FiniteField<u32>,
         element: &<FiniteField<u32> as Ring>::Element,
@@ -179,6 +187,10 @@ impl Integer {
         }
         let e = e as u32;
 
+        if e == 0 {
+            return Integer::Natural(1);
+        }
+
         match self {
             Integer::Natural(n1) => {
                 if let Some(pn) = n1.checked_pow(e) {
@@ -239,12 +251,7 @@ impl Integer {
             r
         };
 
-        // potentially downgrade from bigint
-        if let Some(r) = res.to_i64() {
-            Integer::Natural(r)
-        } else {
-            Integer::Large(ArbitraryPrecisionInteger::from(res))
-        }
+        Integer::from_large(res)
     }
 }
 
@@ -326,15 +333,14 @@ impl Ring for IntegerRing {
     fn is_zero(a: &Self::Element) -> bool {
         match a {
             Integer::Natural(r) => *r == 0,
-            // TODO: not needed anymore when automatically simplifying
-            Integer::Large(r) => r.to_u8().map(|x| x == 0).unwrap_or(false),
+            Integer::Large(_) => false,
         }
     }
 
     fn is_one(&self, a: &Self::Element) -> bool {
         match a {
             Integer::Natural(r) => *r == 1,
-            Integer::Large(r) => r.to_u8().map(|x| x == 1).unwrap_or(false),
+            Integer::Large(_) => false,
         }
     }
 
@@ -352,14 +358,13 @@ impl EuclideanDomain for IntegerRing {
     fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         match (a, b) {
             (Integer::Natural(a), Integer::Natural(b)) => Integer::Natural(a.rem_euclid(*b)),
-            // TODO: downcast
             (Integer::Natural(a), Integer::Large(b)) => {
-                Integer::Large(ArbitraryPrecisionInteger::from(*a).rem_euc(b).into())
+                Integer::from_large(ArbitraryPrecisionInteger::from(*a).rem_euc(b))
             }
             (Integer::Large(a), Integer::Natural(b)) => {
-                Integer::Large(a.rem_euc(ArbitraryPrecisionInteger::from(*b)).into())
+                Integer::from_large(a.rem_euc(ArbitraryPrecisionInteger::from(*b)))
             }
-            (Integer::Large(a), Integer::Large(b)) => Integer::Large(a.rem_euc(b).into()),
+            (Integer::Large(a), Integer::Large(b)) => Integer::from_large(a.rem_euc(b).into()),
         }
     }
 
@@ -369,18 +374,17 @@ impl EuclideanDomain for IntegerRing {
                 Integer::Natural(a.div_euclid(*b)),
                 Integer::Natural(a.rem_euclid(*b)),
             ),
-            // TODO: downcast
             (Integer::Natural(a), Integer::Large(b)) => {
                 let r = ArbitraryPrecisionInteger::from(*a).div_rem_euc(b.clone());
-                (Integer::Large(r.0), Integer::Large(r.1))
+                (Integer::from_large(r.0), Integer::from_large(r.1))
             }
             (Integer::Large(a), Integer::Natural(b)) => {
                 let r = a.clone().div_rem_euc(ArbitraryPrecisionInteger::from(*b));
-                (Integer::Large(r.0), Integer::Large(r.1))
+                (Integer::from_large(r.0), Integer::from_large(r.1))
             }
             (Integer::Large(a), Integer::Large(b)) => {
                 let r = a.clone().div_rem_euc(b.clone());
-                (Integer::Large(r.0), Integer::Large(r.1))
+                (Integer::from_large(r.0), Integer::from_large(r.1))
             }
         }
     }
@@ -394,10 +398,10 @@ impl EuclideanDomain for IntegerRing {
             (Integer::Natural(n1), Integer::Large(r2))
             | (Integer::Large(r2), Integer::Natural(n1)) => {
                 let r1 = ArbitraryPrecisionInteger::from(*n1);
-                Integer::Large(ArbitraryPrecisionInteger::from(r1.clone().gcd(r2)))
+                Integer::from_large(ArbitraryPrecisionInteger::from(r1.clone().gcd(r2)))
             }
             (Integer::Large(r1), Integer::Large(r2)) => {
-                Integer::Large(ArbitraryPrecisionInteger::from(r1.clone().gcd(r2)))
+                Integer::from_large(ArbitraryPrecisionInteger::from(r1.clone().gcd(r2)))
             }
         }
     }
@@ -421,9 +425,9 @@ impl<'a, 'b> Add<&'b Integer> for &'a Integer {
             (Integer::Natural(n1), Integer::Large(r2))
             | (Integer::Large(r2), Integer::Natural(n1)) => {
                 let r1 = ArbitraryPrecisionInteger::from(*n1);
-                Integer::Large(r1 + r2)
+                Integer::from_large(r1 + r2)
             }
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::Large((r1 + r2).into()),
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 + r2).into()),
         }
     }
 }
@@ -442,16 +446,15 @@ impl<'a, 'b> Sub<&'b Integer> for &'a Integer {
                     )
                 }
             }
-            // TODO: check downcast
             (Integer::Natural(n1), Integer::Large(r2)) => {
                 let r1 = ArbitraryPrecisionInteger::from(*n1);
-                Integer::Large(r1 - r2)
+                Integer::from_large(r1 - r2)
             }
             (Integer::Large(r1), Integer::Natural(n2)) => {
                 let r2 = ArbitraryPrecisionInteger::from(*n2);
-                Integer::Large(r1 - r2)
+                Integer::from_large(r1 - r2)
             }
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::Large((r1 - r2).into()),
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 - r2).into()),
         }
     }
 }
@@ -470,13 +473,12 @@ impl<'a, 'b> Mul<&'b Integer> for &'a Integer {
                     )
                 }
             }
-            // FIXME: downcast
             (Integer::Natural(n1), Integer::Large(r2))
             | (Integer::Large(r2), Integer::Natural(n1)) => {
                 let r1 = ArbitraryPrecisionInteger::from(*n1);
-                Integer::Large(r1 * r2)
+                Integer::from_large(r1 * r2)
             }
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::Large((r1 * r2).into()),
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 * r2).into()),
         }
     }
 }
@@ -495,16 +497,15 @@ impl<'a, 'b> Div<&'b Integer> for &'a Integer {
                     )
                 }
             }
-            // FIXME: downcast
             (Integer::Natural(n1), Integer::Large(r2)) => {
                 let r1 = ArbitraryPrecisionInteger::from(*n1);
-                Integer::Large(r1 / r2)
+                Integer::from_large(r1 / r2)
             }
             (Integer::Large(r1), Integer::Natural(n2)) => {
                 let r2 = ArbitraryPrecisionInteger::from(*n2);
-                Integer::Large(r1 / r2)
+                Integer::from_large(r1 / r2)
             }
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::Large((r1 / r2).into()),
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 / r2).into()),
         }
     }
 }
@@ -523,7 +524,7 @@ impl<'a, 'b> Add<i64> for &'a Integer {
                     )
                 }
             }
-            Integer::Large(n1) => Integer::Large(n1 + ArbitraryPrecisionInteger::from(rhs)),
+            Integer::Large(n1) => Integer::from_large(n1 + ArbitraryPrecisionInteger::from(rhs)),
         }
     }
 }
@@ -542,7 +543,7 @@ impl<'a, 'b> Sub<i64> for &'a Integer {
                     )
                 }
             }
-            Integer::Large(n1) => Integer::Large(n1 - ArbitraryPrecisionInteger::from(rhs)),
+            Integer::Large(n1) => Integer::from_large(n1 - ArbitraryPrecisionInteger::from(rhs)),
         }
     }
 }
@@ -561,7 +562,7 @@ impl<'a, 'b> Mul<i64> for &'a Integer {
                     )
                 }
             }
-            Integer::Large(n1) => Integer::Large(n1 * ArbitraryPrecisionInteger::from(rhs)),
+            Integer::Large(n1) => Integer::from_large(n1 * ArbitraryPrecisionInteger::from(rhs)),
         }
     }
 }
@@ -580,7 +581,7 @@ impl<'a, 'b> Div<i64> for &'a Integer {
                     )
                 }
             }
-            Integer::Large(n1) => Integer::Large(n1 / ArbitraryPrecisionInteger::from(rhs)),
+            Integer::Large(n1) => Integer::from_large(n1 / ArbitraryPrecisionInteger::from(rhs)),
         }
     }
 }
@@ -601,12 +602,22 @@ impl<'a> AddAssign<&'a Integer> for Integer {
                 Integer::Large(r2) => {
                     let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                     r1.add_assign(r2);
-                    *self = Integer::Large(r1)
+                    *self = Integer::from_large(r1)
                 }
             },
             Integer::Large(r1) => match rhs {
-                Integer::Natural(n2) => r1.add_assign(ArbitraryPrecisionInteger::from(*n2)),
-                Integer::Large(r2) => r1.add_assign(r2),
+                Integer::Natural(n2) => {
+                    r1.add_assign(ArbitraryPrecisionInteger::from(*n2));
+                    if let Some(n) = r1.to_i64() {
+                        *self = Integer::Natural(n);
+                    }
+                }
+                Integer::Large(r2) => {
+                    r1.add_assign(r2);
+                    if let Some(n) = r1.to_i64() {
+                        *self = Integer::Natural(n);
+                    }
+                }
             },
         };
     }
@@ -628,12 +639,22 @@ impl<'a> SubAssign<&'a Integer> for Integer {
                 Integer::Large(r2) => {
                     let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                     r1.sub_assign(r2);
-                    *self = Integer::Large(r1)
+                    *self = Integer::from_large(r1)
                 }
             },
             Integer::Large(r1) => match rhs {
-                Integer::Natural(n2) => r1.sub_assign(ArbitraryPrecisionInteger::from(*n2)),
-                Integer::Large(r2) => r1.sub_assign(r2),
+                Integer::Natural(n2) => {
+                    r1.sub_assign(ArbitraryPrecisionInteger::from(*n2));
+                    if let Some(n) = r1.to_i64() {
+                        *self = Integer::Natural(n);
+                    }
+                }
+                Integer::Large(r2) => {
+                    r1.sub_assign(r2);
+                    if let Some(n) = r1.to_i64() {
+                        *self = Integer::Natural(n);
+                    }
+                }
             },
         };
     }
@@ -649,18 +670,28 @@ impl<'a> MulAssign<&'a Integer> for Integer {
                     } else {
                         let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                         r1.mul_assign(ArbitraryPrecisionInteger::from(*n2));
-                        *self = Integer::Large(r1)
+                        *self = Integer::from_large(r1)
                     }
                 }
                 Integer::Large(r2) => {
                     let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                     r1.mul_assign(r2);
-                    *self = Integer::Large(r1)
+                    *self = Integer::from_large(r1)
                 }
             },
             Integer::Large(r1) => match rhs {
-                Integer::Natural(n2) => r1.mul_assign(ArbitraryPrecisionInteger::from(*n2)),
-                Integer::Large(r2) => r1.mul_assign(r2),
+                Integer::Natural(n2) => {
+                    r1.mul_assign(ArbitraryPrecisionInteger::from(*n2));
+                    if let Some(n) = r1.to_i64() {
+                        *self = Integer::Natural(n);
+                    }
+                }
+                Integer::Large(r2) => {
+                    r1.mul_assign(r2);
+                    if let Some(n) = r1.to_i64() {
+                        *self = Integer::Natural(n);
+                    }
+                }
             },
         };
     }
@@ -686,8 +717,18 @@ impl<'a> DivAssign<&'a Integer> for Integer {
                 }
             },
             Integer::Large(r1) => match rhs {
-                Integer::Natural(n2) => r1.div_assign(ArbitraryPrecisionInteger::from(*n2)),
-                Integer::Large(r2) => r1.div_assign(r2),
+                Integer::Natural(n2) => {
+                    r1.div_assign(ArbitraryPrecisionInteger::from(*n2));
+                    if let Some(n) = r1.to_i64() {
+                        *self = Integer::Natural(n);
+                    }
+                }
+                Integer::Large(r2) => {
+                    r1.div_assign(r2);
+                    if let Some(n) = r1.to_i64() {
+                        *self = Integer::Natural(n);
+                    }
+                }
             },
         };
     }
@@ -717,7 +758,7 @@ impl<'a> Neg for &'a Integer {
                     Integer::Large(ArbitraryPrecisionInteger::from(*n).neg())
                 }
             }
-            Integer::Large(r) => Integer::Large(r.neg().into()),
+            Integer::Large(r) => Integer::from_large(r.neg().into()),
         }
     }
 }

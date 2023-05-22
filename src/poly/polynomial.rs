@@ -657,6 +657,7 @@ impl<'a, 'b, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E>>
 {
     type Output = MultivariatePolynomial<F, E>;
 
+    #[inline]
     fn mul(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
         self.heap_mul(other)
     }
@@ -667,6 +668,7 @@ impl<'a, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E>>
 {
     type Output = MultivariatePolynomial<F, E>;
 
+    #[inline]
     fn mul(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
         (&self).heap_mul(other)
     }
@@ -905,15 +907,16 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// the ring `v`.
     pub fn replace(&self, n: usize, v: &F::Element) -> MultivariatePolynomial<F, E> {
         let mut res = self.new_from(Some(self.nterms));
-        let mut e = vec![E::zero(); self.nvars];
-        for t in 0..self.nterms {
+        let mut e: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); self.nvars];
+
+        for t in self {
             let c = self.field.mul(
-                &self.coefficients[t],
-                &self.field.pow(v, self.exponents(t)[n].to_u32() as u64),
+                &t.coefficient,
+                &self.field.pow(v, t.exponents[n].to_u32() as u64),
             );
 
-            for (i, ee) in self.exponents(t).iter().enumerate() {
-                e[i] = *ee;
+            for (e, ee) in e.iter_mut().zip(t.exponents) {
+                *e = *ee;
             }
 
             e[n] = E::zero();
@@ -933,10 +936,10 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     ) -> MultivariatePolynomial<F, E> {
         let mut tm: HashMap<E, F::Element> = HashMap::new();
 
-        for t in 0..self.nterms {
-            let mut c = self.coefficients[t].clone();
+        for t in self {
+            let mut c = t.coefficient.clone();
             for (n, vv) in r {
-                let p = self.exponents(t)[*n].to_u32() as usize;
+                let p = t.exponents[*n].to_u32() as usize;
                 if p > 0 {
                     if p < cache[*n].len() {
                         if F::is_zero(&cache[*n][p]) {
@@ -950,7 +953,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                 }
             }
 
-            tm.entry(self.exponents(t)[v])
+            tm.entry(t.exponents[v])
                 .and_modify(|e| self.field.add_assign(e, &c))
                 .or_insert(c);
         }
@@ -1070,6 +1073,18 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     pub fn heap_mul(&self, other: &MultivariatePolynomial<F, E>) -> MultivariatePolynomial<F, E> {
         if self.nterms == 0 || other.nterms == 0 {
             return MultivariatePolynomial::new_from(&self, None);
+        }
+
+        if self.nterms == 1 {
+            return other
+                .clone()
+                .mul_monomial(&self.coefficients[0], &self.exponents);
+        }
+
+        if other.nterms == 1 {
+            return self
+                .clone()
+                .mul_monomial(&other.coefficients[0], &other.exponents);
         }
 
         let mut res = self.new_from(Some(self.nterms));
@@ -1342,36 +1357,31 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         if div.nterms == 1 {
-            let mut q = self.new_from(Some(self.nterms));
+            let mut q = self.clone();
             let dive = div.to_monomial_view(0);
 
-            for t in self {
-                let (quot, rem) = self.field.quot_rem(t.coefficient, dive.coefficient);
-                if !F::is_zero(&rem)
-                    || t.exponents
-                        .iter()
-                        .zip(dive.exponents)
-                        .any(|(te, de)| te < de)
-                {
+            for ee in q.exponents.chunks_mut(q.nvars) {
+                for (e1, e2) in ee.iter_mut().zip(dive.exponents) {
+                    if *e1 >= *e2 {
+                        *e1 = *e1 - *e2;
+                    } else {
+                        return (MultivariatePolynomial::new_from(&self, None), self.clone());
+                    }
+                }
+            }
+
+            for c in &mut q.coefficients {
+                let (quot, rem) = q.field.quot_rem(c, dive.coefficient);
+                *c = quot;
+                if !F::is_zero(&rem) {
                     // TODO: support upgrade to a RationalField
                     return (MultivariatePolynomial::new_from(&self, None), self.clone());
                 }
-
-                q.coefficients.push(quot);
-                q.exponents.extend_from_slice(
-                    &t.exponents
-                        .iter()
-                        .zip(dive.exponents)
-                        .map(|(te, de)| *te - *de)
-                        .collect::<SmallVec<[E; INLINED_EXPONENTS]>>(),
-                );
-                q.nterms += 1;
             }
 
             return (q, self.new_from(None));
         }
 
-        // TODO: use other algorithm for univariate div
         self.heap_division(div)
     }
 

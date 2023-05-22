@@ -1396,6 +1396,30 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             );
         }
 
+        // check if the polynomial is linear in a variable and compute the gcd using the univariate content
+        for (p1, p2) in [(&a, &b), (&b, &a)] {
+            if let Some(var) = (0..p1.nvars).find(|v| p1.degree(*v) == E::from_u32(1)) {
+                let mut cont = p1.univariate_content(var);
+                let p1_prim = p1.as_ref() / &cont;
+
+                if !cont.is_one() {
+                    let cont_p2 = p2.univariate_content(var);
+                    cont = MultivariatePolynomial::gcd(&cont, &cont_p2);
+                }
+
+                if p2.quot_rem(&p1_prim).1.is_zero() {
+                    return rescale_gcd(p1_prim, &shared_degree, &base_degree, &cont);
+                } else {
+                    return rescale_gcd(
+                        cont,
+                        &shared_degree,
+                        &base_degree,
+                        &MultivariatePolynomial::one(p1.field),
+                    );
+                }
+            }
+        }
+
         // store which variables appear in which expression
         let mut scratch: SmallVec<[i32; INLINED_EXPONENTS]> = smallvec![0i32; a.nvars];
         for (p, inc) in [(&a, 1), (&b, 2)] {
@@ -1614,15 +1638,15 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
         ) -> MultivariatePolynomial<IntegerRing, E> {
             let mut g = MultivariatePolynomial::new_from(&gamma, None);
             let mut i = 0;
+            let xi_half = xi / &Integer::Natural(2);
             while !gamma.is_zero() {
                 // create xi-adic representation using the symmetric modulus
                 let mut g_i = MultivariatePolynomial::new_from(&gamma, Some(gamma.nterms));
                 for m in &gamma {
                     let mut c = IntegerRing::new().quot_rem(m.coefficient, xi).1;
-                    let r = xi / &Integer::Natural(2);
 
-                    if c > r {
-                        c = &c - xi;
+                    if c > xi_half {
+                        c -= xi;
                     }
 
                     if !IntegerRing::is_zero(&c) {
@@ -1632,10 +1656,9 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                 for c in &mut g_i.coefficients {
                     *c = IntegerRing::new().quot_rem(c, xi).1;
-                    let r = xi / &Integer::Natural(2);
 
-                    if *c > r {
-                        *c = (&*c) - xi;
+                    if *c > xi_half {
+                        *c -= xi;
                     }
                 }
 
@@ -1660,10 +1683,13 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
         debug!("content={}", content_gcd);
 
-        let a_red = self.clone().div_coeff(&content_gcd);
-        let b_red = b.clone().div_coeff(&content_gcd);
-        let a = &a_red;
-        let b = &b_red;
+        let mut a = Cow::Borrowed(self);
+        let mut b = Cow::Borrowed(b);
+
+        if a.field.is_one(&content_gcd) {
+            a = Cow::Owned(a.into_owned().div_coeff(&content_gcd));
+            b = Cow::Owned(b.into_owned().div_coeff(&content_gcd));
+        }
 
         debug!("a_red={}; b_red={}", a, b);
 
@@ -1725,7 +1751,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let gc = g.div_coeff(&g_cont);
 
-                let (q, r) = self.quot_rem(&gc);
+                let (q, r) = a.quot_rem(&gc);
                 let (q1, r1) = b.quot_rem(&gc);
                 if r.is_zero() && r1.is_zero() {
                     debug!("match {} {}", q, q1);
@@ -1767,8 +1793,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
         } else {
             Ok((
                 MultivariatePolynomial::from_constant(content_gcd, self.nvars, self.field),
-                a_red,
-                b_red,
+                a.into_owned(),
+                b.into_owned(),
             ))
         }
     }

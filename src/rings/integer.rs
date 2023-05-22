@@ -394,7 +394,6 @@ impl EuclideanDomain for IntegerRing {
             (Integer::Natural(n1), Integer::Natural(n2)) => {
                 Integer::Natural(utils::gcd_signed(*n1 as i64, *n2 as i64))
             }
-            // FIXME: downcast
             (Integer::Natural(n1), Integer::Large(r2))
             | (Integer::Large(r2), Integer::Natural(n1)) => {
                 let r1 = ArbitraryPrecisionInteger::from(*n1);
@@ -421,7 +420,6 @@ impl<'a, 'b> Add<&'b Integer> for &'a Integer {
                     )
                 }
             }
-            // TODO: check downcast
             (Integer::Natural(n1), Integer::Large(r2))
             | (Integer::Large(r2), Integer::Natural(n1)) => {
                 let r1 = ArbitraryPrecisionInteger::from(*n1);

@@ -1686,7 +1686,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
         let mut a = Cow::Borrowed(self);
         let mut b = Cow::Borrowed(b);
 
-        if a.field.is_one(&content_gcd) {
+        if !a.field.is_one(&content_gcd) {
             a = Cow::Owned(a.into_owned().div_coeff(&content_gcd));
             b = Cow::Owned(b.into_owned().div_coeff(&content_gcd));
         }

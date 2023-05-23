@@ -2,6 +2,8 @@ use std::ffi::{c_char, CStr};
 use std::fmt::Write;
 use std::os::raw::c_ulonglong;
 
+use smartstring::{LazyCompact, SmartString};
+
 use crate::printer::SymbolicaPrintOptions;
 use crate::representations::Identifier;
 use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
@@ -18,6 +20,7 @@ use crate::{
 pub struct LocalState {
     buffer: String,
     var_map: Vec<Identifier>,
+    var_name_map: Vec<SmartString<LazyCompact>>,
 }
 
 pub struct Symbolica {
@@ -35,6 +38,7 @@ pub extern "C" fn init() -> *mut Symbolica {
         local_state: LocalState {
             buffer: String::with_capacity(2048),
             var_map: vec![],
+            var_name_map: vec![],
         },
     };
     let p = Box::into_raw(Box::new(s));
@@ -55,6 +59,7 @@ pub extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
             .local_state
             .var_map
             .push(symbolica.state.get_or_insert_var(var));
+        symbolica.local_state.var_name_map.push(var.into());
     }
 }
 
@@ -81,6 +86,7 @@ pub extern "C" fn simplify(
                 RationalField::new(),
                 IntegerRing::new(),
                 &symbolica.local_state.var_map,
+                &symbolica.local_state.var_name_map,
             )
             .unwrap();
 
@@ -105,6 +111,7 @@ pub extern "C" fn simplify(
                     field,
                     field,
                     &symbolica.local_state.var_map,
+                    &symbolica.local_state.var_name_map,
                 )
                 .unwrap();
 
@@ -132,6 +139,7 @@ pub extern "C" fn simplify(
                     field,
                     field,
                     &symbolica.local_state.var_map,
+                    &symbolica.local_state.var_name_map,
                 )
                 .unwrap();
 

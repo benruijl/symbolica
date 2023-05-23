@@ -8,6 +8,7 @@ use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Sub};
 
 use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
+use smartstring::{LazyCompact, SmartString};
 
 use crate::parser::{BinaryOperator, Token};
 use crate::representations::number::{BorrowedNumber, ConvertToRing, Number};
@@ -52,26 +53,32 @@ pub trait Exponent:
 }
 
 impl Exponent for u32 {
+    #[inline]
     fn zero() -> Self {
         0
     }
 
+    #[inline]
     fn to_u32(&self) -> u32 {
         *self
     }
 
+    #[inline]
     fn from_u32(n: u32) -> Self {
         n
     }
 
+    #[inline]
     fn is_zero(&self) -> bool {
         *self == 0
     }
 
+    #[inline]
     fn checked_add(&self, other: &Self) -> Option<Self> {
         u32::checked_add(*self, *other)
     }
 
+    #[inline]
     fn gcd(&self, other: &Self) -> Self {
         utils::gcd_unsigned(*self as u64, *other as u64) as Self
     }
@@ -79,14 +86,17 @@ impl Exponent for u32 {
 
 /// An exponent limited to 255 for efficiency
 impl Exponent for u8 {
+    #[inline]
     fn zero() -> Self {
         0
     }
 
+    #[inline]
     fn to_u32(&self) -> u32 {
         *self as u32
     }
 
+    #[inline]
     fn from_u32(n: u32) -> Self {
         if n < u8::MAX as u32 {
             n as u8
@@ -95,14 +105,17 @@ impl Exponent for u8 {
         }
     }
 
+    #[inline]
     fn is_zero(&self) -> bool {
         *self == 0
     }
 
+    #[inline]
     fn checked_add(&self, other: &Self) -> Option<Self> {
         u8::checked_add(*self, *other)
     }
 
+    #[inline]
     fn gcd(&self, other: &Self) -> Self {
         utils::gcd_unsigned(*self as u64, *other as u64) as Self
     }
@@ -457,13 +470,12 @@ impl Token {
     pub fn to_polynomial<R: Ring + ConvertToRing, E: Exponent>(
         &self,
         field: R,
-        state: &mut State,
         var_map: &[Identifier],
+        var_name_map: &[SmartString<LazyCompact>],
     ) -> Result<MultivariatePolynomial<R, E>, Cow<'static, str>> {
         fn parse_factor<R: Ring + ConvertToRing, E: Exponent>(
             factor: &Token,
-            state: &mut State,
-            vars: &[Identifier],
+            var_name_map: &[SmartString<LazyCompact>],
             coefficient: &mut R::Element,
             exponents: &mut SmallVec<[E; INLINED_EXPONENTS]>,
             field: R,
@@ -484,8 +496,8 @@ impl Token {
                     field.mul_assign(coefficient, &num);
                 }
                 Token::ID(x) => {
-                    let id = state.get_or_insert_var(x);
-                    exponents[vars.iter().position(|v| *v == id).unwrap()] += E::from_u32(1);
+                    let index = var_name_map.iter().position(|v| v == x).unwrap();
+                    exponents[index] += E::from_u32(1);
                 }
                 Token::BinaryOp(_, _, BinaryOperator::Neg, args) => {
                     if args.len() != 1 {
@@ -493,7 +505,7 @@ impl Token {
                     }
 
                     *coefficient = field.neg(coefficient);
-                    parse_factor(&args[0], state, vars, coefficient, exponents, field)?;
+                    parse_factor(&args[0], var_name_map, coefficient, exponents, field)?;
                 }
                 Token::BinaryOp(_, _, BinaryOperator::Pow, args) => {
                     if args.len() != 2 {
@@ -501,10 +513,7 @@ impl Token {
                     }
 
                     let var_index = match &args[0] {
-                        Token::ID(v) => {
-                            let id = state.get_or_insert_var(v);
-                            vars.iter().position(|v| *v == id).unwrap()
-                        }
+                        Token::ID(v) => var_name_map.iter().position(|v1| v == v1).unwrap(),
                         _ => Err("Unsupported base")?,
                     };
 
@@ -537,21 +546,19 @@ impl Token {
 
         fn parse_term<R: Ring + ConvertToRing, E: Exponent>(
             term: &Token,
-            state: &mut State,
-            vars: &[Identifier],
+            var_name_map: &[SmartString<LazyCompact>],
             poly: &mut MultivariatePolynomial<R, E>,
             field: R,
         ) -> Result<(), Cow<'static, str>> {
             let mut coefficient = poly.field.one();
-            let mut exponents = smallvec![E::zero(); vars.len()];
+            let mut exponents = smallvec![E::zero(); var_name_map.len()];
 
             match term {
                 Token::BinaryOp(_, _, BinaryOperator::Mul, args) => {
                     for factor in args {
                         parse_factor(
                             &factor,
-                            state,
-                            vars,
+                            var_name_map,
                             &mut coefficient,
                             &mut exponents,
                             field,
@@ -570,8 +577,7 @@ impl Token {
                             for factor in args {
                                 parse_factor(
                                     &factor,
-                                    state,
-                                    vars,
+                                    var_name_map,
                                     &mut coefficient,
                                     &mut exponents,
                                     field,
@@ -580,15 +586,14 @@ impl Token {
                         }
                         _ => parse_factor(
                             &args[0],
-                            state,
-                            vars,
+                            var_name_map,
                             &mut coefficient,
                             &mut exponents,
                             field,
                         )?,
                     }
                 }
-                _ => parse_factor(term, state, vars, &mut coefficient, &mut exponents, field)?,
+                _ => parse_factor(term, var_name_map, &mut coefficient, &mut exponents, field)?,
             }
 
             poly.append_monomial(coefficient, &exponents);
@@ -605,7 +610,7 @@ impl Token {
                 );
 
                 for term in args {
-                    parse_term(&term, state, &var_map, &mut poly, field)?;
+                    parse_term(&term, &var_name_map, &mut poly, field)?;
                 }
                 Ok(poly)
             }
@@ -616,7 +621,7 @@ impl Token {
                     Some(1),
                     Some(var_map.into()),
                 );
-                parse_term(self, state, &var_map, &mut poly, field)?;
+                parse_term(self, &var_name_map, &mut poly, field)?;
                 Ok(poly)
             }
         }
@@ -638,26 +643,33 @@ impl Token {
         field: R,
         out_field: RO,
         var_map: &[Identifier],
+        var_name_map: &[SmartString<LazyCompact>],
     ) -> Result<RationalPolynomial<RO, E>, Cow<'static, str>>
     where
         RationalPolynomial<RO, E>: FromNumeratorAndDenominator<R, RO, E>,
     {
         // see if the current term can be cast into a polynomial using a fast routine
-        if let Ok(num) = self.to_polynomial(field, state, var_map) {
+        if let Ok(num) = self.to_polynomial(field, var_map, var_name_map) {
             let den = MultivariatePolynomial::one(field);
             return Ok(RationalPolynomial::from_num_den(num, den, out_field));
         }
 
         match self {
             Token::Number(_) | Token::ID(_) => {
-                let num = self.to_polynomial(field, state, var_map)?;
+                let num = self.to_polynomial(field, var_map, var_name_map)?;
                 let den = MultivariatePolynomial::one(field);
                 Ok(RationalPolynomial::from_num_den(num, den, out_field))
             }
             Token::BinaryOp(_, _, BinaryOperator::Inv, args) => {
                 assert!(args.len() == 1);
-                let r =
-                    args[0].to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                let r = args[0].to_rational_polynomial(
+                    workspace,
+                    state,
+                    field,
+                    out_field,
+                    var_map,
+                    var_name_map,
+                )?;
                 Ok(r.inv())
             }
             Token::BinaryOp(_, _, BinaryOperator::Pow, args) => {
@@ -665,8 +677,14 @@ impl Token {
                 // if the exponent is not -1, we pass the subexpression to
                 // the general routine
                 if Token::Number("-1".into()) == args[1] {
-                    let r = args[0]
-                        .to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                    let r = args[0].to_rational_polynomial(
+                        workspace,
+                        state,
+                        field,
+                        out_field,
+                        var_map,
+                        var_name_map,
+                    )?;
                     Ok(r.inv())
                 } else {
                     let atom = self.to_atom(state, workspace)?;
@@ -682,8 +700,14 @@ impl Token {
             Token::BinaryOp(_, _, BinaryOperator::Mul, args) => {
                 let mut r = RationalPolynomialField::new(out_field).one();
                 for arg in args {
-                    let mut arg_r =
-                        arg.to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                    let mut arg_r = arg.to_rational_polynomial(
+                        workspace,
+                        state,
+                        field,
+                        out_field,
+                        var_map,
+                        var_name_map,
+                    )?;
                     r.unify_var_map(&mut arg_r);
                     r = &r * &arg_r;
                 }
@@ -692,8 +716,14 @@ impl Token {
             Token::BinaryOp(_, _, BinaryOperator::Add, args) => {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map));
                 for arg in args {
-                    let mut arg_r =
-                        arg.to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                    let mut arg_r = arg.to_rational_polynomial(
+                        workspace,
+                        state,
+                        field,
+                        out_field,
+                        var_map,
+                        var_name_map,
+                    )?;
                     r.unify_var_map(&mut arg_r);
                     r = &r + &arg_r;
                 }

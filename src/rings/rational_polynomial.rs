@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fmt::{Display, Error, Formatter},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
@@ -10,8 +11,10 @@ use crate::{
 };
 
 use super::{
-    finite_field::FiniteField, integer::IntegerRing, rational::RationalField, EuclideanDomain,
-    Field, Ring,
+    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace},
+    integer::IntegerRing,
+    rational::RationalField,
+    EuclideanDomain, Field, Ring,
 };
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -143,63 +146,82 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
         } else {
             let gcd = MultivariatePolynomial::gcd(&num, &den);
 
+            if !gcd.is_one() {
+                num = num / &gcd;
+                den = den / &gcd;
+            }
+
+            // normalize denominator to have positive leading coefficient
+            if den.lcoeff().is_negative() {
+                num = -num;
+                den = -den;
+            }
+
             RationalPolynomial {
-                numerator: num / &gcd,
-                denominator: den / &gcd,
+                numerator: num,
+                denominator: den,
             }
         }
     }
 }
 
-impl<E: Exponent> FromNumeratorAndDenominator<FiniteField<u32>, FiniteField<u32>, E>
-    for RationalPolynomial<FiniteField<u32>, E>
+impl<UField: FiniteFieldWorkspace, E: Exponent>
+    FromNumeratorAndDenominator<FiniteField<UField>, FiniteField<UField>, E>
+    for RationalPolynomial<FiniteField<UField>, E>
+where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+    <FiniteField<UField> as Ring>::Element: Copy,
 {
     fn from_num_den(
-        mut num: MultivariatePolynomial<FiniteField<u32>, E>,
-        mut den: MultivariatePolynomial<FiniteField<u32>, E>,
-        _field: FiniteField<u32>,
+        mut num: MultivariatePolynomial<FiniteField<UField>, E>,
+        mut den: MultivariatePolynomial<FiniteField<UField>, E>,
+        field: FiniteField<UField>,
     ) -> Self {
         num.unify_var_map(&mut den);
 
-        let gcd = MultivariatePolynomial::gcd(&num, &den);
+        if den.is_one() {
+            RationalPolynomial {
+                numerator: num,
+                denominator: den,
+            }
+        } else {
+            let gcd = MultivariatePolynomial::gcd(&num, &den);
 
-        RationalPolynomial {
-            numerator: num / &gcd,
-            denominator: den / &gcd,
+            if !gcd.is_one() {
+                num = num / &gcd;
+                den = den / &gcd;
+            }
+
+            // normalize denominator to have leading coefficient of one
+            if !field.is_one(&den.lcoeff()) {
+                let c = den.lcoeff();
+                num = num.div_coeff(&c);
+                den = den.div_coeff(&c);
+            }
+
+            RationalPolynomial {
+                numerator: num,
+                denominator: den,
+            }
         }
     }
 }
 
-impl<E: Exponent> FromNumeratorAndDenominator<FiniteField<u64>, FiniteField<u64>, E>
-    for RationalPolynomial<FiniteField<u64>, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
+where
+    Self: FromNumeratorAndDenominator<R, R, E>,
 {
-    fn from_num_den(
-        mut num: MultivariatePolynomial<FiniteField<u64>, E>,
-        mut den: MultivariatePolynomial<FiniteField<u64>, E>,
-        _field: FiniteField<u64>,
-    ) -> Self {
-        num.unify_var_map(&mut den);
-
-        let gcd = MultivariatePolynomial::gcd(&num, &den);
-
-        RationalPolynomial {
-            numerator: num / &gcd,
-            denominator: den / &gcd,
-        }
-    }
-}
-
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E> {
+    #[inline]
     pub fn inv(&self) -> Self {
         if self.numerator.is_zero() {
             panic!("Cannot invert 0");
         }
 
-        // TODO: normalize the leading monomial
-        RationalPolynomial {
-            numerator: self.denominator.clone(),
-            denominator: self.numerator.clone(),
-        }
+        Self::from_num_den(
+            self.denominator.clone(),
+            self.numerator.clone(),
+            self.numerator.field,
+        )
     }
 
     pub fn pow(&self, e: u64) -> Self {
@@ -335,6 +357,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Ring for RationalPolyno
 
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> EuclideanDomain
     for RationalPolynomialField<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
     fn rem(&self, a: &Self::Element, _: &Self::Element) -> Self::Element {
         RationalPolynomial {
@@ -356,7 +380,10 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> EuclideanDomain
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Field for RationalPolynomialField<R, E> {
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Field for RationalPolynomialField<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+{
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a / b
     }
@@ -377,16 +404,29 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
 
     fn add(self, other: &'a RationalPolynomial<R, E>) -> Self::Output {
         let denom_gcd = MultivariatePolynomial::gcd(&self.denominator, &other.denominator);
-        let a_denom_red = &self.denominator / &denom_gcd;
-        let b_denom_red = &other.denominator / &denom_gcd;
-        let num1 = b_denom_red * &self.numerator;
-        let num2 = &a_denom_red * &other.numerator;
-        let num = num1 + num2;
-        let den = a_denom_red * &other.denominator;
+
+        let mut a_denom_red = Cow::Borrowed(&self.denominator);
+        let mut b_denom_red = Cow::Borrowed(&other.denominator);
+
+        if !denom_gcd.is_one() {
+            a_denom_red = Cow::Owned(&self.denominator / &denom_gcd);
+            b_denom_red = Cow::Owned(&other.denominator / &denom_gcd);
+        }
+
+        let num1 = &self.numerator * &b_denom_red;
+        let num2 = &other.numerator * &a_denom_red;
+        let mut num = num1 + num2;
+        let mut den = &other.denominator * &a_denom_red;
         let g = MultivariatePolynomial::gcd(&num, &denom_gcd);
+
+        if !g.is_one() {
+            num = num / &g;
+            den = den / &g;
+        }
+
         RationalPolynomial {
-            numerator: num / &g,
-            denominator: den / &g,
+            numerator: num,
+            denominator: den,
         }
     }
 }
@@ -428,15 +468,38 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Mul<&'a Rationa
         let gcd1 = MultivariatePolynomial::gcd(&self.numerator, &other.denominator);
         let gcd2 = MultivariatePolynomial::gcd(&self.denominator, &other.numerator);
 
-        RationalPolynomial {
-            numerator: (&self.numerator / &gcd1) * &(&other.numerator / &gcd2),
-            denominator: (&self.denominator / &gcd2) * &(&other.denominator / &gcd1),
+        if gcd1.is_one() {
+            if gcd2.is_one() {
+                RationalPolynomial {
+                    numerator: &self.numerator * &other.numerator,
+                    denominator: &self.denominator * &other.denominator,
+                }
+            } else {
+                RationalPolynomial {
+                    numerator: &self.numerator * &(&other.numerator / &gcd2),
+                    denominator: (&self.denominator / &gcd2) * &other.denominator,
+                }
+            }
+        } else {
+            if gcd2.is_one() {
+                RationalPolynomial {
+                    numerator: (&self.numerator / &gcd1) * &other.numerator,
+                    denominator: &self.denominator * &(&other.denominator / &gcd1),
+                }
+            } else {
+                RationalPolynomial {
+                    numerator: (&self.numerator / &gcd1) * &(&other.numerator / &gcd2),
+                    denominator: (&self.denominator / &gcd2) * &(&other.denominator / &gcd1),
+                }
+            }
         }
     }
 }
 
 impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Div<&'a RationalPolynomial<R, E>>
     for &'b RationalPolynomial<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
     type Output = RationalPolynomial<R, E>;
 

@@ -331,7 +331,8 @@ impl<'a, P: Atom> AtomView<'a, P> {
         var_map: Option<&[Identifier]>,
     ) -> Result<RationalPolynomial<RO, E>, Cow<'static, str>>
     where
-        RationalPolynomial<RO, E>: FromNumeratorAndDenominator<R, RO, E>,
+        RationalPolynomial<RO, E>:
+            FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map) {
@@ -646,7 +647,8 @@ impl Token {
         var_name_map: &[SmartString<LazyCompact>],
     ) -> Result<RationalPolynomial<RO, E>, Cow<'static, str>>
     where
-        RationalPolynomial<RO, E>: FromNumeratorAndDenominator<R, RO, E>,
+        RationalPolynomial<RO, E>:
+            FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map, var_name_map) {

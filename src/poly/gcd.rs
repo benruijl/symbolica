@@ -1311,7 +1311,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 g,
                 &shared_degree,
                 &base_degree,
-                &MultivariatePolynomial::one(a.field),
+                &a.new_from_constant(a.field.one()),
             );
         }
 
@@ -1392,7 +1392,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 gcd.0,
                 &shared_degree,
                 &base_degree,
-                &MultivariatePolynomial::one(a.field),
+                &a.new_from_constant(a.field.one()),
             );
         }
 
@@ -1414,7 +1414,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                         cont,
                         &shared_degree,
                         &base_degree,
-                        &MultivariatePolynomial::one(p1.field),
+                        &p1.new_from_constant(p1.field.one()),
                     );
                 }
             }
@@ -2249,7 +2249,7 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
             a.nvars,
             IntegerRing::new(),
             Some(a.nterms),
-            a.var_map.clone(),
+            a.var_map.as_ref().map(|x| x.as_slice()),
         );
 
         for t in a {
@@ -2262,7 +2262,7 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
             b.nvars,
             IntegerRing::new(),
             Some(b.nterms),
-            b.var_map.clone(),
+            b.var_map.as_ref().map(|x| x.as_slice()),
         );
 
         for t in b {

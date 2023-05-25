@@ -17,9 +17,7 @@ use crate::representations::{
     OwnedVar, Pow, Var,
 };
 use crate::rings::rational::{Rational, RationalField};
-use crate::rings::rational_polynomial::{
-    FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
-};
+use crate::rings::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::rings::{EuclideanDomain, Ring};
 use crate::state::{State, Workspace};
 use crate::utils;
@@ -350,12 +348,8 @@ impl<'a, P: Atom> AtomView<'a, P> {
             poly.append_monomial(coefficient, &exponents);
         }
 
-        let mut poly = MultivariatePolynomial::<R, E>::new(
-            vars.len(),
-            field,
-            Some(n_terms),
-            Some(vars.clone()),
-        );
+        let mut poly =
+            MultivariatePolynomial::<R, E>::new(vars.len(), field, Some(n_terms), Some(&vars));
 
         match self {
             AtomView::Add(a) => {
@@ -388,15 +382,15 @@ impl<'a, P: Atom> AtomView<'a, P> {
     {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map) {
-            let den = MultivariatePolynomial::one(field);
-            return Ok(RationalPolynomial::from_num_den(num, den, out_field));
+            let den = num.new_from_constant(field.one());
+            return Ok(RationalPolynomial::from_num_den(num, den, out_field, true));
         }
 
         match self {
             AtomView::Num(_) | AtomView::Var(_) => {
                 let num = self.to_polynomial(field, var_map)?;
-                let den = MultivariatePolynomial::one(field);
-                Ok(RationalPolynomial::from_num_den(num, den, out_field))
+                let den = num.new_from_constant(field.one());
+                Ok(RationalPolynomial::from_num_den(num, den, out_field, true))
             }
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
@@ -444,7 +438,8 @@ impl<'a, P: Atom> AtomView<'a, P> {
             }
             AtomView::Fun(_) => Err("Functions not allowed")?,
             AtomView::Mul(m) => {
-                let mut r = RationalPolynomialField::new(out_field).one();
+                let mut r = RationalPolynomial::new(out_field, var_map);
+                r.numerator = r.numerator.add_monomial(out_field.one());
                 for arg in m.into_iter() {
                     let mut arg_r =
                         arg.to_rational_polynomial(workspace, state, field, out_field, var_map)?;
@@ -711,23 +706,23 @@ impl Token {
             let den = if let Some(den) = iter.next() {
                 parse_polynomial(den.as_bytes(), var_map, var_name_map, field).1
             } else {
-                MultivariatePolynomial::one(field)
+                num.new_from_constant(field.one())
             };
 
-            return Ok(RationalPolynomial::from_num_den(num, den, out_field));
+            return Ok(RationalPolynomial::from_num_den(num, den, out_field, true));
         }
 
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map, var_name_map) {
-            let den = MultivariatePolynomial::one(field);
-            return Ok(RationalPolynomial::from_num_den(num, den, out_field));
+            let den = num.new_from_constant(field.one());
+            return Ok(RationalPolynomial::from_num_den(num, den, out_field, true));
         }
 
         match self {
             Token::Number(_) | Token::ID(_) => {
                 let num = self.to_polynomial(field, var_map, var_name_map)?;
-                let den = MultivariatePolynomial::one(field);
-                Ok(RationalPolynomial::from_num_den(num, den, out_field))
+                let den = num.new_from_constant(field.one());
+                Ok(RationalPolynomial::from_num_den(num, den, out_field, true))
             }
             Token::Op(_, _, Operator::Inv, args) => {
                 assert!(args.len() == 1);
@@ -767,7 +762,8 @@ impl Token {
                 }
             }
             Token::Op(_, _, Operator::Mul, args) => {
-                let mut r = RationalPolynomialField::new(out_field).one();
+                let mut r = RationalPolynomial::new(out_field, Some(var_map));
+                r.numerator = r.numerator.add_monomial(out_field.one());
                 for arg in args {
                     let mut arg_r = arg.to_rational_polynomial(
                         workspace,

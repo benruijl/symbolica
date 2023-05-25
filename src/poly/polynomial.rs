@@ -32,19 +32,14 @@ pub struct MultivariatePolynomial<F: Ring, E: Exponent> {
 impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Constructs a zero polynomial.
     #[inline]
-    pub fn new(
-        nvars: usize,
-        field: F,
-        cap: Option<usize>,
-        var_map: Option<SmallVec<[Identifier; INLINED_EXPONENTS]>>,
-    ) -> Self {
+    pub fn new(nvars: usize, field: F, cap: Option<usize>, var_map: Option<&[Identifier]>) -> Self {
         Self {
             coefficients: Vec::with_capacity(cap.unwrap_or(0)),
             exponents: Vec::with_capacity(cap.unwrap_or(0) * nvars),
             nterms: 0,
             nvars,
             field,
-            var_map,
+            var_map: var_map.map(|x| x.into()),
         }
     }
 
@@ -56,6 +51,24 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             coefficients: Vec::with_capacity(cap.unwrap_or(0)),
             exponents: Vec::with_capacity(cap.unwrap_or(0) * self.nvars),
             nterms: 0,
+            nvars: self.nvars,
+            field: self.field,
+            var_map: self.var_map.clone(),
+        }
+    }
+
+    /// Constructs a constant polynomial,
+    /// inheriting the field and variable map from `self`.
+    #[inline]
+    pub fn new_from_constant(&self, coeff: F::Element) -> Self {
+        if F::is_zero(&coeff) {
+            return self.new_from(None);
+        }
+
+        Self {
+            coefficients: vec![coeff],
+            exponents: vec![E::zero(); self.nvars],
+            nterms: 1,
             nvars: self.nvars,
             field: self.field,
             var_map: self.var_map.clone(),
@@ -247,7 +260,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             new_var_map.len(),
             other.field.clone(),
             Some(other.nterms),
-            Some(new_var_map.clone()),
+            Some(&new_var_map),
         );
         let mut newexp: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); new_var_map.len()];
         for t in other.into_iter() {
@@ -1094,7 +1107,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
         // create a min-heap since our polynomials are sorted smallest to largest
         let mut h: BinaryHeap<Reverse<SmallVec<[E; INLINED_EXPONENTS]>>> =
-            BinaryHeap::with_capacity(self.nterms);
+            BinaryHeap::with_capacity(5);
 
         let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
             .exponents(0)

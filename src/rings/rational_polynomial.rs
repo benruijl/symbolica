@@ -37,6 +37,7 @@ pub trait FromNumeratorAndDenominator<R: Ring, OR: Ring, E: Exponent> {
         num: MultivariatePolynomial<R, E>,
         den: MultivariatePolynomial<R, E>,
         field: OR,
+        do_gcd: bool,
     ) -> RationalPolynomial<OR, E>;
 }
 
@@ -48,22 +49,17 @@ pub struct RationalPolynomial<R: Ring, E: Exponent> {
 
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     pub fn new(field: R, var_map: Option<&[Identifier]>) -> RationalPolynomial<R, E> {
+        let num = MultivariatePolynomial::new(
+            var_map.map(|x| x.len()).unwrap_or(0),
+            field,
+            None,
+            var_map,
+        );
+        let den = num.new_from_constant(field.one());
+
         RationalPolynomial {
-            numerator: MultivariatePolynomial::new(
-                var_map.map(|x| x.len()).unwrap_or(0),
-                field,
-                None,
-                var_map.map(|x| x.iter().cloned().collect()),
-            ),
-            denominator: {
-                let d = MultivariatePolynomial::new(
-                    var_map.map(|x| x.len()).unwrap_or(0),
-                    field,
-                    None,
-                    var_map.map(|x| x.iter().cloned().collect()),
-                );
-                d.add_monomial(field.one())
-            },
+            numerator: num,
+            denominator: den,
         }
     }
 
@@ -91,6 +87,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
         num: MultivariatePolynomial<RationalField, E>,
         den: MultivariatePolynomial<RationalField, E>,
         field: IntegerRing,
+        do_gcd: bool,
     ) -> RationalPolynomial<IntegerRing, E> {
         let content = num.field.gcd(&num.content(), &den.content());
 
@@ -98,7 +95,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
             num.nvars,
             IntegerRing::new(),
             Some(num.nterms),
-            num.var_map.clone(),
+            num.var_map.as_ref().map(|x| x.as_slice()),
         );
 
         for t in num.into_iter() {
@@ -111,7 +108,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
             den.nvars,
             IntegerRing::new(),
             Some(den.nterms),
-            den.var_map.clone(),
+            den.var_map.as_ref().map(|x| x.as_slice()),
         );
 
         for t in den.into_iter() {
@@ -124,7 +121,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
             IntegerRing,
             IntegerRing,
             E,
-        >>::from_num_den(num_int, den_int, field)
+        >>::from_num_den(num_int, den_int, field, do_gcd)
     }
 }
 
@@ -135,6 +132,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
         mut num: MultivariatePolynomial<IntegerRing, E>,
         mut den: MultivariatePolynomial<IntegerRing, E>,
         _field: IntegerRing,
+        do_gcd: bool,
     ) -> Self {
         num.unify_var_map(&mut den);
 
@@ -144,11 +142,13 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
                 denominator: den,
             }
         } else {
-            let gcd = MultivariatePolynomial::gcd(&num, &den);
+            if do_gcd {
+                let gcd = MultivariatePolynomial::gcd(&num, &den);
 
-            if !gcd.is_one() {
-                num = num / &gcd;
-                den = den / &gcd;
+                if !gcd.is_one() {
+                    num = num / &gcd;
+                    den = den / &gcd;
+                }
             }
 
             // normalize denominator to have positive leading coefficient
@@ -176,6 +176,7 @@ where
         mut num: MultivariatePolynomial<FiniteField<UField>, E>,
         mut den: MultivariatePolynomial<FiniteField<UField>, E>,
         field: FiniteField<UField>,
+        do_gcd: bool,
     ) -> Self {
         num.unify_var_map(&mut den);
 
@@ -185,11 +186,13 @@ where
                 denominator: den,
             }
         } else {
-            let gcd = MultivariatePolynomial::gcd(&num, &den);
+            if do_gcd {
+                let gcd = MultivariatePolynomial::gcd(&num, &den);
 
-            if !gcd.is_one() {
-                num = num / &gcd;
-                den = den / &gcd;
+                if !gcd.is_one() {
+                    num = num / &gcd;
+                    den = den / &gcd;
+                }
             }
 
             // normalize denominator to have leading coefficient of one
@@ -212,16 +215,13 @@ where
     Self: FromNumeratorAndDenominator<R, R, E>,
 {
     #[inline]
-    pub fn inv(&self) -> Self {
+    pub fn inv(self) -> Self {
         if self.numerator.is_zero() {
             panic!("Cannot invert 0");
         }
 
-        Self::from_num_den(
-            self.denominator.clone(),
-            self.numerator.clone(),
-            self.numerator.field,
-        )
+        let field = self.numerator.field;
+        Self::from_num_den(self.denominator, self.numerator, field, false)
     }
 
     pub fn pow(&self, e: u64) -> Self {
@@ -393,7 +393,7 @@ where
     }
 
     fn inv(&self, a: &Self::Element) -> Self::Element {
-        a.inv()
+        a.clone().inv()
     }
 }
 
@@ -505,6 +505,6 @@ where
 
     fn div(self, other: &'a RationalPolynomial<R, E>) -> Self::Output {
         // TODO: optimize
-        self * &other.inv()
+        self * &other.clone().inv()
     }
 }

@@ -1277,7 +1277,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 break;
             }
 
-            pow = pow - E::from_u32(1);
+            pow = pow - E::one();
         }
 
         q.reverse();

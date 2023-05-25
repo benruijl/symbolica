@@ -83,7 +83,7 @@ where
 
     // convert to standard form
     let mut e = vec![E::zero(); u[0].nvars];
-    e[x] = E::from_u32(1);
+    e[x] = E::one();
     let xp = MultivariatePolynomial::from_monomial(field.one(), e, field);
     let mut u = v[v.len() - 1].clone();
     for k in (0..v.len() - 1).rev() {
@@ -1321,7 +1321,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 for (md, v) in base_degree.iter_mut().zip(t.exponents) {
                     if !v.is_zero() {
                         if let Some(mm) = md.as_mut() {
-                            if *mm != E::from_u32(1) {
+                            if *mm != E::one() {
                                 *mm = mm.gcd(v);
                             }
                         } else {
@@ -1335,7 +1335,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         // rename x^base_deg to x
         if base_degree
             .iter()
-            .any(|d| d.is_some() && d.unwrap() > E::from_u32(1))
+            .any(|d| d.is_some() && d.unwrap() > E::one())
         {
             let aa = a.to_mut();
             for e in aa.exponents.chunks_mut(aa.nvars) {
@@ -1371,7 +1371,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             if shared_degree.iter().any(|d| *d > E::from_u32(0))
                 || base_degree
                     .iter()
-                    .any(|d| d.map(|bd| bd > E::from_u32(1)).unwrap_or(false))
+                    .any(|d| d.map(|bd| bd > E::one()).unwrap_or(false))
             {
                 for e in g.exponents.chunks_mut(g.nvars) {
                     for ((v, d), s) in e.iter_mut().zip(base_degree).zip(shared_degree) {
@@ -1398,7 +1398,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         // check if the polynomial is linear in a variable and compute the gcd using the univariate content
         for (p1, p2) in [(&a, &b), (&b, &a)] {
-            if let Some(var) = (0..p1.nvars).find(|v| p1.degree(*v) == E::from_u32(1)) {
+            if let Some(var) = (0..p1.nvars).find(|v| p1.degree(*v) == E::one()) {
                 let mut cont = p1.univariate_content(var);
                 let p1_prim = p1.as_ref() / &cont;
 

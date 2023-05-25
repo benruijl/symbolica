@@ -43,6 +43,7 @@ pub trait Exponent:
     + Copy
 {
     fn zero() -> Self;
+    fn one() -> Self;
     /// Convert the exponent to `u32`. This is always possible, as `u32` is the largest supported exponent type.
     fn to_u32(&self) -> u32;
     /// Convert from `u32`. This function may panic if the exponent is too large.
@@ -56,6 +57,11 @@ impl Exponent for u32 {
     #[inline]
     fn zero() -> Self {
         0
+    }
+
+    #[inline]
+    fn one() -> Self {
+        1
     }
 
     #[inline]
@@ -84,11 +90,57 @@ impl Exponent for u32 {
     }
 }
 
+impl Exponent for u16 {
+    #[inline]
+    fn zero() -> Self {
+        0
+    }
+
+    #[inline]
+    fn one() -> Self {
+        1
+    }
+
+    #[inline]
+    fn to_u32(&self) -> u32 {
+        *self as u32
+    }
+
+    #[inline]
+    fn from_u32(n: u32) -> Self {
+        if n < u16::MAX as u32 {
+            n as u16
+        } else {
+            panic!("Exponent {} too large for u16", n);
+        }
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        *self == 0
+    }
+
+    #[inline]
+    fn checked_add(&self, other: &Self) -> Option<Self> {
+        u16::checked_add(*self, *other)
+    }
+
+    #[inline]
+    fn gcd(&self, other: &Self) -> Self {
+        utils::gcd_unsigned(*self as u64, *other as u64) as Self
+    }
+}
+
 /// An exponent limited to 255 for efficiency
 impl Exponent for u8 {
     #[inline]
     fn zero() -> Self {
         0
+    }
+
+    #[inline]
+    fn one() -> Self {
+        1
     }
 
     #[inline]
@@ -247,7 +299,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 }
                 AtomView::Var(v) => {
                     let id = v.get_name();
-                    exponents[vars.iter().position(|v| *v == id).unwrap()] += E::from_u32(1);
+                    exponents[vars.iter().position(|v| *v == id).unwrap()] += E::one();
                 }
                 AtomView::Pow(p) => {
                     let (base, exp) = p.get_base_exp();
@@ -498,7 +550,7 @@ impl Token {
                 }
                 Token::ID(x) => {
                     let index = var_name_map.iter().position(|v| v == x).unwrap();
-                    exponents[index] += E::from_u32(1);
+                    exponents[index] += E::one();
                 }
                 Token::Op(_, _, Operator::Neg, args) => {
                     if args.len() != 1 {

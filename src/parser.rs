@@ -710,7 +710,7 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
                 let n = unsafe { std::str::from_utf8_unchecked(&pow_start[..len]) };
                 exponents[index] = E::from_u32(n.parse::<u32>().unwrap());
             } else {
-                exponents[index] = E::from_u32(1);
+                exponents[index] = E::one();
             }
 
             if input.len() == 0 {

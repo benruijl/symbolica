@@ -79,7 +79,7 @@ pub extern "C" fn simplify(
     let token = parse(cstr).unwrap();
 
     if prime == 0 {
-        let r: RationalPolynomial<IntegerRing, u8> = token
+        let r: RationalPolynomial<IntegerRing, u16> = token
             .to_rational_polynomial(
                 &symbolica.workspace,
                 &mut symbolica.state,
@@ -109,7 +109,7 @@ pub extern "C" fn simplify(
     } else {
         if prime < u32::MAX as c_ulonglong {
             let field = FiniteField::<u32>::new(prime as u32);
-            let rf: RationalPolynomial<FiniteField<u32>, u8> = token
+            let rf: RationalPolynomial<FiniteField<u32>, u16> = token
                 .to_rational_polynomial(
                     &symbolica.workspace,
                     &mut symbolica.state,
@@ -138,7 +138,7 @@ pub extern "C" fn simplify(
             .unwrap();
         } else {
             let field = FiniteField::<u64>::new(prime as u64);
-            let rf: RationalPolynomial<FiniteField<u64>, u8> = token
+            let rf: RationalPolynomial<FiniteField<u64>, u16> = token
                 .to_rational_polynomial(
                     &symbolica.workspace,
                     &mut symbolica.state,

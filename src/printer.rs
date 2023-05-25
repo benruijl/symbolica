@@ -16,6 +16,7 @@ pub struct SymbolicaPrintOptions {
     pub terms_on_new_line: bool,
     pub color_top_level_sum: bool,
     pub print_finite_field: bool,
+    pub explicit_rational_polynomial: bool,
 }
 
 impl Default for SymbolicaPrintOptions {
@@ -24,6 +25,7 @@ impl Default for SymbolicaPrintOptions {
             terms_on_new_line: false,
             color_top_level_sum: true,
             print_finite_field: true,
+            explicit_rational_polynomial: false,
         }
     }
 }
@@ -455,6 +457,44 @@ impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
 
 impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b, R, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let print_explicit = match self.print_mode {
+            PrintMode::Symbolica(s) => s.explicit_rational_polynomial,
+            PrintMode::Mathematica => false,
+        };
+
+        if print_explicit {
+            if self.poly.denominator.is_one() {
+                if self.poly.numerator.is_zero() {
+                    f.write_char('0')?;
+                } else {
+                    f.write_fmt(format_args!(
+                        "[{}]",
+                        PolynomialPrinter {
+                            poly: &self.poly.numerator,
+                            state: self.state,
+                            print_mode: self.print_mode,
+                        }
+                    ))?;
+                }
+            } else {
+                f.write_fmt(format_args!(
+                    "[{},{}]",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        print_mode: self.print_mode,
+                    },
+                    PolynomialPrinter {
+                        poly: &self.poly.denominator,
+                        state: self.state,
+                        print_mode: self.print_mode,
+                    }
+                ))?;
+            }
+
+            return Ok(());
+        }
+
         if self.poly.denominator.is_one() {
             f.write_fmt(format_args!(
                 "{}",

@@ -97,7 +97,12 @@ pub extern "C" fn simplify(
             RationalPolynomialPrinter {
                 poly: &r,
                 state: &symbolica.state,
-                print_mode: PrintMode::default()
+                print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                    terms_on_new_line: false,
+                    color_top_level_sum: false,
+                    print_finite_field: false,
+                    explicit_rational_polynomial: true
+                })
             }
         )
         .unwrap();
@@ -125,7 +130,8 @@ pub extern "C" fn simplify(
                     print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
                         terms_on_new_line: false,
                         color_top_level_sum: false,
-                        print_finite_field: false
+                        print_finite_field: false,
+                        explicit_rational_polynomial: true
                     })
                 }
             )
@@ -153,7 +159,8 @@ pub extern "C" fn simplify(
                     print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
                         terms_on_new_line: false,
                         color_top_level_sum: false,
-                        print_finite_field: false
+                        print_finite_field: false,
+                        explicit_rational_polynomial: true
                     })
                 }
             )

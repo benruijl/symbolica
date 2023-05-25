@@ -4,13 +4,13 @@ pub mod polynomial;
 use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Sub};
+use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Neg, Sub};
 
 use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
-use crate::parser::{BinaryOperator, Token};
+use crate::parser::{parse_polynomial, Operator, Token};
 use crate::representations::number::{BorrowedNumber, ConvertToRing, Number};
 use crate::representations::{
     Add, Atom, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedAtom, OwnedMul, OwnedNum, OwnedPow,
@@ -500,7 +500,7 @@ impl Token {
                     let index = var_name_map.iter().position(|v| v == x).unwrap();
                     exponents[index] += E::from_u32(1);
                 }
-                Token::BinaryOp(_, _, BinaryOperator::Neg, args) => {
+                Token::Op(_, _, Operator::Neg, args) => {
                     if args.len() != 1 {
                         Err("Wrong args for neg")?;
                     }
@@ -508,7 +508,7 @@ impl Token {
                     *coefficient = field.neg(coefficient);
                     parse_factor(&args[0], var_name_map, coefficient, exponents, field)?;
                 }
-                Token::BinaryOp(_, _, BinaryOperator::Pow, args) => {
+                Token::Op(_, _, Operator::Pow, args) => {
                     if args.len() != 2 {
                         Err("Wrong args for pow")?;
                     }
@@ -555,7 +555,7 @@ impl Token {
             let mut exponents = smallvec![E::zero(); var_name_map.len()];
 
             match term {
-                Token::BinaryOp(_, _, BinaryOperator::Mul, args) => {
+                Token::Op(_, _, Operator::Mul, args) => {
                     for factor in args {
                         parse_factor(
                             &factor,
@@ -566,7 +566,7 @@ impl Token {
                         )?;
                     }
                 }
-                Token::BinaryOp(_, _, BinaryOperator::Neg, args) => {
+                Token::Op(_, _, Operator::Neg, args) => {
                     if args.len() != 1 {
                         Err("Wrong args for neg")?;
                     }
@@ -574,7 +574,7 @@ impl Token {
                     coefficient = field.neg(&coefficient);
 
                     match &args[0] {
-                        Token::BinaryOp(_, _, BinaryOperator::Mul, args) => {
+                        Token::Op(_, _, Operator::Mul, args) => {
                             for factor in args {
                                 parse_factor(
                                     &factor,
@@ -602,7 +602,7 @@ impl Token {
         }
 
         match self {
-            Token::BinaryOp(_, _, BinaryOperator::Add, args) => {
+            Token::Op(_, _, Operator::Add, args) => {
                 let mut poly = MultivariatePolynomial::<R, E>::new(
                     var_map.len(),
                     field,
@@ -650,6 +650,21 @@ impl Token {
         RationalPolynomial<RO, E>:
             FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
+        // use a faster routine to parse the rational polynomial
+        if let Token::RationalPolynomial(r) = self {
+            let mut iter = r.split(',');
+            let num = iter.next().unwrap();
+
+            let num = parse_polynomial(num.as_bytes(), var_map, var_name_map, field).1;
+            let den = if let Some(den) = iter.next() {
+                parse_polynomial(den.as_bytes(), var_map, var_name_map, field).1
+            } else {
+                MultivariatePolynomial::one(field)
+            };
+
+            return Ok(RationalPolynomial::from_num_den(num, den, out_field));
+        }
+
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map, var_name_map) {
             let den = MultivariatePolynomial::one(field);
@@ -662,7 +677,7 @@ impl Token {
                 let den = MultivariatePolynomial::one(field);
                 Ok(RationalPolynomial::from_num_den(num, den, out_field))
             }
-            Token::BinaryOp(_, _, BinaryOperator::Inv, args) => {
+            Token::Op(_, _, Operator::Inv, args) => {
                 assert!(args.len() == 1);
                 let r = args[0].to_rational_polynomial(
                     workspace,
@@ -674,7 +689,7 @@ impl Token {
                 )?;
                 Ok(r.inv())
             }
-            Token::BinaryOp(_, _, BinaryOperator::Pow, args) => {
+            Token::Op(_, _, Operator::Pow, args) => {
                 // we have a pow that could not be parsed by to_polynomial
                 // if the exponent is not -1, we pass the subexpression to
                 // the general routine
@@ -699,7 +714,7 @@ impl Token {
                     )
                 }
             }
-            Token::BinaryOp(_, _, BinaryOperator::Mul, args) => {
+            Token::Op(_, _, Operator::Mul, args) => {
                 let mut r = RationalPolynomialField::new(out_field).one();
                 for arg in args {
                     let mut arg_r = arg.to_rational_polynomial(
@@ -715,7 +730,7 @@ impl Token {
                 }
                 Ok(r)
             }
-            Token::BinaryOp(_, _, BinaryOperator::Add, args) => {
+            Token::Op(_, _, Operator::Add, args) => {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map));
                 for arg in args {
                     let mut arg_r = arg.to_rational_polynomial(
@@ -730,6 +745,18 @@ impl Token {
                     r = &r + &arg_r;
                 }
                 return Ok(r);
+            }
+            Token::Op(_, _, Operator::Neg, args) => {
+                let r = args[0].to_rational_polynomial(
+                    workspace,
+                    state,
+                    field,
+                    out_field,
+                    var_map,
+                    var_name_map,
+                )?;
+
+                return Ok(r.neg());
             }
             _ => {
                 let atom = self.to_atom(state, workspace)?;

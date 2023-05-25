@@ -357,7 +357,16 @@ impl Ring for IntegerRing {
 impl EuclideanDomain for IntegerRing {
     fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         match (a, b) {
-            (Integer::Natural(a), Integer::Natural(b)) => Integer::Natural(a.rem_euclid(*b)),
+            (Integer::Natural(a), Integer::Natural(b)) => {
+                if let Some(r) = a.checked_rem_euclid(*b) {
+                    Integer::Natural(r)
+                } else {
+                    Integer::from_large(
+                        ArbitraryPrecisionInteger::from(*a)
+                            .rem_euc(ArbitraryPrecisionInteger::from(*b)),
+                    )
+                }
+            }
             (Integer::Natural(a), Integer::Large(b)) => {
                 Integer::from_large(ArbitraryPrecisionInteger::from(*a).rem_euc(b))
             }
@@ -370,10 +379,15 @@ impl EuclideanDomain for IntegerRing {
 
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
         match (a, b) {
-            (Integer::Natural(a), Integer::Natural(b)) => (
-                Integer::Natural(a.div_euclid(*b)),
-                Integer::Natural(a.rem_euclid(*b)),
-            ),
+            (Integer::Natural(aa), Integer::Natural(bb)) => {
+                if let Some(r) = aa.checked_div_euclid(*bb) {
+                    (Integer::Natural(r), a - &(b * &Integer::Natural(r)))
+                } else {
+                    let r = ArbitraryPrecisionInteger::from(*aa)
+                        .div_rem_euc(ArbitraryPrecisionInteger::from(*bb));
+                    (Integer::from_large(r.0), Integer::from_large(r.1))
+                }
+            }
             (Integer::Natural(a), Integer::Large(b)) => {
                 let r = ArbitraryPrecisionInteger::from(*a).div_rem_euc(b.clone());
                 (Integer::from_large(r.0), Integer::from_large(r.1))

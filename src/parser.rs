@@ -1,12 +1,19 @@
 use std::{fmt::Write, string::String};
 
+use bytes::Buf;
 use rug::{Complete, Integer};
 
 use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    representations::{number::Number, tree::AtomTree, Atom, OwnedAtom},
+    poly::{polynomial::MultivariatePolynomial, Exponent},
+    representations::{
+        number::{BorrowedNumber, ConvertToRing, Number},
+        tree::AtomTree,
+        Atom, Identifier, OwnedAtom,
+    },
+    rings::Ring,
     state::{State, Workspace},
 };
 
@@ -14,11 +21,12 @@ use crate::{
 enum ParseState {
     Identifier,
     Number,
+    RationalPolynomial,
     Any,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BinaryOperator {
+pub enum Operator {
     Mul,
     Add,
     Pow,
@@ -27,26 +35,36 @@ pub enum BinaryOperator {
     Inv,      // left side should be tagged as 'finished', for internal use
 }
 
-impl BinaryOperator {
-    fn get_precedence(&self) -> u8 {
+impl Operator {
+    #[inline]
+    pub fn get_arity(&self) -> usize {
         match self {
-            BinaryOperator::Mul => 8,
-            BinaryOperator::Add => 7,
-            BinaryOperator::Pow => 11,
-            BinaryOperator::Argument => 5,
-            BinaryOperator::Neg => 10,
-            BinaryOperator::Inv => 9,
+            Operator::Neg | Operator::Inv => 1,
+            _ => 2,
         }
     }
 
-    fn right_associative(&self) -> bool {
+    #[inline]
+    pub fn get_precedence(&self) -> u8 {
         match self {
-            BinaryOperator::Mul => true,
-            BinaryOperator::Add => true,
-            BinaryOperator::Pow => false,
-            BinaryOperator::Argument => true,
-            BinaryOperator::Neg => true,
-            BinaryOperator::Inv => true,
+            Operator::Mul => 8,
+            Operator::Add => 7,
+            Operator::Pow => 11,
+            Operator::Argument => 5,
+            Operator::Neg => 10,
+            Operator::Inv => 9,
+        }
+    }
+
+    #[inline]
+    pub fn right_associative(&self) -> bool {
+        match self {
+            Operator::Mul => true,
+            Operator::Add => true,
+            Operator::Pow => false,
+            Operator::Argument => true,
+            Operator::Neg => true,
+            Operator::Inv => true,
         }
     }
 }
@@ -55,8 +73,9 @@ impl BinaryOperator {
 pub enum Token {
     Number(SmartString<LazyCompact>),
     ID(SmartString<LazyCompact>),
-    BinaryOp(bool, bool, BinaryOperator, Vec<Token>),
-    Fn(bool, SmartString<LazyCompact>, Vec<Token>),
+    RationalPolynomial(SmartString<LazyCompact>),
+    Op(bool, bool, Operator, Vec<Token>),
+    Fn(bool, Vec<Token>),
     Start,
     OpenParenthesis,
     CloseParenthesis,
@@ -69,38 +88,42 @@ impl Token {
         match self {
             Token::Number(_) => true,
             Token::ID(_) => true,
-            Token::BinaryOp(more_left, more_right, _, _) => !more_left && !more_right,
-            Token::Fn(more_right, _, _) => !more_right,
+            Token::RationalPolynomial(_) => true,
+            Token::Op(more_left, more_right, _, _) => !more_left && !more_right,
+            Token::Fn(more_right, _) => !more_right,
             _ => false,
         }
     }
 
     /// Get the precedence of the token.
+    #[inline]
     fn get_precedence(&self) -> u8 {
         match self {
-            Token::Number(_) => 10,
-            Token::ID(_) => 10,
-            Token::BinaryOp(_, _, o, _) => o.get_precedence(),
-            Token::Fn(_, _, _) | Token::OpenParenthesis | Token::CloseParenthesis => 5,
+            Token::Number(_) => 11,
+            Token::ID(_) => 11,
+            Token::RationalPolynomial(_) => 11,
+            Token::Op(_, _, o, _) => o.get_precedence(),
+            Token::Fn(_, _) | Token::OpenParenthesis | Token::CloseParenthesis => 5,
             Token::Start | Token::EOF => 4,
         }
     }
 
     /// Add `other` to the left side of `self`, where `self` is a binary operation.
+    #[inline]
     fn add_left(&mut self, other: Token) {
         match self {
-            Token::BinaryOp(ml, _, o1, args) => {
+            Token::Op(ml, _, o1, args) => {
                 debug_assert!(*ml);
                 *ml = false;
 
-                if let Token::BinaryOp(ml, mr, o2, mut args2) = other {
+                if let Token::Op(ml, mr, o2, mut args2) = other {
                     debug_assert!(!ml && !mr);
                     if *o1 == o2 {
                         // add from the left by swapping and then extending from the right
                         std::mem::swap(args, &mut args2);
                         args.extend(args2.drain(..));
                     } else {
-                        args.insert(0, Token::BinaryOp(false, false, o2, args2));
+                        args.insert(0, Token::Op(false, false, o2, args2));
                     }
                 } else {
                     args.insert(0, other);
@@ -112,42 +135,43 @@ impl Token {
 
     fn distribute_neg(&mut self) {
         match self {
-            Token::BinaryOp(_, _, BinaryOperator::Neg, args3) => {
+            Token::Op(_, _, Operator::Neg, args3) => {
                 debug_assert!(args3.len() == 1);
                 *self = args3.pop().unwrap();
             }
-            Token::BinaryOp(_, _, BinaryOperator::Mul, args2) => {
+            Token::Op(_, _, Operator::Mul, args2) => {
                 args2[0].distribute_neg();
             }
-            Token::BinaryOp(_, _, BinaryOperator::Add, args2) => {
+            Token::Op(_, _, Operator::Add, args2) => {
                 for a in args2 {
                     a.distribute_neg();
                 }
             }
             _ => {
                 let t = std::mem::replace(self, Token::EOF);
-                *self = Token::BinaryOp(false, false, BinaryOperator::Neg, vec![t]);
+                *self = Token::Op(false, false, Operator::Neg, vec![t]);
             }
         }
     }
 
     /// Add `other` to right side of `self`, where `self` is a binary operation.
+    #[inline]
     fn add_right(&mut self, mut other: Token) {
         match self {
-            Token::BinaryOp(_, mr, o1, args) => {
+            Token::Op(_, mr, o1, args) => {
                 debug_assert!(*mr);
                 *mr = false;
 
-                if *o1 == BinaryOperator::Neg {
+                if *o1 == Operator::Neg {
                     other.distribute_neg();
                     *self = other;
                     return;
                 }
 
-                if let Token::BinaryOp(ml, mr, o2, mut args2) = other {
+                if let Token::Op(ml, mr, o2, mut args2) = other {
                     debug_assert!(!ml && !mr);
                     if *o1 == o2 && o2.right_associative() {
-                        if o2 == BinaryOperator::Neg || o2 == BinaryOperator::Inv {
+                        if o2 == Operator::Neg || o2 == Operator::Inv {
                             // twice unary minus or inv cancels out
                             debug_assert!(args2.len() == 1);
                             *self = args2.pop().unwrap();
@@ -155,7 +179,7 @@ impl Token {
                             args.extend(args2.drain(..))
                         }
                     } else {
-                        args.push(Token::BinaryOp(false, false, o2, args2));
+                        args.push(Token::Op(false, false, o2, args2));
                     }
                 } else {
                     args.push(other);
@@ -178,16 +202,16 @@ impl Token {
                 }
             }
             Token::ID(x) => Ok(AtomTree::Var(state.get_or_insert_var(x))),
-            Token::BinaryOp(_, _, op, args) => {
+            Token::Op(_, _, op, args) => {
                 let mut atom_args = vec![];
                 for a in args {
                     atom_args.push(a.to_atom_tree(state)?);
                 }
 
                 match op {
-                    BinaryOperator::Mul => Ok(AtomTree::Mul(atom_args)),
-                    BinaryOperator::Add => Ok(AtomTree::Add(atom_args)),
-                    BinaryOperator::Pow => {
+                    Operator::Mul => Ok(AtomTree::Mul(atom_args)),
+                    Operator::Add => Ok(AtomTree::Add(atom_args)),
+                    Operator::Pow => {
                         let base = atom_args.remove(0);
                         let exp = atom_args.remove(0);
 
@@ -199,15 +223,15 @@ impl Token {
 
                         Ok(pow)
                     }
-                    BinaryOperator::Argument => Err("Unexpected argument operator".into()),
-                    BinaryOperator::Neg => {
+                    Operator::Argument => Err("Unexpected argument operator".into()),
+                    Operator::Neg => {
                         debug_assert!(atom_args.len() == 1);
                         Ok(AtomTree::Mul(vec![
                             atom_args.pop().unwrap(),
                             AtomTree::Num(Number::Natural(-1, 1)),
                         ]))
                     }
-                    BinaryOperator::Inv => {
+                    Operator::Inv => {
                         debug_assert!(atom_args.len() == 1);
                         Ok(AtomTree::Pow(Box::new((
                             atom_args.pop().unwrap(),
@@ -216,9 +240,14 @@ impl Token {
                     }
                 }
             }
-            Token::Fn(_, name, args) => {
-                let mut atom_args = vec![];
-                for a in args {
+            Token::Fn(_, args) => {
+                let name = match &args[0] {
+                    Token::ID(s) => s,
+                    _ => unreachable!(),
+                };
+
+                let mut atom_args = Vec::with_capacity(args.len() - 1);
+                for a in args.iter().skip(1) {
                     atom_args.push(a.to_atom_tree(state)?);
                 }
                 Ok(AtomTree::Fn(state.get_or_insert_var(name), atom_args))
@@ -242,23 +271,28 @@ impl std::fmt::Display for Token {
         match self {
             Token::Number(n) => f.write_str(n),
             Token::ID(v) => f.write_str(v),
-            Token::BinaryOp(_, _, o, m) => {
+            Token::RationalPolynomial(v) => {
+                f.write_char('[')?;
+                f.write_str(v)?;
+                f.write_char(']')
+            }
+            Token::Op(_, _, o, m) => {
                 let mut first = true;
                 f.write_char('(')?;
 
                 for mm in m {
                     if !first {
                         match o {
-                            BinaryOperator::Mul => f.write_char('*')?,
-                            BinaryOperator::Add => f.write_char('+')?,
-                            BinaryOperator::Pow => f.write_char('^')?,
-                            BinaryOperator::Argument => f.write_char(',')?,
-                            BinaryOperator::Neg => f.write_char('-')?,
-                            BinaryOperator::Inv => f.write_str("1/")?,
+                            Operator::Mul => f.write_char('*')?,
+                            Operator::Add => f.write_char('+')?,
+                            Operator::Pow => f.write_char('^')?,
+                            Operator::Argument => f.write_char(',')?,
+                            Operator::Neg => f.write_char('-')?,
+                            Operator::Inv => f.write_str("1/")?,
                         }
-                    } else if *o == BinaryOperator::Neg {
+                    } else if *o == Operator::Neg {
                         f.write_char('-')?;
-                    } else if *o == BinaryOperator::Inv {
+                    } else if *o == Operator::Inv {
                         f.write_str("1/")?;
                     }
                     first = false;
@@ -267,13 +301,16 @@ impl std::fmt::Display for Token {
                 }
                 f.write_char(')')
             }
-            Token::Fn(_, name, args) => {
+            Token::Fn(_, args) => {
                 let mut first = true;
 
-                f.write_str(name)?;
+                match &args[0] {
+                    Token::ID(s) => f.write_str(&s)?,
+                    _ => unreachable!(),
+                };
 
                 f.write_char('(')?;
-                for aa in args {
+                for aa in args.iter().skip(1) {
                     if !first {
                         f.write_char(',')?;
                     }
@@ -293,7 +330,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
     stack.push(Token::Start);
     let mut state = ParseState::Any;
 
-    let delims = ['\0', '^', '+', '*', '-', '(', ')', '/', ','];
+    let delims = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
     let whitespace = [' ', '\t', '\n', '\r', '\\'];
 
     let mut char_iter = input.chars();
@@ -321,7 +358,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                 }
             }
             ParseState::Number => {
-                if c != '_' && (c < '0' || c > '9') {
+                if c != '_' && !c.is_ascii_digit() {
                     if !delims.contains(&c) {
                         return Err(format!(
                             "Parsing error at index {}. Unexpected continuation of number",
@@ -329,19 +366,31 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         ));
                     }
 
-                    // number is over
-                    state = ParseState::Any;
-
                     // drag in the neg operator
-                    if let Some(Token::BinaryOp(false, true, BinaryOperator::Neg, _)) =
-                        stack.last_mut()
-                    {
-                        stack.pop();
-                        id_buffer.insert(0, '-');
+                    if state == ParseState::Any {
+                        if let Some(Token::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
+                            stack.pop();
+                            id_buffer.insert(0, '-');
+                        }
                     }
 
+                    state = ParseState::Any;
+
                     stack.push(Token::Number(id_buffer.as_str().into()));
+
                     id_buffer.clear();
+                } else {
+                    id_buffer.push(c);
+                }
+            }
+            ParseState::RationalPolynomial => {
+                if c == ']' {
+                    stack.push(Token::RationalPolynomial(id_buffer.as_str().into()));
+                    id_buffer.clear();
+
+                    state = ParseState::Any;
+                    i += 1;
+                    c = char_iter.next().unwrap_or('\0');
                 } else {
                     id_buffer.push(c);
                 }
@@ -350,114 +399,80 @@ pub fn parse(input: &str) -> Result<Token, String> {
         }
 
         if state == ParseState::Any {
-            match c {
-                '+' => {
+            if !c.is_ascii() {
+                state = ParseState::Identifier;
+                id_buffer.push(c);
+            }
+
+            match c as u8 {
+                b'+' => {
                     if matches!(
-                        stack.last().unwrap(),
-                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
+                        unsafe { stack.last().unwrap_unchecked() },
+                        Token::Start | Token::OpenParenthesis | Token::Op(_, true, _, _)
                     ) {
                         // unary operator, can be ignored as plus is the default
                     } else {
-                        stack.push(Token::BinaryOp(
-                            true,
-                            true,
-                            BinaryOperator::Add,
-                            Vec::with_capacity(2),
-                        ))
+                        stack.push(Token::Op(true, true, Operator::Add, vec![]))
                     }
                 }
-                '^' => stack.push(Token::BinaryOp(
-                    true,
-                    true,
-                    BinaryOperator::Pow,
-                    Vec::with_capacity(2),
-                )),
-                '*' => stack.push(Token::BinaryOp(
-                    true,
-                    true,
-                    BinaryOperator::Mul,
-                    Vec::with_capacity(2),
-                )),
-                '-' => {
+                b'^' => stack.push(Token::Op(true, true, Operator::Pow, vec![])),
+                b'*' => stack.push(Token::Op(true, true, Operator::Mul, vec![])),
+                b'-' => {
                     if matches!(
-                        stack.last().unwrap(),
-                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
+                        unsafe { stack.last().unwrap_unchecked() },
+                        Token::Start | Token::OpenParenthesis | Token::Op(_, true, _, _)
                     ) {
                         // unary minus only requires an argument to the right
-                        stack.push(Token::BinaryOp(
-                            false,
-                            true,
-                            BinaryOperator::Neg,
-                            Vec::with_capacity(1),
-                        ));
+                        stack.push(Token::Op(false, true, Operator::Neg, vec![]));
                     } else {
-                        stack.push(Token::BinaryOp(
-                            true,
-                            true,
-                            BinaryOperator::Add,
-                            Vec::with_capacity(2),
-                        ));
+                        stack.push(Token::Op(true, true, Operator::Add, vec![]));
                         extra_ops.push('-'); // push a unary minus
                     }
                 }
-                '(' => {
+                b'(' => {
                     // check if the opening bracket belongs to a function
                     if let Some(Token::ID(_)) = stack.last() {
-                        let name = stack.pop().unwrap();
-                        if let Token::ID(name) = name {
-                            stack.push(Token::Fn(true, name, vec![])); // serves as open paren
+                        let name = unsafe { stack.pop().unwrap_unchecked() };
+                        if let Token::ID(_) = name {
+                            stack.push(Token::Fn(true, vec![name])); // serves as open paren
                         }
                     } else {
                         // TODO: crash when a number if written before it
                         stack.push(Token::OpenParenthesis)
                     }
                 }
-                ')' => stack.push(Token::CloseParenthesis),
-                '/' => {
+                b')' => stack.push(Token::CloseParenthesis),
+                b'/' => {
                     if matches!(
                         stack.last().unwrap(),
-                        Token::Start | Token::OpenParenthesis | Token::BinaryOp(_, true, _, _)
+                        Token::Start | Token::OpenParenthesis | Token::Op(_, true, _, _)
                     ) {
                         // unary inv only requires an argument to the right
-                        stack.push(Token::BinaryOp(
-                            false,
-                            true,
-                            BinaryOperator::Inv,
-                            Vec::with_capacity(1),
-                        ));
+                        stack.push(Token::Op(false, true, Operator::Inv, vec![]));
                     } else {
-                        stack.push(Token::BinaryOp(
-                            true,
-                            true,
-                            BinaryOperator::Mul,
-                            Vec::with_capacity(2),
-                        ));
+                        stack.push(Token::Op(true, true, Operator::Mul, vec![]));
                         extra_ops.push('/'); // push a (unary) inverse
                     }
                 }
-                ',' => stack.push(Token::BinaryOp(
-                    true,
-                    true,
-                    BinaryOperator::Argument,
-                    vec![],
-                )),
-                '\0' => stack.push(Token::EOF),
+                b',' => stack.push(Token::Op(true, true, Operator::Argument, vec![])),
+                b'\0' => stack.push(Token::EOF),
+                b'[' => {
+                    state = ParseState::RationalPolynomial;
+                }
                 x => {
-                    if c >= '0' && c <= '9' {
+                    if x >= b'0' && x <= b'9' {
                         state = ParseState::Number;
                         id_buffer.push(c);
-                    } else if c >= 'a' && c <= 'z' {
+                    } else {
                         state = ParseState::Identifier;
                         id_buffer.push(c);
-                    } else {
-                        return Err(format!("Unknown token {}", x));
                     }
                 }
             }
         }
 
         // match on triplets of type operator identifier operator
-        while stack.len() > 2 && state == ParseState::Any {
+        while state == ParseState::Any && stack.len() > 2 {
             if !unsafe { stack.get_unchecked(stack.len() - 2) }.is_normal() {
                 // no simplification, get new token
                 break;
@@ -482,11 +497,11 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         (Token::Start, mid, Token::EOF) => {
                             *first = mid;
                         }
-                        (Token::Fn(mr, _name, args), mid, Token::CloseParenthesis) => {
+                        (Token::Fn(mr, args), mid, Token::CloseParenthesis) => {
                             debug_assert!(*mr);
                             *mr = false;
 
-                            if let Token::BinaryOp(_, _, BinaryOperator::Argument, arg2) = mid {
+                            if let Token::Op(_, _, Operator::Argument, arg2) = mid {
                                 args.extend(arg2);
                             } else {
                                 args.push(mid);
@@ -495,22 +510,18 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         (Token::OpenParenthesis, mid, Token::CloseParenthesis) => {
                             *first = mid;
                         }
-                        (
-                            Token::BinaryOp(ml1, mr1, o1, m),
-                            mid,
-                            Token::BinaryOp(ml2, mr2, mut o2, mut mm),
-                        ) => {
+                        (Token::Op(ml1, mr1, o1, m), mid, Token::Op(ml2, mr2, mut o2, mut mm)) => {
                             debug_assert!(!*ml1);
                             debug_assert!(*mr1 && ml2);
                             // same precedence, so left associate
 
                             // flatten if middle identifier is also a binary operator of the same type that
                             // is also right associative
-                            if let Token::BinaryOp(_, _, o_mid, mut m_mid) = mid {
+                            if let Token::Op(_, _, o_mid, mut m_mid) = mid {
                                 if o_mid == *o1 && o_mid.right_associative() {
                                     m.extend(m_mid.drain(..));
                                 } else {
-                                    m.push(Token::BinaryOp(false, false, o_mid, m_mid));
+                                    m.push(Token::Op(false, false, o_mid, m_mid));
                                 }
                             } else {
                                 m.push(mid)
@@ -525,7 +536,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                                 *mr1 = mr2;
                                 std::mem::swap(o1, &mut o2);
                                 std::mem::swap(m, &mut mm);
-                                m.insert(0, Token::BinaryOp(false, false, o2, mm));
+                                m.insert(0, Token::Op(false, false, o2, mm));
                             }
                         }
                         _ => return Err(format!("Cannot merge operator")),
@@ -539,11 +550,11 @@ pub fn parse(input: &str) -> Result<Token, String> {
         }
 
         // first drain the queue of extra operators
-        if !extra_ops.is_empty() {
-            c = extra_ops.remove(0);
-        } else {
+        if extra_ops.is_empty() {
             i += 1;
             c = char_iter.next().unwrap_or('\0');
+        } else {
+            c = extra_ops.remove(0);
         }
     }
 
@@ -551,5 +562,178 @@ pub fn parse(input: &str) -> Result<Token, String> {
         Ok(stack.pop().unwrap())
     } else {
         Err(format!("Parsing error: {:?}", stack))
+    }
+}
+
+/// A special routine that can parse a polynomial written in expanded form,
+/// where the coefficient comes first.
+pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
+    mut input: &'a [u8],
+    var_map: &[Identifier],
+    var_name_map: &[SmartString<LazyCompact>],
+    field: R,
+) -> (&'a [u8], MultivariatePolynomial<R, E>) {
+    let mut exponents = vec![E::zero(); var_name_map.len()];
+    let mut poly = MultivariatePolynomial::new(
+        var_name_map.len(),
+        field.clone(),
+        None,
+        Some(var_map.into()),
+    );
+
+    let mut last_pos = input;
+    let mut c = input.get_u8();
+    loop {
+        if c == b'(' || c == b')' || c == b'/' {
+            break;
+        }
+
+        // read a term
+        let mut coeff = field.one();
+        for e in &mut exponents {
+            *e = E::zero();
+        }
+
+        if c == b'+' {
+            last_pos = input;
+            c = input.get_u8();
+        }
+
+        // read number
+        let num_start = last_pos;
+        if c == b'-' {
+            last_pos = input;
+            c = input.get_u8();
+        }
+
+        loop {
+            if !c.is_ascii_digit() {
+                break;
+            }
+
+            if input.len() == 0 {
+                break;
+            }
+
+            last_pos = input;
+            c = input.get_u8();
+        }
+
+        // construct number
+        let mut len = unsafe { input.as_ptr().offset_from(num_start.as_ptr()) } as usize;
+        if !c.is_ascii_digit() && (len > 1 || c != b'-') {
+            len -= 1;
+        }
+
+        if len > 0 {
+            let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
+
+            if len == 1 && num_start[0] == b'-' {
+                coeff = field.neg(&field.one());
+            } else {
+                coeff = if let Ok(x) = n.parse::<i64>() {
+                    field.from_number(BorrowedNumber::Natural(x, 1))
+                } else {
+                    match Integer::parse(n) {
+                        Ok(x) => {
+                            let p = x.complete().into();
+                            field.from_number(BorrowedNumber::Large(&p)) // TODO: prevent copy?
+                        }
+                        Err(e) => panic!("Could not parse number: {}", e),
+                    }
+                };
+            }
+            //println!("coeff {:?}", coeff);
+        }
+
+        if c == b'-' {
+            // done with the term
+            poly.append_monomial(coeff, &exponents);
+            continue;
+        }
+
+        // read var^pow
+        loop {
+            //println!("cur c {}", c as char);
+
+            let before_star = last_pos;
+            if c == b'*' {
+                if input.len() == 0 {
+                    break;
+                }
+
+                last_pos = input;
+                c = input.get_u8();
+            }
+            //println!("YO {}", c as char);
+
+            if !c.is_ascii_alphabetic() {
+                if before_star[0] == b'*' {
+                    last_pos = before_star; // bring back the *
+                }
+                break;
+            }
+
+            let var_start = last_pos;
+
+            // read var
+            while c.is_ascii_alphanumeric() {
+                if input.len() == 0 {
+                    break;
+                }
+
+                last_pos = input;
+                c = input.get_u8();
+            }
+
+            let mut len = unsafe { input.as_ptr().offset_from(var_start.as_ptr()) } as usize;
+            if !c.is_ascii_alphanumeric() {
+                len -= 1;
+            }
+
+            let name = unsafe { std::str::from_utf8_unchecked(&var_start[..len]) };
+            let index = var_name_map.iter().position(|x| x == name).unwrap();
+
+            // read pow
+            if c == b'^' {
+                let pow_start = input;
+
+                // read pow
+                loop {
+                    last_pos = input;
+                    c = input.get_u8();
+
+                    if !c.is_ascii_digit() || input.len() == 0 {
+                        break;
+                    }
+                }
+
+                let mut len = unsafe { input.as_ptr().offset_from(pow_start.as_ptr()) } as usize;
+                if !c.is_ascii_digit() {
+                    len -= 1;
+                }
+                let n = unsafe { std::str::from_utf8_unchecked(&pow_start[..len]) };
+                //println!("pow {}", n);
+                exponents[index] = E::from_u32(n.parse::<u32>().unwrap());
+            } else {
+                exponents[index] = E::from_u32(1);
+            }
+
+            if input.len() == 0 {
+                break;
+            }
+        }
+
+        // contruct a new term
+        poly.append_monomial(coeff, &exponents);
+
+        if input.len() == 0 {
+            break;
+        }
+    }
+    if input.len() == 0 {
+        (input, poly)
+    } else {
+        (last_pos, poly)
     }
 }

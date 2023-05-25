@@ -70,6 +70,7 @@ pub extern "C" fn simplify(
     symbolica: *mut Symbolica,
     input: *const c_char,
     prime: c_ulonglong,
+    explicit_rational_polynomial: bool,
 ) -> *const c_char {
     let c = unsafe { CStr::from_ptr(input) };
     let cstr = c.to_str().unwrap();
@@ -101,7 +102,7 @@ pub extern "C" fn simplify(
                     terms_on_new_line: false,
                     color_top_level_sum: false,
                     print_finite_field: false,
-                    explicit_rational_polynomial: true
+                    explicit_rational_polynomial
                 })
             }
         )
@@ -131,7 +132,7 @@ pub extern "C" fn simplify(
                         terms_on_new_line: false,
                         color_top_level_sum: false,
                         print_finite_field: false,
-                        explicit_rational_polynomial: true
+                        explicit_rational_polynomial
                     })
                 }
             )
@@ -160,7 +161,7 @@ pub extern "C" fn simplify(
                         terms_on_new_line: false,
                         color_top_level_sum: false,
                         print_finite_field: false,
-                        explicit_rational_polynomial: true
+                        explicit_rational_polynomial
                     })
                 }
             )

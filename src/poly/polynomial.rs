@@ -1185,6 +1185,10 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         }
         let mut c = self.coefficients.first().unwrap().clone();
         for cc in self.coefficients.iter().skip(1) {
+            if self.field.is_one(&c) {
+                break;
+            }
+
             c = self.field.gcd(&c, cc);
         }
         c

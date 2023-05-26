@@ -1819,8 +1819,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             }
 
             // check if any entry is a number, as the gcd is then the gcd of the contents
-            if f.iter().any(|x| x.is_constant()) {
-                let mut gcd = f[0].field.one();
+            if let Some(n) = f.iter().find(|x| x.is_constant()) {
+                let mut gcd = n.content();
                 for x in f.iter() {
                     gcd = x.field.gcd(&gcd, &x.content());
 

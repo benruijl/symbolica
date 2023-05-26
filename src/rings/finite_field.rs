@@ -207,6 +207,14 @@ impl Ring for FiniteField<u32> {
         a == &self.one
     }
 
+    fn get_unit(&self, a: &Self::Element) -> Self::Element {
+        *a
+    }
+
+    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
+        self.inv(a)
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0.max(0)..range.1.min(self.p as i64));
         FiniteFieldElement(r as u32)
@@ -447,8 +455,16 @@ impl Ring for FiniteField<u64> {
         a == &self.one
     }
 
+    fn get_unit(&self, a: &Self::Element) -> Self::Element {
+        *a
+    }
+
+    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
+        self.inv(a)
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
-        let r = rng.gen_range(range.0.max(0)..range.1.min(self.p as i64));
+        let r = rng.gen_range(range.0.max(0)..range.1.min(self.p.min(i64::MAX as u64) as i64));
         FiniteFieldElement(r as u64)
     }
 

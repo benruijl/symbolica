@@ -249,6 +249,14 @@ impl Ring for RationalField {
         }
     }
 
+    fn get_unit(&self, a: &Self::Element) -> Self::Element {
+        a.clone()
+    }
+
+    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
+        self.inv(a)
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0..range.1);
         Rational::Natural(r, 1)

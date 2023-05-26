@@ -1356,7 +1356,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             }
         }
 
-        /// Undo simplifications made to the input polynomials.
+        /// Undo simplifications made to the input polynomials and normalize the gcd.
         #[inline(always)]
         fn rescale_gcd<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>(
             mut g: MultivariatePolynomial<R, E>,
@@ -1383,6 +1383,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     }
                 }
             }
+
+            g.normalize();
             g
         }
 
@@ -1822,11 +1824,11 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             if let Some(n) = f.iter().find(|x| x.is_constant()) {
                 let mut gcd = n.content();
                 for x in f.iter() {
-                    gcd = x.field.gcd(&gcd, &x.content());
-
                     if x.field.is_one(&gcd) {
                         break;
                     }
+
+                    gcd = x.field.gcd(&gcd, &x.content());
                 }
                 return MultivariatePolynomial::from_constant(gcd, f[0].nvars, f[0].field);
             }

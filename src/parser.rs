@@ -687,7 +687,7 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
             }
 
             let name = unsafe { std::str::from_utf8_unchecked(&var_start[..len]) };
-            let index = var_name_map.iter().position(|x| x == name).unwrap();
+            let index = var_name_map.iter().position(|x| x == name).expect("Undefined variable");
 
             // read pow
             if c == b'^' {

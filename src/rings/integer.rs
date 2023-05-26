@@ -344,6 +344,20 @@ impl Ring for IntegerRing {
         }
     }
 
+    fn get_unit(&self, a: &Self::Element) -> Self::Element {
+        if a > &Integer::Natural(0) {
+            Integer::Natural(1)
+        } else if a < &Integer::Natural(0) {
+            Integer::Natural(-1)
+        } else {
+            Integer::Natural(0)
+        }
+    }
+
+    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
+        self.get_unit(a)
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0..range.1);
         Integer::Natural(r)

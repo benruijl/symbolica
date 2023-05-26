@@ -718,8 +718,21 @@ impl<'a, F: EuclideanDomain, E: Exponent> Div<&'a MultivariatePolynomial<F, E>>
     }
 }
 
-// FIXME: cannot implement Add<F::Element> because F::Element could be MultivariatePolynomial<F, E>
 impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
+    /// Normalize the polynomial by writing the leading coefficient in
+    /// its normal form.
+    pub fn normalize(&mut self) -> F::Element {
+        let lcu = self.field.get_inv_unit(&self.lcoeff());
+
+        if !self.field.is_one(&lcu) {
+            for c in &mut self.coefficients {
+                self.field.mul_assign(c, &lcu);
+            }
+        }
+
+        lcu
+    }
+
     /// Multiply every coefficient with `other`.
     pub fn mul_coeff(mut self, other: F::Element) -> Self {
         for c in &mut self.coefficients {

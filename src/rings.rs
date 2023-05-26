@@ -21,6 +21,8 @@ pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element;
     fn is_zero(a: &Self::Element) -> bool;
     fn is_one(&self, a: &Self::Element) -> bool;
+    fn get_unit(&self, a: &Self::Element) -> Self::Element;
+    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
     fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error>;

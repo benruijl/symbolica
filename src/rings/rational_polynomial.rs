@@ -271,7 +271,10 @@ impl<R: Ring, E: Exponent> Display for RationalPolynomialField<R, E> {
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Ring for RationalPolynomialField<R, E> {
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Ring for RationalPolynomialField<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+{
     type Element = RationalPolynomial<R, E>;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -344,6 +347,14 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Ring for RationalPolyno
 
     fn is_one(&self, a: &Self::Element) -> bool {
         a.numerator.is_one() && a.denominator.is_one()
+    }
+
+    fn get_unit(&self, a: &Self::Element) -> Self::Element {
+        a.clone()
+    }
+
+    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
+        self.inv(a)
     }
 
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {

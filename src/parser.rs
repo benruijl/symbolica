@@ -391,6 +391,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                     state = ParseState::Any;
                     i += 1;
                     c = char_iter.next().unwrap_or('\0');
+                    continue; // whitespace may have to be skipped
                 } else {
                     id_buffer.push(c);
                 }
@@ -687,7 +688,10 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
             }
 
             let name = unsafe { std::str::from_utf8_unchecked(&var_start[..len]) };
-            let index = var_name_map.iter().position(|x| x == name).expect("Undefined variable");
+            let index = var_name_map
+                .iter()
+                .position(|x| x == name)
+                .expect("Undefined variable");
 
             // read pow
             if c == b'^' {

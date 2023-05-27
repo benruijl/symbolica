@@ -295,6 +295,7 @@ where
                 let mut gfm = smallvec![];
                 let mut rhs = smallvec![ap.field.zero(); system.len()];
 
+                let mut row_counter = 0;
                 for (j, (r, g, scale_factor)) in system.iter().enumerate() {
                     let mut row = vec![];
 
@@ -330,16 +331,23 @@ where
                     }
 
                     gfm.extend(row);
+                    row_counter += 1;
+
+                    if row_counter == c.nterms + 1 {
+                        // solving overdetermined systems is good to detect errors,
+                        // but don't add more than one extra constraint
+                        break;
+                    }
                 }
 
                 let m = Matrix {
-                    shape: (system.len() as u32, c.nterms as u32),
+                    shape: (row_counter as u32, c.nterms as u32),
                     data: gfm,
                     field: ap.field,
                 };
 
                 let rhs_mat = Matrix {
-                    shape: (system.len() as u32, 1),
+                    shape: (row_counter as u32, 1),
                     data: rhs,
                     field: ap.field,
                 };
@@ -1398,30 +1406,6 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             );
         }
 
-        // check if the polynomial is linear in a variable and compute the gcd using the univariate content
-        for (p1, p2) in [(&a, &b), (&b, &a)] {
-            if let Some(var) = (0..p1.nvars).find(|v| p1.degree(*v) == E::one()) {
-                let mut cont = p1.univariate_content(var);
-                let p1_prim = p1.as_ref() / &cont;
-
-                if !cont.is_one() {
-                    let cont_p2 = p2.univariate_content(var);
-                    cont = MultivariatePolynomial::gcd(&cont, &cont_p2);
-                }
-
-                if p2.quot_rem(&p1_prim).1.is_zero() {
-                    return rescale_gcd(p1_prim, &shared_degree, &base_degree, &cont);
-                } else {
-                    return rescale_gcd(
-                        cont,
-                        &shared_degree,
-                        &base_degree,
-                        &p1.new_from_constant(p1.field.one()),
-                    );
-                }
-            }
-        }
-
         // store which variables appear in which expression
         let mut scratch: SmallVec<[i32; INLINED_EXPONENTS]> = smallvec![0i32; a.nvars];
         for (p, inc) in [(&a, 1), (&b, 2)] {
@@ -1434,48 +1418,14 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             }
         }
 
-        // get the content in the first shared variable
-        let content = if let Some(first_var_in_both) = scratch.iter().position(|x| *x == 3) {
-            // TODO: only needed for Zippel, therefore do this at the start of the Zippel routine
-            if scratch.iter().filter(|x| **x == 3).count() > 1 {
-                let uca = a.univariate_content(first_var_in_both);
-                let ucb = b.univariate_content(first_var_in_both);
-                debug!("Starting univariate content computation");
-                let content = MultivariatePolynomial::gcd(&uca, &ucb);
-                debug!("GCD of content: {}", content);
-
-                if !uca.is_one() {
-                    a = Cow::Owned(a.as_ref() / &uca);
-                }
-
-                if !ucb.is_one() {
-                    b = Cow::Owned(b.as_ref() / &ucb);
-                }
-
-                content
-            } else {
-                // get the integer content for univariate polynomials
-                let uca = a.content();
-                let ucb = b.content();
-                let content = a.field.gcd(&a.content(), &b.content());
-                let p = MultivariatePolynomial::new_from(&a, Some(1));
-
-                if !a.field.is_one(&uca) {
-                    a = Cow::Owned(a.into_owned().div_coeff(&uca));
-                }
-                if !a.field.is_one(&ucb) {
-                    b = Cow::Owned(b.into_owned().div_coeff(&ucb));
-                }
-
-                p.add_monomial(content)
-            }
-        } else {
-            unreachable!("Heuristic must have succeeded");
-        };
-
         if a == b {
             debug!("Equal {} ", a);
-            return rescale_gcd(a.into_owned(), &shared_degree, &base_degree, &content);
+            return rescale_gcd(
+                a.into_owned(),
+                &shared_degree,
+                &base_degree,
+                &MultivariatePolynomial::one(b.field),
+            );
         }
 
         // compute the gcd efficiently if some variables do not occur in both
@@ -1503,8 +1453,33 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 PolynomialGCD::gcd_multiple(f),
                 &shared_degree,
                 &base_degree,
-                &content,
+                &MultivariatePolynomial::one(a.field),
             );
+        }
+
+        // check if the polynomial is linear in a variable and compute the gcd using the univariate content
+        for (p1, p2) in [(&a, &b), (&b, &a)] {
+            if let Some(var) = (0..p1.nvars).find(|v| p1.degree(*v) == E::one()) {
+                let mut cont = p1.univariate_content(var);
+
+                let p1_prim = p1.as_ref() / &cont;
+
+                if !cont.is_one() {
+                    let cont_p2 = p2.univariate_content(var);
+                    cont = MultivariatePolynomial::gcd(&cont, &cont_p2);
+                }
+
+                if p2.quot_rem(&p1_prim).1.is_zero() {
+                    return rescale_gcd(p1_prim, &shared_degree, &base_degree, &cont);
+                } else {
+                    return rescale_gcd(
+                        cont,
+                        &shared_degree,
+                        &base_degree,
+                        &p1.new_from_constant(p1.field.one()),
+                    );
+                }
+            }
         }
 
         let mut vars: SmallVec<[_; INLINED_EXPONENTS]> = scratch
@@ -1533,65 +1508,86 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         // Determine a good variable ordering based on the estimated degree (decreasing) in the gcd.
         // If it is different from the input, make a copy and rearrange so that the
         // polynomials do not have to be sorted after filling in variables.
-        // TODO: understand better why copying is so much faster (about 10%) than using a map
         vars.sort_by(|&i, &j| tight_bounds[j].cmp(&tight_bounds[i]));
 
-        if vars.len() == 1 || vars.windows(2).all(|s| s[0] < s[1]) {
-            debug!("Computing gcd without map");
-            let g = PolynomialGCD::gcd(&a, &b, &vars, &mut bounds, &mut tight_bounds);
-            rescale_gcd(g, &shared_degree, &base_degree, &content)
+        // strip the univariate content wrt the new first variable
+        let content = if vars.len() > 1 {
+            let uca = a.univariate_content(vars[0]);
+            let ucb = b.univariate_content(vars[0]);
+            debug!("Starting univariate content computation in {}", vars[0]);
+            let content = MultivariatePolynomial::gcd(&uca, &ucb);
+            debug!("GCD of content: {}", content);
+
+            if !uca.is_one() {
+                a = Cow::Owned(a.as_ref() / &uca);
+            }
+
+            if !ucb.is_one() {
+                b = Cow::Owned(b.as_ref() / &ucb);
+            }
+
+            // if variables got removed, try again from the start
+            if !uca.is_constant() || !ucb.is_constant() {
+                let g = MultivariatePolynomial::gcd(&a, &b);
+                return rescale_gcd(g, &shared_degree, &base_degree, &content);
+            }
+
+            content
         } else {
+            // get the integer content for univariate polynomials
+            let uca = a.content();
+            let ucb = b.content();
+            let content = a.field.gcd(&a.content(), &b.content());
+            let p = MultivariatePolynomial::new_from(&a, Some(1));
+
+            if !a.field.is_one(&uca) {
+                a = Cow::Owned(a.into_owned().div_coeff(&uca));
+            }
+            if !a.field.is_one(&ucb) {
+                b = Cow::Owned(b.into_owned().div_coeff(&ucb));
+            }
+
+            p.add_monomial(content)
+        };
+
+        let rearrange = vars.len() > 1 && vars.windows(2).all(|s| s[0] < s[1]);
+        if rearrange {
             debug!("Rearranging variables with map: {:?}", vars);
-            let aa = a.rearrange(&vars, false);
-            let bb = b.rearrange(&vars, false);
+            a = Cow::Owned(a.rearrange(&vars, false));
+            b = Cow::Owned(b.rearrange(&vars, false));
 
             let mut newbounds: SmallVec<[_; INLINED_EXPONENTS]> =
                 smallvec![E::zero(); bounds.len()];
             for x in 0..vars.len() {
                 newbounds[x] = bounds[vars[x]];
             }
+            bounds = newbounds;
 
             let mut newtight_bounds: SmallVec<[_; INLINED_EXPONENTS]> =
                 smallvec![E::zero(); bounds.len()];
             for x in 0..vars.len() {
                 newtight_bounds[x] = tight_bounds[vars[x]];
             }
-
-            // we need to extract the content if the first variable changed
-            if vars[1..].iter().any(|&c| c < vars[0]) {
-                debug!("Starting new content computation after mapping {:?}", vars);
-                let c = MultivariatePolynomial::univariate_content_gcd(&aa, &bb, 0);
-                debug!("New content: {}", c);
-                if !c.is_one() {
-                    let x1 = aa.quot_rem(&c);
-                    let x2 = bb.quot_rem(&c);
-
-                    assert!(x1.1.is_zero());
-                    assert!(x2.1.is_zero());
-
-                    let gcd = PolynomialGCD::gcd(
-                        &x1.0,
-                        &x2.0,
-                        &(0..vars.len()).collect::<SmallVec<[usize; INLINED_EXPONENTS]>>(),
-                        &mut newbounds,
-                        &mut newtight_bounds,
-                    ) * &c;
-                    let g = gcd.rearrange(&vars, true);
-                    return rescale_gcd(g, &shared_degree, &base_degree, &content);
-                }
-            }
-
-            let gcd = PolynomialGCD::gcd(
-                &aa,
-                &bb,
-                &(0..vars.len()).collect::<SmallVec<[usize; INLINED_EXPONENTS]>>(),
-                &mut newbounds,
-                &mut newtight_bounds,
-            );
-
-            let g = gcd.rearrange(&vars, true);
-            rescale_gcd(g, &shared_degree, &base_degree, &content)
+            tight_bounds = newtight_bounds;
         }
+
+        let mut g = PolynomialGCD::gcd(
+            &a,
+            &b,
+            &if rearrange {
+                Cow::Owned((0..vars.len()).collect::<SmallVec<[usize; INLINED_EXPONENTS]>>())
+            } else {
+                Cow::Borrowed(&vars)
+            },
+            &mut bounds,
+            &mut tight_bounds,
+        );
+
+        if rearrange {
+            g = g.rearrange(&vars, true);
+        }
+
+        rescale_gcd(g, &shared_degree, &base_degree, &content)
     }
 }
 
@@ -2171,7 +2167,53 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         MultivariatePolynomial<Self, E>,
         MultivariatePolynomial<Self, E>,
     )> {
-        a.heuristic_gcd(b).ok()
+        // estimate if the heuristic gcd will overflow
+        let mut max_deg_a = 0;
+        let mut contains_a: SmallVec<[bool; INLINED_EXPONENTS]> = smallvec![false; a.nvars];
+        for t in a {
+            let mut deg = 1;
+            for (var, e) in t.exponents.iter().enumerate() {
+                let v = e.to_u32() as usize;
+                if v > 0 {
+                    contains_a[var] = true;
+                    deg *= v + 1;
+                }
+            }
+
+            if deg > max_deg_a {
+                max_deg_a = deg;
+            }
+        }
+
+        let mut max_deg_b = 0;
+        let mut contains_b: SmallVec<[bool; INLINED_EXPONENTS]> = smallvec![false; b.nvars];
+        for t in b {
+            let mut deg = 1;
+            for (var, e) in t.exponents.iter().enumerate() {
+                let v = e.to_u32() as usize;
+                if v > 0 {
+                    contains_b[var] = true;
+                    deg *= v + 1;
+                }
+            }
+
+            if deg > max_deg_b {
+                max_deg_b = deg;
+            }
+        }
+
+        let num_shared_vars = contains_a
+            .iter()
+            .zip(&contains_b)
+            .filter(|(a, b)| **a && **b)
+            .count();
+
+        if max_deg_a < 20 || max_deg_b < 20 || num_shared_vars < 3 && max_deg_a.min(max_deg_b) < 150
+        {
+            a.heuristic_gcd(b).ok()
+        } else {
+            None
+        }
     }
 
     fn gcd_multiple(f: Vec<MultivariatePolynomial<Self, E>>) -> MultivariatePolynomial<Self, E> {

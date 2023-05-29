@@ -114,7 +114,7 @@ where
 {
     let mut rng = rand::thread_rng();
 
-    let mut system = vec![]; // coefficients for the linear system
+    let mut system = Vec::with_capacity(nx); // coefficients for the linear system
     let mut ni = 0;
     let mut failure_count = 0;
 
@@ -292,13 +292,10 @@ where
             let mut gp = MultivariatePolynomial::new(ap.nvars, ap.field, None, None);
 
             for (i, (c, ex)) in gfu.iter().enumerate() {
-                let mut gfm = smallvec![];
+                let mut gfm = SmallVec::with_capacity((c.nterms + 1) * c.nterms);
                 let mut rhs = smallvec![ap.field.zero(); system.len()];
 
-                let mut row_counter = 0;
                 for (j, (r, g, scale_factor)) in system.iter().enumerate() {
-                    let mut row = vec![];
-
                     // note that we ignore the coefficient of the shape
                     for t in c {
                         let mut coeff = ap.field.one();
@@ -308,7 +305,8 @@ where
                                 &ap.field.pow(v, t.exponents[*n].to_u32() as u64),
                             );
                         }
-                        row.push(coeff);
+
+                        gfm.push(coeff);
                     }
 
                     // move the coefficients of the image to the rhs
@@ -329,25 +327,16 @@ where
                             }
                         }
                     }
-
-                    gfm.extend(row);
-                    row_counter += 1;
-
-                    if row_counter == c.nterms + 1 {
-                        // solving overdetermined systems is good to detect errors,
-                        // but don't add more than one extra constraint
-                        break;
-                    }
                 }
 
                 let m = Matrix {
-                    shape: (row_counter as u32, c.nterms as u32),
+                    shape: (system.len() as u32, c.nterms as u32),
                     data: gfm,
                     field: ap.field,
                 };
 
                 let rhs_mat = Matrix {
-                    shape: (row_counter as u32, 1),
+                    shape: (system.len() as u32, 1),
                     data: rhs,
                     field: ap.field,
                 };
@@ -399,11 +388,9 @@ where
             // columns for the scaling factors
             let mut subsystems = Vec::with_capacity(gfu.len());
             for (i, (c, ex)) in gfu.iter().enumerate() {
-                let mut gfm = vec![];
+                let mut gfm = SmallVec::with_capacity(c.nterms * system.len());
 
                 for (j, (r, g, _scale_factor)) in system.iter().enumerate() {
-                    let mut row = Vec::with_capacity(c.nterms + system.len());
-
                     for t in 0..c.nterms {
                         let mut coeff = ap.field.one();
                         for &(n, v) in r.iter() {
@@ -412,7 +399,7 @@ where
                                 &ap.field.pow(&v, c.exponents(t)[n].to_u32() as u64),
                             );
                         }
-                        row.push(coeff);
+                        gfm.push(coeff);
                     }
 
                     // it could be that some coefficients of g are
@@ -420,23 +407,23 @@ where
                     for ii in 1..system.len() {
                         if ii == j {
                             if i < g.nterms && g.exponents(i)[var] == *ex {
-                                row.push(g.coefficients[i]);
+                                gfm.push(g.coefficients[i]);
                             } else {
                                 // find the matching term or otherwise, push 0
                                 let mut found = false;
                                 for m in g.into_iter() {
                                     if m.exponents[var] == *ex {
-                                        row.push(*m.coefficient);
+                                        gfm.push(*m.coefficient);
                                         found = true;
                                         break;
                                     }
                                 }
                                 if !found {
-                                    row.push(ap.field.zero());
+                                    gfm.push(ap.field.zero());
                                 }
                             }
                         } else {
-                            row.push(ap.field.zero());
+                            gfm.push(ap.field.zero());
                         }
                     }
 
@@ -444,32 +431,30 @@ where
                     // we add it as a last column, since that is the rhs
                     if j == 0 {
                         if i < g.nterms && g.exponents(i)[var] == *ex {
-                            row.push(g.coefficients[i]);
+                            gfm.push(g.coefficients[i]);
                         } else {
                             // find the matching term or otherwise, push 0
                             let mut found = false;
                             for m in g.into_iter() {
                                 if m.exponents[var] == *ex {
-                                    row.push(*m.coefficient);
+                                    gfm.push(*m.coefficient);
                                     found = true;
                                     break;
                                 }
                             }
                             if !found {
-                                row.push(ap.field.zero());
+                                gfm.push(ap.field.zero());
                             }
                         }
                     } else {
-                        row.push(ap.field.zero());
+                        gfm.push(ap.field.zero());
                     }
-
-                    gfm.extend(row);
                 }
 
                 // bring each subsystem to upper triangular form
                 let mut m = Matrix {
                     shape: (system.len() as u32, c.nterms as u32 + system.len() as u32),
-                    data: gfm.into(),
+                    data: gfm,
                     field: ap.field,
                 };
 
@@ -503,8 +488,8 @@ where
 
             if subsystems.len() == gfu.len() {
                 // construct a system for the scaling constants
-                let mut sys = smallvec![];
-                let mut rhs = smallvec![];
+                let mut rhs = SmallVec::with_capacity(subsystems.iter().map(|s| s.rows()).sum());
+                let mut sys = SmallVec::with_capacity(rhs.len() * (system.len() - 1));
                 for s in &subsystems {
                     for r in s.row_iter() {
                         // only include rows that only depend on scaling constants
@@ -529,12 +514,12 @@ where
 
                 let m = Matrix {
                     shape: (rhs.len() as u32, system.len() as u32 - 1),
-                    data: sys.into(),
+                    data: sys,
                     field: ap.field,
                 };
                 let rhs_mat = Matrix {
                     shape: (rhs.len() as u32, 1),
-                    data: rhs.into(),
+                    data: rhs,
                     field: ap.field,
                 };
 
@@ -548,9 +533,10 @@ where
                         let mut si = 0;
                         for s in &mut subsystems {
                             // convert to arrays
-                            let mut m = smallvec![];
-                            let mut rhs = smallvec![];
                             let k = s.cols() - system.len();
+                            let mut m = SmallVec::with_capacity(s.rows() * k);
+                            let mut rhs = SmallVec::with_capacity(s.rows());
+
                             for r in s.row_iter() {
                                 if r.iter()
                                     .take(s.cols() - system.len())

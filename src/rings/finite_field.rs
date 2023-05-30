@@ -1,5 +1,5 @@
 use std::fmt::{Display, Error, Formatter};
-
+use std::hash::Hash;
 use rand::Rng;
 
 use super::{EuclideanDomain, Field, Ring};
@@ -25,10 +25,10 @@ where
 }
 
 /// A number in a finite field.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct FiniteFieldElement<UField>(pub(crate) UField);
 
-pub trait FiniteFieldWorkspace: Clone + Copy + Display {
+pub trait FiniteFieldWorkspace: Clone + Copy + Display + Eq + Hash {
     /// Convert to u64.
     fn to_u64(&self) -> u64;
 }

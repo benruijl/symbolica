@@ -1,6 +1,6 @@
 use ahash::{HashMap, HashMapExt};
 use std::cmp::{Ordering, Reverse};
-use std::collections::BinaryHeap;
+use std::collections::{BTreeMap, BinaryHeap};
 use std::fmt;
 use std::fmt::Display;
 use std::mem;
@@ -1087,7 +1087,8 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     }
 
     /// Multiplication for multivariate polynomials using a custom variation of the heap method
-    /// described in "Sparse polynomial division using a heap" by Monagan, Pearce (2011).
+    /// described in "Sparse polynomial division using a heap" by Monagan, Pearce (2011) and using
+    /// the sorting described in "Sparse Polynomial Powering Using Heaps".
     /// It uses a heap to obtain the next monomial of the result in an ordered fashion.
     /// Additionally, this method uses a hashmap with the monomial exponent as a key and a vector of all pairs
     /// of indices in `self` and `other` that have that monomial exponent when multiplied together.
@@ -1115,12 +1116,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
         let mut res = self.new_from(Some(self.nterms));
 
-        let mut cache: HashMap<SmallVec<[E; INLINED_EXPONENTS]>, SmallVec<[(usize, usize); 5]>> =
-            HashMap::with_capacity(self.nterms);
+        let mut cache: BTreeMap<SmallVec<[E; INLINED_EXPONENTS]>, Vec<(usize, usize)>> =
+            BTreeMap::new();
+        let mut q_cache: Vec<Vec<(usize, usize)>> = vec![];
 
         // create a min-heap since our polynomials are sorted smallest to largest
         let mut h: BinaryHeap<Reverse<SmallVec<[E; INLINED_EXPONENTS]>>> =
-            BinaryHeap::with_capacity(5);
+            BinaryHeap::with_capacity(self.nterms);
 
         let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
             .exponents(0)
@@ -1128,15 +1130,23 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             .zip(other.exponents(0))
             .map(|(e1, e2)| *e1 + *e2)
             .collect();
-        cache.insert(monom.clone(), smallvec![(0, 0)]);
+        cache.insert(monom.clone(), vec![(0, 0)]);
         h.push(Reverse(monom));
+
+        // i=merged_index[j] signifies that self[i]*other[j] has been merged
+        let mut merged_index = vec![0; other.nterms];
+        // in_heap[j] signifies that other[j] is in the heap
+        let mut in_heap = vec![false; other.nterms];
+        in_heap[0] = true;
 
         while h.len() > 0 {
             let cur_mon = h.pop().unwrap();
 
             let mut coefficient = self.field.zero();
 
-            for (i, j) in cache.remove(&cur_mon.0).unwrap() {
+            let mut q = cache.remove(&cur_mon.0).unwrap();
+
+            for (i, j) in q.drain(..) {
                 self.field.add_assign(
                     &mut coefficient,
                     &self
@@ -1144,7 +1154,32 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                         .mul(&self.coefficients[i], &other.coefficients[j]),
                 );
 
-                if j + 1 < other.nterms {
+                merged_index[j] = i + 1;
+
+                if i + 1 < self.nterms && (j == 0 || merged_index[j - 1] > i + 1) {
+                    let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
+                        .exponents(i + 1)
+                        .iter()
+                        .zip(other.exponents(j))
+                        .map(|(e1, e2)| *e1 + *e2)
+                        .collect();
+
+                    if let Some(e) = cache.get_mut(&monom) {
+                        e.push((i + 1, j));
+                    } else {
+                        h.push(Reverse(monom.clone())); // only add when new
+                        if let Some(mut qq) = q_cache.pop() {
+                            qq.push((i + 1, j));
+                            cache.insert(monom, qq);
+                        } else {
+                            cache.insert(monom, vec![(i + 1, j)]);
+                        }
+                    }
+                } else {
+                    in_heap[j] = false;
+                }
+
+                if j + 1 < other.nterms && !in_heap[j + 1] {
                     let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
                         .exponents(i)
                         .iter()
@@ -1152,33 +1187,24 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                         .map(|(e1, e2)| *e1 + *e2)
                         .collect();
 
-                    cache
-                        .entry(monom.clone())
-                        .or_insert_with(|| {
-                            h.push(Reverse(monom)); // only add when new
-                            smallvec![]
-                        })
-                        .push((i, j + 1));
-                }
+                    if let Some(e) = cache.get_mut(&monom) {
+                        e.push((i, j + 1));
+                    } else {
+                        h.push(Reverse(monom.clone())); // only add when new
 
-                // only increment i when (i, 0) has been extracted since this
-                // new term is necessarily smaller
-                if j == 0 && i + 1 < self.nterms {
-                    let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
-                        .exponents(i + 1)
-                        .iter()
-                        .zip(other.exponents(j))
-                        .map(|(e1, e2)| *e1 + *e2)
-                        .collect();
-                    cache
-                        .entry(monom.clone())
-                        .or_insert_with(|| {
-                            h.push(Reverse(monom)); // only add when new
-                            smallvec![]
-                        })
-                        .push((i + 1, 0));
+                        if let Some(mut qq) = q_cache.pop() {
+                            qq.push((i, j + 1));
+                            cache.insert(monom, qq);
+                        } else {
+                            cache.insert(monom, vec![(i, j + 1)]);
+                        }
+                    }
+
+                    in_heap[j + 1] = true;
                 }
             }
+
+            q_cache.push(q);
 
             if !F::is_zero(&coefficient) {
                 res.coefficients.push(coefficient);

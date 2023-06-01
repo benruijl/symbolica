@@ -1752,7 +1752,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             p.add_monomial(content)
         };
 
-        let rearrange = vars.len() > 1 && vars.windows(2).all(|s| s[0] < s[1]);
+        let rearrange = vars.len() > 1 && vars.windows(2).any(|s| s[0] > s[1]);
         if rearrange {
             debug!("Rearranging variables with map: {:?}", vars);
             a = Cow::Owned(a.rearrange(&vars, false));

@@ -1109,15 +1109,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
         let mut res = self.new_from(Some(self.nterms));
 
-        let mut cache: BTreeMap<SmallVec<[E; INLINED_EXPONENTS]>, Vec<(usize, usize)>> =
-            BTreeMap::new();
+        let mut cache: BTreeMap<Vec<E>, Vec<(usize, usize)>> = BTreeMap::new();
         let mut q_cache: Vec<Vec<(usize, usize)>> = vec![];
 
         // create a min-heap since our polynomials are sorted smallest to largest
-        let mut h: BinaryHeap<Reverse<SmallVec<[E; INLINED_EXPONENTS]>>> =
-            BinaryHeap::with_capacity(self.nterms);
+        let mut h: BinaryHeap<Reverse<Vec<E>>> = BinaryHeap::with_capacity(self.nterms);
 
-        let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
+        let monom: Vec<E> = self
             .exponents(0)
             .iter()
             .zip(other.exponents(0))
@@ -1125,6 +1123,8 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             .collect();
         cache.insert(monom.clone(), vec![(0, 0)]);
         h.push(Reverse(monom));
+
+        let mut m_cache: Vec<E> = vec![E::zero(); self.nvars];
 
         // i=merged_index[j] signifies that self[i]*other[j] has been merged
         let mut merged_index = vec![0; other.nterms];
@@ -1150,22 +1150,23 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                 merged_index[j] = i + 1;
 
                 if i + 1 < self.nterms && (j == 0 || merged_index[j - 1] > i + 1) {
-                    let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
-                        .exponents(i + 1)
-                        .iter()
+                    for ((m, e1), e2) in m_cache
+                        .iter_mut()
+                        .zip(self.exponents(i + 1))
                         .zip(other.exponents(j))
-                        .map(|(e1, e2)| *e1 + *e2)
-                        .collect();
+                    {
+                        *m = *e1 + *e2;
+                    }
 
-                    if let Some(e) = cache.get_mut(&monom) {
+                    if let Some(e) = cache.get_mut(&m_cache) {
                         e.push((i + 1, j));
                     } else {
-                        h.push(Reverse(monom.clone())); // only add when new
+                        h.push(Reverse(m_cache.clone())); // only add when new
                         if let Some(mut qq) = q_cache.pop() {
                             qq.push((i + 1, j));
-                            cache.insert(monom, qq);
+                            cache.insert(m_cache.clone(), qq);
                         } else {
-                            cache.insert(monom, vec![(i + 1, j)]);
+                            cache.insert(m_cache.clone(), vec![(i + 1, j)]);
                         }
                     }
                 } else {
@@ -1173,23 +1174,24 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                 }
 
                 if j + 1 < other.nterms && !in_heap[j + 1] {
-                    let monom: SmallVec<[E; INLINED_EXPONENTS]> = self
-                        .exponents(i)
-                        .iter()
+                    for ((m, e1), e2) in m_cache
+                        .iter_mut()
+                        .zip(self.exponents(i))
                         .zip(other.exponents(j + 1))
-                        .map(|(e1, e2)| *e1 + *e2)
-                        .collect();
+                    {
+                        *m = *e1 + *e2;
+                    }
 
-                    if let Some(e) = cache.get_mut(&monom) {
+                    if let Some(e) = cache.get_mut(&m_cache) {
                         e.push((i, j + 1));
                     } else {
-                        h.push(Reverse(monom.clone())); // only add when new
+                        h.push(Reverse(m_cache.clone())); // only add when new
 
                         if let Some(mut qq) = q_cache.pop() {
                             qq.push((i, j + 1));
-                            cache.insert(monom, qq);
+                            cache.insert(m_cache.clone(), qq);
                         } else {
-                            cache.insert(monom, vec![(i, j + 1)]);
+                            cache.insert(m_cache.clone(), vec![(i, j + 1)]);
                         }
                     }
 
@@ -1461,14 +1463,13 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         let mut div_monomial_in_heap = vec![false; div.nterms];
         let mut merged_index_of_div_monomial_in_quotient = vec![0; div.nterms];
 
-        let mut cache: BTreeMap<SmallVec<[E; INLINED_EXPONENTS]>, Vec<(usize, usize, bool)>> =
-            BTreeMap::new();
+        let mut cache: BTreeMap<Vec<E>, Vec<(usize, usize, bool)>> = BTreeMap::new();
 
-        let mut h: BinaryHeap<SmallVec<[E; INLINED_EXPONENTS]>> =
-            BinaryHeap::with_capacity(self.nterms);
+        let mut h: BinaryHeap<Vec<E>> = BinaryHeap::with_capacity(self.nterms);
         let mut q_cache: Vec<Vec<(usize, usize, bool)>> = vec![];
 
-        let mut m: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); div.nvars];
+        let mut m = vec![E::zero(); div.nvars];
+        let mut m_cache = vec![E::zero(); div.nvars];
         let mut c;
 
         let mut k = 0;
@@ -1500,23 +1501,24 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
                         if next_in_divisor && j + 1 < div.nterms {
                             // quotient heap product
-                            let next_m: SmallVec<[E; INLINED_EXPONENTS]> = q
-                                .exponents(i)
-                                .iter()
+                            for ((m, e1), e2) in m_cache
+                                .iter_mut()
+                                .zip(q.exponents(i))
                                 .zip(div.exponents_back(j + 1))
-                                .map(|(e1, e2)| *e1 + *e2)
-                                .collect();
+                            {
+                                *m = *e1 + *e2;
+                            }
 
                             // TODO: make macro
-                            if let Some(e) = cache.get_mut(&next_m) {
+                            if let Some(e) = cache.get_mut(&m_cache) {
                                 e.push((i, j + 1, true));
                             } else {
-                                h.push(next_m.clone()); // only add when new
+                                h.push(m_cache.clone()); // only add when new
                                 if let Some(mut qq) = q_cache.pop() {
                                     qq.push((i, j + 1, true));
-                                    cache.insert(next_m, qq);
+                                    cache.insert(m_cache.clone(), qq);
                                 } else {
-                                    cache.insert(next_m, vec![(i, j + 1, true)]);
+                                    cache.insert(m_cache.clone(), vec![(i, j + 1, true)]);
                                 }
                             }
                         } else if !next_in_divisor {
@@ -1526,22 +1528,23 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                                 && (j == 1 // the divisor starts with the sub-leading term in the heap
                                     || merged_index_of_div_monomial_in_quotient[j - 1] > i + 1)
                             {
-                                let next_m: SmallVec<[E; INLINED_EXPONENTS]> = q
-                                    .exponents(i + 1)
-                                    .iter()
+                                for ((m, e1), e2) in m_cache
+                                    .iter_mut()
+                                    .zip(q.exponents(i + 1))
                                     .zip(div.exponents_back(j))
-                                    .map(|(e1, e2)| *e1 + *e2)
-                                    .collect();
+                                {
+                                    *m = *e1 + *e2;
+                                }
 
-                                if let Some(e) = cache.get_mut(&next_m) {
+                                if let Some(e) = cache.get_mut(&m_cache) {
                                     e.push((i + 1, j, false));
                                 } else {
-                                    h.push(next_m.clone()); // only add when new
+                                    h.push(m_cache.clone()); // only add when new
                                     if let Some(mut qq) = q_cache.pop() {
                                         qq.push((i + 1, j, false));
-                                        cache.insert(next_m, qq);
+                                        cache.insert(m_cache.clone(), qq);
                                     } else {
-                                        cache.insert(next_m, vec![(i + 1, j, false)]);
+                                        cache.insert(m_cache.clone(), vec![(i + 1, j, false)]);
                                     }
                                 }
                             } else {
@@ -1549,23 +1552,24 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                             }
 
                             if j + 1 < div.nterms && !div_monomial_in_heap[j + 1] {
-                                let next_elem: SmallVec<[E; INLINED_EXPONENTS]> = q
-                                    .exponents(i)
-                                    .iter()
+                                for ((m, e1), e2) in m_cache
+                                    .iter_mut()
+                                    .zip(q.exponents(i))
                                     .zip(div.exponents_back(j + 1))
-                                    .map(|(e1, e2)| *e1 + *e2)
-                                    .collect();
+                                {
+                                    *m = *e1 + *e2;
+                                }
 
-                                if let Some(e) = cache.get_mut(&next_elem) {
+                                if let Some(e) = cache.get_mut(&m_cache) {
                                     e.push((i, j + 1, false));
                                 } else {
-                                    h.push(next_elem.clone()); // only add when new
+                                    h.push(m_cache.clone()); // only add when new
 
                                     if let Some(mut qq) = q_cache.pop() {
                                         qq.push((i, j + 1, false));
-                                        cache.insert(next_elem, qq);
+                                        cache.insert(m_cache.clone(), qq);
                                     } else {
-                                        cache.insert(next_elem, vec![(i, j + 1, false)]);
+                                        cache.insert(m_cache.clone(), vec![(i, j + 1, false)]);
                                     }
                                 }
 
@@ -1589,12 +1593,11 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 }
 
                 q.coefficients.push(quot);
-                q.exponents.extend_from_slice(
-                    &div.last_exponents()
+                q.exponents.extend(
+                    div.last_exponents()
                         .iter()
                         .zip(&m)
-                        .map(|(ge, me)| *me - *ge)
-                        .collect::<SmallVec<[E; INLINED_EXPONENTS]>>(),
+                        .map(|(ge, me)| *me - *ge),
                 );
                 q.nterms += 1;
 
@@ -1602,25 +1605,26 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     continue;
                 }
 
-                let qn_g1: SmallVec<[E; INLINED_EXPONENTS]> = q
-                    .last_exponents()
-                    .iter()
+                for ((m, e1), e2) in m_cache
+                    .iter_mut()
+                    .zip(q.last_exponents())
                     .zip(div.exponents_back(1))
-                    .map(|(e1, e2)| *e1 + *e2)
-                    .collect();
+                {
+                    *m = *e1 + *e2;
+                }
 
                 if q.nterms < div.nterms {
                     // using quotient heap
 
-                    if let Some(e) = cache.get_mut(&qn_g1) {
+                    if let Some(e) = cache.get_mut(&m_cache) {
                         e.push((q.nterms - 1, 1, true));
                     } else {
-                        h.push(qn_g1.clone()); // only add when new
+                        h.push(m_cache.clone()); // only add when new
                         if let Some(mut qq) = q_cache.pop() {
                             qq.push((q.nterms - 1, 1, true));
-                            cache.insert(qn_g1, qq);
+                            cache.insert(m_cache.clone(), qq);
                         } else {
-                            cache.insert(qn_g1, vec![(q.nterms - 1, 1, true)]);
+                            cache.insert(m_cache.clone(), vec![(q.nterms - 1, 1, true)]);
                         }
                     }
                 } else if q.nterms >= div.nterms {
@@ -1628,15 +1632,15 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     if !div_monomial_in_heap[1] {
                         div_monomial_in_heap[1] = true;
 
-                        if let Some(e) = cache.get_mut(&qn_g1) {
+                        if let Some(e) = cache.get_mut(&m_cache) {
                             e.push((q.nterms - 1, 1, false));
                         } else {
-                            h.push(qn_g1.clone()); // only add when new
+                            h.push(m_cache.clone()); // only add when new
                             if let Some(mut qq) = q_cache.pop() {
                                 qq.push((q.nterms - 1, 1, false));
-                                cache.insert(qn_g1, qq);
+                                cache.insert(m_cache.clone(), qq);
                             } else {
-                                cache.insert(qn_g1, vec![(q.nterms - 1, 1, false)]);
+                                cache.insert(m_cache.clone(), vec![(q.nterms - 1, 1, false)]);
                             }
                         }
                     }
@@ -1648,15 +1652,15 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     debug_assert!(div_monomial_in_heap.iter().any(|c| !c));
                     div_monomial_in_heap[1] = true;
 
-                    if let Some(e) = cache.get_mut(&qn_g1) {
+                    if let Some(e) = cache.get_mut(&m_cache) {
                         e.push((q.nterms - 1, 1, false));
                     } else {
-                        h.push(qn_g1.clone()); // only add when new
+                        h.push(m_cache.clone()); // only add when new
                         if let Some(mut qq) = q_cache.pop() {
                             qq.push((q.nterms - 1, 1, false));
-                            cache.insert(qn_g1, qq);
+                            cache.insert(m_cache.clone(), qq);
                         } else {
-                            cache.insert(qn_g1, vec![(q.nterms - 1, 1, false)]);
+                            cache.insert(m_cache.clone(), vec![(q.nterms - 1, 1, false)]);
                         }
                     }
                 }

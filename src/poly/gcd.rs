@@ -167,24 +167,6 @@ where
         })
         .collect::<Vec<_>>();
 
-    let var_bound = max(a.degree(main_var).to_u32(), b.degree(main_var).to_u32()) as usize + 1;
-    let has_small_exp = var_bound < POW_CACHE_SIZE;
-
-    // store a power map for the univariate polynomials that will be sampled
-    // the sampling_polynomial routine will set the power to 0 after use.
-    // If the exponent is small enough, we use a vec, otherwise we use a hashmap.
-    let (mut tm, mut tm_fixed) = if has_small_exp {
-        (
-            HashMap::with_hasher(Default::default()),
-            vec![a.field.zero(); var_bound],
-        )
-    } else {
-        (
-            HashMap::with_capacity_and_hasher(INITIAL_POW_MAP_SIZE, Default::default()),
-            vec![],
-        )
-    };
-
     // find a set of sample points that yield unique coefficients for every coefficient of a term in the shape
     let (row_sample_values, samples) = 'find_root_sample: loop {
         for v in &mut cache {
@@ -247,36 +229,119 @@ where
 
         let mut samples = vec![Vec::with_capacity(samples_needed); shape.len()];
         let mut r = r_orig.clone();
+
+        /// Evaluation of the exponents by filling in the variables
+        #[inline(always)]
+        fn evaluate_exponent<UField: FiniteFieldWorkspace, E: Exponent>(
+            poly: &MultivariatePolynomial<FiniteField<UField>, E>,
+            r: &[(usize, <FiniteField<UField> as Ring>::Element)],
+            cache: &mut [Vec<<FiniteField<UField> as Ring>::Element>],
+        ) -> Vec<<FiniteField<UField> as Ring>::Element>
+        where
+            FiniteField<UField>: FiniteFieldCore<UField>,
+            <FiniteField<UField> as Ring>::Element: Copy,
+        {
+            let mut eval = vec![poly.field.one(); poly.nterms];
+            for (c, t) in eval.iter_mut().zip(poly) {
+                // evaluate each exponent
+                for &(n, v) in r {
+                    let exp = t.exponents[n].to_u32() as usize;
+                    if exp > 0 {
+                        if n < cache[n].len() {
+                            if FiniteField::<UField>::is_zero(&cache[n][exp]) {
+                                cache[n][exp] = poly.field.pow(&v, exp as u64);
+                            }
+
+                            poly.field.mul_assign(c, &cache[n][exp]);
+                        } else {
+                            poly.field.mul_assign(c, &poly.field.pow(&v, exp as u64));
+                        }
+                    }
+                }
+            }
+            eval
+        }
+
+        let a_eval = evaluate_exponent(a, &r_orig, &mut cache);
+        let b_eval = evaluate_exponent(b, &r_orig, &mut cache);
+
+        let mut a_current = Cow::Borrowed(&a_eval);
+        let mut b_current = Cow::Borrowed(&b_eval);
+
+        let mut a_poly = MultivariatePolynomial::new(
+            a.nvars,
+            a.field,
+            Some(a.degree(main_var).to_u32() as usize + 1),
+            None,
+        );
+        let mut b_poly = MultivariatePolynomial::new(
+            b.nvars,
+            b.field,
+            Some(b.degree(main_var).to_u32() as usize + 1),
+            None,
+        );
+
         for sample_index in 0..samples_needed {
-            // sample at x^i
+            // sample at r^i
             if sample_index > 0 {
                 for (c, rr) in r.iter_mut().zip(&r_orig) {
                     *c = (c.0, a.field.mul(&c.1, &rr.1));
                 }
 
-                for v in &mut cache {
-                    for vi in v {
-                        *vi = a.field.zero();
-                    }
+                for (c, e) in a_current.to_mut().iter_mut().zip(&a_eval) {
+                    a.field.mul_assign(c, e);
+                }
+                for (c, e) in b_current.to_mut().iter_mut().zip(&b_eval) {
+                    b.field.mul_assign(c, e);
                 }
             }
 
-            let a1 = if has_small_exp {
-                a.sample_polynomial_small_exponent(main_var, &r, &mut cache, &mut tm_fixed)
-            } else {
-                a.sample_polynomial(main_var, &r, &mut cache, &mut tm)
-            };
-            let b1 = if has_small_exp {
-                b.sample_polynomial_small_exponent(main_var, &r, &mut cache, &mut tm_fixed)
-            } else {
-                b.sample_polynomial(main_var, &r, &mut cache, &mut tm)
-            };
+            #[inline(always)]
+            fn evaluate<UField: FiniteFieldWorkspace, E: Exponent>(
+                poly: &MultivariatePolynomial<FiniteField<UField>, E>,
+                exp_evals: &[<FiniteField<UField> as Ring>::Element],
+                main_var: usize,
+                out: &mut MultivariatePolynomial<FiniteField<UField>, E>,
+            ) where
+                FiniteField<UField>: FiniteFieldCore<UField>,
+                <FiniteField<UField> as Ring>::Element: Copy,
+            {
+                out.clear();
+                let mut c = poly.field.zero();
+                let mut new_exp = vec![E::zero(); poly.nvars];
+                for (aa, e) in poly.into_iter().zip(exp_evals) {
+                    if aa.exponents[main_var] != new_exp[main_var] {
+                        if !FiniteField::is_zero(&c) {
+                            out.coefficients.push(c);
+                            out.exponents.extend_from_slice(&new_exp);
+                            out.nterms += 1;
 
-            if a1.ldegree(main_var) != a_ldegree && b1.ldegree(main_var) != b_ldegree {
+                            c = poly.field.zero();
+                        }
+
+                        new_exp[main_var] = aa.exponents[main_var];
+                    }
+
+                    poly.field
+                        .add_assign(&mut c, &poly.field.mul(&aa.coefficient, e));
+                }
+
+                if !FiniteField::is_zero(&c) {
+                    out.coefficients.push(c);
+                    out.exponents.extend_from_slice(&new_exp);
+                    out.nterms += 1;
+                }
+            }
+
+            // now construct the univariate polynomials from the current evaluated monomials
+            evaluate(a, &a_current, main_var, &mut a_poly);
+            evaluate(b, &b_current, main_var, &mut b_poly);
+
+            if a_poly.ldegree(main_var) != a_ldegree && a_poly.ldegree(main_var) != b_ldegree {
                 continue 'find_root_sample;
             }
 
-            let g = MultivariatePolynomial::univariate_gcd(&a1, &b1);
+            let g = MultivariatePolynomial::univariate_gcd(&a_poly, &b_poly);
             debug!(
                 "GCD of sample at point {:?} in main var {}: {}",
                 r, main_var, g

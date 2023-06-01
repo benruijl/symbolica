@@ -876,13 +876,13 @@ macro_rules! generate_methods {
 
             pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
                 let (q, r) = if self.poly.get_var_map() == rhs.poly.get_var_map() {
-                    self.poly.quot_rem(&rhs.poly)
+                    self.poly.quot_rem(&rhs.poly, false)
                 } else {
                     let mut new_self = (*self.poly).clone();
                     let mut new_rhs = (*rhs.poly).clone();
                     new_self.unify_var_map(&mut new_rhs);
 
-                    new_self.quot_rem(&new_rhs)
+                    new_self.quot_rem(&new_rhs, false)
                 };
 
                 if r.is_zero() {
@@ -897,7 +897,7 @@ macro_rules! generate_methods {
 
             pub fn quot_rem(&self, rhs: Self) -> (Self, Self) {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
-                    let (q, r) = self.poly.quot_rem(&rhs.poly);
+                    let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
                     (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
                 } else {
@@ -905,7 +905,7 @@ macro_rules! generate_methods {
                     let mut new_rhs = (*rhs.poly).clone();
                     new_self.unify_var_map(&mut new_rhs);
 
-                    let (q, r) = new_self.quot_rem(&new_rhs);
+                    let (q, r) = new_self.quot_rem(&new_rhs, false);
 
                     (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
                 }

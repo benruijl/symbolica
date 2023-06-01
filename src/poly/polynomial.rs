@@ -693,15 +693,8 @@ impl<'a, 'b, F: EuclideanDomain, E: Exponent> Div<&'a MultivariatePolynomial<F, 
     type Output = MultivariatePolynomial<F, E>;
 
     fn div(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
-        let (r, q) = self.quot_rem(&other);
-        if q.is_zero() {
-            r
-        } else {
-            panic!(
-                "No clean division of {} by {} possible: rest = {}",
-                self, other, r
-            );
-        }
+        self.divides(&other)
+            .unwrap_or_else(|| panic!("No clean division of {} by {}", self, other))
     }
 }
 
@@ -1395,10 +1388,23 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         (q, r)
     }
 
+    pub fn divides(
+        &self,
+        div: &MultivariatePolynomial<F, E>,
+    ) -> Option<MultivariatePolynomial<F, E>> {
+        let (a, b) = self.quot_rem(div, true);
+        if b.nterms == 0 {
+            Some(a)
+        } else {
+            None
+        }
+    }
+
     /// Divide two multivariate polynomials and return the quotient and remainder.
     pub fn quot_rem(
         &self,
         div: &MultivariatePolynomial<F, E>,
+        abort_on_remainder: bool,
     ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
         if div.is_zero() {
             panic!("Cannot divide by 0 polynomial");
@@ -1438,7 +1444,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
             return (q, self.new_from(None));
         }
 
-        self.heap_division(div)
+        self.heap_division(div, abort_on_remainder)
     }
 
     /// Heap division for multivariate polynomials, using a cache so that only unique
@@ -1447,33 +1453,37 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
     pub fn heap_division(
         &self,
         div: &MultivariatePolynomial<F, E>,
+        abort_on_remainder: bool,
     ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
         let mut q = self.new_from(Some(self.nterms));
         let mut r = self.new_from(None);
 
         let mut div_monomial_in_heap = vec![false; div.nterms];
-        let mut index_of_div_monomial_in_quotient = vec![0; div.nterms];
+        let mut merged_index_of_div_monomial_in_quotient = vec![0; div.nterms];
 
-        let mut cache: HashMap<
-            SmallVec<[E; INLINED_EXPONENTS]>,
-            SmallVec<[(usize, usize, bool); 5]>,
-        > = HashMap::with_capacity(self.nterms);
+        let mut cache: BTreeMap<SmallVec<[E; INLINED_EXPONENTS]>, Vec<(usize, usize, bool)>> =
+            BTreeMap::new();
 
         let mut h: BinaryHeap<SmallVec<[E; INLINED_EXPONENTS]>> =
             BinaryHeap::with_capacity(self.nterms);
+        let mut q_cache: Vec<Vec<(usize, usize, bool)>> = vec![];
 
-        let mut m: SmallVec<[E; INLINED_EXPONENTS]> = SmallVec::default();
+        let mut m: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); div.nvars];
         let mut c;
 
         let mut k = 0;
         while !h.is_empty() || k < self.nterms {
-            m.clear();
             if k < self.nterms && (h.is_empty() || self.exponents_back(k) >= &h.peek().unwrap()) {
-                m.extend_from_slice(self.exponents_back(k));
+                for (s, e) in m.iter_mut().zip(self.exponents_back(k)) {
+                    *s = *e;
+                }
+
                 c = self.coefficient_back(k).clone();
                 k += 1;
             } else {
-                m.extend_from_slice(h.peek().unwrap().as_slice());
+                for (s, e) in m.iter_mut().zip(h.peek().unwrap().as_slice()) {
+                    *s = *e;
+                }
                 c = self.field.zero();
             }
 
@@ -1481,74 +1491,85 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 if &m == monomial {
                     h.pop().unwrap();
 
-                    for (qi, gi, next_in_divisor) in cache.remove(&m).unwrap() {
+                    for (i, j, next_in_divisor) in cache.remove(&m).unwrap() {
                         // TODO: use fraction-free routines
                         self.field.sub_assign(
                             &mut c,
-                            &self
-                                .field
-                                .mul(&q.coefficients[qi], &div.coefficient_back(gi)),
+                            &self.field.mul(&q.coefficients[i], &div.coefficient_back(j)),
                         );
 
-                        if next_in_divisor && gi + 1 < div.nterms {
+                        if next_in_divisor && j + 1 < div.nterms {
                             // quotient heap product
                             let next_m: SmallVec<[E; INLINED_EXPONENTS]> = q
-                                .exponents(qi)
+                                .exponents(i)
                                 .iter()
-                                .zip(div.exponents_back(gi + 1))
+                                .zip(div.exponents_back(j + 1))
                                 .map(|(e1, e2)| *e1 + *e2)
                                 .collect();
 
-                            cache
-                                .entry(next_m.clone())
-                                .or_insert_with(|| {
-                                    h.push(next_m); // only add when new
-                                    smallvec![]
-                                })
-                                .push((qi, gi + 1, true));
+                            // TODO: make macro
+                            if let Some(e) = cache.get_mut(&next_m) {
+                                e.push((i, j + 1, true));
+                            } else {
+                                h.push(next_m.clone()); // only add when new
+                                if let Some(mut qq) = q_cache.pop() {
+                                    qq.push((i, j + 1, true));
+                                    cache.insert(next_m, qq);
+                                } else {
+                                    cache.insert(next_m, vec![(i, j + 1, true)]);
+                                }
+                            }
                         } else if !next_in_divisor {
-                            index_of_div_monomial_in_quotient[gi] = qi + 1;
+                            merged_index_of_div_monomial_in_quotient[j] = i + 1;
 
-                            if qi + 1 < q.nterms {
+                            if i + 1 < q.nterms
+                                && (j == 1 // the divisor starts with the sub-leading term in the heap
+                                    || merged_index_of_div_monomial_in_quotient[j - 1] > i + 1)
+                            {
                                 let next_m: SmallVec<[E; INLINED_EXPONENTS]> = q
-                                    .exponents(qi + 1)
+                                    .exponents(i + 1)
                                     .iter()
-                                    .zip(div.exponents_back(gi))
+                                    .zip(div.exponents_back(j))
                                     .map(|(e1, e2)| *e1 + *e2)
                                     .collect();
 
-                                cache
-                                    .entry(next_m.clone())
-                                    .or_insert_with(|| {
-                                        h.push(next_m);
-                                        smallvec![]
-                                    })
-                                    .push((qi + 1, gi, false));
+                                if let Some(e) = cache.get_mut(&next_m) {
+                                    e.push((i + 1, j, false));
+                                } else {
+                                    h.push(next_m.clone()); // only add when new
+                                    if let Some(mut qq) = q_cache.pop() {
+                                        qq.push((i + 1, j, false));
+                                        cache.insert(next_m, qq);
+                                    } else {
+                                        cache.insert(next_m, vec![(i + 1, j, false)]);
+                                    }
+                                }
                             } else {
-                                div_monomial_in_heap[gi] = false;
+                                div_monomial_in_heap[j] = false;
                             }
 
-                            // modification from paper: also executed when qi + 1 = #q
-                            if gi + 1 < div.nterms && !div_monomial_in_heap[gi + 1] {
-                                let t = index_of_div_monomial_in_quotient[gi + 1];
-                                if t < q.nterms {
-                                    div_monomial_in_heap[gi + 1] = true; // fixed index in paper
+                            if j + 1 < div.nterms && !div_monomial_in_heap[j + 1] {
+                                let next_elem: SmallVec<[E; INLINED_EXPONENTS]> = q
+                                    .exponents(i)
+                                    .iter()
+                                    .zip(div.exponents_back(j + 1))
+                                    .map(|(e1, e2)| *e1 + *e2)
+                                    .collect();
 
-                                    let next_elem: SmallVec<[E; INLINED_EXPONENTS]> = q
-                                        .exponents(qi)
-                                        .iter()
-                                        .zip(div.exponents_back(gi + 1))
-                                        .map(|(e1, e2)| *e1 + *e2)
-                                        .collect();
+                                if let Some(e) = cache.get_mut(&next_elem) {
+                                    e.push((i, j + 1, false));
+                                } else {
+                                    h.push(next_elem.clone()); // only add when new
 
-                                    cache
-                                        .entry(next_elem.clone())
-                                        .or_insert_with(|| {
-                                            h.push(next_elem);
-                                            smallvec![]
-                                        })
-                                        .push((qi, gi + 1, false));
+                                    if let Some(mut qq) = q_cache.pop() {
+                                        qq.push((i, j + 1, false));
+                                        cache.insert(next_elem, qq);
+                                    } else {
+                                        cache.insert(next_elem, vec![(i, j + 1, false)]);
+                                    }
                                 }
+
+                                div_monomial_in_heap[j + 1] = true;
                             }
                         }
                     }
@@ -1559,7 +1580,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 let (quot, rem) = self.field.quot_rem(&c, &div.lcoeff());
                 if !F::is_zero(&rem) {
                     // TODO: support upgrade to a RationalField
-                    return (MultivariatePolynomial::new_from(&self, None), self.clone());
+                    if abort_on_remainder {
+                        r.nterms += 1;
+                        return (q, r);
+                    } else {
+                        return (MultivariatePolynomial::new_from(&self, None), self.clone());
+                    }
                 }
 
                 q.coefficients.push(quot);
@@ -1585,46 +1611,65 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
                 if q.nterms < div.nterms {
                     // using quotient heap
-                    cache
-                        .entry(qn_g1.clone())
-                        .or_insert_with(|| {
-                            h.push(qn_g1);
-                            smallvec![]
-                        })
-                        .push((q.nterms - 1, 1, true));
-                } else if q.nterms > div.nterms {
+
+                    if let Some(e) = cache.get_mut(&qn_g1) {
+                        e.push((q.nterms - 1, 1, true));
+                    } else {
+                        h.push(qn_g1.clone()); // only add when new
+                        if let Some(mut qq) = q_cache.pop() {
+                            qq.push((q.nterms - 1, 1, true));
+                            cache.insert(qn_g1, qq);
+                        } else {
+                            cache.insert(qn_g1, vec![(q.nterms - 1, 1, true)]);
+                        }
+                    }
+                } else if q.nterms >= div.nterms {
                     // using divisor heap
                     if !div_monomial_in_heap[1] {
                         div_monomial_in_heap[1] = true;
 
-                        cache
-                            .entry(qn_g1.clone())
-                            .or_insert_with(|| {
-                                h.push(qn_g1);
-                                smallvec![]
-                            })
-                            .push((q.nterms - 1, 1, false));
+                        if let Some(e) = cache.get_mut(&qn_g1) {
+                            e.push((q.nterms - 1, 1, false));
+                        } else {
+                            h.push(qn_g1.clone()); // only add when new
+                            if let Some(mut qq) = q_cache.pop() {
+                                qq.push((q.nterms - 1, 1, false));
+                                cache.insert(qn_g1, qq);
+                            } else {
+                                cache.insert(qn_g1, vec![(q.nterms - 1, 1, false)]);
+                            }
+                        }
                     }
                 } else {
                     // switch to divisor heap
-                    for index in &mut index_of_div_monomial_in_quotient {
+                    for index in &mut merged_index_of_div_monomial_in_quotient {
                         *index = q.nterms - 1;
                     }
                     debug_assert!(div_monomial_in_heap.iter().any(|c| !c));
                     div_monomial_in_heap[1] = true;
 
-                    cache
-                        .entry(qn_g1.clone())
-                        .or_insert_with(|| {
-                            h.push(qn_g1);
-                            smallvec![]
-                        })
-                        .push((q.nterms - 1, 1, false));
+                    if let Some(e) = cache.get_mut(&qn_g1) {
+                        e.push((q.nterms - 1, 1, false));
+                    } else {
+                        h.push(qn_g1.clone()); // only add when new
+                        if let Some(mut qq) = q_cache.pop() {
+                            qq.push((q.nterms - 1, 1, false));
+                            cache.insert(qn_g1, qq);
+                        } else {
+                            cache.insert(qn_g1, vec![(q.nterms - 1, 1, false)]);
+                        }
+                    }
                 }
             } else if !F::is_zero(&c) {
-                r.coefficients.push(c);
-                r.exponents.extend(&m);
                 r.nterms += 1;
+
+                if abort_on_remainder {
+                    // return something, the only guarantee is that r.nterms > 0
+                    return (q, r);
+                } else {
+                    r.coefficients.push(c);
+                    r.exponents.extend(&m);
+                }
             }
         }
 

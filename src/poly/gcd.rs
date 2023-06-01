@@ -1285,9 +1285,7 @@ where
             let cont = gc.multivariate_content(lastvar);
             if !cont.is_one() {
                 debug!("Removing content in x{}: {}", lastvar, cont);
-                let cc = gc.quot_rem(&cont);
-                debug_assert!(cc.1.is_zero());
-                gc = cc.0;
+                gc = gc.divides(&cont).unwrap();
             }
 
             // do a probabilistic division test
@@ -1332,7 +1330,7 @@ where
                 }
             };
 
-            if g1.is_one() || (a1.quot_rem(&g1).1.is_zero() && b1.quot_rem(&g1).1.is_zero()) {
+            if g1.is_one() || (a1.divides(&g1).is_some() && b1.divides(&g1).is_some()) {
                 return Some(gc);
             }
 
@@ -1673,7 +1671,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     cont = MultivariatePolynomial::gcd(&cont, &cont_p2);
                 }
 
-                if p2.quot_rem(&p1_prim).1.is_zero() {
+                if p2.divides(&p1_prim).is_some() {
                     return rescale_gcd(p1_prim, &shared_degree, &base_degree, &cont);
                 } else {
                     return rescale_gcd(
@@ -1896,7 +1894,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
         debug!("a_red={}; b_red={}", a, b);
 
         if let Some(var) =
-            (0..a.nvars).position(|x| a.degree(x) > E::zero() && b.degree(x) > E::zero())
+            (0..a.nvars).find(|x| a.degree(*x) > E::zero() && b.degree(*x) > E::zero())
         {
             let max_a = a
                 .coefficients
@@ -1953,21 +1951,20 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let gc = g.div_coeff(&g_cont);
 
-                let (q, r) = a.quot_rem(&gc);
-                let (q1, r1) = b.quot_rem(&gc);
-                if r.is_zero() && r1.is_zero() {
-                    debug!("match {} {}", q, q1);
-                    return Ok((gc.mul_coeff(content_gcd), q, q1));
+                if let Some(q) = a.divides(&gc) {
+                    if let Some(q1) = b.divides(&gc) {
+                        debug!("match {} {}", q, q1);
+                        return Ok((gc.mul_coeff(content_gcd), q, q1));
+                    }
                 }
 
                 debug!("co_fac_p {}", co_fac_p);
 
                 if !co_fac_p.is_zero() {
                     let a_co_fac = interpolate(co_fac_p, var, &xi);
-                    let (q, r) = a.quot_rem(&a_co_fac);
-                    if r.is_zero() {
-                        let (q1, r1) = b.quot_rem(&q);
-                        if r1.is_zero() {
+
+                    if let Some(q) = a.divides(&a_co_fac) {
+                        if let Some(q1) = b.divides(&q) {
                             return Ok((q.mul_coeff(content_gcd), a_co_fac, q1));
                         }
                     }
@@ -1977,10 +1974,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                     let b_co_fac = interpolate(co_fac_q, var, &xi);
                     debug!("cofac b {}", b_co_fac);
 
-                    let (q, r) = b.quot_rem(&b_co_fac);
-                    if r.is_zero() {
-                        let (q1, r1) = a.quot_rem(&q);
-                        if r1.is_zero() {
+                    if let Some(q) = b.divides(&b_co_fac) {
+                        if let Some(q1) = a.divides(&q) {
                             return Ok((q.mul_coeff(content_gcd), q1, b_co_fac));
                         }
                     }
@@ -2065,7 +2060,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let mut content_gcd = content;
 
             f.retain(|x| {
-                if x.quot_rem(&gcd).1.is_zero() {
+                if x.divides(&gcd).is_some() {
                     content_gcd = gcd.field.gcd(&content_gcd, &x.content());
                     false
                 } else {
@@ -2216,7 +2211,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                         .collect();
 
                     debug!("Final suggested gcd: {}", gc);
-                    if gc.is_one() || (a.quot_rem(&gc).1.is_zero() && b.quot_rem(&gc).1.is_zero()) {
+                    if gc.is_one() || (a.divides(&gc).is_some() && b.divides(&gc).is_some()) {
                         return gc;
                     }
 

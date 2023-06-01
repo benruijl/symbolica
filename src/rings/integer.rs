@@ -290,46 +290,57 @@ impl Ord for Integer {
 impl Ring for IntegerRing {
     type Element = Integer;
 
+    #[inline]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a + b
     }
 
+    #[inline]
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a - b
     }
 
+    #[inline]
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a * b
     }
 
+    #[inline]
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a += b;
     }
 
+    #[inline]
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a -= b;
     }
 
+    #[inline]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a *= b;
     }
 
+    #[inline]
     fn neg(&self, a: &Self::Element) -> Self::Element {
         -a
     }
 
+    #[inline]
     fn zero(&self) -> Self::Element {
         Integer::Natural(0)
     }
 
+    #[inline]
     fn one(&self) -> Self::Element {
         Integer::Natural(1)
     }
 
+    #[inline]
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
         b.pow(e)
     }
 
+    #[inline]
     fn is_zero(a: &Self::Element) -> bool {
         match a {
             Integer::Natural(r) => *r == 0,
@@ -337,6 +348,7 @@ impl Ring for IntegerRing {
         }
     }
 
+    #[inline]
     fn is_one(&self, a: &Self::Element) -> bool {
         match a {
             Integer::Natural(r) => *r == 1,
@@ -761,12 +773,14 @@ impl<'a> DivAssign<&'a Integer> for Integer {
 }
 
 impl<'a> MulAssign<i64> for Integer {
+    #[inline]
     fn mul_assign(&mut self, rhs: i64) {
         *self = (&*self) * rhs;
     }
 }
 
 impl<'a> DivAssign<i64> for Integer {
+    #[inline]
     fn div_assign(&mut self, rhs: i64) {
         *self = (&*self) / rhs;
     }

@@ -156,14 +156,17 @@ impl Ring for FiniteField<u32> {
         }
     }
 
+    #[inline(always)]
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.add(a, b);
     }
 
+    #[inline(always)]
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.sub(a, b);
     }
 
+    #[inline(always)]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, b);
     }
@@ -174,11 +177,13 @@ impl Ring for FiniteField<u32> {
         FiniteFieldElement(self.p - a.0)
     }
 
+    #[inline]
     fn zero(&self) -> Self::Element {
         FiniteFieldElement(0)
     }
 
     /// Return the unit element in Montgomory form.
+    #[inline]
     fn one(&self) -> Self::Element {
         self.one
     }
@@ -199,18 +204,22 @@ impl Ring for FiniteField<u32> {
         x
     }
 
+    #[inline]
     fn is_zero(a: &Self::Element) -> bool {
         a.0 == 0
     }
 
+    #[inline]
     fn is_one(&self, a: &Self::Element) -> bool {
         a == &self.one
     }
 
+    #[inline]
     fn get_unit(&self, a: &Self::Element) -> Self::Element {
         *a
     }
 
+    #[inline]
     fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
         self.inv(a)
     }
@@ -230,24 +239,29 @@ impl Ring for FiniteField<u32> {
 }
 
 impl EuclideanDomain for FiniteField<u32> {
+    #[inline]
     fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
         FiniteFieldElement(0)
     }
 
+    #[inline]
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
         (self.mul(a, &self.inv(b)), FiniteFieldElement(0))
     }
 
+    #[inline]
     fn gcd(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
         self.one()
     }
 }
 
 impl Field for FiniteField<u32> {
+    #[inline]
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.mul(a, &self.inv(b))
     }
 
+    #[inline]
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, &self.inv(b));
     }
@@ -293,6 +307,7 @@ impl Field for FiniteField<u32> {
 }
 
 impl FiniteFieldWorkspace for u64 {
+    #[inline]
     fn to_u64(&self) -> u64 {
         *self
     }
@@ -404,14 +419,17 @@ impl Ring for FiniteField<u64> {
         }
     }
 
+    #[inline]
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.add(a, b);
     }
 
+    #[inline]
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.sub(a, b);
     }
 
+    #[inline]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, b);
     }
@@ -422,11 +440,13 @@ impl Ring for FiniteField<u64> {
         FiniteFieldElement(self.p - a.0)
     }
 
+    #[inline]
     fn zero(&self) -> Self::Element {
         FiniteFieldElement(0)
     }
 
     /// Return the unit element in Montgomory form.
+    #[inline]
     fn one(&self) -> Self::Element {
         self.one
     }
@@ -447,18 +467,22 @@ impl Ring for FiniteField<u64> {
         x
     }
 
+    #[inline]
     fn is_zero(a: &Self::Element) -> bool {
         a.0 == 0
     }
 
+    #[inline]
     fn is_one(&self, a: &Self::Element) -> bool {
         a == &self.one
     }
 
+    #[inline]
     fn get_unit(&self, a: &Self::Element) -> Self::Element {
         *a
     }
 
+    #[inline]
     fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
         self.inv(a)
     }
@@ -478,24 +502,29 @@ impl Ring for FiniteField<u64> {
 }
 
 impl EuclideanDomain for FiniteField<u64> {
+    #[inline]
     fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
         FiniteFieldElement(0)
     }
 
+    #[inline]
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
         (self.mul(a, &self.inv(b)), FiniteFieldElement(0))
     }
 
+    #[inline]
     fn gcd(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
         self.one()
     }
 }
 
 impl Field for FiniteField<u64> {
+    #[inline]
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.mul(a, &self.inv(b))
     }
 
+    #[inline]
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, &self.inv(b));
     }

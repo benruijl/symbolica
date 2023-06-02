@@ -762,9 +762,9 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// This operation is O(n).
     pub fn degree(&self, x: usize) -> E {
         let mut max = E::zero();
-        for t in 0..self.nterms {
-            if max < self.exponents(t)[x] {
-                max = self.exponents(t)[x];
+        for e in self.exponents.iter().skip(x).step_by(self.nvars) {
+            if max < *e {
+                max = *e;
             }
         }
         max
@@ -1140,11 +1140,10 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             let mut q = cache.remove(&cur_mon.0).unwrap();
 
             for (i, j) in q.drain(..) {
-                self.field.add_assign(
+                self.field.add_mul_assign(
                     &mut coefficient,
-                    &self
-                        .field
-                        .mul(&self.coefficients[i], &other.coefficients[j]),
+                    &self.coefficients[i],
+                    &other.coefficients[j],
                 );
 
                 merged_index[j] = i + 1;
@@ -1494,9 +1493,10 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
                     for (i, j, next_in_divisor) in cache.remove(&m).unwrap() {
                         // TODO: use fraction-free routines
-                        self.field.sub_assign(
+                        self.field.sub_mul_assign(
                             &mut c,
-                            &self.field.mul(&q.coefficients[i], &div.coefficient_back(j)),
+                            &q.coefficients[i],
+                            &div.coefficient_back(j),
                         );
 
                         if next_in_divisor && j + 1 < div.nterms {

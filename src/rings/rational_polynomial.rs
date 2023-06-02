@@ -303,6 +303,14 @@ where
         *a = self.mul(a, b);
     }
 
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.add_assign(a, &(b * c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.sub_assign(a, &(b * c));
+    }
+
     fn neg(&self, a: &Self::Element) -> Self::Element {
         a.clone().neg()
     }

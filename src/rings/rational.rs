@@ -9,7 +9,7 @@ use rug::{ops::Pow, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryP
 use crate::utils;
 
 use super::{
-    finite_field::{FiniteField, ToFiniteField, FiniteFieldCore},
+    finite_field::{FiniteField, FiniteFieldCore, ToFiniteField},
     integer::Integer,
     EuclideanDomain, Field, Ring,
 };
@@ -188,6 +188,14 @@ impl Ring for RationalField {
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.add_assign(a, &(b * c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.sub_assign(a, &(b * c));
     }
 
     fn neg(&self, a: &Self::Element) -> Self::Element {

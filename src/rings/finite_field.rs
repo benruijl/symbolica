@@ -1,6 +1,6 @@
+use rand::Rng;
 use std::fmt::{Display, Error, Formatter};
 use std::hash::Hash;
-use rand::Rng;
 
 use super::{EuclideanDomain, Field, Ring};
 
@@ -169,6 +169,14 @@ impl Ring for FiniteField<u32> {
     #[inline(always)]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.add_assign(a, &self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.sub_assign(a, &self.mul(b, c));
     }
 
     /// Computes -x mod n.
@@ -432,6 +440,14 @@ impl Ring for FiniteField<u64> {
     #[inline]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.add_assign(a, &self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.sub_assign(a, &self.mul(b, c));
     }
 
     /// Computes -x mod n.

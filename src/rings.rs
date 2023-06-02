@@ -15,6 +15,8 @@ pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element);
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element);
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element);
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element);
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element);
     fn neg(&self, a: &Self::Element) -> Self::Element;
     fn zero(&self) -> Self::Element;
     fn one(&self) -> Self::Element;

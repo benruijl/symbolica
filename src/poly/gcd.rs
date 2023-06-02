@@ -323,7 +323,7 @@ where
                     }
 
                     poly.field
-                        .add_assign(&mut c, &poly.field.mul(&aa.coefficient, e));
+                        .add_mul_assign(&mut c, &aa.coefficient, e);
                 }
 
                 if !FiniteField::is_zero(&c) {
@@ -478,7 +478,7 @@ where
             let mut last_q = a.field.zero();
             for (m, rhs) in master.iter().skip(1).zip(rhs).rev() {
                 last_q = a.field.add(&m, &a.field.mul(s, &last_q));
-                a.field.add_assign(&mut coeff, &a.field.mul(&last_q, rhs));
+                a.field.add_mul_assign(&mut coeff, &last_q, rhs);
             }
             a.field.div_assign(&mut coeff, &norm);
 

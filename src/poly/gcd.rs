@@ -322,8 +322,7 @@ where
                         new_exp[main_var] = aa.exponents[main_var];
                     }
 
-                    poly.field
-                        .add_mul_assign(&mut c, &aa.coefficient, e);
+                    poly.field.add_mul_assign(&mut c, &aa.coefficient, e);
                 }
 
                 if !FiniteField::is_zero(&c) {
@@ -410,7 +409,7 @@ where
             }
 
             // construct the right-hand side
-            for (i, (rhs, (shape_part, exp))) in samples.iter_mut().zip(shape).enumerate() {
+            'rhs: for (i, (rhs, (shape_part, exp))) in samples.iter_mut().zip(shape).enumerate() {
                 // we may not need all terms
                 if rhs.len() == shape_part.nterms {
                     continue;
@@ -424,9 +423,11 @@ where
                     for m in g.into_iter() {
                         if m.exponents[main_var] == *exp {
                             rhs.push(a.field.neg(&a.field.mul(&m.coefficient, &scale_factor)));
-                            break;
+                            continue 'rhs;
                         }
                     }
+
+                    rhs.push(a.field.zero());
                 }
             }
         }

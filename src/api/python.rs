@@ -776,7 +776,7 @@ impl PythonPolynomial {
             self.poly.nvars,
             IntegerRing::new(),
             Some(self.poly.nterms),
-            self.poly.var_map.clone(),
+            self.poly.var_map.as_ref().map(|x| x.as_slice()),
         );
 
         let mut new_exponent = SmallVec::<[u8; 5]>::new();
@@ -953,6 +953,7 @@ impl PythonRationalPolynomial {
                 (*num.poly).clone(),
                 (*den.poly).clone(),
                 IntegerRing::new(),
+                true,
             )),
         }
     }

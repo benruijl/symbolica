@@ -39,6 +39,8 @@ pub trait Exponent:
     + AddAssign
     + Clone
     + Copy
+    + PartialEq
+    + Eq
 {
     fn zero() -> Self;
     fn one() -> Self;
@@ -49,6 +51,13 @@ pub trait Exponent:
     fn is_zero(&self) -> bool;
     fn checked_add(&self, other: &Self) -> Option<Self>;
     fn gcd(&self, other: &Self) -> Self;
+
+    /// Pack a list of exponents into a number, such that arithmetic and
+    /// comparisons can be performed. The caller must guarantee that:
+    /// - the list is no longer than 8 entries
+    /// - each entry is not larger than 255
+    fn pack(list: &[Self]) -> u64;
+    fn unpack(n: u64, out: &mut [Self]);
 }
 
 impl Exponent for u32 {
@@ -85,6 +94,22 @@ impl Exponent for u32 {
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
         utils::gcd_unsigned(*self as u64, *other as u64) as Self
+    }
+
+    fn pack(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 8) + (*x as u8 as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = *ss as u32;
+        }
     }
 }
 
@@ -127,6 +152,22 @@ impl Exponent for u16 {
     fn gcd(&self, other: &Self) -> Self {
         utils::gcd_unsigned(*self as u64, *other as u64) as Self
     }
+
+    fn pack(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 8) + (*x as u8 as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = *ss as u16;
+        }
+    }
 }
 
 /// An exponent limited to 255 for efficiency
@@ -168,6 +209,20 @@ impl Exponent for u8 {
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
         utils::gcd_unsigned(*self as u64, *other as u64) as Self
+    }
+
+    fn pack(list: &[Self]) -> u64 {
+        let d = unsafe { *(list.as_ptr() as *const u64) };
+        // TODO: what about big-endian systems?
+        // set the digits out of scope to 0
+        let dm = d & ((1u64 << (8 * list.len())) - 1);
+        dm.swap_bytes() // swap bytes to preserve comparison
+    }
+
+    fn unpack(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
+        out.copy_from_slice(s);
     }
 }
 

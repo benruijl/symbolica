@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::cmp::{max, min, Ordering};
 use std::mem;
 use std::ops::Add;
-use tracing::{debug, instrument, trace};
+use tracing::{debug, instrument};
 
 use crate::poly::INLINED_EXPONENTS;
 use crate::rings::finite_field::{
@@ -43,6 +43,7 @@ pub const INITIAL_POW_MAP_SIZE: usize = 1000;
 /// The upper bound of the range to be sampled during the computation of multiple gcds
 pub const MAX_RNG_PREFACTOR: u32 = 50000;
 
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum GCDError {
     BadOriginalImage,
     BadCurrentImage,
@@ -93,6 +94,147 @@ where
             + v[k].clone();
     }
     u
+}
+
+/// Evaluation of the exponents by filling in the variables
+#[inline(always)]
+fn evaluate_exponents<UField: FiniteFieldWorkspace, E: Exponent>(
+    poly: &MultivariatePolynomial<FiniteField<UField>, E>,
+    r: &[(usize, <FiniteField<UField> as Ring>::Element)],
+    cache: &mut [Vec<<FiniteField<UField> as Ring>::Element>],
+) -> Vec<<FiniteField<UField> as Ring>::Element>
+where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+    <FiniteField<UField> as Ring>::Element: Copy,
+{
+    let mut eval = vec![poly.field.one(); poly.nterms];
+    for (c, t) in eval.iter_mut().zip(poly) {
+        // evaluate each exponent
+        for &(n, v) in r {
+            let exp = t.exponents[n].to_u32() as usize;
+            if exp > 0 {
+                if n < cache[n].len() {
+                    if FiniteField::<UField>::is_zero(&cache[n][exp]) {
+                        cache[n][exp] = poly.field.pow(&v, exp as u64);
+                    }
+
+                    poly.field.mul_assign(c, &cache[n][exp]);
+                } else {
+                    poly.field.mul_assign(c, &poly.field.pow(&v, exp as u64));
+                }
+            }
+        }
+    }
+    eval
+}
+
+/// Evaluate a polynomial using the evaluation of the exponent of every monomial.
+#[inline(always)]
+fn evaluate_using_exponents<UField: FiniteFieldWorkspace, E: Exponent>(
+    poly: &MultivariatePolynomial<FiniteField<UField>, E>,
+    exp_evals: &[<FiniteField<UField> as Ring>::Element],
+    main_var: usize,
+    out: &mut MultivariatePolynomial<FiniteField<UField>, E>,
+) where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+    <FiniteField<UField> as Ring>::Element: Copy,
+{
+    out.clear();
+    let mut c = poly.field.zero();
+    let mut new_exp = vec![E::zero(); poly.nvars];
+    for (aa, e) in poly.into_iter().zip(exp_evals) {
+        if aa.exponents[main_var] != new_exp[main_var] {
+            if !FiniteField::is_zero(&c) {
+                out.coefficients.push(c);
+                out.exponents.extend_from_slice(&new_exp);
+                out.nterms += 1;
+
+                c = poly.field.zero();
+            }
+
+            new_exp[main_var] = aa.exponents[main_var];
+        }
+
+        poly.field.add_mul_assign(&mut c, &aa.coefficient, e);
+    }
+
+    if !FiniteField::is_zero(&c) {
+        out.coefficients.push(c);
+        out.exponents.extend_from_slice(&new_exp);
+        out.nterms += 1;
+    }
+}
+
+fn solve_vandermonde<UField: FiniteFieldWorkspace, E: Exponent>(
+    a: &MultivariatePolynomial<FiniteField<UField>, E>,
+    main_var: usize,
+    shape: &[(MultivariatePolynomial<FiniteField<UField>, E>, E)],
+    row_sample_values: Vec<Vec<<FiniteField<UField> as Ring>::Element>>,
+    samples: Vec<Vec<<FiniteField<UField> as Ring>::Element>>,
+) -> MultivariatePolynomial<FiniteField<UField>, E>
+where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+    <FiniteField<UField> as Ring>::Element: Copy,
+{
+    let mut gp = MultivariatePolynomial::new(a.nvars, a.field, None, None);
+
+    // solve the transposed Vandermonde system
+    for (((c, ex), sample), rhs) in shape.iter().zip(&row_sample_values).zip(&samples) {
+        if c.nterms == 1 {
+            let coeff = a.field.div(&rhs[0], &sample[0]);
+            let mut ee: SmallVec<[E; INLINED_EXPONENTS]> = c.exponents(0).into();
+            ee[main_var] = *ex;
+            gp.append_monomial(coeff, &ee);
+            continue;
+        }
+
+        // construct the master polynomial (1-s1)*(1-s2)*... efficiently
+        let mut master = vec![a.field.zero(); sample.len() + 1];
+        master[0] = a.field.one();
+
+        for (i, x) in sample.iter().take(c.nterms).enumerate() {
+            let first = &mut master[0];
+            let mut old_last = *first;
+            a.field.mul_assign(first, &a.field.neg(x));
+            for m in &mut master[1..=i] {
+                let ov = *m;
+                a.field.mul_assign(m, &a.field.neg(x));
+                a.field.add_assign(m, &old_last);
+                old_last = ov;
+            }
+            master[i + 1] = a.field.one();
+        }
+
+        for (i, s) in sample.iter().take(c.nterms).enumerate() {
+            let mut norm = a.field.one();
+
+            // sample master/(1-s_i) by using the factorized form
+            for (j, l) in sample.iter().enumerate() {
+                if j != i {
+                    a.field.mul_assign(&mut norm, &a.field.sub(s, &l))
+                }
+            }
+
+            // divide out 1-s_i
+            let mut coeff = a.field.zero();
+            let mut last_q = a.field.zero();
+            for (m, rhs) in master.iter().skip(1).zip(rhs).rev() {
+                last_q = a.field.add(&m, &a.field.mul(s, &last_q));
+                a.field.add_mul_assign(&mut coeff, &last_q, rhs);
+            }
+            a.field.div_assign(&mut coeff, &norm);
+
+            // divide by the Vandermonde row since the Vandermonde matrices should start with a 1
+            a.field.div_assign(&mut coeff, s);
+
+            let mut ee: SmallVec<[E; INLINED_EXPONENTS]> = c.exponents(i).into();
+            ee[main_var] = *ex;
+
+            gp.append_monomial(coeff, &ee);
+        }
+    }
+
+    gp
 }
 
 #[instrument(level = "trace", fields(%a, %b))]
@@ -230,40 +372,8 @@ where
         let mut samples = vec![Vec::with_capacity(samples_needed); shape.len()];
         let mut r = r_orig.clone();
 
-        /// Evaluation of the exponents by filling in the variables
-        #[inline(always)]
-        fn evaluate_exponent<UField: FiniteFieldWorkspace, E: Exponent>(
-            poly: &MultivariatePolynomial<FiniteField<UField>, E>,
-            r: &[(usize, <FiniteField<UField> as Ring>::Element)],
-            cache: &mut [Vec<<FiniteField<UField> as Ring>::Element>],
-        ) -> Vec<<FiniteField<UField> as Ring>::Element>
-        where
-            FiniteField<UField>: FiniteFieldCore<UField>,
-            <FiniteField<UField> as Ring>::Element: Copy,
-        {
-            let mut eval = vec![poly.field.one(); poly.nterms];
-            for (c, t) in eval.iter_mut().zip(poly) {
-                // evaluate each exponent
-                for &(n, v) in r {
-                    let exp = t.exponents[n].to_u32() as usize;
-                    if exp > 0 {
-                        if n < cache[n].len() {
-                            if FiniteField::<UField>::is_zero(&cache[n][exp]) {
-                                cache[n][exp] = poly.field.pow(&v, exp as u64);
-                            }
-
-                            poly.field.mul_assign(c, &cache[n][exp]);
-                        } else {
-                            poly.field.mul_assign(c, &poly.field.pow(&v, exp as u64));
-                        }
-                    }
-                }
-            }
-            eval
-        }
-
-        let a_eval = evaluate_exponent(a, &r_orig, &mut cache);
-        let b_eval = evaluate_exponent(b, &r_orig, &mut cache);
+        let a_eval = evaluate_exponents(a, &r_orig, &mut cache);
+        let b_eval = evaluate_exponents(b, &r_orig, &mut cache);
 
         let mut a_current = Cow::Borrowed(&a_eval);
         let mut b_current = Cow::Borrowed(&b_eval);
@@ -296,45 +406,9 @@ where
                 }
             }
 
-            #[inline(always)]
-            fn evaluate<UField: FiniteFieldWorkspace, E: Exponent>(
-                poly: &MultivariatePolynomial<FiniteField<UField>, E>,
-                exp_evals: &[<FiniteField<UField> as Ring>::Element],
-                main_var: usize,
-                out: &mut MultivariatePolynomial<FiniteField<UField>, E>,
-            ) where
-                FiniteField<UField>: FiniteFieldCore<UField>,
-                <FiniteField<UField> as Ring>::Element: Copy,
-            {
-                out.clear();
-                let mut c = poly.field.zero();
-                let mut new_exp = vec![E::zero(); poly.nvars];
-                for (aa, e) in poly.into_iter().zip(exp_evals) {
-                    if aa.exponents[main_var] != new_exp[main_var] {
-                        if !FiniteField::is_zero(&c) {
-                            out.coefficients.push(c);
-                            out.exponents.extend_from_slice(&new_exp);
-                            out.nterms += 1;
-
-                            c = poly.field.zero();
-                        }
-
-                        new_exp[main_var] = aa.exponents[main_var];
-                    }
-
-                    poly.field.add_mul_assign(&mut c, &aa.coefficient, e);
-                }
-
-                if !FiniteField::is_zero(&c) {
-                    out.coefficients.push(c);
-                    out.exponents.extend_from_slice(&new_exp);
-                    out.nterms += 1;
-                }
-            }
-
             // now construct the univariate polynomials from the current evaluated monomials
-            evaluate(a, &a_current, main_var, &mut a_poly);
-            evaluate(b, &b_current, main_var, &mut b_poly);
+            evaluate_using_exponents(a, &a_current, main_var, &mut a_poly);
+            evaluate_using_exponents(b, &b_current, main_var, &mut b_poly);
 
             if a_poly.ldegree(main_var) != a_ldegree && a_poly.ldegree(main_var) != b_ldegree {
                 continue 'find_root_sample;
@@ -378,6 +452,7 @@ where
             let mut coeff = a.field.one();
             let (c, d) = &shape[single_scale];
             for (n, v) in r.iter() {
+                // TODO: can be taken from row?
                 a.field.mul_assign(
                     &mut coeff,
                     &a.field.pow(v, c.exponents(0)[*n].to_u32() as u64),
@@ -435,78 +510,29 @@ where
         break (row_sample_values, samples);
     };
 
-    let mut gp = MultivariatePolynomial::new(a.nvars, a.field, None, None);
-
-    // solve the transposed Vandermonde system
-    for (((c, ex), sample), rhs) in shape.iter().zip(&row_sample_values).zip(&samples) {
-        if c.nterms == 1 {
-            let coeff = a.field.div(&rhs[0], &sample[0]);
-            let mut ee: SmallVec<[E; INLINED_EXPONENTS]> = c.exponents(0).into();
-            ee[main_var] = *ex;
-            gp.append_monomial(coeff, &ee);
-            continue;
-        }
-
-        // construct the master polynomial (1-s1)*(1-s2)*... efficiently
-        let mut master = vec![a.field.zero(); sample.len() + 1];
-        master[0] = a.field.one();
-
-        for (i, x) in sample.iter().enumerate() {
-            let first = &mut master[0];
-            let mut old_last = *first;
-            a.field.mul_assign(first, &a.field.neg(x));
-            for m in &mut master[1..=i] {
-                let ov = *m;
-                a.field.mul_assign(m, &a.field.neg(x));
-                a.field.add_assign(m, &old_last);
-                old_last = ov;
-            }
-            master[i + 1] = a.field.one();
-        }
-
-        for (i, s) in sample.iter().enumerate() {
-            let mut norm = a.field.one();
-
-            // sample master/(1-s_i) by using the factorized form
-            for (j, l) in sample.iter().enumerate() {
-                if j != i {
-                    a.field.mul_assign(&mut norm, &a.field.sub(s, &l))
-                }
-            }
-
-            // divide out 1-s_i
-            let mut coeff = a.field.zero();
-            let mut last_q = a.field.zero();
-            for (m, rhs) in master.iter().skip(1).zip(rhs).rev() {
-                last_q = a.field.add(&m, &a.field.mul(s, &last_q));
-                a.field.add_mul_assign(&mut coeff, &last_q, rhs);
-            }
-            a.field.div_assign(&mut coeff, &norm);
-
-            // divide by the Vandermonde row since the Vandermonde matrices should start with a 1
-            a.field.div_assign(&mut coeff, s);
-
-            let mut ee: SmallVec<[E; INLINED_EXPONENTS]> = c.exponents(i).into();
-            ee[main_var] = *ex;
-
-            gp.append_monomial(coeff, &ee);
-        }
-    }
-
-    Ok(gp)
+    Ok(solve_vandermonde(
+        a,
+        main_var,
+        shape,
+        row_sample_values,
+        samples,
+    ))
 }
 
-#[instrument(level = "trace", fields(%ap, %bp))]
+/// Construct an image in the case where no monomial in the main variable is a single term.
+/// Using Javadi's method to solve the normalization problem, we first determine the coefficients of a single monomial using
+/// Gaussian elimination. Then, we are back in the single term case and we use a Vandermonde
+/// matrix to solve for every coefficient.
+#[instrument(level = "trace", fields(%a, %b))]
 fn construct_new_image_multiple_scales<UField: FiniteFieldWorkspace, E: Exponent>(
-    ap: &MultivariatePolynomial<FiniteField<UField>, E>,
-    bp: &MultivariatePolynomial<FiniteField<UField>, E>,
-    aldegree: E,
-    bldegree: E,
+    a: &MultivariatePolynomial<FiniteField<UField>, E>,
+    b: &MultivariatePolynomial<FiniteField<UField>, E>,
+    a_ldegree: E,
+    b_ldegree: E,
     bounds: &mut [E],
-    nx: usize,
     vars: &[usize],
-    var: usize,
-    gfu: &[(MultivariatePolynomial<FiniteField<UField>, E>, E)],
+    main_var: usize,
+    shape: &[(MultivariatePolynomial<FiniteField<UField>, E>, E)],
 ) -> Result<MultivariatePolynomial<FiniteField<UField>, E>, GCDError>
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
@@ -514,410 +540,358 @@ where
 {
     let mut rng = rand::thread_rng();
 
-    let mut system = Vec::with_capacity(nx); // coefficients for the linear system
-    let mut ni = 0;
     let mut failure_count = 0;
 
-    let mut rank_failure_count = 0;
-    let mut last_rank = (0, 0);
-
     // store a table for variables raised to a certain power
-    let mut cache = (0..ap.nvars)
+    let mut cache = (0..a.nvars)
         .map(|i| {
             vec![
-                ap.field.zero();
+                a.field.zero();
                 min(
-                    max(ap.degree(i), bp.degree(i)).to_u32() as usize + 1,
+                    max(a.degree(i), b.degree(i)).to_u32() as usize + 1,
                     POW_CACHE_SIZE
                 )
             ]
         })
         .collect::<Vec<_>>();
 
-    let var_bound = max(ap.degree(var).to_u32(), bp.degree(var).to_u32()) as usize + 1;
-    let has_small_exp = var_bound < POW_CACHE_SIZE;
+    // sort the shape based on the number of terms in the coefficient
+    let mut shape_map: Vec<_> = (0..shape.len()).collect();
+    shape_map.sort_unstable_by_key(|i| shape[*i].0.nterms);
 
-    // store a power map for the univariate polynomials that will be sampled
-    // the sampling_polynomial routine will set the power to 0 after use.
-    // If the exponent is small enough, we use a vec, otherwise we use a hashmap.
-    let (mut tm, mut tm_fixed) = if has_small_exp {
-        (
-            HashMap::with_hasher(Default::default()),
-            vec![ap.field.zero(); var_bound],
-        )
-    } else {
-        (
-            HashMap::with_capacity_and_hasher(INITIAL_POW_MAP_SIZE, Default::default()),
-            vec![],
-        )
-    };
+    let max_terms = shape[*shape_map.last().unwrap()].0.nterms;
 
-    'newimage: loop {
-        // generate random numbers for all non-leading variables
-        // TODO: apply a Horner scheme to speed up the substitution?
-        let mut failcount = 0;
-        let (r, a1, b1) = loop {
-            for v in &mut cache {
-                for vi in v {
-                    *vi = ap.field.zero();
+    // find a set of sample points that yield unique coefficients for every coefficient of a term in the shape
+    let (row_sample_values, samples) = 'find_root_sample: loop {
+        for v in &mut cache {
+            for vi in v {
+                *vi = a.field.zero();
+            }
+        }
+
+        let r_orig: SmallVec<[_; INLINED_EXPONENTS]> = vars
+            .iter()
+            .map(|i| {
+                (
+                    *i,
+                    a.field.sample(
+                        &mut rng,
+                        (
+                            1,
+                            a.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
+                        ),
+                    ),
+                )
+            })
+            .collect();
+
+        let mut row_sample_values = Vec::with_capacity(shape.len()); // coefficients for the linear system
+
+        let max_samples_needed = 2 * max_terms - 1;
+        for (c, _) in shape.iter() {
+            let mut row = Vec::with_capacity(c.nterms);
+            let mut seen = HashSet::new();
+
+            for t in c {
+                // evaluate each exponent
+                let mut c = a.field.one();
+                for &(n, v) in &r_orig {
+                    let exp = t.exponents[n].to_u32() as usize;
+                    if exp > 0 {
+                        if n < cache[n].len() {
+                            if FiniteField::<UField>::is_zero(&cache[n][exp]) {
+                                cache[n][exp] = a.field.pow(&v, exp as u64);
+                            }
+
+                            a.field.mul_assign(&mut c, &cache[n][exp]);
+                        } else {
+                            a.field.mul_assign(&mut c, &a.field.pow(&v, exp as u64));
+                        }
+                    }
+                }
+                row.push(c);
+
+                // check if each element is unique
+                if !seen.insert(a.field.from_element(c)) {
+                    debug!("Duplicate element: restarting");
+                    continue 'find_root_sample;
                 }
             }
 
-            let r: SmallVec<[_; INLINED_EXPONENTS]> = vars
-                .iter()
-                .map(|i| {
-                    (
-                        *i,
-                        ap.field.sample(
-                            &mut rng,
-                            (
-                                1,
-                                ap.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
-                            ),
-                        ),
-                    )
-                })
-                .collect();
-
-            let a1 = if has_small_exp {
-                ap.sample_polynomial_small_exponent(var, &r, &mut cache, &mut tm_fixed)
-            } else {
-                ap.sample_polynomial(var, &r, &mut cache, &mut tm)
-            };
-            let b1 = if has_small_exp {
-                bp.sample_polynomial_small_exponent(var, &r, &mut cache, &mut tm_fixed)
-            } else {
-                bp.sample_polynomial(var, &r, &mut cache, &mut tm)
-            };
-
-            if a1.ldegree(var) == aldegree && b1.ldegree(var) == bldegree {
-                break (r, a1, b1);
-            }
-
-            failcount += 1;
-            if failcount > 10 {
-                panic!(
-                "Cannot find samples with the right bounds after 10 tries: {} {} {} {}\nap={}\nbp={}\na1={}\nb1={}",
-                a1.ldegree(var),
-                aldegree,
-                b1.ldegree(var),
-                bldegree,
-                ap,
-                bp,
-                a1,
-                b1
-            )
-            }
-        };
-
-        let g1 = MultivariatePolynomial::univariate_gcd(&a1, &b1);
-        trace!("GCD of sample at point {:?}: {}", r, g1);
-
-        if g1.ldegree(var) < bounds[var] {
-            // original image and form and degree bounds are unlucky
-            // change the bound and try a new prime
-            bounds[var] = g1.ldegree(var);
-            debug!("Unlucky degree bound");
-            return Err(GCDError::BadOriginalImage);
+            row_sample_values.push(row);
         }
 
-        if g1.ldegree(var) > bounds[var] {
-            failure_count += 1;
-            if failure_count > 2 || failure_count > ni {
-                // p is likely unlucky
-                debug!(
-                    "Bad current image: gcd({},{}) mod {} under {:?} = {}",
-                    ap,
-                    bp,
-                    ap.field.get_prime(),
-                    r,
-                    g1
-                );
-                return Err(GCDError::BadCurrentImage);
-            }
-            debug!("Degree too high");
-            continue;
-        }
+        let mut samples = vec![Vec::with_capacity(max_samples_needed); shape.len()];
+        let mut r = r_orig.clone();
 
-        // check if all the monomials of the image appear in the shape
-        // if not, the original shape is bad
-        for m in g1.into_iter() {
-            if gfu.iter().all(|(_, pow)| *pow != m.exponents[var]) {
-                debug!("Bad shape: terms missing");
+        let a_eval = evaluate_exponents(a, &r_orig, &mut cache);
+        let b_eval = evaluate_exponents(b, &r_orig, &mut cache);
+
+        let mut a_current = Cow::Borrowed(&a_eval);
+        let mut b_current = Cow::Borrowed(&b_eval);
+
+        let mut a_poly = MultivariatePolynomial::new(
+            a.nvars,
+            a.field,
+            Some(a.degree(main_var).to_u32() as usize + 1),
+            None,
+        );
+        let mut b_poly = MultivariatePolynomial::new(
+            b.nvars,
+            b.field,
+            Some(b.degree(main_var).to_u32() as usize + 1),
+            None,
+        );
+
+        let mut second_index = 1;
+        let mut solved_coeff = None;
+        for sample_index in 0..max_samples_needed {
+            if solved_coeff.is_some() && sample_index >= max_terms {
+                // we have enough samples
+                break;
+            }
+
+            // sample at r^i
+            if sample_index > 0 {
+                for (c, rr) in r.iter_mut().zip(&r_orig) {
+                    *c = (c.0, a.field.mul(&c.1, &rr.1));
+                }
+
+                for (c, e) in a_current.to_mut().iter_mut().zip(&a_eval) {
+                    a.field.mul_assign(c, e);
+                }
+                for (c, e) in b_current.to_mut().iter_mut().zip(&b_eval) {
+                    b.field.mul_assign(c, e);
+                }
+            }
+
+            // now construct the univariate polynomials from the current evaluated monomials
+            evaluate_using_exponents(a, &a_current, main_var, &mut a_poly);
+            evaluate_using_exponents(b, &b_current, main_var, &mut b_poly);
+
+            if a_poly.ldegree(main_var) != a_ldegree && a_poly.ldegree(main_var) != b_ldegree {
+                continue 'find_root_sample;
+            }
+
+            let mut g = MultivariatePolynomial::univariate_gcd(&a_poly, &b_poly);
+            debug!(
+                "GCD of sample at point {:?} in main var {}: {}",
+                r, main_var, g
+            );
+
+            if g.ldegree(main_var) < bounds[main_var] {
+                // original image and form and degree bounds are unlucky
+                // change the bound and try a new prime
+
+                debug!("Unlucky degree bound: {} vs {}", g, bounds[main_var]);
+                bounds[main_var] = g.ldegree(main_var);
                 return Err(GCDError::BadOriginalImage);
             }
-        }
 
-        system.push((r, g1, ap.field.one()));
-        ni += 1;
+            if g.ldegree(main_var) > bounds[main_var] {
+                failure_count += 1;
+                if failure_count > 2 {
+                    // p is likely unlucky
+                    debug!(
+                        "Bad current image: gcd({},{}) mod {} under {:?} = {}",
+                        a,
+                        b,
+                        a.field.get_prime(),
+                        r,
+                        g
+                    );
+                    return Err(GCDError::BadCurrentImage);
+                }
+                debug!("Degree too high");
+                continue 'find_root_sample;
+            }
 
-        // make sure we have at least nx images
-        if ni < nx {
-            continue 'newimage;
-        }
+            // check if all the monomials of the image appear in the shape
+            // if not, the original shape is bad
+            for m in g.into_iter() {
+                if shape.iter().all(|(_, pow)| *pow != m.exponents[main_var]) {
+                    debug!("Bad shape: terms missing");
+                    return Err(GCDError::BadOriginalImage);
+                }
+            }
 
-        // multiple scaling case: construct subsystems with augmented columns for the scaling factors
-        let mut subsystems = Vec::with_capacity(gfu.len());
-        for (i, (c, ex)) in gfu.iter().enumerate() {
-            let mut gfm = SmallVec::with_capacity(c.nterms * system.len());
+            // set the coefficient of the scaling term in the gcd to 1
+            let (_, d) = &shape[shape_map[0]];
+            let mut found = false;
+            for t in &g {
+                if t.exponents[main_var] == *d {
+                    let scale_factor = g.field.inv(&t.coefficient);
+                    g = g.mul_coeff(scale_factor);
+                    found = true;
+                    break;
+                }
+            }
 
-            for (j, (r, g, _scale_factor)) in system.iter().enumerate() {
-                for t in 0..c.nterms {
-                    let mut coeff = ap.field.one();
-                    for &(n, v) in r.iter() {
-                        ap.field.mul_assign(
-                            &mut coeff,
-                            &ap.field.pow(&v, c.exponents(t)[n].to_u32() as u64),
+            if !found {
+                // the scaling term is missing, so the sample point is bad
+                debug!("Bad sample point: scaling term missing");
+                // TODO: check if this happen a number of times in a row
+                // as the prime may be too small to generate n samples that
+                // all contain the scaling term
+                continue 'find_root_sample;
+            }
+
+            // construct the right-hand side
+            'rhs: for (i, (rhs, (shape_part, exp))) in samples.iter_mut().zip(shape).enumerate() {
+                // we may not need all terms
+                if solved_coeff.is_some() && rhs.len() == shape_part.nterms {
+                    continue;
+                }
+
+                // find the associated term in the sample, trying the usual place first
+                if i < g.nterms && g.exponents(i)[main_var] == *exp {
+                    rhs.push(g.coefficients[i]);
+                } else {
+                    // find the matching term if it exists
+                    for m in g.into_iter() {
+                        if m.exponents[main_var] == *exp {
+                            rhs.push(*m.coefficient);
+                            continue 'rhs;
+                        }
+                    }
+
+                    rhs.push(a.field.zero());
+                }
+            }
+
+            // see if we have collected enough samples to solve for the scaling factor
+            while solved_coeff.is_none() {
+                // try to solve the system!
+                let vars_scale = shape[shape_map[0]].0.nterms - 1;
+                let vars_second = shape[shape_map[second_index]].0.nterms;
+                let samples_needed = vars_scale + vars_second;
+
+                if sample_index + 1 < samples_needed {
+                    break; // obtain more samples
+                }
+
+                let mut gfm = SmallVec::with_capacity(samples_needed * samples_needed);
+                let mut new_rhs = SmallVec::with_capacity(samples_needed);
+
+                for sample_index in 0..samples_needed {
+                    let rhs_sec = &samples[shape_map[second_index]][sample_index];
+                    let row_eval_sec = &row_sample_values[shape_map[second_index]];
+                    let row_eval_first = &row_sample_values[shape_map[0]];
+
+                    // assume first constant is 1, which will form the rhs of our equation
+                    let actual_rhs = a.field.mul(
+                        &rhs_sec,
+                        &a.field.pow(&row_eval_first[0], sample_index as u64 + 1),
+                    );
+
+                    for aa in &row_eval_first[1..] {
+                        gfm.push(
+                            a.field.neg(
+                                &a.field
+                                    .mul(&rhs_sec, &a.field.pow(aa, sample_index as u64 + 1)),
+                            ),
                         );
                     }
-                    gfm.push(coeff);
-                }
 
-                // it could be that some coefficients of g are
-                // 0, so we have to be caul to find the matching monomial
-                for ii in 1..system.len() {
-                    if ii == j {
-                        if i < g.nterms && g.exponents(i)[var] == *ex {
-                            gfm.push(g.coefficients[i]);
-                        } else {
-                            // find the matching term or otherwise, push 0
-                            let mut found = false;
-                            for m in g.into_iter() {
-                                if m.exponents[var] == *ex {
-                                    gfm.push(*m.coefficient);
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            if !found {
-                                gfm.push(ap.field.zero());
-                            }
-                        }
-                    } else {
-                        gfm.push(ap.field.zero());
+                    for aa in row_eval_sec {
+                        gfm.push(a.field.pow(aa, sample_index as u64 + 1));
                     }
+
+                    new_rhs.push(actual_rhs);
                 }
 
-                // the scaling of the first image is fixed to 1
-                // we add it as a last column, since that is the rhs
-                if j == 0 {
-                    if i < g.nterms && g.exponents(i)[var] == *ex {
-                        gfm.push(g.coefficients[i]);
-                    } else {
-                        // find the matching term or otherwise, push 0
-                        let mut found = false;
-                        for m in g.into_iter() {
-                            if m.exponents[var] == *ex {
-                                gfm.push(*m.coefficient);
-                                found = true;
-                                break;
-                            }
-                        }
-                        if !found {
-                            gfm.push(ap.field.zero());
+                // bring each subsystem to upper triangular form
+                let m = Matrix {
+                    shape: (samples_needed as u32, samples_needed as u32),
+                    data: gfm,
+                    field: a.field,
+                };
+                let rhs = Matrix {
+                    shape: (samples_needed as u32, 1),
+                    data: new_rhs,
+                    field: a.field,
+                };
+
+                match m.solve(&rhs) {
+                    Ok(r) => {
+                        debug!(
+                            "Solved with {} and {} term",
+                            shape[shape_map[0]].0, shape[shape_map[second_index]].0
+                        );
+                        solved_coeff = Some(r);
+                    }
+                    Err(LinearSolverError::Underdetermined { .. }) => {
+                        debug!("Underdetermined system: trying next index");
+                        debug!(
+                            "Underdetermined system {} and {} term",
+                            shape[shape_map[0]].0, shape[shape_map[second_index]].0
+                        );
+
+                        second_index += 1;
+                        if second_index == shape.len() {
+                            unimplemented!(
+                                "Could not solve the system with just 2 terms: a={}, b={}",
+                                a,
+                                b
+                            );
                         }
                     }
-                } else {
-                    gfm.push(ap.field.zero());
-                }
-            }
-
-            // bring each subsystem to upper triangular form
-            let mut m = Matrix {
-                shape: (system.len() as u32, c.nterms as u32 + system.len() as u32),
-                data: gfm,
-                field: ap.field,
-            };
-
-            match m.solve_subsystem(c.nterms as u32) {
-                Ok(..) => {
-                    subsystems.push(m);
-                }
-                Err(LinearSolverError::Underdetermined { min_rank, max_rank }) => {
-                    debug!("Underdetermined system 2");
-
-                    if last_rank == (min_rank, max_rank) {
-                        rank_failure_count += 1;
-
-                        if rank_failure_count == 3 {
-                            debug!("Same degrees of freedom encountered 3 times: assuming bad prime/evaluation point");
-                            return Err(GCDError::BadCurrentImage);
-                        }
-                    } else {
-                        // update the rank and get new images
-                        rank_failure_count = 0;
-                        last_rank = (min_rank, max_rank);
-                        break;
+                    Err(LinearSolverError::Inconsistent) => {
+                        debug!("Inconsistent system");
+                        return Err(GCDError::BadOriginalImage);
                     }
-                }
-                Err(LinearSolverError::Inconsistent) => {
-                    debug!("Inconsistent system");
-                    return Err(GCDError::BadOriginalImage);
                 }
             }
         }
 
-        if subsystems.len() == gfu.len() {
-            // construct a system for the scaling constants
-            let mut rhs = SmallVec::with_capacity(subsystems.iter().map(|s| s.rows()).sum());
-            let mut sys = SmallVec::with_capacity(rhs.len() * (system.len() - 1));
-            for s in &subsystems {
-                for r in s.row_iter() {
-                    // only include rows that only depend on scaling constants
-                    if r.iter()
-                        .take(s.cols() - system.len())
-                        .any(|x| !FiniteField::<UField>::is_zero(x))
-                    {
-                        continue;
-                    }
-
-                    // note the last column is the rhs, so we skip it
-                    sys.extend(
-                        r.iter()
-                            .skip(s.cols() - system.len())
-                            .take(system.len() - 1)
-                            .cloned(),
+        if let Some(r) = solved_coeff {
+            // evaluate the scaling term for every sample
+            let mut lcoeff_cache = Vec::with_capacity(max_terms);
+            for sample_index in 0..max_terms {
+                let row_eval_first = &row_sample_values[shape_map[0]];
+                let mut scaling_factor = a.field.pow(&row_eval_first[0], sample_index as u64 + 1); // coeff eval is 1
+                for (exp_eval, coeff_eval) in
+                    row_sample_values[shape_map[0]][1..].iter().zip(&r.data)
+                {
+                    a.field.add_mul_assign(
+                        &mut scaling_factor,
+                        coeff_eval,
+                        &a.field.pow(&exp_eval, sample_index as u64 + 1),
                     );
-
-                    rhs.push(ap.field.neg(r.iter().last().unwrap()));
                 }
+                lcoeff_cache.push(scaling_factor);
+                debug!(
+                    "Scaling fac {}: {}",
+                    sample_index,
+                    a.field.from_element(scaling_factor)
+                );
             }
 
-            let m = Matrix {
-                shape: (rhs.len() as u32, system.len() as u32 - 1),
-                data: sys,
-                field: ap.field,
-            };
-            let rhs_mat = Matrix {
-                shape: (rhs.len() as u32, 1),
-                data: rhs,
-                field: ap.field,
-            };
-
-            match m.solve(&rhs_mat) {
-                Ok(x) => {
-                    debug!("Solved scaling constants: {:?}", x);
-
-                    let mut gp = MultivariatePolynomial::new(ap.nvars, ap.field, None, None);
-
-                    // now we fill in the constants in the subsystems and solve it
-                    let mut si = 0;
-                    for s in &mut subsystems {
-                        // convert to arrays
-                        let k = s.cols() - system.len();
-                        let mut m = SmallVec::with_capacity(s.rows() * k);
-                        let mut rhs = SmallVec::with_capacity(s.rows());
-
-                        for r in s.row_iter() {
-                            if r.iter()
-                                .take(s.cols() - system.len())
-                                .all(|x| FiniteField::<UField>::is_zero(x))
-                            {
-                                continue;
-                            }
-
-                            let mut coeff = ap.field.zero();
-                            for (i, xx) in r.iter().enumerate() {
-                                if i < k {
-                                    m.push(*xx);
-                                } else {
-                                    if i == r.len() - 1 {
-                                        ap.field.sub_assign(&mut coeff, xx);
-                                    } else {
-                                        ap.field.sub_assign(
-                                            &mut coeff,
-                                            &ap.field.mul(xx, &x[((i - k) as u32, 0)]),
-                                        );
-                                    }
-                                }
-                            }
-                            rhs.push(coeff);
-                        }
-
-                        // solve the system and plug in the scaling constants
-                        let mm = Matrix {
-                            shape: (rhs.len() as u32, k as u32),
-                            data: m,
-                            field: ap.field,
-                        };
-                        let rhs_mat = Matrix {
-                            shape: (rhs.len() as u32, 1),
-                            data: rhs,
-                            field: ap.field,
-                        };
-
-                        match mm.solve(&rhs_mat) {
-                            Ok(x) => {
-                                // for every power of the main variable
-                                let mut i = 0; // index in the result x
-                                let (c, ex) = &gfu[si];
-                                for mv in c.into_iter() {
-                                    let mut ee = mv.exponents.to_vec();
-                                    ee[var] = *ex;
-
-                                    gp.append_monomial(x[(i, 0)], &ee);
-                                    i += 1;
-                                }
-                            }
-                            Err(LinearSolverError::Underdetermined { min_rank, max_rank }) => {
-                                debug!("Underdetermined system 3: {}/{}", ni, nx);
-
-                                if last_rank == (min_rank, max_rank) {
-                                    rank_failure_count += 1;
-
-                                    if rank_failure_count == 3 {
-                                        debug!("Same degrees of freedom encountered 3 times: assuming bad prime/evaluation point");
-                                        return Err(GCDError::BadCurrentImage);
-                                    }
-                                } else {
-                                    // update the rank and get new images
-                                    rank_failure_count = 0;
-                                    last_rank = (min_rank, max_rank);
-                                    gp =
-                                        MultivariatePolynomial::new(ap.nvars, ap.field, None, None);
-                                    break;
-                                }
-                            }
-                            Err(LinearSolverError::Inconsistent) => {
-                                debug!("Inconsistent system");
-                                return Err(GCDError::BadOriginalImage);
-                            }
-                        }
-
-                        si += 1;
-                    }
-
-                    if !gp.is_zero() {
-                        debug!("Reconstructed {}", gp);
-                        return Ok(gp);
-                    }
-                }
-                Err(LinearSolverError::Underdetermined { min_rank, max_rank }) => {
-                    debug!(
-                        "Underdetermined system 4: {}/{}, rank: {}/{}",
-                        ni, nx, min_rank, max_rank
-                    );
-
-                    if last_rank == (min_rank, max_rank) {
-                        rank_failure_count += 1;
-
-                        if rank_failure_count == 3 {
-                            debug!("Same degrees of freedom encountered 3 times: assuming bad prime/evaluation point");
-                            return Err(GCDError::BadCurrentImage);
-                        }
-                    } else {
-                        // update the rank and get new images
-                        rank_failure_count = 0;
-                        last_rank = (min_rank, max_rank);
-                    }
-                }
-                Err(LinearSolverError::Inconsistent) => {
-                    debug!("Inconsistent system");
-                    return Err(GCDError::BadOriginalImage);
+            for ((c, _), rhs) in shape.iter().zip(&mut samples) {
+                rhs.truncate(c.nterms); // drop unneeded samples
+                for (r, scale) in rhs.iter_mut().zip(&lcoeff_cache) {
+                    a.field.mul_assign(r, scale);
                 }
             }
+        } else {
+            // TODO: expand the system or try a different base
+            // also study if it's possible to pick the smallest base so that this
+            debug!(
+                "Could not solve the system with just 2 terms: a={}, b={}",
+                a, b
+            );
         }
-    }
+
+        break (row_sample_values, samples);
+    };
+
+    Ok(solve_vandermonde(
+        a,
+        main_var,
+        shape,
+        row_sample_values,
+        samples,
+    ))
 }
 
 impl<UField: FiniteFieldWorkspace, E: Exponent> MultivariatePolynomial<FiniteField<UField>, E>
@@ -1310,7 +1284,6 @@ where
                         av.degree(vars[0]),
                         bv.degree(vars[0]),
                         bounds,
-                        nx,
                         &vars[1..vars.len() - 1],
                         vars[0],
                         &gfu,
@@ -2357,7 +2330,6 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                             ap.degree(vars[0]),
                             bp.degree(vars[0]),
                             bounds,
-                            nx,
                             &vars[1..],
                             vars[0],
                             &gfu,

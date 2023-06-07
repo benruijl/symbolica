@@ -438,14 +438,14 @@ impl<'a, P: Atom> AtomView<'a, P> {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map) {
             let den = num.new_from_constant(field.one());
-            return Ok(RationalPolynomial::from_num_den(num, den, out_field, true));
+            return Ok(RationalPolynomial::from_num_den(num, den, out_field, false));
         }
 
         match self {
             AtomView::Num(_) | AtomView::Var(_) => {
                 let num = self.to_polynomial(field, var_map)?;
                 let den = num.new_from_constant(field.one());
-                Ok(RationalPolynomial::from_num_den(num, den, out_field, true))
+                Ok(RationalPolynomial::from_num_den(num, den, out_field, false))
             }
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
@@ -764,20 +764,21 @@ impl Token {
                 num.new_from_constant(field.one())
             };
 
-            return Ok(RationalPolynomial::from_num_den(num, den, out_field, true));
+            // in the fast format [a,b], the gcd of a and b should always be 1
+            return Ok(RationalPolynomial::from_num_den(num, den, out_field, false));
         }
 
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map, var_name_map) {
             let den = num.new_from_constant(field.one());
-            return Ok(RationalPolynomial::from_num_den(num, den, out_field, true));
+            return Ok(RationalPolynomial::from_num_den(num, den, out_field, false));
         }
 
         match self {
             Token::Number(_) | Token::ID(_) => {
                 let num = self.to_polynomial(field, var_map, var_name_map)?;
                 let den = num.new_from_constant(field.one());
-                Ok(RationalPolynomial::from_num_den(num, den, out_field, true))
+                Ok(RationalPolynomial::from_num_den(num, den, out_field, false))
             }
             Token::Op(_, _, Operator::Inv, args) => {
                 assert!(args.len() == 1);

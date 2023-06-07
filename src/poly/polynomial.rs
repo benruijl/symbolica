@@ -278,6 +278,10 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
     /// Reverse the monomial ordering in-place.
     fn reverse(&mut self) {
+        if self.nterms < 2 {
+            return;
+        }
+
         self.coefficients.reverse();
 
         let midu = if self.nterms % 2 == 0 {
@@ -1060,19 +1064,23 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             if include {
                 tm.entry(e_in_xs.clone())
                     .and_modify(|x| x.append_monomial(t.coefficient.clone(), &e_not_in_xs))
-                    .or_insert(MultivariatePolynomial::from_monomial(
-                        t.coefficient.clone(),
-                        e_not_in_xs.to_vec(),
-                        self.field,
-                    ));
+                    .or_insert_with(|| {
+                        MultivariatePolynomial::from_monomial(
+                            t.coefficient.clone(),
+                            e_not_in_xs.to_vec(),
+                            self.field,
+                        )
+                    });
             } else {
                 tm.entry(e_not_in_xs.clone())
                     .and_modify(|x| x.append_monomial(t.coefficient.clone(), &e_in_xs))
-                    .or_insert(MultivariatePolynomial::from_monomial(
-                        t.coefficient.clone(),
-                        e_in_xs.to_vec(),
-                        self.field,
-                    ));
+                    .or_insert_with(|| {
+                        MultivariatePolynomial::from_monomial(
+                            t.coefficient.clone(),
+                            e_in_xs.to_vec(),
+                            self.field,
+                        )
+                    });
             }
         }
 
@@ -1391,13 +1399,10 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 }
 
                 if div.exponents(bindex)[var] + q.exponents(qindex)[var] == pow {
-                    self.field.add_assign(
+                    self.field.sub_mul_assign(
                         &mut coeff,
-                        &self.field.neg(
-                            &self
-                                .field
-                                .mul(&div.coefficients[bindex], &q.coefficients[qindex]),
-                        ),
+                        &div.coefficients[bindex],
+                        &q.coefficients[qindex],
                     );
                 }
 
@@ -1406,13 +1411,16 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
             if !F::is_zero(&coeff) {
                 // can the division be performed? if not, add to rest
-
                 let (quot, div) = if pow >= m {
-                    let (quot, rem) = self.field.quot_rem(&coeff, &norm);
-                    if F::is_zero(&rem) {
-                        (quot, true)
+                    if self.field.is_one(&norm) {
+                        (coeff, true)
                     } else {
-                        (coeff, false)
+                        let (quot, rem) = self.field.quot_rem(&coeff, &norm);
+                        if F::is_zero(&rem) {
+                            (quot, true)
+                        } else {
+                            (coeff, false)
+                        }
                     }
                 } else {
                     (coeff, false)
@@ -1455,6 +1463,22 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         &self,
         div: &MultivariatePolynomial<F, E>,
     ) -> Option<MultivariatePolynomial<F, E>> {
+        if self.is_zero() {
+            return Some(self.clone());
+        }
+
+        if self.nterms < div.nterms {
+            return None;
+        }
+
+        if div.is_zero() {
+            panic!("Cannot divide by 0 polynomial");
+        }
+
+        if (0..self.nvars).any(|v| self.degree(v) < div.degree(v)) {
+            return None;
+        }
+
         let (a, b) = self.quot_rem(div, true);
         if b.nterms == 0 {
             Some(a)

@@ -1694,16 +1694,15 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         }
 
         // try if b divides a or vice versa
-        if a.nterms > b.nterms {
-            if a.divides(&b).is_some() {
-                return rescale_gcd(
-                    b.into_owned(),
-                    &shared_degree,
-                    &base_degree,
-                    &MultivariatePolynomial::one(a.field),
-                );
-            }
-        } else if b.divides(&a).is_some() {
+        if a.nterms >= b.nterms && a.divides(&b).is_some() {
+            return rescale_gcd(
+                b.into_owned(),
+                &shared_degree,
+                &base_degree,
+                &MultivariatePolynomial::one(a.field),
+            );
+        }
+        if a.nterms <= b.nterms && b.divides(&a).is_some() {
             return rescale_gcd(
                 a.into_owned(),
                 &shared_degree,
@@ -2242,12 +2241,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 if gm == old_gm {
                     // divide by integer content
                     let gmc = gm.content();
-                    let mut gc = gm.clone();
-                    gc.coefficients = gc
-                        .coefficients
-                        .iter()
-                        .map(|x| gc.field.quot_rem(x, &gmc).0)
-                        .collect();
+                    let gc = gm.clone().div_coeff(&gmc);
 
                     debug!("Final suggested gcd: {}", gc);
                     if gc.is_one() || (a.divides(&gc).is_some() && b.divides(&gc).is_some()) {

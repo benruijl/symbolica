@@ -8,6 +8,7 @@ use crate::printer::SymbolicaPrintOptions;
 use crate::representations::Identifier;
 use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
 use crate::rings::integer::IntegerRing;
+use crate::rings::rational::RationalField;
 use crate::{
     parser::parse,
     printer::{PrintMode, RationalPolynomialPrinter},
@@ -83,7 +84,7 @@ pub extern "C" fn simplify(
             .to_rational_polynomial(
                 &symbolica.workspace,
                 &mut symbolica.state,
-                IntegerRing::new(),
+                RationalField::new(),
                 IntegerRing::new(),
                 &symbolica.local_state.var_map,
                 &symbolica.local_state.var_name_map,

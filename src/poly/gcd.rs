@@ -1404,11 +1404,11 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
     /// Compute the gcd of the univariate content in `x`.
     pub fn univariate_content_gcd(
-        a: &MultivariatePolynomial<R, E>,
+        &self,
         b: &MultivariatePolynomial<R, E>,
         x: usize,
     ) -> MultivariatePolynomial<R, E> {
-        let af = a.to_univariate_polynomial_list(x);
+        let af = self.to_univariate_polynomial_list(x);
         let bf = b.to_univariate_polynomial_list(x);
 
         let mut f = Vec::with_capacity(af.len() + bf.len());
@@ -1751,28 +1751,19 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         // polynomials do not have to be sorted after filling in variables.
         vars.sort_by(|&i, &j| tight_bounds[j].cmp(&tight_bounds[i]));
 
-        // strip the univariate content wrt the new first variable
+        // strip the gcd of the univariate contents wrt the new first variable
         let content = if vars.len() > 1 {
-            let uca = a.univariate_content(vars[0]);
-            let ucb = b.univariate_content(vars[0]);
             debug!("Starting univariate content computation in {}", vars[0]);
-            let content = MultivariatePolynomial::gcd(&uca, &ucb);
+            let content = a.univariate_content_gcd(&b, vars[0]);
             debug!("GCD of content: {}", content);
 
-            if !uca.is_one() {
-                a = Cow::Owned(a.as_ref() / &uca);
+            if !content.is_one() {
+                a = Cow::Owned(a.as_ref() / & content);
+                b = Cow::Owned(b.as_ref() / & content);
             }
 
-            if !ucb.is_one() {
-                b = Cow::Owned(b.as_ref() / &ucb);
-            }
-
-            // if variables got removed, try again from the start
-            if !uca.is_constant() || !ucb.is_constant() {
-                let g = MultivariatePolynomial::gcd(&a, &b);
-                return rescale_gcd(g, &shared_degree, &base_degree, &content);
-            }
-
+            // even if variables got removed, benchmarks show that it is not
+            // worth it do restart the gcd computation
             content
         } else {
             // get the integer content for univariate polynomials

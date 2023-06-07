@@ -1221,11 +1221,6 @@ where
                 debug!("Multiple scaling case: sample {} times", nx);
             }
 
-            // we need one extra sample to detect inconsistencies, such
-            // as missing terms in the shape.
-            // NOTE: not in paper
-            nx += 1;
-
             let mut lc = gv.lcoeff_varorder(vars);
 
             let mut gseq = vec![gv.clone().mul_coeff(
@@ -1698,6 +1693,25 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             );
         }
 
+        // try if b divides a or vice versa
+        if a.nterms > b.nterms {
+            if a.divides(&b).is_some() {
+                return rescale_gcd(
+                    b.into_owned(),
+                    &shared_degree,
+                    &base_degree,
+                    &MultivariatePolynomial::one(a.field),
+                );
+            }
+        } else if b.divides(&a).is_some() {
+            return rescale_gcd(
+                a.into_owned(),
+                &shared_degree,
+                &base_degree,
+                &MultivariatePolynomial::one(b.field),
+            );
+        }
+
         // check if the polynomial is linear in a variable and compute the gcd using the univariate content
         for (p1, p2) in [(&a, &b), (&b, &a)] {
             if let Some(var) = (0..p1.nvars).find(|v| p1.degree(*v) == E::one()) {
@@ -1758,8 +1772,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             debug!("GCD of content: {}", content);
 
             if !content.is_one() {
-                a = Cow::Owned(a.as_ref() / & content);
-                b = Cow::Owned(b.as_ref() / & content);
+                a = Cow::Owned(a.as_ref() / &content);
+                b = Cow::Owned(b.as_ref() / &content);
             }
 
             // even if variables got removed, benchmarks show that it is not
@@ -2204,11 +2218,6 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 debug!("Multiple scaling case: sample {} times", nx);
             }
 
-            // we need one extra sample to detect inconsistencies, such
-            // as missing terms in the shape.
-            // NOTE: not in paper
-            nx += 1;
-
             let gpc = gp.lcoeff_varorder(vars);
             let lcoeff_factor = gp.field.div(&gammap, &gpc);
 
@@ -2275,7 +2284,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let ap = a.to_finite_field_u32(finite_field);
                 let bp = b.to_finite_field_u32(finite_field);
-                debug!("New image: gcd({},{}) mod {}", ap, bp, p);
+                debug!("New image: gcd({},{})", ap, bp);
 
                 // for the univariate case, we don't need to construct an image
                 if vars.len() == 1 {

@@ -85,12 +85,11 @@ where
     // convert to standard form
     let mut e = vec![E::zero(); u[0].nvars];
     e[x] = E::one();
-    let xp = MultivariatePolynomial::from_monomial(field.one(), e, field);
+    let xp = MultivariatePolynomial::new_from_monomial(&u[0], field.one(), e);
     let mut u = v[v.len() - 1].clone();
     for k in (0..v.len() - 1).rev() {
         // TODO: prevent cloning
-        u = u * &(xp.clone()
-            - MultivariatePolynomial::from_constant(a[k].clone(), xp.nvars, field))
+        u = u * &(xp.clone() - MultivariatePolynomial::new_from_constant(&v[0], a[k].clone()))
             + v[k].clone();
     }
     u
@@ -1118,11 +1117,7 @@ where
             debug!("Content in last variable is not 1, but {}", c);
             // TODO: we assume that a content of -1 is also allowed
             // like in the special case gcd_(-x0*x1,-x0-x0*x1)
-            if c != MultivariatePolynomial::from_constant(
-                a.field.neg(&a.field.one()),
-                a.nvars,
-                a.field,
-            ) {
+            if c.nterms != 1 || c.coefficients[0] != a.field.neg(&a.field.one()) {
                 return None;
             }
         }
@@ -1486,7 +1481,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     break;
                 }
             }
-            return Some(MultivariatePolynomial::from_constant(gcd, a.nvars, a.field));
+            return Some(MultivariatePolynomial::new_from_constant(a, gcd));
         }
 
         if b.is_constant() {
@@ -1497,7 +1492,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     break;
                 }
             }
-            return Some(MultivariatePolynomial::from_constant(gcd, a.nvars, a.field));
+            return Some(MultivariatePolynomial::new_from_constant(a, gcd));
         }
 
         None
@@ -1693,7 +1688,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             );
         }
 
-        // try if b divides a or vice versa
+        // try if b divides a or vice versa, doing a heuristical length check first
         if a.nterms >= b.nterms && a.divides(&b).is_some() {
             return rescale_gcd(
                 b.into_owned(),
@@ -2032,7 +2027,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             Err(HeuristicGCDError::BadReconstruction)
         } else {
             Ok((
-                MultivariatePolynomial::from_constant(content_gcd, self.nvars, self.field),
+                MultivariatePolynomial::new_from_constant(self, content_gcd),
                 a.into_owned(),
                 b.into_owned(),
             ))
@@ -2068,7 +2063,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                     gcd = x.field.gcd(&gcd, &x.content());
                 }
-                return MultivariatePolynomial::from_constant(gcd, f[0].nvars, f[0].field);
+                return MultivariatePolynomial::new_from_constant(n, gcd);
             }
 
             // take the smallest element

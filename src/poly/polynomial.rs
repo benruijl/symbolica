@@ -7,7 +7,6 @@ use std::mem;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use crate::representations::Identifier;
-use crate::rings::finite_field::FiniteField;
 use crate::rings::{EuclideanDomain, Field, Ring, RingPrinter};
 
 use super::{Exponent, INLINED_EXPONENTS};
@@ -75,35 +74,22 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         }
     }
 
-    /// Constructs a constant polynomial with the given number of variables.
-    #[inline]
-    pub fn from_constant(constant: F::Element, nvars: usize, field: F) -> Self {
-        if F::is_zero(&constant) {
-            return Self::new(nvars, field, None, None);
-        }
-        Self {
-            coefficients: vec![constant],
-            exponents: vec![E::zero(); nvars],
-            nterms: 1,
-            nvars,
-            field,
-            var_map: None,
-        }
-    }
-
     /// Constructs a polynomial with a single term.
     #[inline]
-    pub fn from_monomial(coefficient: F::Element, exponents: Vec<E>, field: F) -> Self {
-        if F::is_zero(&coefficient) {
-            return Self::new(exponents.len(), field, None, None);
+    pub fn new_from_monomial(&self, coeff: F::Element, exponents: Vec<E>) -> Self {
+        debug_assert!(self.nvars == exponents.len());
+
+        if F::is_zero(&coeff) {
+            return self.new_from(None);
         }
+
         Self {
-            coefficients: vec![coefficient],
+            coefficients: vec![coeff],
             nvars: exponents.len(),
             exponents,
             nterms: 1,
-            field,
-            var_map: None,
+            field: self.field,
+            var_map: self.var_map.clone(),
         }
     }
 
@@ -136,7 +122,15 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
     #[inline]
     pub fn one(field: F) -> Self {
-        MultivariatePolynomial::from_constant(field.one(), 0, field)
+        // TODO: inherit var_map from somewhere
+        Self {
+            coefficients: vec![field.one()],
+            exponents: vec![],
+            nterms: 1,
+            nvars: 0,
+            field: field,
+            var_map: None,
+        }
     }
 
     #[inline]
@@ -1065,20 +1059,20 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                 tm.entry(e_in_xs.clone())
                     .and_modify(|x| x.append_monomial(t.coefficient.clone(), &e_not_in_xs))
                     .or_insert_with(|| {
-                        MultivariatePolynomial::from_monomial(
+                        MultivariatePolynomial::new_from_monomial(
+                            self,
                             t.coefficient.clone(),
                             e_not_in_xs.to_vec(),
-                            self.field,
                         )
                     });
             } else {
                 tm.entry(e_not_in_xs.clone())
                     .and_modify(|x| x.append_monomial(t.coefficient.clone(), &e_in_xs))
                     .or_insert_with(|| {
-                        MultivariatePolynomial::from_monomial(
+                        MultivariatePolynomial::new_from_monomial(
+                            self,
                             t.coefficient.clone(),
                             e_in_xs.to_vec(),
-                            self.field,
                         )
                     });
             }
@@ -1467,10 +1461,6 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
             return Some(self.clone());
         }
 
-        if self.nterms < div.nterms {
-            return None;
-        }
-
         if div.is_zero() {
             panic!("Cannot divide by 0 polynomial");
         }
@@ -1503,6 +1493,31 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
         if div.is_one() {
             return (self.clone(), self.new_from(None));
+        }
+
+        if self.nterms == div.nterms {
+            if self == div {
+                return (
+                    self.new_from_constant(self.field.one()),
+                    self.new_from(None),
+                );
+            }
+
+            // check if one is a multiple of the other
+            let (q, r) = self.field.quot_rem(&self.lcoeff(), &div.lcoeff());
+
+            if F::is_zero(&r)
+                && self
+                    .into_iter()
+                    .zip(div)
+                    .all(|(t1, t2)| t1.exponents == t2.exponents)
+                && self
+                    .into_iter()
+                    .zip(div)
+                    .all(|(t1, t2)| &self.field.mul(t2.coefficient, &q) == t1.coefficient)
+            {
+                return (self.new_from_constant(q), self.new_from(None));
+            }
         }
 
         if div.nterms == 1 {
@@ -1819,13 +1834,13 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         let mut h: BinaryHeap<u64> = BinaryHeap::with_capacity(self.nterms);
-        let mut q_cache: Vec<Vec<(usize, usize, bool)>> = vec![];
+        let mut q_cache: Vec<Vec<(usize, usize, bool)>> =  Vec::with_capacity(self.nterms);
 
         let mut m;
         let mut m_cache;
         let mut c;
 
-        let mut q_exp = vec![];
+        let mut q_exp = Vec::with_capacity(self.nterms);
 
         let mut k = 0;
         while !h.is_empty() || k < self.nterms {

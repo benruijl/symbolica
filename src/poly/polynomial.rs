@@ -901,22 +901,37 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         res
     }
 
-    /// Change the order of the variables in the polynomial, using `varmap`.
+    /// Change the order of the variables in the polynomial, using `order`.
     /// The map can also be reversed, by setting `inverse` to `true`.
-    pub fn rearrange(&self, varmap: &[usize], inverse: bool) -> MultivariatePolynomial<F, E> {
-        let mut res = self.new_from(Some(self.nterms));
-        let mut newe = vec![E::zero(); self.nvars];
-        for m in self.into_iter() {
-            for x in 0..varmap.len() {
+    ///
+    /// Note that the polynomial `var_map` is not updated.
+    pub fn rearrange(&self, order: &[usize], inverse: bool) -> MultivariatePolynomial<F, E> {
+        let mut new_exp = vec![E::zero(); self.nterms * self.nvars];
+        for (e, er) in new_exp
+            .chunks_mut(self.nvars)
+            .zip(self.exponents.chunks(self.nvars))
+        {
+            for x in 0..order.len() {
                 if !inverse {
-                    newe[x] = m.exponents[varmap[x]];
+                    e[x] = er[order[x]];
                 } else {
-                    newe[varmap[x]] = m.exponents[x];
+                    e[order[x]] = er[x];
                 }
             }
-
-            res.append_monomial(m.coefficient.clone(), &newe);
         }
+
+        let mut indices: Vec<usize> = (0..self.nterms).collect();
+        indices.sort_unstable_by_key(|&i| &new_exp[i * self.nvars..(i + 1) * self.nvars]);
+
+        let mut res = self.new_from(Some(self.nterms));
+
+        for i in indices {
+            res.append_monomial(
+                self.coefficients[i].clone(),
+                &new_exp[i * self.nvars..(i + 1) * self.nvars],
+            );
+        }
+
         res
     }
 

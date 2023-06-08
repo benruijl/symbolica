@@ -212,11 +212,11 @@ impl Exponent for u8 {
     }
 
     fn pack(list: &[Self]) -> u64 {
-        let d = unsafe { *(list.as_ptr() as *const u64) };
-        // TODO: what about big-endian systems?
-        // set the digits out of scope to 0
-        let dm = d & ((1u64 << (8 * list.len())) - 1);
-        dm.swap_bytes() // swap bytes to preserve comparison
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 8) + (*x as u64);
+        }
+        num.swap_bytes()
     }
 
     fn unpack(mut n: u64, out: &mut [Self]) {

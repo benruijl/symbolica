@@ -318,14 +318,14 @@ where
     fn zero(&self) -> Self::Element {
         RationalPolynomial {
             numerator: MultivariatePolynomial::new(0, self.ring, None, None),
-            denominator: MultivariatePolynomial::from_constant(self.ring.one(), 0, self.ring),
+            denominator: MultivariatePolynomial::one(self.ring),
         }
     }
 
     fn one(&self) -> Self::Element {
         RationalPolynomial {
-            numerator: MultivariatePolynomial::from_constant(self.ring.one(), 0, self.ring),
-            denominator: MultivariatePolynomial::from_constant(self.ring.one(), 0, self.ring),
+            numerator: MultivariatePolynomial::one(self.ring),
+            denominator: MultivariatePolynomial::one(self.ring),
         }
     }
 
@@ -382,10 +382,9 @@ where
     fn rem(&self, a: &Self::Element, _: &Self::Element) -> Self::Element {
         RationalPolynomial {
             numerator: MultivariatePolynomial::new_from(&a.numerator, None),
-            denominator: MultivariatePolynomial::from_constant(
+            denominator: MultivariatePolynomial::new_from_constant(
+                &a.numerator,
                 a.numerator.field.one(),
-                a.numerator.nvars,
-                a.numerator.field,
             ),
         }
     }

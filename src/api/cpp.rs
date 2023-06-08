@@ -21,6 +21,8 @@ pub struct LocalState {
     buffer: String,
     var_map: Vec<Identifier>,
     var_name_map: Vec<SmartString<LazyCompact>>,
+    input_has_rational_numbers: bool,
+    exp_fits_in_u8: bool,
 }
 
 pub struct Symbolica {
@@ -39,10 +41,24 @@ pub extern "C" fn init() -> *mut Symbolica {
             buffer: String::with_capacity(2048),
             var_map: vec![],
             var_name_map: vec![],
+            input_has_rational_numbers: false,
+            exp_fits_in_u8: true,
         },
     };
     let p = Box::into_raw(Box::new(s));
     p
+}
+
+#[no_mangle]
+pub extern "C" fn set_options(
+    symbolica: *mut Symbolica,
+    input_has_rational_numbers: bool,
+    exp_fits_in_u8: bool,
+) {
+    let symbolica = unsafe { &mut *symbolica };
+
+    symbolica.local_state.input_has_rational_numbers = input_has_rational_numbers;
+    symbolica.local_state.exp_fits_in_u8 = exp_fits_in_u8;
 }
 
 #[no_mangle]
@@ -79,94 +95,108 @@ pub extern "C" fn simplify(
 
     let token = parse(cstr).unwrap();
 
-    if prime == 0 {
-        let r: RationalPolynomial<IntegerRing, u16> = token
-            .to_rational_polynomial(
-                &symbolica.workspace,
-                &mut symbolica.state,
-                RationalField::new(),
-                IntegerRing::new(),
-                &symbolica.local_state.var_map,
-                &symbolica.local_state.var_name_map,
-            )
-            .unwrap();
+    macro_rules! to_rational {
+        ($in_field: ty, $exp_size: ty) => {
+            if prime == 0 {
+                let r: RationalPolynomial<IntegerRing, $exp_size> = token
+                    .to_rational_polynomial(
+                        &symbolica.workspace,
+                        &mut symbolica.state,
+                        <$in_field>::new(),
+                        IntegerRing::new(),
+                        &symbolica.local_state.var_map,
+                        &symbolica.local_state.var_name_map,
+                    )
+                    .unwrap();
 
-        symbolica.local_state.buffer.clear();
-        write!(
-            &mut symbolica.local_state.buffer,
-            "{}\0", // add the NUL character
-            RationalPolynomialPrinter {
-                poly: &r,
-                state: &symbolica.state,
-                print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
-                    terms_on_new_line: false,
-                    color_top_level_sum: false,
-                    print_finite_field: false,
-                    explicit_rational_polynomial
-                })
+                symbolica.local_state.buffer.clear();
+                write!(
+                    &mut symbolica.local_state.buffer,
+                    "{}\0", // add the NUL character
+                    RationalPolynomialPrinter {
+                        poly: &r,
+                        state: &symbolica.state,
+                        print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                            terms_on_new_line: false,
+                            color_top_level_sum: false,
+                            print_finite_field: false,
+                            explicit_rational_polynomial
+                        })
+                    }
+                )
+                .unwrap();
+            } else {
+                if prime < u32::MAX as c_ulonglong {
+                    let field = FiniteField::<u32>::new(prime as u32);
+                    let rf: RationalPolynomial<FiniteField<u32>, $exp_size> = token
+                        .to_rational_polynomial(
+                            &symbolica.workspace,
+                            &mut symbolica.state,
+                            field,
+                            field,
+                            &symbolica.local_state.var_map,
+                            &symbolica.local_state.var_name_map,
+                        )
+                        .unwrap();
+
+                    symbolica.local_state.buffer.clear();
+                    write!(
+                        &mut symbolica.local_state.buffer,
+                        "{}\0", // add the NUL character
+                        RationalPolynomialPrinter {
+                            poly: &rf,
+                            state: &symbolica.state,
+                            print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                                terms_on_new_line: false,
+                                color_top_level_sum: false,
+                                print_finite_field: false,
+                                explicit_rational_polynomial
+                            })
+                        }
+                    )
+                    .unwrap();
+                } else {
+                    let field = FiniteField::<u64>::new(prime as u64);
+                    let rf: RationalPolynomial<FiniteField<u64>, $exp_size> = token
+                        .to_rational_polynomial(
+                            &symbolica.workspace,
+                            &mut symbolica.state,
+                            field,
+                            field,
+                            &symbolica.local_state.var_map,
+                            &symbolica.local_state.var_name_map,
+                        )
+                        .unwrap();
+
+                    symbolica.local_state.buffer.clear();
+                    write!(
+                        &mut symbolica.local_state.buffer,
+                        "{}\0", // add the NUL character
+                        RationalPolynomialPrinter {
+                            poly: &rf,
+                            state: &symbolica.state,
+                            print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                                terms_on_new_line: false,
+                                color_top_level_sum: false,
+                                print_finite_field: false,
+                                explicit_rational_polynomial
+                            })
+                        }
+                    )
+                    .unwrap();
+                }
             }
-        )
-        .unwrap();
-    } else {
-        if prime < u32::MAX as c_ulonglong {
-            let field = FiniteField::<u32>::new(prime as u32);
-            let rf: RationalPolynomial<FiniteField<u32>, u16> = token
-                .to_rational_polynomial(
-                    &symbolica.workspace,
-                    &mut symbolica.state,
-                    field,
-                    field,
-                    &symbolica.local_state.var_map,
-                    &symbolica.local_state.var_name_map,
-                )
-                .unwrap();
+        };
+    }
 
-            symbolica.local_state.buffer.clear();
-            write!(
-                &mut symbolica.local_state.buffer,
-                "{}\0", // add the NUL character
-                RationalPolynomialPrinter {
-                    poly: &rf,
-                    state: &symbolica.state,
-                    print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
-                        terms_on_new_line: false,
-                        color_top_level_sum: false,
-                        print_finite_field: false,
-                        explicit_rational_polynomial
-                    })
-                }
-            )
-            .unwrap();
-        } else {
-            let field = FiniteField::<u64>::new(prime as u64);
-            let rf: RationalPolynomial<FiniteField<u64>, u16> = token
-                .to_rational_polynomial(
-                    &symbolica.workspace,
-                    &mut symbolica.state,
-                    field,
-                    field,
-                    &symbolica.local_state.var_map,
-                    &symbolica.local_state.var_name_map,
-                )
-                .unwrap();
-
-            symbolica.local_state.buffer.clear();
-            write!(
-                &mut symbolica.local_state.buffer,
-                "{}\0", // add the NUL character
-                RationalPolynomialPrinter {
-                    poly: &rf,
-                    state: &symbolica.state,
-                    print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
-                        terms_on_new_line: false,
-                        color_top_level_sum: false,
-                        print_finite_field: false,
-                        explicit_rational_polynomial
-                    })
-                }
-            )
-            .unwrap();
-        }
+    match (
+        symbolica.local_state.input_has_rational_numbers,
+        symbolica.local_state.exp_fits_in_u8,
+    ) {
+        (false, true) => to_rational!(IntegerRing, u8),
+        (true, true) => to_rational!(RationalField, u8),
+        (false, false) => to_rational!(IntegerRing, u16),
+        (true, false) => to_rational!(RationalField, u16),
     }
 
     unsafe { CStr::from_bytes_with_nul_unchecked(symbolica.local_state.buffer.as_bytes()) }.as_ptr()

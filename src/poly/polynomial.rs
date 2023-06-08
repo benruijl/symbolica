@@ -904,7 +904,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Change the order of the variables in the polynomial, using `varmap`.
     /// The map can also be reversed, by setting `inverse` to `true`.
     pub fn rearrange(&self, varmap: &[usize], inverse: bool) -> MultivariatePolynomial<F, E> {
-        let mut res = self.new_from(None);
+        let mut res = self.new_from(Some(self.nterms));
         let mut newe = vec![E::zero(); self.nvars];
         for m in self.into_iter() {
             for x in 0..varmap.len() {
@@ -1834,7 +1834,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         let mut h: BinaryHeap<u64> = BinaryHeap::with_capacity(self.nterms);
-        let mut q_cache: Vec<Vec<(usize, usize, bool)>> =  Vec::with_capacity(self.nterms);
+        let mut q_cache: Vec<Vec<(usize, usize, bool)>> = Vec::with_capacity(self.nterms);
 
         let mut m;
         let mut m_cache;

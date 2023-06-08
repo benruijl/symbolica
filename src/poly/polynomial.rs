@@ -2055,18 +2055,13 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
     }
 }
 
-impl<UField, E: Exponent> MultivariatePolynomial<FiniteField<UField>, E>
-where
-    FiniteField<UField>: Field,
-{
-    /// Optimized division routine for the univariate case in a finite field.
-    pub fn fast_divmod(
+impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
+    /// Optimized division routine for univariate polynomials over a field, which
+    /// makes the divisor monic first.
+    pub fn quot_rem_univariate(
         &self,
-        div: &mut MultivariatePolynomial<FiniteField<UField>, E>,
-    ) -> (
-        MultivariatePolynomial<FiniteField<UField>, E>,
-        MultivariatePolynomial<FiniteField<UField>, E>,
-    ) {
+        div: &mut MultivariatePolynomial<F, E>,
+    ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
         if div.nterms == 1 {
             // calculate inverse once
             let inv = self.field.inv(&div.coefficients[0]);
@@ -2122,7 +2117,6 @@ where
             return res;
         }
 
-        // fall back to generic case
         self.synthetic_division(div)
     }
 }

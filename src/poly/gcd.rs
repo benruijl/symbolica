@@ -915,11 +915,11 @@ where
 
         // TODO: there exists an efficient algorithm for univariate poly
         // division in a finite field using FFT
-        let mut r = c.fast_divmod(&mut d).1;
+        let mut r = c.quot_rem_univariate(&mut d).1;
         while !r.is_zero() {
             c = d;
             d = r;
-            r = c.fast_divmod(&mut d).1;
+            r = c.quot_rem_univariate(&mut d).1;
         }
 
         // normalize the gcd

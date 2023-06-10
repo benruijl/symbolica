@@ -320,7 +320,7 @@ impl Ring for IntegerRing {
         *a *= b;
     }
 
-    #[inline]
+    #[inline(always)]
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
         match a {
             Integer::Natural(n) => {

@@ -1124,6 +1124,12 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                 .mul_monomial(&other.coefficients[0], &other.exponents);
         }
 
+        // place the smallest polynomial first, as this is faster
+        // in the heap algorithm
+        if self.nterms > other.nterms {
+            return other.heap_mul(self);
+        }
+
         // use a special routine if the exponents can be packed into a u64
         if self.nvars <= 8
             && (0..self.nvars).all(|i| (self.degree(i) * other.degree(i)).to_u32() < 255)

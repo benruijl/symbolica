@@ -434,7 +434,16 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
         let num1 = &self.numerator * &b_denom_red;
         let num2 = &other.numerator * &a_denom_red;
         let mut num = num1 + num2;
-        let mut den = &other.denominator * &a_denom_red;
+
+        // prefer small * large over medium * medium sized polynomials
+        let mut den = if self.denominator.nterms > other.denominator.nterms
+            && self.denominator.nterms > a_denom_red.nterms
+        {
+            b_denom_red.as_ref() * &self.denominator
+        } else {
+            a_denom_red.as_ref() * &other.denominator
+        };
+
         let g = MultivariatePolynomial::gcd(&num, &denom_gcd);
 
         if !g.is_one() {

@@ -1132,7 +1132,12 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
         // use a special routine if the exponents can be packed into a u64
         if self.nvars <= 8
-            && (0..self.nvars).all(|i| (self.degree(i) * other.degree(i)).to_u32() < 255)
+            && (0..self.nvars).all(|i| {
+                self.degree(i)
+                    .to_u32()
+                    .saturating_add(other.degree(i).to_u32())
+                    < 255
+            })
         {
             return self.heap_mul_packed_exp(other);
         }

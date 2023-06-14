@@ -9,7 +9,7 @@ use smartstring::{LazyCompact, SmartString};
 use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent},
     representations::{
-        number::{BorrowedNumber, ConvertToRing, Number},
+        number::{ConvertToRing, Number},
         tree::AtomTree,
         Atom, Identifier, OwnedAtom,
     },
@@ -633,12 +633,12 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
                 coeff = field.neg(&field.one());
             } else {
                 coeff = if let Ok(x) = n.parse::<i64>() {
-                    field.from_number(BorrowedNumber::Natural(x, 1))
+                    field.from_number(Number::Natural(x, 1))
                 } else {
                     match Integer::parse(n) {
                         Ok(x) => {
                             let p = x.complete().into();
-                            field.from_number(BorrowedNumber::Large(&p)) // TODO: prevent copy?
+                            field.from_number(Number::Large(p))
                         }
                         Err(e) => panic!("Could not parse number: {}", e),
                     }

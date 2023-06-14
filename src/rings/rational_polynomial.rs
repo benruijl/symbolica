@@ -94,15 +94,11 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
         let mut num_int = MultivariatePolynomial::new(
             num.nvars,
             IntegerRing::new(),
-            Some(num.nterms),
+            None,
             num.var_map.as_ref().map(|x| x.as_slice()),
         );
-
-        for t in num.into_iter() {
-            let coeff = num.field.div(t.coefficient, &content);
-            debug_assert!(coeff.is_integer());
-            num_int.append_monomial(coeff.numerator(), t.exponents);
-        }
+        num_int.nterms = num.nterms;
+        num_int.exponents = num.exponents;
 
         let mut den_int = MultivariatePolynomial::new(
             den.nvars,
@@ -110,11 +106,31 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
             Some(den.nterms),
             den.var_map.as_ref().map(|x| x.as_slice()),
         );
+        den_int.nterms = den.nterms;
+        den_int.exponents = den.exponents;
 
-        for t in den.into_iter() {
-            let coeff = den.field.div(t.coefficient, &content);
-            debug_assert!(coeff.is_integer());
-            den_int.append_monomial(coeff.numerator(), t.exponents);
+        if num.field.is_one(&content) {
+            num_int.coefficients = num
+                .coefficients
+                .into_iter()
+                .map(|c| c.numerator())
+                .collect();
+            den_int.coefficients = den
+                .coefficients
+                .into_iter()
+                .map(|c| c.numerator())
+                .collect();
+        } else {
+            num_int.coefficients = num
+                .coefficients
+                .into_iter()
+                .map(|c| num.field.div(&c, &content).numerator())
+                .collect();
+            den_int.coefficients = den
+                .coefficients
+                .into_iter()
+                .map(|c| den.field.div(&c, &content).numerator())
+                .collect();
         }
 
         <RationalPolynomial<IntegerRing, E> as FromNumeratorAndDenominator<

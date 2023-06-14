@@ -348,7 +348,10 @@ impl<'a, P: Atom> AtomView<'a, P> {
         ) {
             match factor {
                 AtomView::Num(n) => {
-                    field.mul_assign(coefficient, &field.from_number(n.get_number_view()));
+                    field.mul_assign(
+                        coefficient,
+                        &field.from_borrowed_number(n.get_number_view()),
+                    );
                 }
                 AtomView::Var(v) => {
                     let id = v.get_name();
@@ -586,12 +589,12 @@ impl Token {
             match factor {
                 Token::Number(n) => {
                     let num = if let Ok(x) = n.parse::<i64>() {
-                        field.from_number(BorrowedNumber::Natural(x, 1))
+                        field.from_number(Number::Natural(x, 1))
                     } else {
                         match ArbitraryPrecisionInteger::parse(n) {
                             Ok(x) => {
                                 let p = x.complete().into();
-                                field.from_number(BorrowedNumber::Large(&p)) // TODO: prevent copy?
+                                field.from_number(Number::Large(p))
                             }
                             Err(e) => Err(format!("Could not parse number: {}", e))?,
                         }

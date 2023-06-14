@@ -90,11 +90,33 @@ impl Integer {
         }
     }
 
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Integer::Natural(n) => *n == 0,
+            Integer::Large(_) => false,
+        }
+    }
+
+    pub fn is_one(&self) -> bool {
+        match self {
+            Integer::Natural(n) => *n == 1,
+            Integer::Large(_) => false,
+        }
+    }
+
     pub fn is_negative(&self) -> bool {
         match self {
             Integer::Natural(n) => *n < 0,
             Integer::Large(r) => ArbitraryPrecisionInteger::from(r.signum_ref()) == -1,
         }
+    }
+
+    pub fn zero() -> Integer {
+        Integer::Natural(0)
+    }
+
+    pub fn one() -> Integer {
+        Integer::Natural(1)
     }
 
     pub fn abs(&self) -> Integer {
@@ -150,12 +172,12 @@ impl Integer {
     /// The implementation does not to overflow.
     pub fn binom(n: i64, mut k: i64) -> Integer {
         if n < 0 || k < 0 || k > n {
-            return Integer::Natural(0);
+            return Integer::zero();
         }
         if k > n / 2 {
             k = n - k
         }
-        let mut res = Integer::Natural(1);
+        let mut res = Integer::one();
         for i in 1..=k {
             res *= n - k + i;
             res /= i;
@@ -167,7 +189,7 @@ impl Integer {
     ///
     /// The implementation does not to overflow.
     pub fn multinom(k: &[u32]) -> Integer {
-        let mut mcr = Integer::Natural(1);
+        let mut mcr = Integer::one();
         let mut accum = 0i64;
         for v in k {
             if let Some(res) = accum.checked_add(*v as i64) {
@@ -188,7 +210,7 @@ impl Integer {
         let e = e as u32;
 
         if e == 0 {
-            return Integer::Natural(1);
+            return Integer::one();
         }
 
         match self {
@@ -375,7 +397,7 @@ impl Ring for IntegerRing {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
         match a {
             Integer::Natural(n) => {
@@ -437,12 +459,12 @@ impl Ring for IntegerRing {
 
     #[inline]
     fn zero(&self) -> Self::Element {
-        Integer::Natural(0)
+        Integer::zero()
     }
 
     #[inline]
     fn one(&self) -> Self::Element {
-        Integer::Natural(1)
+        Integer::one()
     }
 
     #[inline]
@@ -467,12 +489,12 @@ impl Ring for IntegerRing {
     }
 
     fn get_unit(&self, a: &Self::Element) -> Self::Element {
-        if a > &Integer::Natural(0) {
-            Integer::Natural(1)
-        } else if a < &Integer::Natural(0) {
+        if a > &Integer::zero() {
+            Integer::one()
+        } else if a < &Integer::zero() {
             Integer::Natural(-1)
         } else {
-            Integer::Natural(0)
+            Integer::zero()
         }
     }
 

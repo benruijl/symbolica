@@ -1135,7 +1135,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             && (0..self.nvars).all(|i| {
                 self.degree(i)
                     .to_u32()
-                    .saturating_mul(other.degree(i).to_u32())
+                    .saturating_add(other.degree(i).to_u32())
                     < 255
             })
         {

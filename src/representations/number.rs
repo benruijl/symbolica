@@ -44,8 +44,11 @@ fn get_size_of_natural(num_type: u8) -> u8 {
 }
 
 pub trait ConvertToRing: Ring {
-    /// Convert from a Symbolica Number to a Ring.
-    fn from_number(&self, number: BorrowedNumber<'_>) -> Self::Element;
+    /// Convert from a Symbolica `Number` to a Ring.
+    fn from_number(&self, number: Number) -> Self::Element;
+
+    /// Convert from a Symbolica `BorrowedNumber` to a Ring.
+    fn from_borrowed_number(&self, number: BorrowedNumber<'_>) -> Self::Element;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,7 +84,17 @@ pub enum BorrowedNumber<'a> {
 }
 
 impl<'a> ConvertToRing for RationalField {
-    fn from_number(&self, number: BorrowedNumber<'_>) -> Rational {
+    #[inline]
+    fn from_number(&self, number: Number) -> Self::Element {
+        match number {
+            Number::Natural(r, d) => Rational::Natural(r, d),
+            Number::Large(r) => Rational::Large(r),
+            Number::FiniteField(_, _) => panic!("Cannot convert finite field to rational"),
+        }
+    }
+
+    #[inline]
+    fn from_borrowed_number(&self, number: BorrowedNumber<'_>) -> Rational {
         match number {
             BorrowedNumber::Natural(r, d) => Rational::Natural(r, d),
             BorrowedNumber::Large(r) => Rational::Large(r.clone()),
@@ -91,18 +104,31 @@ impl<'a> ConvertToRing for RationalField {
 }
 
 impl<'a> ConvertToRing for IntegerRing {
-    fn from_number(&self, number: BorrowedNumber<'_>) -> Integer {
+    #[inline]
+    fn from_number(&self, number: Number) -> Integer {
+        match number {
+            Number::Natural(r, d) => {
+                debug_assert!(d == 1);
+                Integer::Natural(r)
+            }
+            Number::Large(r) => {
+                let (n, d) = r.into_numer_denom();
+                debug_assert!(d == 1);
+                Integer::Large(n)
+            }
+            Number::FiniteField(_, _) => panic!("Cannot convert finite field to integer"),
+        }
+    }
+
+    #[inline]
+    fn from_borrowed_number(&self, number: BorrowedNumber<'_>) -> Integer {
         match number {
             BorrowedNumber::Natural(r, d) => {
-                if d != 1 {
-                    panic!("Cannot convert fraction to integer")
-                }
+                debug_assert!(d == 1);
                 Integer::Natural(r)
             }
             BorrowedNumber::Large(r) => {
-                if r.denom() != &1 {
-                    panic!("Cannot convert fraction to integer")
-                }
+                debug_assert!(r.denom() == &1);
                 Integer::Large(r.numer().clone())
             }
             BorrowedNumber::FiniteField(_, _) => panic!("Cannot convert finite field to integer"),
@@ -115,7 +141,29 @@ where
     FiniteField<UField>: FiniteFieldCore<UField>,
     Integer: ToFiniteField<UField>,
 {
-    fn from_number(&self, number: BorrowedNumber<'_>) -> <FiniteField<UField> as Ring>::Element {
+    #[inline]
+    fn from_number(&self, number: Number) -> <FiniteField<UField> as Ring>::Element {
+        match number {
+            Number::Natural(n, d) => self.div(
+                &Integer::new(n).to_finite_field(self),
+                &Integer::new(d).to_finite_field(self),
+            ),
+            Number::Large(r) => {
+                let (n, d) = r.into_numer_denom();
+                self.div(
+                    &Integer::Large(n).to_finite_field(self),
+                    &Integer::Large(d).to_finite_field(self),
+                )
+            }
+            Number::FiniteField(_, _) => panic!("Cannot convert finite field to other one"),
+        }
+    }
+
+    #[inline]
+    fn from_borrowed_number(
+        &self,
+        number: BorrowedNumber<'_>,
+    ) -> <FiniteField<UField> as Ring>::Element {
         match number {
             BorrowedNumber::Natural(n, d) => self.div(
                 &Integer::new(n).to_finite_field(self),

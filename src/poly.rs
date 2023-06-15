@@ -16,7 +16,7 @@ use crate::representations::{
     Add, Atom, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedAtom, OwnedMul, OwnedNum, OwnedPow,
     OwnedVar, Pow, Var,
 };
-use crate::rings::rational::{Rational, RationalField};
+use crate::rings::integer::{Integer, IntegerRing};
 use crate::rings::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::rings::{EuclideanDomain, Ring};
 use crate::state::{State, Workspace};
@@ -280,9 +280,6 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                     match exp {
                         AtomView::Num(n) => match n.get_number_view() {
-                            BorrowedNumber::FiniteField(_, _) => {
-                                Err("Finite field not supported in conversion routine")
-                            }
                             BorrowedNumber::Natural(n, d) => {
                                 if d == 1 && n >= 0 && n <= u32::MAX as i64 {
                                     Ok(())
@@ -296,6 +293,12 @@ impl<'a, P: Atom> AtomView<'a, P> {
                                 } else {
                                     Err("Exponent too large or negative or a fraction")
                                 }
+                            }
+                            BorrowedNumber::FiniteField(_, _) => {
+                                Err("Finite field not supported in conversion routine")
+                            }
+                            BorrowedNumber::RationalPolynomial(_) => {
+                                Err("Rational polynomial not supported in conversion routine")
                             }
                         },
                         _ => return Err("base must be a variable"),
@@ -376,7 +379,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             BorrowedNumber::Large(r) => {
                                 exponents[var_index] += E::from_u32(r.numer().to_u32().unwrap())
                             }
-                            BorrowedNumber::FiniteField(_, _) => unreachable!(),
+                            _ => unreachable!(),
                         },
                         _ => unreachable!(),
                     }
@@ -521,10 +524,10 @@ impl<'a, P: Atom> AtomView<'a, P> {
 }
 
 impl<P: Atom> OwnedAtom<P> {
-    pub fn from_polynomial(
+    pub fn from_polynomial<E: Exponent>(
         &mut self,
         workspace: &Workspace<P>,
-        poly: &MultivariatePolynomial<RationalField, u32>,
+        poly: &MultivariatePolynomial<IntegerRing, E>,
     ) {
         let var_map = poly
             .var_map
@@ -535,21 +538,21 @@ impl<P: Atom> OwnedAtom<P> {
 
         for monomial in poly {
             let mut mul_h = workspace.new_atom();
-            let mul = mul_h.get_mut().transform_to_mul();
+            let mul = mul_h.transform_to_mul();
 
             for (&var_id, &pow) in var_map.iter().zip(monomial.exponents) {
-                if pow > 0 {
+                if pow > E::zero() {
                     let mut var_h = workspace.new_atom();
-                    let var = var_h.get_mut().transform_to_var();
+                    let var = var_h.transform_to_var();
                     var.from_id(var_id);
 
-                    if pow > 1 {
+                    if pow > E::one() {
                         let mut num_h = workspace.new_atom();
-                        let num = num_h.get_mut().transform_to_num();
-                        num.from_number(Number::Natural(pow as i64, 1));
+                        let num = num_h.transform_to_num();
+                        num.from_number(Number::Natural(pow.to_u32() as i64, 1));
 
                         let mut pow_h = workspace.new_atom();
-                        let pow = pow_h.get_mut().transform_to_pow();
+                        let pow = pow_h.transform_to_pow();
                         pow.from_base_and_exp(var_h.get().to_view(), num_h.get().to_view());
                         mul.extend(pow_h.get().to_view());
                     } else {
@@ -559,10 +562,10 @@ impl<P: Atom> OwnedAtom<P> {
             }
 
             let mut num_h = workspace.new_atom();
-            let num = num_h.get_mut().transform_to_num();
+            let num = num_h.transform_to_num();
             let number = match monomial.coefficient {
-                Rational::Natural(n, d) => Number::Natural(*n as i64, *d as i64),
-                Rational::Large(r) => Number::Large(r.clone()),
+                Integer::Natural(n) => Number::Natural(*n as i64, 1),
+                Integer::Large(r) => Number::Large(r.into()),
             };
             num.from_number(number);
             mul.extend(num_h.get().to_view());

@@ -935,6 +935,44 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         res
     }
 
+    /// Change the order of the variables in the polynomial, using `order`.
+    /// The order may contain `None`, to signal unmapped indices. This operation
+    /// allows the polynomial to grow in size.
+    ///
+    /// Note that the polynomial `var_map` is not updated.
+    pub fn rearrange_with_growth(&self, order: &[Option<usize>]) -> MultivariatePolynomial<F, E> {
+        let mut new_exp = vec![E::zero(); self.nterms * order.len()];
+        for (e, er) in new_exp
+            .chunks_mut(order.len())
+            .zip(self.exponents.chunks(self.nvars))
+        {
+            for x in 0..order.len() {
+                if let Some(v) = order[x] {
+                    e[x] = er[v];
+                }
+            }
+        }
+
+        let mut indices: Vec<usize> = (0..self.nterms).collect();
+        indices.sort_unstable_by_key(|&i| &new_exp[i * order.len()..(i + 1) * order.len()]);
+
+        let mut res = MultivariatePolynomial::new(
+            order.len(),
+            self.field,
+            Some(self.nterms),
+            self.var_map.as_ref().map(|x| x.as_slice()),
+        );
+
+        for i in indices {
+            res.append_monomial(
+                self.coefficients[i].clone(),
+                &new_exp[i * order.len()..(i + 1) * order.len()],
+            );
+        }
+
+        res
+    }
+
     /// Replace a variable `n` in the polynomial by an element from
     /// the ring `v`.
     pub fn replace(&self, n: usize, v: &F::Element) -> MultivariatePolynomial<F, E> {
@@ -1860,7 +1898,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         let mut h: BinaryHeap<u64> = BinaryHeap::with_capacity(self.nterms);
-        let mut q_cache: Vec<Vec<(usize, usize, bool)>> =  Vec::with_capacity(self.nterms);
+        let mut q_cache: Vec<Vec<(usize, usize, bool)>> = Vec::with_capacity(self.nterms);
 
         let mut m;
         let mut m_cache;

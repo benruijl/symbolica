@@ -91,7 +91,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         let coeff = coeff_h.get_mut().transform_to_num();
                         let coeff_f = Integer::multinom(new_term);
 
-                        if coeff_f != Integer::Natural(1) {
+                        if coeff_f != Integer::one() {
                             coeff.from_number(match coeff_f {
                                 Integer::Natural(n) => Number::Natural(n, 1),
                                 Integer::Large(l) => Number::Large(Rational::from(l)),

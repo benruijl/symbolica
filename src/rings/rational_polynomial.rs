@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    poly::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent, INLINED_EXPONENTS},
+    poly::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent},
     representations::Identifier,
 };
 
@@ -41,7 +41,7 @@ pub trait FromNumeratorAndDenominator<R: Ring, OR: Ring, E: Exponent> {
     ) -> RationalPolynomial<OR, E>;
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct RationalPolynomial<R: Ring, E: Exponent> {
     pub numerator: MultivariatePolynomial<R, E>,
     pub denominator: MultivariatePolynomial<R, E>,
@@ -63,17 +63,13 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         }
     }
 
-    pub fn get_var_map(
-        &self,
-    ) -> &Option<smallvec::SmallVec<[crate::representations::Identifier; INLINED_EXPONENTS]>> {
-        &self.numerator.var_map
+    pub fn get_var_map(&self) -> Option<&[Identifier]> {
+        self.numerator.var_map.as_ref().map(|x| x.as_slice())
     }
 
     pub fn unify_var_map(&mut self, other: &mut Self) {
-        assert!(
-            self.numerator.var_map == self.denominator.var_map
-                && other.numerator.var_map == other.denominator.var_map
-        );
+        assert_eq!(self.numerator.var_map, self.denominator.var_map);
+        assert_eq!(other.numerator.var_map, other.denominator.var_map);
 
         self.numerator.unify_var_map(&mut other.numerator);
         self.denominator.unify_var_map(&mut other.denominator);

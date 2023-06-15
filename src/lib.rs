@@ -1,4 +1,5 @@
 pub mod api;
+pub mod coefficient;
 pub mod expand;
 pub mod id;
 pub mod normalize;

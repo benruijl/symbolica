@@ -23,7 +23,7 @@ pub const SMALL_PRIMES: [i64; 20] = [
     2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
 ];
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct IntegerRing;
 
 impl IntegerRing {
@@ -32,7 +32,6 @@ impl IntegerRing {
     }
 }
 
-// FIXME: PartialEq can only work when Large simplifies to Natural whenever possible
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Integer {
     Natural(i64),

@@ -215,13 +215,14 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
             BorrowedNumber::FiniteField(num, fi) => {
                 f.write_fmt(format_args!("[m_{}%f_{}]", num.0, fi.0))
             }
+            BorrowedNumber::RationalPolynomial(p) => f.write_fmt(format_args!("{}", p,)),
         }
     }
 
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
-        _print_mode: PrintMode,
+        print_mode: PrintMode,
         state: &State,
         _print_state: PrintState,
     ) -> fmt::Result {
@@ -244,6 +245,14 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                     ff.get_prime()
                 ))
             }
+            BorrowedNumber::RationalPolynomial(p) => f.write_fmt(format_args!(
+                "({})",
+                RationalPolynomialPrinter {
+                    poly: p,
+                    state,
+                    print_mode,
+                }
+            )),
         }
     }
 }

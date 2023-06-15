@@ -9,7 +9,7 @@ fn main() {
     let mut state = State::new();
     let workspace = Workspace::new();
 
-    let expr: OwnedAtom<DefaultRepresentation> = parse("x*(y+z+1)/(y+2)+x*z")
+    let expr: OwnedAtom<DefaultRepresentation> = parse("x*z+x*(y+2)^-1*(y+z+1)")
         .unwrap()
         .to_atom(&mut state, &workspace)
         .unwrap();
@@ -21,7 +21,7 @@ fn main() {
     let mut expr_yz = OwnedAtom::new();
     expr.to_view().set_coefficient_ring(
         &[state.get_or_insert_var("y"), state.get_or_insert_var("z")],
-        &mut state,
+        &state,
         &workspace,
         &mut expr_yz,
     );
@@ -34,7 +34,7 @@ fn main() {
     let mut expr_y = OwnedAtom::new();
     expr_yz.to_view().set_coefficient_ring(
         &[state.get_or_insert_var("y")],
-        &mut state,
+        &state,
         &workspace,
         &mut expr_y,
     );

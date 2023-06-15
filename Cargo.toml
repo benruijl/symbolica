@@ -28,7 +28,7 @@ python_api = ["pyo3", "once_cell", "ouroboros"]
 [dependencies.pyo3]
 features = ["extension-module", "multiple-pymethods"]
 optional = true
-version = "0.18"
+version = "0.19"
 
 [dev-dependencies]
 tracing-subscriber = {version = "0.3.17", features = ["env-filter"]}

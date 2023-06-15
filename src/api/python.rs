@@ -462,6 +462,31 @@ impl PythonExpression {
         Ok(PythonAtomIterator::from_expr(self.clone()))
     }
 
+    pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonExpression> {
+        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+        for v in vars {
+            match v.expr.to_view() {
+                AtomView::Var(v) => var_map.push(v.get_name()),
+                e => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Expected variable instead of {:?}",
+                        e
+                    )))?;
+                }
+            }
+        }
+
+        let mut b = OwnedAtom::new();
+        self.expr.to_view().set_coefficient_ring(
+            &var_map,
+            &STATE.read().unwrap().borrow(),
+            &WORKSPACE,
+            &mut b,
+        );
+
+        Ok(PythonExpression { expr: Arc::new(b) })
+    }
+
     pub fn expand(&self) -> PythonExpression {
         let mut b = OwnedAtom::new();
         self.expr

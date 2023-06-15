@@ -18,7 +18,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
     pub fn set_coefficient_ring(
         &self,
         vars: &[Identifier],
-        state: &mut State,
+        state: &State,
         workspace: &Workspace<P>,
         out: &mut OwnedAtom<P>,
     ) -> bool {
@@ -44,14 +44,14 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             true
                         } else {
                             let mut n1 = workspace.new_atom();
-                            n1.from_polynomial(workspace, &r.numerator);
+                            n1.from_polynomial(workspace, state, &r.numerator);
 
                             let mut n1_conv = workspace.new_atom();
                             n1.to_view()
                                 .set_coefficient_ring(vars, state, workspace, &mut n1_conv);
 
                             let mut n2 = workspace.new_atom();
-                            n2.from_polynomial(workspace, &r.denominator);
+                            n2.from_polynomial(workspace, state, &r.denominator);
 
                             let mut n2_conv = workspace.new_atom();
                             n2.to_view()
@@ -61,8 +61,9 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             let mut n3 = workspace.new_atom();
                             let mut exp = workspace.new_atom();
                             exp.transform_to_num().from_number(Number::Natural(-1, 1));
-                            n3.transform_to_pow()
-                                .from_base_and_exp(n2_conv.to_view(), exp.to_view());
+                            let n3p = n3.transform_to_pow();
+                            n3p.from_base_and_exp(n2_conv.to_view(), exp.to_view());
+                            n3p.set_dirty(true);
 
                             let mut m = workspace.new_atom();
                             let mm = m.transform_to_mul();

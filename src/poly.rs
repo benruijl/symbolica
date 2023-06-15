@@ -527,6 +527,7 @@ impl<P: Atom> OwnedAtom<P> {
     pub fn from_polynomial<E: Exponent>(
         &mut self,
         workspace: &Workspace<P>,
+        state: &State,
         poly: &MultivariatePolynomial<IntegerRing, E>,
     ) {
         let var_map = poly
@@ -569,9 +570,15 @@ impl<P: Atom> OwnedAtom<P> {
             };
             num.from_number(number);
             mul.extend(num_h.get().to_view());
+            mul.set_dirty(true);
 
             add.extend(mul_h.get().to_view());
         }
+        add.set_dirty(true);
+
+        let mut norm = workspace.new_atom();
+        self.to_view().normalize(&workspace, &state, &mut norm);
+        std::mem::swap(norm.get_mut(), self);
     }
 }
 

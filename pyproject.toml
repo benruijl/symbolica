@@ -1,0 +1,25 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "symbolica"
+version = "0.0.1"
+description = "Symbolica is a blazing fast symbolic manipulation toolkit"
+readme = "Readme.md"
+license = {file = "License.md"}
+keywords = ["math", "algebra", "polynomial", "expression", "manipulation"]
+authors = [
+  {email = "benruyl@gmail.com"},
+  {name = "Ben Ruijl"}
+]
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+[project.urls]
+homepage = "https://symbolica.io"
+repository = "https://github.com/benruijl/symbolica"

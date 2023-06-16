@@ -23,7 +23,7 @@ default = ["python_api"]
 # if using this, make sure jemalloc is compiled with --disable-initial-exec-tls
 # if symbolica is used as a dynamic library (as is the case for the Python API)
 faster_alloc = ["tikv-jemallocator"]
-python_api = ["pyo3", "once_cell", "ouroboros"]
+python_api = ["pyo3", "once_cell", "self_cell"]
 
 [dependencies.pyo3]
 features = ["extension-module", "multiple-pymethods"]
@@ -44,7 +44,7 @@ byteorder = "1.4"
 bytes = "1.3"
 colored = "2.0"
 once_cell = {version = "1.17", optional = true}
-ouroboros = {version = "0.15", optional = true}
+self_cell = {version = "1.0", optional = true}
 rand = "0.8"
 smallvec = "1.1"
 smartstring = "1.0"

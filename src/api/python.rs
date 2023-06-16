@@ -6,7 +6,6 @@ use std::{
 
 use ahash::HashMap;
 use once_cell::sync::Lazy;
-use ouroboros::self_referencing;
 use pyo3::{
     exceptions, pyclass,
     pyclass::CompareOp,
@@ -14,6 +13,7 @@ use pyo3::{
     types::{PyModule, PyTuple, PyType},
     FromPyObject, PyResult, Python,
 };
+use self_cell::self_cell;
 use smallvec::SmallVec;
 
 use crate::{
@@ -113,8 +113,8 @@ impl ConvertibleToExpression {
 
 #[pymethods]
 impl PythonExpression {
-    #[staticmethod]
-    pub fn var(name: &str) -> PyResult<PythonExpression> {
+    #[classmethod]
+    pub fn var(_cls: &PyType, name: &str) -> PyResult<PythonExpression> {
         let mut guard = STATE.write().unwrap();
         let state = guard.borrow_mut();
         // TODO: check if the name meets the requirements
@@ -129,8 +129,8 @@ impl PythonExpression {
     }
 
     #[pyo3(signature = (*args,))]
-    #[staticmethod]
-    pub fn vars(args: &PyTuple) -> PyResult<Vec<PythonExpression>> {
+    #[classmethod]
+    pub fn vars(_cls: &PyType, args: &PyTuple) -> PyResult<Vec<PythonExpression>> {
         let mut guard = STATE.write().unwrap();
         let state = guard.borrow_mut();
         let mut result = Vec::with_capacity(args.len());
@@ -151,14 +151,14 @@ impl PythonExpression {
         Ok(result)
     }
 
-    #[staticmethod]
-    pub fn fun(name: &str) -> PyResult<PythonFunction> {
+    #[classmethod]
+    pub fn fun(_cls: &PyType, name: &str) -> PyResult<PythonFunction> {
         PythonFunction::__new__(name)
     }
 
     #[pyo3(signature = (*args,))]
-    #[staticmethod]
-    pub fn funs(args: &PyTuple) -> PyResult<Vec<PythonFunction>> {
+    #[classmethod]
+    pub fn funs(_cls: &PyType, args: &PyTuple) -> PyResult<Vec<PythonFunction>> {
         let mut result = Vec::with_capacity(args.len());
         for a in args {
             let name = a.extract::<&str>()?;
@@ -247,10 +247,11 @@ impl PythonExpression {
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         let workspace = WORKSPACE;
         let mut e = workspace.new_atom();
-        let a: &mut OwnedAddD = e.get_mut().transform_to_add();
+        let a: &mut OwnedAddD = e.transform_to_add();
 
         a.extend(self.expr.to_view());
         a.extend(rhs.to_expression().expr.to_view());
+        a.set_dirty(true);
 
         let mut b = OwnedAtom::new();
         e.get()
@@ -269,10 +270,11 @@ impl PythonExpression {
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         let workspace = WORKSPACE;
         let mut e = workspace.new_atom();
-        let a: &mut OwnedMulD = e.get_mut().transform_to_mul();
+        let a: &mut OwnedMulD = e.transform_to_mul();
 
         a.extend(self.expr.to_view());
         a.extend(rhs.to_expression().expr.to_view());
+        a.set_dirty(true);
 
         let mut b = OwnedAtom::new();
         e.get()
@@ -285,18 +287,20 @@ impl PythonExpression {
     pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         let workspace = WORKSPACE;
         let mut pow = workspace.new_atom();
-        let pow_num = pow.get_mut().transform_to_num();
+        let pow_num = pow.transform_to_num();
         pow_num.from_number(Number::Natural(-1, 1));
 
         let mut e = workspace.new_atom();
-        let a: &mut OwnedPowD = e.get_mut().transform_to_pow();
+        let a: &mut OwnedPowD = e.transform_to_pow();
         a.from_base_and_exp(rhs.to_expression().expr.to_view(), pow.get().to_view());
+        a.set_dirty(true);
 
         let mut m = workspace.new_atom();
-        let md: &mut OwnedMulD = m.get_mut().transform_to_mul();
+        let md: &mut OwnedMulD = m.transform_to_mul();
 
         md.extend(self.expr.to_view());
         md.extend(e.get().to_view());
+        md.set_dirty(true);
 
         let mut b = OwnedAtom::new();
         m.get()
@@ -318,9 +322,10 @@ impl PythonExpression {
 
         let workspace = WORKSPACE;
         let mut e = workspace.new_atom();
-        let a: &mut OwnedPowD = e.get_mut().transform_to_pow();
+        let a: &mut OwnedPowD = e.transform_to_pow();
 
         a.from_base_and_exp(self.expr.to_view(), rhs.to_expression().expr.to_view());
+        a.set_dirty(true);
 
         let mut b = OwnedAtom::new();
         e.get()
@@ -333,14 +338,15 @@ impl PythonExpression {
     pub fn __neg__(&self) -> PythonExpression {
         let workspace = WORKSPACE;
         let mut e = workspace.new_atom();
-        let a: &mut OwnedMulD = e.get_mut().transform_to_mul();
+        let a: &mut OwnedMulD = e.transform_to_mul();
 
         let mut sign = workspace.new_atom();
-        let sign_num = sign.get_mut().transform_to_num();
+        let sign_num = sign.transform_to_num();
         sign_num.from_number(Number::Natural(-1, 1));
 
         a.extend(self.expr.to_view());
         a.extend(sign.get().to_view());
+        a.set_dirty(true);
 
         let mut b = OwnedAtom::new();
         e.get()
@@ -724,7 +730,7 @@ impl PythonFunction {
     pub fn __call__(&self, args: &PyTuple) -> PyResult<PythonExpression> {
         let b = WORKSPACE;
         let mut fun_b = b.new_atom();
-        let fun: &mut OwnedFunD = fun_b.get_mut().transform_to_fun();
+        let fun: &mut OwnedFunD = fun_b.transform_to_fun();
         fun.from_name(self.id);
 
         for arg in args {
@@ -748,35 +754,31 @@ impl PythonFunction {
     }
 }
 
-#[pyclass]
-#[self_referencing]
-pub struct PythonAtomIterator {
-    expr: Arc<OwnedAtom<DefaultRepresentation>>,
-    #[borrows(expr)]
-    #[covariant]
-    iter: ListIteratorD<'this>,
-}
+self_cell!(
+    #[pyclass]
+    pub struct PythonAtomIterator {
+        owner: Arc<OwnedAtom<DefaultRepresentation>>,
+        #[covariant]
+        dependent: ListIteratorD,
+    }
+);
 
 impl PythonAtomIterator {
     /// Create a self-referential structure for the iterator.
     pub fn from_expr(expr: PythonExpression) -> PythonAtomIterator {
-        PythonAtomIteratorBuilder {
-            expr: expr.expr.clone(),
-            iter_builder: |expr| match expr.to_view() {
-                AtomView::Add(a) => a.into_iter(),
-                AtomView::Mul(m) => m.into_iter(),
-                AtomView::Fun(f) => f.into_iter(),
-                _ => unreachable!(),
-            },
-        }
-        .build()
+        PythonAtomIterator::new(expr.expr.clone(), |expr| match expr.to_view() {
+            AtomView::Add(a) => a.into_iter(),
+            AtomView::Mul(m) => m.into_iter(),
+            AtomView::Fun(f) => f.into_iter(),
+            _ => unreachable!(),
+        })
     }
 }
 
 #[pymethods]
 impl PythonAtomIterator {
     fn __next__(&mut self) -> Option<PythonExpression> {
-        self.with_iter_mut(|i| {
+        self.with_dependent_mut(|_, i| {
             i.next().map(|e| PythonExpression {
                 expr: Arc::new({
                     let mut owned = OwnedAtom::new();

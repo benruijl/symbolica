@@ -2092,7 +2092,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 return gcd;
             }
 
-            // remove the content from the gcd as the odds of collisions are too high
+            // remove the content from the gcd before the divison test as the odds
+            // of an unlucky content are high
             let content = gcd.content();
             gcd = gcd.div_coeff(&content);
             let mut content_gcd = content;
@@ -2106,9 +2107,16 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 }
             });
 
+            gcd = gcd.mul_coeff(content_gcd);
+
             if f.is_empty() {
-                return gcd.mul_coeff(content_gcd);
+                return gcd;
             }
+
+            debug!(
+                "Multiply GCD not found in one try, current estimate: {}",
+                gcd
+            );
 
             f.push(gcd);
         }

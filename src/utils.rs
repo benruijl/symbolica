@@ -18,7 +18,8 @@ pub fn gcd_signed(mut a: i64, mut b: i64) -> i64 {
     let mut c;
     while a != 0 {
         c = a;
-        a = b % a;
+        // only wraps when i64::MIN % -1 and that still yields 0
+        a = b.wrapping_rem(a);
         b = c;
     }
     b.abs()

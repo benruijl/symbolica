@@ -50,7 +50,7 @@ impl Operator {
             Operator::Mul => 8,
             Operator::Add => 7,
             Operator::Pow => 11,
-            Operator::Argument => 5,
+            Operator::Argument => 6,
             Operator::Neg => 10,
             Operator::Inv => 9,
         }

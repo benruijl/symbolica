@@ -41,13 +41,17 @@ fn main() {
             symbolica::printer::PrintMode::default(),
             &state
         ),
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state),
+        AtomPrinter::new(
+            expr.to_view(),
+            symbolica::printer::PrintMode::default(),
+            &state
+        ),
     );
 
     let mut replaced = OwnedAtom::new();
 
     let mut it = ReplaceIterator::new(&pattern, expr.to_view(), &rhs, &state, &restrictions);
-    while let Some(()) = it.next(&workspace, &mut replaced) {
+    while let Some(()) = it.next(&state, &workspace, &mut replaced) {
         println!(
             "\t{}",
             AtomPrinter::new(

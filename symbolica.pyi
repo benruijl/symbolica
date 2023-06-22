@@ -171,8 +171,8 @@ class Expression:
 
     def replace_all(
         self,
-        lhs: Expression | int,
-        rhs: Expression | int,
+        lhs: Transformer | Expression | int,
+        rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
     ) -> Expression:
         """
@@ -202,11 +202,11 @@ class CompareOp:
 
 
 class Function:
-    """ A Symbolica function. Will turn into an expression when called with arguments."""
+    """ A Symbolica function. Will turn into an expression or a transformer when called with arguments."""
 
-    def __call__(self, *args: Expression | int) -> Expression:
+    def __call__(self, *args: Expression | int) -> Expression | Transformer:
         """
-        Create a Symbolica expression by calling the function with appropriate arguments.
+        Create a Symbolica expression or transformer by calling the function with appropriate arguments.
 
         Examples
         -------
@@ -216,6 +216,12 @@ class Function:
         >>> print(e)
         f(3,x)
         """
+
+class Transformer:
+    """ Transform an expression. """
+
+    def expand(self) -> Transformer:
+        """ Expand products and powers. """
 
 
 class RationalPolynomial:

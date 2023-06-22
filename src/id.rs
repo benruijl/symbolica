@@ -2,6 +2,7 @@ use ahash::HashMap;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
+    transformer::Transformer,
     representations::{
         Add, Atom, AtomView, Fun, Identifier, ListSlice, Mul, OwnedAdd, OwnedAtom, OwnedFun,
         OwnedMul, OwnedPow, Pow, SliceType, Var,
@@ -9,13 +10,15 @@ use crate::{
     state::{ResettableBuffer, State, Workspace},
 };
 
+#[derive(Clone)]
 pub enum Pattern<P: Atom> {
     Wildcard(Identifier),
     Fn(Identifier, bool, Vec<Pattern<P>>), // bool signifies that the identifier is a wildcard
     Pow(Box<[Pattern<P>; 2]>),
     Mul(Vec<Pattern<P>>),
     Add(Vec<Pattern<P>>),
-    Literal(OwnedAtom<P>), // a literal
+    Literal(OwnedAtom<P>),
+    Transformer(Box<Transformer<P>>),
 }
 
 impl<P: Atom> OwnedAtom<P> {
@@ -124,6 +127,7 @@ impl<P: Atom> Pattern<P> {
     /// Substitute the wildcards in the pattern with the values in the match stack.
     pub fn substitute_wildcards(
         &self,
+        state: &State,
         workspace: &Workspace<P>,
         out: &mut OwnedAtom<P>,
         match_stack: &MatchStack<P>,
@@ -190,7 +194,7 @@ impl<P: Atom> Pattern<P> {
 
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
-                    arg.substitute_wildcards(workspace, oa, match_stack);
+                    arg.substitute_wildcards(state, workspace, oa, match_stack);
                     func.add_arg(oa.to_view());
                 }
             }
@@ -223,7 +227,7 @@ impl<P: Atom> Pattern<P> {
 
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
-                    arg.substitute_wildcards(workspace, oa, match_stack);
+                    arg.substitute_wildcards(state, workspace, oa, match_stack);
                     out.from_view(&oa.to_view());
                 }
 
@@ -265,7 +269,7 @@ impl<P: Atom> Pattern<P> {
 
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
-                    arg.substitute_wildcards(workspace, oa, match_stack);
+                    arg.substitute_wildcards(state, workspace, oa, match_stack);
                     out.extend(oa.to_view());
                 }
                 out.set_dirty(true);
@@ -304,13 +308,17 @@ impl<P: Atom> Pattern<P> {
 
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
-                    arg.substitute_wildcards(workspace, oa, match_stack);
+                    arg.substitute_wildcards(state, workspace, oa, match_stack);
                     out.extend(oa.to_view());
                 }
                 out.set_dirty(true);
             }
             Pattern::Literal(oa) => {
                 out.from_view(&oa.to_view());
+            }
+            Pattern::Transformer(t) => {
+                // execute the transformer with the match stack as input
+                t.execute(state, workspace, match_stack, out);
             }
         }
     }
@@ -331,7 +339,7 @@ impl<P: Atom> Pattern<P> {
         if let Some((_, used_flags)) = it.next(&mut match_stack) {
             let mut handle = workspace.new_atom();
             let rhs_subs = handle.get_mut();
-            rhs.substitute_wildcards(workspace, rhs_subs, &match_stack);
+            rhs.substitute_wildcards(state, workspace, rhs_subs, &match_stack);
 
             match target {
                 AtomView::Mul(m) => {
@@ -466,6 +474,7 @@ impl<P: Atom> std::fmt::Debug for Pattern<P> {
             Self::Mul(arg0) => f.debug_tuple("Mul").field(arg0).finish(),
             Self::Add(arg0) => f.debug_tuple("Add").field(arg0).finish(),
             Self::Literal(arg0) => f.debug_tuple("Literal").field(arg0).finish(),
+            Self::Transformer(arg0) => f.debug_tuple("Transformer").field(arg0).finish(),
         }
     }
 }
@@ -949,6 +958,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                         PatternIter::Sequence(None, SliceType::Add, pat, Box::new(None))
                     }
                     Pattern::Literal(atom) => PatternIter::Literal(None, atom.to_view()),
+                    Pattern::Transformer(_) => panic!("Transformer is not allowed on lhs"),
                 };
 
                 self.iterators.push(it);
@@ -1550,7 +1560,12 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
     }
 
     /// Return the next replacement.
-    pub fn next(&mut self, workspace: &Workspace<P>, out: &mut OwnedAtom<P>) -> Option<()> {
+    pub fn next(
+        &mut self,
+        state: &State,
+        workspace: &Workspace<P>,
+        out: &mut OwnedAtom<P>,
+    ) -> Option<()> {
         if let Some((position, used_flags, _target, match_stack)) =
             self.pattern_tree_iterator.next()
         {
@@ -1558,7 +1573,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
             let new_rhs = rhs_handle.get_mut();
 
             self.rhs
-                .substitute_wildcards(workspace, new_rhs, match_stack);
+                .substitute_wildcards(state, workspace, new_rhs, match_stack);
 
             ReplaceIterator::copy_and_replace(
                 out,

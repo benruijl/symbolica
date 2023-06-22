@@ -11,13 +11,14 @@ use pyo3::{
     pyclass::CompareOp,
     pymethods, pymodule,
     types::{PyModule, PyTuple, PyType},
-    FromPyObject, PyResult, Python,
+    FromPyObject, IntoPy, PyObject, PyResult, Python,
 };
 use self_cell::self_cell;
 use smallvec::SmallVec;
 
 use crate::{
-    id::{Match, Pattern, PatternRestriction},
+    id::{Match, MatchStack, Pattern, PatternRestriction},
+    transformer::Transformer,
     parser::parse,
     poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
     printer::{AtomPrinter, PolynomialPrinter, PrintMode, RationalPolynomialPrinter},
@@ -45,12 +46,66 @@ thread_local!(static WORKSPACE: Workspace<DefaultRepresentation> = Workspace::ne
 fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonExpression>()?;
     m.add_class::<PythonFunction>()?;
+    m.add_class::<PythonPattern>()?;
     m.add_class::<PythonPolynomial>()?;
     m.add_class::<PythonIntegerPolynomial>()?;
     m.add_class::<PythonRationalPolynomial>()?;
     m.add_class::<PythonRationalPolynomialSmallExponent>()?;
 
     Ok(())
+}
+
+#[derive(FromPyObject)]
+pub enum ConvertibleToPattern {
+    Literal(ConvertibleToExpression),
+    Pattern(PythonPattern),
+}
+
+impl ConvertibleToPattern {
+    pub fn to_pattern(self) -> PythonPattern {
+        match self {
+            Self::Literal(l) => PythonPattern {
+                expr: Arc::new(Pattern::from_view(
+                    l.to_expression().expr.to_view(),
+                    &STATE.read().unwrap(),
+                )),
+            },
+            Self::Pattern(e) => e,
+        }
+    }
+}
+
+#[pyclass(name = "Transformer")]
+#[derive(Clone)]
+pub struct PythonPattern {
+    pub expr: Arc<Pattern<DefaultRepresentation>>,
+}
+
+#[pymethods]
+impl PythonPattern {
+    #[classmethod]
+    pub fn expand(_cls: &PyType, arg: ConvertibleToPattern) -> PyResult<PythonPattern> {
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Expand(
+                (*arg.to_pattern().expr).clone(),
+            )))),
+        })
+    }
+
+    pub fn execute(&self) -> PyResult<PythonExpression> {
+        let b = WORKSPACE.with(|workspace| {
+            let mut e = OwnedAtom::new();
+            self.expr.substitute_wildcards(
+                &STATE.read().unwrap(),
+                workspace,
+                &mut e,
+                &MatchStack::new(&HashMap::default()),
+            );
+            e
+        });
+
+        Ok(PythonExpression { expr: Arc::new(b) })
+    }
 }
 
 #[pyclass(name = "Expression")]
@@ -647,14 +702,14 @@ impl PythonExpression {
 
     pub fn replace_all(
         &self,
-        lhs: ConvertibleToExpression,
-        rhs: ConvertibleToExpression,
+        lhs: ConvertibleToPattern,
+        rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
     ) -> PyResult<PythonExpression> {
-        let pattern =
-            Pattern::from_view(lhs.to_expression().expr.to_view(), &STATE.read().unwrap());
+        let pattern = &lhs.to_pattern().expr;
+        let rhs = &rhs.to_pattern().expr;
+
         let mut restrictions = HashMap::default();
-        let rhs = Pattern::from_view(rhs.to_expression().expr.to_view(), &STATE.read().unwrap());
         let mut out = OwnedAtom::new();
 
         if let Some(rs) = cond {
@@ -747,32 +802,53 @@ impl PythonFunction {
     }
 
     #[pyo3(signature = (*args,))]
-    pub fn __call__(&self, args: &PyTuple) -> PyResult<PythonExpression> {
-        let out = WORKSPACE.with(|workspace| {
-            let mut fun_b = workspace.new_atom();
-            let fun: &mut OwnedFunD = fun_b.transform_to_fun();
-            fun.set_from_name(self.id);
+    pub fn __call__(&self, args: &PyTuple, py: Python) -> PyResult<PyObject> {
+        let mut fn_args = Vec::with_capacity(args.len());
 
-            for arg in args {
-                if let Ok(a) = arg.extract::<ConvertibleToExpression>() {
-                    fun.add_arg(a.to_expression().expr.to_view());
-                } else {
-                    let msg = format!("Unknown type: {:?}", arg.get_type().name());
-                    return Err(exceptions::PyTypeError::new_err(msg));
-                }
+        for arg in args {
+            if let Ok(a) = arg.extract::<ConvertibleToExpression>() {
+                fn_args.push(Pattern::Literal((*a.to_expression().expr).clone()));
+            } else if let Ok(a) = arg.extract::<ConvertibleToPattern>() {
+                fn_args.push((*a.to_pattern().expr).clone());
+            } else {
+                let msg = format!("Unknown type: {}", arg.get_type().name().unwrap());
+                return Err(exceptions::PyTypeError::new_err(msg));
             }
+        }
 
-            let mut out = OwnedAtom::new();
-            fun_b
-                .get()
-                .to_view()
-                .normalize(workspace, &STATE.read().unwrap(), &mut out);
-            Ok(out)
-        })?;
+        if fn_args.iter().all(|x| matches!(x, Pattern::Literal(_))) {
+            // simplify to literal expression
+            WORKSPACE.with(|workspace| {
+                let mut fun_b = workspace.new_atom();
+                let fun: &mut OwnedFunD = fun_b.transform_to_fun();
+                fun.set_from_name(self.id);
+                fun.set_dirty(true);
 
-        Ok(PythonExpression {
-            expr: Arc::new(out),
-        })
+                for x in fn_args {
+                    if let Pattern::Literal(a) = x {
+                        fun.add_arg(a.to_view());
+                    }
+                }
+
+                let mut out = OwnedAtom::new();
+                fun_b
+                    .get()
+                    .to_view()
+                    .normalize(workspace, &STATE.read().unwrap(), &mut out);
+
+                Ok(PythonExpression {
+                    expr: Arc::new(out),
+                }
+                .into_py(py))
+            })
+        } else {
+            let p = Pattern::Fn(
+                self.id,
+                STATE.read().unwrap().is_wildcard(self.id).unwrap(),
+                fn_args,
+            );
+            Ok(PythonPattern { expr: Arc::new(p) }.into_py(py))
+        }
     }
 }
 

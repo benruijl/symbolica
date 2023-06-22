@@ -50,10 +50,10 @@ fn get_size_of_natural(num_type: u8) -> u8 {
 
 pub trait ConvertToRing: Ring {
     /// Convert from a Symbolica `Number` to a Ring.
-    fn from_number(&self, number: Number) -> Self::Element;
+    fn element_from_number(&self, number: Number) -> Self::Element;
 
     /// Convert from a Symbolica `BorrowedNumber` to a Ring.
-    fn from_borrowed_number(&self, number: BorrowedNumber<'_>) -> Self::Element;
+    fn element_from_borrowed_number(&self, number: BorrowedNumber<'_>) -> Self::Element;
 }
 
 // TODO: rename to Coefficient
@@ -66,7 +66,7 @@ pub enum Number {
 }
 
 impl Number {
-    pub fn to_borrowed<'a>(&'a self) -> BorrowedNumber<'a> {
+    pub fn to_borrowed(&self) -> BorrowedNumber<'_> {
         match self {
             Number::Natural(num, den) => BorrowedNumber::Natural(*num, *den),
             Number::Large(r) => BorrowedNumber::Large(r),
@@ -93,9 +93,9 @@ pub enum BorrowedNumber<'a> {
     RationalPolynomial(&'a RationalPolynomial<IntegerRing, u16>),
 }
 
-impl<'a> ConvertToRing for RationalField {
+impl ConvertToRing for RationalField {
     #[inline]
-    fn from_number(&self, number: Number) -> Self::Element {
+    fn element_from_number(&self, number: Number) -> Self::Element {
         match number {
             Number::Natural(r, d) => Rational::Natural(r, d),
             Number::Large(r) => Rational::Large(r),
@@ -107,7 +107,7 @@ impl<'a> ConvertToRing for RationalField {
     }
 
     #[inline]
-    fn from_borrowed_number(&self, number: BorrowedNumber<'_>) -> Rational {
+    fn element_from_borrowed_number(&self, number: BorrowedNumber<'_>) -> Rational {
         match number {
             BorrowedNumber::Natural(r, d) => Rational::Natural(r, d),
             BorrowedNumber::Large(r) => Rational::Large(r.clone()),
@@ -119,9 +119,9 @@ impl<'a> ConvertToRing for RationalField {
     }
 }
 
-impl<'a> ConvertToRing for IntegerRing {
+impl ConvertToRing for IntegerRing {
     #[inline]
-    fn from_number(&self, number: Number) -> Integer {
+    fn element_from_number(&self, number: Number) -> Integer {
         match number {
             Number::Natural(r, d) => {
                 debug_assert!(d == 1);
@@ -140,7 +140,7 @@ impl<'a> ConvertToRing for IntegerRing {
     }
 
     #[inline]
-    fn from_borrowed_number(&self, number: BorrowedNumber<'_>) -> Integer {
+    fn element_from_borrowed_number(&self, number: BorrowedNumber<'_>) -> Integer {
         match number {
             BorrowedNumber::Natural(r, d) => {
                 debug_assert!(d == 1);
@@ -158,13 +158,13 @@ impl<'a> ConvertToRing for IntegerRing {
     }
 }
 
-impl<'a, UField: FiniteFieldWorkspace> ConvertToRing for FiniteField<UField>
+impl<UField: FiniteFieldWorkspace> ConvertToRing for FiniteField<UField>
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
     Integer: ToFiniteField<UField>,
 {
     #[inline]
-    fn from_number(&self, number: Number) -> <FiniteField<UField> as Ring>::Element {
+    fn element_from_number(&self, number: Number) -> <FiniteField<UField> as Ring>::Element {
         match number {
             Number::Natural(n, d) => self.div(
                 &Integer::new(n).to_finite_field(self),
@@ -185,7 +185,7 @@ where
     }
 
     #[inline]
-    fn from_borrowed_number(
+    fn element_from_borrowed_number(
         &self,
         number: BorrowedNumber<'_>,
     ) -> <FiniteField<UField> as Ring>::Element {
@@ -453,7 +453,7 @@ impl BorrowedNumber<'_> {
                 n1.0.cmp(&n2.0)
             }
             (&BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(n2)) => {
-                ArbitraryPrecisionRational::from((n1, d1)).cmp(&n2)
+                ArbitraryPrecisionRational::from((n1, d1)).cmp(n2)
             }
             (BorrowedNumber::Large(n1), &BorrowedNumber::Natural(n2, d2)) => {
                 n1.cmp(&&ArbitraryPrecisionRational::from((n2, d2)))
@@ -587,7 +587,7 @@ impl PackedRationalNumberReader for [u8] {
             }
             U64_NUM => {
                 let v = source.get_u64_le();
-                (v as u64, source)
+                (v, source)
             }
             ARB_NUM => {
                 panic!("Overflow")
@@ -614,7 +614,7 @@ impl PackedRationalNumberReader for [u8] {
             }
             U64_DEN => {
                 let v = source.get_u64_le();
-                (v as u64, source)
+                (v, source)
             }
             ARB_DEN => {
                 panic!("Overflow")
@@ -733,8 +733,8 @@ impl PackedRationalNumberWriter for (i64, i64) {
     fn write_packed(self, dest: &mut Vec<u8>) {
         let p = dest.len();
 
-        let num_u64 = self.0.abs() as u64; // FIXME: may overflow
-        let den_u64 = self.1.abs() as u64;
+        let num_u64 = self.0.unsigned_abs();
+        let den_u64 = self.1.unsigned_abs();
         (num_u64, den_u64).write_packed(dest);
 
         if self.0 >= 0 && self.1 < 0 || self.0 < 0 && self.1 >= 0 {
@@ -744,8 +744,8 @@ impl PackedRationalNumberWriter for (i64, i64) {
 
     #[inline(always)]
     fn write_packed_fixed(self, dest: &mut [u8]) {
-        let num_u64 = self.0.abs() as u64;
-        let den_u64 = self.1.abs() as u64;
+        let num_u64 = self.0.unsigned_abs();
+        let den_u64 = self.1.unsigned_abs();
         (num_u64, den_u64).write_packed_fixed(dest);
 
         if self.0 >= 0 && self.1 < 0 || self.0 < 0 && self.1 >= 0 {

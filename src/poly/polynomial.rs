@@ -14,7 +14,7 @@ use smallvec::{smallvec, SmallVec};
 
 /// Multivariate polynomial with a sparse degree and variable dense representation.
 // TODO: implement EuclideanDomain for MultivariatePolynomial
-#[derive(Clone, Hash)]
+#[derive(Clone)]
 pub struct MultivariatePolynomial<F: Ring, E: Exponent> {
     // Data format: the i-th monomial is stored as coefficients[i] and
     // exponents[i * nvars .. (i + 1) * nvars]. Keep coefficients.len() == nterms and
@@ -99,7 +99,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
         MonomialView {
             coefficient: &self.coefficients[i],
-            exponents: &self.exponents(i),
+            exponents: self.exponents(i),
         }
     }
 
@@ -128,7 +128,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             exponents: vec![],
             nterms: 1,
             nvars: 0,
-            field: field,
+            field,
             var_map: None,
         }
     }
@@ -143,13 +143,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Returns the number of terms in the polynomial.
     #[inline]
     pub fn nterms(&self) -> usize {
-        return self.nterms;
+        self.nterms
     }
 
     /// Returns the number of variables in the polynomial.
     #[inline]
     pub fn nvars(&self) -> usize {
-        return self.nvars;
+        self.nvars
     }
 
     /// Returns true if the polynomial is constant.
@@ -252,7 +252,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         // reconstruct 'other' with correct monomial ordering
         let mut newother = Self::new(
             new_var_map.len(),
-            other.field.clone(),
+            other.field,
             Some(other.nterms),
             Some(&new_var_map),
         );
@@ -324,7 +324,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         for t in 1..self.nterms {
             match MultivariatePolynomial::<F, E>::cmp_exponents(
                 self.exponents(t),
-                &self.exponents(t - 1),
+                self.exponents(t - 1),
             ) {
                 Ordering::Equal => panic!("Inconsistent polynomial (equal monomials): {}", self),
                 Ordering::Less => panic!(
@@ -468,7 +468,7 @@ impl<F: Ring + Display, E: Exponent> Display for MultivariatePolynomial<F, E> {
         let mut is_first_term = true;
         for monomial in self {
             let mut is_first_factor = true;
-            if self.field.is_one(&monomial.coefficient) {
+            if self.field.is_one(monomial.coefficient) {
                 if !is_first_term {
                     write!(f, "+")?;
                 }
@@ -483,14 +483,14 @@ impl<F: Ring + Display, E: Exponent> Display for MultivariatePolynomial<F, E> {
                         "{:+}",
                         RingPrinter {
                             ring: &self.field,
-                            element: &monomial.coefficient
+                            element: monomial.coefficient
                         }
                     )?;
                 }
                 is_first_factor = false;
             }
             is_first_term = false;
-            for (i, e) in monomial.exponents.into_iter().enumerate() {
+            for (i, e) in monomial.exponents.iter().enumerate() {
                 if e.is_zero() {
                     continue;
                 }
@@ -681,7 +681,7 @@ impl<'a, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E>>
 
     #[inline]
     fn mul(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
-        (&self).heap_mul(other)
+        self.heap_mul(other)
     }
 }
 
@@ -691,7 +691,7 @@ impl<'a, 'b, F: EuclideanDomain, E: Exponent> Div<&'a MultivariatePolynomial<F, 
     type Output = MultivariatePolynomial<F, E>;
 
     fn div(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
-        self.divides(&other)
+        self.divides(other)
             .unwrap_or_else(|| panic!("No clean division of {} by {}", self, other))
     }
 }
@@ -820,7 +820,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                     }
                 }
             }
-            highestc = &m.coefficient;
+            highestc = m.coefficient;
         }
         debug_assert!(!F::is_zero(highestc));
         highestc.clone()
@@ -981,7 +981,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
         for t in self {
             let c = self.field.mul(
-                &t.coefficient,
+                t.coefficient,
                 &self.field.pow(v, t.exponents[n].to_u32() as u64),
             );
 
@@ -1147,7 +1147,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// should be considered next as they are smaller than the current monomial.
     pub fn heap_mul(&self, other: &MultivariatePolynomial<F, E>) -> MultivariatePolynomial<F, E> {
         if self.nterms == 0 || other.nterms == 0 {
-            return MultivariatePolynomial::new_from(&self, None);
+            return MultivariatePolynomial::new_from(self, None);
         }
 
         if self.nterms == 1 {
@@ -1205,7 +1205,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         let mut in_heap = vec![false; other.nterms];
         in_heap[0] = true;
 
-        while h.len() > 0 {
+        while !h.is_empty() {
             let cur_mon = h.pop().unwrap();
 
             let mut coefficient = self.field.zero();
@@ -1308,7 +1308,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         let mut h: BinaryHeap<Reverse<u64>> = BinaryHeap::with_capacity(self.nterms);
 
         let monom: u64 = pack_a[0] + pack_b[0];
-        cache.insert(monom.clone(), vec![(0, 0)]);
+        cache.insert(monom, vec![(0, 0)]);
         h.push(Reverse(monom));
 
         // i=merged_index[j] signifies that self[i]*other[j] has been merged
@@ -1317,7 +1317,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         let mut in_heap = vec![false; other.nterms];
         in_heap[0] = true;
 
-        while h.len() > 0 {
+        while !h.is_empty() {
             let cur_mon = h.pop().unwrap();
 
             let mut coefficient = self.field.zero();
@@ -1355,13 +1355,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                     if let Some(e) = cache.get_mut(&m) {
                         e.push((i, j + 1));
                     } else {
-                        h.push(Reverse(m.clone())); // only add when new
+                        h.push(Reverse(m)); // only add when new
 
                         if let Some(mut qq) = q_cache.pop() {
                             qq.push((i, j + 1));
-                            cache.insert(m.clone(), qq);
+                            cache.insert(m, qq);
                         } else {
-                            cache.insert(m.clone(), vec![(i, j + 1)]);
+                            cache.insert(m, vec![(i, j + 1)]);
                         }
                     }
 
@@ -1470,10 +1470,10 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
             if !F::is_zero(&coeff) {
                 // can the division be performed? if not, add to rest
                 let (quot, div) = if pow >= m {
-                    if self.field.is_one(&norm) {
+                    if self.field.is_one(norm) {
                         (coeff, true)
                     } else {
-                        let (quot, rem) = self.field.quot_rem(&coeff, &norm);
+                        let (quot, rem) = self.field.quot_rem(&coeff, norm);
                         if F::is_zero(&rem) {
                             (quot, true)
                         } else {
@@ -1509,7 +1509,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
         #[cfg(debug_assertions)]
         {
-            if !(&q * &div + r.clone() - self.clone()).is_zero() {
+            if !(&q * div + r.clone() - self.clone()).is_zero() {
                 panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
             }
         }
@@ -1593,7 +1593,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     if *e1 >= *e2 {
                         *e1 = *e1 - *e2;
                     } else {
-                        return (MultivariatePolynomial::new_from(&self, None), self.clone());
+                        return (MultivariatePolynomial::new_from(self, None), self.clone());
                     }
                 }
             }
@@ -1603,7 +1603,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 *c = quot;
                 if !F::is_zero(&rem) {
                     // TODO: support upgrade to a RationalField
-                    return (MultivariatePolynomial::new_from(&self, None), self.clone());
+                    return (MultivariatePolynomial::new_from(self, None), self.clone());
                 }
             }
 
@@ -1642,7 +1642,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
         let mut k = 0;
         while !h.is_empty() || k < self.nterms {
-            if k < self.nterms && (h.is_empty() || self.exponents_back(k) >= &h.peek().unwrap()) {
+            if k < self.nterms && (h.is_empty() || self.exponents_back(k) >= h.peek().unwrap()) {
                 for (s, e) in m.iter_mut().zip(self.exponents_back(k)) {
                     *s = *e;
                 }
@@ -1665,7 +1665,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                         self.field.sub_mul_assign(
                             &mut c,
                             &q.coefficients[i],
-                            &div.coefficient_back(j),
+                            div.coefficient_back(j),
                         );
 
                         if next_in_divisor && j + 1 < div.nterms {
@@ -1757,7 +1757,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                         r.nterms += 1;
                         return (q, r);
                     } else {
-                        return (MultivariatePolynomial::new_from(&self, None), self.clone());
+                        return (MultivariatePolynomial::new_from(self, None), self.clone());
                     }
                 }
 
@@ -1852,7 +1852,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
         #[cfg(debug_assertions)]
         {
-            if !(&q * &div + r.clone() - self.clone()).is_zero() {
+            if !(&q * div + r.clone() - self.clone()).is_zero() {
                 panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
             }
         }
@@ -1930,7 +1930,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                         self.field.sub_mul_assign(
                             &mut c,
                             &q.coefficients[i],
-                            &div.coefficient_back(j),
+                            div.coefficient_back(j),
                         );
 
                         if next_in_divisor && j + 1 < div.nterms {
@@ -1941,12 +1941,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                             if let Some(e) = cache.get_mut(&m_cache) {
                                 e.push((i, j + 1, true));
                             } else {
-                                h.push(m_cache.clone()); // only add when new
+                                h.push(m_cache); // only add when new
                                 if let Some(mut qq) = q_cache.pop() {
                                     qq.push((i, j + 1, true));
-                                    cache.insert(m_cache.clone(), qq);
+                                    cache.insert(m_cache, qq);
                                 } else {
-                                    cache.insert(m_cache.clone(), vec![(i, j + 1, true)]);
+                                    cache.insert(m_cache, vec![(i, j + 1, true)]);
                                 }
                             }
                         } else if !next_in_divisor {
@@ -1961,12 +1961,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                                 if let Some(e) = cache.get_mut(&m_cache) {
                                     e.push((i + 1, j, false));
                                 } else {
-                                    h.push(m_cache.clone()); // only add when new
+                                    h.push(m_cache); // only add when new
                                     if let Some(mut qq) = q_cache.pop() {
                                         qq.push((i + 1, j, false));
-                                        cache.insert(m_cache.clone(), qq);
+                                        cache.insert(m_cache, qq);
                                     } else {
-                                        cache.insert(m_cache.clone(), vec![(i + 1, j, false)]);
+                                        cache.insert(m_cache, vec![(i + 1, j, false)]);
                                     }
                                 }
                             } else {
@@ -1979,13 +1979,13 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                                 if let Some(e) = cache.get_mut(&m_cache) {
                                     e.push((i, j + 1, false));
                                 } else {
-                                    h.push(m_cache.clone()); // only add when new
+                                    h.push(m_cache); // only add when new
 
                                     if let Some(mut qq) = q_cache.pop() {
                                         qq.push((i, j + 1, false));
-                                        cache.insert(m_cache.clone(), qq);
+                                        cache.insert(m_cache, qq);
                                     } else {
-                                        cache.insert(m_cache.clone(), vec![(i, j + 1, false)]);
+                                        cache.insert(m_cache, vec![(i, j + 1, false)]);
                                     }
                                 }
 
@@ -2005,7 +2005,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                         r.nterms += 1;
                         return (q, r);
                     } else {
-                        return (MultivariatePolynomial::new_from(&self, None), self.clone());
+                        return (MultivariatePolynomial::new_from(self, None), self.clone());
                     }
                 }
 
@@ -2029,12 +2029,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     if let Some(e) = cache.get_mut(&m_cache) {
                         e.push((q.nterms - 1, 1, true));
                     } else {
-                        h.push(m_cache.clone()); // only add when new
+                        h.push(m_cache); // only add when new
                         if let Some(mut qq) = q_cache.pop() {
                             qq.push((q.nterms - 1, 1, true));
-                            cache.insert(m_cache.clone(), qq);
+                            cache.insert(m_cache, qq);
                         } else {
-                            cache.insert(m_cache.clone(), vec![(q.nterms - 1, 1, true)]);
+                            cache.insert(m_cache, vec![(q.nterms - 1, 1, true)]);
                         }
                     }
                 } else if q.nterms >= div.nterms {
@@ -2045,12 +2045,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                         if let Some(e) = cache.get_mut(&m_cache) {
                             e.push((q.nterms - 1, 1, false));
                         } else {
-                            h.push(m_cache.clone()); // only add when new
+                            h.push(m_cache); // only add when new
                             if let Some(mut qq) = q_cache.pop() {
                                 qq.push((q.nterms - 1, 1, false));
-                                cache.insert(m_cache.clone(), qq);
+                                cache.insert(m_cache, qq);
                             } else {
-                                cache.insert(m_cache.clone(), vec![(q.nterms - 1, 1, false)]);
+                                cache.insert(m_cache, vec![(q.nterms - 1, 1, false)]);
                             }
                         }
                     }
@@ -2065,12 +2065,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     if let Some(e) = cache.get_mut(&m_cache) {
                         e.push((q.nterms - 1, 1, false));
                     } else {
-                        h.push(m_cache.clone()); // only add when new
+                        h.push(m_cache); // only add when new
                         if let Some(mut qq) = q_cache.pop() {
                             qq.push((q.nterms - 1, 1, false));
-                            cache.insert(m_cache.clone(), qq);
+                            cache.insert(m_cache, qq);
                         } else {
-                            cache.insert(m_cache.clone(), vec![(q.nterms - 1, 1, false)]);
+                            cache.insert(m_cache, vec![(q.nterms - 1, 1, false)]);
                         }
                     }
                 }
@@ -2095,7 +2095,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
         #[cfg(debug_assertions)]
         {
-            if !(&q * &div + r.clone() - self.clone()).is_zero() {
+            if !(&q * div + r.clone() - self.clone()).is_zero() {
                 panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
             }
         }

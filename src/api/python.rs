@@ -39,7 +39,7 @@ use crate::{
 };
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
-const WORKSPACE: Lazy<Workspace<DefaultRepresentation>> = Lazy::new(|| Workspace::new());
+thread_local!(static WORKSPACE: Workspace<DefaultRepresentation> = Workspace::new());
 
 #[pymodule]
 fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
@@ -101,7 +101,7 @@ impl ConvertibleToExpression {
             ConvertibleToExpression::Int(i) => {
                 let mut num = OwnedAtom::new();
                 let num_d: &mut OwnedNumD = num.transform_to_num();
-                num_d.from_number(Number::Natural(i, 1));
+                num_d.set_from_number(Number::Natural(i, 1));
                 PythonExpression {
                     expr: Arc::new(num),
                 }
@@ -121,7 +121,7 @@ impl PythonExpression {
         let id = state.get_or_insert_var(name);
         let mut var = OwnedAtom::new();
         let o: &mut OwnedVarD = var.transform_to_var();
-        o.from_id(id);
+        o.set_from_id(id);
 
         Ok(PythonExpression {
             expr: Arc::new(var),
@@ -141,7 +141,7 @@ impl PythonExpression {
             let id = state.get_or_insert_var(name);
             let mut var = OwnedAtom::new();
             let o: &mut OwnedVarD = var.transform_to_var();
-            o.from_id(id);
+            o.set_from_id(id);
 
             result.push(PythonExpression {
                 expr: Arc::new(var),
@@ -170,10 +170,12 @@ impl PythonExpression {
 
     #[classmethod]
     pub fn parse(_cls: &PyType, arg: &str) -> PyResult<PythonExpression> {
-        let e = parse(arg)
-            .map_err(|m| exceptions::PyValueError::new_err(m))?
-            .to_atom(STATE.write().unwrap().borrow_mut(), &WORKSPACE)
-            .map_err(|m| exceptions::PyValueError::new_err(m))?;
+        let e = WORKSPACE.with(|f| {
+            parse(arg)
+                .map_err(exceptions::PyValueError::new_err)?
+                .to_atom(STATE.write().unwrap().borrow_mut(), f)
+                .map_err(exceptions::PyValueError::new_err)
+        })?;
 
         Ok(PythonExpression { expr: Arc::new(e) })
     }
@@ -237,7 +239,7 @@ impl PythonExpression {
         let id = state.get_or_insert_var(var_name);
         let mut var = OwnedAtom::new();
         let o: &mut OwnedVarD = var.transform_to_var();
-        o.from_id(id);
+        o.set_from_id(id);
 
         Ok(PythonExpression {
             expr: Arc::new(var),
@@ -245,18 +247,20 @@ impl PythonExpression {
     }
 
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
-        let workspace = WORKSPACE;
-        let mut e = workspace.new_atom();
-        let a: &mut OwnedAddD = e.transform_to_add();
+        let b = WORKSPACE.with(|workspace| {
+            let mut e = workspace.new_atom();
+            let a: &mut OwnedAddD = e.transform_to_add();
 
-        a.extend(self.expr.to_view());
-        a.extend(rhs.to_expression().expr.to_view());
-        a.set_dirty(true);
+            a.extend(self.expr.to_view());
+            a.extend(rhs.to_expression().expr.to_view());
+            a.set_dirty(true);
 
-        let mut b = OwnedAtom::new();
-        e.get()
-            .to_view()
-            .normalize(&WORKSPACE, &STATE.read().unwrap().borrow(), &mut b);
+            let mut b = OwnedAtom::new();
+            e.get()
+                .to_view()
+                .normalize(workspace, STATE.read().unwrap().borrow(), &mut b);
+            b
+        });
 
         PythonExpression { expr: Arc::new(b) }
     }
@@ -268,44 +272,48 @@ impl PythonExpression {
     }
 
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
-        let workspace = WORKSPACE;
-        let mut e = workspace.new_atom();
-        let a: &mut OwnedMulD = e.transform_to_mul();
+        let b = WORKSPACE.with(|workspace| {
+            let mut e = workspace.new_atom();
+            let a: &mut OwnedMulD = e.transform_to_mul();
 
-        a.extend(self.expr.to_view());
-        a.extend(rhs.to_expression().expr.to_view());
-        a.set_dirty(true);
+            a.extend(self.expr.to_view());
+            a.extend(rhs.to_expression().expr.to_view());
+            a.set_dirty(true);
 
-        let mut b = OwnedAtom::new();
-        e.get()
-            .to_view()
-            .normalize(&WORKSPACE, &STATE.read().unwrap().borrow(), &mut b);
+            let mut b = OwnedAtom::new();
+            e.get()
+                .to_view()
+                .normalize(workspace, STATE.read().unwrap().borrow(), &mut b);
+            b
+        });
 
         PythonExpression { expr: Arc::new(b) }
     }
 
     pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
-        let workspace = WORKSPACE;
-        let mut pow = workspace.new_atom();
-        let pow_num = pow.transform_to_num();
-        pow_num.from_number(Number::Natural(-1, 1));
+        let b = WORKSPACE.with(|workspace| {
+            let mut pow = workspace.new_atom();
+            let pow_num = pow.transform_to_num();
+            pow_num.set_from_number(Number::Natural(-1, 1));
 
-        let mut e = workspace.new_atom();
-        let a: &mut OwnedPowD = e.transform_to_pow();
-        a.from_base_and_exp(rhs.to_expression().expr.to_view(), pow.get().to_view());
-        a.set_dirty(true);
+            let mut e = workspace.new_atom();
+            let a: &mut OwnedPowD = e.transform_to_pow();
+            a.set_from_base_and_exp(rhs.to_expression().expr.to_view(), pow.get().to_view());
+            a.set_dirty(true);
 
-        let mut m = workspace.new_atom();
-        let md: &mut OwnedMulD = m.transform_to_mul();
+            let mut m = workspace.new_atom();
+            let md: &mut OwnedMulD = m.transform_to_mul();
 
-        md.extend(self.expr.to_view());
-        md.extend(e.get().to_view());
-        md.set_dirty(true);
+            md.extend(self.expr.to_view());
+            md.extend(e.get().to_view());
+            md.set_dirty(true);
 
-        let mut b = OwnedAtom::new();
-        m.get()
-            .to_view()
-            .normalize(&WORKSPACE, &STATE.read().unwrap().borrow(), &mut b);
+            let mut b = OwnedAtom::new();
+            m.get()
+                .to_view()
+                .normalize(workspace, STATE.read().unwrap().borrow(), &mut b);
+            b
+        });
         PythonExpression { expr: Arc::new(b) }
     }
 
@@ -320,38 +328,42 @@ impl PythonExpression {
             ));
         }
 
-        let workspace = WORKSPACE;
-        let mut e = workspace.new_atom();
-        let a: &mut OwnedPowD = e.transform_to_pow();
+        let b = WORKSPACE.with(|workspace| {
+            let mut e = workspace.new_atom();
+            let a: &mut OwnedPowD = e.transform_to_pow();
 
-        a.from_base_and_exp(self.expr.to_view(), rhs.to_expression().expr.to_view());
-        a.set_dirty(true);
+            a.set_from_base_and_exp(self.expr.to_view(), rhs.to_expression().expr.to_view());
+            a.set_dirty(true);
 
-        let mut b = OwnedAtom::new();
-        e.get()
-            .to_view()
-            .normalize(&WORKSPACE, &STATE.read().unwrap().borrow(), &mut b);
+            let mut b = OwnedAtom::new();
+            e.get()
+                .to_view()
+                .normalize(workspace, STATE.read().unwrap().borrow(), &mut b);
+            b
+        });
 
         Ok(PythonExpression { expr: Arc::new(b) })
     }
 
     pub fn __neg__(&self) -> PythonExpression {
-        let workspace = WORKSPACE;
-        let mut e = workspace.new_atom();
-        let a: &mut OwnedMulD = e.transform_to_mul();
+        let b = WORKSPACE.with(|workspace| {
+            let mut e = workspace.new_atom();
+            let a: &mut OwnedMulD = e.transform_to_mul();
 
-        let mut sign = workspace.new_atom();
-        let sign_num = sign.transform_to_num();
-        sign_num.from_number(Number::Natural(-1, 1));
+            let mut sign = workspace.new_atom();
+            let sign_num = sign.transform_to_num();
+            sign_num.set_from_number(Number::Natural(-1, 1));
 
-        a.extend(self.expr.to_view());
-        a.extend(sign.get().to_view());
-        a.set_dirty(true);
+            a.extend(self.expr.to_view());
+            a.extend(sign.get().to_view());
+            a.set_dirty(true);
 
-        let mut b = OwnedAtom::new();
-        e.get()
-            .to_view()
-            .normalize(&WORKSPACE, &STATE.read().unwrap().borrow(), &mut b);
+            let mut b = OwnedAtom::new();
+            e.get()
+                .to_view()
+                .normalize(workspace, STATE.read().unwrap().borrow(), &mut b);
+            b
+        });
 
         PythonExpression { expr: Arc::new(b) }
     }
@@ -482,22 +494,28 @@ impl PythonExpression {
             }
         }
 
-        let mut b = OwnedAtom::new();
-        self.expr.to_view().set_coefficient_ring(
-            &var_map,
-            &STATE.read().unwrap().borrow(),
-            &WORKSPACE,
-            &mut b,
-        );
+        let b = WORKSPACE.with(|workspace| {
+            let mut b = OwnedAtom::new();
+            self.expr.to_view().set_coefficient_ring(
+                &var_map,
+                STATE.read().unwrap().borrow(),
+                workspace,
+                &mut b,
+            );
+            b
+        });
 
         Ok(PythonExpression { expr: Arc::new(b) })
     }
 
     pub fn expand(&self) -> PythonExpression {
-        let mut b = OwnedAtom::new();
-        self.expr
-            .to_view()
-            .expand(&WORKSPACE, &STATE.read().unwrap().borrow(), &mut b);
+        let b = WORKSPACE.with(|workspace| {
+            let mut b = OwnedAtom::new();
+            self.expr
+                .to_view()
+                .expand(workspace, STATE.read().unwrap().borrow(), &mut b);
+            b
+        });
 
         PythonExpression { expr: Arc::new(b) }
     }
@@ -558,26 +576,28 @@ impl PythonExpression {
             }
         }
 
-        self.expr
-            .to_view()
-            .to_rational_polynomial(
-                &WORKSPACE,
-                &STATE.read().unwrap(),
-                RationalField::new(),
-                IntegerRing::new(),
-                if var_map.is_empty() {
-                    None
-                } else {
-                    Some(var_map.as_slice())
-                },
-            )
-            .map(|x| PythonRationalPolynomial { poly: Arc::new(x) })
-            .map_err(|e| {
-                exceptions::PyValueError::new_err(format!(
-                    "Could not convert to polynomial: {:?}",
-                    e
-                ))
-            })
+        WORKSPACE.with(|workspace| {
+            self.expr
+                .to_view()
+                .to_rational_polynomial(
+                    workspace,
+                    &STATE.read().unwrap(),
+                    RationalField::new(),
+                    IntegerRing::new(),
+                    if var_map.is_empty() {
+                        None
+                    } else {
+                        Some(var_map.as_slice())
+                    },
+                )
+                .map(|x| PythonRationalPolynomial { poly: Arc::new(x) })
+                .map_err(|e| {
+                    exceptions::PyValueError::new_err(format!(
+                        "Could not convert to polynomial: {:?}",
+                        e
+                    ))
+                })
+        })
     }
 
     // TODO: use macro as the body is the same as for to_rational_polynomial
@@ -601,26 +621,28 @@ impl PythonExpression {
             }
         }
 
-        self.expr
-            .to_view()
-            .to_rational_polynomial(
-                &WORKSPACE,
-                &STATE.read().unwrap(),
-                RationalField::new(),
-                IntegerRing::new(),
-                if var_map.is_empty() {
-                    None
-                } else {
-                    Some(var_map.as_slice())
-                },
-            )
-            .map(|x| PythonRationalPolynomialSmallExponent { poly: Arc::new(x) })
-            .map_err(|e| {
-                exceptions::PyValueError::new_err(format!(
-                    "Could not convert to polynomial: {:?}",
-                    e
-                ))
-            })
+        WORKSPACE.with(|workspace| {
+            self.expr
+                .to_view()
+                .to_rational_polynomial(
+                    workspace,
+                    &STATE.read().unwrap(),
+                    RationalField::new(),
+                    IntegerRing::new(),
+                    if var_map.is_empty() {
+                        None
+                    } else {
+                        Some(var_map.as_slice())
+                    },
+                )
+                .map(|x| PythonRationalPolynomialSmallExponent { poly: Arc::new(x) })
+                .map_err(|e| {
+                    exceptions::PyValueError::new_err(format!(
+                        "Could not convert to polynomial: {:?}",
+                        e
+                    ))
+                })
+        })
     }
 
     pub fn replace_all(
@@ -637,44 +659,40 @@ impl PythonExpression {
 
         if let Some(rs) = cond {
             for r in &*rs.restrictions {
-                match r {
-                    &SimplePatternRestriction::IsVar(name) => {
+                match *r {
+                    SimplePatternRestriction::IsVar(name) => {
                         restrictions
                             .entry(name)
                             .or_insert(vec![])
                             .push(PatternRestriction::<DefaultRepresentation>::IsVar);
                     }
-                    &SimplePatternRestriction::IsNumber(name) => {
+                    SimplePatternRestriction::IsNumber(name) => {
                         restrictions
                             .entry(name)
                             .or_insert(vec![])
                             .push(PatternRestriction::IsNumber);
                     }
-                    &SimplePatternRestriction::Length(name, min, max) => {
+                    SimplePatternRestriction::Length(name, min, max) => {
                         restrictions
                             .entry(name)
                             .or_insert(vec![])
                             .push(PatternRestriction::Length(min, max));
                     }
-                    &SimplePatternRestriction::NumberCmp(name, op, ref_num) => {
+                    SimplePatternRestriction::NumberCmp(name, op, ref_num) => {
                         restrictions.entry(name).or_insert(vec![]).push(
                             PatternRestriction::Filter(Box::new(
                                 move |v: &Match<DefaultRepresentation>| match v {
-                                    Match::Single(v) => {
-                                        if let AtomView::Num(n) = v {
-                                            let num = n.get_number_view();
-                                            let ordering =
-                                                num.cmp(&BorrowedNumber::Natural(ref_num, 1));
-                                            match op {
-                                                CompareOp::Lt => ordering.is_lt(),
-                                                CompareOp::Le => ordering.is_le(),
-                                                CompareOp::Eq => ordering.is_eq(),
-                                                CompareOp::Ne => ordering.is_ne(),
-                                                CompareOp::Gt => ordering.is_gt(),
-                                                CompareOp::Ge => ordering.is_ge(),
-                                            }
-                                        } else {
-                                            false
+                                    Match::Single(AtomView::Num(n)) => {
+                                        let num = n.get_number_view();
+                                        let ordering =
+                                            num.cmp(&BorrowedNumber::Natural(ref_num, 1));
+                                        match op {
+                                            CompareOp::Lt => ordering.is_lt(),
+                                            CompareOp::Le => ordering.is_le(),
+                                            CompareOp::Eq => ordering.is_eq(),
+                                            CompareOp::Ne => ordering.is_ne(),
+                                            CompareOp::Gt => ordering.is_gt(),
+                                            CompareOp::Ge => ordering.is_ge(),
                                         }
                                     }
                                     _ => false,
@@ -686,14 +704,16 @@ impl PythonExpression {
             }
         }
 
-        pattern.replace_all(
-            self.expr.to_view(),
-            &rhs,
-            &STATE.read().unwrap(),
-            &WORKSPACE,
-            &restrictions,
-            &mut out,
-        );
+        WORKSPACE.with(|workspace| {
+            pattern.replace_all(
+                self.expr.to_view(),
+                &rhs,
+                &STATE.read().unwrap(),
+                workspace,
+                &restrictions,
+                &mut out,
+            );
+        });
 
         Ok(PythonExpression {
             expr: Arc::new(out),
@@ -728,25 +748,27 @@ impl PythonFunction {
 
     #[pyo3(signature = (*args,))]
     pub fn __call__(&self, args: &PyTuple) -> PyResult<PythonExpression> {
-        let b = WORKSPACE;
-        let mut fun_b = b.new_atom();
-        let fun: &mut OwnedFunD = fun_b.transform_to_fun();
-        fun.from_name(self.id);
+        let out = WORKSPACE.with(|workspace| {
+            let mut fun_b = workspace.new_atom();
+            let fun: &mut OwnedFunD = fun_b.transform_to_fun();
+            fun.set_from_name(self.id);
 
-        for arg in args {
-            if let Ok(a) = arg.extract::<ConvertibleToExpression>() {
-                fun.add_arg(a.to_expression().expr.to_view());
-            } else {
-                let msg = format!("Unknown type: {:?}", arg.get_type().name());
-                return Err(exceptions::PyTypeError::new_err(msg));
+            for arg in args {
+                if let Ok(a) = arg.extract::<ConvertibleToExpression>() {
+                    fun.add_arg(a.to_expression().expr.to_view());
+                } else {
+                    let msg = format!("Unknown type: {:?}", arg.get_type().name());
+                    return Err(exceptions::PyTypeError::new_err(msg));
+                }
             }
-        }
 
-        let mut out = OwnedAtom::new();
-        fun_b
-            .get()
-            .to_view()
-            .normalize(&WORKSPACE, &STATE.read().unwrap(), &mut out);
+            let mut out = OwnedAtom::new();
+            fun_b
+                .get()
+                .to_view()
+                .normalize(workspace, &STATE.read().unwrap(), &mut out);
+            Ok(out)
+        })?;
 
         Ok(PythonExpression {
             expr: Arc::new(out),
@@ -766,10 +788,10 @@ self_cell!(
 impl PythonAtomIterator {
     /// Create a self-referential structure for the iterator.
     pub fn from_expr(expr: PythonExpression) -> PythonAtomIterator {
-        PythonAtomIterator::new(expr.expr.clone(), |expr| match expr.to_view() {
-            AtomView::Add(a) => a.into_iter(),
-            AtomView::Mul(m) => m.into_iter(),
-            AtomView::Fun(f) => f.into_iter(),
+        PythonAtomIterator::new(expr.expr, |expr| match expr.to_view() {
+            AtomView::Add(a) => a.iter(),
+            AtomView::Mul(m) => m.iter(),
+            AtomView::Fun(f) => f.iter(),
             _ => unreachable!(),
         })
     }

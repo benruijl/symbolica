@@ -31,18 +31,18 @@ pub struct OwnedNumD {
 impl OwnedNum for OwnedNumD {
     type P = DefaultRepresentation;
 
-    fn from_number(&mut self, num: Number) {
+    fn set_from_number(&mut self, num: Number) {
         self.data.clear();
         self.data.put_u8(NUM_ID);
         num.write_packed(&mut self.data);
     }
 
-    fn from_view<'a>(&mut self, a: &NumViewD<'a>) {
+    fn set_from_view(&mut self, a: &NumViewD<'_>) {
         self.data.clear();
         self.data.extend(a.data);
     }
 
-    fn add<'a>(&mut self, other: &NumViewD<'a>, state: &State) {
+    fn add(&mut self, other: &NumViewD<'_>, state: &State) {
         let nv = self.to_num_view();
         let a = nv.get_number_view();
         let b = other.get_number_view();
@@ -52,7 +52,7 @@ impl OwnedNum for OwnedNumD {
         n.write_packed(&mut self.data);
     }
 
-    fn mul<'a>(&mut self, other: &NumViewD<'a>, state: &State) {
+    fn mul(&mut self, other: &NumViewD<'_>, state: &State) {
         let nv = self.to_num_view();
         let a = nv.get_number_view();
         let b = other.get_number_view();
@@ -118,17 +118,17 @@ pub struct OwnedVarD {
 impl OwnedVar for OwnedVarD {
     type P = DefaultRepresentation;
 
-    fn from_id(&mut self, id: Identifier) {
+    fn set_from_id(&mut self, id: Identifier) {
         self.data.clear();
         self.data.put_u8(VAR_ID);
         (id.to_u32() as u64, 1).write_packed(&mut self.data);
     }
 
-    fn to_var_view<'a>(&'a self) -> <Self::P as Atom>::V<'a> {
+    fn to_var_view(&self) -> <Self::P as Atom>::V<'_> {
         VarViewD { data: &self.data }
     }
 
-    fn from_view<'a>(&mut self, view: &VarViewD) {
+    fn set_from_view<'a>(&mut self, view: &VarViewD) {
         self.data.clear();
         self.data.extend(view.data);
     }
@@ -184,10 +184,10 @@ pub struct OwnedFunD {
 impl OwnedFun for OwnedFunD {
     type P = DefaultRepresentation;
 
-    fn from_name(&mut self, id: Identifier) {
+    fn set_from_name(&mut self, id: Identifier) {
         self.data.clear();
         self.data.put_u8(FUN_ID);
-        self.data.put_u32_le(0 as u32);
+        self.data.put_u32_le(0_u32);
 
         let buf_pos = self.data.len();
 
@@ -251,11 +251,11 @@ impl OwnedFun for OwnedFunD {
             .unwrap();
     }
 
-    fn to_fun_view<'a>(&'a self) -> <Self::P as Atom>::F<'a> {
+    fn to_fun_view(&self) -> <Self::P as Atom>::F<'_> {
         FnViewD { data: &self.data }
     }
 
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::F<'a>) {
+    fn set_from_view(&mut self, view: &<Self::P as Atom>::F<'_>) {
         self.data.clear();
         self.data.extend(view.data);
     }
@@ -311,7 +311,7 @@ pub struct OwnedPowD {
 impl OwnedPow for OwnedPowD {
     type P = DefaultRepresentation;
 
-    fn from_base_and_exp(&mut self, base: AtomView<Self::P>, exp: AtomView<Self::P>) {
+    fn set_from_base_and_exp(&mut self, base: AtomView<Self::P>, exp: AtomView<Self::P>) {
         self.data.clear();
         self.data.put_u8(POW_ID);
         self.data.extend(base.get_data());
@@ -326,11 +326,11 @@ impl OwnedPow for OwnedPowD {
         }
     }
 
-    fn to_pow_view<'a>(&'a self) -> <Self::P as Atom>::P<'a> {
+    fn to_pow_view(&self) -> <Self::P as Atom>::P<'_> {
         PowViewD { data: &self.data }
     }
 
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::P<'a>) {
+    fn set_from_view(&mut self, view: &<Self::P as Atom>::P<'_>) {
         self.data.clear();
         self.data.extend(view.data);
     }
@@ -394,15 +394,15 @@ impl OwnedMul for OwnedMulD {
         }
     }
 
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::M<'a>) {
+    fn set_from_view(&mut self, view: &<Self::P as Atom>::M<'_>) {
         self.data.clear();
         self.data.extend(view.data);
     }
 
-    fn extend<'a>(&mut self, other: AtomView<'a, DefaultRepresentation>) {
+    fn extend(&mut self, other: AtomView<'_, DefaultRepresentation>) {
         if self.data.is_empty() {
             self.data.put_u8(MUL_ID);
-            self.data.put_u32_le(0 as u32);
+            self.data.put_u32_le(0_u32);
             (0u64, 1).write_packed(&mut self.data);
         }
 
@@ -442,7 +442,7 @@ impl OwnedMul for OwnedMulD {
         // size should be ok now
         (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
 
-        for child in new_slice.into_iter() {
+        for child in new_slice.iter() {
             self.data.extend_from_slice(child.get_data());
         }
 
@@ -503,7 +503,7 @@ impl OwnedMul for OwnedMulD {
             .unwrap();
     }
 
-    fn to_mul_view<'a>(&'a self) -> <Self::P as Atom>::M<'a> {
+    fn to_mul_view(&self) -> <Self::P as Atom>::M<'_> {
         MulViewD { data: &self.data }
     }
 }
@@ -566,10 +566,10 @@ impl OwnedAdd for OwnedAddD {
         }
     }
 
-    fn extend<'a>(&mut self, other: AtomView<'a, DefaultRepresentation>) {
+    fn extend(&mut self, other: AtomView<'_, DefaultRepresentation>) {
         if self.data.is_empty() {
             self.data.put_u8(ADD_ID);
-            self.data.put_u32_le(0 as u32);
+            self.data.put_u32_le(0_u32);
             (0u64, 1).write_packed(&mut self.data);
         }
 
@@ -609,7 +609,7 @@ impl OwnedAdd for OwnedAddD {
         // size should be ok now
         (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
 
-        for child in new_slice.into_iter() {
+        for child in new_slice.iter() {
             self.data.extend_from_slice(child.get_data());
         }
 
@@ -624,11 +624,11 @@ impl OwnedAdd for OwnedAddD {
             .unwrap();
     }
 
-    fn to_add_view<'a>(&'a self) -> <Self::P as Atom>::A<'a> {
+    fn to_add_view(&self) -> <Self::P as Atom>::A<'_> {
         AddViewD { data: &self.data }
     }
 
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::A<'a>) {
+    fn set_from_view(&mut self, view: &<Self::P as Atom>::A<'_>) {
         self.data.clear();
         self.data.extend(view.data);
     }
@@ -670,7 +670,7 @@ impl ResettableBuffer for OwnedAddD {
     fn new() -> Self {
         let mut data = Vec::new();
         data.put_u8(ADD_ID);
-        data.put_u32_le(0 as u32);
+        data.put_u32_le(0_u32);
         (0u64, 1).write_packed(&mut data);
 
         OwnedAddD { data }
@@ -679,7 +679,7 @@ impl ResettableBuffer for OwnedAddD {
     fn reset(&mut self) {
         self.data.clear();
         self.data.put_u8(ADD_ID);
-        self.data.put_u32_le(0 as u32);
+        self.data.put_u32_le(0_u32);
         (0u64, 1).write_packed(&mut self.data);
     }
 }
@@ -719,11 +719,11 @@ impl<'a> Var<'a> for VarViewD<'a> {
 
     #[inline]
     fn get_name(&self) -> Identifier {
-        Identifier::from((&self.data[1..]).get_frac_i64().0 as u32)
+        Identifier::from(self.data[1..].get_frac_i64().0 as u32)
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
-        AtomView::Var(self.clone())
+        AtomView::Var(*self)
     }
 }
 
@@ -786,7 +786,7 @@ impl OwnedAtom<DefaultRepresentation> {
             AtomTree::Fn(name, args) => {
                 data.put_u8(FUN_ID | DIRTY_FLAG);
                 let size_pos = data.len();
-                data.put_u32_le(0 as u32); // length of entire fn without flag
+                data.put_u32_le(0_u32); // length of entire fn without flag
                 let buf_pos = data.len();
 
                 // pack name and args
@@ -820,7 +820,7 @@ impl OwnedAtom<DefaultRepresentation> {
                 }
 
                 let size_pos = data.len();
-                data.put_u32_le(0 as u32); // length of entire fn without flag
+                data.put_u32_le(0_u32); // length of entire fn without flag
                 let buf_pos = data.len();
 
                 (args.len() as u64, 1).write_packed(data);
@@ -924,11 +924,11 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     type I = ListIteratorD<'a>;
 
     fn get_name(&self) -> Identifier {
-        Identifier::from((&self.data[1 + 4..]).get_frac_i64().0 as u32)
+        Identifier::from(self.data[1 + 4..].get_frac_i64().0 as u32)
     }
 
     fn get_nargs(&self) -> usize {
-        (&self.data[1 + 4..]).get_frac_i64().1 as usize
+        self.data[1 + 4..].get_frac_i64().1 as usize
     }
 
     fn is_dirty(&self) -> bool {
@@ -940,7 +940,7 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     }
 
     #[inline]
-    fn into_iter(&self) -> Self::I {
+    fn iter(&self) -> Self::I {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -955,7 +955,7 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
-        AtomView::Fun(self.clone())
+        AtomView::Fun(*self)
     }
 
     fn to_slice(&self) -> ListSliceD<'a> {
@@ -1006,7 +1006,7 @@ impl<'a> Num<'a> for NumViewD<'a> {
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
-        AtomView::Num(self.clone())
+        AtomView::Num(*self)
     }
 }
 
@@ -1051,7 +1051,7 @@ impl<'a> Pow<'a> for PowViewD<'a> {
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
-        AtomView::Pow(self.clone())
+        AtomView::Pow(*self)
     }
 
     fn to_slice(&self) -> ListSliceD<'a> {
@@ -1083,11 +1083,11 @@ impl<'a> Mul<'a> for MulViewD<'a> {
     }
 
     fn get_nargs(&self) -> usize {
-        (&self.data[1 + 4..]).get_frac_i64().0 as usize
+        self.data[1 + 4..].get_frac_i64().0 as usize
     }
 
     #[inline]
-    fn into_iter(&self) -> Self::I {
+    fn iter(&self) -> Self::I {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -1102,7 +1102,7 @@ impl<'a> Mul<'a> for MulViewD<'a> {
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
-        AtomView::Mul(self.clone())
+        AtomView::Mul(*self)
     }
 
     fn to_slice(&self) -> ListSliceD<'a> {
@@ -1141,11 +1141,11 @@ impl<'a> Add<'a> for AddViewD<'a> {
     }
 
     fn get_nargs(&self) -> usize {
-        (&self.data[1 + 4..]).get_frac_i64().0 as usize
+        self.data[1 + 4..].get_frac_i64().0 as usize
     }
 
     #[inline]
-    fn into_iter(&self) -> Self::I {
+    fn iter(&self) -> Self::I {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -1160,7 +1160,7 @@ impl<'a> Add<'a> for AddViewD<'a> {
     }
 
     fn to_view(&self) -> AtomView<'a, Self::P> {
-        AtomView::Add(self.clone())
+        AtomView::Add(*self)
     }
 
     fn to_slice(&self) -> ListSliceD<'a> {
@@ -1400,7 +1400,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
         }
     }
 
-    fn eq<'b>(&self, other: &ListSliceD<'b>) -> bool {
+    fn eq(&self, other: &ListSliceD<'_>) -> bool {
         self.data == other.data
     }
 
@@ -1416,8 +1416,8 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
         }
     }
 
-    fn into_iter(&self) -> Self::ListSliceIterator {
-        ListSliceIteratorD { data: self.clone() }
+    fn iter(&self) -> Self::ListSliceIterator {
+        ListSliceIteratorD { data: *self }
     }
 }
 

@@ -45,9 +45,7 @@ fn main() {
 
     // the coefficient must downgrade from y,z to y
     let mut expr_exp = OwnedAtom::new();
-    expr_y
-        .to_view()
-        .expand(&workspace, &mut state, &mut expr_exp);
+    expr_y.to_view().expand(&workspace, &state, &mut expr_exp);
     println!(
         "> Coefficient ring y after expansion: {}",
         AtomPrinter::new(expr_exp.to_view(), PrintMode::default(), &state)

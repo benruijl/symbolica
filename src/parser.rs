@@ -121,7 +121,7 @@ impl Token {
                     if *o1 == o2 {
                         // add from the left by swapping and then extending from the right
                         std::mem::swap(args, &mut args2);
-                        args.extend(args2.drain(..));
+                        args.append(&mut args2);
                     } else {
                         args.insert(0, Token::Op(false, false, o2, args2));
                     }
@@ -176,7 +176,7 @@ impl Token {
                             debug_assert!(args2.len() == 1);
                             *self = args2.pop().unwrap();
                         } else {
-                            args.extend(args2.drain(..))
+                            args.append(&mut args2)
                         }
                     } else {
                         args.push(Token::Op(false, false, o2, args2));
@@ -305,7 +305,7 @@ impl std::fmt::Display for Token {
                 let mut first = true;
 
                 match &args[0] {
-                    Token::ID(s) => f.write_str(&s)?,
+                    Token::ID(s) => f.write_str(s)?,
                     _ => unreachable!(),
                 };
 
@@ -461,7 +461,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                     state = ParseState::RationalPolynomial;
                 }
                 x => {
-                    if x >= b'0' && x <= b'9' {
+                    if x.is_ascii_digit() {
                         state = ParseState::Number;
                         id_buffer.push(c);
                     } else {
@@ -520,7 +520,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                             // is also right associative
                             if let Token::Op(_, _, o_mid, mut m_mid) = mid {
                                 if o_mid == *o1 && o_mid.right_associative() {
-                                    m.extend(m_mid.drain(..));
+                                    m.append(&mut m_mid);
                                 } else {
                                     m.push(Token::Op(false, false, o_mid, m_mid));
                                 }
@@ -530,7 +530,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
 
                             // may not be the same operator, in the case of * and /
                             if *o1 == o2 {
-                                m.extend(mm.drain(..));
+                                m.append(&mut mm);
                                 *mr1 = mr2;
                             } else {
                                 // embed operator 1 in operator 2
@@ -540,7 +540,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                                 m.insert(0, Token::Op(false, false, o2, mm));
                             }
                         }
-                        _ => return Err(format!("Cannot merge operator")),
+                        _ => return Err("Cannot merge operator".to_string()),
                     }
                 }
             }
@@ -575,12 +575,7 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
     field: R,
 ) -> (&'a [u8], MultivariatePolynomial<R, E>) {
     let mut exponents = vec![E::zero(); var_name_map.len()];
-    let mut poly = MultivariatePolynomial::new(
-        var_name_map.len(),
-        field.clone(),
-        None,
-        Some(var_map.into()),
-    );
+    let mut poly = MultivariatePolynomial::new(var_name_map.len(), field, None, Some(var_map));
 
     let mut last_pos = input;
     let mut c = input.get_u8();
@@ -612,7 +607,7 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
                 break;
             }
 
-            if input.len() == 0 {
+            if input.is_empty() {
                 break;
             }
 
@@ -633,12 +628,12 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
                 coeff = field.neg(&field.one());
             } else {
                 coeff = if let Ok(x) = n.parse::<i64>() {
-                    field.from_number(Number::Natural(x, 1))
+                    field.element_from_number(Number::Natural(x, 1))
                 } else {
                     match Integer::parse(n) {
                         Ok(x) => {
                             let p = x.complete().into();
-                            field.from_number(Number::Large(p))
+                            field.element_from_number(Number::Large(p))
                         }
                         Err(e) => panic!("Could not parse number: {}", e),
                     }
@@ -656,7 +651,7 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
         loop {
             let before_star = last_pos;
             if c == b'*' {
-                if input.len() == 0 {
+                if input.is_empty() {
                     break;
                 }
 
@@ -674,7 +669,7 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
 
             // read var
             while c.is_ascii_alphanumeric() {
-                if input.len() == 0 {
+                if input.is_empty() {
                     break;
                 }
 
@@ -702,7 +697,7 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
                     last_pos = input;
                     c = input.get_u8();
 
-                    if !c.is_ascii_digit() || input.len() == 0 {
+                    if !c.is_ascii_digit() || input.is_empty() {
                         break;
                     }
                 }
@@ -717,7 +712,7 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
                 exponents[index] = E::one();
             }
 
-            if input.len() == 0 {
+            if input.is_empty() {
                 break;
             }
         }
@@ -725,11 +720,11 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
         // contruct a new term
         poly.append_monomial(coeff, &exponents);
 
-        if input.len() == 0 {
+        if input.is_empty() {
             break;
         }
     }
-    if input.len() == 0 {
+    if input.is_empty() {
         (input, poly)
     } else {
         (last_pos, poly)

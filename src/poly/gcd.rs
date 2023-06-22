@@ -154,7 +154,7 @@ fn evaluate_using_exponents<UField: FiniteFieldWorkspace, E: Exponent>(
             new_exp[main_var] = aa.exponents[main_var];
         }
 
-        poly.field.add_mul_assign(&mut c, &aa.coefficient, e);
+        poly.field.add_mul_assign(&mut c, aa.coefficient, e);
     }
 
     if !FiniteField::is_zero(&c) {
@@ -210,7 +210,7 @@ where
             // sample master/(1-s_i) by using the factorized form
             for (j, l) in sample.iter().enumerate() {
                 if j != i {
-                    a.field.mul_assign(&mut norm, &a.field.sub(s, &l))
+                    a.field.mul_assign(&mut norm, &a.field.sub(s, l))
                 }
             }
 
@@ -218,7 +218,7 @@ where
             let mut coeff = a.field.zero();
             let mut last_q = a.field.zero();
             for (m, rhs) in master.iter().skip(1).zip(rhs).rev() {
-                last_q = a.field.add(&m, &a.field.mul(s, &last_q));
+                last_q = a.field.add(m, &a.field.mul(s, &last_q));
                 a.field.add_mul_assign(&mut coeff, &last_q, rhs);
             }
             a.field.div_assign(&mut coeff, &norm);
@@ -254,7 +254,7 @@ where
 {
     if vars.is_empty() {
         // return gcd divided by the single scale factor
-        let g = MultivariatePolynomial::univariate_gcd(&a, &b);
+        let g = MultivariatePolynomial::univariate_gcd(a, b);
 
         if g.ldegree(main_var) < bounds[main_var] {
             // original image and form and degree bounds are unlucky
@@ -281,7 +281,7 @@ where
         let (_, d) = &shape[single_scale];
         for t in &g {
             if t.exponents[main_var] == *d {
-                let scale_factor = a.field.neg(&a.field.inv(&t.coefficient)); // TODO: why -1?
+                let scale_factor = a.field.neg(&a.field.inv(t.coefficient)); // TODO: why -1?
                 return Ok(g.mul_coeff(scale_factor));
             }
         }
@@ -461,7 +461,7 @@ where
             let mut found = false;
             for t in &g {
                 if t.exponents[main_var] == *d {
-                    scale_factor = g.field.div(&coeff, &t.coefficient);
+                    scale_factor = g.field.div(&coeff, t.coefficient);
                     found = true;
                     break;
                 }
@@ -496,7 +496,7 @@ where
                     // find the matching term if it exists
                     for m in g.into_iter() {
                         if m.exponents[main_var] == *exp {
-                            rhs.push(a.field.neg(&a.field.mul(&m.coefficient, &scale_factor)));
+                            rhs.push(a.field.neg(&a.field.mul(m.coefficient, &scale_factor)));
                             continue 'rhs;
                         }
                     }
@@ -719,7 +719,7 @@ where
             let mut found = false;
             for t in &g {
                 if t.exponents[main_var] == *d {
-                    let scale_factor = g.field.inv(&t.coefficient);
+                    let scale_factor = g.field.inv(t.coefficient);
                     g = g.mul_coeff(scale_factor);
                     found = true;
                     break;
@@ -779,7 +779,7 @@ where
 
                     // assume first constant is 1, which will form the rhs of our equation
                     let actual_rhs = a.field.mul(
-                        &rhs_sec,
+                        rhs_sec,
                         &a.field.pow(&row_eval_first[0], sample_index as u64 + 1),
                     );
 
@@ -787,7 +787,7 @@ where
                         gfm.push(
                             a.field.neg(
                                 &a.field
-                                    .mul(&rhs_sec, &a.field.pow(aa, sample_index as u64 + 1)),
+                                    .mul(rhs_sec, &a.field.pow(aa, sample_index as u64 + 1)),
                             ),
                         );
                     }
@@ -855,7 +855,7 @@ where
                     a.field.add_mul_assign(
                         &mut scaling_factor,
                         coeff_eval,
-                        &a.field.pow(&exp_eval, sample_index as u64 + 1),
+                        &a.field.pow(exp_eval, sample_index as u64 + 1),
                     );
                 }
                 lcoeff_cache.push(scaling_factor);
@@ -923,7 +923,7 @@ where
         }
 
         // normalize the gcd
-        let l = d.coefficients.last().unwrap().clone();
+        let l = *d.coefficients.last().unwrap();
         for x in &mut d.coefficients {
             a.field.div_assign(x, &l);
         }
@@ -941,7 +941,7 @@ where
         tm: &mut HashMap<E, <FiniteField<UField> as Ring>::Element>,
     ) -> Self {
         for mv in self.into_iter() {
-            let mut c = mv.coefficient.clone();
+            let mut c = *mv.coefficient;
             for &(n, vv) in r {
                 let exp = mv.exponents[n].to_u32() as usize;
                 if exp > 0 {
@@ -986,7 +986,7 @@ where
         tm: &mut [<FiniteField<UField> as Ring>::Element],
     ) -> MultivariatePolynomial<FiniteField<UField>, E> {
         for mv in self.into_iter() {
-            let mut c = mv.coefficient.clone();
+            let mut c = *mv.coefficient;
             for &(n, vv) in r {
                 let exp = mv.exponents[n].to_u32() as usize;
                 if exp > 0 {
@@ -1011,7 +1011,7 @@ where
         let mut res = MultivariatePolynomial::new(self.nvars, self.field, None, None);
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm.iter_mut().enumerate() {
-            if !FiniteField::<UField>::is_zero(&c) {
+            if !FiniteField::<UField>::is_zero(c) {
                 e[v] = E::from_u32(k as u32);
                 res.append_monomial_back(mem::replace(c, self.field.zero()), &e);
                 e[v] = E::zero();
@@ -1085,7 +1085,7 @@ where
         };
 
         let g1 = MultivariatePolynomial::univariate_gcd(&a1, &b1);
-        return g1.ldegree_max();
+        g1.ldegree_max()
     }
 
     /// Compute the gcd shape of two polynomials in a finite field by filling in random
@@ -1098,12 +1098,12 @@ where
         bounds: &mut [E],       // degree bounds
         tight_bounds: &mut [E], // tighter degree bounds
     ) -> Option<Self> {
-        let lastvar = vars.last().unwrap().clone();
+        let lastvar = *vars.last().unwrap();
 
         // if we are in the univariate case, return the univariate gcd
         // TODO: this is a modification of the algorithm!
         if vars.len() == 1 {
-            let gg = MultivariatePolynomial::univariate_gcd(&a, &b);
+            let gg = MultivariatePolynomial::univariate_gcd(a, b);
             if gg.degree(vars[0]) > bounds[vars[0]] {
                 return None;
             }
@@ -1205,7 +1205,7 @@ where
 
             // In the case of multiple scaling, each sample adds an
             // additional unknown, except for the first
-            if single_scale == None {
+            if single_scale.is_none() {
                 let mut nx1 = (gv.nterms() - 1) / (gfu.len() - 1);
                 if (gv.nterms() - 1) % (gfu.len() - 1) != 0 {
                     nx1 += 1;
@@ -1604,7 +1604,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             content: &MultivariatePolynomial<R, E>,
         ) -> MultivariatePolynomial<R, E> {
             if !content.is_one() {
-                g = g * &content;
+                g = g * content;
             }
 
             if shared_degree.iter().any(|d| *d > E::from_u32(0))
@@ -1618,7 +1618,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                             *v = *v * *d;
                         }
 
-                        *v = *v + *s;
+                        *v += *s;
                     }
                 }
             }
@@ -1908,7 +1908,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                 g = g.add(g_i_2);
 
-                gamma = (gamma - g_i).div_coeff(&xi);
+                gamma = (gamma - g_i).div_coeff(xi);
                 i += 1;
             }
             g
@@ -2040,7 +2040,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
     pub fn gcd_multiple(
         mut f: Vec<MultivariatePolynomial<IntegerRing, E>>,
     ) -> MultivariatePolynomial<IntegerRing, E> {
-        assert!(f.len() > 0);
+        assert!(!f.is_empty());
 
         let mut prime_index = 1; // skip prime 2
 
@@ -2209,7 +2209,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
             // In the case of multiple scaling, each sample adds an
             // additional unknown, except for the first
-            if single_scale == None {
+            if single_scale.is_none() {
                 let mut nx1 = (gp.nterms() - 1) / (gfu.len() - 1);
                 if (gp.nterms() - 1) % (gfu.len() - 1) != 0 {
                     nx1 += 1;
@@ -2353,14 +2353,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 for t in 0..gm.nterms {
                     let gpc = if gm.exponents(t) == gp.exponents(gpi) {
                         gpi += 1;
-                        gp.coefficients[gpi - 1].clone()
+                        gp.coefficients[gpi - 1]
                     } else {
                         ap.field.zero()
                     };
 
                     let gmc = &mut gm.coefficients[t];
                     let coeff = if gmc.is_negative() {
-                        a.field.add(&gmc, &m)
+                        a.field.add(gmc, &m)
                     } else {
                         gmc.clone()
                     };
@@ -2476,7 +2476,7 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         bounds: &mut [E],
         tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<IntegerRing, E> {
-        MultivariatePolynomial::gcd_zippel(&a, &b, vars, bounds, tight_bounds)
+        MultivariatePolynomial::gcd_zippel(a, b, vars, bounds, tight_bounds)
     }
 
     fn get_gcd_var_bounds(
@@ -2635,7 +2635,7 @@ where
         tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<FiniteField<UField>, E> {
         assert!(!a.is_zero() || !b.is_zero());
-        MultivariatePolynomial::gcd_shape_modular(&a, &b, vars, bounds, tight_bounds).unwrap()
+        MultivariatePolynomial::gcd_shape_modular(a, b, vars, bounds, tight_bounds).unwrap()
     }
 
     fn get_gcd_var_bounds(
@@ -2648,7 +2648,7 @@ where
         for var in vars {
             let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
                 vars.iter().filter(|i| *i != var).cloned().collect();
-            tight_bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(&a, &b, &vvars, *var);
+            tight_bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(a, b, &vvars, *var);
         }
         tight_bounds
     }

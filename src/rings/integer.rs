@@ -259,9 +259,9 @@ impl Integer {
         // convert to mixed-radix notation
         let gamma1 = (p1.clone() % p2.clone())
             .invert(&p2)
-            .expect(&format!("Could not invert {} in {}", p1, p2));
+            .unwrap_or_else(|_| panic!("Could not invert {} in {}", p1, p2));
 
-        let v1 = ((n2.clone() - n1.clone()) * gamma1.clone()) % p2.clone();
+        let v1 = ((n2 - n1.clone()) * gamma1) % p2.clone();
 
         // convert to standard representation
         let r = v1 * p1.clone() + n1;
@@ -488,12 +488,10 @@ impl Ring for IntegerRing {
     }
 
     fn get_unit(&self, a: &Self::Element) -> Self::Element {
-        if a > &Integer::zero() {
-            Integer::one()
-        } else if a < &Integer::zero() {
-            Integer::Natural(-1)
-        } else {
-            Integer::zero()
+        match a.cmp(&Integer::zero()) {
+            Ordering::Less => Integer::Natural(-1),
+            Ordering::Equal => Integer::zero(),
+            Ordering::Greater => Integer::one(),
         }
     }
 
@@ -563,16 +561,14 @@ impl EuclideanDomain for IntegerRing {
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         match (a, b) {
             (Integer::Natural(n1), Integer::Natural(n2)) => {
-                Integer::Natural(utils::gcd_signed(*n1 as i64, *n2 as i64))
+                Integer::Natural(utils::gcd_signed(*n1, *n2))
             }
             (Integer::Natural(n1), Integer::Large(r2))
             | (Integer::Large(r2), Integer::Natural(n1)) => {
                 let r1 = ArbitraryPrecisionInteger::from(*n1);
-                Integer::from_large(ArbitraryPrecisionInteger::from(r1.clone().gcd(r2)))
+                Integer::from_large(r1.gcd(r2))
             }
-            (Integer::Large(r1), Integer::Large(r2)) => {
-                Integer::from_large(ArbitraryPrecisionInteger::from(r1.clone().gcd(r2)))
-            }
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large(r1.clone().gcd(r2)),
         }
     }
 }
@@ -653,7 +649,7 @@ impl<'a, 'b> Div<&'b Integer> for &'a Integer {
     }
 }
 
-impl<'a, 'b> Add<i64> for &'a Integer {
+impl<'a> Add<i64> for &'a Integer {
     type Output = Integer;
 
     fn add(self, rhs: i64) -> Integer {
@@ -670,7 +666,7 @@ impl<'a, 'b> Add<i64> for &'a Integer {
     }
 }
 
-impl<'a, 'b> Sub<i64> for &'a Integer {
+impl<'a> Sub<i64> for &'a Integer {
     type Output = Integer;
 
     fn sub(self, rhs: i64) -> Integer {
@@ -687,7 +683,7 @@ impl<'a, 'b> Sub<i64> for &'a Integer {
     }
 }
 
-impl<'a, 'b> Mul<i64> for &'a Integer {
+impl<'a> Mul<i64> for &'a Integer {
     type Output = Integer;
 
     fn mul(self, rhs: i64) -> Integer {
@@ -704,7 +700,7 @@ impl<'a, 'b> Mul<i64> for &'a Integer {
     }
 }
 
-impl<'a, 'b> Div<i64> for &'a Integer {
+impl<'a> Div<i64> for &'a Integer {
     type Output = Integer;
 
     fn div(self, rhs: i64) -> Integer {
@@ -869,14 +865,14 @@ impl<'a> DivAssign<&'a Integer> for Integer {
     }
 }
 
-impl<'a> MulAssign<i64> for Integer {
+impl MulAssign<i64> for Integer {
     #[inline]
     fn mul_assign(&mut self, rhs: i64) {
         *self = (&*self) * rhs;
     }
 }
 
-impl<'a> DivAssign<i64> for Integer {
+impl DivAssign<i64> for Integer {
     #[inline]
     fn div_assign(&mut self, rhs: i64) {
         *self = (&*self) / rhs;

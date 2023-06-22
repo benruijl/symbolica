@@ -260,7 +260,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
 impl<'a, A: Mul<'a>> FormattedPrintMul for A {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut first = true;
-        for x in self.into_iter() {
+        for x in self.iter() {
             if !first {
                 f.write_char('*')?;
             }
@@ -286,7 +286,7 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
     ) -> fmt::Result {
         let mut first = true;
         print_state.level += 1;
-        for x in self.into_iter() {
+        for x in self.iter() {
             if !first {
                 f.write_char('*')?;
             }
@@ -317,7 +317,7 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
 
         print_state.level += 1;
         let mut first = true;
-        for x in self.into_iter() {
+        for x in self.iter() {
             if !first {
                 f.write_char(',')?;
             }
@@ -333,7 +333,7 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         f.write_fmt(format_args!("f_{}(", self.get_name().to_u32()))?;
 
         let mut first = true;
-        for x in self.into_iter() {
+        for x in self.iter() {
             if !first {
                 f.write_char(',')?;
             }
@@ -410,7 +410,7 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
     ) -> fmt::Result {
         let mut first = true;
         print_state.level += 1;
-        for x in self.into_iter() {
+        for x in self.iter() {
             if !first {
                 if print_state.level == 1 && print_mode.get_terms_on_new_line() {
                     f.write_char('\n')?;
@@ -432,7 +432,7 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut first = true;
-        for x in self.into_iter() {
+        for x in self.iter() {
             if !first {
                 f.write_char('+')?;
             }
@@ -605,7 +605,7 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, '
         let mut is_first_term = true;
         for monomial in self.poly {
             let mut is_first_factor = true;
-            if self.poly.field.is_one(&monomial.coefficient) {
+            if self.poly.field.is_one(monomial.coefficient) {
                 if !is_first_term {
                     write!(f, "+")?;
                 }
@@ -623,7 +623,7 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, '
                         "{:+}",
                         RingPrinter {
                             ring: &self.poly.field,
-                            element: &monomial.coefficient
+                            element: monomial.coefficient
                         }
                     )?;
                 }

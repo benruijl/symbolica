@@ -147,8 +147,8 @@ impl Ring for RationalField {
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         match (a, b) {
             (Rational::Natural(n1, d1), Rational::Natural(n2, d2)) => {
-                let gcd1 = utils::gcd_signed(*n1 as i64, *d2 as i64);
-                let gcd2 = utils::gcd_signed(*d1 as i64, *n2 as i64);
+                let gcd1 = utils::gcd_signed(*n1, *d2);
+                let gcd2 = utils::gcd_signed(*d1, *n2);
 
                 match (n2 / gcd2).checked_mul(n1 / gcd1) {
                     Some(nn) => match (d1 / gcd2).checked_mul(d2 / gcd1) {
@@ -287,8 +287,8 @@ impl EuclideanDomain for RationalField {
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         match (a, b) {
             (Rational::Natural(n1, d1), Rational::Natural(n2, d2)) => {
-                let gcd_num = utils::gcd_signed(*n1 as i64, *n2 as i64);
-                let gcd_den = utils::gcd_signed(*d1 as i64, *d2 as i64);
+                let gcd_num = utils::gcd_signed(*n1, *n2);
+                let gcd_den = utils::gcd_signed(*d1, *d2);
 
                 if let Some(lcm) = d2.checked_mul(d1 / gcd_den) {
                     Rational::Natural(gcd_num, lcm)
@@ -336,7 +336,7 @@ impl Field for RationalField {
                     if let Some(neg) = d.checked_neg() {
                         Rational::Natural(neg, -n)
                     } else {
-                        Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).clone().recip())
+                        Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).recip())
                     }
                 } else {
                     Rational::Natural(*d, *n)

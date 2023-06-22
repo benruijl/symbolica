@@ -43,7 +43,7 @@ fn main() {
 
     buffer.clear();
     while let Ok(n) = stdin.read_line(&mut buffer) {
-        if n == 0 || buffer.starts_with("\n") || buffer.starts_with("&q") {
+        if n == 0 || buffer.starts_with('\n') || buffer.starts_with("&q") {
             break;
         }
 

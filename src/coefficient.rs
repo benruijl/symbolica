@@ -40,7 +40,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             r.numerator.var_map = Some(vars.into());
                             r.denominator.var_map = Some(vars.into());
                             out.transform_to_num()
-                                .from_number(Number::RationalPolynomial(r));
+                                .set_from_number(Number::RationalPolynomial(r));
                             true
                         } else {
                             let mut n1 = workspace.new_atom();
@@ -60,9 +60,9 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             // create n1/n2
                             let mut n3 = workspace.new_atom();
                             let mut exp = workspace.new_atom();
-                            exp.transform_to_num().from_number(Number::Natural(-1, 1));
+                            exp.transform_to_num().set_from_number(Number::Natural(-1, 1));
                             let n3p = n3.transform_to_pow();
-                            n3p.from_base_and_exp(n2_conv.to_view(), exp.to_view());
+                            n3p.set_from_base_and_exp(n2_conv.to_view(), exp.to_view());
                             n3p.set_dirty(true);
 
                             let mut m = workspace.new_atom();
@@ -98,7 +98,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     let den = MultivariatePolynomial::new_from_constant(&poly, Integer::one());
 
                     out.transform_to_num()
-                        .from_number(Number::RationalPolynomial(RationalPolynomial {
+                        .set_from_number(Number::RationalPolynomial(RationalPolynomial {
                             numerator: poly,
                             denominator: den,
                         }));
@@ -115,7 +115,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 if base.set_coefficient_ring(vars, state, workspace, &mut nb) {
                     let mut o = workspace.new_atom();
                     let pow = o.transform_to_pow();
-                    pow.from_base_and_exp(nb.to_view(), exp);
+                    pow.set_from_base_and_exp(nb.to_view(), exp);
                     pow.set_dirty(true);
 
                     o.to_view().normalize(workspace, state, out);
@@ -132,7 +132,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 let mut changed = false;
 
                 let mut arg_o = workspace.new_atom();
-                for arg in m.into_iter() {
+                for arg in m.iter() {
                     arg_o.reset();
 
                     changed |= arg.set_coefficient_ring(vars, state, workspace, &mut arg_o);
@@ -156,7 +156,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 let mut changed = false;
 
                 let mut arg_o = workspace.new_atom();
-                for arg in a.into_iter() {
+                for arg in a.iter() {
                     arg_o.reset();
 
                     changed |= arg.set_coefficient_ring(vars, state, workspace, &mut arg_o);

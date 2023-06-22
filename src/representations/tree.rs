@@ -1,6 +1,6 @@
 use std::mem::size_of;
 
-use super::{Identifier, number::Number};
+use super::{number::Number, Identifier};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AtomTree {

@@ -34,7 +34,7 @@ pub trait FiniteFieldWorkspace: Clone + Copy + Display + Eq + Hash {
 }
 
 pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
-    fn new(p: UField) -> FiniteField<UField>;
+    fn new(p: UField) -> Self;
     fn get_prime(&self) -> UField;
     /// Convert a number in a prime field a % n to Montgomory form.
     fn to_element(&self, a: UField) -> Self::Element;
@@ -282,7 +282,7 @@ impl Field for FiniteField<u32> {
         // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
         let x_mont = self
             .mul(
-                &self.mul(&a, &FiniteFieldElement(1)),
+                &self.mul(a, &FiniteFieldElement(1)),
                 &FiniteFieldElement(1),
             )
             .0;
@@ -553,7 +553,7 @@ impl Field for FiniteField<u64> {
         // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
         let x_mont = self
             .mul(
-                &self.mul(&a, &FiniteFieldElement(1)),
+                &self.mul(a, &FiniteFieldElement(1)),
                 &FiniteFieldElement(1),
             )
             .0;

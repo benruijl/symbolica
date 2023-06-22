@@ -22,13 +22,7 @@ fn main() {
         state.get_or_insert_var("x_"),
         vec![PatternRestriction::Filter(Box::new(
             |v: &Match<DefaultRepresentation>| match v {
-                Match::Single(v) => {
-                    if let AtomView::Num(n) = v {
-                        !n.is_one() && !n.is_zero()
-                    } else {
-                        false
-                    }
-                }
+                Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
                 _ => false,
             },
         ))],

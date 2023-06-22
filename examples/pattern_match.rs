@@ -62,7 +62,7 @@ fn main() {
                     print!("Fn {}", state.get_name(*f).unwrap())
                 }
             }
-            println!("");
+            println!();
         }
     }
 }

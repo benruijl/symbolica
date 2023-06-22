@@ -356,7 +356,7 @@ where
         poly.denominator = poly.denominator.add_monomial(self.ring.one());
 
         for _ in 0..e {
-            poly = self.mul(&poly, &b);
+            poly = self.mul(&poly, b);
         }
         poly
     }
@@ -519,17 +519,15 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Mul<&'a Rationa
                     denominator: (&self.denominator / &gcd2) * &other.denominator,
                 }
             }
+        } else if gcd2.is_one() {
+            RationalPolynomial {
+                numerator: (&self.numerator / &gcd1) * &other.numerator,
+                denominator: &self.denominator * &(&other.denominator / &gcd1),
+            }
         } else {
-            if gcd2.is_one() {
-                RationalPolynomial {
-                    numerator: (&self.numerator / &gcd1) * &other.numerator,
-                    denominator: &self.denominator * &(&other.denominator / &gcd1),
-                }
-            } else {
-                RationalPolynomial {
-                    numerator: (&self.numerator / &gcd1) * &(&other.numerator / &gcd2),
-                    denominator: (&self.denominator / &gcd2) * &(&other.denominator / &gcd1),
-                }
+            RationalPolynomial {
+                numerator: (&self.numerator / &gcd1) * &(&other.numerator / &gcd2),
+                denominator: (&self.denominator / &gcd2) * &(&other.denominator / &gcd1),
             }
         }
     }

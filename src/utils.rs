@@ -1,6 +1,6 @@
 use smallvec::SmallVec;
 
-pub unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+pub(crate) unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     std::slice::from_raw_parts((p as *const T) as *const u8, std::mem::size_of::<T>())
 }
 
@@ -40,8 +40,8 @@ impl CombinationIterator {
         }
     }
 
-    pub fn next<'a>(&'a mut self) -> Option<&'a [u32]> {
-        if self.indices.len() == 0 {
+    pub fn next(&mut self) -> Option<&[u32]> {
+        if self.indices.is_empty() {
             return None;
         }
 

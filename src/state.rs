@@ -1,4 +1,7 @@
-use std::{cell::RefCell, ops::{Deref, DerefMut}};
+use std::{
+    cell::RefCell,
+    ops::{Deref, DerefMut},
+};
 
 use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
@@ -53,7 +56,7 @@ impl State {
     }
 
     pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteField<u64> {
-        &self.finite_fields[fi.0 as usize]
+        &self.finite_fields[fi.0]
     }
 
     pub fn get_or_insert_finite_field(&mut self, f: FiniteField<u64>) -> FiniteFieldIndex {

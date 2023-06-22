@@ -3,8 +3,11 @@ use symbolica::{
     id::{Match, Pattern, PatternAtomTreeIterator, PatternRestriction},
     parser::parse,
     printer::AtomPrinter,
-    representations::{default::DefaultRepresentation, OwnedAtom, AtomView, number::BorrowedNumber, Num},
-    state::{State, Workspace}, rings::finite_field,
+    representations::{
+        default::DefaultRepresentation, number::BorrowedNumber, AtomView, Num, OwnedAtom,
+    },
+    rings::finite_field,
+    state::{State, Workspace},
 };
 fn main() {
     let mut state = State::new();
@@ -50,13 +53,9 @@ fn main() {
         state.get_or_insert_var("z_"),
         vec![PatternRestriction::Filter(Box::new(
             |x: &Match<DefaultRepresentation>| {
-                if let Match::Single(s) = x {
-                    if let AtomView::Num(num) = s {
-                        if let BorrowedNumber::Natural(x, y) = num.get_number_view() {
-                            y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
-                        } else {
-                            false
-                        }
+                if let Match::Single(AtomView::Num(num)) = x {
+                    if let BorrowedNumber::Natural(x, y) = num.get_number_view() {
+                        y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
                     } else {
                         false
                     }
@@ -101,7 +100,7 @@ fn main() {
                     print!("Fn {}", state.get_name(*f).unwrap())
                 }
             }
-            println!("");
+            println!();
         }
     }
 }

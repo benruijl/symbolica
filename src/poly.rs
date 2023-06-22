@@ -301,7 +301,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                                 Err("Rational polynomial not supported in conversion routine")
                             }
                         },
-                        _ => return Err("base must be a variable"),
+                        _ => Err("base must be a variable"),
                     }
                 }
                 AtomView::Add(_) => Err("Expression may not contain subexpressions"),
@@ -316,7 +316,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
         ) -> Result<(), &'static str> {
             match term {
                 AtomView::Mul(m) => {
-                    for factor in m.into_iter() {
+                    for factor in m.iter() {
                         check_factor(&factor, vars, allow_new_vars)?;
                     }
                     Ok(())
@@ -331,7 +331,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
         let mut n_terms = 0;
         match self {
             AtomView::Add(a) => {
-                for term in a.into_iter() {
+                for term in a.iter() {
                     check_term(&term, &mut vars, var_map.is_none())?;
                     n_terms += 1;
                 }
@@ -353,7 +353,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 AtomView::Num(n) => {
                     field.mul_assign(
                         coefficient,
-                        &field.from_borrowed_number(n.get_number_view()),
+                        &field.element_from_borrowed_number(n.get_number_view()),
                     );
                 }
                 AtomView::Var(v) => {
@@ -399,7 +399,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
             match term {
                 AtomView::Mul(m) => {
-                    for factor in m.into_iter() {
+                    for factor in m.iter() {
                         parse_factor(&factor, vars, &mut coefficient, &mut exponents, field);
                     }
                 }
@@ -414,7 +414,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
         match self {
             AtomView::Add(a) => {
-                for term in a.into_iter() {
+                for term in a.iter() {
                     parse_term(&term, &vars, &mut poly, field);
                 }
             }
@@ -465,7 +465,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                         if nn != -1 && nn != 1 {
                             let mut h = workspace.new_atom();
-                            if !self.expand(workspace, state, &mut h.get_mut()) {
+                            if !self.expand(workspace, state, h.get_mut()) {
                                 // expansion did not change the input, so we are in a case of x^-3 or x^3
                                 let r = base.to_rational_polynomial(
                                     workspace, state, field, out_field, var_map,
@@ -501,7 +501,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
             AtomView::Mul(m) => {
                 let mut r = RationalPolynomial::new(out_field, var_map);
                 r.numerator = r.numerator.add_monomial(out_field.one());
-                for arg in m.into_iter() {
+                for arg in m.iter() {
                     let mut arg_r =
                         arg.to_rational_polynomial(workspace, state, field, out_field, var_map)?;
                     r.unify_var_map(&mut arg_r);
@@ -511,13 +511,13 @@ impl<'a, P: Atom> AtomView<'a, P> {
             }
             AtomView::Add(a) => {
                 let mut r = RationalPolynomial::new(out_field, var_map);
-                for arg in a.into_iter() {
+                for arg in a.iter() {
                     let mut arg_r =
                         arg.to_rational_polynomial(workspace, state, field, out_field, var_map)?;
                     r.unify_var_map(&mut arg_r);
                     r = &r + &arg_r;
                 }
-                return Ok(r);
+                Ok(r)
             }
         }
     }
@@ -545,16 +545,16 @@ impl<P: Atom> OwnedAtom<P> {
                 if pow > E::zero() {
                     let mut var_h = workspace.new_atom();
                     let var = var_h.transform_to_var();
-                    var.from_id(var_id);
+                    var.set_from_id(var_id);
 
                     if pow > E::one() {
                         let mut num_h = workspace.new_atom();
                         let num = num_h.transform_to_num();
-                        num.from_number(Number::Natural(pow.to_u32() as i64, 1));
+                        num.set_from_number(Number::Natural(pow.to_u32() as i64, 1));
 
                         let mut pow_h = workspace.new_atom();
                         let pow = pow_h.transform_to_pow();
-                        pow.from_base_and_exp(var_h.get().to_view(), num_h.get().to_view());
+                        pow.set_from_base_and_exp(var_h.get().to_view(), num_h.get().to_view());
                         mul.extend(pow_h.get().to_view());
                     } else {
                         mul.extend(var_h.get().to_view());
@@ -565,10 +565,10 @@ impl<P: Atom> OwnedAtom<P> {
             let mut num_h = workspace.new_atom();
             let num = num_h.transform_to_num();
             let number = match monomial.coefficient {
-                Integer::Natural(n) => Number::Natural(*n as i64, 1),
+                Integer::Natural(n) => Number::Natural(*n, 1),
                 Integer::Large(r) => Number::Large(r.into()),
             };
-            num.from_number(number);
+            num.set_from_number(number);
             mul.extend(num_h.get().to_view());
             mul.set_dirty(true);
 
@@ -577,7 +577,7 @@ impl<P: Atom> OwnedAtom<P> {
         add.set_dirty(true);
 
         let mut norm = workspace.new_atom();
-        self.to_view().normalize(&workspace, &state, &mut norm);
+        self.to_view().normalize(workspace, state, &mut norm);
         std::mem::swap(norm.get_mut(), self);
     }
 }
@@ -599,12 +599,12 @@ impl Token {
             match factor {
                 Token::Number(n) => {
                     let num = if let Ok(x) = n.parse::<i64>() {
-                        field.from_number(Number::Natural(x, 1))
+                        field.element_from_number(Number::Natural(x, 1))
                     } else {
                         match ArbitraryPrecisionInteger::parse(n) {
                             Ok(x) => {
                                 let p = x.complete().into();
-                                field.from_number(Number::Large(p))
+                                field.element_from_number(Number::Large(p))
                             }
                             Err(e) => Err(format!("Could not parse number: {}", e))?,
                         }
@@ -643,7 +643,7 @@ impl Token {
                             } else {
                                 match ArbitraryPrecisionInteger::parse(n) {
                                     Ok(x) => {
-                                        let p: ArbitraryPrecisionInteger = x.complete().into();
+                                        let p: ArbitraryPrecisionInteger = x.complete();
                                         let exp = p.to_u32().ok_or("Cannot convert to u32")?;
                                         exponents[var_index] += E::from_u32(exp);
                                     }
@@ -673,7 +673,7 @@ impl Token {
                 Token::Op(_, _, Operator::Mul, args) => {
                     for factor in args {
                         parse_factor(
-                            &factor,
+                            factor,
                             var_name_map,
                             &mut coefficient,
                             &mut exponents,
@@ -692,7 +692,7 @@ impl Token {
                         Token::Op(_, _, Operator::Mul, args) => {
                             for factor in args {
                                 parse_factor(
-                                    &factor,
+                                    factor,
                                     var_name_map,
                                     &mut coefficient,
                                     &mut exponents,
@@ -722,11 +722,11 @@ impl Token {
                     var_map.len(),
                     field,
                     Some(args.len()),
-                    Some(var_map.into()),
+                    Some(var_map),
                 );
 
                 for term in args {
-                    parse_term(&term, &var_name_map, &mut poly, field)?;
+                    parse_term(term, var_name_map, &mut poly, field)?;
                 }
                 Ok(poly)
             }
@@ -735,9 +735,9 @@ impl Token {
                     var_map.len(),
                     field,
                     Some(1),
-                    Some(var_map.into()),
+                    Some(var_map),
                 );
-                parse_term(self, &var_name_map, &mut poly, field)?;
+                parse_term(self, var_name_map, &mut poly, field)?;
                 Ok(poly)
             }
         }
@@ -861,7 +861,7 @@ impl Token {
                     r.unify_var_map(&mut arg_r);
                     r = &r + &arg_r;
                 }
-                return Ok(r);
+                Ok(r)
             }
             Token::Op(_, _, Operator::Neg, args) => {
                 let r = args[0].to_rational_polynomial(
@@ -873,7 +873,7 @@ impl Token {
                     var_name_map,
                 )?;
 
-                return Ok(r.neg());
+                Ok(r.neg())
             }
             _ => {
                 let atom = self.to_atom(state, workspace)?;

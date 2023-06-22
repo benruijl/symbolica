@@ -67,36 +67,36 @@ pub trait Convert<P: Atom> {
 pub trait OwnedNum: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
-    fn from_number(&mut self, num: Number);
-    fn from_view(&mut self, a: &<Self::P as Atom>::N<'_>);
-    fn add<'a>(&mut self, other: &<Self::P as Atom>::N<'a>, state: &State);
-    fn mul<'a>(&mut self, other: &<Self::P as Atom>::N<'a>, state: &State);
-    fn to_num_view<'a>(&'a self) -> <Self::P as Atom>::N<'a>;
+    fn set_from_number(&mut self, num: Number);
+    fn set_from_view(&mut self, a: &<Self::P as Atom>::N<'_>);
+    fn add(&mut self, other: &<Self::P as Atom>::N<'_>, state: &State);
+    fn mul(&mut self, other: &<Self::P as Atom>::N<'_>, state: &State);
+    fn to_num_view(&self) -> <Self::P as Atom>::N<'_>;
 }
 
 pub trait OwnedVar: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
-    fn from_id(&mut self, id: Identifier);
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::V<'a>);
-    fn to_var_view<'a>(&'a self) -> <Self::P as Atom>::V<'a>;
+    fn set_from_id(&mut self, id: Identifier);
+    fn set_from_view(&mut self, view: &<Self::P as Atom>::V<'_>);
+    fn to_var_view(&self) -> <Self::P as Atom>::V<'_>;
 }
 
 pub trait OwnedFun: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::F<'a>);
-    fn from_name(&mut self, id: Identifier);
+    fn set_from_view(&mut self, view: &<Self::P as Atom>::F<'_>);
+    fn set_from_name(&mut self, id: Identifier);
     fn set_dirty(&mut self, dirty: bool);
     fn add_arg(&mut self, other: AtomView<Self::P>);
-    fn to_fun_view<'a>(&'a self) -> <Self::P as Atom>::F<'a>;
+    fn to_fun_view(&self) -> <Self::P as Atom>::F<'_>;
 }
 
 pub trait OwnedPow: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::P<'a>);
-    fn from_base_and_exp(&mut self, base: AtomView<'_, Self::P>, exp: AtomView<'_, Self::P>);
+    fn set_from_view(&mut self, view: &<Self::P as Atom>::P<'_>);
+    fn set_from_base_and_exp(&mut self, base: AtomView<'_, Self::P>, exp: AtomView<'_, Self::P>);
     fn set_dirty(&mut self, dirty: bool);
     fn to_pow_view(&self) -> <Self::P as Atom>::P<'_>;
 }
@@ -105,19 +105,19 @@ pub trait OwnedMul: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_dirty(&mut self, dirty: bool);
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::M<'a>);
+    fn set_from_view(&mut self, view: &<Self::P as Atom>::M<'_>);
     fn extend(&mut self, other: AtomView<Self::P>);
     fn replace_last(&mut self, other: AtomView<Self::P>);
-    fn to_mul_view<'a>(&'a self) -> <Self::P as Atom>::M<'a>;
+    fn to_mul_view(&self) -> <Self::P as Atom>::M<'_>;
 }
 
 pub trait OwnedAdd: Clone + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_dirty(&mut self, dirty: bool);
-    fn from_view<'a>(&mut self, view: &<Self::P as Atom>::A<'a>);
+    fn set_from_view(&mut self, view: &<Self::P as Atom>::A<'_>);
     fn extend(&mut self, other: AtomView<Self::P>);
-    fn to_add_view<'a>(&'a self) -> <Self::P as Atom>::A<'a>;
+    fn to_add_view(&self) -> <Self::P as Atom>::A<'_>;
 }
 
 pub trait Num<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
@@ -145,7 +145,7 @@ pub trait Fun<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::F<'b>> {
     fn get_nargs(&self) -> usize;
     fn is_dirty(&self) -> bool;
     fn cmp(&self, other: &Self) -> Ordering;
-    fn into_iter(&self) -> Self::I;
+    fn iter(&self) -> Self::I;
     fn to_view(&self) -> AtomView<'a, Self::P>;
     fn to_slice(&self) -> <Self::P as Atom>::S<'a>;
 }
@@ -169,7 +169,7 @@ pub trait Mul<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
 
     fn is_dirty(&self) -> bool;
     fn get_nargs(&self) -> usize;
-    fn into_iter(&self) -> Self::I;
+    fn iter(&self) -> Self::I;
     fn to_view(&self) -> AtomView<'a, Self::P>;
     fn to_slice(&self) -> <Self::P as Atom>::S<'a>;
 }
@@ -180,7 +180,7 @@ pub trait Add<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::A<'b>> {
 
     fn is_dirty(&self) -> bool;
     fn get_nargs(&self) -> usize;
-    fn into_iter(&self) -> Self::I;
+    fn iter(&self) -> Self::I;
     fn to_view(&self) -> AtomView<'a, Self::P>;
     fn to_slice(&self) -> <Self::P as Atom>::S<'a>;
 }
@@ -199,7 +199,7 @@ pub trait ListSlice<'a>: Clone {
     type P: Atom;
     type ListSliceIterator: Iterator<Item = AtomView<'a, Self::P>>;
 
-    fn into_iter(&self) -> Self::ListSliceIterator;
+    fn iter(&self) -> Self::ListSliceIterator;
     fn from_one(view: AtomView<'a, Self::P>) -> Self;
     fn get_type(&self) -> SliceType;
     fn len(&self) -> usize;
@@ -220,12 +220,12 @@ pub enum AtomView<'a, P: Atom> {
 impl<'a, P: Atom> Clone for AtomView<'a, P> {
     fn clone(&self) -> Self {
         match self {
-            Self::Num(arg0) => Self::Num(arg0.clone()),
-            Self::Var(arg0) => Self::Var(arg0.clone()),
-            Self::Fun(arg0) => Self::Fun(arg0.clone()),
-            Self::Pow(arg0) => Self::Pow(arg0.clone()),
-            Self::Mul(arg0) => Self::Mul(arg0.clone()),
-            Self::Add(arg0) => Self::Add(arg0.clone()),
+            Self::Num(arg0) => Self::Num(*arg0),
+            Self::Var(arg0) => Self::Var(*arg0),
+            Self::Fun(arg0) => Self::Fun(*arg0),
+            Self::Pow(arg0) => Self::Pow(*arg0),
+            Self::Mul(arg0) => Self::Mul(*arg0),
+            Self::Add(arg0) => Self::Add(*arg0),
         }
     }
 }
@@ -407,32 +407,32 @@ impl<P: Atom> OwnedAtom<P> {
         match view {
             AtomView::Num(n) => {
                 let num = self.transform_to_num();
-                num.from_view(n);
+                num.set_from_view(n);
             }
             AtomView::Var(v) => {
                 let var = self.transform_to_var();
-                var.from_view(v);
+                var.set_from_view(v);
             }
             AtomView::Fun(f) => {
                 let fun = self.transform_to_fun();
-                fun.from_view(f);
+                fun.set_from_view(f);
             }
             AtomView::Pow(p) => {
                 let pow = self.transform_to_pow();
-                pow.from_view(p);
+                pow.set_from_view(p);
             }
             AtomView::Mul(m) => {
                 let mul = self.transform_to_mul();
-                mul.from_view(m);
+                mul.set_from_view(m);
             }
             AtomView::Add(a) => {
                 let add = self.transform_to_add();
-                add.from_view(a);
+                add.set_from_view(a);
             }
         }
     }
 
-    pub fn to_view<'a>(&'a self) -> AtomView<'a, P> {
+    pub fn to_view(&self) -> AtomView<'_, P> {
         match self {
             OwnedAtom::Num(n) => AtomView::Num(n.to_num_view()),
             OwnedAtom::Var(v) => AtomView::Var(v.to_var_view()),

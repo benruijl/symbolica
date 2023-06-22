@@ -17,7 +17,7 @@ use crate::{
     state::{State, Workspace},
 };
 
-pub struct LocalState {
+struct LocalState {
     buffer: String,
     var_map: Vec<Identifier>,
     var_name_map: Vec<SmartString<LazyCompact>>,
@@ -25,7 +25,7 @@ pub struct LocalState {
     exp_fits_in_u8: bool,
 }
 
-pub struct Symbolica {
+struct Symbolica {
     state: State,
     workspace: Workspace<DefaultRepresentation>,
     local_state: LocalState,
@@ -33,7 +33,7 @@ pub struct Symbolica {
 
 /// Create a new Symbolica handle.
 #[no_mangle]
-pub extern "C" fn init() -> *mut Symbolica {
+unsafe extern "C" fn init() -> *mut Symbolica {
     let s = Symbolica {
         state: State::new(),
         workspace: Workspace::new(),
@@ -45,12 +45,12 @@ pub extern "C" fn init() -> *mut Symbolica {
             exp_fits_in_u8: true,
         },
     };
-    let p = Box::into_raw(Box::new(s));
-    p
+
+    Box::into_raw(Box::new(s))
 }
 
 #[no_mangle]
-pub extern "C" fn set_options(
+unsafe extern "C" fn set_options(
     symbolica: *mut Symbolica,
     input_has_rational_numbers: bool,
     exp_fits_in_u8: bool,
@@ -62,7 +62,7 @@ pub extern "C" fn set_options(
 }
 
 #[no_mangle]
-pub extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
+unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
     let c = unsafe { CStr::from_ptr(vars) };
     let cstr = c.to_str().unwrap();
 
@@ -82,7 +82,7 @@ pub extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
 /// Simplify a rational polynomial. The return value is only valid until the next call to
 /// `simplify`.
 #[no_mangle]
-pub extern "C" fn simplify(
+unsafe extern "C" fn simplify(
     symbolica: *mut Symbolica,
     input: *const c_char,
     prime: c_ulonglong,
@@ -204,6 +204,6 @@ pub extern "C" fn simplify(
 
 /// Free the Symbolica handle.
 #[no_mangle]
-pub unsafe extern "C" fn drop(symbolica: *mut Symbolica) {
+unsafe extern "C" fn drop(symbolica: *mut Symbolica) {
     let _ = Box::from_raw(symbolica);
 }

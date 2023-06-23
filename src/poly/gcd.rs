@@ -409,7 +409,7 @@ where
             evaluate_using_exponents(a, &a_current, main_var, &mut a_poly);
             evaluate_using_exponents(b, &b_current, main_var, &mut b_poly);
 
-            if a_poly.ldegree(main_var) != a_ldegree && a_poly.ldegree(main_var) != b_ldegree {
+            if a_poly.ldegree(main_var) != a_ldegree || b_poly.ldegree(main_var) != b_ldegree {
                 continue 'find_root_sample;
             }
 
@@ -558,6 +558,8 @@ where
     let mut shape_map: Vec<_> = (0..shape.len()).collect();
     shape_map.sort_unstable_by_key(|i| shape[*i].0.nterms);
 
+    let mut scaling_var_relations: Vec<Vec<<FiniteField<UField> as Ring>::Element>> = vec![];
+
     let max_terms = shape[*shape_map.last().unwrap()].0.nterms;
 
     // find a set of sample points that yield unique coefficients for every coefficient of a term in the shape
@@ -668,7 +670,7 @@ where
             evaluate_using_exponents(a, &a_current, main_var, &mut a_poly);
             evaluate_using_exponents(b, &b_current, main_var, &mut b_poly);
 
-            if a_poly.ldegree(main_var) != a_ldegree && a_poly.ldegree(main_var) != b_ldegree {
+            if a_poly.ldegree(main_var) != a_ldegree || b_poly.ldegree(main_var) != b_ldegree {
                 continue 'find_root_sample;
             }
 
@@ -764,13 +766,14 @@ where
                 let vars_scale = shape[shape_map[0]].0.nterms - 1;
                 let vars_second = shape[shape_map[second_index]].0.nterms;
                 let samples_needed = vars_scale + vars_second;
+                let rows = samples_needed + scaling_var_relations.len();
 
                 if sample_index + 1 < samples_needed {
                     break; // obtain more samples
                 }
 
-                let mut gfm = SmallVec::with_capacity(samples_needed * samples_needed);
-                let mut new_rhs = SmallVec::with_capacity(samples_needed);
+                let mut gfm = SmallVec::with_capacity(rows * samples_needed);
+                let mut new_rhs = SmallVec::with_capacity(rows);
 
                 for sample_index in 0..samples_needed {
                     let rhs_sec = &samples[shape_map[second_index]][sample_index];
@@ -783,6 +786,11 @@ where
                         &a.field.pow(&row_eval_first[0], sample_index as u64 + 1),
                     );
 
+                    for aa in row_eval_sec {
+                        gfm.push(a.field.pow(aa, sample_index as u64 + 1));
+                    }
+
+                    // place the scaling term variables at the end
                     for aa in &row_eval_first[1..] {
                         gfm.push(
                             a.field.neg(
@@ -792,21 +800,29 @@ where
                         );
                     }
 
-                    for aa in row_eval_sec {
-                        gfm.push(a.field.pow(aa, sample_index as u64 + 1));
-                    }
-
                     new_rhs.push(actual_rhs);
                 }
 
-                // bring each subsystem to upper triangular form
+                // add extra relations between the scaling term variables coming from previous tries
+                // that yielded underdetermined systems
+                for extra_relations in &scaling_var_relations {
+                    for _ in 0..vars_second {
+                        gfm.push(a.field.zero());
+                    }
+
+                    for v in &extra_relations[..vars_scale] {
+                        gfm.push(*v);
+                    }
+                    new_rhs.push(*extra_relations.last().unwrap());
+                }
+
                 let m = Matrix {
-                    shape: (samples_needed as u32, samples_needed as u32),
+                    shape: (rows as u32, samples_needed as u32),
                     data: gfm,
                     field: a.field,
                 };
                 let rhs = Matrix {
-                    shape: (samples_needed as u32, 1),
+                    shape: (rows as u32, 1),
                     data: new_rhs,
                     field: a.field,
                 };
@@ -817,21 +833,40 @@ where
                             "Solved with {} and {} term",
                             shape[shape_map[0]].0, shape[shape_map[second_index]].0
                         );
+
+                        let mut r = r.data;
+                        r.drain(0..vars_second);
                         solved_coeff = Some(r);
                     }
-                    Err(LinearSolverError::Underdetermined { .. }) => {
-                        debug!("Underdetermined system: trying next index");
+                    Err(LinearSolverError::Underdetermined {
+                        row_reduced_matrix, ..
+                    }) => {
+                        // extract relations between the variables in the scaling term from the row reduced augmented matrix
+                        let mat = row_reduced_matrix.expect("Row reduced matrix missing");
+
                         debug!(
-                            "Underdetermined system {} and {} term",
-                            shape[shape_map[0]].0, shape[shape_map[second_index]].0
+                            "Underdetermined system {} and {} term; row reduction={}, rhs={}",
+                            shape[shape_map[0]].0, shape[shape_map[second_index]].0, mat, rhs
                         );
+
+                        for x in mat.row_iter() {
+                            if x[..vars_second]
+                                .iter()
+                                .all(|y| FiniteField::<UField>::is_zero(y))
+                                && x.iter().any(|y| !FiniteField::<UField>::is_zero(y))
+                            {
+                                scaling_var_relations.push(x[vars_second..].to_vec());
+                            }
+                        }
 
                         second_index += 1;
                         if second_index == shape.len() {
-                            unimplemented!(
-                                "Could not solve the system with just 2 terms: a={}, b={}",
+                            panic!(
+                                "Could not solve for the scaling coefficients: a={}, b={}, mat={}, rhs={}",
                                 a,
-                                b
+                                b,
+                                mat,
+                                rhs,
                             );
                         }
                     }
@@ -849,9 +884,7 @@ where
             for sample_index in 0..max_terms {
                 let row_eval_first = &row_sample_values[shape_map[0]];
                 let mut scaling_factor = a.field.pow(&row_eval_first[0], sample_index as u64 + 1); // coeff eval is 1
-                for (exp_eval, coeff_eval) in
-                    row_sample_values[shape_map[0]][1..].iter().zip(&r.data)
-                {
+                for (exp_eval, coeff_eval) in row_sample_values[shape_map[0]][1..].iter().zip(&r) {
                     a.field.add_mul_assign(
                         &mut scaling_factor,
                         coeff_eval,
@@ -873,8 +906,6 @@ where
                 }
             }
         } else {
-            // TODO: expand the system or try a different base
-            // also study if it's possible to pick the smallest base so that this
             debug!(
                 "Could not solve the system with just 2 terms: a={}, b={}",
                 a, b

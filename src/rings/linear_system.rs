@@ -73,16 +73,20 @@ impl<F: Field> Display for Matrix<F> {
 }
 
 /// Error from linear solver.
-#[derive(Debug, Eq, PartialEq)]
-pub enum LinearSolverError {
-    Underdetermined { min_rank: u32, max_rank: u32 },
+#[derive(Debug)]
+pub enum LinearSolverError<F: Field> {
+    Underdetermined {
+        min_rank: u32,
+        max_rank: u32,
+        row_reduced_matrix: Option<Matrix<F>>,
+    },
     Inconsistent,
 }
 
 impl<F: Field> Matrix<F> {
     /// Solves `A * x = 0` for the first `max_col` columns in x.
     /// The other columns are augmented.
-    pub fn solve_subsystem(&mut self, max_col: u32) -> Result<u32, LinearSolverError> {
+    pub fn solve_subsystem(&mut self, max_col: u32) -> Result<u32, LinearSolverError<F>> {
         let (neqs, ncols) = self.shape;
 
         // A fast check.
@@ -90,6 +94,7 @@ impl<F: Field> Matrix<F> {
             return Err(LinearSolverError::Underdetermined {
                 min_rank: 0,
                 max_rank: neqs,
+                row_reduced_matrix: None,
             });
         }
 
@@ -115,6 +120,7 @@ impl<F: Field> Matrix<F> {
                     return Err(LinearSolverError::Underdetermined {
                         min_rank: i,
                         max_rank: max_col - 1,
+                        row_reduced_matrix: None,
                     });
                 }
             }
@@ -143,7 +149,7 @@ impl<F: Field> Matrix<F> {
 
     /// Solves `A * x = b` for `x`, where `A` is `self`.
     // TODO: provide vectors to prevent allocation
-    pub fn solve(&self, b: &Matrix<F>) -> Result<Matrix<F>, LinearSolverError> {
+    pub fn solve(&self, b: &Matrix<F>) -> Result<Matrix<F>, LinearSolverError<F>> {
         assert!(self.shape.0 == b.shape.0 && b.shape.1 == 1 && self.field == b.field);
 
         let (neqs, nvars) = self.shape;
@@ -153,6 +159,7 @@ impl<F: Field> Matrix<F> {
             return Err(LinearSolverError::Underdetermined {
                 min_rank: 0,
                 max_rank: neqs,
+                row_reduced_matrix: None,
             });
         }
 
@@ -167,7 +174,13 @@ impl<F: Field> Matrix<F> {
 
         let mut i = match m.solve_subsystem(nvars) {
             Ok(i) => i,
-            Err(x) => {
+            Err(mut x) => {
+                if let LinearSolverError::Underdetermined {
+                    row_reduced_matrix, ..
+                } = &mut x
+                {
+                    *row_reduced_matrix = Some(m);
+                }
                 return Err(x);
             }
         };
@@ -185,6 +198,7 @@ impl<F: Field> Matrix<F> {
             return Err(LinearSolverError::Underdetermined {
                 min_rank: rank,
                 max_rank: rank,
+                row_reduced_matrix: Some(m),
             });
         }
         assert_eq!(rank, nvars);
@@ -354,13 +368,14 @@ mod tests {
             field,
         };
         let r = a.solve(&b);
-        assert_eq!(
+        assert!(matches!(
             r,
             Err(LinearSolverError::Underdetermined {
                 min_rank: 0,
-                max_rank: 2
+                max_rank: 2,
+                ..
             })
-        );
+        ));
     }
 
     #[test]
@@ -383,13 +398,14 @@ mod tests {
             field,
         };
         let r = a.solve(&b);
-        assert_eq!(
+        assert!(matches!(
             r,
             Err(LinearSolverError::Underdetermined {
                 min_rank: 1,
-                max_rank: 3
+                max_rank: 3,
+                ..
             })
-        );
+        ));
     }
 
     #[test]
@@ -412,13 +428,14 @@ mod tests {
             field,
         };
         let r = a.solve(&b);
-        assert_eq!(
+        assert!(matches!(
             r,
             Err(LinearSolverError::Underdetermined {
                 min_rank: 2,
-                max_rank: 2
+                max_rank: 2,
+                ..
             })
-        );
+        ));
     }
 
     #[test]
@@ -470,7 +487,7 @@ mod tests {
             field,
         };
         let r = a.solve(&b);
-        assert_eq!(r, Err(LinearSolverError::Inconsistent));
+        assert!(matches!(r, Err(LinearSolverError::Inconsistent)));
     }
 
     #[test]

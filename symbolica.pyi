@@ -81,9 +81,19 @@ class Expression:
         Add this expression to `other`, returning the result.
         """
 
+    def __radd__(self, other: Expression | int) -> Expression:
+        """
+        Add this expression to `other`, returning the result.
+        """
+
     def __sub__(self, other: Expression | int) -> Expression:
         """
         Subtract `other` from this expression, returning the result.
+        """
+
+    def __rsub__(self, other: Expression | int) -> Expression:
+        """
+        Subtract this expression from `other`, returning the result.
         """
 
     def __mul__(self, other: Expression | int) -> Expression:
@@ -91,14 +101,29 @@ class Expression:
         Add this expression to `other`, returning the result.
         """
 
-    def __truediv__(self, other: Expression | int) -> Expression:
+    def __rmul__(self, other: Expression | int) -> Expression:
         """
-        Divide `other` from this expression, returning the result.
+        Add this expression to `other`, returning the result.
         """
 
-    def __pow__(self, rhs: Expression | int) -> Expression:
+    def __truediv__(self, other: Expression | int) -> Expression:
         """
-        Take `self` to power `other`, returning the result.
+        Divide this expression by `other`, returning the result.
+        """
+
+    def __rtruediv__(self, other: Expression | int) -> Expression:
+        """
+        Divide `other` by this expression, returning the result.
+        """
+
+    def __pow__(self, exp: Expression | int) -> Expression:
+        """
+        Take `self` to power `exp`, returning the result.
+        """
+
+    def __rpow__(self, base: Expression | int) -> Expression:
+        """
+        Take `base` to power `self`, returning the result.
         """
 
     def __neg__(self) -> Expression:

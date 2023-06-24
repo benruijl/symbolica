@@ -317,10 +317,19 @@ impl PythonExpression {
         PythonExpression { expr: Arc::new(b) }
     }
 
+    pub fn __radd__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
+        self.__add__(rhs)
+    }
+
     pub fn __sub__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         self.__add__(ConvertibleToExpression::Expression(
             rhs.to_expression().__neg__(),
         ))
+    }
+
+    pub fn __rsub__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
+        rhs.to_expression()
+            .__add__(ConvertibleToExpression::Expression(self.__neg__()))
     }
 
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
@@ -340,6 +349,10 @@ impl PythonExpression {
         });
 
         PythonExpression { expr: Arc::new(b) }
+    }
+
+    pub fn __rmul__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
+        self.__mul__(rhs)
     }
 
     pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
@@ -369,6 +382,11 @@ impl PythonExpression {
         PythonExpression { expr: Arc::new(b) }
     }
 
+    pub fn __rtruediv__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
+        rhs.to_expression()
+            .__truediv__(ConvertibleToExpression::Expression(self.clone()))
+    }
+
     pub fn __pow__(
         &self,
         rhs: ConvertibleToExpression,
@@ -395,6 +413,27 @@ impl PythonExpression {
         });
 
         Ok(PythonExpression { expr: Arc::new(b) })
+    }
+
+    pub fn __rpow__(
+        &self,
+        rhs: ConvertibleToExpression,
+        number: Option<i64>,
+    ) -> PyResult<PythonExpression> {
+        rhs.to_expression()
+            .__pow__(ConvertibleToExpression::Expression(self.clone()), number)
+    }
+
+    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonExpression> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
+    }
+
+    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonExpression> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
     }
 
     pub fn __neg__(&self) -> PythonExpression {
@@ -738,7 +777,11 @@ impl PythonExpression {
                         restrictions
                             .entry(name)
                             .or_insert(vec![])
-                            .push(PatternRestriction::<DefaultRepresentation>::IsLiteralWildcard(name));
+                            .push(
+                                PatternRestriction::<DefaultRepresentation>::IsLiteralWildcard(
+                                    name,
+                                ),
+                            );
                     }
                     SimplePatternRestriction::IsNumber(name) => {
                         restrictions
@@ -816,7 +859,11 @@ impl PythonExpression {
                         restrictions
                             .entry(name)
                             .or_insert(vec![])
-                            .push(PatternRestriction::<DefaultRepresentation>::IsLiteralWildcard(name));
+                            .push(
+                                PatternRestriction::<DefaultRepresentation>::IsLiteralWildcard(
+                                    name,
+                                ),
+                            );
                     }
                     SimplePatternRestriction::IsNumber(name) => {
                         restrictions

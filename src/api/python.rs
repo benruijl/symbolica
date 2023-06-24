@@ -11,14 +11,13 @@ use pyo3::{
     pyclass::CompareOp,
     pymethods, pymodule,
     types::{PyModule, PyTuple, PyType},
-    FromPyObject, IntoPy, PyObject, PyResult, Python,
+    FromPyObject, IntoPy, PyObject, PyRef, PyResult, Python,
 };
 use self_cell::self_cell;
 use smallvec::SmallVec;
 
 use crate::{
-    id::{Match, MatchStack, Pattern, PatternRestriction},
-    transformer::Transformer,
+    id::{Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction},
     parser::parse,
     poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
     printer::{AtomPrinter, PolynomialPrinter, PrintMode, RationalPolynomialPrinter},
@@ -37,6 +36,7 @@ use crate::{
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
     },
     state::{ResettableBuffer, State, Workspace},
+    transformer::Transformer,
 };
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
@@ -120,6 +120,7 @@ pub enum SimplePatternRestriction {
     Length(Identifier, usize, Option<usize>), // min-max range
     IsVar(Identifier),
     IsNumber(Identifier),
+    IsLiteralWildcard(Identifier), // matches x_ to x_ only
     NumberCmp(Identifier, CompareOp, i64),
 }
 
@@ -250,10 +251,6 @@ impl PythonExpression {
                 print_mode: PrintMode::default(),
             }
         ))
-    }
-
-    pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{:?}", self.expr))
     }
 
     /// Create a wildcard from a variable name.
@@ -499,6 +496,26 @@ impl PythonExpression {
         }
     }
 
+    pub fn is_lit(&self) -> PyResult<PythonPatternRestriction> {
+        match self.expr.to_view() {
+            AtomView::Var(v) => {
+                let name = v.get_name();
+                if !STATE.read().unwrap().is_wildcard(name).unwrap_or(false) {
+                    return Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    ));
+                }
+
+                Ok(PythonPatternRestriction {
+                    restrictions: Arc::new(vec![SimplePatternRestriction::IsLiteralWildcard(name)]),
+                })
+            }
+            _ => Err(exceptions::PyTypeError::new_err(
+                "Only wildcards can be restricted.",
+            )),
+        }
+    }
+
     fn __richcmp__(&self, other: i64, op: CompareOp) -> PyResult<PythonPatternRestriction> {
         match self.expr.to_view() {
             AtomView::Var(v) => {
@@ -700,6 +717,80 @@ impl PythonExpression {
         })
     }
 
+    #[pyo3(name = "r#match")]
+    pub fn pattern_match(
+        &self,
+        lhs: ConvertibleToPattern,
+        cond: Option<PythonPatternRestriction>,
+    ) -> PythonMatchIterator {
+        let mut restrictions = HashMap::default();
+
+        if let Some(rs) = cond {
+            for r in &*rs.restrictions {
+                match *r {
+                    SimplePatternRestriction::IsVar(name) => {
+                        restrictions
+                            .entry(name)
+                            .or_insert(vec![])
+                            .push(PatternRestriction::<DefaultRepresentation>::IsVar);
+                    }
+                    SimplePatternRestriction::IsLiteralWildcard(name) => {
+                        restrictions
+                            .entry(name)
+                            .or_insert(vec![])
+                            .push(PatternRestriction::<DefaultRepresentation>::IsLiteralWildcard(name));
+                    }
+                    SimplePatternRestriction::IsNumber(name) => {
+                        restrictions
+                            .entry(name)
+                            .or_insert(vec![])
+                            .push(PatternRestriction::IsNumber);
+                    }
+                    SimplePatternRestriction::Length(name, min, max) => {
+                        restrictions
+                            .entry(name)
+                            .or_insert(vec![])
+                            .push(PatternRestriction::Length(min, max));
+                    }
+                    SimplePatternRestriction::NumberCmp(name, op, ref_num) => {
+                        restrictions.entry(name).or_insert(vec![]).push(
+                            PatternRestriction::Filter(Box::new(
+                                move |v: &Match<DefaultRepresentation>| match v {
+                                    Match::Single(AtomView::Num(n)) => {
+                                        let num = n.get_number_view();
+                                        let ordering =
+                                            num.cmp(&BorrowedNumber::Natural(ref_num, 1));
+                                        match op {
+                                            CompareOp::Lt => ordering.is_lt(),
+                                            CompareOp::Le => ordering.is_le(),
+                                            CompareOp::Eq => ordering.is_eq(),
+                                            CompareOp::Ne => ordering.is_ne(),
+                                            CompareOp::Gt => ordering.is_gt(),
+                                            CompareOp::Ge => ordering.is_ge(),
+                                        }
+                                    }
+                                    _ => false,
+                                },
+                            )),
+                        );
+                    }
+                }
+            }
+        }
+
+        PythonMatchIterator::new(
+            (
+                lhs.to_pattern().expr,
+                self.expr.clone(),
+                restrictions,
+                STATE.read().unwrap().clone(), // FIXME: state is cloned
+            ),
+            move |(lhs, target, res, state)| {
+                PatternAtomTreeIterator::new(lhs, target.to_view(), state, res)
+            },
+        )
+    }
+
     pub fn replace_all(
         &self,
         lhs: ConvertibleToPattern,
@@ -720,6 +811,12 @@ impl PythonExpression {
                             .entry(name)
                             .or_insert(vec![])
                             .push(PatternRestriction::<DefaultRepresentation>::IsVar);
+                    }
+                    SimplePatternRestriction::IsLiteralWildcard(name) => {
+                        restrictions
+                            .entry(name)
+                            .or_insert(vec![])
+                            .push(PatternRestriction::<DefaultRepresentation>::IsLiteralWildcard(name));
                     }
                     SimplePatternRestriction::IsNumber(name) => {
                         restrictions
@@ -883,6 +980,58 @@ impl PythonAtomIterator {
                     owned.from_view(&e);
                     owned
                 }),
+            })
+        })
+    }
+}
+
+type OwnedMatch = (
+    Arc<Pattern<DefaultRepresentation>>,
+    Arc<OwnedAtom<DefaultRepresentation>>,
+    HashMap<Identifier, Vec<PatternRestriction<DefaultRepresentation>>>,
+    State,
+);
+type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a, DefaultRepresentation>;
+
+self_cell!(
+    #[pyclass]
+    pub struct PythonMatchIterator {
+        owner: OwnedMatch,
+        #[not_covariant]
+        dependent: MatchIterator,
+    }
+);
+
+#[pymethods]
+impl PythonMatchIterator {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self) -> Option<Vec<(PythonExpression, PythonExpression)>> {
+        self.with_dependent_mut(|_, i| {
+            i.next().map(|(_, _, _, matches)| {
+                matches
+                    .into_iter()
+                    .map(|m| {
+                        (
+                            PythonExpression {
+                                expr: Arc::new({
+                                    let mut a: OwnedAtom<DefaultRepresentation> = OwnedAtom::new();
+                                    a.transform_to_var().set_from_id(m.0);
+                                    a
+                                }),
+                            },
+                            PythonExpression {
+                                expr: Arc::new({
+                                    let mut a: OwnedAtom<DefaultRepresentation> = OwnedAtom::new();
+                                    m.1.to_atom(&mut a);
+                                    a
+                                }),
+                            },
+                        )
+                    })
+                    .collect()
             })
         })
     }

@@ -1,7 +1,5 @@
-from collections.abc import Iterator, Sequence
-
-from pyparsing import Optional
-
+from __future__ import annotations
+from typing import Iterator, Optional, Sequence, Tuple
 
 class Expression:
     @classmethod
@@ -134,6 +132,12 @@ class Expression:
         Create a pattern restriction that tests if a wildcard is a variable.
         """
 
+    def is_lit(self) -> PatternRestriction:
+        """
+        Create a pattern restriction that treats the wildcard as a literal variable,
+        so that it only matches to itself.
+        """
+
     def is_num(self) -> PatternRestriction:
         """
         Create a pattern restriction that tests if a wildcard is a number.
@@ -167,6 +171,26 @@ class Expression:
         --------
         >>> a = Expression.parse('(1 + 3*x1 + 5*x2 + 7*x3 + 9*x4 + 11*x5 + 13*x6 + 15*x7)^2 - 1').to_rational_polynomial()
         >>> print(a)
+        """
+
+    def match(
+        self,
+        lhs: Transformer | Expression | int,
+        cond: Optional[PatternRestriction] = None,
+    ) -> MatchIterator:
+        """
+        Return an iterator over the pattern `self` matching to `lhs`.
+        Restrictions on pattern can be supplied through `cond`.
+
+        Examples
+        --------
+
+        >>> x, x_ = Expression.vars('x','x_')
+        >>> f = Expression.fun('f')
+        >>> e = f(x)*f(1)*f(2)*f(3)
+        >>> for match in e.match(f(x_)):
+        >>>    for map in match:
+        >>>        print(map[0],'=', map[1])
         """
 
     def replace_all(
@@ -217,11 +241,22 @@ class Function:
         f(3,x)
         """
 
+
 class Transformer:
     """ Transform an expression. """
 
     def expand(self) -> Transformer:
         """ Expand products and powers. """
+
+
+class MatchIterator:
+    """ An iterator over matches. """
+
+    def __iter__(self) -> MatchIterator:
+        """ Create the iterator. """
+
+    def __next__(self) -> Sequence[Tuple[Expression, Expression]]:
+        """ Return the next match. """
 
 
 class RationalPolynomial:

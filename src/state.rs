@@ -15,6 +15,7 @@ use crate::{
 pub struct FiniteFieldIndex(pub(crate) usize);
 
 /// A global state, that stores mappings from variable and function names to ids.
+#[derive(Clone)]
 pub struct State {
     // get variable maps from here
     str_to_var_id: HashMap<String, Identifier>,

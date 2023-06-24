@@ -2,12 +2,12 @@ use ahash::HashMap;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
-    transformer::Transformer,
     representations::{
         Add, Atom, AtomView, Fun, Identifier, ListSlice, Mul, OwnedAdd, OwnedAtom, OwnedFun,
         OwnedMul, OwnedPow, Pow, SliceType, Var,
     },
     state::{ResettableBuffer, State, Workspace},
+    transformer::Transformer,
 };
 
 #[derive(Clone)]
@@ -159,7 +159,8 @@ impl<P: Atom> Pattern<P> {
                     }
                 }
 
-                let func = out.transform_to_fun();
+                let mut func_h = workspace.new_atom();
+                let func = func_h.transform_to_fun();
                 func.set_from_name(name);
                 func.set_dirty(true);
 
@@ -197,6 +198,8 @@ impl<P: Atom> Pattern<P> {
                     arg.substitute_wildcards(state, workspace, oa, match_stack);
                     func.add_arg(oa.to_view());
                 }
+
+                func_h.to_view().normalize(workspace, state, out);
             }
             Pattern::Pow(base_and_exp) => {
                 let mut base = workspace.new_atom();
@@ -231,29 +234,32 @@ impl<P: Atom> Pattern<P> {
                     out.from_view(&oa.to_view());
                 }
 
-                let out = out.transform_to_pow();
-                out.set_from_base_and_exp(oas[0].to_view(), oas[1].to_view());
-                out.set_dirty(true);
+                let mut pow_h = workspace.new_atom();
+                let pow = pow_h.transform_to_pow();
+                pow.set_from_base_and_exp(oas[0].to_view(), oas[1].to_view());
+                pow.set_dirty(true);
+                pow_h.to_view().normalize(workspace, state, out);
             }
             Pattern::Mul(args) => {
-                let out = out.transform_to_mul();
+                let mut mul_h = workspace.new_atom();
+                let mul = mul_h.transform_to_mul();
 
                 for arg in args {
                     if let Pattern::Wildcard(w) = arg {
                         if let Some(w) = match_stack.get(*w) {
                             match w {
-                                Match::Single(s) => out.extend(*s),
+                                Match::Single(s) => mul.extend(*s),
                                 Match::Multiple(t, wargs) => match t {
                                     SliceType::Mul | SliceType::Empty | SliceType::One => {
                                         for arg in wargs {
-                                            out.extend(*arg);
+                                            mul.extend(*arg);
                                         }
                                     }
                                     _ => {
                                         let mut handle = workspace.new_atom();
                                         let oa = handle.get_mut();
                                         w.to_atom(oa);
-                                        out.extend(oa.to_view())
+                                        mul.extend(oa.to_view())
                                     }
                                 },
                                 Match::FunctionName(_) => {
@@ -270,29 +276,31 @@ impl<P: Atom> Pattern<P> {
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
                     arg.substitute_wildcards(state, workspace, oa, match_stack);
-                    out.extend(oa.to_view());
+                    mul.extend(oa.to_view());
                 }
-                out.set_dirty(true);
+                mul.set_dirty(true);
+                mul_h.to_view().normalize(workspace, state, out);
             }
             Pattern::Add(args) => {
-                let out = out.transform_to_add();
+                let mut add_h = workspace.new_atom();
+                let add = add_h.transform_to_mul();
 
                 for arg in args {
                     if let Pattern::Wildcard(w) = arg {
                         if let Some(w) = match_stack.get(*w) {
                             match w {
-                                Match::Single(s) => out.extend(*s),
+                                Match::Single(s) => add.extend(*s),
                                 Match::Multiple(t, wargs) => match t {
                                     SliceType::Add | SliceType::Empty | SliceType::One => {
                                         for arg in wargs {
-                                            out.extend(*arg);
+                                            add.extend(*arg);
                                         }
                                     }
                                     _ => {
                                         let mut handle = workspace.new_atom();
                                         let oa = handle.get_mut();
                                         w.to_atom(oa);
-                                        out.extend(oa.to_view())
+                                        add.extend(oa.to_view())
                                     }
                                 },
                                 Match::FunctionName(_) => {
@@ -309,9 +317,10 @@ impl<P: Atom> Pattern<P> {
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
                     arg.substitute_wildcards(state, workspace, oa, match_stack);
-                    out.extend(oa.to_view());
+                    add.extend(oa.to_view());
                 }
-                out.set_dirty(true);
+                add.set_dirty(true);
+                add_h.to_view().normalize(workspace, state, out);
             }
             Pattern::Literal(oa) => {
                 out.from_view(&oa.to_view());
@@ -380,7 +389,7 @@ impl<P: Atom> Pattern<P> {
             true
         } else {
             // no match found at this level, so check the children
-            match target {
+            let submatch = match target {
                 AtomView::Fun(f) => {
                     let out = out.transform_to_fun();
                     out.set_from_name(f.get_name());
@@ -420,7 +429,7 @@ impl<P: Atom> Pattern<P> {
                     submatch
                 }
                 AtomView::Mul(m) => {
-                    let out = out.transform_to_mul();
+                    let mul = out.transform_to_mul();
 
                     let mut submatch = false;
                     for child in m.iter() {
@@ -430,10 +439,10 @@ impl<P: Atom> Pattern<P> {
                         submatch |=
                             self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
 
-                        out.extend(child_buf.to_view());
+                        mul.extend(child_buf.to_view());
                     }
 
-                    out.set_dirty(submatch | m.is_dirty());
+                    mul.set_dirty(submatch | m.is_dirty());
                     submatch
                 }
                 AtomView::Add(a) => {
@@ -455,7 +464,15 @@ impl<P: Atom> Pattern<P> {
                     out.from_view(&target); // no children
                     false
                 }
+            };
+
+            if submatch {
+                let mut handle_norm = workspace.new_atom();
+                let norm = handle_norm.get_mut();
+                out.to_view().normalize(workspace, state, norm);
+                std::mem::swap(out, norm);
             }
+            submatch
         }
     }
 }
@@ -491,10 +508,11 @@ where
     Length(usize, Option<usize>), // min-max range
     IsVar,
     IsNumber,
-    Filter(Box<dyn Fn(&Match<'_, P>) -> bool>),
+    IsLiteralWildcard(Identifier),
+    Filter(Box<dyn (Fn(&Match<'_, P>) -> bool) + Send + Sync>),
     Cmp(
         Identifier,
-        Box<dyn Fn(&Match<'_, P>, &Match<'_, P>) -> bool>,
+        Box<dyn Fn(&Match<'_, P>, &Match<'_, P>) -> bool + Send + Sync>,
     ),
 }
 
@@ -517,7 +535,7 @@ impl<'a, P: Atom> std::fmt::Debug for Match<'a, P> {
 
 impl<'a, P: Atom> Match<'a, P> {
     /// Create a new atom from a matched subexpression.
-    fn to_atom(&self, out: &mut OwnedAtom<P>) {
+    pub fn to_atom(&self, out: &mut OwnedAtom<P>) {
         match self {
             Self::Single(v) => {
                 out.from_view(v);
@@ -605,6 +623,13 @@ impl<'a, 'b, P: Atom> MatchStack<'a, 'b, P> {
                     PatternRestriction::IsVar => {
                         if let Match::Single(AtomView::Var(_)) = value {
                             continue;
+                        }
+                    }
+                    PatternRestriction::IsLiteralWildcard(wc) => {
+                        if let Match::Single(AtomView::Var(v)) = value {
+                            if wc == &v.get_name() {
+                                continue;
+                            }
                         }
                     }
                     PatternRestriction::IsNumber => {
@@ -708,7 +733,9 @@ impl<'a, 'b, P: Atom> MatchStack<'a, 'b, P> {
                         minimal = Some(minimal.map_or(*min, |v: usize| v.max(*min)));
                         maximal = max.map_or(maximal, |v| Some(maximal.map_or(v, |v1| v.min(v1))));
                     }
-                    PatternRestriction::IsVar | PatternRestriction::IsNumber => {
+                    PatternRestriction::IsVar
+                    | PatternRestriction::IsNumber
+                    | PatternRestriction::IsLiteralWildcard(_) => {
                         minimal = Some(1);
                         maximal = Some(1);
                     }

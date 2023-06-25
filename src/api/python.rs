@@ -424,6 +424,18 @@ impl PythonExpression {
             .__pow__(ConvertibleToExpression::Expression(self.clone()), number)
     }
 
+    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonExpression> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
+    }
+
+    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonExpression> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
+    }
+
     pub fn __neg__(&self) -> PythonExpression {
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();

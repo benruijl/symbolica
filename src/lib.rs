@@ -9,6 +9,7 @@ pub mod printer;
 pub mod representations;
 pub mod rings;
 pub mod state;
+pub mod streaming;
 pub mod utils;
 
 #[cfg(feature = "faster_alloc")]

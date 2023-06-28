@@ -166,7 +166,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
     }
 
     /// Compare terms in an expression. `x` and `x*2` are placed next to each other.
-    fn cmp_terms(&self, other: &AtomView<'_, P>) -> Ordering {
+    pub fn cmp_terms(&self, other: &AtomView<'_, P>) -> Ordering {
         debug_assert!(!matches!(self, AtomView::Add(_)));
         debug_assert!(!matches!(other, AtomView::Add(_)));
         match (&self, other) {
@@ -383,7 +383,7 @@ impl<P: Atom> OwnedAtom<P> {
     /// Merge two terms if possible. If this function returns `true`, `self`
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
-    fn merge_terms(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
+    pub fn merge_terms(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
         if let OwnedAtom::Num(n1) = self {
             if let OwnedAtom::Num(n2) = other {
                 n1.add(&n2.to_num_view(), state);

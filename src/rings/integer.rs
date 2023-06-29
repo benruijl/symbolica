@@ -55,7 +55,7 @@ impl ToFiniteField<u64> for Integer {
     fn to_finite_field(&self, field: &FiniteField<u64>) -> <FiniteField<u64> as Ring>::Element {
         match self {
             &Integer::Natural(n) => {
-                if field.get_prime() >= i64::MAX as u64 {
+                if field.get_prime() > i64::MAX as u64 {
                     field.to_element((n as i128).rem_euclid(field.get_prime() as i128) as u64)
                 } else {
                     field.to_element(n.rem_euclid(field.get_prime() as i64) as u64)

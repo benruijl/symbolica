@@ -112,7 +112,7 @@ where
         for &(n, v) in r {
             let exp = t.exponents[n].to_u32() as usize;
             if exp > 0 {
-                if n < cache[n].len() {
+                if exp < cache[n].len() {
                     if FiniteField::<UField>::is_zero(&cache[n][exp]) {
                         cache[n][exp] = poly.field.pow(&v, exp as u64);
                     }
@@ -345,7 +345,7 @@ where
                 for &(n, v) in &r_orig {
                     let exp = t.exponents[n].to_u32() as usize;
                     if exp > 0 {
-                        if n < cache[n].len() {
+                        if exp < cache[n].len() {
                             if FiniteField::<UField>::is_zero(&cache[n][exp]) {
                                 cache[n][exp] = a.field.pow(&v, exp as u64);
                             }
@@ -599,7 +599,7 @@ where
                 for &(n, v) in &r_orig {
                     let exp = t.exponents[n].to_u32() as usize;
                     if exp > 0 {
-                        if n < cache[n].len() {
+                        if exp < cache[n].len() {
                             if FiniteField::<UField>::is_zero(&cache[n][exp]) {
                                 cache[n][exp] = a.field.pow(&v, exp as u64);
                             }
@@ -976,7 +976,7 @@ where
             for &(n, vv) in r {
                 let exp = mv.exponents[n].to_u32() as usize;
                 if exp > 0 {
-                    if n < cache[n].len() {
+                    if exp < cache[n].len() {
                         if FiniteField::<UField>::is_zero(&cache[n][exp]) {
                             cache[n][exp] = self.field.pow(&vv, exp as u64);
                         }
@@ -1021,7 +1021,7 @@ where
             for &(n, vv) in r {
                 let exp = mv.exponents[n].to_u32() as usize;
                 if exp > 0 {
-                    if n < cache[n].len() {
+                    if exp < cache[n].len() {
                         if FiniteField::<UField>::is_zero(&cache[n][exp]) {
                             cache[n][exp] = self.field.pow(&vv, exp as u64);
                         }

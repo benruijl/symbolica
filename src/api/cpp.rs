@@ -126,7 +126,7 @@ unsafe extern "C" fn simplify(
                 )
                 .unwrap();
             } else {
-                if prime < u32::MAX as c_ulonglong {
+                if prime <= u32::MAX as c_ulonglong {
                     let field = FiniteField::<u32>::new(prime as u32);
                     let rf: RationalPolynomial<FiniteField<u32>, $exp_size> = token
                         .to_rational_polynomial(

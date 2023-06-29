@@ -377,7 +377,7 @@ impl BorrowedNumber<'_> {
                     (n1, d1) = (d1, n1);
                 }
 
-                if n2 < u32::MAX as i64 {
+                if n2 <= u32::MAX as i64 {
                     if let Some(pn) = n1.checked_pow(n2 as u32) {
                         if let Some(pd) = d1.checked_pow(n2 as u32) {
                             // TODO: simplify 4^(1/2)
@@ -394,14 +394,14 @@ impl BorrowedNumber<'_> {
                 }
             }
             (&BorrowedNumber::RationalPolynomial(r), &BorrowedNumber::Natural(n2, d2)) => {
-                if n2.saturating_abs() >= u32::MAX as i64 {
+                if n2.unsigned_abs() > u32::MAX as u64 {
                     panic!("Power is too large: {}", n2);
                 }
 
                 if n2 < 0 {
                     let r = r.clone().inv();
                     (
-                        Number::RationalPolynomial(r.pow(n2.saturating_abs() as u64)),
+                        Number::RationalPolynomial(r.pow(n2.unsigned_abs() as u64)),
                         Number::Natural(1, d2),
                     )
                 } else {
@@ -763,13 +763,13 @@ impl PackedRationalNumberWriter for (u64, u64) {
     fn write_packed(self, dest: &mut Vec<u8>) {
         let p = dest.len();
 
-        if self.0 < u8::MAX as u64 {
+        if self.0 <= u8::MAX as u64 {
             dest.put_u8(U8_NUM);
             dest.put_u8(self.0 as u8);
-        } else if self.0 < u16::MAX as u64 {
+        } else if self.0 <= u16::MAX as u64 {
             dest.put_u8(U16_NUM);
             dest.put_u16_le(self.0 as u16);
-        } else if self.0 < u32::MAX as u64 {
+        } else if self.0 <= u32::MAX as u64 {
             dest.put_u8(U32_NUM);
             dest.put_u32_le(self.0 as u32);
         } else {
@@ -778,13 +778,13 @@ impl PackedRationalNumberWriter for (u64, u64) {
         }
 
         if self.1 == 1 {
-        } else if self.1 < u8::MAX as u64 {
+        } else if self.1 <= u8::MAX as u64 {
             dest[p] |= U8_DEN;
             dest.put_u8(self.1 as u8);
-        } else if self.1 < u16::MAX as u64 {
+        } else if self.1 <= u16::MAX as u64 {
             dest[p] |= U16_DEN;
             dest.put_u16_le(self.1 as u16);
-        } else if self.1 < u32::MAX as u64 {
+        } else if self.1 <= u32::MAX as u64 {
             dest[p] |= U32_DEN;
             dest.put_u32_le(self.1 as u32);
         } else {
@@ -797,13 +797,13 @@ impl PackedRationalNumberWriter for (u64, u64) {
     fn write_packed_fixed(self, dest: &mut [u8]) {
         let (tag, mut dest) = dest.split_first_mut().unwrap();
 
-        if self.0 < u8::MAX as u64 {
+        if self.0 <= u8::MAX as u64 {
             *tag = U8_NUM;
             dest.put_u8(self.0 as u8);
-        } else if self.0 < u16::MAX as u64 {
+        } else if self.0 <= u16::MAX as u64 {
             *tag = U16_NUM;
             dest.put_u16_le(self.0 as u16);
-        } else if self.0 < u32::MAX as u64 {
+        } else if self.0 <= u32::MAX as u64 {
             *tag = U32_NUM;
             dest.put_u32_le(self.0 as u32);
         } else {
@@ -812,13 +812,13 @@ impl PackedRationalNumberWriter for (u64, u64) {
         }
 
         if self.1 == 1 {
-        } else if self.1 < u8::MAX as u64 {
+        } else if self.1 <= u8::MAX as u64 {
             *tag |= U8_DEN;
             dest.put_u8(self.1 as u8);
-        } else if self.1 < u16::MAX as u64 {
+        } else if self.1 <= u16::MAX as u64 {
             *tag |= U16_DEN;
             dest.put_u16_le(self.1 as u16);
-        } else if self.1 < u32::MAX as u64 {
+        } else if self.1 <= u32::MAX as u64 {
             *tag |= U32_DEN;
             dest.put_u32_le(self.1 as u32);
         } else {
@@ -829,11 +829,11 @@ impl PackedRationalNumberWriter for (u64, u64) {
 
     fn get_packed_size(&self) -> u64 {
         let mut size = 1;
-        size += if self.0 < u8::MAX as u64 {
+        size += if self.0 <= u8::MAX as u64 {
             get_size_of_natural(U8_NUM)
-        } else if self.0 < u16::MAX as u64 {
+        } else if self.0 <= u16::MAX as u64 {
             get_size_of_natural(U16_NUM)
-        } else if self.0 < u32::MAX as u64 {
+        } else if self.0 <= u32::MAX as u64 {
             get_size_of_natural(U32_NUM)
         } else {
             get_size_of_natural(U64_NUM)
@@ -841,11 +841,11 @@ impl PackedRationalNumberWriter for (u64, u64) {
 
         size += if self.1 == 1 {
             0
-        } else if self.1 < u8::MAX as u64 {
+        } else if self.1 <= u8::MAX as u64 {
             get_size_of_natural(U8_NUM)
-        } else if self.1 < u16::MAX as u64 {
+        } else if self.1 <= u16::MAX as u64 {
             get_size_of_natural(U16_NUM)
-        } else if self.1 < u32::MAX as u64 {
+        } else if self.1 <= u32::MAX as u64 {
             get_size_of_natural(U32_NUM)
         } else {
             get_size_of_natural(U64_NUM)

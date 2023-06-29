@@ -28,7 +28,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 let (negative, num) = 'get_num: {
                     if let AtomView::Num(n) = new_exp.get().to_view() {
                         if let BorrowedNumber::Natural(n, 1) = n.get_number_view() {
-                            if n.abs() < u32::MAX as i64 {
+                            if n.unsigned_abs() <= u32::MAX as u64 {
                                 break 'get_num (n < 0, n.unsigned_abs() as u32);
                             }
                         }

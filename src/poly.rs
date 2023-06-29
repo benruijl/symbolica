@@ -58,6 +58,13 @@ pub trait Exponent:
     /// - each entry is not larger than 255
     fn pack(list: &[Self]) -> u64;
     fn unpack(n: u64, out: &mut [Self]);
+
+    /// Pack a list of exponents into a number, such that arithmetic and
+    /// comparisons can be performed. The caller must guarantee that:
+    /// - the list is no longer than 4 entries
+    /// - each entry is not larger than 2^16 - 1
+    fn pack_u16(list: &[Self]) -> u64;
+    fn unpack_u16(n: u64, out: &mut [Self]);
 }
 
 impl Exponent for u32 {
@@ -111,6 +118,22 @@ impl Exponent for u32 {
             *o = *ss as u32;
         }
     }
+
+    fn pack_u16(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 16) + ((*x as u16).to_be() as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack_u16(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = ss.swap_bytes() as u32;
+        }
+    }
 }
 
 impl Exponent for u16 {
@@ -131,7 +154,7 @@ impl Exponent for u16 {
 
     #[inline]
     fn from_u32(n: u32) -> Self {
-        if n < u16::MAX as u32 {
+        if n <= u16::MAX as u32 {
             n as u16
         } else {
             panic!("Exponent {} too large for u16", n);
@@ -168,6 +191,22 @@ impl Exponent for u16 {
             *o = *ss as u16;
         }
     }
+
+    fn pack_u16(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 16) + x.to_be() as u64;
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack_u16(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = ss.swap_bytes();
+        }
+    }
 }
 
 /// An exponent limited to 255 for efficiency
@@ -189,7 +228,7 @@ impl Exponent for u8 {
 
     #[inline]
     fn from_u32(n: u32) -> Self {
-        if n < u8::MAX as u32 {
+        if n <= u8::MAX as u32 {
             n as u8
         } else {
             panic!("Exponent {} too large for u8", n);
@@ -223,6 +262,22 @@ impl Exponent for u8 {
         n = n.swap_bytes();
         let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
         out.copy_from_slice(s);
+    }
+
+    fn pack_u16(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 16) + ((*x as u16).to_be() as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack_u16(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = ss.swap_bytes() as u8;
+        }
     }
 }
 

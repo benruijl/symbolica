@@ -1169,15 +1169,21 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         // use a special routine if the exponents can be packed into a u64
+        let mut pack_u8 = true;
         if self.nvars <= 8
             && (0..self.nvars).all(|i| {
-                self.degree(i)
+                let deg = self
+                    .degree(i)
                     .to_u32()
-                    .saturating_add(other.degree(i).to_u32())
-                    < 255
+                    .saturating_add(other.degree(i).to_u32());
+                if deg > 255 {
+                    pack_u8 = false;
+                }
+
+                deg <= 255 || self.nvars <= 4 && deg <= 65535
             })
         {
-            return self.heap_mul_packed_exp(other);
+            return self.heap_mul_packed_exp(other, pack_u8);
         }
 
         let mut res = self.new_from(Some(self.nterms));
@@ -1283,23 +1289,39 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     }
 
     /// Heap multiplication, but with the exponents packed into a `u64`.
-    /// Each exponent is limited to 255.
+    /// Each exponent is limited to 65535 if there are four or fewer variables,
+    /// or 255 if there are 8 or fewer variables.
     pub fn heap_mul_packed_exp(
         &self,
         other: &MultivariatePolynomial<F, E>,
+        pack_u8: bool,
     ) -> MultivariatePolynomial<F, E> {
         let mut res = self.new_from(Some(self.nterms));
 
-        let pack_a: Vec<_> = self
-            .exponents
-            .chunks(self.nvars)
-            .map(|c| E::pack(c))
-            .collect();
-        let pack_b: Vec<_> = other
-            .exponents
-            .chunks(self.nvars)
-            .map(|c| E::pack(c))
-            .collect();
+        let pack_a: Vec<_> = if pack_u8 {
+            self.exponents
+                .chunks(self.nvars)
+                .map(|c| E::pack(c))
+                .collect()
+        } else {
+            self.exponents
+                .chunks(self.nvars)
+                .map(|c| E::pack_u16(c))
+                .collect()
+        };
+        let pack_b: Vec<_> = if pack_u8 {
+            other
+                .exponents
+                .chunks(self.nvars)
+                .map(|c| E::pack(c))
+                .collect()
+        } else {
+            other
+                .exponents
+                .chunks(self.nvars)
+                .map(|c| E::pack_u16(c))
+                .collect()
+        };
 
         let mut cache: BTreeMap<u64, Vec<(usize, usize)>> = BTreeMap::new();
         let mut q_cache: Vec<Vec<(usize, usize)>> = vec![];
@@ -1376,7 +1398,12 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                 let len = res.exponents.len();
 
                 res.exponents.resize(len + self.nvars, E::zero());
-                E::unpack(cur_mon.0, &mut res.exponents[len..len + self.nvars]);
+
+                if pack_u8 {
+                    E::unpack(cur_mon.0, &mut res.exponents[len..len + self.nvars]);
+                } else {
+                    E::unpack_u16(cur_mon.0, &mut res.exponents[len..len + self.nvars]);
+                }
                 res.nterms += 1;
             }
         }
@@ -1610,8 +1637,18 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
             return (q, self.new_from(None));
         }
 
-        if self.nvars <= 8 && (0..self.nvars).all(|i| self.degree(i).to_u32() < 127) {
-            self.heap_division_packed_exp(div, abort_on_remainder)
+        let mut pack_u8 = true;
+        if self.nvars <= 8
+            && (0..self.nvars).all(|i| {
+                let deg = self.degree(i).to_u32();
+                if deg > 127 {
+                    pack_u8 = false;
+                }
+
+                deg <= 127 || self.nvars <= 4 && deg <= 32767
+            })
+        {
+            self.heap_division_packed_exp(div, abort_on_remainder, pack_u8)
         } else {
             self.heap_division(div, abort_on_remainder)
         }
@@ -1861,26 +1898,40 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
     }
 
     /// Heap division, but with the exponents packed into a `u64`.
-    /// Each exponent is limited to 127, such that the last bit per byte can
+    /// Each exponent is limited to 32767 if there are 5 or fewer variables,
+    /// or 127 if there are 8 or fewer variables, such that the last bit per byte can
     /// be used to check for subtraction overflow, serving as a division test.
     pub fn heap_division_packed_exp(
         &self,
         div: &MultivariatePolynomial<F, E>,
         abort_on_remainder: bool,
+        pack_u8: bool,
     ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
         let mut q = self.new_from(Some(self.nterms));
         let mut r = self.new_from(None);
 
-        let pack_a: Vec<_> = self
-            .exponents
-            .chunks(self.nvars)
-            .map(|c| E::pack(c))
-            .collect();
-        let pack_div: Vec<_> = div
-            .exponents
-            .chunks(div.nvars)
-            .map(|c| E::pack(c))
-            .collect();
+        let pack_a: Vec<_> = if pack_u8 {
+            self.exponents
+                .chunks(self.nvars)
+                .map(|c| E::pack(c))
+                .collect()
+        } else {
+            self.exponents
+                .chunks(self.nvars)
+                .map(|c| E::pack_u16(c))
+                .collect()
+        };
+        let pack_div: Vec<_> = if pack_u8 {
+            div.exponents
+                .chunks(div.nvars)
+                .map(|c| E::pack(c))
+                .collect()
+        } else {
+            div.exponents
+                .chunks(div.nvars)
+                .map(|c| E::pack_u16(c))
+                .collect()
+        };
 
         let mut div_monomial_in_heap = vec![false; div.nterms];
         let mut merged_index_of_div_monomial_in_quotient = vec![0; div.nterms];
@@ -1888,9 +1939,11 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         let mut cache: BTreeMap<u64, Vec<(usize, usize, bool)>> = BTreeMap::new();
 
         #[inline(always)]
-        fn divides(a: u64, b: u64) -> Option<u64> {
+        fn divides(a: u64, b: u64, pack_u8: bool) -> Option<u64> {
             let d = a.overflowing_sub(b).0;
-            if d & 9259542123273814144u64 == 0 {
+            if pack_u8 && (d & 9259542123273814144u64 == 0)
+                || !pack_u8 && (d & 9223512776490647552u64 == 0)
+            {
                 Some(d)
             } else {
                 None
@@ -1996,7 +2049,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 }
             }
 
-            let q_e = divides(m, pack_div[pack_div.len() - 1]);
+            let q_e = divides(m, pack_div[pack_div.len() - 1], pack_u8);
             if !F::is_zero(&c) && q_e.is_some() {
                 let (quot, rem) = self.field.quot_rem(&c, &div.lcoeff());
                 if !F::is_zero(&rem) {
@@ -2013,7 +2066,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 q.coefficients.push(quot);
                 let len = q.exponents.len();
                 q.exponents.resize(len + self.nvars, E::zero());
-                E::unpack(q_e, &mut q.exponents[len..len + self.nvars]);
+
+                if pack_u8 {
+                    E::unpack(q_e, &mut q.exponents[len..len + self.nvars]);
+                } else {
+                    E::unpack_u16(q_e, &mut q.exponents[len..len + self.nvars]);
+                }
                 q.nterms += 1;
                 q_exp.push(q_e);
 
@@ -2084,7 +2142,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     r.coefficients.push(c);
                     let len = r.exponents.len();
                     r.exponents.resize(len + self.nvars, E::zero());
-                    E::unpack(m, &mut r.exponents[len..len + self.nvars]);
+
+                    if pack_u8 {
+                        E::unpack(m, &mut r.exponents[len..len + self.nvars]);
+                    } else {
+                        E::unpack_u16(m, &mut r.exponents[len..len + self.nvars]);
+                    }
                 }
             }
         }

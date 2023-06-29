@@ -2074,7 +2074,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
         assert!(!f.is_empty());
 
         let mut prime_index = 1; // skip prime 2
-
+        let mut loop_counter = 0;
         loop {
             if f.len() == 1 {
                 return f.swap_remove(0);
@@ -2111,8 +2111,16 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let term_bound = f.iter().map(|x| x.nterms).sum();
             let mut b = a.new_from(Some(term_bound));
 
+            // prevent sampling f[i] and f[i+prime_len] with the same
+            // prefactor every iteration
+            let num_primes = if f.len() % SMALL_PRIMES.len() == 0 {
+                SMALL_PRIMES.len() - 1
+            } else {
+                SMALL_PRIMES.len()
+            };
+
             for p in f.iter() {
-                let k = Integer::Natural(SMALL_PRIMES[prime_index % SMALL_PRIMES.len()]);
+                let k = Integer::Natural(SMALL_PRIMES[prime_index % num_primes]);
                 prime_index += 1;
                 b = b + p.clone().mul_coeff(k);
             }
@@ -2128,6 +2136,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let content = gcd.content();
             gcd = gcd.div_coeff(&content);
             let mut content_gcd = content;
+
+            let old_length = f.len();
 
             f.retain(|x| {
                 if x.divides(&gcd).is_some() {
@@ -2150,6 +2160,13 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             );
 
             f.push(gcd);
+
+            if f.len() == old_length + 1 && loop_counter > 5 {
+                debug!("Multiple GCD failed");
+                return MultivariatePolynomial::repeated_gcd(f);
+            }
+
+            loop_counter += 1;
         }
     }
 

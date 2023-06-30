@@ -343,6 +343,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                                 }
                             }
                             BorrowedNumber::Large(r) => {
+                                let r = r.to_rat();
                                 if r.denom().to_u8() == Some(1) && r.numer().to_u32().is_some() {
                                     Ok(())
                                 } else {
@@ -432,7 +433,8 @@ impl<'a, P: Atom> AtomView<'a, P> {
                                 exponents[var_index] += E::from_u32(r as u32)
                             }
                             BorrowedNumber::Large(r) => {
-                                exponents[var_index] += E::from_u32(r.numer().to_u32().unwrap())
+                                exponents[var_index] +=
+                                    E::from_u32(r.to_rat().numer().to_u32().unwrap())
                             }
                             _ => unreachable!(),
                         },

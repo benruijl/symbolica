@@ -805,7 +805,7 @@ impl OwnedAtom<DefaultRepresentation> {
             }
             AtomTree::Num(n) => {
                 data.put_u8(NUM_ID | DIRTY_FLAG);
-                n.clone().write_packed(data);
+                n.write_packed(data);
             }
             AtomTree::Pow(p) => {
                 data.put_u8(POW_ID | DIRTY_FLAG);

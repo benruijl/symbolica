@@ -211,7 +211,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                     f.write_fmt(format_args!("{}", num))
                 }
             }
-            BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r)),
+            BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r.to_rat())),
             BorrowedNumber::FiniteField(num, fi) => {
                 f.write_fmt(format_args!("[m_{}%f_{}]", num.0, fi.0))
             }
@@ -236,7 +236,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                     f.write_fmt(format_args!("{}", num))
                 }
             }
-            BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r)),
+            BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r.to_rat())),
             BorrowedNumber::FiniteField(num, fi) => {
                 let ff = state.get_finite_field(fi);
                 f.write_fmt(format_args!(

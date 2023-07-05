@@ -567,11 +567,7 @@ impl Field for FiniteField<u64> {
         }
 
         debug_assert!(u3 == 1);
-        if even_iter {
-            FiniteFieldElement(u1)
-        } else {
-            FiniteFieldElement(self.p - u1)
-        }
+        FiniteFieldElement(if even_iter { u1 } else { self.p - u1 })
     }
 }
 
@@ -638,8 +634,8 @@ pub struct PrimeIteratorU64 {
 
 impl PrimeIteratorU64 {
     /// Create a new prime iterator that is larger than `start`.
-    pub fn new(start: u64) -> PrimeIteratorU64 {
-        PrimeIteratorU64 {
+    pub fn new(start: u64) -> Self {
+        Self {
             current_number: start.max(1),
         }
     }

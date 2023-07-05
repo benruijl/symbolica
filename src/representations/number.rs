@@ -477,11 +477,15 @@ impl PackedRationalNumberWriter for Number {
                 let num_digits = r.numer().significant_digits::<u8>();
                 let den_digits = r.denom().significant_digits::<u8>();
 
-                if r.numer() < &0 {
-                    (-(num_digits as i64), den_digits as i64).write_packed(dest);
-                } else {
-                    (num_digits as i64, den_digits as i64).write_packed(dest);
-                }
+                (
+                    if r.numer() < &0 {
+                        -(num_digits as i64)
+                    } else {
+                        num_digits as i64
+                    },
+                    den_digits as i64,
+                )
+                    .write_packed(dest);
 
                 let old_len = dest.len();
                 dest.resize(old_len + num_digits + den_digits, 0);

@@ -193,31 +193,30 @@ where
         num.unify_var_map(&mut den);
 
         if den.is_one() {
-            Self {
+            return Self {
                 numerator: num,
                 denominator: den,
-            }
-        } else {
-            if do_gcd {
-                let gcd = MultivariatePolynomial::gcd(&num, &den);
+            };
+        }
+        if do_gcd {
+            let gcd = MultivariatePolynomial::gcd(&num, &den);
 
-                if !gcd.is_one() {
-                    num = num / &gcd;
-                    den = den / &gcd;
-                }
+            if !gcd.is_one() {
+                num = num / &gcd;
+                den = den / &gcd;
             }
+        }
 
-            // normalize denominator to have leading coefficient of one
-            if !field.is_one(&den.lcoeff()) {
-                let c = den.lcoeff();
-                num = num.div_coeff(&c);
-                den = den.div_coeff(&c);
-            }
+        // normalize denominator to have leading coefficient of one
+        if !field.is_one(&den.lcoeff()) {
+            let c = den.lcoeff();
+            num = num.div_coeff(&c);
+            den = den.div_coeff(&c);
+        }
 
-            Self {
-                numerator: num,
-                denominator: den,
-            }
+        Self {
+            numerator: num,
+            denominator: den,
         }
     }
 }
@@ -475,7 +474,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub for RationalPolynomial<R, E> {
     type Output = Self;
 
-    fn sub(self, other: Self) -> Self::Output {
+    fn sub(self, other: Self) -> Self {
         self.add(&other.neg())
     }
 }
@@ -492,8 +491,8 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub<&'a Rationa
 
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg for RationalPolynomial<R, E> {
     type Output = Self;
-    fn neg(self) -> Self::Output {
-        RationalPolynomial {
+    fn neg(self) -> Self {
+        Self {
             numerator: self.numerator.neg(),
             denominator: self.denominator,
         }

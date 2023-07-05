@@ -82,11 +82,9 @@ impl Token {
     /// Return if the token does not require any further arguments.
     fn is_normal(&self) -> bool {
         match self {
-            Token::Number(_) => true,
-            Token::ID(_) => true,
-            Token::RationalPolynomial(_) => true,
-            Token::Op(more_left, more_right, _, _) => !more_left && !more_right,
-            Token::Fn(more_right, _) => !more_right,
+            Self::Number(_) | Self::ID(_) | Self::RationalPolynomial(_) => true,
+            Self::Op(more_left, more_right, _, _) => !more_left && !more_right,
+            Self::Fn(more_right, _) => !more_right,
             _ => false,
         }
     }
@@ -95,24 +93,22 @@ impl Token {
     #[inline]
     fn get_precedence(&self) -> u8 {
         match self {
-            Token::Number(_) => 11,
-            Token::ID(_) => 11,
-            Token::RationalPolynomial(_) => 11,
-            Token::Op(_, _, o, _) => o.get_precedence(),
-            Token::Fn(_, _) | Token::OpenParenthesis | Token::CloseParenthesis => 5,
-            Token::Start | Token::EOF => 4,
+            Self::Number(_) | Self::ID(_) | Self::RationalPolynomial(_) => 11,
+            Self::Op(_, _, o, _) => o.get_precedence(),
+            Self::Fn(_, _) | Self::OpenParenthesis | Self::CloseParenthesis => 5,
+            Self::Start | Self::EOF => 4,
         }
     }
 
     /// Add `other` to the left side of `self`, where `self` is a binary operation.
     #[inline]
-    fn add_left(&mut self, other: Token) {
+    fn add_left(&mut self, other: Self) {
         match self {
-            Token::Op(ml, _, o1, args) => {
+            Self::Op(ml, _, o1, args) => {
                 debug_assert!(*ml);
                 *ml = false;
 
-                if let Token::Op(ml, mr, o2, mut args2) = other {
+                if let Self::Op(ml, mr, o2, mut args2) = other {
                     debug_assert!(!ml && !mr);
                     if *o1 == o2 {
                         // add from the left by swapping and then extending from the right
@@ -131,30 +127,30 @@ impl Token {
 
     fn distribute_neg(&mut self) {
         match self {
-            Token::Op(_, _, Operator::Neg, args3) => {
+            Self::Op(_, _, Operator::Neg, args3) => {
                 debug_assert!(args3.len() == 1);
                 *self = args3.pop().unwrap();
             }
-            Token::Op(_, _, Operator::Mul, args2) => {
+            Self::Op(_, _, Operator::Mul, args2) => {
                 args2[0].distribute_neg();
             }
-            Token::Op(_, _, Operator::Add, args2) => {
+            Self::Op(_, _, Operator::Add, args2) => {
                 for a in args2 {
                     a.distribute_neg();
                 }
             }
             _ => {
                 let t = std::mem::replace(self, Token::EOF);
-                *self = Token::Op(false, false, Operator::Neg, vec![t]);
+                *self = Self::Op(false, false, Operator::Neg, vec![t]);
             }
         }
     }
 
     /// Add `other` to right side of `self`, where `self` is a binary operation.
     #[inline]
-    fn add_right(&mut self, mut other: Token) {
+    fn add_right(&mut self, mut other: Self) {
         match self {
-            Token::Op(_, mr, o1, args) => {
+            Self::Op(_, mr, o1, args) => {
                 debug_assert!(*mr);
                 *mr = false;
 
@@ -164,7 +160,7 @@ impl Token {
                     return;
                 }
 
-                if let Token::Op(ml, mr, o2, mut args2) = other {
+                if let Self::Op(ml, mr, o2, mut args2) = other {
                     debug_assert!(!ml && !mr);
                     if *o1 == o2 && o2.right_associative() {
                         if o2 == Operator::Neg || o2 == Operator::Inv {
@@ -175,7 +171,7 @@ impl Token {
                             args.append(&mut args2)
                         }
                     } else {
-                        args.push(Token::Op(false, false, o2, args2));
+                        args.push(Self::Op(false, false, o2, args2));
                     }
                 } else {
                     args.push(other);
@@ -187,7 +183,7 @@ impl Token {
 
     pub fn to_atom_tree(&self, state: &mut State) -> Result<AtomTree, String> {
         match self {
-            Token::Number(n) => {
+            Self::Number(n) => {
                 if let Ok(x) = n.parse::<i64>() {
                     Ok(AtomTree::Num(Number::Natural(x, 1)))
                 } else {
@@ -197,8 +193,8 @@ impl Token {
                     }
                 }
             }
-            Token::ID(x) => Ok(AtomTree::Var(state.get_or_insert_var(x))),
-            Token::Op(_, _, op, args) => {
+            Self::ID(x) => Ok(AtomTree::Var(state.get_or_insert_var(x))),
+            Self::Op(_, _, op, args) => {
                 let mut atom_args = vec![];
                 for a in args {
                     atom_args.push(a.to_atom_tree(state)?);
@@ -236,7 +232,7 @@ impl Token {
                     }
                 }
             }
-            Token::Fn(_, args) => {
+            Self::Fn(_, args) => {
                 let name = match &args[0] {
                     Token::ID(s) => s,
                     _ => unreachable!(),
@@ -265,14 +261,14 @@ impl Token {
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Token::Number(n) => f.write_str(n),
-            Token::ID(v) => f.write_str(v),
-            Token::RationalPolynomial(v) => {
+            Self::Number(n) => f.write_str(n),
+            Self::ID(v) => f.write_str(v),
+            Self::RationalPolynomial(v) => {
                 f.write_char('[')?;
                 f.write_str(v)?;
                 f.write_char(']')
             }
-            Token::Op(_, _, o, m) => {
+            Self::Op(_, _, o, m) => {
                 let mut first = true;
                 f.write_char('(')?;
 
@@ -297,11 +293,11 @@ impl std::fmt::Display for Token {
                 }
                 f.write_char(')')
             }
-            Token::Fn(_, args) => {
+            Self::Fn(_, args) => {
                 let mut first = true;
 
                 match &args[0] {
-                    Token::ID(s) => f.write_str(s)?,
+                    Self::ID(s) => f.write_str(s)?,
                     _ => unreachable!(),
                 };
 

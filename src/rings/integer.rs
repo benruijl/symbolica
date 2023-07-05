@@ -195,21 +195,21 @@ impl Integer {
         let mut mcr = Integer::one();
         let mut accum = 0i64;
         for v in k {
-            if let Some(res) = accum.checked_add(*v as i64) {
-                accum = res;
-            } else {
-                panic!("Sum of occurrences exceeds i64: {:?}", k);
-            }
-
+            let Some(res) = accum.checked_add(*v as i64) else {
+                panic!("Sum of occurrences exceeds i64: {:?}", k)
+            };
+            accum = res;
             mcr *= &Self::binom(accum, *v as i64);
         }
         mcr
     }
 
     pub fn pow(&self, e: u64) -> Integer {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
+        assert!(
+            e <= u32::MAX as u64,
+            "Power of exponentation is larger than 2^32: {}",
+            e
+        );
         let e = e as u32;
 
         if e == 0 {

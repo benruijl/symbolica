@@ -1427,10 +1427,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 
     /// Synthetic division for univariate polynomials
     // TODO: create UnivariatePolynomial?
-    pub fn synthetic_division(
-        &self,
-        div: &MultivariatePolynomial<F, E>,
-    ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
+    pub fn synthetic_division(&self, div: &Self) -> (Self, Self) {
         let mut dividendpos = self.nterms - 1; // work from the back
         let norm = div.coefficients.last().unwrap();
 
@@ -1531,17 +1528,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         (q, r)
     }
 
-    pub fn divides(
-        &self,
-        div: &MultivariatePolynomial<F, E>,
-    ) -> Option<MultivariatePolynomial<F, E>> {
+    pub fn divides(&self, div: &Self) -> Option<Self> {
         if self.is_zero() {
             return Some(self.clone());
         }
 
-        if div.is_zero() {
-            panic!("Cannot divide by 0 polynomial");
-        }
+        assert!(!div.is_zero(), "Cannot divide by 0 polynomial");
 
         if (0..self.nvars).any(|v| self.degree(v) < div.degree(v)) {
             return None;
@@ -1556,14 +1548,8 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
     }
 
     /// Divide two multivariate polynomials and return the quotient and remainder.
-    pub fn quot_rem(
-        &self,
-        div: &MultivariatePolynomial<F, E>,
-        abort_on_remainder: bool,
-    ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
-        if div.is_zero() {
-            panic!("Cannot divide by 0 polynomial");
-        }
+    pub fn quot_rem(&self, div: &Self, abort_on_remainder: bool) -> (Self, Self) {
+        assert!(!div.is_zero(), "Cannot divide by 0 polynomial");
 
         if self.is_zero() {
             return (self.clone(), self.clone());
@@ -1644,11 +1630,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
     /// Heap division for multivariate polynomials, using a cache so that only unique
     /// monomial exponents appear in the heap.
     /// Reference: "Sparse polynomial division using a heap" by Monagan, Pearce (2011)
-    pub fn heap_division(
-        &self,
-        div: &MultivariatePolynomial<F, E>,
-        abort_on_remainder: bool,
-    ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
+    pub fn heap_division(&self, div: &Self, abort_on_remainder: bool) -> (Self, Self) {
         let mut q = self.new_from(Some(self.nterms));
         let mut r = self.new_from(None);
 
@@ -1890,10 +1872,10 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
     /// be used to check for subtraction overflow, serving as a division test.
     pub fn heap_division_packed_exp(
         &self,
-        div: &MultivariatePolynomial<F, E>,
+        div: &Self,
         abort_on_remainder: bool,
         pack_u8: bool,
-    ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
+    ) -> (Self, Self) {
         let mut q = self.new_from(Some(self.nterms));
         let mut r = self.new_from(None);
 

@@ -455,9 +455,7 @@ impl OwnedMul for OwnedMulD {
     }
 
     fn replace_last(&mut self, other: AtomView<Self::P>) {
-        if self.data.is_empty() {
-            panic!("Cannot pop empty mul");
-        }
+        assert!(!self.data.is_empty(), "Cannot pop empty mul");
 
         let mut c = &self.data[1 + 4..];
 

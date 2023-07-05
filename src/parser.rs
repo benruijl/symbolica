@@ -534,12 +534,12 @@ pub fn parse(input: &str) -> Result<Token, String> {
         }
 
         // first drain the queue of extra operators
-        if extra_ops.is_empty() {
+        c = if extra_ops.is_empty() {
             i += 1;
-            c = char_iter.next().unwrap_or('\0');
+            char_iter.next().unwrap_or('\0')
         } else {
-            c = extra_ops.remove(0);
-        }
+            extra_ops.remove(0)
+        };
     }
 
     if stack.len() == 1 {
@@ -672,7 +672,7 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
                 .expect("Undefined variable");
 
             // read pow
-            if c == b'^' {
+            exponents[index] = if c == b'^' {
                 let pow_start = input;
 
                 // read pow
@@ -690,10 +690,10 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
                     len -= 1;
                 }
                 let n = unsafe { std::str::from_utf8_unchecked(&pow_start[..len]) };
-                exponents[index] = E::from_u32(n.parse::<u32>().unwrap());
+                E::from_u32(n.parse::<u32>().unwrap())
             } else {
-                exponents[index] = E::one();
-            }
+                E::one()
+            };
 
             if input.is_empty() {
                 break;

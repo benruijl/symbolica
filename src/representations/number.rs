@@ -355,7 +355,7 @@ impl BorrowedNumber<'_> {
                 Number::RationalPolynomial(r)
             }
             (BorrowedNumber::Large(l), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
+            | (Self::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
                 let mut r = (*p).clone();
                 let (n, d) = l.to_rat().into_numer_denom();
                 r.numerator = r.numerator.mul_coeff(Integer::Large(n));
@@ -384,21 +384,18 @@ impl BorrowedNumber<'_> {
                     (n1, d1) = (d1, n1);
                 }
 
-                if n2 <= u32::MAX as i64 {
-                    if let Some(pn) = n1.checked_pow(n2 as u32) {
-                        if let Some(pd) = d1.checked_pow(n2 as u32) {
-                            // TODO: simplify 4^(1/2)
-                            return (Number::Natural(pn, pd), Number::Natural(1, d2));
-                        }
+                assert!(n2 <= u32::MAX as i64, "Power is too large: {}", n2);
+                if let Some(pn) = n1.checked_pow(n2 as u32) {
+                    if let Some(pd) = d1.checked_pow(n2 as u32) {
+                        // TODO: simplify 4^(1/2)
+                        return (Number::Natural(pn, pd), Number::Natural(1, d2));
                     }
-
-                    (
-                        Number::Large(ArbitraryPrecisionRational::from((n1, d1)).pow(n2 as u32)),
-                        Number::Natural(1, d2),
-                    )
-                } else {
-                    panic!("Power is too large: {}", n2);
                 }
+
+                (
+                    Number::Large(ArbitraryPrecisionRational::from((n1, d1)).pow(n2 as u32)),
+                    Number::Natural(1, d2),
+                )
             }
             (&Self::RationalPolynomial(r), &BorrowedNumber::Natural(n2, d2)) => {
                 assert!(

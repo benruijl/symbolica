@@ -681,26 +681,24 @@ impl Token {
                         _ => Err("Unsupported base")?,
                     };
 
-                    match &args[1] {
-                        Token::Number(n) => {
-                            if let Ok(x) = n.parse::<i64>() {
-                                if x < 1 || x > u32::MAX as i64 {
-                                    Err("Invalid exponent")?;
-                                }
-                                exponents[var_index] += E::from_u32(x as u32);
-                            } else {
-                                match ArbitraryPrecisionInteger::parse(n) {
-                                    Ok(x) => {
-                                        let p: ArbitraryPrecisionInteger = x.complete();
-                                        let exp = p.to_u32().ok_or("Cannot convert to u32")?;
-                                        exponents[var_index] += E::from_u32(exp);
-                                    }
-                                    Err(e) => Err(format!("Could not parse number: {}", e))?,
-                                }
-                            };
+                    let Token::Number(n) = &args[1] else {
+                        Err("Unsupported exponent")?
+                    };
+                    if let Ok(x) = n.parse::<i64>() {
+                        if x < 1 || x > u32::MAX as i64 {
+                            Err("Invalid exponent")?;
                         }
-                        _ => Err("Unsupported exponent")?,
-                    }
+                        exponents[var_index] += E::from_u32(x as u32);
+                    } else {
+                        match ArbitraryPrecisionInteger::parse(n) {
+                            Ok(x) => {
+                                let p: ArbitraryPrecisionInteger = x.complete();
+                                let exp = p.to_u32().ok_or("Cannot convert to u32")?;
+                                exponents[var_index] += E::from_u32(exp);
+                            }
+                            Err(e) => Err(format!("Could not parse number: {}", e))?,
+                        }
+                    };
                 }
                 _ => Err("Unsupported expression")?,
             }

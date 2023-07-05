@@ -53,16 +53,16 @@ impl ToFiniteField<u32> for Integer {
 
 impl ToFiniteField<u64> for Integer {
     fn to_finite_field(&self, field: &FiniteField<u64>) -> <FiniteField<u64> as Ring>::Element {
-        match self {
+        field.to_element(match self {
             &Self::Natural(n) => {
                 if field.get_prime() > i64::MAX as u64 {
-                    field.to_element((n as i128).rem_euclid(field.get_prime() as i128) as u64)
+                    (n as i128).rem_euclid(field.get_prime() as i128) as u64
                 } else {
-                    field.to_element(n.rem_euclid(field.get_prime() as i64) as u64)
+                    n.rem_euclid(field.get_prime() as i64) as u64
                 }
             }
-            Self::Large(r) => field.to_element(r.mod_u64(field.get_prime())),
-        }
+            Self::Large(r) => r.mod_u64(field.get_prime()),
+        })
     }
 }
 

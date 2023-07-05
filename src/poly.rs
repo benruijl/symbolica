@@ -67,213 +67,91 @@ pub trait Exponent:
     fn unpack_u16(n: u64, out: &mut [Self]);
 }
 
-impl Exponent for u32 {
-    #[inline]
-    fn zero() -> Self {
-        0
-    }
+macro_rules! impl_exponent {
+    ($ty: ty) => {
+        impl Exponent for $ty {
+            #[inline]
+            fn zero() -> Self {
+                0
+            }
 
-    #[inline]
-    fn one() -> Self {
-        1
-    }
+            #[inline]
+            fn one() -> Self {
+                1
+            }
 
-    #[inline]
-    fn to_u32(&self) -> u32 {
-        *self
-    }
+            #[inline]
+            fn to_u32(&self) -> u32 {
+                *self as _
+            }
 
-    #[inline]
-    fn from_u32(n: u32) -> Self {
-        n
-    }
+            #[inline]
+            fn from_u32(n: u32) -> Self {
+                assert!(
+                    n <= Self::MAX as u32,
+                    "Exponent {} too large for u{}",
+                    n,
+                    std::mem::size_of::<Self>() * 8
+                );
+                n as _
+            }
 
-    #[inline]
-    fn is_zero(&self) -> bool {
-        *self == 0
-    }
+            #[inline]
+            fn is_zero(&self) -> bool {
+                *self == 0
+            }
 
-    #[inline]
-    fn checked_add(&self, other: &Self) -> Option<Self> {
-        u32::checked_add(*self, *other)
-    }
+            #[inline]
+            fn checked_add(&self, other: &Self) -> Option<Self> {
+                Self::checked_add(*self, *other)
+            }
 
-    #[inline]
-    fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_unsigned(*self as u64, *other as u64) as Self
-    }
+            #[inline]
+            fn gcd(&self, other: &Self) -> Self {
+                utils::gcd_unsigned(*self as u64, *other as u64) as Self
+            }
 
-    fn pack(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 8) + (*x as u8 as u64);
+            fn pack(list: &[Self]) -> u64 {
+                let mut num: u64 = 0;
+                for x in list.iter().rev() {
+                    num = (num << 8) + (*x as u8 as u64);
+                }
+                num.swap_bytes()
+            }
+
+            fn unpack(mut n: u64, out: &mut [Self]) {
+                n = n.swap_bytes();
+                let s =
+                    unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
+                for (o, ss) in out.iter_mut().zip(s) {
+                    *o = *ss as Self;
+                }
+            }
+
+            fn pack_u16(list: &[Self]) -> u64 {
+                let mut num: u64 = 0;
+                for x in list.iter().rev() {
+                    num = (num << 16) + x.to_be() as u64;
+                }
+                num.swap_bytes()
+            }
+
+            fn unpack_u16(mut n: u64, out: &mut [Self]) {
+                n = n.swap_bytes();
+                let s = unsafe {
+                    std::slice::from_raw_parts(&n as *const u64 as *const Self, out.len())
+                };
+                for (o, ss) in out.iter_mut().zip(s) {
+                    *o = ss.swap_bytes();
+                }
+            }
         }
-        num.swap_bytes()
-    }
-
-    fn unpack(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = *ss as u32;
-        }
-    }
-
-    fn pack_u16(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 16) + ((*x as u16).to_be() as u64);
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack_u16(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = ss.swap_bytes() as u32;
-        }
-    }
+    };
 }
 
-impl Exponent for u16 {
-    #[inline]
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline]
-    fn one() -> Self {
-        1
-    }
-
-    #[inline]
-    fn to_u32(&self) -> u32 {
-        *self as u32
-    }
-
-    #[inline]
-    fn from_u32(n: u32) -> Self {
-        assert!(n <= u16::MAX as u32, "Exponent {} too large for u16", n);
-        n as _
-    }
-
-    #[inline]
-    fn is_zero(&self) -> bool {
-        *self == 0
-    }
-
-    #[inline]
-    fn checked_add(&self, other: &Self) -> Option<Self> {
-        u16::checked_add(*self, *other)
-    }
-
-    #[inline]
-    fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_unsigned(*self as u64, *other as u64) as Self
-    }
-
-    fn pack(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 8) + (*x as u8 as u64);
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = *ss as u16;
-        }
-    }
-
-    fn pack_u16(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 16) + x.to_be() as u64;
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack_u16(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = ss.swap_bytes();
-        }
-    }
-}
-
-/// An exponent limited to 255 for efficiency
-impl Exponent for u8 {
-    #[inline]
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline]
-    fn one() -> Self {
-        1
-    }
-
-    #[inline]
-    fn to_u32(&self) -> u32 {
-        *self as u32
-    }
-
-    #[inline]
-    fn from_u32(n: u32) -> Self {
-        assert!(n <= u8::MAX as u32, "Exponent {} too large for u8", n);
-        n as _
-    }
-
-    #[inline]
-    fn is_zero(&self) -> bool {
-        *self == 0
-    }
-
-    #[inline]
-    fn checked_add(&self, other: &Self) -> Option<Self> {
-        Self::checked_add(*self, *other)
-    }
-
-    #[inline]
-    fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_unsigned(*self as u64, *other as u64) as Self
-    }
-
-    fn pack(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 8) + (*x as u64);
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
-        out.copy_from_slice(s);
-    }
-
-    fn pack_u16(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 16) + ((*x as u16).to_be() as u64);
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack_u16(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = ss.swap_bytes() as u8;
-        }
-    }
-}
+impl_exponent!(u32);
+impl_exponent!(u16);
+impl_exponent!(u8);
 
 impl<'a, P: Atom> AtomView<'a, P> {
     /// Convert an expression to a polynomial.

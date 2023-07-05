@@ -281,10 +281,7 @@ impl Field for FiniteField<u32> {
         // apply multiplication with 1 twice to get the correct scaling of R=2^32
         // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
         let x_mont = self
-            .mul(
-                &self.mul(a, &FiniteFieldElement(1)),
-                &FiniteFieldElement(1),
-            )
+            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
             .0;
 
         // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
@@ -552,10 +549,7 @@ impl Field for FiniteField<u64> {
         // apply multiplication with 1 twice to get the correct scaling of R=2^64
         // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
         let x_mont = self
-            .mul(
-                &self.mul(a, &FiniteFieldElement(1)),
-                &FiniteFieldElement(1),
-            )
+            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
             .0;
 
         // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)

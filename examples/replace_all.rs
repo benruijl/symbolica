@@ -52,7 +52,15 @@ fn main() {
             symbolica::printer::PrintMode::default(),
             &state
         ),
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state),
-        AtomPrinter::new(out.to_view(), symbolica::printer::PrintMode::default(), &state)
+        AtomPrinter::new(
+            expr.to_view(),
+            symbolica::printer::PrintMode::default(),
+            &state
+        ),
+        AtomPrinter::new(
+            out.to_view(),
+            symbolica::printer::PrintMode::default(),
+            &state
+        )
     );
 }

@@ -1513,27 +1513,26 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
 
     /// Return the next replacement.
     pub fn next(&mut self, workspace: &Workspace<P>, out: &mut OwnedAtom<P>) -> Option<()> {
-        if let Some((position, used_flags, _target, match_stack)) =
+        let Some((position, used_flags, _target, match_stack)) =
             self.pattern_tree_iterator.next()
-        {
-            let mut rhs_handle = workspace.new_atom();
-            let new_rhs = rhs_handle.get_mut();
+        else {
+            return None
+        };
+        let mut rhs_handle = workspace.new_atom();
+        let new_rhs = rhs_handle.get_mut();
 
-            self.rhs
-                .substitute_wildcards(workspace, new_rhs, match_stack);
+        self.rhs
+            .substitute_wildcards(workspace, new_rhs, match_stack);
 
-            ReplaceIterator::copy_and_replace(
-                out,
-                position,
-                &used_flags,
-                self.target,
-                new_rhs.to_view(),
-                workspace,
-            );
+        ReplaceIterator::copy_and_replace(
+            out,
+            position,
+            &used_flags,
+            self.target,
+            new_rhs.to_view(),
+            workspace,
+        );
 
-            Some(())
-        } else {
-            None
-        }
+        Some(())
     }
 }

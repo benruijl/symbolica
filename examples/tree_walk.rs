@@ -17,7 +17,11 @@ fn main() {
 
     println!(
         "> Tree walk of {}:",
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state)
+        AtomPrinter::new(
+            expr.to_view(),
+            symbolica::printer::PrintMode::default(),
+            &state
+        )
     );
 
     for (loc, view) in AtomTreeIterator::new(expr.to_view()) {

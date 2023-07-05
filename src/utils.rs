@@ -32,9 +32,9 @@ pub struct CombinationIterator {
 }
 
 impl CombinationIterator {
-    pub fn new(n: usize, k: u32) -> CombinationIterator {
-        CombinationIterator {
-            indices: (0..n).map(|_| 0).collect(),
+    pub fn new(n: usize, k: u32) -> Self {
+        Self {
+            indices: smallvec::smallvec![0; n],
             k,
             init: false,
         }

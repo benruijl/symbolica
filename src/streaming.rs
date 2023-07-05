@@ -31,11 +31,7 @@ impl<P: Atom> Iterator for TermInputStream<P> {
     type Item = OwnedAtom<P>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(v) = self.mem_buf.pop() {
-            return Some(v);
-        }
-
-        None
+        self.mem_buf.pop()
     }
 }
 

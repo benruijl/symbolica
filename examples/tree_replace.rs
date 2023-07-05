@@ -30,7 +30,11 @@ fn main() {
             symbolica::printer::PrintMode::default(),
             &state
         ),
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state)
+        AtomPrinter::new(
+            expr.to_view(),
+            symbolica::printer::PrintMode::default(),
+            &state
+        )
     );
 
     let mut it = PatternAtomTreeIterator::new(&pattern, expr.to_view(), &state, &restrictions);

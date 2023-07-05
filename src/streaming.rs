@@ -130,8 +130,8 @@ where
     OwnedAtom<P>: Send,
 {
     /// Create a new term streamer.
-    pub fn new() -> TermStreamer<P> {
-        TermStreamer {
+    pub fn new() -> Self {
+        Self {
             exp_in: TermInputStream { mem_buf: vec![] },
             exp_out: TermOutputStream { mem_buf: vec![] },
         }
@@ -139,8 +139,8 @@ where
 
     /// Create a new term streamer that contains the
     /// terms in atom `a`. More terms can be added using `self.push`.
-    pub fn new_from(a: OwnedAtom<P>) -> TermStreamer<P> {
-        let mut s = TermStreamer {
+    pub fn new_from(a: OwnedAtom<P>) -> Self {
+        let mut s = Self {
             exp_in: TermInputStream { mem_buf: vec![] },
             exp_out: TermOutputStream { mem_buf: vec![] },
         };
@@ -163,7 +163,7 @@ where
     pub fn map(
         mut self,
         f: impl Fn(&Workspace<P>, OwnedAtom<P>) -> OwnedAtom<P> + Send + Sync,
-    ) -> TermStreamer<P> {
+    ) -> Self {
         self.move_out_to_in();
 
         let out_wrap = Mutex::new(self.exp_out);
@@ -174,7 +174,7 @@ where
             })
         });
 
-        TermStreamer {
+        Self {
             exp_in: TermInputStream { mem_buf: vec![] },
             exp_out: out_wrap.into_inner().unwrap(),
         }

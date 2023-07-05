@@ -149,30 +149,29 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
         num.unify_var_map(&mut den);
 
         if den.is_one() {
-            Self {
+            return Self {
                 numerator: num,
                 denominator: den,
-            }
-        } else {
-            if do_gcd {
-                let gcd = MultivariatePolynomial::gcd(&num, &den);
+            };
+        }
+        if do_gcd {
+            let gcd = MultivariatePolynomial::gcd(&num, &den);
 
-                if !gcd.is_one() {
-                    num = num / &gcd;
-                    den = den / &gcd;
-                }
+            if !gcd.is_one() {
+                num = num / &gcd;
+                den = den / &gcd;
             }
+        }
 
-            // normalize denominator to have positive leading coefficient
-            if den.lcoeff().is_negative() {
-                num = -num;
-                den = -den;
-            }
+        // normalize denominator to have positive leading coefficient
+        if den.lcoeff().is_negative() {
+            num = -num;
+            den = -den;
+        }
 
-            Self {
-                numerator: num,
-                denominator: den,
-            }
+        Self {
+            numerator: num,
+            denominator: den,
         }
     }
 }
@@ -242,7 +241,7 @@ where
         let e = e as u32;
 
         // TODO: do binary exponentation
-        let mut poly = RationalPolynomial {
+        let mut poly = Self {
             numerator: MultivariatePolynomial::new_from(&self.numerator, None),
             denominator: MultivariatePolynomial::new_from(&self.denominator, None),
         };
@@ -327,14 +326,14 @@ where
     }
 
     fn zero(&self) -> Self::Element {
-        RationalPolynomial {
+        Self::Element {
             numerator: MultivariatePolynomial::new(0, self.ring, None, None),
             denominator: MultivariatePolynomial::one(self.ring),
         }
     }
 
     fn one(&self) -> Self::Element {
-        RationalPolynomial {
+        Self::Element {
             numerator: MultivariatePolynomial::one(self.ring),
             denominator: MultivariatePolynomial::one(self.ring),
         }
@@ -510,23 +509,23 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Mul<&'a Rationa
 
         if gcd1.is_one() {
             if gcd2.is_one() {
-                RationalPolynomial {
+                Self::Output {
                     numerator: &self.numerator * &other.numerator,
                     denominator: &self.denominator * &other.denominator,
                 }
             } else {
-                RationalPolynomial {
+                Self::Output {
                     numerator: &self.numerator * &(&other.numerator / &gcd2),
                     denominator: (&self.denominator / &gcd2) * &other.denominator,
                 }
             }
         } else if gcd2.is_one() {
-            RationalPolynomial {
+            Self::Output {
                 numerator: (&self.numerator / &gcd1) * &other.numerator,
                 denominator: &self.denominator * &(&other.denominator / &gcd1),
             }
         } else {
-            RationalPolynomial {
+            Self::Output {
                 numerator: (&self.numerator / &gcd1) * &(&other.numerator / &gcd2),
                 denominator: (&self.denominator / &gcd2) * &(&other.denominator / &gcd1),
             }

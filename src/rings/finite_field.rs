@@ -87,7 +87,7 @@ impl FiniteFieldCore<u32> for FiniteField<u32> {
     fn new(p: u32) -> FiniteField<u32> {
         assert!(p % 2 != 0);
 
-        FiniteField {
+        Self {
             p,
             m: Self::inv_2_32(p),
             one: FiniteFieldElement(Self::get_one(p)),
@@ -130,11 +130,11 @@ impl Ring for FiniteField<u32> {
     /// Subtract `b` from `a`, where `a` and `b` are in Montgomory form.
     #[inline(always)]
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        if a.0 >= b.0 {
-            FiniteFieldElement(a.0 - b.0)
+        FiniteFieldElement(if a.0 >= b.0 {
+            a.0 - b.0
         } else {
-            FiniteFieldElement(a.0 + (self.p - b.0))
-        }
+            a.0 + (self.p - b.0)
+        })
     }
 
     /// Multiply two numbers in Montgomory form.
@@ -149,11 +149,7 @@ impl Ring for FiniteField<u32> {
             return FiniteFieldElement(u.wrapping_sub(self.p));
         }
 
-        if u >= self.p {
-            FiniteFieldElement(u - self.p)
-        } else {
-            FiniteFieldElement(u)
-        }
+        FiniteFieldElement(if u >= self.p { u - self.p } else { u })
     }
 
     #[inline(always)]

@@ -278,10 +278,10 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
         self.coefficients.reverse();
 
-        let midu = if self.nterms % 2 == 0 {
-            self.nvars * (self.nterms / 2)
+        let midu = if self.nvars * self.nterms % 2 == 0 {
+            self.nterms / 2
         } else {
-            self.nvars * (self.nterms / 2 + 1)
+            self.nterms / 2 + 1
         };
 
         let (l, r) = self.exponents.split_at_mut(midu);
@@ -322,10 +322,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         for t in 1..self.nterms {
-            match MultivariatePolynomial::<F, E>::cmp_exponents(
-                self.exponents(t),
-                self.exponents(t - 1),
-            ) {
+            match Self::cmp_exponents(self.exponents(t), self.exponents(t - 1)) {
                 Ordering::Equal => panic!("Inconsistent polynomial (equal monomials): {}", self),
                 Ordering::Less => panic!(
                     "Inconsistent polynomial (wrong monomial ordering): {}",
@@ -365,13 +362,12 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         if F::is_zero(&coefficient) {
             return;
         }
-        if self.nvars != exponents.len() {
-            panic!(
-                "nvars mismatched: got {}, expected {}",
-                exponents.len(),
-                self.nvars
-            );
-        }
+        assert!(
+            self.nvars == exponents.len(),
+            "nvars mismatched: got {}, expected {}",
+            exponents.len(),
+            self.nvars
+        );
 
         // should we append to the back?
         if self.nterms == 0 || self.last_exponents() < exponents {

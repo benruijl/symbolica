@@ -325,80 +325,80 @@ impl<P: Atom> OwnedAtom<P> {
         };
 
         match self {
-            OwnedAtom::Var(v) => v,
+            Self::Var(v) => v,
             _ => unreachable!(),
         }
     }
 
     pub fn transform_to_fun(&mut self) -> &mut P::OF {
-        let mut of = std::mem::replace(self, OwnedAtom::Empty);
+        let mut of = std::mem::replace(self, Self::Empty);
 
         *self = match of {
-            OwnedAtom::Fun(_) => {
+            Self::Fun(_) => {
                 of.reset();
                 of
             }
-            OwnedAtom::Num(n) => OwnedAtom::Fun(n.to_owned_fun()),
-            OwnedAtom::Pow(p) => OwnedAtom::Fun(p.to_owned_fun()),
-            OwnedAtom::Var(v) => OwnedAtom::Fun(v.to_owned_fun()),
-            OwnedAtom::Mul(m) => OwnedAtom::Fun(m.to_owned_fun()),
-            OwnedAtom::Add(a) => OwnedAtom::Fun(a.to_owned_fun()),
-            OwnedAtom::Empty => unreachable!(),
+            Self::Num(n) => Self::Fun(n.to_owned_fun()),
+            Self::Pow(p) => Self::Fun(p.to_owned_fun()),
+            Self::Var(v) => Self::Fun(v.to_owned_fun()),
+            Self::Mul(m) => Self::Fun(m.to_owned_fun()),
+            Self::Add(a) => Self::Fun(a.to_owned_fun()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            OwnedAtom::Fun(f) => f,
+            Self::Fun(f) => f,
             _ => unreachable!(),
         }
     }
 
     pub fn transform_to_mul(&mut self) -> &mut P::OM {
-        let mut om = std::mem::replace(self, OwnedAtom::Empty);
+        let mut om = std::mem::replace(self, Self::Empty);
 
         *self = match om {
-            OwnedAtom::Mul(_) => {
+            Self::Mul(_) => {
                 om.reset();
                 om
             }
-            OwnedAtom::Num(n) => OwnedAtom::Mul(n.to_owned_mul()),
-            OwnedAtom::Pow(p) => OwnedAtom::Mul(p.to_owned_mul()),
-            OwnedAtom::Var(v) => OwnedAtom::Mul(v.to_owned_mul()),
-            OwnedAtom::Fun(f) => OwnedAtom::Mul(f.to_owned_mul()),
-            OwnedAtom::Add(a) => OwnedAtom::Mul(a.to_owned_mul()),
-            OwnedAtom::Empty => unreachable!(),
+            Self::Num(n) => Self::Mul(n.to_owned_mul()),
+            Self::Pow(p) => Self::Mul(p.to_owned_mul()),
+            Self::Var(v) => Self::Mul(v.to_owned_mul()),
+            Self::Fun(f) => Self::Mul(f.to_owned_mul()),
+            Self::Add(a) => Self::Mul(a.to_owned_mul()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            OwnedAtom::Mul(m) => m,
+            Self::Mul(m) => m,
             _ => unreachable!(),
         }
     }
 
     pub fn transform_to_add(&mut self) -> &mut P::OA {
-        let mut oa = std::mem::replace(self, OwnedAtom::Empty);
+        let mut oa = std::mem::replace(self, Self::Empty);
 
         *self = match oa {
-            OwnedAtom::Add(_) => {
+            Self::Add(_) => {
                 oa.reset();
                 oa
             }
-            OwnedAtom::Num(n) => OwnedAtom::Add(n.to_owned_add()),
-            OwnedAtom::Pow(p) => OwnedAtom::Add(p.to_owned_add()),
-            OwnedAtom::Var(v) => OwnedAtom::Add(v.to_owned_add()),
-            OwnedAtom::Fun(f) => OwnedAtom::Add(f.to_owned_add()),
-            OwnedAtom::Mul(m) => OwnedAtom::Add(m.to_owned_add()),
-            OwnedAtom::Empty => unreachable!(),
+            Self::Num(n) => Self::Add(n.to_owned_add()),
+            Self::Pow(p) => Self::Add(p.to_owned_add()),
+            Self::Var(v) => Self::Add(v.to_owned_add()),
+            Self::Fun(f) => Self::Add(f.to_owned_add()),
+            Self::Mul(m) => Self::Add(m.to_owned_add()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            OwnedAtom::Add(a) => a,
+            Self::Add(a) => a,
             _ => unreachable!(),
         }
     }
 
     /// This function allocates a new OwnedAtom with the same content as `view`.
-    pub fn new_from_view(view: &AtomView<P>) -> OwnedAtom<P> {
-        let mut owned = OwnedAtom::new();
+    pub fn new_from_view(view: &AtomView<P>) -> Self {
+        let mut owned = Self::new();
         owned.from_view(view);
         owned
     }
@@ -434,13 +434,13 @@ impl<P: Atom> OwnedAtom<P> {
 
     pub fn to_view(&self) -> AtomView<'_, P> {
         match self {
-            OwnedAtom::Num(n) => AtomView::Num(n.to_num_view()),
-            OwnedAtom::Var(v) => AtomView::Var(v.to_var_view()),
-            OwnedAtom::Fun(f) => AtomView::Fun(f.to_fun_view()),
-            OwnedAtom::Pow(p) => AtomView::Pow(p.to_pow_view()),
-            OwnedAtom::Mul(m) => AtomView::Mul(m.to_mul_view()),
-            OwnedAtom::Add(a) => AtomView::Add(a.to_add_view()),
-            OwnedAtom::Empty => unreachable!(),
+            Self::Num(n) => AtomView::Num(n.to_num_view()),
+            Self::Var(v) => AtomView::Var(v.to_var_view()),
+            Self::Fun(f) => AtomView::Fun(f.to_fun_view()),
+            Self::Pow(p) => AtomView::Pow(p.to_pow_view()),
+            Self::Mul(m) => AtomView::Mul(m.to_mul_view()),
+            Self::Add(a) => AtomView::Add(a.to_add_view()),
+            Self::Empty => unreachable!(),
         }
     }
 }
@@ -452,13 +452,13 @@ impl<P: Atom> ResettableBuffer for OwnedAtom<P> {
 
     fn reset(&mut self) {
         match self {
-            OwnedAtom::Num(n) => n.reset(),
-            OwnedAtom::Var(v) => v.reset(),
-            OwnedAtom::Fun(f) => f.reset(),
-            OwnedAtom::Pow(p) => p.reset(),
-            OwnedAtom::Mul(m) => m.reset(),
-            OwnedAtom::Add(a) => a.reset(),
-            OwnedAtom::Empty => {}
+            Self::Num(n) => n.reset(),
+            Self::Var(v) => v.reset(),
+            Self::Fun(f) => f.reset(),
+            Self::Pow(p) => p.reset(),
+            Self::Mul(m) => m.reset(),
+            Self::Add(a) => a.reset(),
+            Self::Empty => {}
         }
     }
 }

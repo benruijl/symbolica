@@ -23,7 +23,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
         out: &mut OwnedAtom<P>,
     ) -> bool {
         match self {
-            AtomView::Num(n) => {
+            Self::Num(n) => {
                 if let BorrowedNumber::RationalPolynomial(r) = n.get_number_view() {
                     let old_var_map = r.get_var_map().unwrap();
                     if old_var_map != vars {
@@ -83,7 +83,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     false
                 }
             }
-            AtomView::Var(v) => {
+            Self::Var(v) => {
                 let id = v.get_name();
                 if vars.contains(&id) {
                     // change variable into coefficient

@@ -564,7 +564,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
         }
 
         match self {
-            AtomView::Mul(t) => {
+            Self::Mul(t) => {
                 let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
 
                 for a in t.iter() {
@@ -646,16 +646,16 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     on.set_from_number(Number::Natural(1, 1));
                 }
             }
-            AtomView::Num(n) => {
+            Self::Num(n) => {
                 let normalized_num = n.get_number_view().normalize();
                 let nn = out.transform_to_num();
                 nn.set_from_number(normalized_num);
             }
-            AtomView::Var(v) => {
+            Self::Var(v) => {
                 let vv = out.transform_to_var();
                 vv.set_from_view(v);
             }
-            AtomView::Fun(f) => {
+            Self::Fun(f) => {
                 let out = out.transform_to_fun();
                 out.set_from_name(f.get_name());
 
@@ -671,7 +671,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     }
                 }
             }
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 let mut base_handle = workspace.new_atom();
@@ -750,7 +750,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     );
                 }
             }
-            AtomView::Add(a) => {
+            Self::Add(a) => {
                 let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
 
                 for a in a.iter() {

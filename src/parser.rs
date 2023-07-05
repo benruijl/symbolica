@@ -39,7 +39,7 @@ impl Operator {
     #[inline]
     pub fn get_arity(&self) -> usize {
         match self {
-            Operator::Neg | Operator::Inv => 1,
+            Self::Neg | Self::Inv => 1,
             _ => 2,
         }
     }

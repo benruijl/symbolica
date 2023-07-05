@@ -375,10 +375,10 @@ impl BorrowedNumber<'_> {
         }
     }
 
-    pub fn pow(&self, other: &BorrowedNumber<'_>, _state: &State) -> (Number, Number) {
+    pub fn pow(&self, other: &BorrowedNumber<'_>, _: &State) -> (Number, Number) {
         // TODO: normalize 4^1/3 to 2^(2/3)?
         match (self, other) {
-            (&BorrowedNumber::Natural(mut n1, mut d1), &BorrowedNumber::Natural(mut n2, d2)) => {
+            (&Self::Natural(mut n1, mut d1), &BorrowedNumber::Natural(mut n2, d2)) => {
                 if n2 < 0 {
                     n2 = n2.saturating_abs();
                     (n1, d1) = (d1, n1);
@@ -400,7 +400,7 @@ impl BorrowedNumber<'_> {
                     panic!("Power is too large: {}", n2);
                 }
             }
-            (&BorrowedNumber::RationalPolynomial(r), &BorrowedNumber::Natural(n2, d2)) => {
+            (&Self::RationalPolynomial(r), &BorrowedNumber::Natural(n2, d2)) => {
                 assert!(
                     n2.unsigned_abs() <= u32::MAX as u64,
                     "Power is too large: {}",

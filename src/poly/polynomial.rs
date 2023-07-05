@@ -631,7 +631,7 @@ impl<'a, 'b, F: Ring, E: Exponent> Add<&'a MultivariatePolynomial<F, E>>
 impl<F: Ring, E: Exponent> Sub for MultivariatePolynomial<F, E> {
     type Output = Self;
 
-    fn sub(self, other: Self) -> Self::Output {
+    fn sub(self, other: Self) -> Self {
         self.add(other.neg())
     }
 }

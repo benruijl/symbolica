@@ -548,9 +548,7 @@ impl<F: Ring, E: Exponent> Add for MultivariatePolynomial<F, E> {
         if other.is_zero() {
             return self;
         }
-        if self.nvars != other.nvars {
-            panic!("nvars mismatched");
-        }
+        assert!(self.nvars == other.nvars, "nvars mismatched");
 
         // Merge the two polynomials, which are assumed to be already sorted.
 

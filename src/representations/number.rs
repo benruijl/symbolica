@@ -473,8 +473,8 @@ impl BorrowedNumber<'_> {
 impl PackedRationalNumberWriter for Number {
     fn write_packed(&self, dest: &mut Vec<u8>) {
         match self {
-            Number::Natural(num, den) => (*num, *den).write_packed(dest),
-            Number::Large(r) => {
+            Self::Natural(num, den) => (*num, *den).write_packed(dest),
+            Self::Large(r) => {
                 dest.put_u8(ARB_NUM | ARB_DEN);
 
                 let num_digits = r.numer().significant_digits::<u8>();
@@ -492,11 +492,11 @@ impl PackedRationalNumberWriter for Number {
                 r.denom()
                     .write_digits(&mut dest[old_len + num_digits..], Order::Lsf);
             }
-            Number::FiniteField(num, f) => {
+            Self::FiniteField(num, f) => {
                 dest.put_u8(FIN_NUM);
                 (num.0, f.0 as u64).write_packed(dest); // this adds an extra tag
             }
-            Number::RationalPolynomial(p) => {
+            Self::RationalPolynomial(p) => {
                 dest.put_u8(RAT_POLY);
                 // note that this is not a linear representation
                 // FIXME: pointer alignment
@@ -510,11 +510,11 @@ impl PackedRationalNumberWriter for Number {
 
     fn write_packed_fixed(&self, mut dest: &mut [u8]) {
         match self {
-            Number::Natural(num, den) => (*num, *den).write_packed_fixed(dest),
-            Number::Large(_) | Number::RationalPolynomial(_) => {
+            Self::Natural(num, den) => (*num, *den).write_packed_fixed(dest),
+            Self::Large(_) | Number::RationalPolynomial(_) => {
                 todo!("Writing large packed rational not implemented")
             }
-            Number::FiniteField(num, f) => {
+            Self::FiniteField(num, f) => {
                 dest.put_u8(FIN_NUM);
                 (num.0, f.0 as u64).write_packed_fixed(dest);
             }
@@ -523,14 +523,14 @@ impl PackedRationalNumberWriter for Number {
 
     fn get_packed_size(&self) -> u64 {
         match self {
-            Number::Natural(num, den) => (*num, *den).get_packed_size(),
-            Number::Large(l) => {
+            Self::Natural(num, den) => (*num, *den).get_packed_size(),
+            Self::Large(l) => {
                 let n = l.numer().significant_digits::<u8>() as i64;
                 let d = l.denom().significant_digits::<u8>() as i64;
                 1 + (n as i64, d as i64).get_packed_size() + n as u64 + d as u64
             }
-            Number::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
-            Number::RationalPolynomial(_) => {
+            Self::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
+            Self::RationalPolynomial(_) => {
                 1 + std::mem::size_of::<RationalPolynomial<IntegerRing, u16>>() as u64
             }
         }

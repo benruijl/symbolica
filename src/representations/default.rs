@@ -168,7 +168,7 @@ impl Convert<DefaultRepresentation> for OwnedVarD {
 
 impl ResettableBuffer for OwnedVarD {
     fn new() -> Self {
-        OwnedVarD { data: vec![] }
+        Self { data: vec![] }
     }
 
     fn reset(&mut self) {
@@ -277,9 +277,9 @@ impl Convert<DefaultRepresentation> for OwnedFunD {
         OwnedNumD { data: self.data }
     }
 
-    fn to_owned_fun(mut self) -> OwnedFunD {
+    fn to_owned_fun(mut self) -> Self {
         self.data.clear();
-        OwnedFunD { data: self.data }
+        Self { data: self.data }
     }
 
     fn to_owned_add(mut self) -> OwnedAddD {
@@ -1495,9 +1495,7 @@ pub fn representation_size() {
 
     let c = b.to_tree();
 
-    if a != c {
-        panic!("in and out is different: {:?} vs {:?}", a, c);
-    }
+    assert!(a == c, "in and out is different: {:?} vs {:?}", a, c);
 
     println!("{:?}", b.to_view());
 }

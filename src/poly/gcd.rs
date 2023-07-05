@@ -860,15 +860,14 @@ where
                         }
 
                         second_index += 1;
-                        if second_index == shape.len() {
-                            panic!(
-                                "Could not solve for the scaling coefficients: a={}, b={}, mat={}, rhs={}",
-                                a,
-                                b,
-                                mat,
-                                rhs,
-                            );
-                        }
+                        assert!(
+                            second_index != shape.len(),
+                            "Could not solve for the scaling coefficients: a={}, b={}, mat={}, rhs={}",
+                            a,
+                            b,
+                            mat,
+                            rhs,
+                        );
                     }
                     Err(LinearSolverError::Inconsistent) => {
                         debug!("Inconsistent system");

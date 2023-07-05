@@ -70,8 +70,8 @@ pub enum Token {
     Number(SmartString<LazyCompact>),
     ID(SmartString<LazyCompact>),
     RationalPolynomial(SmartString<LazyCompact>),
-    Op(bool, bool, Operator, Vec<Token>),
-    Fn(bool, Vec<Token>),
+    Op(bool, bool, Operator, Vec<Self>),
+    Fn(bool, Vec<Self>),
     Start,
     OpenParenthesis,
     CloseParenthesis,
@@ -115,7 +115,7 @@ impl Token {
                         std::mem::swap(args, &mut args2);
                         args.append(&mut args2);
                     } else {
-                        args.insert(0, Token::Op(false, false, o2, args2));
+                        args.insert(0, Self::Op(false, false, o2, args2));
                     }
                 } else {
                     args.insert(0, other);
@@ -140,7 +140,7 @@ impl Token {
                 }
             }
             _ => {
-                let t = std::mem::replace(self, Token::EOF);
+                let t = std::mem::replace(self, Self::EOF);
                 *self = Self::Op(false, false, Operator::Neg, vec![t]);
             }
         }
@@ -149,35 +149,33 @@ impl Token {
     /// Add `other` to right side of `self`, where `self` is a binary operation.
     #[inline]
     fn add_right(&mut self, mut other: Self) {
-        match self {
-            Self::Op(_, mr, o1, args) => {
-                debug_assert!(*mr);
-                *mr = false;
+        let Self::Op(_, mr, o1, args) = self else { 
+            unreachable!("Cannot right-append to non-operator") 
+        };
+        debug_assert!(*mr);
+        *mr = false;
 
-                if *o1 == Operator::Neg {
-                    other.distribute_neg();
-                    *self = other;
-                    return;
-                }
+        if *o1 == Operator::Neg {
+            other.distribute_neg();
+            *self = other;
+            return;
+        }
 
-                if let Self::Op(ml, mr, o2, mut args2) = other {
-                    debug_assert!(!ml && !mr);
-                    if *o1 == o2 && o2.right_associative() {
-                        if o2 == Operator::Neg || o2 == Operator::Inv {
-                            // twice unary minus or inv cancels out
-                            debug_assert!(args2.len() == 1);
-                            *self = args2.pop().unwrap();
-                        } else {
-                            args.append(&mut args2)
-                        }
-                    } else {
-                        args.push(Self::Op(false, false, o2, args2));
-                    }
+        if let Self::Op(ml, mr, o2, mut args2) = other {
+            debug_assert!(!ml && !mr);
+            if *o1 == o2 && o2.right_associative() {
+                if matches!(o2, Operator::Neg | Operator::Inv) {
+                    // twice unary minus or inv cancels out
+                    debug_assert!(args2.len() == 1);
+                    *self = args2.pop().unwrap();
                 } else {
-                    args.push(other);
+                    args.append(&mut args2)
                 }
+            } else {
+                args.push(Self::Op(false, false, o2, args2));
             }
-            _ => unreachable!("Cannot right-append to non-operator"),
+        } else {
+            args.push(other);
         }
     }
 

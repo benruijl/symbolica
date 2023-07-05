@@ -67,7 +67,7 @@ fn main() {
             RationalPolynomialPrinter {
                 poly: &r,
                 state: &state,
-                print_mode: PrintMode::default()
+                print_mode: <_>::default()
             }
         );
 

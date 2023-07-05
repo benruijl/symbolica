@@ -24,8 +24,8 @@ pub struct RationalPolynomialField<R: Ring, E: Exponent> {
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomialField<R, E> {
-    pub fn new(coeff_ring: R) -> RationalPolynomialField<R, E> {
-        RationalPolynomialField {
+    pub fn new(coeff_ring: R) -> Self {
+        Self {
             ring: coeff_ring,
             _phantom_exp: PhantomData,
         }
@@ -48,7 +48,7 @@ pub struct RationalPolynomial<R: Ring, E: Exponent> {
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
-    pub fn new(field: R, var_map: Option<&[Identifier]>) -> RationalPolynomial<R, E> {
+    pub fn new(field: R, var_map: Option<&[Identifier]>) -> Self {
         let num = MultivariatePolynomial::new(
             var_map.map(|x| x.len()).unwrap_or(0),
             field,
@@ -57,7 +57,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         );
         let den = num.new_from_constant(field.one());
 
-        RationalPolynomial {
+        Self {
             numerator: num,
             denominator: den,
         }
@@ -84,7 +84,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
         den: MultivariatePolynomial<RationalField, E>,
         field: IntegerRing,
         do_gcd: bool,
-    ) -> RationalPolynomial<IntegerRing, E> {
+    ) -> Self {
         let content = num.field.gcd(&num.content(), &den.content());
 
         let mut num_int = MultivariatePolynomial::new(
@@ -149,30 +149,29 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
         num.unify_var_map(&mut den);
 
         if den.is_one() {
-            RationalPolynomial {
+            return Self {
                 numerator: num,
                 denominator: den,
-            }
-        } else {
-            if do_gcd {
-                let gcd = MultivariatePolynomial::gcd(&num, &den);
+            };
+        }
+        if do_gcd {
+            let gcd = MultivariatePolynomial::gcd(&num, &den);
 
-                if !gcd.is_one() {
-                    num = num / &gcd;
-                    den = den / &gcd;
-                }
+            if !gcd.is_one() {
+                num = num / &gcd;
+                den = den / &gcd;
             }
+        }
 
-            // normalize denominator to have positive leading coefficient
-            if den.lcoeff().is_negative() {
-                num = -num;
-                den = -den;
-            }
+        // normalize denominator to have positive leading coefficient
+        if den.lcoeff().is_negative() {
+            num = -num;
+            den = -den;
+        }
 
-            RationalPolynomial {
-                numerator: num,
-                denominator: den,
-            }
+        Self {
+            numerator: num,
+            denominator: den,
         }
     }
 }
@@ -193,31 +192,30 @@ where
         num.unify_var_map(&mut den);
 
         if den.is_one() {
-            RationalPolynomial {
+            return Self {
                 numerator: num,
                 denominator: den,
-            }
-        } else {
-            if do_gcd {
-                let gcd = MultivariatePolynomial::gcd(&num, &den);
+            };
+        }
+        if do_gcd {
+            let gcd = MultivariatePolynomial::gcd(&num, &den);
 
-                if !gcd.is_one() {
-                    num = num / &gcd;
-                    den = den / &gcd;
-                }
+            if !gcd.is_one() {
+                num = num / &gcd;
+                den = den / &gcd;
             }
+        }
 
-            // normalize denominator to have leading coefficient of one
-            if !field.is_one(&den.lcoeff()) {
-                let c = den.lcoeff();
-                num = num.div_coeff(&c);
-                den = den.div_coeff(&c);
-            }
+        // normalize denominator to have leading coefficient of one
+        if !field.is_one(&den.lcoeff()) {
+            let c = den.lcoeff();
+            num = num.div_coeff(&c);
+            den = den.div_coeff(&c);
+        }
 
-            RationalPolynomial {
-                numerator: num,
-                denominator: den,
-            }
+        Self {
+            numerator: num,
+            denominator: den,
         }
     }
 }
@@ -228,22 +226,22 @@ where
 {
     #[inline]
     pub fn inv(self) -> Self {
-        if self.numerator.is_zero() {
-            panic!("Cannot invert 0");
-        }
+        assert!(!self.numerator.is_zero(), "Cannot invert 0");
 
         let field = self.numerator.field;
         Self::from_num_den(self.denominator, self.numerator, field, false)
     }
 
     pub fn pow(&self, e: u64) -> Self {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
+        assert!(
+            e <= u32::MAX as u64,
+            "Power of exponentation is larger than 2^32: {}",
+            e
+        );
         let e = e as u32;
 
         // TODO: do binary exponentation
-        let mut poly = RationalPolynomial {
+        let mut poly = Self {
             numerator: MultivariatePolynomial::new_from(&self.numerator, None),
             denominator: MultivariatePolynomial::new_from(&self.denominator, None),
         };
@@ -260,7 +258,7 @@ where
         let gcd_num = MultivariatePolynomial::gcd(&self.numerator, &other.numerator);
         let gcd_den = MultivariatePolynomial::gcd(&self.denominator, &other.denominator);
 
-        RationalPolynomial {
+        Self {
             numerator: gcd_num,
             denominator: (&other.denominator / &gcd_den) * &self.denominator,
         }
@@ -328,23 +326,25 @@ where
     }
 
     fn zero(&self) -> Self::Element {
-        RationalPolynomial {
+        Self::Element {
             numerator: MultivariatePolynomial::new(0, self.ring, None, None),
             denominator: MultivariatePolynomial::one(self.ring),
         }
     }
 
     fn one(&self) -> Self::Element {
-        RationalPolynomial {
+        Self::Element {
             numerator: MultivariatePolynomial::one(self.ring),
             denominator: MultivariatePolynomial::one(self.ring),
         }
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
+        assert!(
+            e <= u32::MAX as u64,
+            "Power of exponentation is larger than 2^32: {}",
+            e
+        );
         let e = e as u32;
 
         // TODO: do binary exponentation
@@ -473,7 +473,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub for RationalPolynomial<R, E> {
     type Output = Self;
 
-    fn sub(self, other: Self) -> Self::Output {
+    fn sub(self, other: Self) -> Self {
         self.add(&other.neg())
     }
 }
@@ -490,8 +490,8 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub<&'a Rationa
 
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg for RationalPolynomial<R, E> {
     type Output = Self;
-    fn neg(self) -> Self::Output {
-        RationalPolynomial {
+    fn neg(self) -> Self {
+        Self {
             numerator: self.numerator.neg(),
             denominator: self.denominator,
         }
@@ -509,23 +509,23 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Mul<&'a Rationa
 
         if gcd1.is_one() {
             if gcd2.is_one() {
-                RationalPolynomial {
+                Self::Output {
                     numerator: &self.numerator * &other.numerator,
                     denominator: &self.denominator * &other.denominator,
                 }
             } else {
-                RationalPolynomial {
+                Self::Output {
                     numerator: &self.numerator * &(&other.numerator / &gcd2),
                     denominator: (&self.denominator / &gcd2) * &other.denominator,
                 }
             }
         } else if gcd2.is_one() {
-            RationalPolynomial {
+            Self::Output {
                 numerator: (&self.numerator / &gcd1) * &other.numerator,
                 denominator: &self.denominator * &(&other.denominator / &gcd1),
             }
         } else {
-            RationalPolynomial {
+            Self::Output {
                 numerator: (&self.numerator / &gcd1) * &(&other.numerator / &gcd2),
                 denominator: (&self.denominator / &gcd2) * &(&other.denominator / &gcd1),
             }

@@ -23,8 +23,8 @@ pub struct State {
 }
 
 impl State {
-    pub fn new() -> State {
-        State {
+    pub fn new() -> Self {
+        Self {
             str_to_var_id: HashMap::new(),
             var_to_str_map: vec![],
             finite_fields: vec![],
@@ -35,9 +35,10 @@ impl State {
     /// Get the id for a certain name if the name is already registered,
     /// else register it and return a new id.
     pub fn get_or_insert_var<S: AsRef<str>>(&mut self, name: S) -> Identifier {
+        use std::collections::hash_map::Entry;
         match self.str_to_var_id.entry(name.as_ref().into()) {
-            std::collections::hash_map::Entry::Occupied(o) => *o.get(),
-            std::collections::hash_map::Entry::Vacant(v) => {
+            Entry::Occupied(o) => *o.get(),
+            Entry::Vacant(v) => {
                 let new_id = Identifier::from(self.var_to_str_map.len() as u32);
                 v.insert(new_id);
                 self.var_to_str_map.push(name.as_ref().into());
@@ -77,8 +78,8 @@ pub struct Workspace<P: Atom> {
 }
 
 impl<P: Atom> Workspace<P> {
-    pub fn new() -> Workspace<P> {
-        Workspace {
+    pub fn new() -> Self {
+        Self {
             atom_stack: Stack::new(),
         }
     }
@@ -151,13 +152,13 @@ pub struct BufferHandle<'a, T: ResettableBuffer> {
 impl<'a, T: ResettableBuffer> Deref for BufferHandle<'a, T> {
     type Target = T;
 
-    fn deref(&self) -> &Self::Target {
+    fn deref(&self) -> &T {
         self.get()
     }
 }
 
 impl<'a, T: ResettableBuffer> DerefMut for BufferHandle<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    fn deref_mut(&mut self) -> &mut T {
         self.get_mut()
     }
 }

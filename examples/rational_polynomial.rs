@@ -28,6 +28,6 @@ fn main() {
         .unwrap();
     println!(
         "{}",
-        RationalPolynomialPrinter::new(&rat, &state, PrintMode::default())
+        RationalPolynomialPrinter::new(&rat, &state, <_>::default())
     );
 }

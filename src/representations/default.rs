@@ -79,9 +79,9 @@ impl Convert<DefaultRepresentation> for OwnedNumD {
         OwnedPowD { data: self.data }
     }
 
-    fn to_owned_num(mut self) -> OwnedNumD {
+    fn to_owned_num(mut self) -> Self {
         self.data.clear();
-        OwnedNumD { data: self.data }
+        Self { data: self.data }
     }
 
     fn to_owned_fun(mut self) -> OwnedFunD {
@@ -102,7 +102,7 @@ impl Convert<DefaultRepresentation> for OwnedNumD {
 
 impl ResettableBuffer for OwnedNumD {
     fn new() -> Self {
-        OwnedNumD { data: vec![] }
+        Self { data: vec![] }
     }
 
     fn reset(&mut self) {
@@ -135,9 +135,9 @@ impl OwnedVar for OwnedVarD {
 }
 
 impl Convert<DefaultRepresentation> for OwnedVarD {
-    fn to_owned_var(mut self) -> OwnedVarD {
+    fn to_owned_var(mut self) -> Self {
         self.data.clear();
-        OwnedVarD { data: self.data }
+        Self { data: self.data }
     }
 
     fn to_owned_pow(mut self) -> OwnedPowD {
@@ -168,7 +168,7 @@ impl Convert<DefaultRepresentation> for OwnedVarD {
 
 impl ResettableBuffer for OwnedVarD {
     fn new() -> Self {
-        OwnedVarD { data: vec![] }
+        Self { data: vec![] }
     }
 
     fn reset(&mut self) {
@@ -277,9 +277,9 @@ impl Convert<DefaultRepresentation> for OwnedFunD {
         OwnedNumD { data: self.data }
     }
 
-    fn to_owned_fun(mut self) -> OwnedFunD {
+    fn to_owned_fun(mut self) -> Self {
         self.data.clear();
-        OwnedFunD { data: self.data }
+        Self { data: self.data }
     }
 
     fn to_owned_add(mut self) -> OwnedAddD {
@@ -455,9 +455,7 @@ impl OwnedMul for OwnedMulD {
     }
 
     fn replace_last(&mut self, other: AtomView<Self::P>) {
-        if self.data.is_empty() {
-            panic!("Cannot pop empty mul");
-        }
+        assert!(!self.data.is_empty(), "Cannot pop empty mul");
 
         let mut c = &self.data[1 + 4..];
 
@@ -924,7 +922,7 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     type I = ListIteratorD<'a>;
 
     fn get_name(&self) -> Identifier {
-        Identifier::from(self.data[1 + 4..].get_frac_i64().0 as u32)
+        (self.data[1 + 4..].get_frac_i64().0 as u32).into()
     }
 
     fn get_nargs(&self) -> usize {
@@ -1495,9 +1493,7 @@ pub fn representation_size() {
 
     let c = b.to_tree();
 
-    if a != c {
-        panic!("in and out is different: {:?} vs {:?}", a, c);
-    }
+    assert!(a == c, "in and out is different: {:?} vs {:?}", a, c);
 
     println!("{:?}", b.to_view());
 }

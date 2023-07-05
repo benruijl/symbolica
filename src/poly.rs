@@ -67,219 +67,91 @@ pub trait Exponent:
     fn unpack_u16(n: u64, out: &mut [Self]);
 }
 
-impl Exponent for u32 {
-    #[inline]
-    fn zero() -> Self {
-        0
-    }
+macro_rules! impl_exponent {
+    ($ty: ty) => {
+        impl Exponent for $ty {
+            #[inline]
+            fn zero() -> Self {
+                0
+            }
 
-    #[inline]
-    fn one() -> Self {
-        1
-    }
+            #[inline]
+            fn one() -> Self {
+                1
+            }
 
-    #[inline]
-    fn to_u32(&self) -> u32 {
-        *self
-    }
+            #[inline]
+            fn to_u32(&self) -> u32 {
+                *self as _
+            }
 
-    #[inline]
-    fn from_u32(n: u32) -> Self {
-        n
-    }
+            #[inline]
+            fn from_u32(n: u32) -> Self {
+                assert!(
+                    n <= Self::MAX as u32,
+                    "Exponent {} too large for u{}",
+                    n,
+                    std::mem::size_of::<Self>() * 8
+                );
+                n as _
+            }
 
-    #[inline]
-    fn is_zero(&self) -> bool {
-        *self == 0
-    }
+            #[inline]
+            fn is_zero(&self) -> bool {
+                *self == 0
+            }
 
-    #[inline]
-    fn checked_add(&self, other: &Self) -> Option<Self> {
-        u32::checked_add(*self, *other)
-    }
+            #[inline]
+            fn checked_add(&self, other: &Self) -> Option<Self> {
+                Self::checked_add(*self, *other)
+            }
 
-    #[inline]
-    fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_unsigned(*self as u64, *other as u64) as Self
-    }
+            #[inline]
+            fn gcd(&self, other: &Self) -> Self {
+                utils::gcd_unsigned(*self as u64, *other as u64) as Self
+            }
 
-    fn pack(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 8) + (*x as u8 as u64);
+            fn pack(list: &[Self]) -> u64 {
+                let mut num: u64 = 0;
+                for x in list.iter().rev() {
+                    num = (num << 8) + (*x as u8 as u64);
+                }
+                num.swap_bytes()
+            }
+
+            fn unpack(mut n: u64, out: &mut [Self]) {
+                n = n.swap_bytes();
+                let s =
+                    unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
+                for (o, ss) in out.iter_mut().zip(s) {
+                    *o = *ss as Self;
+                }
+            }
+
+            fn pack_u16(list: &[Self]) -> u64 {
+                let mut num: u64 = 0;
+                for x in list.iter().rev() {
+                    num = (num << 16) + x.to_be() as u64;
+                }
+                num.swap_bytes()
+            }
+
+            fn unpack_u16(mut n: u64, out: &mut [Self]) {
+                n = n.swap_bytes();
+                let s = unsafe {
+                    std::slice::from_raw_parts(&n as *const u64 as *const Self, out.len())
+                };
+                for (o, ss) in out.iter_mut().zip(s) {
+                    *o = ss.swap_bytes();
+                }
+            }
         }
-        num.swap_bytes()
-    }
-
-    fn unpack(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = *ss as u32;
-        }
-    }
-
-    fn pack_u16(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 16) + ((*x as u16).to_be() as u64);
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack_u16(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = ss.swap_bytes() as u32;
-        }
-    }
+    };
 }
 
-impl Exponent for u16 {
-    #[inline]
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline]
-    fn one() -> Self {
-        1
-    }
-
-    #[inline]
-    fn to_u32(&self) -> u32 {
-        *self as u32
-    }
-
-    #[inline]
-    fn from_u32(n: u32) -> Self {
-        if n <= u16::MAX as u32 {
-            n as u16
-        } else {
-            panic!("Exponent {} too large for u16", n);
-        }
-    }
-
-    #[inline]
-    fn is_zero(&self) -> bool {
-        *self == 0
-    }
-
-    #[inline]
-    fn checked_add(&self, other: &Self) -> Option<Self> {
-        u16::checked_add(*self, *other)
-    }
-
-    #[inline]
-    fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_unsigned(*self as u64, *other as u64) as Self
-    }
-
-    fn pack(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 8) + (*x as u8 as u64);
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = *ss as u16;
-        }
-    }
-
-    fn pack_u16(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 16) + x.to_be() as u64;
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack_u16(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = ss.swap_bytes();
-        }
-    }
-}
-
-/// An exponent limited to 255 for efficiency
-impl Exponent for u8 {
-    #[inline]
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline]
-    fn one() -> Self {
-        1
-    }
-
-    #[inline]
-    fn to_u32(&self) -> u32 {
-        *self as u32
-    }
-
-    #[inline]
-    fn from_u32(n: u32) -> Self {
-        if n <= u8::MAX as u32 {
-            n as u8
-        } else {
-            panic!("Exponent {} too large for u8", n);
-        }
-    }
-
-    #[inline]
-    fn is_zero(&self) -> bool {
-        *self == 0
-    }
-
-    #[inline]
-    fn checked_add(&self, other: &Self) -> Option<Self> {
-        u8::checked_add(*self, *other)
-    }
-
-    #[inline]
-    fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_unsigned(*self as u64, *other as u64) as Self
-    }
-
-    fn pack(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 8) + (*x as u64);
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
-        out.copy_from_slice(s);
-    }
-
-    fn pack_u16(list: &[Self]) -> u64 {
-        let mut num: u64 = 0;
-        for x in list.iter().rev() {
-            num = (num << 16) + ((*x as u16).to_be() as u64);
-        }
-        num.swap_bytes()
-    }
-
-    fn unpack_u16(mut n: u64, out: &mut [Self]) {
-        n = n.swap_bytes();
-        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
-        for (o, ss) in out.iter_mut().zip(s) {
-            *o = ss.swap_bytes() as u8;
-        }
-    }
-}
+impl_exponent!(u32);
+impl_exponent!(u16);
+impl_exponent!(u8);
 
 impl<'a, P: Atom> AtomView<'a, P> {
     /// Convert an expression to a polynomial.
@@ -505,57 +377,54 @@ impl<'a, P: Atom> AtomView<'a, P> {
         }
 
         match self {
-            AtomView::Num(_) | AtomView::Var(_) => {
+            Self::Num(_) | Self::Var(_) => {
                 let num = self.to_polynomial(field, var_map)?;
                 let den = num.new_from_constant(field.one());
                 Ok(RationalPolynomial::from_num_den(num, den, out_field, false))
             }
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
-                if let AtomView::Num(n) = exp {
-                    let num_n = n.get_number_view();
+                let Self::Num(n) = exp else {
+                    Err("Power needs to be a number")?
+                };
 
-                    if let BorrowedNumber::Natural(nn, nd) = num_n {
-                        if nd != 1 {
-                            Err("Exponent cannot be a faction")?
-                        }
+                let num_n = n.get_number_view();
 
-                        if nn != -1 && nn != 1 {
-                            let mut h = workspace.new_atom();
-                            if !self.expand(workspace, state, h.get_mut()) {
-                                // expansion did not change the input, so we are in a case of x^-3 or x^3
-                                let r = base.to_rational_polynomial(
-                                    workspace, state, field, out_field, var_map,
-                                )?;
+                let BorrowedNumber::Natural(nn, nd) = num_n else {
+                    Err("Exponent needs to be an integer")?
+                };
+                if nd != 1 {
+                    Err("Exponent cannot be a fraction")?
+                }
 
-                                if nn < 0 {
-                                    let r_inv = r.inv();
-                                    Ok(r_inv.pow(-nn as u64))
-                                } else {
-                                    Ok(r.pow(nn as u64))
-                                }
-                            } else {
-                                h.get().to_view().to_rational_polynomial(
-                                    workspace, state, field, out_field, var_map,
-                                )
-                            }
-                        } else if nn < 0 {
-                            let r = base.to_rational_polynomial(
-                                workspace, state, field, out_field, var_map,
-                            )?;
-                            Ok(r.inv())
+                if nn != -1 && nn != 1 {
+                    let mut h = workspace.new_atom();
+                    if !self.expand(workspace, state, h.get_mut()) {
+                        // expansion did not change the input, so we are in a case of x^-3 or x^3
+                        let r = base
+                            .to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+
+                        if nn < 0 {
+                            let r_inv = r.inv();
+                            Ok(r_inv.pow(-nn as u64))
                         } else {
-                            base.to_rational_polynomial(workspace, state, field, out_field, var_map)
+                            Ok(r.pow(nn as u64))
                         }
                     } else {
-                        Err("Exponent needs to be an integer")?
+                        h.get()
+                            .to_view()
+                            .to_rational_polynomial(workspace, state, field, out_field, var_map)
                     }
+                } else if nn < 0 {
+                    let r =
+                        base.to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                    Ok(r.inv())
                 } else {
-                    Err("Power needs to be a number")?
+                    base.to_rational_polynomial(workspace, state, field, out_field, var_map)
                 }
             }
-            AtomView::Fun(_) => Err("Functions not allowed")?,
-            AtomView::Mul(m) => {
+            Self::Fun(_) => Err("Functions not allowed")?,
+            Self::Mul(m) => {
                 let mut r = RationalPolynomial::new(out_field, var_map);
                 r.numerator = r.numerator.add_monomial(out_field.one());
                 for arg in m.iter() {
@@ -566,7 +435,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 }
                 Ok(r)
             }
-            AtomView::Add(a) => {
+            Self::Add(a) => {
                 let mut r = RationalPolynomial::new(out_field, var_map);
                 for arg in a.iter() {
                     let mut arg_r =
@@ -690,26 +559,24 @@ impl Token {
                         _ => Err("Unsupported base")?,
                     };
 
-                    match &args[1] {
-                        Token::Number(n) => {
-                            if let Ok(x) = n.parse::<i64>() {
-                                if x < 1 || x > u32::MAX as i64 {
-                                    Err("Invalid exponent")?;
-                                }
-                                exponents[var_index] += E::from_u32(x as u32);
-                            } else {
-                                match ArbitraryPrecisionInteger::parse(n) {
-                                    Ok(x) => {
-                                        let p: ArbitraryPrecisionInteger = x.complete();
-                                        let exp = p.to_u32().ok_or("Cannot convert to u32")?;
-                                        exponents[var_index] += E::from_u32(exp);
-                                    }
-                                    Err(e) => Err(format!("Could not parse number: {}", e))?,
-                                }
-                            };
+                    let Token::Number(n) = &args[1] else {
+                        Err("Unsupported exponent")?
+                    };
+                    if let Ok(x) = n.parse::<i64>() {
+                        if x < 1 || x > u32::MAX as i64 {
+                            Err("Invalid exponent")?;
                         }
-                        _ => Err("Unsupported exponent")?,
-                    }
+                        exponents[var_index] += E::from_u32(x as u32);
+                    } else {
+                        match ArbitraryPrecisionInteger::parse(n) {
+                            Ok(x) => {
+                                let p: ArbitraryPrecisionInteger = x.complete();
+                                let exp = p.to_u32().ok_or("Cannot convert to u32")?;
+                                exponents[var_index] += E::from_u32(exp);
+                            }
+                            Err(e) => Err(format!("Could not parse number: {}", e))?,
+                        }
+                    };
                 }
                 _ => Err("Unsupported expression")?,
             }
@@ -774,7 +641,7 @@ impl Token {
         }
 
         match self {
-            Token::Op(_, _, Operator::Add, args) => {
+            Self::Op(_, _, Operator::Add, args) => {
                 let mut poly = MultivariatePolynomial::<R, E>::new(
                     var_map.len(),
                     field,
@@ -823,7 +690,7 @@ impl Token {
             FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
         // use a faster routine to parse the rational polynomial
-        if let Token::RationalPolynomial(r) = self {
+        if let Self::RationalPolynomial(r) = self {
             let mut iter = r.split(',');
             let num = iter.next().unwrap();
 
@@ -845,12 +712,12 @@ impl Token {
         }
 
         match self {
-            Token::Number(_) | Token::ID(_) => {
+            Self::Number(_) | Self::ID(_) => {
                 let num = self.to_polynomial(field, var_map, var_name_map)?;
                 let den = num.new_from_constant(field.one());
                 Ok(RationalPolynomial::from_num_den(num, den, out_field, false))
             }
-            Token::Op(_, _, Operator::Inv, args) => {
+            Self::Op(_, _, Operator::Inv, args) => {
                 assert!(args.len() == 1);
                 let r = args[0].to_rational_polynomial(
                     workspace,
@@ -862,11 +729,11 @@ impl Token {
                 )?;
                 Ok(r.inv())
             }
-            Token::Op(_, _, Operator::Pow, args) => {
+            Self::Op(_, _, Operator::Pow, args) => {
                 // we have a pow that could not be parsed by to_polynomial
                 // if the exponent is not -1, we pass the subexpression to
                 // the general routine
-                if Token::Number("-1".into()) == args[1] {
+                if Self::Number("-1".into()) == args[1] {
                     let r = args[0].to_rational_polynomial(
                         workspace,
                         state,
@@ -887,7 +754,7 @@ impl Token {
                     )
                 }
             }
-            Token::Op(_, _, Operator::Mul, args) => {
+            Self::Op(_, _, Operator::Mul, args) => {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map));
                 r.numerator = r.numerator.add_monomial(out_field.one());
                 for arg in args {
@@ -904,7 +771,7 @@ impl Token {
                 }
                 Ok(r)
             }
-            Token::Op(_, _, Operator::Add, args) => {
+            Self::Op(_, _, Operator::Add, args) => {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map));
                 for arg in args {
                     let mut arg_r = arg.to_rational_polynomial(
@@ -920,7 +787,7 @@ impl Token {
                 }
                 Ok(r)
             }
-            Token::Op(_, _, Operator::Neg, args) => {
+            Self::Op(_, _, Operator::Neg, args) => {
                 let r = args[0].to_rational_polynomial(
                     workspace,
                     state,

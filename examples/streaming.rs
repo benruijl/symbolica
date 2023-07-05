@@ -41,7 +41,7 @@ fn main() {
             &rhs,
             &state,
             workspace,
-            &HashMap::default(),
+            &<_>::default(),
             &mut out1,
         );
 
@@ -57,6 +57,6 @@ fn main() {
     let res = stream.to_expression(&workspace, &state);
     println!(
         "\t+ {}",
-        AtomPrinter::new(res.to_view(), PrintMode::default(), &state)
+        AtomPrinter::new(res.to_view(), <_>::default(), &state)
     );
 }

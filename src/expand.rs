@@ -16,7 +16,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
         assert!(!self.is_dirty());
 
         match self {
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 let mut new_base = workspace.new_atom();
@@ -173,7 +173,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     changed
                 }
             }
-            AtomView::Mul(m) => {
+            Self::Mul(m) => {
                 let mut changed = false;
 
                 let mut sum: SmallVec<[BufferHandle<OwnedAtom<P>>; 10]> = SmallVec::new();
@@ -251,7 +251,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
                 changed
             }
-            AtomView::Add(a) => {
+            Self::Add(a) => {
                 let mut changed = false;
 
                 let mut add_h = workspace.new_atom();

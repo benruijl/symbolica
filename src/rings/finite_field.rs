@@ -87,7 +87,7 @@ impl FiniteFieldCore<u32> for FiniteField<u32> {
     fn new(p: u32) -> FiniteField<u32> {
         assert!(p % 2 != 0);
 
-        FiniteField {
+        Self {
             p,
             m: Self::inv_2_32(p),
             one: FiniteFieldElement(Self::get_one(p)),
@@ -130,11 +130,11 @@ impl Ring for FiniteField<u32> {
     /// Subtract `b` from `a`, where `a` and `b` are in Montgomory form.
     #[inline(always)]
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        if a.0 >= b.0 {
-            FiniteFieldElement(a.0 - b.0)
+        FiniteFieldElement(if a.0 >= b.0 {
+            a.0 - b.0
         } else {
-            FiniteFieldElement(a.0 + (self.p - b.0))
-        }
+            a.0 + (self.p - b.0)
+        })
     }
 
     /// Multiply two numbers in Montgomory form.
@@ -149,11 +149,7 @@ impl Ring for FiniteField<u32> {
             return FiniteFieldElement(u.wrapping_sub(self.p));
         }
 
-        if u >= self.p {
-            FiniteFieldElement(u - self.p)
-        } else {
-            FiniteFieldElement(u)
-        }
+        FiniteFieldElement(if u >= self.p { u - self.p } else { u })
     }
 
     #[inline(always)]
@@ -281,10 +277,7 @@ impl Field for FiniteField<u32> {
         // apply multiplication with 1 twice to get the correct scaling of R=2^32
         // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
         let x_mont = self
-            .mul(
-                &self.mul(a, &FiniteFieldElement(1)),
-                &FiniteFieldElement(1),
-            )
+            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
             .0;
 
         // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
@@ -552,10 +545,7 @@ impl Field for FiniteField<u64> {
         // apply multiplication with 1 twice to get the correct scaling of R=2^64
         // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
         let x_mont = self
-            .mul(
-                &self.mul(a, &FiniteFieldElement(1)),
-                &FiniteFieldElement(1),
-            )
+            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
             .0;
 
         // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
@@ -577,11 +567,7 @@ impl Field for FiniteField<u64> {
         }
 
         debug_assert!(u3 == 1);
-        if even_iter {
-            FiniteFieldElement(u1)
-        } else {
-            FiniteFieldElement(self.p - u1)
-        }
+        FiniteFieldElement(if even_iter { u1 } else { self.p - u1 })
     }
 }
 
@@ -648,8 +634,8 @@ pub struct PrimeIteratorU64 {
 
 impl PrimeIteratorU64 {
     /// Create a new prime iterator that is larger than `start`.
-    pub fn new(start: u64) -> PrimeIteratorU64 {
-        PrimeIteratorU64 {
+    pub fn new(start: u64) -> Self {
+        Self {
             current_number: start.max(1),
         }
     }

@@ -70,10 +70,10 @@ pub enum Number {
 impl Number {
     pub fn is_zero(&self) -> bool {
         match self {
-            Number::Natural(num, _den) => *num == 0,
-            Number::Large(_r) => false,
-            Number::FiniteField(num, _field) => num.0 == 0,
-            Number::RationalPolynomial(r) => r.numerator.is_zero(),
+            Self::Natural(num, _) => *num == 0,
+            Self::Large(_) => false,
+            Self::FiniteField(num, _) => num.0 == 0,
+            Self::RationalPolynomial(r) => r.numerator.is_zero(),
         }
     }
 }
@@ -173,11 +173,11 @@ impl ConvertToRing for IntegerRing {
 
 impl<UField: FiniteFieldWorkspace> ConvertToRing for FiniteField<UField>
 where
-    FiniteField<UField>: FiniteFieldCore<UField>,
+    Self: FiniteFieldCore<UField>,
     Integer: ToFiniteField<UField>,
 {
     #[inline]
-    fn element_from_number(&self, number: Number) -> <FiniteField<UField> as Ring>::Element {
+    fn element_from_number(&self, number: Number) -> <Self as Ring>::Element {
         match number {
             Number::Natural(n, d) => self.div(
                 &Integer::new(n).to_finite_field(self),
@@ -198,10 +198,7 @@ where
     }
 
     #[inline]
-    fn element_from_borrowed_number(
-        &self,
-        number: BorrowedNumber<'_>,
-    ) -> <FiniteField<UField> as Ring>::Element {
+    fn element_from_borrowed_number(&self, number: BorrowedNumber<'_>) -> <Self as Ring>::Element {
         match number {
             BorrowedNumber::Natural(n, d) => self.div(
                 &Integer::new(n).to_finite_field(self),
@@ -225,28 +222,28 @@ where
 impl BorrowedNumber<'_> {
     pub fn normalize(&self) -> Number {
         match self {
-            BorrowedNumber::Natural(num, den) => {
+            Self::Natural(num, den) => {
                 let gcd = utils::gcd_signed(*num, *den);
                 Number::Natural(*num / gcd, *den / gcd)
             }
-            BorrowedNumber::Large(_)
-            | BorrowedNumber::FiniteField(_, _)
-            | BorrowedNumber::RationalPolynomial(_) => self.to_owned(),
+            Self::Large(_) | Self::FiniteField(_, _) | Self::RationalPolynomial(_) => {
+                self.to_owned()
+            }
         }
     }
 
     pub fn to_owned(&self) -> Number {
         match self {
-            BorrowedNumber::Natural(num, den) => Number::Natural(*num, *den),
-            BorrowedNumber::Large(r) => Number::Large(r.to_rat()),
-            BorrowedNumber::FiniteField(num, field) => Number::FiniteField(*num, *field),
-            BorrowedNumber::RationalPolynomial(p) => Number::RationalPolynomial((*p).clone()),
+            Self::Natural(num, den) => Number::Natural(*num, *den),
+            Self::Large(r) => Number::Large(r.to_rat()),
+            Self::FiniteField(num, field) => Number::FiniteField(*num, *field),
+            Self::RationalPolynomial(p) => Number::RationalPolynomial((*p).clone()),
         }
     }
 
     pub fn add(&self, other: &BorrowedNumber<'_>, state: &State) -> Number {
         match (self, other) {
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
                 let r = &Rational::Natural(*n1, *d1) + &Rational::Natural(*n2, *d2);
                 match r {
                     Rational::Natural(n, d) => Number::Natural(n, d),
@@ -254,33 +251,29 @@ impl BorrowedNumber<'_> {
                 }
             }
             // TODO: check downcast
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(r2))
-            | (BorrowedNumber::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Large(r2))
+            | (Self::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
                 let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
                 Number::Large(r1 + r2.to_rat())
             }
-            (BorrowedNumber::Large(r1), BorrowedNumber::Large(r2)) => {
+            (Self::Large(r1), BorrowedNumber::Large(r2)) => {
                 Number::Large(r1.to_rat() + r2.to_rat())
             }
-            (BorrowedNumber::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
-                if i1 != i2 {
-                    panic!(
-                        "Cannot add numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(*i1).get_prime(),
-                        state.get_finite_field(*i2).get_prime()
-                    );
-                }
+            (Self::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
+                assert!(
+                    i1 == i2,
+                    "Cannot add numbers from different finite fields: p1={}, p2={}",
+                    state.get_finite_field(*i1).get_prime(),
+                    state.get_finite_field(*i2).get_prime()
+                );
                 let f = state.get_finite_field(*i1);
                 Number::FiniteField(f.add(n1, n2), *i1)
             }
-            (BorrowedNumber::FiniteField(_, _), _) => {
+            (Self::FiniteField(_, _), _) | (_, BorrowedNumber::FiniteField(_, _)) => {
                 panic!("Cannot add finite field to non-finite number. Convert other number first?");
             }
-            (_, BorrowedNumber::FiniteField(_, _)) => {
-                panic!("Cannot add finite field to non-finite number. Convert other number first?");
-            }
-            (BorrowedNumber::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
+            (Self::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
+            | (Self::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
                 let r = (*p).clone();
                 let r2 = RationalPolynomial {
                     numerator: MultivariatePolynomial::new_from_constant(
@@ -295,7 +288,7 @@ impl BorrowedNumber<'_> {
                 Number::RationalPolynomial(&r + &r2)
             }
             (BorrowedNumber::Large(l), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
+            | (Self::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
                 let r = (*p).clone();
                 let (n, d) = l.to_rat().into_numer_denom();
                 let r2 = RationalPolynomial {
@@ -310,7 +303,7 @@ impl BorrowedNumber<'_> {
                 };
                 Number::RationalPolynomial(&r + &r2)
             }
-            (BorrowedNumber::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
+            (Self::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
                 if p1.get_var_map() != p2.get_var_map() {
                     let mut p1 = (*p1).clone();
                     let mut p2 = (*p2).clone();
@@ -325,7 +318,7 @@ impl BorrowedNumber<'_> {
 
     pub fn mul(&self, other: &BorrowedNumber<'_>, state: &State) -> Number {
         match (self, other) {
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
                 let r = &Rational::Natural(*n1, *d1) * &Rational::Natural(*n2, *d2);
                 match r {
                     Rational::Natural(n, d) => Number::Natural(n, d),
@@ -333,47 +326,43 @@ impl BorrowedNumber<'_> {
                 }
             }
             // TODO: check downcast
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(r2))
-            | (BorrowedNumber::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Large(r2))
+            | (Self::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
                 let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
                 Number::Large(r1 * r2.to_rat())
             }
-            (BorrowedNumber::Large(r1), BorrowedNumber::Large(r2)) => {
+            (Self::Large(r1), BorrowedNumber::Large(r2)) => {
                 Number::Large(r1.to_rat() + r2.to_rat())
             }
-            (BorrowedNumber::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
-                if i1 != i2 {
-                    panic!(
-                        "Cannot multiply numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(*i1).get_prime(),
-                        state.get_finite_field(*i2).get_prime()
-                    );
-                }
+            (Self::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
+                assert!(
+                    i1 == i2,
+                    "Cannot multiply numbers from different finite fields: p1={}, p2={}",
+                    state.get_finite_field(*i1).get_prime(),
+                    state.get_finite_field(*i2).get_prime()
+                );
                 let f = state.get_finite_field(*i1);
                 Number::FiniteField(f.mul(n1, n2), *i1)
             }
-            (BorrowedNumber::FiniteField(_, _), _) => {
+            (Self::FiniteField(_, _), _) | (_, BorrowedNumber::FiniteField(_, _)) => {
                 panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
             }
-            (_, BorrowedNumber::FiniteField(_, _)) => {
-                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
-            }
-            (BorrowedNumber::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
+            (Self::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
+            | (Self::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
                 let mut r = (*p).clone();
                 r.numerator = r.numerator.mul_coeff(Integer::Natural(*n));
                 r.denominator = r.denominator.mul_coeff(Integer::Natural(*d));
                 Number::RationalPolynomial(r)
             }
             (BorrowedNumber::Large(l), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
+            | (Self::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
                 let mut r = (*p).clone();
                 let (n, d) = l.to_rat().into_numer_denom();
                 r.numerator = r.numerator.mul_coeff(Integer::Large(n));
                 r.denominator = r.denominator.mul_coeff(Integer::Large(d));
                 Number::RationalPolynomial(r)
             }
-            (BorrowedNumber::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
+            (Self::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
                 if p1.get_var_map() != p2.get_var_map() {
                     let mut p1 = (*p1).clone();
                     let mut p2 = (*p2).clone();
@@ -386,35 +375,34 @@ impl BorrowedNumber<'_> {
         }
     }
 
-    pub fn pow(&self, other: &BorrowedNumber<'_>, _state: &State) -> (Number, Number) {
+    pub fn pow(&self, other: &BorrowedNumber<'_>, _: &State) -> (Number, Number) {
         // TODO: normalize 4^1/3 to 2^(2/3)?
         match (self, other) {
-            (&BorrowedNumber::Natural(mut n1, mut d1), &BorrowedNumber::Natural(mut n2, d2)) => {
+            (&Self::Natural(mut n1, mut d1), &BorrowedNumber::Natural(mut n2, d2)) => {
                 if n2 < 0 {
                     n2 = n2.saturating_abs();
                     (n1, d1) = (d1, n1);
                 }
 
-                if n2 <= u32::MAX as i64 {
-                    if let Some(pn) = n1.checked_pow(n2 as u32) {
-                        if let Some(pd) = d1.checked_pow(n2 as u32) {
-                            // TODO: simplify 4^(1/2)
-                            return (Number::Natural(pn, pd), Number::Natural(1, d2));
-                        }
+                assert!(n2 <= u32::MAX as i64, "Power is too large: {}", n2);
+                if let Some(pn) = n1.checked_pow(n2 as u32) {
+                    if let Some(pd) = d1.checked_pow(n2 as u32) {
+                        // TODO: simplify 4^(1/2)
+                        return (Number::Natural(pn, pd), Number::Natural(1, d2));
                     }
+                }
 
-                    (
-                        Number::Large(ArbitraryPrecisionRational::from((n1, d1)).pow(n2 as u32)),
-                        Number::Natural(1, d2),
-                    )
-                } else {
-                    panic!("Power is too large: {}", n2);
-                }
+                (
+                    Number::Large(ArbitraryPrecisionRational::from((n1, d1)).pow(n2 as u32)),
+                    Number::Natural(1, d2),
+                )
             }
-            (&BorrowedNumber::RationalPolynomial(r), &BorrowedNumber::Natural(n2, d2)) => {
-                if n2.unsigned_abs() > u32::MAX as u64 {
-                    panic!("Power is too large: {}", n2);
-                }
+            (&Self::RationalPolynomial(r), &BorrowedNumber::Natural(n2, d2)) => {
+                assert!(
+                    n2.unsigned_abs() <= u32::MAX as u64,
+                    "Power is too large: {}",
+                    n2
+                );
 
                 if n2 < 0 {
                     let r = r.clone().inv();
@@ -441,7 +429,7 @@ impl BorrowedNumber<'_> {
 
     pub fn cmp(&self, other: &BorrowedNumber) -> Ordering {
         match (self, other) {
-            (&BorrowedNumber::Natural(n1, d1), &BorrowedNumber::Natural(n2, d2)) => {
+            (&Self::Natural(n1, d1), &BorrowedNumber::Natural(n2, d2)) => {
                 // TODO: improve
                 if n1 < 0 && n2 > 0 {
                     return Ordering::Less;
@@ -466,14 +454,12 @@ impl BorrowedNumber<'_> {
                     ),
                 }
             }
-            (BorrowedNumber::Large(n1), BorrowedNumber::Large(n2)) => n1.to_rat().cmp(&n2.to_rat()),
-            (BorrowedNumber::FiniteField(n1, _), BorrowedNumber::FiniteField(n2, _)) => {
-                n1.0.cmp(&n2.0)
-            }
-            (&BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(n2)) => {
+            (Self::Large(n1), BorrowedNumber::Large(n2)) => n1.to_rat().cmp(&n2.to_rat()),
+            (Self::FiniteField(n1, _), BorrowedNumber::FiniteField(n2, _)) => n1.0.cmp(&n2.0),
+            (&Self::Natural(n1, d1), BorrowedNumber::Large(n2)) => {
                 ArbitraryPrecisionRational::from((n1, d1)).cmp(&n2.to_rat())
             }
-            (BorrowedNumber::Large(n1), &BorrowedNumber::Natural(n2, d2)) => {
+            (Self::Large(n1), &BorrowedNumber::Natural(n2, d2)) => {
                 n1.to_rat().cmp(&ArbitraryPrecisionRational::from((n2, d2)))
             }
             _ => unreachable!(),
@@ -484,18 +470,22 @@ impl BorrowedNumber<'_> {
 impl PackedRationalNumberWriter for Number {
     fn write_packed(&self, dest: &mut Vec<u8>) {
         match self {
-            Number::Natural(num, den) => (*num, *den).write_packed(dest),
-            Number::Large(r) => {
+            Self::Natural(num, den) => (*num, *den).write_packed(dest),
+            Self::Large(r) => {
                 dest.put_u8(ARB_NUM | ARB_DEN);
 
                 let num_digits = r.numer().significant_digits::<u8>();
                 let den_digits = r.denom().significant_digits::<u8>();
 
-                if r.numer() < &0 {
-                    (-(num_digits as i64), den_digits as i64).write_packed(dest);
-                } else {
-                    (num_digits as i64, den_digits as i64).write_packed(dest);
-                }
+                (
+                    if r.numer() < &0 {
+                        -(num_digits as i64)
+                    } else {
+                        num_digits as i64
+                    },
+                    den_digits as i64,
+                )
+                    .write_packed(dest);
 
                 let old_len = dest.len();
                 dest.resize(old_len + num_digits + den_digits, 0);
@@ -503,11 +493,11 @@ impl PackedRationalNumberWriter for Number {
                 r.denom()
                     .write_digits(&mut dest[old_len + num_digits..], Order::Lsf);
             }
-            Number::FiniteField(num, f) => {
+            Self::FiniteField(num, f) => {
                 dest.put_u8(FIN_NUM);
                 (num.0, f.0 as u64).write_packed(dest); // this adds an extra tag
             }
-            Number::RationalPolynomial(p) => {
+            Self::RationalPolynomial(p) => {
                 dest.put_u8(RAT_POLY);
                 // note that this is not a linear representation
                 // FIXME: pointer alignment
@@ -521,11 +511,11 @@ impl PackedRationalNumberWriter for Number {
 
     fn write_packed_fixed(&self, mut dest: &mut [u8]) {
         match self {
-            Number::Natural(num, den) => (*num, *den).write_packed_fixed(dest),
-            Number::Large(_) | Number::RationalPolynomial(_) => {
+            Self::Natural(num, den) => (*num, *den).write_packed_fixed(dest),
+            Self::Large(_) | Number::RationalPolynomial(_) => {
                 todo!("Writing large packed rational not implemented")
             }
-            Number::FiniteField(num, f) => {
+            Self::FiniteField(num, f) => {
                 dest.put_u8(FIN_NUM);
                 (num.0, f.0 as u64).write_packed_fixed(dest);
             }
@@ -534,14 +524,14 @@ impl PackedRationalNumberWriter for Number {
 
     fn get_packed_size(&self) -> u64 {
         match self {
-            Number::Natural(num, den) => (*num, *den).get_packed_size(),
-            Number::Large(l) => {
+            Self::Natural(num, den) => (*num, *den).get_packed_size(),
+            Self::Large(l) => {
                 let n = l.numer().significant_digits::<u8>() as i64;
                 let d = l.denom().significant_digits::<u8>() as i64;
                 1 + (n as i64, d as i64).get_packed_size() + n as u64 + d as u64
             }
-            Number::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
-            Number::RationalPolynomial(_) => {
+            Self::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
+            Self::RationalPolynomial(_) => {
                 1 + std::mem::size_of::<RationalPolynomial<IntegerRing, u16>>() as u64
             }
         }

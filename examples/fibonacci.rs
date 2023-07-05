@@ -75,11 +75,7 @@ fn main() {
 
     println!(
         "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {}:",
-        AtomPrinter::new(
-            target.get().to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
+        AtomPrinter::new(target.get().to_view(), <_>::default(), &state),
     );
 
     for _ in 0..9 {
@@ -100,7 +96,7 @@ fn main() {
             &expand_rhs,
             &state,
             &workspace,
-            &HashMap::default(),
+            &<_>::default(),
             out2.get_mut(),
         );
 
@@ -117,7 +113,7 @@ fn main() {
             &rhs_one,
             &state,
             &workspace,
-            &HashMap::default(),
+            &<_>::default(),
             out_renom2.get_mut(),
         );
 
@@ -127,7 +123,7 @@ fn main() {
             &rhs_one,
             &state,
             &workspace,
-            &HashMap::default(),
+            &<_>::default(),
             out3.get_mut(),
         );
 
@@ -139,11 +135,7 @@ fn main() {
 
         println!(
             "\t{}",
-            AtomPrinter::new(
-                out_renom.get().to_view(),
-                symbolica::printer::PrintMode::default(),
-                &state
-            ),
+            AtomPrinter::new(out_renom.get().to_view(), <_>::default(), &state),
         );
 
         target = out_renom;

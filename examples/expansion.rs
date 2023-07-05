@@ -20,15 +20,7 @@ fn main() {
 
     println!(
         "> Expansion of {}: {}",
-        AtomPrinter::new(
-            input.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
-        AtomPrinter::new(
-            o.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
+        AtomPrinter::new(input.to_view(), <_>::default(), &state),
+        AtomPrinter::new(o.to_view(), <_>::default(), &state),
     );
 }

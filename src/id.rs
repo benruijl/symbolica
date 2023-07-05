@@ -111,29 +111,26 @@ impl<P: Atom> Pattern<P> {
     ) {
         match self {
             Pattern::Wildcard(name) => {
-                if let Some(w) = match_stack.get(*name) {
-                    match w {
-                        Match::Single(s) => out.from_view(s),
-                        Match::Multiple(_, _) => {
-                            unreachable!("Wildcard cannot be multiple")
-                        }
-                        Match::FunctionName(_) => unreachable!("Wildcard cannot be function name"),
-                    }
-                } else {
+                let Some(w) = match_stack.get(*name) else {
                     panic!("Unsubstituted wildcard {}", name.to_u32());
+                };
+                match w {
+                    Match::Single(s) => out.from_view(s),
+                    Match::Multiple(_, _) => {
+                        unreachable!("Wildcard cannot be multiple")
+                    }
+                    Match::FunctionName(_) => unreachable!("Wildcard cannot be function name"),
                 }
             }
             Pattern::Fn(mut name, is_wildcard, args) => {
                 if *is_wildcard {
-                    if let Some(w) = match_stack.get(name) {
-                        if let Match::FunctionName(fname) = w {
-                            name = *fname
-                        } else {
-                            unreachable!("Wildcard must be a function name")
-                        }
-                    } else {
-                        panic!("Unsubstituted wildcard {}", name.to_u32());
-                    }
+                    let Some(w) = match_stack.get(name) else {
+                        panic!("Unsubstituted wildcard {}", name.to_u32())
+                    };
+                    let Match::FunctionName(fname) = w else {
+                        unreachable!("Wildcard must be a function name")
+                    };
+                    name = *fname
                 }
 
                 let func = out.transform_to_fun();
@@ -142,30 +139,27 @@ impl<P: Atom> Pattern<P> {
 
                 for arg in args {
                     if let Pattern::Wildcard(w) = arg {
-                        if let Some(w) = match_stack.get(*w) {
-                            match w {
-                                Match::Single(s) => func.add_arg(*s),
-                                Match::Multiple(t, wargs) => match t {
-                                    SliceType::Arg | SliceType::Empty | SliceType::One => {
-                                        for arg in wargs {
-                                            func.add_arg(*arg);
-                                        }
-                                    }
-                                    _ => {
-                                        let mut handle = workspace.new_atom();
-                                        let oa = handle.get_mut();
-                                        w.to_atom(oa);
-                                        func.add_arg(oa.to_view())
-                                    }
-                                },
-                                Match::FunctionName(_) => {
-                                    unreachable!("Wildcard cannot be function name")
-                                }
-                            }
-
-                            continue;
-                        } else {
+                        let Some(w) = match_stack.get(*w) else {
                             panic!("Unsubstituted wildcard {}", name.to_u32());
+                        };
+                        match w {
+                            Match::Single(s) => func.add_arg(*s),
+                            Match::Multiple(t, wargs) => match t {
+                                SliceType::Arg | SliceType::Empty | SliceType::One => {
+                                    for arg in wargs {
+                                        func.add_arg(*arg);
+                                    }
+                                }
+                                _ => {
+                                    let mut handle = workspace.new_atom();
+                                    let oa = handle.get_mut();
+                                    w.to_atom(oa);
+                                    func.add_arg(oa.to_view())
+                                }
+                            },
+                            Match::FunctionName(_) => {
+                                unreachable!("Wildcard cannot be function name")
+                            }
                         }
                     }
 
@@ -182,23 +176,20 @@ impl<P: Atom> Pattern<P> {
 
                 for (out, arg) in oas.iter_mut().zip(base_and_exp.iter()) {
                     if let Pattern::Wildcard(w) = arg {
-                        if let Some(w) = match_stack.get(*w) {
-                            match w {
-                                Match::Single(s) => out.from_view(s),
-                                Match::Multiple(_, _) => {
-                                    let mut handle = workspace.new_atom();
-                                    let oa = handle.get_mut();
-                                    w.to_atom(oa);
-                                    out.from_view(&oa.to_view())
-                                }
-                                Match::FunctionName(_) => {
-                                    unreachable!("Wildcard cannot be function name")
-                                }
+                        let Some(w) = match_stack.get(*w) else {
+                            panic!("Unsubstituted wildcard {}", w.to_u32())
+                        };
+                        match w {
+                            Match::Single(s) => out.from_view(s),
+                            Match::Multiple(_, _) => {
+                                let mut handle = workspace.new_atom();
+                                let oa = handle.get_mut();
+                                w.to_atom(oa);
+                                out.from_view(&oa.to_view())
                             }
-
-                            continue;
-                        } else {
-                            panic!("Unsubstituted wildcard {}", w.to_u32());
+                            Match::FunctionName(_) => {
+                                unreachable!("Wildcard cannot be function name")
+                            }
                         }
                     }
 
@@ -217,30 +208,27 @@ impl<P: Atom> Pattern<P> {
 
                 for arg in args {
                     if let Pattern::Wildcard(w) = arg {
-                        if let Some(w) = match_stack.get(*w) {
-                            match w {
-                                Match::Single(s) => out.extend(*s),
-                                Match::Multiple(t, wargs) => match t {
-                                    SliceType::Mul | SliceType::Empty | SliceType::One => {
-                                        for arg in wargs {
-                                            out.extend(*arg);
-                                        }
-                                    }
-                                    _ => {
-                                        let mut handle = workspace.new_atom();
-                                        let oa = handle.get_mut();
-                                        w.to_atom(oa);
-                                        out.extend(oa.to_view())
-                                    }
-                                },
-                                Match::FunctionName(_) => {
-                                    unreachable!("Wildcard cannot be function name")
-                                }
-                            }
-
-                            continue;
-                        } else {
+                        let Some(w) = match_stack.get(*w) else {
                             panic!("Unsubstituted wildcard {}", w.to_u32());
+                        };
+                        match w {
+                            Match::Single(s) => out.extend(*s),
+                            Match::Multiple(t, wargs) => match t {
+                                SliceType::Mul | SliceType::Empty | SliceType::One => {
+                                    for arg in wargs {
+                                        out.extend(*arg);
+                                    }
+                                }
+                                _ => {
+                                    let mut handle = workspace.new_atom();
+                                    let oa = handle.get_mut();
+                                    w.to_atom(oa);
+                                    out.extend(oa.to_view())
+                                }
+                            },
+                            Match::FunctionName(_) => {
+                                unreachable!("Wildcard cannot be function name")
+                            }
                         }
                     }
 
@@ -256,30 +244,27 @@ impl<P: Atom> Pattern<P> {
 
                 for arg in args {
                     if let Pattern::Wildcard(w) = arg {
-                        if let Some(w) = match_stack.get(*w) {
-                            match w {
-                                Match::Single(s) => out.extend(*s),
-                                Match::Multiple(t, wargs) => match t {
-                                    SliceType::Add | SliceType::Empty | SliceType::One => {
-                                        for arg in wargs {
-                                            out.extend(*arg);
-                                        }
-                                    }
-                                    _ => {
-                                        let mut handle = workspace.new_atom();
-                                        let oa = handle.get_mut();
-                                        w.to_atom(oa);
-                                        out.extend(oa.to_view())
-                                    }
-                                },
-                                Match::FunctionName(_) => {
-                                    unreachable!("Wildcard cannot be function name")
-                                }
-                            }
-
-                            continue;
-                        } else {
+                        let Some(w) = match_stack.get(*w) else {
                             panic!("Unsubstituted wildcard {}", w.to_u32());
+                        };
+                        match w {
+                            Match::Single(s) => out.extend(*s),
+                            Match::Multiple(t, wargs) => match t {
+                                SliceType::Add | SliceType::Empty | SliceType::One => {
+                                    for arg in wargs {
+                                        out.extend(*arg);
+                                    }
+                                }
+                                _ => {
+                                    let mut handle = workspace.new_atom();
+                                    let oa = handle.get_mut();
+                                    w.to_atom(oa);
+                                    out.extend(oa.to_view())
+                                }
+                            },
+                            Match::FunctionName(_) => {
+                                unreachable!("Wildcard cannot be function name")
+                            }
                         }
                     }
 

@@ -18,9 +18,7 @@ impl<F: Field> Matrix<F> {
     pub fn new(rows: u32, cols: u32, field: F) -> Self {
         Self {
             shape: (rows, cols),
-            data: (0..rows as usize * cols as usize)
-                .map(|_| field.zero())
-                .collect(),
+            data: smallvec::smallvec![field.zero(); (rows * cols) as _],
             field,
         }
     }

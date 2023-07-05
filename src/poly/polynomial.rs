@@ -1270,28 +1270,14 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         let mut res = self.new_from(Some(self.nterms));
 
         let pack_a: Vec<_> = if pack_u8 {
-            self.exponents
-                .chunks(self.nvars)
-                .map(|c| E::pack(c))
-                .collect()
+            self.exponents.chunks(self.nvars).map(E::pack).collect()
         } else {
-            self.exponents
-                .chunks(self.nvars)
-                .map(|c| E::pack_u16(c))
-                .collect()
+            self.exponents.chunks(self.nvars).map(E::pack_u16).collect()
         };
         let pack_b: Vec<_> = if pack_u8 {
-            other
-                .exponents
-                .chunks(self.nvars)
-                .map(|c| E::pack(c))
-                .collect()
+            other.exponents.chunks(self.nvars).map(E::pack).collect()
         } else {
-            other
-                .exponents
-                .chunks(self.nvars)
-                .map(|c| E::pack_u16(c))
-                .collect()
+            other.exponents.chunks(self.nvars).map(E::pack_u16).collect()
         };
 
         let mut cache: BTreeMap<u64, Vec<(usize, usize)>> = BTreeMap::new();

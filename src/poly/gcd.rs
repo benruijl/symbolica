@@ -555,7 +555,7 @@ where
         .collect::<Vec<_>>();
 
     // sort the shape based on the number of terms in the coefficient
-    let mut shape_map: Vec<_> = (0..shape.len()).collect();
+    let mut shape_map = vec![0; shape.len()];
     shape_map.sort_unstable_by_key(|i| shape[*i].0.nterms);
 
     let mut scaling_var_relations: Vec<Vec<<FiniteField<UField> as Ring>::Element>> = vec![];
@@ -1695,13 +1695,13 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             let inca: SmallVec<[_; INLINED_EXPONENTS]> = scratch
                 .iter()
                 .enumerate()
-                .filter_map(|(i, v)| if *v == 1 || *v == 3 { Some(i) } else { None })
+                .filter_map(|(i, v)| if matches!(v, 1 | 3) { Some(i) } else { None })
                 .collect();
 
             let incb: SmallVec<[_; INLINED_EXPONENTS]> = scratch
                 .iter()
                 .enumerate()
-                .filter_map(|(i, v)| if *v == 2 || *v == 3 { Some(i) } else { None })
+                .filter_map(|(i, v)| if matches!(v, 2 | 3) { Some(i) } else { None })
                 .collect();
 
             // extract the variables of b in the coefficient of a and vice versa
@@ -1768,17 +1768,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             .collect();
 
         // determine safe bounds for variables in the gcd
-        let mut bounds: SmallVec<[_; INLINED_EXPONENTS]> = (0..a.nvars)
-            .map(|i| {
-                let da = a.degree(i);
-                let db = b.degree(i);
-                if da < db {
-                    da
-                } else {
-                    db
-                }
-            })
-            .collect();
+        let mut bounds: SmallVec<[_; INLINED_EXPONENTS]> =
+            (0..a.nvars).map(|i| a.degree(i).min(b.degree(i))).collect();
 
         // find better upper bounds for all variables
         // these bounds could actually be wrong due to an unfortunate prime or sampling points

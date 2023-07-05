@@ -41,35 +41,35 @@ pub enum PrintMode {
 impl PrintMode {
     pub fn get_terms_on_new_line(&self) -> bool {
         match self {
-            PrintMode::Symbolica(options) => options.terms_on_new_line,
-            PrintMode::Mathematica => false,
+            Self::Symbolica(options) => options.terms_on_new_line,
+            Self::Mathematica => false,
         }
     }
 
-    pub fn set_terms_on_new_line(self, terms_on_new_line: bool) -> PrintMode {
+    pub fn set_terms_on_new_line(self, terms_on_new_line: bool) -> Self {
         match self {
-            PrintMode::Symbolica(mut options) => {
+            Self::Symbolica(mut options) => {
                 options.terms_on_new_line = terms_on_new_line;
-                PrintMode::Symbolica(options)
+                Self::Symbolica(options)
             }
-            PrintMode::Mathematica => PrintMode::Mathematica,
+            Self::Mathematica => Self::Mathematica,
         }
     }
 
     pub fn get_color_top_level_sum(&self) -> bool {
         match self {
-            PrintMode::Symbolica(options) => options.color_top_level_sum,
-            PrintMode::Mathematica => false,
+            Self::Symbolica(options) => options.color_top_level_sum,
+            Self::Mathematica => false,
         }
     }
 
-    pub fn set_color_top_level_sum(self, color_top_level_sum: bool) -> PrintMode {
+    pub fn set_color_top_level_sum(self, color_top_level_sum: bool) -> Self {
         match self {
-            PrintMode::Symbolica(mut options) => {
+            Self::Symbolica(mut options) => {
                 options.color_top_level_sum = color_top_level_sum;
-                PrintMode::Symbolica(options)
+                Self::Symbolica(options)
             }
-            PrintMode::Mathematica => PrintMode::Mathematica,
+            Self::Mathematica => Self::Mathematica,
         }
     }
 }
@@ -121,12 +121,8 @@ pub struct AtomPrinter<'a, 'b, P: Atom> {
 }
 
 impl<'a, 'b, P: Atom> AtomPrinter<'a, 'b, P> {
-    pub fn new(
-        atom: AtomView<'a, P>,
-        print_mode: PrintMode,
-        state: &'b State,
-    ) -> AtomPrinter<'a, 'b, P> {
-        AtomPrinter {
+    pub fn new(atom: AtomView<'a, P>, print_mode: PrintMode, state: &'b State) -> Self {
+        Self {
             atom,
             state,
             print_mode,
@@ -145,12 +141,12 @@ impl<'a, 'b, P: Atom> fmt::Display for AtomPrinter<'a, 'b, P> {
 impl<'a, P: Atom> AtomView<'a, P> {
     fn fmt_debug(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            AtomView::Num(n) => n.fmt_debug(fmt),
-            AtomView::Var(v) => v.fmt_debug(fmt),
-            AtomView::Fun(f) => f.fmt_debug(fmt),
-            AtomView::Pow(p) => p.fmt_debug(fmt),
-            AtomView::Mul(m) => m.fmt_debug(fmt),
-            AtomView::Add(a) => a.fmt_debug(fmt),
+            Self::Num(n) => n.fmt_debug(fmt),
+            Self::Var(v) => v.fmt_debug(fmt),
+            Self::Fun(f) => f.fmt_debug(fmt),
+            Self::Pow(p) => p.fmt_debug(fmt),
+            Self::Mul(m) => m.fmt_debug(fmt),
+            Self::Add(a) => a.fmt_debug(fmt),
         }
     }
 
@@ -162,12 +158,12 @@ impl<'a, P: Atom> AtomView<'a, P> {
         print_state: PrintState,
     ) -> fmt::Result {
         match self {
-            AtomView::Num(n) => n.fmt_output(fmt, print_mode, state, print_state),
-            AtomView::Var(v) => v.fmt_output(fmt, print_mode, state, print_state),
-            AtomView::Fun(f) => f.fmt_output(fmt, print_mode, state, print_state),
-            AtomView::Pow(p) => p.fmt_output(fmt, print_mode, state, print_state),
-            AtomView::Mul(t) => t.fmt_output(fmt, print_mode, state, print_state),
-            AtomView::Add(e) => e.fmt_output(fmt, print_mode, state, print_state),
+            Self::Num(n) => n.fmt_output(fmt, print_mode, state, print_state),
+            Self::Var(v) => v.fmt_output(fmt, print_mode, state, print_state),
+            Self::Fun(f) => f.fmt_output(fmt, print_mode, state, print_state),
+            Self::Pow(p) => p.fmt_output(fmt, print_mode, state, print_state),
+            Self::Mul(t) => t.fmt_output(fmt, print_mode, state, print_state),
+            Self::Add(e) => e.fmt_output(fmt, print_mode, state, print_state),
         }
     }
 }
@@ -455,8 +451,8 @@ impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
         poly: &'a RationalPolynomial<R, E>,
         state: &'b State,
         print_mode: PrintMode,
-    ) -> RationalPolynomialPrinter<'a, 'b, R, E> {
-        RationalPolynomialPrinter {
+    ) -> Self {
+        Self {
             poly,
             state,
             print_mode,
@@ -584,8 +580,8 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> PolynomialPrinter<'a, 'b, F, E> {
         poly: &'a MultivariatePolynomial<F, E>,
         state: &'b State,
         print_mode: PrintMode,
-    ) -> PolynomialPrinter<'a, 'b, F, E> {
-        PolynomialPrinter {
+    ) -> Self {
+        Self {
             poly,
             state,
             print_mode,

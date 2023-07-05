@@ -41,34 +41,15 @@ impl<P: Atom> Pattern<P> {
                     return true;
                 }
 
-                for arg in f.iter() {
-                    if Self::has_wildcard(arg, state) {
-                        return true;
-                    }
-                }
-                false
+                f.iter().any(|arg| Self::has_wildcard(arg, state))
             }
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 Self::has_wildcard(base, state) || Self::has_wildcard(exp, state)
             }
-            AtomView::Mul(m) => {
-                for child in m.iter() {
-                    if Self::has_wildcard(child, state) {
-                        return true;
-                    }
-                }
-                false
-            }
-            AtomView::Add(a) => {
-                for child in a.iter() {
-                    if Self::has_wildcard(child, state) {
-                        return true;
-                    }
-                }
-                false
-            }
+            AtomView::Mul(m) => m.iter().any(|child| Self::has_wildcard(child, state)),
+            AtomView::Add(a) => a.iter().any(|child| Self::has_wildcard(child, state)),
         }
     }
 

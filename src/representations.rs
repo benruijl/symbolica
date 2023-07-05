@@ -280,10 +280,8 @@ impl<P: Atom> OwnedAtom<P> {
             Self::Empty => unreachable!(),
         };
 
-        match self {
-            Self::Num(n) => n,
-            _ => unreachable!(),
-        }
+        let Self::Num(n) = self else { unreachable!() };
+        n
     }
 
     pub fn transform_to_pow(&mut self) -> &mut P::OP {
@@ -302,10 +300,8 @@ impl<P: Atom> OwnedAtom<P> {
             Self::Empty => unreachable!(),
         };
 
-        match self {
-            Self::Pow(p) => p,
-            _ => unreachable!(),
-        }
+        let Self::Pow(p) = self else { unreachable!() };
+        p
     }
 
     pub fn transform_to_var(&mut self) -> &mut P::OV {
@@ -324,10 +320,8 @@ impl<P: Atom> OwnedAtom<P> {
             Self::Empty => unreachable!(),
         };
 
-        match self {
-            Self::Var(v) => v,
-            _ => unreachable!(),
-        }
+        let Self::Var(v) = self else { unreachable!() };
+        v
     }
 
     pub fn transform_to_fun(&mut self) -> &mut P::OF {
@@ -346,10 +340,8 @@ impl<P: Atom> OwnedAtom<P> {
             Self::Empty => unreachable!(),
         };
 
-        match self {
-            Self::Fun(f) => f,
-            _ => unreachable!(),
-        }
+        let Self::Fun(f) = self else { unreachable!() };
+        f
     }
 
     pub fn transform_to_mul(&mut self) -> &mut P::OM {
@@ -368,10 +360,8 @@ impl<P: Atom> OwnedAtom<P> {
             Self::Empty => unreachable!(),
         };
 
-        match self {
-            Self::Mul(m) => m,
-            _ => unreachable!(),
-        }
+        let Self::Mul(m) = self else { unreachable!() };
+        m
     }
 
     pub fn transform_to_add(&mut self) -> &mut P::OA {
@@ -390,10 +380,8 @@ impl<P: Atom> OwnedAtom<P> {
             Self::Empty => unreachable!(),
         };
 
-        match self {
-            Self::Add(a) => a,
-            _ => unreachable!(),
-        }
+        let Self::Add(a) = self else { unreachable!() };
+        a
     }
 
     /// This function allocates a new OwnedAtom with the same content as `view`.

@@ -152,13 +152,13 @@ pub struct BufferHandle<'a, T: ResettableBuffer> {
 impl<'a, T: ResettableBuffer> Deref for BufferHandle<'a, T> {
     type Target = T;
 
-    fn deref(&self) -> &Self::Target {
+    fn deref(&self) -> &T {
         self.get()
     }
 }
 
 impl<'a, T: ResettableBuffer> DerefMut for BufferHandle<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    fn deref_mut(&mut self) -> &mut T {
         self.get_mut()
     }
 }

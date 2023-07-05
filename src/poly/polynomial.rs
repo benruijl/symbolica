@@ -1277,7 +1277,11 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         let pack_b: Vec<_> = if pack_u8 {
             other.exponents.chunks(self.nvars).map(E::pack).collect()
         } else {
-            other.exponents.chunks(self.nvars).map(E::pack_u16).collect()
+            other
+                .exponents
+                .chunks(self.nvars)
+                .map(E::pack_u16)
+                .collect()
         };
 
         let mut cache: BTreeMap<u64, Vec<(usize, usize)>> = BTreeMap::new();
@@ -1850,26 +1854,14 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         let mut r = self.new_from(None);
 
         let pack_a: Vec<_> = if pack_u8 {
-            self.exponents
-                .chunks(self.nvars)
-                .map(|c| E::pack(c))
-                .collect()
+            self.exponents.chunks(self.nvars).map(E::pack).collect()
         } else {
-            self.exponents
-                .chunks(self.nvars)
-                .map(|c| E::pack_u16(c))
-                .collect()
+            self.exponents.chunks(self.nvars).map(E::pack_u16).collect()
         };
         let pack_div: Vec<_> = if pack_u8 {
-            div.exponents
-                .chunks(div.nvars)
-                .map(|c| E::pack(c))
-                .collect()
+            div.exponents.chunks(div.nvars).map(E::pack).collect()
         } else {
-            div.exponents
-                .chunks(div.nvars)
-                .map(|c| E::pack_u16(c))
-                .collect()
+            div.exponents.chunks(div.nvars).map(E::pack_u16).collect()
         };
 
         let mut div_monomial_in_heap = vec![false; div.nterms];

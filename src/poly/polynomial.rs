@@ -815,9 +815,9 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
     /// Get the leading coefficient viewed as a polynomial
     /// in all variables except the last variable `n`.
-    pub fn lcoeff_last(&self, n: usize) -> MultivariatePolynomial<F, E> {
+    pub fn lcoeff_last(&self, n: usize) -> Self {
         if self.is_zero() {
-            return MultivariatePolynomial::zero(self.field);
+            return Self::zero(self.field);
         }
         // the last variable should have the least sorting priority,
         // so the last term should still be the lcoeff
@@ -842,9 +842,9 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Get the leading coefficient viewed as a polynomial
     /// in all variables with order as described in `vars` except the last variable in `vars`.
     /// This operation is O(n) if the variables are out of order.
-    pub fn lcoeff_last_varorder(&self, vars: &[usize]) -> MultivariatePolynomial<F, E> {
+    pub fn lcoeff_last_varorder(&self, vars: &[usize]) -> Self {
         if self.is_zero() {
-            return MultivariatePolynomial::zero(self.field);
+            return Self::zero(self.field);
         }
 
         if vars.windows(2).all(|s| s[0] < s[1]) {
@@ -892,7 +892,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// The map can also be reversed, by setting `inverse` to `true`.
     ///
     /// Note that the polynomial `var_map` is not updated.
-    pub fn rearrange(&self, order: &[usize], inverse: bool) -> MultivariatePolynomial<F, E> {
+    pub fn rearrange(&self, order: &[usize], inverse: bool) -> Self {
         let mut new_exp = vec![E::zero(); self.nterms * self.nvars];
         for (e, er) in new_exp
             .chunks_mut(self.nvars)
@@ -927,7 +927,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// allows the polynomial to grow in size.
     ///
     /// Note that the polynomial `var_map` is not updated.
-    pub fn rearrange_with_growth(&self, order: &[Option<usize>]) -> MultivariatePolynomial<F, E> {
+    pub fn rearrange_with_growth(&self, order: &[Option<usize>]) -> Self {
         let mut new_exp = vec![E::zero(); self.nterms * order.len()];
         for (e, er) in new_exp
             .chunks_mut(order.len())
@@ -943,7 +943,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         let mut indices: Vec<usize> = (0..self.nterms).collect();
         indices.sort_unstable_by_key(|&i| &new_exp[i * order.len()..(i + 1) * order.len()]);
 
-        let mut res = MultivariatePolynomial::new(
+        let mut res = Self::new(
             order.len(),
             self.field,
             Some(self.nterms),
@@ -962,7 +962,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
     /// Replace a variable `n` in the polynomial by an element from
     /// the ring `v`.
-    pub fn replace(&self, n: usize, v: &F::Element) -> MultivariatePolynomial<F, E> {
+    pub fn replace(&self, n: usize, v: &F::Element) -> Self {
         let mut res = self.new_from(Some(self.nterms));
         let mut e: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); self.nvars];
 
@@ -990,7 +990,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         v: usize,
         r: &[(usize, F::Element)],
         cache: &mut [Vec<F::Element>],
-    ) -> MultivariatePolynomial<F, E> {
+    ) -> Self {
         let mut tm: HashMap<E, F::Element> = HashMap::new();
 
         for t in self {
@@ -1028,10 +1028,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
 
     /// Create a univariate polynomial out of a multivariate one.
     // TODO: allow a MultivariatePolynomial as a coefficient
-    pub fn to_univariate_polynomial_list(
-        &self,
-        x: usize,
-    ) -> Vec<(MultivariatePolynomial<F, E>, E)> {
+    pub fn to_univariate_polynomial_list(&self, x: usize) -> Vec<(Self, E)> {
         if self.coefficients.is_empty() {
             return vec![];
         }
@@ -1075,13 +1072,12 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         &self,
         xs: &[usize],
         include: bool,
-    ) -> HashMap<SmallVec<[E; INLINED_EXPONENTS]>, MultivariatePolynomial<F, E>> {
+    ) -> HashMap<SmallVec<[E; INLINED_EXPONENTS]>, Self> {
         if self.coefficients.is_empty() {
             return HashMap::new();
         }
 
-        let mut tm: HashMap<SmallVec<[E; INLINED_EXPONENTS]>, MultivariatePolynomial<F, E>> =
-            HashMap::new();
+        let mut tm: HashMap<SmallVec<[E; INLINED_EXPONENTS]>, Self> = HashMap::new();
         let mut e_not_in_xs = smallvec![E::zero(); self.nvars];
         let mut e_in_xs = smallvec![E::zero(); self.nvars];
         for t in self {
@@ -1099,21 +1095,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
                 tm.entry(e_in_xs.clone())
                     .and_modify(|x| x.append_monomial(t.coefficient.clone(), &e_not_in_xs))
                     .or_insert_with(|| {
-                        MultivariatePolynomial::new_from_monomial(
-                            self,
-                            t.coefficient.clone(),
-                            e_not_in_xs.to_vec(),
-                        )
+                        Self::new_from_monomial(self, t.coefficient.clone(), e_not_in_xs.to_vec())
                     });
             } else {
                 tm.entry(e_not_in_xs.clone())
                     .and_modify(|x| x.append_monomial(t.coefficient.clone(), &e_in_xs))
                     .or_insert_with(|| {
-                        MultivariatePolynomial::new_from_monomial(
-                            self,
-                            t.coefficient.clone(),
-                            e_in_xs.to_vec(),
-                        )
+                        Self::new_from_monomial(self, t.coefficient.clone(), e_in_xs.to_vec())
                     });
             }
         }
@@ -1132,9 +1120,9 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// only has new monomials, and by taking (and removing) the corresponding entry from the hashmap, all
     /// monomials that have that exponent can be summed. Then, new monomials combinations are added that
     /// should be considered next as they are smaller than the current monomial.
-    pub fn heap_mul(&self, other: &MultivariatePolynomial<F, E>) -> MultivariatePolynomial<F, E> {
+    pub fn heap_mul(&self, other: &Self) -> Self {
         if self.nterms == 0 || other.nterms == 0 {
-            return MultivariatePolynomial::new_from(self, None);
+            return Self::new_from(self, None);
         }
 
         if self.nterms == 1 {
@@ -1278,11 +1266,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Heap multiplication, but with the exponents packed into a `u64`.
     /// Each exponent is limited to 65535 if there are four or fewer variables,
     /// or 255 if there are 8 or fewer variables.
-    pub fn heap_mul_packed_exp(
-        &self,
-        other: &MultivariatePolynomial<F, E>,
-        pack_u8: bool,
-    ) -> MultivariatePolynomial<F, E> {
+    pub fn heap_mul_packed_exp(&self, other: &Self, pack_u8: bool) -> Self {
         let mut res = self.new_from(Some(self.nterms));
 
         let pack_a: Vec<_> = if pack_u8 {
@@ -1593,7 +1577,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                     if *e1 >= *e2 {
                         *e1 = *e1 - *e2;
                     } else {
-                        return (MultivariatePolynomial::new_from(self, None), self.clone());
+                        return (Self::new_from(self, None), self.clone());
                     }
                 }
             }
@@ -1603,7 +1587,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                 *c = quot;
                 if !F::is_zero(&rem) {
                     // TODO: support upgrade to a RationalField
-                    return (MultivariatePolynomial::new_from(self, None), self.clone());
+                    return (Self::new_from(self, None), self.clone());
                 }
             }
 
@@ -1763,7 +1747,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                         r.nterms += 1;
                         return (q, r);
                     } else {
-                        return (MultivariatePolynomial::new_from(self, None), self.clone());
+                        return (Self::new_from(self, None), self.clone());
                     }
                 }
 
@@ -2027,7 +2011,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
                         r.nterms += 1;
                         return (q, r);
                     } else {
-                        return (MultivariatePolynomial::new_from(self, None), self.clone());
+                        return (Self::new_from(self, None), self.clone());
                     }
                 }
 

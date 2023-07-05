@@ -162,7 +162,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             return false;
         }
         debug_assert!(!F::is_zero(self.coefficients.first().unwrap()));
-        return self.exponents.iter().all(|e| e.is_zero());
+        self.exponents.iter().all(|e| e.is_zero())
     }
 
     /// Returns the `index`th monomial, starting from the back.
@@ -315,11 +315,11 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
         assert_eq!(self.coefficients.len(), self.nterms);
         assert_eq!(self.exponents.len(), self.nterms * self.nvars);
 
-        for c in &self.coefficients {
-            if F::is_zero(c) {
-                panic!("Inconsistent polynomial (0 coefficient): {}", self);
-            }
-        }
+        assert!(
+            self.coefficients.iter().all(F::is_zero),
+            "Inconsistent polynomial (0 coefficient): {}",
+            self
+        );
 
         for t in 1..self.nterms {
             match Self::cmp_exponents(self.exponents(t), self.exponents(t - 1)) {
@@ -670,13 +670,11 @@ impl<'a, 'b, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E>>
     }
 }
 
-impl<'a, F: Ring, E: Exponent> Mul<&'a MultivariatePolynomial<F, E>>
-    for MultivariatePolynomial<F, E>
-{
-    type Output = MultivariatePolynomial<F, E>;
+impl<'a, F: Ring, E: Exponent> Mul<&'a Self> for MultivariatePolynomial<F, E> {
+    type Output = Self;
 
     #[inline]
-    fn mul(self, other: &'a MultivariatePolynomial<F, E>) -> Self::Output {
+    fn mul(self, other: &'a Self) -> Self {
         self.heap_mul(other)
     }
 }
@@ -692,15 +690,10 @@ impl<'a, 'b, F: EuclideanDomain, E: Exponent> Div<&'a MultivariatePolynomial<F, 
     }
 }
 
-impl<'a, F: EuclideanDomain, E: Exponent> Div<&'a MultivariatePolynomial<F, E>>
-    for MultivariatePolynomial<F, E>
-{
-    type Output = MultivariatePolynomial<F, E>;
+impl<'a, F: EuclideanDomain, E: Exponent> Div<&'a Self> for MultivariatePolynomial<F, E> {
+    type Output = Self;
 
-    fn div(
-        self: MultivariatePolynomial<F, E>,
-        other: &'a MultivariatePolynomial<F, E>,
-    ) -> Self::Output {
+    fn div(self, other: &'a Self) -> Self {
         (&self).div(other)
     }
 }
@@ -755,13 +748,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Get the degree of the variable `x`.
     /// This operation is O(n).
     pub fn degree(&self, x: usize) -> E {
-        let mut max = E::zero();
-        for e in self.exponents.iter().skip(x).step_by(self.nvars) {
-            if max < *e {
-                max = *e;
-            }
-        }
-        max
+        *self
+            .exponents
+            .iter()
+            .skip(x)
+            .step_by(self.nvars)
+            .max()
+            .unwrap_or(&E::zero())
     }
 
     // Get the highest degree of a variable in the leading monomial.
@@ -2166,10 +2159,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
 impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
     /// Optimized division routine for univariate polynomials over a field, which
     /// makes the divisor monic first.
-    pub fn quot_rem_univariate(
-        &self,
-        div: &mut MultivariatePolynomial<F, E>,
-    ) -> (MultivariatePolynomial<F, E>, MultivariatePolynomial<F, E>) {
+    pub fn quot_rem_univariate(&self, div: &mut Self) -> (Self, Self) {
         if div.nterms == 1 {
             // calculate inverse once
             let inv = self.field.inv(&div.coefficients[0]);

@@ -154,11 +154,8 @@ impl Exponent for u16 {
 
     #[inline]
     fn from_u32(n: u32) -> Self {
-        if n <= u16::MAX as u32 {
-            n as u16
-        } else {
-            panic!("Exponent {} too large for u16", n);
-        }
+        assert!(n <= u16::MAX as u32, "Exponent {} too large for u16", n);
+        n as _
     }
 
     #[inline]
@@ -228,11 +225,8 @@ impl Exponent for u8 {
 
     #[inline]
     fn from_u32(n: u32) -> Self {
-        if n <= u8::MAX as u32 {
-            n as u8
-        } else {
-            panic!("Exponent {} too large for u8", n);
-        }
+        assert!(n <= u8::MAX as u32, "Exponent {} too large for u8", n);
+        n as _
     }
 
     #[inline]

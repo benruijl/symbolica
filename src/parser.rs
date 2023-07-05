@@ -47,24 +47,20 @@ impl Operator {
     #[inline]
     pub fn get_precedence(&self) -> u8 {
         match self {
-            Operator::Mul => 8,
-            Operator::Add => 7,
-            Operator::Pow => 11,
-            Operator::Argument => 6,
-            Operator::Neg => 10,
-            Operator::Inv => 9,
+            Self::Mul => 8,
+            Self::Add => 7,
+            Self::Pow => 11,
+            Self::Argument => 6,
+            Self::Neg => 10,
+            Self::Inv => 9,
         }
     }
 
     #[inline]
     pub fn right_associative(&self) -> bool {
         match self {
-            Operator::Mul => true,
-            Operator::Add => true,
-            Operator::Pow => false,
-            Operator::Argument => true,
-            Operator::Neg => true,
-            Operator::Inv => true,
+            Self::Pow => false,
+            _ => true,
         }
     }
 }

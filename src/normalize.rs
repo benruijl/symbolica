@@ -291,29 +291,27 @@ impl<P: Atom> OwnedAtom<P> {
                         return false;
                     }
 
-                    if let AtomView::Num(n) = &exp1 {
-                        new_exp.set_from_view(n);
-                    } else {
+                    let AtomView::Num(n) = &exp1 else {
                         unimplemented!("No support for non-numerical powers yet");
-                    }
+                    };
+                    new_exp.set_from_view(n);
                 }
 
-                if let AtomView::Num(n2) = &exp2 {
-                    new_exp.add(n2, state);
+                let AtomView::Num(n2) = &exp2 else {
+                    unimplemented!("No support for non-numerical powers yet")
+                };
+                new_exp.add(n2, state);
 
-                    if new_exp.to_num_view().is_zero() {
-                        let num = self.transform_to_num();
-                        num.set_from_number(Number::Natural(1, 1));
-                    } else if new_exp.to_num_view().is_one() {
-                        self.from_view(&base2);
-                    } else {
-                        p1.set_from_base_and_exp(base2, AtomView::Num(new_exp.to_num_view()));
-                    }
-
-                    return true;
+                if new_exp.to_num_view().is_zero() {
+                    let num = self.transform_to_num();
+                    num.set_from_number(Number::Natural(1, 1));
+                } else if new_exp.to_num_view().is_one() {
+                    self.from_view(&base2);
                 } else {
-                    unimplemented!("No support for non-numerical powers yet");
+                    p1.set_from_base_and_exp(base2, AtomView::Num(new_exp.to_num_view()));
                 }
+
+                return true;
             }
         }
 
@@ -322,32 +320,30 @@ impl<P: Atom> OwnedAtom<P> {
             let pv = p.to_pow_view();
             let (base, exp) = pv.get_base_exp();
 
-            if self.to_view() == base {
-                if let AtomView::Num(n) = &exp {
-                    let num = helper.transform_to_num();
-
-                    let new_exp = n
-                        .get_number_view()
-                        .add(&BorrowedNumber::Natural(1, 1), state);
-
-                    if new_exp.is_zero() {
-                        let num = self.transform_to_num();
-                        num.set_from_number(Number::Natural(1, 1));
-                    } else if Number::Natural(1, 1) == new_exp {
-                        self.from_view(&base);
-                    } else {
-                        num.set_from_number(new_exp);
-                        let op = self.transform_to_pow();
-                        op.set_from_base_and_exp(base, AtomView::Num(num.to_num_view()));
-                    }
-
-                    return true;
-                } else {
-                    unimplemented!("No support for non-numerical powers yet");
-                };
-            } else {
+            if self.to_view() != base {
                 return false;
             }
+            let AtomView::Num(n) = &exp else {
+                unimplemented!("No support for non-numerical powers yet")
+            };
+            let num = helper.transform_to_num();
+
+            let new_exp = n
+                .get_number_view()
+                .add(&BorrowedNumber::Natural(1, 1), state);
+
+            if new_exp.is_zero() {
+                let num = self.transform_to_num();
+                num.set_from_number(Number::Natural(1, 1));
+            } else if Number::Natural(1, 1) == new_exp {
+                self.from_view(&base);
+            } else {
+                num.set_from_number(new_exp);
+                let op = self.transform_to_pow();
+                op.set_from_base_and_exp(base, AtomView::Num(num.to_num_view()));
+            }
+
+            return true;
         }
 
         // simplify num1 * num2

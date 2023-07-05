@@ -31,8 +31,8 @@ pub const SMALL_PRIMES: [i64; 100] = [
 pub struct IntegerRing;
 
 impl IntegerRing {
-    pub fn new() -> IntegerRing {
-        IntegerRing
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -243,20 +243,20 @@ impl Integer {
         }
 
         let p1 = match p1 {
-            Self::Natural(n) => ArbitraryPrecisionInteger::from(n),
+            Self::Natural(n) => n.into(),
             Self::Large(r) => r,
         };
         let p2 = match p2 {
-            Self::Natural(n) => ArbitraryPrecisionInteger::from(n),
+            Self::Natural(n) => n.into(),
             Self::Large(r) => r,
         };
 
         let n1 = match n1 {
-            Self::Natural(n) => ArbitraryPrecisionInteger::from(n),
+            Self::Natural(n) => n.into(),
             Self::Large(r) => r,
         };
         let n2 = match n2 {
-            Self::Natural(n) => ArbitraryPrecisionInteger::from(n),
+            Self::Natural(n) => n.into(),
             Self::Large(r) => r,
         };
 

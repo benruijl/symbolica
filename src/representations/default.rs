@@ -922,7 +922,7 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     type I = ListIteratorD<'a>;
 
     fn get_name(&self) -> Identifier {
-        Identifier::from(self.data[1 + 4..].get_frac_i64().0 as u32)
+        (self.data[1 + 4..].get_frac_i64().0 as u32).into()
     }
 
     fn get_nargs(&self) -> usize {

@@ -23,7 +23,7 @@ impl std::fmt::Debug for Identifier {
 
 impl From<u32> for Identifier {
     fn from(value: u32) -> Self {
-        Identifier(value)
+        Self(value)
     }
 }
 
@@ -235,12 +235,12 @@ impl<'a, P: Atom> Copy for AtomView<'a, P> {}
 impl<'a, 'b, P: Atom> PartialEq<AtomView<'b, P>> for AtomView<'a, P> {
     fn eq(&self, other: &AtomView<P>) -> bool {
         match (self, other) {
-            (AtomView::Num(n1), AtomView::Num(n2)) => n1 == n2,
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1 == v2,
-            (AtomView::Fun(f1), AtomView::Fun(f2)) => f1 == f2,
-            (AtomView::Pow(p1), AtomView::Pow(p2)) => p1 == p2,
-            (AtomView::Mul(m1), AtomView::Mul(m2)) => m1 == m2,
-            (AtomView::Add(a1), AtomView::Add(a2)) => a1 == a2,
+            (Self::Num(n1), AtomView::Num(n2)) => n1 == n2,
+            (Self::Var(v1), AtomView::Var(v2)) => v1 == v2,
+            (Self::Fun(f1), AtomView::Fun(f2)) => f1 == f2,
+            (Self::Pow(p1), AtomView::Pow(p2)) => p1 == p2,
+            (Self::Mul(m1), AtomView::Mul(m2)) => m1 == m2,
+            (Self::Add(a1), AtomView::Add(a2)) => a1 == a2,
             _ => false,
         }
     }
@@ -265,63 +265,63 @@ impl<P: Atom> std::fmt::Debug for OwnedAtom<P> {
 
 impl<P: Atom> OwnedAtom<P> {
     pub fn transform_to_num(&mut self) -> &mut P::ON {
-        let mut ov = std::mem::replace(self, OwnedAtom::Empty);
+        let mut ov = std::mem::replace(self, Self::Empty);
 
         *self = match ov {
-            OwnedAtom::Num(_) => {
+            Self::Num(_) => {
                 ov.reset();
                 ov
             }
-            OwnedAtom::Var(v) => OwnedAtom::Num(v.to_owned_num()),
-            OwnedAtom::Fun(f) => OwnedAtom::Num(f.to_owned_num()),
-            OwnedAtom::Pow(p) => OwnedAtom::Num(p.to_owned_num()),
-            OwnedAtom::Mul(m) => OwnedAtom::Num(m.to_owned_num()),
-            OwnedAtom::Add(a) => OwnedAtom::Num(a.to_owned_num()),
-            OwnedAtom::Empty => unreachable!(),
+            Self::Var(v) => Self::Num(v.to_owned_num()),
+            Self::Fun(f) => Self::Num(f.to_owned_num()),
+            Self::Pow(p) => Self::Num(p.to_owned_num()),
+            Self::Mul(m) => Self::Num(m.to_owned_num()),
+            Self::Add(a) => Self::Num(a.to_owned_num()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            OwnedAtom::Num(n) => n,
+            Self::Num(n) => n,
             _ => unreachable!(),
         }
     }
 
     pub fn transform_to_pow(&mut self) -> &mut P::OP {
-        let mut ov = std::mem::replace(self, OwnedAtom::Empty);
+        let mut ov = std::mem::replace(self, Self::Empty);
 
         *self = match ov {
-            OwnedAtom::Pow(_) => {
+            Self::Pow(_) => {
                 ov.reset();
                 ov
             }
-            OwnedAtom::Num(n) => OwnedAtom::Pow(n.to_owned_pow()),
-            OwnedAtom::Var(v) => OwnedAtom::Pow(v.to_owned_pow()),
-            OwnedAtom::Fun(f) => OwnedAtom::Pow(f.to_owned_pow()),
-            OwnedAtom::Mul(m) => OwnedAtom::Pow(m.to_owned_pow()),
-            OwnedAtom::Add(a) => OwnedAtom::Pow(a.to_owned_pow()),
-            OwnedAtom::Empty => unreachable!(),
+            Self::Num(n) => Self::Pow(n.to_owned_pow()),
+            Self::Var(v) => Self::Pow(v.to_owned_pow()),
+            Self::Fun(f) => Self::Pow(f.to_owned_pow()),
+            Self::Mul(m) => Self::Pow(m.to_owned_pow()),
+            Self::Add(a) => Self::Pow(a.to_owned_pow()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            OwnedAtom::Pow(p) => p,
+            Self::Pow(p) => p,
             _ => unreachable!(),
         }
     }
 
     pub fn transform_to_var(&mut self) -> &mut P::OV {
-        let mut ov = std::mem::replace(self, OwnedAtom::Empty);
+        let mut ov = std::mem::replace(self, Self::Empty);
 
         *self = match ov {
-            OwnedAtom::Var(_) => {
+            Self::Var(_) => {
                 ov.reset();
                 ov
             }
-            OwnedAtom::Num(n) => OwnedAtom::Var(n.to_owned_var()),
-            OwnedAtom::Pow(p) => OwnedAtom::Var(p.to_owned_var()),
-            OwnedAtom::Fun(f) => OwnedAtom::Var(f.to_owned_var()),
-            OwnedAtom::Mul(m) => OwnedAtom::Var(m.to_owned_var()),
-            OwnedAtom::Add(a) => OwnedAtom::Var(a.to_owned_var()),
-            OwnedAtom::Empty => unreachable!(),
+            Self::Num(n) => Self::Var(n.to_owned_var()),
+            Self::Pow(p) => Self::Var(p.to_owned_var()),
+            Self::Fun(f) => Self::Var(f.to_owned_var()),
+            Self::Mul(m) => Self::Var(m.to_owned_var()),
+            Self::Add(a) => Self::Var(a.to_owned_var()),
+            Self::Empty => unreachable!(),
         };
 
         match self {

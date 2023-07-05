@@ -18,8 +18,8 @@ use super::{
 pub struct RationalField;
 
 impl RationalField {
-    pub fn new() -> RationalField {
-        RationalField
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -33,7 +33,7 @@ pub enum Rational {
 impl ToFiniteField<u32> for Rational {
     fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
         match self {
-            &Rational::Natural(n, d) => {
+            &Self::Natural(n, d) => {
                 let mut ff = field.to_element(n.rem_euclid(field.get_prime() as i64) as u32);
 
                 if d != 1 {
@@ -43,7 +43,7 @@ impl ToFiniteField<u32> for Rational {
 
                 ff
             }
-            Rational::Large(r) => field.div(
+            Self::Large(r) => field.div(
                 &field.to_element(r.numer().mod_u(field.get_prime())),
                 &field.to_element(r.denom().mod_u(field.get_prime())),
             ),
@@ -52,35 +52,35 @@ impl ToFiniteField<u32> for Rational {
 }
 
 impl Rational {
-    pub fn new(num: i64, den: i64) -> Rational {
-        Rational::Natural(num, den)
+    pub fn new(num: i64, den: i64) -> Self {
+        Self::Natural(num, den)
     }
 
     pub fn from_finite_field_u32(
         field: FiniteField<u32>,
         element: &<FiniteField<u32> as Ring>::Element,
-    ) -> Rational {
-        Rational::Natural(field.from_element(*element) as i64, 1)
+    ) -> Self {
+        Self::Natural(field.from_element(*element) as i64, 1)
     }
 
     pub fn is_negative(&self) -> bool {
         match self {
-            Rational::Natural(n, _) => *n < 0,
-            Rational::Large(r) => ArbitraryPrecisionInteger::from(r.numer().signum_ref()) == -1,
+            Self::Natural(n, _) => *n < 0,
+            Self::Large(r) => ArbitraryPrecisionInteger::from(r.numer().signum_ref()) == -1,
         }
     }
 
     pub fn is_integer(&self) -> bool {
         match self {
-            Rational::Natural(_, d) => *d == 1,
-            Rational::Large(r) => r.is_integer(),
+            Self::Natural(_, d) => *d == 1,
+            Self::Large(r) => r.is_integer(),
         }
     }
 
     pub fn numerator(&self) -> Integer {
         match self {
-            Rational::Natural(n, _) => Integer::Natural(*n),
-            Rational::Large(r) => Integer::Large(r.numer().clone()),
+            Self::Natural(n, _) => Integer::Natural(*n),
+            Self::Large(r) => Integer::Large(r.numer().clone()),
         }
     }
 }

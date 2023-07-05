@@ -15,8 +15,8 @@ pub struct Matrix<F: Field> {
 }
 
 impl<F: Field> Matrix<F> {
-    pub fn new(rows: u32, cols: u32, field: F) -> Matrix<F> {
-        Matrix {
+    pub fn new(rows: u32, cols: u32, field: F) -> Self {
+        Self {
             shape: (rows, cols),
             data: (0..rows as usize * cols as usize)
                 .map(|_| field.zero())
@@ -149,7 +149,7 @@ impl<F: Field> Matrix<F> {
 
     /// Solves `A * x = b` for `x`, where `A` is `self`.
     // TODO: provide vectors to prevent allocation
-    pub fn solve(&self, b: &Matrix<F>) -> Result<Matrix<F>, LinearSolverError<F>> {
+    pub fn solve(&self, b: &Self) -> Result<Self, LinearSolverError<F>> {
         assert!(self.shape.0 == b.shape.0 && b.shape.1 == 1 && self.field == b.field);
 
         let (neqs, nvars) = self.shape;
@@ -164,7 +164,7 @@ impl<F: Field> Matrix<F> {
         }
 
         // Create the augmented matrix.
-        let mut m = Matrix::new(neqs, nvars + 1, self.field);
+        let mut m = Self::new(neqs, nvars + 1, self.field);
         for r in 0..neqs {
             for c in 0..nvars {
                 m[(r, c)] = self[(r, c)].clone();
@@ -233,7 +233,7 @@ impl<F: Field> Matrix<F> {
             i -= 1;
         }
 
-        let result = Matrix {
+        let result = Self {
             shape: (nvars, 1),
             data: (0..nvars).map(|i| m[(i, nvars)].clone()).collect(),
             field: m.field,

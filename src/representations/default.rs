@@ -102,7 +102,7 @@ impl Convert<DefaultRepresentation> for OwnedNumD {
 
 impl ResettableBuffer for OwnedNumD {
     fn new() -> Self {
-        OwnedNumD { data: vec![] }
+        Self { data: vec![] }
     }
 
     fn reset(&mut self) {
@@ -135,9 +135,9 @@ impl OwnedVar for OwnedVarD {
 }
 
 impl Convert<DefaultRepresentation> for OwnedVarD {
-    fn to_owned_var(mut self) -> OwnedVarD {
+    fn to_owned_var(mut self) -> Self {
         self.data.clear();
-        OwnedVarD { data: self.data }
+        Self { data: self.data }
     }
 
     fn to_owned_pow(mut self) -> OwnedPowD {

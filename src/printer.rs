@@ -76,7 +76,7 @@ impl PrintMode {
 
 impl Default for PrintMode {
     fn default() -> Self {
-        Self::Symbolica(SymbolicaPrintOptions::default())
+        Self::Symbolica(<_>::default())
     }
 }
 

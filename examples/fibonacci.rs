@@ -96,7 +96,7 @@ fn main() {
             &expand_rhs,
             &state,
             &workspace,
-            &HashMap::default(),
+            &<_>::default(),
             out2.get_mut(),
         );
 
@@ -113,7 +113,7 @@ fn main() {
             &rhs_one,
             &state,
             &workspace,
-            &HashMap::default(),
+            &<_>::default(),
             out_renom2.get_mut(),
         );
 
@@ -123,7 +123,7 @@ fn main() {
             &rhs_one,
             &state,
             &workspace,
-            &HashMap::default(),
+            &<_>::default(),
             out3.get_mut(),
         );
 

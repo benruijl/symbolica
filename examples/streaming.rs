@@ -41,7 +41,7 @@ fn main() {
             &rhs,
             &state,
             workspace,
-            &HashMap::default(),
+            &<_>::default(),
             &mut out1,
         );
 

@@ -236,7 +236,7 @@ impl Exponent for u8 {
 
     #[inline]
     fn checked_add(&self, other: &Self) -> Option<Self> {
-        u8::checked_add(*self, *other)
+        Self::checked_add(*self, *other)
     }
 
     #[inline]
@@ -499,57 +499,54 @@ impl<'a, P: Atom> AtomView<'a, P> {
         }
 
         match self {
-            AtomView::Num(_) | AtomView::Var(_) => {
+            Self::Num(_) | Self::Var(_) => {
                 let num = self.to_polynomial(field, var_map)?;
                 let den = num.new_from_constant(field.one());
                 Ok(RationalPolynomial::from_num_den(num, den, out_field, false))
             }
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
-                if let AtomView::Num(n) = exp {
-                    let num_n = n.get_number_view();
+                let Self::Num(n) = exp else {
+                    Err("Power needs to be a number")?
+                };
 
-                    if let BorrowedNumber::Natural(nn, nd) = num_n {
-                        if nd != 1 {
-                            Err("Exponent cannot be a faction")?
-                        }
+                let num_n = n.get_number_view();
 
-                        if nn != -1 && nn != 1 {
-                            let mut h = workspace.new_atom();
-                            if !self.expand(workspace, state, h.get_mut()) {
-                                // expansion did not change the input, so we are in a case of x^-3 or x^3
-                                let r = base.to_rational_polynomial(
-                                    workspace, state, field, out_field, var_map,
-                                )?;
+                let BorrowedNumber::Natural(nn, nd) = num_n else {
+                    Err("Exponent needs to be an integer")?
+                };
+                if nd != 1 {
+                    Err("Exponent cannot be a fraction")?
+                }
 
-                                if nn < 0 {
-                                    let r_inv = r.inv();
-                                    Ok(r_inv.pow(-nn as u64))
-                                } else {
-                                    Ok(r.pow(nn as u64))
-                                }
-                            } else {
-                                h.get().to_view().to_rational_polynomial(
-                                    workspace, state, field, out_field, var_map,
-                                )
-                            }
-                        } else if nn < 0 {
-                            let r = base.to_rational_polynomial(
-                                workspace, state, field, out_field, var_map,
-                            )?;
-                            Ok(r.inv())
+                if nn != -1 && nn != 1 {
+                    let mut h = workspace.new_atom();
+                    if !self.expand(workspace, state, h.get_mut()) {
+                        // expansion did not change the input, so we are in a case of x^-3 or x^3
+                        let r = base
+                            .to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+
+                        if nn < 0 {
+                            let r_inv = r.inv();
+                            Ok(r_inv.pow(-nn as u64))
                         } else {
-                            base.to_rational_polynomial(workspace, state, field, out_field, var_map)
+                            Ok(r.pow(nn as u64))
                         }
                     } else {
-                        Err("Exponent needs to be an integer")?
+                        h.get()
+                            .to_view()
+                            .to_rational_polynomial(workspace, state, field, out_field, var_map)
                     }
+                } else if nn < 0 {
+                    let r =
+                        base.to_rational_polynomial(workspace, state, field, out_field, var_map)?;
+                    Ok(r.inv())
                 } else {
-                    Err("Power needs to be a number")?
+                    base.to_rational_polynomial(workspace, state, field, out_field, var_map)
                 }
             }
-            AtomView::Fun(_) => Err("Functions not allowed")?,
-            AtomView::Mul(m) => {
+            Self::Fun(_) => Err("Functions not allowed")?,
+            Self::Mul(m) => {
                 let mut r = RationalPolynomial::new(out_field, var_map);
                 r.numerator = r.numerator.add_monomial(out_field.one());
                 for arg in m.iter() {
@@ -560,7 +557,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 }
                 Ok(r)
             }
-            AtomView::Add(a) => {
+            Self::Add(a) => {
                 let mut r = RationalPolynomial::new(out_field, var_map);
                 for arg in a.iter() {
                     let mut arg_r =

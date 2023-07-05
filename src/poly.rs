@@ -768,7 +768,7 @@ impl Token {
         }
 
         match self {
-            Token::Op(_, _, Operator::Add, args) => {
+            Self::Op(_, _, Operator::Add, args) => {
                 let mut poly = MultivariatePolynomial::<R, E>::new(
                     var_map.len(),
                     field,
@@ -839,12 +839,12 @@ impl Token {
         }
 
         match self {
-            Token::Number(_) | Token::ID(_) => {
+            Self::Number(_) | Self::ID(_) => {
                 let num = self.to_polynomial(field, var_map, var_name_map)?;
                 let den = num.new_from_constant(field.one());
                 Ok(RationalPolynomial::from_num_den(num, den, out_field, false))
             }
-            Token::Op(_, _, Operator::Inv, args) => {
+            Self::Op(_, _, Operator::Inv, args) => {
                 assert!(args.len() == 1);
                 let r = args[0].to_rational_polynomial(
                     workspace,
@@ -856,11 +856,11 @@ impl Token {
                 )?;
                 Ok(r.inv())
             }
-            Token::Op(_, _, Operator::Pow, args) => {
+            Self::Op(_, _, Operator::Pow, args) => {
                 // we have a pow that could not be parsed by to_polynomial
                 // if the exponent is not -1, we pass the subexpression to
                 // the general routine
-                if Token::Number("-1".into()) == args[1] {
+                if Self::Number("-1".into()) == args[1] {
                     let r = args[0].to_rational_polynomial(
                         workspace,
                         state,
@@ -881,7 +881,7 @@ impl Token {
                     )
                 }
             }
-            Token::Op(_, _, Operator::Mul, args) => {
+            Self::Op(_, _, Operator::Mul, args) => {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map));
                 r.numerator = r.numerator.add_monomial(out_field.one());
                 for arg in args {
@@ -898,7 +898,7 @@ impl Token {
                 }
                 Ok(r)
             }
-            Token::Op(_, _, Operator::Add, args) => {
+            Self::Op(_, _, Operator::Add, args) => {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map));
                 for arg in args {
                     let mut arg_r = arg.to_rational_polynomial(
@@ -914,7 +914,7 @@ impl Token {
                 }
                 Ok(r)
             }
-            Token::Op(_, _, Operator::Neg, args) => {
+            Self::Op(_, _, Operator::Neg, args) => {
                 let r = args[0].to_rational_polynomial(
                     workspace,
                     state,

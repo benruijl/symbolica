@@ -58,10 +58,7 @@ impl Operator {
 
     #[inline]
     pub fn right_associative(&self) -> bool {
-        match self {
-            Self::Pow => false,
-            _ => true,
-        }
+        self != &Self::Pow
     }
 }
 
@@ -230,7 +227,7 @@ impl Token {
             }
             Self::Fn(_, args) => {
                 let name = match &args[0] {
-                    Token::ID(s) => s,
+                    Self::ID(s) => s,
                     _ => unreachable!(),
                 };
 

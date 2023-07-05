@@ -88,7 +88,7 @@ impl Rational {
 impl Display for Rational {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Rational::Natural(n, d) => {
+            Self::Natural(n, d) => {
                 if *d == 1 {
                     n.fmt(f)
                 } else {
@@ -97,7 +97,7 @@ impl Display for Rational {
                     write!(f, "{}", d)
                 }
             }
-            Rational::Large(r) => r.fmt(f),
+            Self::Large(r) => r.fmt(f),
         }
     }
 }

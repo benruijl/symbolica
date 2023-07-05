@@ -269,10 +269,7 @@ impl BorrowedNumber<'_> {
                 let f = state.get_finite_field(*i1);
                 Number::FiniteField(f.add(n1, n2), *i1)
             }
-            (Self::FiniteField(_, _), _) => {
-                panic!("Cannot add finite field to non-finite number. Convert other number first?");
-            }
-            (_, BorrowedNumber::FiniteField(_, _)) => {
+            (Self::FiniteField(_, _), _) | (_, BorrowedNumber::FiniteField(_, _)) => {
                 panic!("Cannot add finite field to non-finite number. Convert other number first?");
             }
             (Self::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
@@ -321,7 +318,7 @@ impl BorrowedNumber<'_> {
 
     pub fn mul(&self, other: &BorrowedNumber<'_>, state: &State) -> Number {
         match (self, other) {
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
                 let r = &Rational::Natural(*n1, *d1) * &Rational::Natural(*n2, *d2);
                 match r {
                     Rational::Natural(n, d) => Number::Natural(n, d),
@@ -329,33 +326,29 @@ impl BorrowedNumber<'_> {
                 }
             }
             // TODO: check downcast
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(r2))
-            | (BorrowedNumber::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Large(r2))
+            | (Self::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
                 let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
                 Number::Large(r1 * r2.to_rat())
             }
-            (BorrowedNumber::Large(r1), BorrowedNumber::Large(r2)) => {
+            (Self::Large(r1), BorrowedNumber::Large(r2)) => {
                 Number::Large(r1.to_rat() + r2.to_rat())
             }
-            (BorrowedNumber::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
-                if i1 != i2 {
-                    panic!(
-                        "Cannot multiply numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(*i1).get_prime(),
-                        state.get_finite_field(*i2).get_prime()
-                    );
-                }
+            (Self::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
+                assert!(
+                    i1 == i2,
+                    "Cannot multiply numbers from different finite fields: p1={}, p2={}",
+                    state.get_finite_field(*i1).get_prime(),
+                    state.get_finite_field(*i2).get_prime()
+                );
                 let f = state.get_finite_field(*i1);
                 Number::FiniteField(f.mul(n1, n2), *i1)
             }
-            (BorrowedNumber::FiniteField(_, _), _) => {
+            (Self::FiniteField(_, _), _) | (_, BorrowedNumber::FiniteField(_, _)) => {
                 panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
             }
-            (_, BorrowedNumber::FiniteField(_, _)) => {
-                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
-            }
-            (BorrowedNumber::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
+            (Self::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
+            | (Self::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
                 let mut r = (*p).clone();
                 r.numerator = r.numerator.mul_coeff(Integer::Natural(*n));
                 r.denominator = r.denominator.mul_coeff(Integer::Natural(*d));
@@ -369,7 +362,7 @@ impl BorrowedNumber<'_> {
                 r.denominator = r.denominator.mul_coeff(Integer::Large(d));
                 Number::RationalPolynomial(r)
             }
-            (BorrowedNumber::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
+            (Self::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
                 if p1.get_var_map() != p2.get_var_map() {
                     let mut p1 = (*p1).clone();
                     let mut p2 = (*p2).clone();
@@ -408,9 +401,11 @@ impl BorrowedNumber<'_> {
                 }
             }
             (&BorrowedNumber::RationalPolynomial(r), &BorrowedNumber::Natural(n2, d2)) => {
-                if n2.unsigned_abs() > u32::MAX as u64 {
-                    panic!("Power is too large: {}", n2);
-                }
+                assert!(
+                    n2.unsigned_abs() <= u32::MAX as u64,
+                    "Power is too large: {}",
+                    n2
+                );
 
                 if n2 < 0 {
                     let r = r.clone().inv();
@@ -437,7 +432,7 @@ impl BorrowedNumber<'_> {
 
     pub fn cmp(&self, other: &BorrowedNumber) -> Ordering {
         match (self, other) {
-            (&BorrowedNumber::Natural(n1, d1), &BorrowedNumber::Natural(n2, d2)) => {
+            (&Self::Natural(n1, d1), &BorrowedNumber::Natural(n2, d2)) => {
                 // TODO: improve
                 if n1 < 0 && n2 > 0 {
                     return Ordering::Less;
@@ -462,14 +457,12 @@ impl BorrowedNumber<'_> {
                     ),
                 }
             }
-            (BorrowedNumber::Large(n1), BorrowedNumber::Large(n2)) => n1.to_rat().cmp(&n2.to_rat()),
-            (BorrowedNumber::FiniteField(n1, _), BorrowedNumber::FiniteField(n2, _)) => {
-                n1.0.cmp(&n2.0)
-            }
-            (&BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(n2)) => {
+            (Self::Large(n1), BorrowedNumber::Large(n2)) => n1.to_rat().cmp(&n2.to_rat()),
+            (Self::FiniteField(n1, _), BorrowedNumber::FiniteField(n2, _)) => n1.0.cmp(&n2.0),
+            (&Self::Natural(n1, d1), BorrowedNumber::Large(n2)) => {
                 ArbitraryPrecisionRational::from((n1, d1)).cmp(&n2.to_rat())
             }
-            (BorrowedNumber::Large(n1), &BorrowedNumber::Natural(n2, d2)) => {
+            (Self::Large(n1), &BorrowedNumber::Natural(n2, d2)) => {
                 n1.to_rat().cmp(&ArbitraryPrecisionRational::from((n2, d2)))
             }
             _ => unreachable!(),

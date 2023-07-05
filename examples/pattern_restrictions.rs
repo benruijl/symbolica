@@ -72,8 +72,8 @@ fn main() {
 
     println!(
         "> Matching pattern {} : 0 <= len(x) <= 2, 0 <= len(y) <= 4, len(x) >= len(y) & is_prime(z) to {}:",
-        AtomPrinter::new(pat_expr.to_view(), symbolica::printer::PrintMode::default(), &state),
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state)
+        AtomPrinter::new(pat_expr.to_view(), <_>::default(), &state),
+        AtomPrinter::new(expr.to_view(), <_>::default(), &state)
     );
 
     let mut it = PatternAtomTreeIterator::new(&pattern, expr.to_view(), &state, &restrictions);
@@ -82,17 +82,11 @@ fn main() {
         for (id, v) in match_stack {
             print!("\t\t{} = ", state.get_name(*id).unwrap());
             match v {
-                Match::Single(s) => print!(
-                    "{}",
-                    AtomPrinter::new(*s, symbolica::printer::PrintMode::default(), &state),
-                ),
+                Match::Single(s) => print!("{}", AtomPrinter::new(*s, <_>::default(), &state),),
                 Match::Multiple(slice_type, mm) => {
                     print!("{:?} ", slice_type);
                     for vv in mm {
-                        print!(
-                            "{}",
-                            AtomPrinter::new(*vv, symbolica::printer::PrintMode::default(), &state),
-                        );
+                        print!("{}", AtomPrinter::new(*vv, <_>::default(), &state),);
                         print!(", ")
                     }
                 }

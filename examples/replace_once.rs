@@ -31,21 +31,9 @@ fn main() {
 
     println!(
         "> Replace once {}={} in {}:",
-        AtomPrinter::new(
-            pat_expr.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
-        AtomPrinter::new(
-            rhs_expr.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
-        AtomPrinter::new(
-            expr.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
+        AtomPrinter::new(pat_expr.to_view(), <_>::default(), &state),
+        AtomPrinter::new(rhs_expr.to_view(), <_>::default(), &state),
+        AtomPrinter::new(expr.to_view(), <_>::default(), &state),
     );
 
     let mut replaced = OwnedAtom::new();
@@ -54,11 +42,7 @@ fn main() {
     while let Some(()) = it.next(&workspace, &mut replaced) {
         println!(
             "\t{}",
-            AtomPrinter::new(
-                replaced.to_view(),
-                symbolica::printer::PrintMode::default(),
-                &state
-            ),
+            AtomPrinter::new(replaced.to_view(), <_>::default(), &state),
         );
     }
 }

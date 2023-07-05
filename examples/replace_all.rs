@@ -42,25 +42,9 @@ fn main() {
 
     println!(
         "> Replace all {}={} in {}: {}",
-        AtomPrinter::new(
-            pat_expr.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
-        AtomPrinter::new(
-            rhs_expr.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
-        AtomPrinter::new(
-            expr.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
-        AtomPrinter::new(
-            out.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        )
+        AtomPrinter::new(pat_expr.to_view(), <_>::default(), &state),
+        AtomPrinter::new(rhs_expr.to_view(), <_>::default(), &state),
+        AtomPrinter::new(expr.to_view(), <_>::default(), &state),
+        AtomPrinter::new(out.to_view(), <_>::default(), &state)
     );
 }

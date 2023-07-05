@@ -11,10 +11,10 @@ use crate::{
 
 pub enum Pattern<P: Atom> {
     Wildcard(Identifier),
-    Fn(Identifier, bool, Vec<Pattern<P>>), // bool signifies that the identifier is a wildcard
-    Pow(Box<[Pattern<P>; 2]>),
-    Mul(Vec<Pattern<P>>),
-    Add(Vec<Pattern<P>>),
+    Fn(Identifier, bool, Vec<Self>), // bool signifies that the identifier is a wildcard
+    Pow(Box<[Self; 2]>),
+    Mul(Vec<Self>),
+    Add(Vec<Self>),
     Literal(OwnedAtom<P>), // a literal
 }
 

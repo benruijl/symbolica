@@ -27,7 +27,7 @@ pub const SMALL_PRIMES: [i64; 100] = [
     431, 433, 439, 443, 449, 457, 461, 463, 467, 479, 487, 491, 499, 503, 509, 521, 523, 541,
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct IntegerRing;
 
 impl IntegerRing {
@@ -44,10 +44,10 @@ pub enum Integer {
 
 impl ToFiniteField<u32> for Integer {
     fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
-        match self {
-            &Self::Natural(n) => field.to_element(n.rem_euclid(field.get_prime() as i64) as u32),
-            Self::Large(r) => field.to_element(r.mod_u(field.get_prime())),
-        }
+        field.to_element(match self {
+            &Self::Natural(n) => n.rem_euclid(field.get_prime() as i64) as u32,
+            Self::Large(r) => r.mod_u(field.get_prime()),
+        })
     }
 }
 
@@ -367,11 +367,11 @@ impl Ring for IntegerRing {
                     (Integer::Large(b), Integer::Large(c)) => *n + (b * c).complete(),
                 };
 
-                if let Some(n) = l.to_i64() {
-                    *a = Integer::Natural(n);
+                *a = if let Some(n) = l.to_i64() {
+                    Integer::Natural(n)
                 } else {
-                    *a = Integer::Large(l);
-                }
+                    Integer::Large(l)
+                };
             }
             Integer::Large(l) => {
                 match (b, c) {
@@ -422,11 +422,11 @@ impl Ring for IntegerRing {
                     (Integer::Large(b), Integer::Large(c)) => *n - (b * c).complete(),
                 };
 
-                if let Some(n) = l.to_i64() {
-                    *a = Integer::Natural(n);
+                *a = if let Some(n) = l.to_i64() {
+                    Integer::Natural(n)
                 } else {
-                    *a = Integer::Large(l);
-                }
+                    Integer::Large(l)
+                };
             }
             Integer::Large(l) => {
                 match (b, c) {

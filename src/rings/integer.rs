@@ -721,36 +721,36 @@ impl<'a> Div<i64> for &'a Integer {
     }
 }
 
-impl<'a> AddAssign<&'a Integer> for Integer {
-    fn add_assign(&mut self, rhs: &'a Integer) {
+impl<'a> AddAssign<&'a Self> for Integer {
+    fn add_assign(&mut self, rhs: &'a Self) {
         match self {
-            Integer::Natural(n1) => match rhs {
-                Integer::Natural(n2) => {
+            Self::Natural(n1) => match rhs {
+                Self::Natural(n2) => {
                     if let Some(nn) = n1.checked_add(*n2) {
                         *n1 = nn;
                     } else {
                         let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                         r1.add_assign(*n2);
-                        *self = Integer::Large(r1)
+                        *self = Self::Large(r1)
                     }
                 }
-                Integer::Large(r2) => {
+                Self::Large(r2) => {
                     let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                     r1.add_assign(r2);
-                    *self = Integer::from_large(r1)
+                    *self = Self::from_large(r1)
                 }
             },
-            Integer::Large(r1) => match rhs {
-                Integer::Natural(n2) => {
+            Self::Large(r1) => match rhs {
+                Self::Natural(n2) => {
                     r1.add_assign(*n2);
                     if let Some(n) = r1.to_i64() {
-                        *self = Integer::Natural(n);
+                        *self = Self::Natural(n);
                     }
                 }
-                Integer::Large(r2) => {
+                Self::Large(r2) => {
                     r1.add_assign(r2);
                     if let Some(n) = r1.to_i64() {
-                        *self = Integer::Natural(n);
+                        *self = Self::Natural(n);
                     }
                 }
             },
@@ -758,36 +758,36 @@ impl<'a> AddAssign<&'a Integer> for Integer {
     }
 }
 
-impl<'a> SubAssign<&'a Integer> for Integer {
-    fn sub_assign(&mut self, rhs: &'a Integer) {
+impl<'a> SubAssign<&'a Self> for Integer {
+    fn sub_assign(&mut self, rhs: &'a Self) {
         match self {
-            Integer::Natural(n1) => match rhs {
-                Integer::Natural(n2) => {
+            Self::Natural(n1) => match rhs {
+                Self::Natural(n2) => {
                     if let Some(nn) = n1.checked_sub(*n2) {
                         *n1 = nn;
                     } else {
                         let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                         r1.sub_assign(*n2);
-                        *self = Integer::Large(r1)
+                        *self = Self::Large(r1)
                     }
                 }
-                Integer::Large(r2) => {
+                Self::Large(r2) => {
                     let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                     r1.sub_assign(r2);
-                    *self = Integer::from_large(r1)
+                    *self = Self::from_large(r1)
                 }
             },
-            Integer::Large(r1) => match rhs {
-                Integer::Natural(n2) => {
+            Self::Large(r1) => match rhs {
+                Self::Natural(n2) => {
                     r1.sub_assign(*n2);
                     if let Some(n) = r1.to_i64() {
-                        *self = Integer::Natural(n);
+                        *self = Self::Natural(n);
                     }
                 }
-                Integer::Large(r2) => {
+                Self::Large(r2) => {
                     r1.sub_assign(r2);
                     if let Some(n) = r1.to_i64() {
-                        *self = Integer::Natural(n);
+                        *self = Self::Natural(n);
                     }
                 }
             },
@@ -795,36 +795,36 @@ impl<'a> SubAssign<&'a Integer> for Integer {
     }
 }
 
-impl<'a> MulAssign<&'a Integer> for Integer {
-    fn mul_assign(&mut self, rhs: &'a Integer) {
+impl<'a> MulAssign<&'a Self> for Integer {
+    fn mul_assign(&mut self, rhs: &'a Self) {
         match self {
-            Integer::Natural(n1) => match rhs {
-                Integer::Natural(n2) => {
+            Self::Natural(n1) => match rhs {
+                Self::Natural(n2) => {
                     if let Some(nn) = n1.checked_mul(*n2) {
                         *n1 = nn;
                     } else {
                         let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                         r1.mul_assign(*n2);
-                        *self = Integer::from_large(r1)
+                        *self = Self::from_large(r1)
                     }
                 }
-                Integer::Large(r2) => {
+                Self::Large(r2) => {
                     let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                     r1.mul_assign(r2);
-                    *self = Integer::from_large(r1)
+                    *self = Self::from_large(r1)
                 }
             },
-            Integer::Large(r1) => match rhs {
-                Integer::Natural(n2) => {
+            Self::Large(r1) => match rhs {
+                Self::Natural(n2) => {
                     r1.mul_assign(*n2);
                     if let Some(n) = r1.to_i64() {
-                        *self = Integer::Natural(n);
+                        *self = Self::Natural(n);
                     }
                 }
-                Integer::Large(r2) => {
+                Self::Large(r2) => {
                     r1.mul_assign(r2);
                     if let Some(n) = r1.to_i64() {
-                        *self = Integer::Natural(n);
+                        *self = Self::Natural(n);
                     }
                 }
             },
@@ -832,36 +832,36 @@ impl<'a> MulAssign<&'a Integer> for Integer {
     }
 }
 
-impl<'a> DivAssign<&'a Integer> for Integer {
-    fn div_assign(&mut self, rhs: &'a Integer) {
+impl<'a> DivAssign<&'a Self> for Integer {
+    fn div_assign(&mut self, rhs: &'a Self) {
         match self {
-            Integer::Natural(n1) => match rhs {
-                Integer::Natural(n2) => {
+            Self::Natural(n1) => match rhs {
+                Self::Natural(n2) => {
                     if let Some(nn) = n1.checked_div(*n2) {
                         *n1 = nn;
                     } else {
                         let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                         r1.div_assign(*n2);
-                        *self = Integer::Large(r1)
+                        *self = Self::Large(r1)
                     }
                 }
-                Integer::Large(r2) => {
+                Self::Large(r2) => {
                     let mut r1 = ArbitraryPrecisionInteger::from(*n1);
                     r1.div_assign(r2);
-                    *self = Integer::Large(r1)
+                    *self = Self::Large(r1)
                 }
             },
-            Integer::Large(r1) => match rhs {
-                Integer::Natural(n2) => {
+            Self::Large(r1) => match rhs {
+                Self::Natural(n2) => {
                     r1.div_assign(*n2);
                     if let Some(n) = r1.to_i64() {
-                        *self = Integer::Natural(n);
+                        *self = Self::Natural(n);
                     }
                 }
-                Integer::Large(r2) => {
+                Self::Large(r2) => {
                     r1.div_assign(r2);
                     if let Some(n) = r1.to_i64() {
-                        *self = Integer::Natural(n);
+                        *self = Self::Natural(n);
                     }
                 }
             },

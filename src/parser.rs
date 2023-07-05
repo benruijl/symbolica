@@ -103,25 +103,23 @@ impl Token {
     /// Add `other` to the left side of `self`, where `self` is a binary operation.
     #[inline]
     fn add_left(&mut self, other: Self) {
-        match self {
-            Self::Op(ml, _, o1, args) => {
-                debug_assert!(*ml);
-                *ml = false;
+        let Self::Op(ml, _, o1, args) = self else {
+            unreachable!("Cannot left-append to non-operator")
+        };
+        debug_assert!(*ml);
+        *ml = false;
 
-                if let Self::Op(ml, mr, o2, mut args2) = other {
-                    debug_assert!(!ml && !mr);
-                    if *o1 == o2 {
-                        // add from the left by swapping and then extending from the right
-                        std::mem::swap(args, &mut args2);
-                        args.append(&mut args2);
-                    } else {
-                        args.insert(0, Self::Op(false, false, o2, args2));
-                    }
-                } else {
-                    args.insert(0, other);
-                }
+        if let Self::Op(ml, mr, o2, mut args2) = other {
+            debug_assert!(!ml && !mr);
+            if *o1 == o2 {
+                // add from the left by swapping and then extending from the right
+                std::mem::swap(args, &mut args2);
+                args.append(&mut args2);
+            } else {
+                args.insert(0, Self::Op(false, false, o2, args2));
             }
-            _ => unreachable!("Cannot left-append to non-operator"),
+        } else {
+            args.insert(0, other);
         }
     }
 
@@ -149,7 +147,7 @@ impl Token {
     /// Add `other` to right side of `self`, where `self` is a binary operation.
     #[inline]
     fn add_right(&mut self, mut other: Self) {
-        let Self::Op(_, mr, o1, args) = self else { 
+        let Self::Op(_, mr, o1, args) = self else {
             unreachable!("Cannot right-append to non-operator") 
         };
         debug_assert!(*mr);
@@ -294,10 +292,8 @@ impl std::fmt::Display for Token {
             Self::Fn(_, args) => {
                 let mut first = true;
 
-                match &args[0] {
-                    Self::ID(s) => f.write_str(s)?,
-                    _ => unreachable!(),
-                };
+                let Self::ID(s) = &args[0] else { unreachable!() };
+                f.write_str(s)?;
 
                 f.write_char('(')?;
                 for aa in args.iter().skip(1) {

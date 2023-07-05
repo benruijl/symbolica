@@ -70,9 +70,9 @@ pub enum Number {
 impl Number {
     pub fn is_zero(&self) -> bool {
         match self {
-            Self::Natural(num, _den) => *num == 0,
-            Self::Large(_r) => false,
-            Self::FiniteField(num, _field) => num.0 == 0,
+            Self::Natural(num, _) => *num == 0,
+            Self::Large(_) => false,
+            Self::FiniteField(num, _) => num.0 == 0,
             Self::RationalPolynomial(r) => r.numerator.is_zero(),
         }
     }

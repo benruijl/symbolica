@@ -79,9 +79,9 @@ impl Convert<DefaultRepresentation> for OwnedNumD {
         OwnedPowD { data: self.data }
     }
 
-    fn to_owned_num(mut self) -> OwnedNumD {
+    fn to_owned_num(mut self) -> Self {
         self.data.clear();
-        OwnedNumD { data: self.data }
+        Self { data: self.data }
     }
 
     fn to_owned_fun(mut self) -> OwnedFunD {

@@ -57,6 +57,6 @@ fn main() {
     let res = stream.to_expression(&workspace, &state);
     println!(
         "\t+ {}",
-        AtomPrinter::new(res.to_view(), PrintMode::default(), &state)
+        AtomPrinter::new(res.to_view(), <_>::default(), &state)
     );
 }

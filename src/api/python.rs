@@ -192,7 +192,7 @@ impl PythonExpression {
             AtomPrinter {
                 atom: self.expr.to_view(),
                 state: &STATE.read().unwrap(),
-                print_mode: PrintMode::default(),
+                print_mode: <_>::default(),
             }
         ))
     }
@@ -880,7 +880,7 @@ macro_rules! generate_methods {
                     PolynomialPrinter {
                         poly: &self.poly,
                         state: &STATE.read().unwrap(),
-                        print_mode: PrintMode::default()
+                        print_mode: <_>::default()
                     }
                 ))
             }
@@ -1031,7 +1031,7 @@ macro_rules! generate_rat_methods {
                     RationalPolynomialPrinter {
                         poly: &self.poly,
                         state: &STATE.read().unwrap(),
-                        print_mode: PrintMode::default()
+                        print_mode: <_>::default()
                     }
                 ))
             }

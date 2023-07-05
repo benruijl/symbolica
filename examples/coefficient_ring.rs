@@ -15,7 +15,7 @@ fn main() {
         .unwrap();
     println!(
         "> In: {}",
-        AtomPrinter::new(expr.to_view(), PrintMode::default(), &state)
+        AtomPrinter::new(expr.to_view(), <_>::default(), &state)
     );
 
     let mut expr_yz = OwnedAtom::new();
@@ -27,7 +27,7 @@ fn main() {
     );
     println!(
         "> Coefficient ring y,z: {}",
-        AtomPrinter::new(expr_yz.to_view(), PrintMode::default(), &state)
+        AtomPrinter::new(expr_yz.to_view(), <_>::default(), &state)
     );
 
     // the coefficient must downgrade from y,z to y
@@ -40,7 +40,7 @@ fn main() {
     );
     println!(
         "> Coefficient ring y: {}",
-        AtomPrinter::new(expr_y.to_view(), PrintMode::default(), &state)
+        AtomPrinter::new(expr_y.to_view(), <_>::default(), &state)
     );
 
     // the coefficient must downgrade from y,z to y
@@ -48,6 +48,6 @@ fn main() {
     expr_y.to_view().expand(&workspace, &state, &mut expr_exp);
     println!(
         "> Coefficient ring y after expansion: {}",
-        AtomPrinter::new(expr_exp.to_view(), PrintMode::default(), &state)
+        AtomPrinter::new(expr_exp.to_view(), <_>::default(), &state)
     );
 }

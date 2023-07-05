@@ -817,7 +817,7 @@ impl Token {
             FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
         // use a faster routine to parse the rational polynomial
-        if let Token::RationalPolynomial(r) = self {
+        if let Self::RationalPolynomial(r) = self {
             let mut iter = r.split(',');
             let num = iter.next().unwrap();
 

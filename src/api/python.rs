@@ -76,8 +76,8 @@ pub struct PythonPatternRestriction {
 
 #[pymethods]
 impl PythonPatternRestriction {
-    pub fn __and__(&self, other: Self) -> PythonPatternRestriction {
-        PythonPatternRestriction {
+    pub fn __and__(&self, other: Self) -> Self {
+        Self {
             restrictions: Arc::new(
                 self.restrictions
                     .iter()
@@ -98,7 +98,7 @@ pub enum ConvertibleToExpression {
 impl ConvertibleToExpression {
     pub fn to_expression(self) -> PythonExpression {
         match self {
-            ConvertibleToExpression::Int(i) => {
+            Self::Int(i) => {
                 let mut num = OwnedAtom::new();
                 let num_d: &mut OwnedNumD = num.transform_to_num();
                 num_d.set_from_number(Number::Natural(i, 1));
@@ -106,7 +106,7 @@ impl ConvertibleToExpression {
                     expr: Arc::new(num),
                 }
             }
-            ConvertibleToExpression::Expression(e) => e,
+            Self::Expression(e) => e,
         }
     }
 }

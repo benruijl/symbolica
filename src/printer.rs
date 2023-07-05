@@ -591,11 +591,8 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> PolynomialPrinter<'a, 'b, F, E> {
 
 impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, 'b, F, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let var_map = match self.poly.var_map.as_ref() {
-            Some(v) => v,
-            None => {
-                return write!(f, "{}", self.poly);
-            }
+        let Some(var_map) = self.poly.var_map.as_ref() else {
+            return write!(f, "{}", self.poly);
         };
 
         let mut is_first_term = true;

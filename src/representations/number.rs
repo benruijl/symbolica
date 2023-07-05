@@ -70,10 +70,10 @@ pub enum Number {
 impl Number {
     pub fn is_zero(&self) -> bool {
         match self {
-            Number::Natural(num, _den) => *num == 0,
-            Number::Large(_r) => false,
-            Number::FiniteField(num, _field) => num.0 == 0,
-            Number::RationalPolynomial(r) => r.numerator.is_zero(),
+            Self::Natural(num, _den) => *num == 0,
+            Self::Large(_r) => false,
+            Self::FiniteField(num, _field) => num.0 == 0,
+            Self::RationalPolynomial(r) => r.numerator.is_zero(),
         }
     }
 }
@@ -303,7 +303,7 @@ impl BorrowedNumber<'_> {
                 };
                 Number::RationalPolynomial(&r + &r2)
             }
-            (BorrowedNumber::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
+            (Self::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
                 if p1.get_var_map() != p2.get_var_map() {
                     let mut p1 = (*p1).clone();
                     let mut p2 = (*p2).clone();

@@ -173,11 +173,11 @@ impl ConvertToRing for IntegerRing {
 
 impl<UField: FiniteFieldWorkspace> ConvertToRing for FiniteField<UField>
 where
-    FiniteField<UField>: FiniteFieldCore<UField>,
+    Self: FiniteFieldCore<UField>,
     Integer: ToFiniteField<UField>,
 {
     #[inline]
-    fn element_from_number(&self, number: Number) -> <FiniteField<UField> as Ring>::Element {
+    fn element_from_number(&self, number: Number) -> <Self as Ring>::Element {
         match number {
             Number::Natural(n, d) => self.div(
                 &Integer::new(n).to_finite_field(self),
@@ -198,10 +198,7 @@ where
     }
 
     #[inline]
-    fn element_from_borrowed_number(
-        &self,
-        number: BorrowedNumber<'_>,
-    ) -> <FiniteField<UField> as Ring>::Element {
+    fn element_from_borrowed_number(&self, number: BorrowedNumber<'_>) -> <Self as Ring>::Element {
         match number {
             BorrowedNumber::Natural(n, d) => self.div(
                 &Integer::new(n).to_finite_field(self),
@@ -225,28 +222,28 @@ where
 impl BorrowedNumber<'_> {
     pub fn normalize(&self) -> Number {
         match self {
-            BorrowedNumber::Natural(num, den) => {
+            Self::Natural(num, den) => {
                 let gcd = utils::gcd_signed(*num, *den);
                 Number::Natural(*num / gcd, *den / gcd)
             }
-            BorrowedNumber::Large(_)
-            | BorrowedNumber::FiniteField(_, _)
-            | BorrowedNumber::RationalPolynomial(_) => self.to_owned(),
+            Self::Large(_) | Self::FiniteField(_, _) | Self::RationalPolynomial(_) => {
+                self.to_owned()
+            }
         }
     }
 
     pub fn to_owned(&self) -> Number {
         match self {
-            BorrowedNumber::Natural(num, den) => Number::Natural(*num, *den),
-            BorrowedNumber::Large(r) => Number::Large(r.to_rat()),
-            BorrowedNumber::FiniteField(num, field) => Number::FiniteField(*num, *field),
-            BorrowedNumber::RationalPolynomial(p) => Number::RationalPolynomial((*p).clone()),
+            Self::Natural(num, den) => Number::Natural(*num, *den),
+            Self::Large(r) => Number::Large(r.to_rat()),
+            Self::FiniteField(num, field) => Number::FiniteField(*num, *field),
+            Self::RationalPolynomial(p) => Number::RationalPolynomial((*p).clone()),
         }
     }
 
     pub fn add(&self, other: &BorrowedNumber<'_>, state: &State) -> Number {
         match (self, other) {
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
                 let r = &Rational::Natural(*n1, *d1) + &Rational::Natural(*n2, *d2);
                 match r {
                     Rational::Natural(n, d) => Number::Natural(n, d),
@@ -254,33 +251,32 @@ impl BorrowedNumber<'_> {
                 }
             }
             // TODO: check downcast
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(r2))
-            | (BorrowedNumber::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Large(r2))
+            | (Self::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
                 let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
                 Number::Large(r1 + r2.to_rat())
             }
-            (BorrowedNumber::Large(r1), BorrowedNumber::Large(r2)) => {
+            (Self::Large(r1), BorrowedNumber::Large(r2)) => {
                 Number::Large(r1.to_rat() + r2.to_rat())
             }
-            (BorrowedNumber::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
-                if i1 != i2 {
-                    panic!(
-                        "Cannot add numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(*i1).get_prime(),
-                        state.get_finite_field(*i2).get_prime()
-                    );
-                }
+            (Self::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
+                assert!(
+                    i1 == i2,
+                    "Cannot add numbers from different finite fields: p1={}, p2={}",
+                    state.get_finite_field(*i1).get_prime(),
+                    state.get_finite_field(*i2).get_prime()
+                );
                 let f = state.get_finite_field(*i1);
                 Number::FiniteField(f.add(n1, n2), *i1)
             }
-            (BorrowedNumber::FiniteField(_, _), _) => {
+            (Self::FiniteField(_, _), _) => {
                 panic!("Cannot add finite field to non-finite number. Convert other number first?");
             }
             (_, BorrowedNumber::FiniteField(_, _)) => {
                 panic!("Cannot add finite field to non-finite number. Convert other number first?");
             }
-            (BorrowedNumber::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
+            (Self::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
+            | (Self::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
                 let r = (*p).clone();
                 let r2 = RationalPolynomial {
                     numerator: MultivariatePolynomial::new_from_constant(
@@ -295,7 +291,7 @@ impl BorrowedNumber<'_> {
                 Number::RationalPolynomial(&r + &r2)
             }
             (BorrowedNumber::Large(l), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
+            | (Self::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
                 let r = (*p).clone();
                 let (n, d) = l.to_rat().into_numer_denom();
                 let r2 = RationalPolynomial {

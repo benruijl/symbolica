@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use ahash::HashMap;
+use ahash::{HashMap, HashMapExt};
 use once_cell::sync::Lazy;
 use pyo3::{
     exceptions, pyclass,
@@ -17,7 +17,7 @@ use self_cell::self_cell;
 use smallvec::SmallVec;
 
 use crate::{
-    id::{Match, Pattern, PatternAtomTreeIterator, PatternRestriction},
+    id::{Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction},
     parser::parse,
     poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
     printer::{AtomPrinter, PolynomialPrinter, PrintMode, RationalPolynomialPrinter},
@@ -35,7 +35,8 @@ use crate::{
         rational::RationalField,
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
     },
-    state::{ResettableBuffer, State, Workspace},
+    state::{ResettableBuffer, State, Workspace, INPUT_ID},
+    streaming::TermStreamer,
     transformer::Transformer,
 };
 
@@ -83,11 +84,33 @@ pub struct PythonPattern {
 
 #[pymethods]
 impl PythonPattern {
-    #[classmethod]
-    pub fn expand(_cls: &PyType, arg: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    #[new]
+    pub fn new() -> PythonPattern {
+        PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Input))),
+        }
+    }
+
+    pub fn expand(&self) -> PyResult<PythonPattern> {
         Ok(PythonPattern {
             expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Expand(
-                (*arg.to_pattern().expr).clone(),
+                (*self.expr).clone(),
+            )))),
+        })
+    }
+
+    pub fn replace_all(
+        &self,
+        lhs: ConvertibleToPattern,
+        rhs: ConvertibleToPattern,
+        cond: Option<PythonPatternRestriction>,
+    ) -> PyResult<PythonPattern> {
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::ReplaceAll(
+                (*lhs.to_pattern().expr).clone(),
+                (*self.expr).clone(),
+                (*rhs.to_pattern().expr).clone(),
+                cond.map(|r| r.convert()).unwrap_or(HashMap::default()),
             )))),
         })
     }
@@ -231,6 +254,65 @@ pub enum SimplePatternRestriction {
 #[derive(Debug, Clone)]
 pub struct PythonPatternRestriction {
     pub restrictions: Arc<Vec<SimplePatternRestriction>>,
+}
+
+impl PythonPatternRestriction {
+    fn convert(&self) -> HashMap<Identifier, Vec<PatternRestriction<DefaultRepresentation>>> {
+        let mut restrictions = HashMap::with_capacity(self.restrictions.len());
+
+        for r in &*self.restrictions {
+            match *r {
+                SimplePatternRestriction::IsVar(name) => {
+                    restrictions
+                        .entry(name)
+                        .or_insert(vec![])
+                        .push(PatternRestriction::<DefaultRepresentation>::IsVar);
+                }
+                SimplePatternRestriction::IsLiteralWildcard(name) => {
+                    restrictions
+                        .entry(name)
+                        .or_insert(vec![])
+                        .push(PatternRestriction::<DefaultRepresentation>::IsLiteralWildcard(name));
+                }
+                SimplePatternRestriction::IsNumber(name) => {
+                    restrictions
+                        .entry(name)
+                        .or_insert(vec![])
+                        .push(PatternRestriction::IsNumber);
+                }
+                SimplePatternRestriction::Length(name, min, max) => {
+                    restrictions
+                        .entry(name)
+                        .or_insert(vec![])
+                        .push(PatternRestriction::Length(min, max));
+                }
+                SimplePatternRestriction::NumberCmp(name, op, ref_num) => {
+                    restrictions
+                        .entry(name)
+                        .or_insert(vec![])
+                        .push(PatternRestriction::Filter(Box::new(
+                            move |v: &Match<DefaultRepresentation>| match v {
+                                Match::Single(AtomView::Num(n)) => {
+                                    let num = n.get_number_view();
+                                    let ordering = num.cmp(&BorrowedNumber::Natural(ref_num, 1));
+                                    match op {
+                                        CompareOp::Lt => ordering.is_lt(),
+                                        CompareOp::Le => ordering.is_le(),
+                                        CompareOp::Eq => ordering.is_eq(),
+                                        CompareOp::Ne => ordering.is_ne(),
+                                        CompareOp::Gt => ordering.is_gt(),
+                                        CompareOp::Ge => ordering.is_ge(),
+                                    }
+                                }
+                                _ => false,
+                            },
+                        )));
+                }
+            }
+        }
+
+        restrictions
+    }
 }
 
 #[pymethods]
@@ -571,6 +653,12 @@ impl PythonExpression {
         }
     }
 
+    pub fn transform(&self) -> PythonPattern {
+        PythonPattern {
+            expr: Arc::new(Pattern::Literal((*self.expr).clone())),
+        }
+    }
+
     /// Create a pattern restriction based on the length.
     pub fn len(
         &self,
@@ -692,6 +780,40 @@ impl PythonExpression {
         };
 
         Ok(PythonAtomIterator::from_expr(self.clone()))
+    }
+
+    pub fn map(&self, op: PythonPattern) -> PyResult<PythonExpression> {
+        let t = match op.expr.as_ref() {
+            Pattern::Transformer(t) => t,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "Operation must of a transformer",
+                )));
+            }
+        };
+
+        let mut stream = TermStreamer::new_from((*self.expr).clone());
+
+        // map every term in the expression
+        stream = stream.map(|workspace, x| {
+            let mut out = OwnedAtom::new();
+            let restrictions = HashMap::default();
+            let mut match_stack = MatchStack::new(&restrictions);
+            match_stack.insert(INPUT_ID, Match::Single(x.to_view()));
+
+            t.execute(
+                STATE.read().unwrap().borrow(),
+                workspace,
+                &match_stack,
+                &mut out,
+            );
+            out
+        });
+
+        let b = WORKSPACE
+            .with(|workspace| stream.to_expression(workspace, STATE.read().unwrap().borrow()));
+
+        Ok(PythonExpression { expr: Arc::new(b) })
     }
 
     pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonExpression> {
@@ -865,65 +987,7 @@ impl PythonExpression {
         lhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
     ) -> PythonMatchIterator {
-        let mut restrictions = HashMap::default();
-
-        if let Some(rs) = cond {
-            for r in &*rs.restrictions {
-                match *r {
-                    SimplePatternRestriction::IsVar(name) => {
-                        restrictions
-                            .entry(name)
-                            .or_insert(vec![])
-                            .push(PatternRestriction::<DefaultRepresentation>::IsVar);
-                    }
-                    SimplePatternRestriction::IsLiteralWildcard(name) => {
-                        restrictions
-                            .entry(name)
-                            .or_insert(vec![])
-                            .push(
-                                PatternRestriction::<DefaultRepresentation>::IsLiteralWildcard(
-                                    name,
-                                ),
-                            );
-                    }
-                    SimplePatternRestriction::IsNumber(name) => {
-                        restrictions
-                            .entry(name)
-                            .or_insert(vec![])
-                            .push(PatternRestriction::IsNumber);
-                    }
-                    SimplePatternRestriction::Length(name, min, max) => {
-                        restrictions
-                            .entry(name)
-                            .or_insert(vec![])
-                            .push(PatternRestriction::Length(min, max));
-                    }
-                    SimplePatternRestriction::NumberCmp(name, op, ref_num) => {
-                        restrictions.entry(name).or_insert(vec![]).push(
-                            PatternRestriction::Filter(Box::new(
-                                move |v: &Match<DefaultRepresentation>| match v {
-                                    Match::Single(AtomView::Num(n)) => {
-                                        let num = n.get_number_view();
-                                        let ordering =
-                                            num.cmp(&BorrowedNumber::Natural(ref_num, 1));
-                                        match op {
-                                            CompareOp::Lt => ordering.is_lt(),
-                                            CompareOp::Le => ordering.is_le(),
-                                            CompareOp::Eq => ordering.is_eq(),
-                                            CompareOp::Ne => ordering.is_ne(),
-                                            CompareOp::Gt => ordering.is_gt(),
-                                            CompareOp::Ge => ordering.is_ge(),
-                                        }
-                                    }
-                                    _ => false,
-                                },
-                            )),
-                        );
-                    }
-                }
-            }
-        }
-
+        let restrictions = cond.map(|r| r.convert()).unwrap_or(HashMap::default());
         PythonMatchIterator::new(
             (
                 lhs.to_pattern().expr,
@@ -945,66 +1009,8 @@ impl PythonExpression {
     ) -> PyResult<PythonExpression> {
         let pattern = &lhs.to_pattern().expr;
         let rhs = &rhs.to_pattern().expr;
-
-        let mut restrictions = HashMap::default();
+        let restrictions = cond.map(|r| r.convert()).unwrap_or(HashMap::default());
         let mut out = OwnedAtom::new();
-
-        if let Some(rs) = cond {
-            for r in &*rs.restrictions {
-                match *r {
-                    SimplePatternRestriction::IsVar(name) => {
-                        restrictions
-                            .entry(name)
-                            .or_insert(vec![])
-                            .push(PatternRestriction::<DefaultRepresentation>::IsVar);
-                    }
-                    SimplePatternRestriction::IsLiteralWildcard(name) => {
-                        restrictions
-                            .entry(name)
-                            .or_insert(vec![])
-                            .push(
-                                PatternRestriction::<DefaultRepresentation>::IsLiteralWildcard(
-                                    name,
-                                ),
-                            );
-                    }
-                    SimplePatternRestriction::IsNumber(name) => {
-                        restrictions
-                            .entry(name)
-                            .or_insert(vec![])
-                            .push(PatternRestriction::IsNumber);
-                    }
-                    SimplePatternRestriction::Length(name, min, max) => {
-                        restrictions
-                            .entry(name)
-                            .or_insert(vec![])
-                            .push(PatternRestriction::Length(min, max));
-                    }
-                    SimplePatternRestriction::NumberCmp(name, op, ref_num) => {
-                        restrictions.entry(name).or_insert(vec![]).push(
-                            PatternRestriction::Filter(Box::new(
-                                move |v: &Match<DefaultRepresentation>| match v {
-                                    Match::Single(AtomView::Num(n)) => {
-                                        let num = n.get_number_view();
-                                        let ordering =
-                                            num.cmp(&BorrowedNumber::Natural(ref_num, 1));
-                                        match op {
-                                            CompareOp::Lt => ordering.is_lt(),
-                                            CompareOp::Le => ordering.is_le(),
-                                            CompareOp::Eq => ordering.is_eq(),
-                                            CompareOp::Ne => ordering.is_ne(),
-                                            CompareOp::Gt => ordering.is_gt(),
-                                            CompareOp::Ge => ordering.is_ge(),
-                                        }
-                                    }
-                                    _ => false,
-                                },
-                            )),
-                        );
-                    }
-                }
-            }
-        }
 
         WORKSPACE.with(|workspace| {
             pattern.replace_all(

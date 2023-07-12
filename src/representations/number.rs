@@ -511,6 +511,7 @@ impl PackedRationalNumberWriter for Number {
                 dest.put_u8(RAT_POLY);
                 // note that this is not a linear representation
                 // FIXME: pointer alignment
+                let p = p.clone();
                 let v = std::mem::ManuallyDrop::new(p);
                 let lin_buf = unsafe { utils::any_as_u8_slice(&v) };
 

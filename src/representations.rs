@@ -3,7 +3,7 @@ pub mod number;
 pub mod tree;
 
 use crate::state::{ResettableBuffer, State, Workspace};
-use std::{cmp::Ordering, ops::{Range, Deref}};
+use std::{cmp::Ordering, ops::Range};
 
 use self::{
     number::{BorrowedNumber, Number},
@@ -14,6 +14,12 @@ use self::{
 /// Should be created using `get_or_insert` of `State`.
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Identifier(u32);
+
+impl Identifier {
+    pub(crate) const fn init(value: u32) -> Self {
+        Identifier(value)
+    }
+}
 
 impl std::fmt::Debug for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -34,7 +40,7 @@ impl Identifier {
 }
 
 /// Represents all atoms of a mathematical expression.
-pub trait Atom: PartialEq {
+pub trait Atom: PartialEq + 'static {
     type N<'a>: Num<'a, P = Self>;
     type V<'a>: Var<'a, P = Self>;
     type F<'a>: Fun<'a, P = Self>;

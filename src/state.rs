@@ -14,6 +14,8 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FiniteFieldIndex(pub(crate) usize);
 
+pub(crate) const INPUT_ID: Identifier = Identifier::init(u32::MAX);
+
 /// A global state, that stores mappings from variable and function names to ids.
 #[derive(Clone)]
 pub struct State {
@@ -39,6 +41,10 @@ impl State {
         match self.str_to_var_id.entry(name.as_ref().into()) {
             std::collections::hash_map::Entry::Occupied(o) => *o.get(),
             std::collections::hash_map::Entry::Vacant(v) => {
+                if self.var_to_str_map.len() == u32::MAX as usize - 1 {
+                    panic!("Too many variables defined");
+                }
+
                 let new_id = Identifier::from(self.var_to_str_map.len() as u32);
                 v.insert(new_id);
                 self.var_to_str_map.push(name.as_ref().into());

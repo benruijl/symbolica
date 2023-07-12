@@ -60,7 +60,8 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             // create n1/n2
                             let mut n3 = workspace.new_atom();
                             let mut exp = workspace.new_atom();
-                            exp.transform_to_num().set_from_number(Number::Natural(-1, 1));
+                            exp.transform_to_num()
+                                .set_from_number(Number::Natural(-1, 1));
                             let n3p = n3.transform_to_pow();
                             n3p.set_from_base_and_exp(n2_conv.to_view(), exp.to_view());
                             n3p.set_dirty(true);

@@ -137,6 +137,12 @@ class Expression:
         Return the number of terms in this expression.
         """
 
+    def transform(self) -> Transformer:
+        """
+        Convert the input to a transformer, on which subsequent
+        transformations can be applied.
+        """
+
     def set_coefficient_ring(self, vars: Sequence[Expression]) -> Expression:
         """
         Set the coefficient ring to contain the variables in the `vars` list.
@@ -177,6 +183,22 @@ class Expression:
     def __iter__(self) -> Iterator[Expression]:
         """
         Create an iterator over all atoms in the expression.
+        """
+
+    def map(
+        self,
+        transformations: Transformer,
+    ) -> Expression:
+        """
+        Map the transformations to every term in the expression.
+        The execution happen in parallel.
+
+        Examples
+        --------
+        >>> x, x_ = Expression.vars('x', 'x_')
+        >>> e = (1+x)**2
+        >>> r = e.map(Transformer().expand().replace_all(x, 6))
+        >>> print(r)
         """
 
     def expand(self) -> Expression:
@@ -286,9 +308,31 @@ class Function:
 class Transformer:
     """ Transform an expression. """
 
-    @classmethod
-    def expand(_cls, expr: Transformer | Expression | int) -> Transformer:
+    def __init__() -> Transformer:
+        """ Create a new transformer for a term provided by `Expression.map`. """
+
+    def expand(self) -> Transformer:
         """ Expand products and powers. """
+
+    def replace_all(
+        self,
+        pat: Transformer | Expression | int,
+        rhs: Transformer | Expression | int,
+        cond: Optional[PatternRestriction] = None,
+    ) -> Transformer:
+        """
+        Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
+        Restrictions on pattern can be supplied through `cond`.
+
+        Examples
+        --------
+
+        >>> x, w1_, w2_ = Expression.vars('x','w1_','w2_')
+        >>> f = Expression.fun('f')
+        >>> e = f(3,x)
+        >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
+        >>> print(r)
+        """
 
     def __add__(self, other: Transformer | Expression | int) -> Transformer:
         """

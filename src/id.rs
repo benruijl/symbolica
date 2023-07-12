@@ -1,4 +1,5 @@
 use ahash::HashMap;
+use dyn_clone::DynClone;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
@@ -666,6 +667,23 @@ impl<P: Atom> std::fmt::Debug for Pattern<P> {
     }
 }
 
+pub trait FilterFn<P: Atom>:
+    for<'a, 'b> Fn(&'a Match<'b, P>) -> bool + DynClone + Send + Sync
+{
+}
+dyn_clone::clone_trait_object!(<P: Atom> FilterFn<P>);
+impl<P: Atom, T: Clone + Send + Sync + for<'a, 'b> Fn(&'a Match<'b, P>) -> bool> FilterFn<P> for T {}
+
+pub trait CmpFn<P: Atom>:
+    for<'a, 'b> Fn(&Match<'_, P>, &Match<'_, P>) -> bool + DynClone + Send + Sync
+{
+}
+dyn_clone::clone_trait_object!(<P: Atom> CmpFn<P>);
+impl<P: Atom, T: Clone + Send + Sync + for<'a, 'b> Fn(&Match<'_, P>, &Match<'_, P>) -> bool>
+    CmpFn<P> for T
+{
+}
+
 /// Restrictions for a wildcard. Note that a length restriction
 /// applies at any level and therefore
 /// `x_*f(x_) : length(x) == 2`
@@ -679,11 +697,21 @@ where
     IsVar,
     IsNumber,
     IsLiteralWildcard(Identifier),
-    Filter(Box<dyn (Fn(&Match<'_, P>) -> bool) + Send + Sync>),
-    Cmp(
-        Identifier,
-        Box<dyn Fn(&Match<'_, P>, &Match<'_, P>) -> bool + Send + Sync>,
-    ),
+    Filter(Box<dyn FilterFn<P>>),
+    Cmp(Identifier, Box<dyn CmpFn<P>>),
+}
+
+impl<P: Atom + 'static> Clone for PatternRestriction<P> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Length(min, max) => Self::Length(min.clone(), max.clone()),
+            Self::IsVar => Self::IsVar,
+            Self::IsNumber => Self::IsNumber,
+            Self::IsLiteralWildcard(w) => Self::IsLiteralWildcard(w.clone()),
+            Self::Filter(f) => Self::Filter(dyn_clone::clone_box(f)),
+            Self::Cmp(i, f) => Self::Cmp(i.clone(), dyn_clone::clone_box(f)),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -696,9 +724,9 @@ pub enum Match<'a, P: Atom> {
 impl<'a, P: Atom> std::fmt::Debug for Match<'a, P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Single(arg0) => f.debug_tuple("").field(arg0).finish(),
-            Self::Multiple(arg0, arg1) => f.debug_tuple("").field(arg0).field(arg1).finish(),
-            Self::FunctionName(arg0) => f.debug_tuple("Fn").field(arg0).finish(),
+            Self::Single(a) => f.debug_tuple("").field(a).finish(),
+            Self::Multiple(t, list) => f.debug_tuple("").field(t).field(list).finish(),
+            Self::FunctionName(name) => f.debug_tuple("Fn").field(name).finish(),
         }
     }
 }

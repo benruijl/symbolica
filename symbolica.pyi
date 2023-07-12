@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Iterator, Optional, Sequence, Tuple
+from typing import overload, Iterator, Optional, Sequence, Tuple
+
 
 class Expression:
     @classmethod
@@ -253,7 +254,22 @@ class CompareOp:
 class Function:
     """ A Symbolica function. Will turn into an expression or a transformer when called with arguments."""
 
-    def __call__(self, *args: Expression | int) -> Expression | Transformer:
+    @overload
+    def __call__(self, *args: Expression | int) -> Expression:
+        """
+        Create a Symbolica expression or transformer by calling the function with appropriate arguments.
+
+        Examples
+        -------
+        >>> x = Expression.vars('x')
+        >>> f = Expression.fun('f')
+        >>> e = f(3,x)
+        >>> print(e)
+        f(3,x)
+        """
+
+    @overload
+    def __call__(self, *args: Transformer) -> Transformer:
         """
         Create a Symbolica expression or transformer by calling the function with appropriate arguments.
 
@@ -270,8 +286,64 @@ class Function:
 class Transformer:
     """ Transform an expression. """
 
-    def expand(self) -> Transformer:
+    @classmethod
+    def expand(_cls, expr: Transformer | Expression | int) -> Transformer:
         """ Expand products and powers. """
+
+    def __add__(self, other: Transformer | Expression | int) -> Transformer:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __radd__(self, other: Transformer | Expression | int) -> Transformer:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __sub__(self, other: Transformer | Expression | int) -> Transformer:
+        """
+        Subtract `other` from this transformer, returning the result.
+        """
+
+    def __rsub__(self, other: Transformer | Expression | int) -> Transformer:
+        """
+        Subtract this transformer from `other`, returning the result.
+        """
+
+    def __mul__(self, other: Transformer | Expression | int) -> Transformer:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __rmul__(self, other: Transformer | Expression | int) -> Transformer:
+        """
+        Add this transformer to `other`, returning the result.
+        """
+
+    def __truediv__(self, other: Transformer | Expression | int) -> Transformer:
+        """
+        Divide this transformer by `other`, returning the result.
+        """
+
+    def __rtruediv__(self, other: Transformer | Expression | int) -> Transformer:
+        """
+        Divide `other` by this transformer, returning the result.
+        """
+
+    def __pow__(self, exp: Transformer | Expression | int) -> Transformer:
+        """
+        Take `self` to power `exp`, returning the result.
+        """
+
+    def __rpow__(self, base: Transformer | Expression | int) -> Transformer:
+        """
+        Take `base` to power `self`, returning the result.
+        """
+
+    def __neg__(self) -> Transformer:
+        """
+        Negate the current transformer, returning the result.
+        """
 
 
 class MatchIterator:

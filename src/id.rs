@@ -3,8 +3,8 @@ use smallvec::{smallvec, SmallVec};
 
 use crate::{
     representations::{
-        Add, Atom, AtomView, Fun, Identifier, ListSlice, Mul, OwnedAdd, OwnedAtom, OwnedFun,
-        OwnedMul, OwnedPow, Pow, SliceType, Var,
+        number::Number, Add, Atom, AtomView, Fun, Identifier, ListSlice, Mul, OwnedAdd, OwnedAtom,
+        OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, SliceType, Var,
     },
     state::{ResettableBuffer, State, Workspace},
     transformer::Transformer,
@@ -30,6 +30,176 @@ impl<P: Atom> OwnedAtom<P> {
 impl<'a, P: Atom> AtomView<'a, P> {
     pub fn into_pattern(self, state: &State) -> Pattern<P> {
         Pattern::from_view(self, state)
+    }
+}
+
+impl<P: Atom + Clone> Pattern<P> {
+    pub fn add(&self, rhs: &Self, workspace: &Workspace<P>, state: &State) -> Self {
+        if let Pattern::Literal(l1) = self {
+            if let Pattern::Literal(l2) = rhs {
+                // create new literal
+                let mut e = workspace.new_atom();
+                let a = e.transform_to_add();
+
+                a.extend(l1.to_view());
+                a.extend(l2.to_view());
+                a.set_dirty(true);
+
+                let mut b = OwnedAtom::<P>::new();
+                e.get().to_view().normalize(workspace, state, &mut b);
+
+                return Pattern::Literal(b);
+            }
+        }
+
+        let mut new_args = vec![];
+        if let Pattern::Add(l1) = self {
+            new_args.extend_from_slice(l1);
+        } else {
+            new_args.push(self.clone());
+        }
+        if let Pattern::Add(l1) = rhs {
+            new_args.extend_from_slice(l1);
+        } else {
+            new_args.push(rhs.clone());
+        }
+
+        // TODO: fuse literal parts
+        Pattern::Add(new_args)
+    }
+
+    pub fn mul(&self, rhs: &Self, workspace: &Workspace<P>, state: &State) -> Self {
+        if let Pattern::Literal(l1) = self {
+            if let Pattern::Literal(l2) = rhs {
+                let mut e = workspace.new_atom();
+                let a = e.transform_to_mul();
+
+                a.extend(l1.to_view());
+                a.extend(l2.to_view());
+                a.set_dirty(true);
+
+                let mut b = OwnedAtom::<P>::new();
+                e.get().to_view().normalize(workspace, state, &mut b);
+
+                return Pattern::Literal(b);
+            }
+        }
+
+        let mut new_args = vec![];
+        if let Pattern::Mul(l1) = self {
+            new_args.extend_from_slice(l1);
+        } else {
+            new_args.push(self.clone());
+        }
+        if let Pattern::Mul(l1) = rhs {
+            new_args.extend_from_slice(l1);
+        } else {
+            new_args.push(rhs.clone());
+        }
+
+        // TODO: fuse literal parts
+        Pattern::Mul(new_args)
+    }
+
+    pub fn div(&self, rhs: &Self, workspace: &Workspace<P>, state: &State) -> Self {
+        if let Pattern::Literal(l2) = rhs {
+            let mut pow = workspace.new_atom();
+            let pow_num = pow.transform_to_num();
+            pow_num.set_from_number(Number::Natural(-1, 1));
+
+            let mut e = workspace.new_atom();
+            let a = e.transform_to_pow();
+            a.set_from_base_and_exp(l2.to_view(), pow.get().to_view());
+            a.set_dirty(true);
+
+            let mut b = OwnedAtom::<P>::new();
+            e.to_view().normalize(workspace, state, &mut b);
+
+            match self {
+                Pattern::Mul(m) => {
+                    let mut new_args = m.clone();
+                    new_args.push(Pattern::Literal(b));
+                    Pattern::Mul(new_args)
+                }
+                Pattern::Literal(l1) => {
+                    let mut m = workspace.new_atom();
+                    let md = m.transform_to_mul();
+
+                    md.extend(l1.to_view());
+                    md.extend(b.to_view());
+                    md.set_dirty(true);
+
+                    let mut b = OwnedAtom::<P>::new();
+                    m.get().to_view().normalize(workspace, state, &mut b);
+                    Pattern::Literal(b)
+                }
+                _ => Pattern::Mul(vec![self.clone(), Pattern::Literal(b)]),
+            }
+        } else {
+            let mut pow = OwnedAtom::<P>::new();
+            let pow_num = pow.transform_to_num();
+            pow_num.set_from_number(Number::Natural(-1, 1));
+
+            let rhs = Pattern::Mul(vec![
+                self.clone(),
+                Pattern::Pow(Box::new([rhs.clone(), Pattern::Literal(pow)])),
+            ]);
+
+            match self {
+                Pattern::Mul(m) => {
+                    let mut new_args = m.clone();
+                    new_args.push(rhs);
+                    Pattern::Mul(new_args)
+                }
+                _ => Pattern::Mul(vec![self.clone(), rhs]),
+            }
+        }
+    }
+
+    pub fn pow(&self, rhs: &Self, workspace: &Workspace<P>, state: &State) -> Self {
+        if let Pattern::Literal(l1) = self {
+            if let Pattern::Literal(l2) = rhs {
+                let mut e = workspace.new_atom();
+                let a = e.transform_to_pow();
+
+                a.set_from_base_and_exp(l1.to_view(), l2.to_view());
+                a.set_dirty(true);
+
+                let mut b = OwnedAtom::new();
+                e.get().to_view().normalize(workspace, state, &mut b);
+
+                return Pattern::Literal(b);
+            }
+        }
+
+        Pattern::Pow(Box::new([self.clone(), rhs.clone()]))
+    }
+
+    pub fn neg(&self, workspace: &Workspace<P>, state: &State) -> Self {
+        if let Pattern::Literal(l1) = self {
+            let mut e = workspace.new_atom();
+            let a = e.transform_to_mul();
+
+            let mut sign = workspace.new_atom();
+            let sign_num = sign.transform_to_num();
+            sign_num.set_from_number(Number::Natural(-1, 1));
+
+            a.extend(l1.to_view());
+            a.extend(sign.get().to_view());
+            a.set_dirty(true);
+
+            let mut b = OwnedAtom::new();
+            e.get().to_view().normalize(workspace, state, &mut b);
+
+            Pattern::Literal(b)
+        } else {
+            let mut pow = OwnedAtom::<P>::new();
+            let pow_num = pow.transform_to_num();
+            pow_num.set_from_number(Number::Natural(-1, 1));
+
+            // TODO: simplify if a literal is already present
+            Pattern::Mul(vec![self.clone(), Pattern::Literal(pow)])
+        }
     }
 }
 
@@ -283,7 +453,7 @@ impl<P: Atom> Pattern<P> {
             }
             Pattern::Add(args) => {
                 let mut add_h = workspace.new_atom();
-                let add = add_h.transform_to_mul();
+                let add = add_h.transform_to_add();
 
                 for arg in args {
                     if let Pattern::Wildcard(w) = arg {

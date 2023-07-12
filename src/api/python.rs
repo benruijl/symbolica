@@ -17,7 +17,7 @@ use self_cell::self_cell;
 use smallvec::SmallVec;
 
 use crate::{
-    id::{Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction},
+    id::{Match, Pattern, PatternAtomTreeIterator, PatternRestriction},
     parser::parse,
     poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
     printer::{AtomPrinter, PolynomialPrinter, PrintMode, RationalPolynomialPrinter},
@@ -92,19 +92,122 @@ impl PythonPattern {
         })
     }
 
-    pub fn execute(&self) -> PyResult<PythonExpression> {
-        let b = WORKSPACE.with(|workspace| {
-            let mut e = OwnedAtom::new();
-            self.expr.substitute_wildcards(
-                &STATE.read().unwrap(),
+    pub fn __add__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
+        let res = WORKSPACE.with(|workspace| {
+            self.expr.add(
+                &rhs.to_pattern().expr,
                 workspace,
-                &mut e,
-                &MatchStack::new(&HashMap::default()),
-            );
-            e
+                STATE.read().unwrap().borrow(),
+            )
         });
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        PythonPattern {
+            expr: Arc::new(res),
+        }
+    }
+
+    pub fn __radd__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
+        self.__add__(rhs)
+    }
+
+    pub fn __sub__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
+        self.__add__(ConvertibleToPattern::Pattern(rhs.to_pattern().__neg__()))
+    }
+
+    pub fn __rsub__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
+        rhs.to_pattern()
+            .__add__(ConvertibleToPattern::Pattern(self.__neg__()))
+    }
+
+    pub fn __mul__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
+        let res = WORKSPACE.with(|workspace| {
+            self.expr.mul(
+                &rhs.to_pattern().expr,
+                workspace,
+                STATE.read().unwrap().borrow(),
+            )
+        });
+
+        PythonPattern {
+            expr: Arc::new(res),
+        }
+    }
+
+    pub fn __rmul__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
+        self.__mul__(rhs)
+    }
+
+    pub fn __truediv__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
+        let res = WORKSPACE.with(|workspace| {
+            self.expr.div(
+                &rhs.to_pattern().expr,
+                workspace,
+                STATE.read().unwrap().borrow(),
+            )
+        });
+
+        PythonPattern {
+            expr: Arc::new(res),
+        }
+    }
+
+    pub fn __rtruediv__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
+        rhs.to_pattern()
+            .__truediv__(ConvertibleToPattern::Pattern(self.clone()))
+    }
+
+    pub fn __pow__(
+        &self,
+        rhs: ConvertibleToPattern,
+        number: Option<i64>,
+    ) -> PyResult<PythonPattern> {
+        if number.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Optional number argument not supported",
+            ));
+        }
+
+        let res = WORKSPACE.with(|workspace| {
+            self.expr.pow(
+                &rhs.to_pattern().expr,
+                workspace,
+                STATE.read().unwrap().borrow(),
+            )
+        });
+
+        Ok(PythonPattern {
+            expr: Arc::new(res),
+        })
+    }
+
+    pub fn __rpow__(
+        &self,
+        rhs: ConvertibleToPattern,
+        number: Option<i64>,
+    ) -> PyResult<PythonPattern> {
+        rhs.to_pattern()
+            .__pow__(ConvertibleToPattern::Pattern(self.clone()), number)
+    }
+
+    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonPattern> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
+    }
+
+    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonPattern> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
+    }
+
+    pub fn __neg__(&self) -> PythonPattern {
+        let res =
+            WORKSPACE.with(|workspace| self.expr.neg(workspace, STATE.read().unwrap().borrow()));
+
+        PythonPattern {
+            expr: Arc::new(res),
+        }
     }
 }
 

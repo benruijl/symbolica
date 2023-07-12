@@ -3,7 +3,7 @@ pub mod number;
 pub mod tree;
 
 use crate::state::{ResettableBuffer, State, Workspace};
-use std::{cmp::Ordering, ops::Range};
+use std::{cmp::Ordering, ops::{Range, Deref}};
 
 use self::{
     number::{BorrowedNumber, Number},

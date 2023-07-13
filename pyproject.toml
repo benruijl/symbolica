@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "symbolica"
-version = "0.0.1"
+version = "0.0.2"
 description = "Symbolica is a blazing fast symbolic manipulation toolkit"
 readme = "Readme.md"
 license = {file = "License.md"}

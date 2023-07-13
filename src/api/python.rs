@@ -655,7 +655,7 @@ impl PythonExpression {
 
     pub fn transform(&self) -> PythonPattern {
         PythonPattern {
-            expr: Arc::new(Pattern::Literal((*self.expr).clone())),
+            expr: Arc::new(self.expr.into_pattern(&STATE.read().unwrap())),
         }
     }
 

@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::Div};
 
 use bytes::{Buf, BufMut};
 use rug::{
@@ -16,7 +16,7 @@ use crate::{
         integer::{Integer, IntegerRing},
         rational::{Rational, RationalField},
         rational_polynomial::RationalPolynomial,
-        Field, Ring,
+        EuclideanDomain, Field, Ring,
     },
     state::{FiniteFieldIndex, State},
     utils,
@@ -361,16 +361,24 @@ impl BorrowedNumber<'_> {
             (BorrowedNumber::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
             | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
                 let mut r = (*p).clone();
-                r.numerator = r.numerator.mul_coeff(Integer::Natural(*n));
-                r.denominator = r.denominator.mul_coeff(Integer::Natural(*d));
+                let (n, d) = (Integer::Natural(*n), Integer::Natural(*d));
+
+                let gcd1 = IntegerRing::new().gcd(&n, &r.denominator.content());
+                let gcd2 = IntegerRing::new().gcd(&d, &r.numerator.content());
+                r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
+                r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
                 Number::RationalPolynomial(r)
             }
             (BorrowedNumber::Large(l), BorrowedNumber::RationalPolynomial(p))
             | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
                 let mut r = (*p).clone();
                 let (n, d) = l.to_rat().into_numer_denom();
-                r.numerator = r.numerator.mul_coeff(Integer::Large(n));
-                r.denominator = r.denominator.mul_coeff(Integer::Large(d));
+                let (n, d) = (Integer::Large(n), Integer::Large(d));
+
+                let gcd1 = IntegerRing::new().gcd(&n, &r.denominator.content());
+                let gcd2 = IntegerRing::new().gcd(&d, &r.numerator.content());
+                r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
+                r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
                 Number::RationalPolynomial(r)
             }
             (BorrowedNumber::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {

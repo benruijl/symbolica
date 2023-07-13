@@ -1,6 +1,10 @@
 <h1 align="center">
   <br>
+  <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://symbolica.io/logo_dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://symbolica.io/logo.svg">
   <img src="https://symbolica.io/logo.svg" alt="logo" width="200">
+</picture>
   <br>
 </h1>
 
@@ -12,12 +16,30 @@
 
 # Symbolica
 
-[Symbolica](https://symbolica.io) is a symbolic manipulation toolkit which aims to handle expressions with billions
+[Symbolica](https://symbolica.io) is a computer algebra system which aims to handle expressions with billions
 of terms, taking up terabytes of diskspace. It can easily be incorporated into existing projects using its Python, Rust or C++ bindings.
+
+## Quick Example
+
+Symbolica allows you to build and manipulate mathematical expressions through matching and replacing patterns, similar to `regex` for text:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://symbolica.io/resources/demo.gif">
+  <source media="(prefers-color-scheme: light)" srcset="https://symbolica.io/resources/demo_light.gif">
+  <img width="600" alt="A demo of Symbolica" srcset="https://symbolica.io/resources/demo.gif">
+</picture>
+
+You are able to perform these operations from the comfort of a programming language that you (probably) already know, by using Symbolica's bindings to Python, Rust and C++:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="help.png">
+  <source media="(prefers-color-scheme: light)" srcset="help.png">
+  <img width="600" alt="A demo of Symbolica" src="help.png">
+</picture>
 
 # Installation
 
-Symbolica is in early development, but can already be used as a library in Rust and Pyton.
+Symbolica is in early development, but can already be used as a library in Rust and Python. The C/C++ bindings allow for fast multivariate polynomial arithmetic.
 
 ## Rust
 
@@ -30,7 +52,16 @@ symbolica = { git = "https://github.com/benruijl/symbolica.git" }
 
 ## Python
 
-Compile Symbolica with a recent Rust compiler:
+Symbolica can be installed for Python >3.5 using `pip`:
+
+```sh
+pip install symbolica
+```
+
+The installation may take some time, as it may have to compile Symbolica.
+
+### Manual installation
+Alternatively, one can install Symbolica manually. Compile Symbolica with a recent Rust compiler:
 
 ```sh
 git clone https://github.com/benruijl/symbolica.git
@@ -42,33 +73,45 @@ and copy the shared library to your destination location, stripping the leading 
 cp target/release/libsymbolica.so symbolica.so
 ```
 
-Now test that it works with the following Python script, which showcases pattern matching and rational polynomial arithmetic:
+# Examples
+
+In the following example we create a Symbolica expression `(1+x)^2`, expand it, and replace `x^2` by `6`:
 
 ```python
 from symbolica import Expression
+x, x_ = Expression.vars('x')
+e = (1+x)**2
+r = e.expand().replace_all(x**2, 6)
+print(r)
+```
+which yields `2*x+7`.
 
-# create a Symbolica expression
+### Wildcards
+
+Variables ending with a `_` are wildcards and can match any subexpression.
+In the following example we try to match the pattern `f(w1_,w2_)` where `w1_` is more than 0 and `w2_` must match a variable:
+
+```python
+from symbolica import Expression
 x, y, w1_, w2_ = Expression.vars('x','y','w1_','w2_')
 f = Expression.fun('f')
 e = f(3,x)*y**2+5
-
-# replace f(w1_,w2_) with f(w-1,w2^2) in e where w1_>=0 and w2_ is a variable
 r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
-print('Replaced:', r)
-
-# parse rational polynomials
-p = Expression.parse('(x*y^2*5+5)^2/(2*x+5)+(x+4)/(6*x^2+1)').to_rational_polynomial()
-print('Rational polynomial:', p)
-
-# compute polynomial GCDs
-a = Expression.parse('(1 + 3*x1 + 5*x2 + 7*x3 + 9*x4 + 11*x5 + 13*x6 + 15*x7)^2 - 1').to_rational_polynomial()
-b = Expression.parse('(1 - 3*x1 - 5*x2 - 7*x3 + 9*x4 - 11*x5 - 13*x6 + 15*x7)^2 + 1').to_rational_polynomial()
-g = Expression.parse('(1 + 3*x1 + 5*x2 + 7*x3 + 9*x4 + 11*x5 + 13*x6 - 15*x7)^2 + 3').to_rational_polynomial()
-ag = a * g
-bg = b * g
-print('Complicated GCD:', ag.gcd(bg))
+print(r)
 ```
+which yields `y^2*f(2,x^2)+5`.
+
+### Rational arithmetic
+
+Symbolica is world-class in rational arithmetic, outperforming Mathematica, Maple, Form, Fermat, and other computer algebra packages. Simply convert an expression to a rational polynomial:
+```python
+from symbolica import Expression
+x, y = Expression.vars('x','y')
+p = Expression.parse('(x*y^2*5+5)^2/(2*x+5)+(x+4)/(6*x^2+1)').to_rational_polynomial()
+print(p)
+```
+which yields `(45+13*x+50*x*y^2+152*x^2+25*x^2*y^4+300*x^3*y^2+150*x^4*y^4)/(5+2*x+30*x^2+12*x^3)`.
 
 ## Development
 
-Symbolica is in early development. Follow the development on [Zulip](https://reform.zulipchat.com)!
+Symbolica is in early development. Follow the development and discussions on [Zulip](https://reform.zulipchat.com)!

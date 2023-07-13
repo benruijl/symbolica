@@ -33,7 +33,7 @@ You are able to perform these operations from the comfort of a programming langu
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://symbolica.io/resources/completion.png">
-  <source media="(prefers-color-scheme: light)" srcset="https://symbolica.io/resources/completion.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://symbolica.io/resources/completion_light.png">
   <img width="600" alt="A demo of Symbolica" src="https://symbolica.io/resources/completion.png">
 </picture>
 

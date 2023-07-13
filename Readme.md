@@ -32,9 +32,9 @@ Symbolica allows you to build and manipulate mathematical expressions through ma
 You are able to perform these operations from the comfort of a programming language that you (probably) already know, by using Symbolica's bindings to Python, Rust and C++:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="help.png">
-  <source media="(prefers-color-scheme: light)" srcset="help.png">
-  <img width="600" alt="A demo of Symbolica" src="help.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://symbolica.io/resources/completion.png">
+  <source media="(prefers-color-scheme: light)" srcset="https://symbolica.io/resources/completion.png">
+  <img width="600" alt="A demo of Symbolica" src="https://symbolica.io/resources/completion.png">
 </picture>
 
 # Installation

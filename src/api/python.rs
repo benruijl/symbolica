@@ -35,7 +35,7 @@ use crate::{
         rational::RationalField,
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
     },
-    state::{ResettableBuffer, State, Workspace, INPUT_ID},
+    state::{FunctionAttribute, ResettableBuffer, State, Workspace, INPUT_ID},
     streaming::TermStreamer,
     transformer::Transformer,
 };
@@ -393,8 +393,8 @@ impl PythonExpression {
     }
 
     #[classmethod]
-    pub fn fun(_cls: &PyType, name: &str) -> PyResult<PythonFunction> {
-        PythonFunction::__new__(name)
+    pub fn fun(_cls: &PyType, name: &str, is_symmetric: Option<bool>) -> PyResult<PythonFunction> {
+        PythonFunction::__new__(name, is_symmetric)
     }
 
     #[pyo3(signature = (*args,))]
@@ -403,7 +403,7 @@ impl PythonExpression {
         let mut result = Vec::with_capacity(args.len());
         for a in args {
             let name = a.extract::<&str>()?;
-            result.push(PythonFunction::__new__(name)?);
+            result.push(PythonFunction::__new__(name, None)?);
         }
 
         Ok(result)
@@ -1043,9 +1043,21 @@ pub struct PythonFunction {
 #[pymethods]
 impl PythonFunction {
     #[new]
-    pub fn __new__(name: &str) -> PyResult<Self> {
+    pub fn __new__(name: &str, is_symmetric: Option<bool>) -> PyResult<Self> {
         // TODO: parse and check if this is a valid function name
-        let id = STATE.write().unwrap().borrow_mut().get_or_insert_var(name);
+        let id = if is_symmetric.unwrap_or(false) {
+            STATE
+                .write()
+                .unwrap()
+                .borrow_mut()
+                .get_or_insert_fn(name, Some(vec![FunctionAttribute::Symmetric]))
+        } else {
+            STATE
+                .write()
+                .unwrap()
+                .borrow_mut()
+                .get_or_insert_fn(name, None)
+        };
         Ok(PythonFunction { id })
     }
 

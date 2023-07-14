@@ -22,7 +22,7 @@ class Expression:
         """
 
     @classmethod
-    def fun(_cls, name: str) -> Function:
+    def fun(_cls, name: str, is_symmetric: bool = False) -> Function:
         """
         Creates a new Symbolica function with a given name.
 

@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    collections::hash_map::Entry,
     ops::{Deref, DerefMut},
 };
 
@@ -16,11 +17,17 @@ pub struct FiniteFieldIndex(pub(crate) usize);
 
 pub(crate) const INPUT_ID: Identifier = Identifier::init(u32::MAX);
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum FunctionAttribute {
+    Symmetric,
+}
+
 /// A global state, that stores mappings from variable and function names to ids.
 #[derive(Clone)]
 pub struct State {
     // get variable maps from here
     str_to_var_id: HashMap<String, Identifier>,
+    function_attributes: HashMap<Identifier, Vec<FunctionAttribute>>,
     var_to_str_map: Vec<String>,
     finite_fields: Vec<FiniteField<u64>>,
 }
@@ -29,6 +36,7 @@ impl State {
     pub fn new() -> State {
         State {
             str_to_var_id: HashMap::new(),
+            function_attributes: HashMap::new(),
             var_to_str_map: vec![],
             finite_fields: vec![],
         }
@@ -39,8 +47,8 @@ impl State {
     /// else register it and return a new id.
     pub fn get_or_insert_var<S: AsRef<str>>(&mut self, name: S) -> Identifier {
         match self.str_to_var_id.entry(name.as_ref().into()) {
-            std::collections::hash_map::Entry::Occupied(o) => *o.get(),
-            std::collections::hash_map::Entry::Vacant(v) => {
+            Entry::Occupied(o) => *o.get(),
+            Entry::Vacant(v) => {
                 if self.var_to_str_map.len() == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
@@ -51,6 +59,49 @@ impl State {
                 new_id
             }
         }
+    }
+
+    /// Get the id for a certain name if the name is already registered,
+    /// else register it and return a new id.
+    pub fn get_or_insert_fn<S: AsRef<str>>(
+        &mut self,
+        name: S,
+        attributes: Option<Vec<FunctionAttribute>>,
+    ) -> Identifier {
+        match self.str_to_var_id.entry(name.as_ref().into()) {
+            Entry::Occupied(o) => {
+                let r = *o.get();
+                if match self.function_attributes.entry(r) {
+                    Entry::Occupied(o) => Some(o.get()) == attributes.as_ref(),
+                    Entry::Vacant(_) => attributes.map(|a| a.is_empty()).unwrap_or(true),
+                } {
+                    r
+                } else {
+                    panic!("Function redefined with new attributes");
+                }
+            }
+            Entry::Vacant(v) => {
+                if self.var_to_str_map.len() == u32::MAX as usize - 1 {
+                    panic!("Too many variables defined");
+                }
+
+                let new_id = Identifier::from(self.var_to_str_map.len() as u32);
+                v.insert(new_id);
+                self.var_to_str_map.push(name.as_ref().into());
+
+                self.function_attributes
+                    .insert(new_id, attributes.unwrap_or(vec![]));
+
+                new_id
+            }
+        }
+    }
+
+    pub fn get_function_attributes(&self, id: Identifier) -> &[FunctionAttribute] {
+        self.function_attributes
+            .get(&id)
+            .map(|x| x.as_ref())
+            .unwrap_or(&[])
     }
 
     /// Get the name for a given id.

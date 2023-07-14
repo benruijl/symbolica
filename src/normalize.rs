@@ -8,7 +8,7 @@ use crate::{
         Add, Atom, AtomView, Fun, ListSlice, Mul, Num, OwnedAdd, OwnedAtom, OwnedFun, OwnedMul,
         OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
-    state::{BufferHandle, ResettableBuffer, State, Workspace},
+    state::{BufferHandle, FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace},
 };
 
 impl<'a, P: Atom> AtomView<'a, P> {
@@ -656,18 +656,38 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 vv.set_from_view(v);
             }
             AtomView::Fun(f) => {
+                let name = f.get_name();
                 let out = out.transform_to_fun();
-                out.set_from_name(f.get_name());
+                out.set_from_name(name);
 
-                let mut handle = workspace.new_atom();
-                let new_at = handle.get_mut();
-                for a in f.iter() {
-                    if a.is_dirty() {
-                        new_at.reset(); // TODO: needed?
-                        a.normalize(workspace, state, new_at);
-                        out.add_arg(new_at.to_view());
-                    } else {
-                        out.add_arg(a);
+                if state.get_function_attributes(name).contains(&Symmetric) {
+                    let mut arg_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
+
+                    for a in f.iter() {
+                        let mut handle = workspace.new_atom();
+                        if a.is_dirty() {
+                            a.normalize(workspace, state, &mut handle);
+                        } else {
+                            handle.from_view(&a);
+                        }
+                        arg_buf.push(handle);
+                    }
+
+                    arg_buf.sort_by(|a, b| a.get().to_view().cmp(&b.get().to_view()));
+
+                    for a in arg_buf {
+                        out.add_arg(a.to_view());
+                    }
+                } else {
+                    let mut handle = workspace.new_atom();
+                    for a in f.iter() {
+                        if a.is_dirty() {
+                            handle.reset(); // TODO: needed?
+                            a.normalize(workspace, state, &mut handle);
+                            out.add_arg(handle.to_view());
+                        } else {
+                            out.add_arg(a);
+                        }
                     }
                 }
             }

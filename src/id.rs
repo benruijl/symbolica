@@ -7,7 +7,7 @@ use crate::{
         number::Number, Add, Atom, AtomView, Fun, Identifier, ListSlice, Mul, OwnedAdd, OwnedAtom,
         OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, SliceType, Var,
     },
-    state::{ResettableBuffer, State, Workspace},
+    state::{FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace},
     transformer::Transformer,
 };
 
@@ -1366,6 +1366,11 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                                 f.get_name() == *name
                             };
 
+                            let ordered = !self
+                                .state
+                                .get_function_attributes(target_name)
+                                .contains(&Symmetric);
+
                             if name_match {
                                 let mut it = SubSliceIterator::from_list(
                                     args,
@@ -1373,7 +1378,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                                     self.state,
                                     match_stack,
                                     true,
-                                    true,
+                                    ordered,
                                 );
 
                                 if let Some((x, _)) = it.next(match_stack) {

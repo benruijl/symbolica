@@ -36,10 +36,19 @@ impl IntegerRing {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Integer {
     Natural(i64),
     Large(ArbitraryPrecisionInteger),
+}
+
+impl std::fmt::Debug for Integer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Natural(arg0) => std::fmt::Display::fmt(arg0, f),
+            Self::Large(arg0) => f.debug_tuple("Large").field(arg0).finish(),
+        }
+    }
 }
 
 impl ToFiniteField<u32> for Integer {

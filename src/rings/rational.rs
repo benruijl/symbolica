@@ -1,6 +1,6 @@
 use std::{
     fmt::{Display, Error, Formatter, Write},
-    ops::{Add, Div, Mul, Neg, Sub},
+    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
 use rand::Rng;
@@ -24,7 +24,7 @@ impl RationalField {
 }
 
 // FIXME: PartialEq can only work when Large simplifies to Natural whenever possible
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Rational {
     Natural(i64, i64),
     Large(ArbitraryPrecisionRational),
@@ -81,6 +81,50 @@ impl Rational {
         match self {
             Rational::Natural(n, _) => Integer::Natural(*n),
             Rational::Large(r) => Integer::Large(r.numer().clone()),
+        }
+    }
+
+    pub fn zero() -> Rational {
+        Rational::Natural(0, 1)
+    }
+
+    pub fn one() -> Rational {
+        Rational::Natural(1, 1)
+    }
+
+    pub fn abs(&self) -> Rational {
+        if self.is_negative() {
+            self.clone().neg()
+        } else {
+            self.clone()
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self == &Rational::Natural(0, 1)
+    }
+
+    pub fn is_one(&self) -> bool {
+        self == &Rational::Natural(1, 1)
+    }
+
+    pub fn pow(&self, e: u64) -> Rational {
+        if e > u32::MAX as u64 {
+            panic!("Power of exponentation is larger than 2^32: {}", e);
+        }
+        let e = e as u32;
+
+        match self {
+            Rational::Natural(n1, d1) => {
+                if let Some(pn) = n1.checked_pow(e) {
+                    if let Some(pd) = d1.checked_pow(e) {
+                        return Rational::Natural(pn, pd);
+                    }
+                }
+
+                Rational::Large(ArbitraryPrecisionRational::from((*n1, *d1)).pow(e))
+            }
+            Rational::Large(r) => Rational::Large(r.pow(e).into()),
         }
     }
 }
@@ -220,23 +264,7 @@ impl Ring for RationalField {
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
-        let e = e as u32;
-
-        match b {
-            Rational::Natural(n1, d1) => {
-                if let Some(pn) = n1.checked_pow(e) {
-                    if let Some(pd) = d1.checked_pow(e) {
-                        return Rational::Natural(pn, pd);
-                    }
-                }
-
-                Rational::Large(ArbitraryPrecisionRational::from((*n1, *d1)).pow(e))
-            }
-            Rational::Large(r) => Rational::Large(r.pow(e).into()),
-        }
+        b.pow(e)
     }
 
     fn is_zero(a: &Self::Element) -> bool {
@@ -395,5 +423,35 @@ impl<'a, 'b> Div<&'a Rational> for &'b Rational {
 
     fn div(self, other: &'a Rational) -> Self::Output {
         RationalField::new().div(self, other)
+    }
+}
+
+impl<'a, 'b> AddAssign<&'a Rational> for Rational {
+    fn add_assign(&mut self, other: &'a Rational) {
+        RationalField::new().add_assign(self, other)
+    }
+}
+
+impl SubAssign for Rational {
+    fn sub_assign(&mut self, other: Self) {
+        self.add_assign(&other.neg())
+    }
+}
+
+impl<'a, 'b> SubAssign<&'a Rational> for &'b Rational {
+    fn sub_assign(&mut self, other: &'a Rational) {
+        (self.clone()).sub_assign(other.clone())
+    }
+}
+
+impl<'a, 'b> MulAssign<&'a Rational> for Rational {
+    fn mul_assign(&mut self, other: &'a Rational) {
+        RationalField::new().mul_assign(self, other)
+    }
+}
+
+impl<'a, 'b> DivAssign<&'a Rational> for Rational {
+    fn div_assign(&mut self, other: &'a Rational) {
+        RationalField::new().div_assign(self, other)
     }
 }

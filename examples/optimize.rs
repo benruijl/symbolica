@@ -1,8 +1,8 @@
 use symbolica::{
     parser::parse,
-    poly::evaluate::BorrowedHornerScheme,
+    poly::evaluate::{BorrowedHornerScheme, InstructionSetPrinter},
     representations::default::DefaultRepresentation,
-    rings::integer::IntegerRing,
+    rings::rational::RationalField,
     state::{State, Workspace},
 };
 
@@ -15,20 +15,44 @@ fn main() {
     let mut state = State::new();
     let workspace = Workspace::<DefaultRepresentation>::new();
 
-    let poly: MultivariatePolynomial<IntegerRing, u8> = parse(SIGMA)
+    let poly: MultivariatePolynomial<_, u8> = parse(SIGMA)
         .unwrap()
         .to_atom(&mut state, &workspace)
         .unwrap()
         .to_view()
-        .to_polynomial(IntegerRing::new(), None)
+        .to_polynomial(RationalField::new(), None)
         .unwrap();
 
-    let (h, scheme) = poly.optimize_horner_scheme(1000);
-    let i = h.to_instr();
-    println!("{}", i);
+    let (h, scheme) = poly.optimize_horner_scheme(4000);
+    let mut i = h.to_instr();
+
     println!(
         "Number of operations={}, with scheme={:?}",
         BorrowedHornerScheme::from(&h).op_count_cse(),
         scheme,
     );
+
+    i.fuse_operations();
+
+    for _ in 0..100 {
+        if !i.common_pair_elimination() {
+            break;
+        }
+        i.fuse_operations();
+    }
+
+    let op_count = i.op_count();
+
+    let o = i.to_output(true);
+
+    println!(
+        "{}",
+        InstructionSetPrinter {
+            instr: &o,
+            var_map: poly.var_map.as_ref().unwrap(),
+            state: &state
+        }
+    );
+
+    println!("Final number of operations={}", op_count);
 }

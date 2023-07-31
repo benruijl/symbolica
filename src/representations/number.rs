@@ -437,6 +437,24 @@ impl BorrowedNumber<'_> {
                     )
                 }
             }
+            (&BorrowedNumber::Large(r), &BorrowedNumber::Natural(n2, d2)) => {
+                if n2.unsigned_abs() > u32::MAX as u64 {
+                    panic!("Power is too large: {}", n2);
+                }
+
+                if n2 < 0 {
+                    let r = r.to_rat().clone().recip();
+                    (
+                        Number::Large(r.pow(n2.unsigned_abs() as u32)),
+                        Number::Natural(1, d2),
+                    )
+                } else {
+                    (
+                        Number::Large(r.to_rat().pow(n2 as u32)),
+                        Number::Natural(1, d2),
+                    )
+                }
+            }
             _ => {
                 unimplemented!(
                     "Power of configuration {:?}^{:?} is not implemented",

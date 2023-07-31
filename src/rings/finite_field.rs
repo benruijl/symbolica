@@ -232,6 +232,10 @@ impl Ring for FiniteField<u32> {
         self.inv(a)
     }
 
+    fn one_is_gcd_unit() -> bool {
+        true
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0.max(0)..range.1.min(self.p as i64));
         FiniteFieldElement(r as u32)
@@ -281,10 +285,7 @@ impl Field for FiniteField<u32> {
         // apply multiplication with 1 twice to get the correct scaling of R=2^32
         // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
         let x_mont = self
-            .mul(
-                &self.mul(a, &FiniteFieldElement(1)),
-                &FiniteFieldElement(1),
-            )
+            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
             .0;
 
         // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
@@ -503,6 +504,10 @@ impl Ring for FiniteField<u64> {
         self.inv(a)
     }
 
+    fn one_is_gcd_unit() -> bool {
+        true
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0.max(0)..range.1.min(self.p.min(i64::MAX as u64) as i64));
         FiniteFieldElement(r as u64)
@@ -552,10 +557,7 @@ impl Field for FiniteField<u64> {
         // apply multiplication with 1 twice to get the correct scaling of R=2^64
         // see the paper [Montgomery Arithmetic from a Software Perspective](https://eprint.iacr.org/2017/1057.pdf).
         let x_mont = self
-            .mul(
-                &self.mul(a, &FiniteFieldElement(1)),
-                &FiniteFieldElement(1),
-            )
+            .mul(&self.mul(a, &FiniteFieldElement(1)), &FiniteFieldElement(1))
             .0;
 
         // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)

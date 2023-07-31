@@ -265,6 +265,10 @@ impl Ring for RationalField {
         self.inv(a)
     }
 
+    fn one_is_gcd_unit() -> bool {
+        false
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0..range.1);
         Rational::Natural(r, 1)

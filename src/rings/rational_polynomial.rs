@@ -377,6 +377,10 @@ where
         self.inv(a)
     }
 
+    fn one_is_gcd_unit() -> bool {
+        false
+    }
+
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
         todo!("Sampling a polynomial is not possible yet")
     }

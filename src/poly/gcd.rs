@@ -1470,7 +1470,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         let mut gcd = f.pop().unwrap();
         for p in f {
-            if gcd.is_one() {
+            if R::one_is_gcd_unit() && gcd.is_one() {
                 return gcd;
             }
 
@@ -1508,7 +1508,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             let mut gcd = a.coefficients[0].clone();
             for c in &b.coefficients {
                 gcd = a.field.gcd(&gcd, c);
-                if a.field.is_one(&gcd) {
+                if R::one_is_gcd_unit() && a.field.is_one(&gcd) {
                     break;
                 }
             }
@@ -1519,7 +1519,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             let mut gcd = b.coefficients[0].clone();
             for c in &a.coefficients {
                 gcd = a.field.gcd(&gcd, c);
-                if a.field.is_one(&gcd) {
+                if R::one_is_gcd_unit() && a.field.is_one(&gcd) {
                     break;
                 }
             }

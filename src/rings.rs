@@ -25,6 +25,8 @@ pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
     fn is_one(&self, a: &Self::Element) -> bool;
     fn get_unit(&self, a: &Self::Element) -> Self::Element;
     fn get_inv_unit(&self, a: &Self::Element) -> Self::Element;
+    /// Should return `true` iff `gcd(1,x)` returns `1` for any `x`.
+    fn one_is_gcd_unit() -> bool;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
     fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error>;

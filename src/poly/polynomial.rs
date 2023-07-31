@@ -1419,7 +1419,8 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E> {
         }
         let mut c = self.coefficients.first().unwrap().clone();
         for cc in self.coefficients.iter().skip(1) {
-            if self.field.is_one(&c) {
+            // early return if possible (not possible for rationals)
+            if F::one_is_gcd_unit() && self.field.is_one(&c) {
                 break;
             }
 

@@ -1,4 +1,5 @@
 pub mod finite_field;
+pub mod float;
 pub mod integer;
 pub mod linear_system;
 pub mod rational;

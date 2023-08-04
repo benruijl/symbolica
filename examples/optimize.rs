@@ -34,7 +34,7 @@ fn main() {
 
     i.fuse_operations();
 
-    for _ in 0..100 {
+    for _ in 0..100_000 {
         if !i.common_pair_elimination() {
             break;
         }
@@ -44,6 +44,8 @@ fn main() {
     let op_count = i.op_count();
 
     let o = i.to_output(true);
+
+    let o_f64 = o.convert::<f64>();
 
     println!(
         "{}",
@@ -55,4 +57,8 @@ fn main() {
     );
 
     println!("Final number of operations={}", op_count);
+    println!(
+        "Evaluation = {}",
+        o_f64.evaluate(&(0..poly.nvars).map(|x| x as f64 + 1.).collect::<Vec<_>>())
+    );
 }

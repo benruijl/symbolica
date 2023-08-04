@@ -127,6 +127,36 @@ impl Rational {
             Rational::Large(r) => Rational::Large(r.pow(e).into()),
         }
     }
+
+    pub fn inv(&self) -> Rational {
+        match self {
+            Rational::Natural(n, d) => {
+                if *n < 0 {
+                    if let Some(neg) = d.checked_neg() {
+                        Rational::Natural(neg, -n)
+                    } else {
+                        Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).recip())
+                    }
+                } else {
+                    Rational::Natural(*d, *n)
+                }
+            }
+            Rational::Large(r) => Rational::Large(r.clone().recip()),
+        }
+    }
+
+    pub fn neg(&self) -> Rational {
+        match self {
+            Rational::Natural(n, d) => {
+                if let Some(neg) = n.checked_neg() {
+                    Rational::Natural(neg, *d)
+                } else {
+                    Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).neg())
+                }
+            }
+            Rational::Large(r) => Rational::Large(r.neg().into()),
+        }
+    }
 }
 
 impl Display for Rational {
@@ -243,16 +273,7 @@ impl Ring for RationalField {
     }
 
     fn neg(&self, a: &Self::Element) -> Self::Element {
-        match a {
-            Rational::Natural(n, d) => {
-                if let Some(neg) = n.checked_neg() {
-                    Rational::Natural(neg, *d)
-                } else {
-                    Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).neg())
-                }
-            }
-            Rational::Large(r) => Rational::Large(r.neg().into()),
-        }
+        a.neg()
     }
 
     fn zero(&self) -> Self::Element {
@@ -362,20 +383,7 @@ impl Field for RationalField {
     }
 
     fn inv(&self, a: &Self::Element) -> Self::Element {
-        match a {
-            Rational::Natural(n, d) => {
-                if *n < 0 {
-                    if let Some(neg) = d.checked_neg() {
-                        Rational::Natural(neg, -n)
-                    } else {
-                        Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).recip())
-                    }
-                } else {
-                    Rational::Natural(*d, *n)
-                }
-            }
-            Rational::Large(r) => Rational::Large(r.clone().recip()),
-        }
+        a.inv()
     }
 }
 
@@ -387,19 +395,11 @@ impl<'a, 'b> Add<&'a Rational> for &'b Rational {
     }
 }
 
-impl Sub for Rational {
-    type Output = Self;
-
-    fn sub(self, other: Self) -> Self::Output {
-        self.add(&other.neg())
-    }
-}
-
 impl<'a, 'b> Sub<&'a Rational> for &'b Rational {
     type Output = Rational;
 
     fn sub(self, other: &'a Rational) -> Self::Output {
-        (self.clone()).sub(other.clone())
+        self.add(&other.neg())
     }
 }
 
@@ -426,31 +426,25 @@ impl<'a, 'b> Div<&'a Rational> for &'b Rational {
     }
 }
 
-impl<'a, 'b> AddAssign<&'a Rational> for Rational {
+impl<'a> AddAssign<&'a Rational> for Rational {
     fn add_assign(&mut self, other: &'a Rational) {
         RationalField::new().add_assign(self, other)
     }
 }
 
-impl SubAssign for Rational {
-    fn sub_assign(&mut self, other: Self) {
+impl<'a> SubAssign<&'a Rational> for Rational {
+    fn sub_assign(&mut self, other: &'a Rational) {
         self.add_assign(&other.neg())
     }
 }
 
-impl<'a, 'b> SubAssign<&'a Rational> for &'b Rational {
-    fn sub_assign(&mut self, other: &'a Rational) {
-        (self.clone()).sub_assign(other.clone())
-    }
-}
-
-impl<'a, 'b> MulAssign<&'a Rational> for Rational {
+impl<'a> MulAssign<&'a Rational> for Rational {
     fn mul_assign(&mut self, other: &'a Rational) {
         RationalField::new().mul_assign(self, other)
     }
 }
 
-impl<'a, 'b> DivAssign<&'a Rational> for Rational {
+impl<'a> DivAssign<&'a Rational> for Rational {
     fn div_assign(&mut self, other: &'a Rational) {
         RationalField::new().div_assign(self, other)
     }

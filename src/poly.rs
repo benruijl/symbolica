@@ -1,6 +1,6 @@
+pub mod evaluate;
 pub mod gcd;
 pub mod polynomial;
-pub mod evaluate;
 
 use std::borrow::Cow;
 use std::fmt::{Debug, Display};

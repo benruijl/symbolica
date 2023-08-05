@@ -722,20 +722,38 @@ impl<N: NumericalFloatLike + Eq + Hash> Hash for Variable<N> {
     }
 }
 
-impl<N: NumericalFloatLike> Variable<N> {
-    fn to_pretty_string(&self, var_map: &[Identifier], state: &State) -> String {
+impl Variable<Rational> {
+    fn to_pretty_string(
+        &self,
+        var_map: &[Identifier],
+        state: &State,
+        mode: InstructionSetMode,
+    ) -> String {
         match self {
             Variable::Index(i) => format!("Z{}", i),
             Variable::Var(v, p) => {
                 let var = state.get_name(var_map[*v]).unwrap();
                 if *p == 1 {
-                    format!("{}", var)
+                    format!("{}", var.as_str())
+                } else if *p == 2 {
+                    format!("{0}*{0}", var)
                 } else {
-                    format!("{}^{}", var, p)
+                    match mode {
+                        InstructionSetMode::Plain => format!("{}^{}", v, p),
+                        InstructionSetMode::CPP(_) => format!("std::pow({},{})", v, p),
+                    }
                 }
             }
-
-            Variable::Constant(c) => format!("{}", c),
+            Variable::Constant(c) => match mode {
+                InstructionSetMode::Plain => format!("{}", c),
+                InstructionSetMode::CPP(_) => {
+                    if c.is_integer() {
+                        format!("T({})", c.numerator())
+                    } else {
+                        format!("T({})/T({})", c.numerator(), c.denominator())
+                    }
+                }
+            },
         }
     }
 }
@@ -1144,6 +1162,7 @@ impl InstructionList {
                 last_use[..i].iter_mut().enumerate().find(|(_, r)| **r < i)
             {
                 *lu = cur_last_use; // set the last use to the current variable last use
+                last_use[i] = 0; // make the current index available
                 rename_map[i] = new_v; // set the rename map so that every occurrence on the rhs is replaced
                 new_v
             } else {
@@ -1284,34 +1303,112 @@ impl std::fmt::Display for InstructionList {
     }
 }
 
-pub struct InstructionSetPrinter<'a, N: NumericalFloatLike> {
-    pub instr: &'a InstructionListOutput<N>,
-    pub var_map: &'a [Identifier],
-    pub state: &'a State,
+pub struct CPPPrinter {}
+
+impl CPPPrinter {
+    pub fn format_number(num: &Rational) -> String {
+        if num.is_integer() {
+            format!("T({})", num.numerator())
+        } else {
+            format!("T({})/T({})", num.numerator(), num.denominator())
+        }
+    }
 }
 
-impl<'a, N: NumericalFloatLike> std::fmt::Display for InstructionSetPrinter<'a, N> {
+#[derive(Clone, Copy)]
+pub struct InstructionSetModeCPPSettings {
+    pub write_header_and_test: bool,
+}
+
+#[derive(Clone, Copy)]
+pub enum InstructionSetMode {
+    Plain,
+    CPP(InstructionSetModeCPPSettings),
+}
+
+pub struct InstructionSetPrinter<'a> {
+    pub instr: &'a InstructionListOutput<Rational>,
+    pub var_map: &'a [Identifier],
+    pub state: &'a State,
+    pub mode: InstructionSetMode,
+}
+
+impl<'a> InstructionSetPrinter<'a> {
+    /*pub fn new(inst) -> InstructionSetPrinter<'a, N> {
+        InstructionSetPrinter { instr: (), var_map: (), state: (), mode: () }
+    }*/
+}
+
+impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let InstructionSetMode::CPP(s) = self.mode {
+            if s.write_header_and_test {
+                f.write_str("#include <cstdlib>\n")?;
+                f.write_str("#include <cmath>\n")?;
+                f.write_str("#include <iostream>\n")?;
+                f.write_str("\n")?;
+            }
+
+            f.write_str("template<typename T>\n")?;
+            f.write_fmt(format_args!(
+                "T evaluate({}) {{\n",
+                self.var_map
+                    .iter()
+                    .map(|x| format!("T {}", self.state.get_name(*x).unwrap()))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ))?;
+
+            let max_register = self.instr.instr.iter().map(|r| r.0).max().unwrap_or(0);
+            f.write_fmt(format_args!(
+                "\tT {};\n",
+                (0..=max_register)
+                    .map(|x| format!("Z{}", x))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ))?;
+        }
+
         for (reg, x) in &self.instr.instr {
             match x {
                 Instruction::Add(a) => f.write_fmt(format_args!(
-                    "Z{} = {};\n",
+                    "\tZ{} = {};\n",
                     reg,
                     a.iter()
-                        .map(|x| x.to_pretty_string(self.var_map, self.state))
+                        .map(|x| x.to_pretty_string(self.var_map, self.state, self.mode))
                         .collect::<Vec<_>>()
                         .join("+")
                 ))?,
                 Instruction::Mul(m) => f.write_fmt(format_args!(
-                    "Z{} = {};\n",
+                    "\tZ{} = {};\n",
                     reg,
                     m.iter()
-                        .map(|x| x.to_pretty_string(self.var_map, self.state))
+                        .map(|x| x.to_pretty_string(self.var_map, self.state, self.mode))
                         .collect::<Vec<_>>()
                         .join("*")
                 ))?,
-                Instruction::Yield(y) => f.write_fmt(format_args!("Z{} = {};\n", reg, y))?,
+                Instruction::Yield(y) => match self.mode {
+                    InstructionSetMode::Plain => {
+                        f.write_fmt(format_args!("Z{} = {};\n", reg, y))?
+                    }
+                    InstructionSetMode::CPP(_) => f.write_fmt(format_args!("return {};\n", y))?,
+                },
                 Instruction::Empty => f.write_fmt(format_args!("Z{} = NOP;\n", reg))?,
+            }
+        }
+
+        if let InstructionSetMode::CPP(s) = self.mode {
+            f.write_str("}\n")?;
+
+            if s.write_header_and_test {
+                let points: Vec<_> = (0..self.var_map.len())
+                    .map(|i| ((i + 1) as f64 / (self.var_map.len() + 2) as f64).to_string())
+                    .collect();
+
+                f.write_fmt(format_args!(
+                    "\nint main() {{\n\tstd::cout << evaluate({}) << std::endl;\n}}",
+                    points.join(",")
+                ))?;
             }
         }
 

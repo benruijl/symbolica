@@ -84,6 +84,13 @@ impl Rational {
         }
     }
 
+    pub fn denominator(&self) -> Integer {
+        match self {
+            Rational::Natural(_, d) => Integer::Natural(*d),
+            Rational::Large(r) => Integer::Large(r.denom().clone()),
+        }
+    }
+
     pub fn zero() -> Rational {
         Rational::Natural(0, 1)
     }

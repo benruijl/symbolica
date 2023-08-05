@@ -47,14 +47,24 @@ fn main() {
 
     let o_f64 = o.convert::<f64>();
 
-    println!(
-        "{}",
-        InstructionSetPrinter {
-            instr: &o,
-            var_map: poly.var_map.as_ref().unwrap(),
-            state: &state
-        }
-    );
+    println!("Writing output to evaluate.cpp");
+    std::fs::write(
+        "evaluate.cpp",
+        format!(
+            "{}",
+            InstructionSetPrinter {
+                instr: &o,
+                var_map: poly.var_map.as_ref().unwrap(),
+                state: &state,
+                mode: symbolica::poly::evaluate::InstructionSetMode::CPP(
+                    symbolica::poly::evaluate::InstructionSetModeCPPSettings {
+                        write_header_and_test: true
+                    }
+                )
+            }
+        ),
+    )
+    .unwrap();
 
     println!("Final number of operations={}", op_count);
     println!(

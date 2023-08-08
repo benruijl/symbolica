@@ -581,11 +581,48 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
 }
 
 impl HornerScheme<RationalField> {
+    fn get_constants(&self, constants: &mut HashMap<Rational, usize>, shift: usize) {
+        match self {
+            HornerScheme::Node(n) => {
+                if n.gcd != Rational::one() && !constants.contains_key(&n.gcd) {
+                    constants.insert(n.gcd.clone(), constants.len() + shift);
+                }
+                if let Some(content) = n.content_rest.0.as_ref() {
+                    content.get_constants(constants, shift);
+                }
+                if let Some(content) = n.content_rest.1.as_ref() {
+                    content.get_constants(constants, shift);
+                }
+            }
+            HornerScheme::Leaf(_, l) => {
+                if !constants.contains_key(l) {
+                    constants.insert(l.clone(), constants.len() + shift);
+                }
+            }
+        }
+    }
+
     /// Convert the Horner scheme to a list of instructions, suitable for numerical evaluation.
-    pub fn to_instr<'a>(&'a self) -> InstructionList {
-        let mut instr = vec![];
+    pub fn to_instr<'a>(&'a self, nvars: usize) -> InstructionList {
         let mut seen: HashMap<BorrowedHornerNode<'a, RationalField>, usize> = HashMap::default();
-        let v = self.to_instr_rec(&mut instr, &mut seen); // variable can be ignored, should point to last
+
+        // collect all unique constants
+
+        let mut constant_map: HashMap<Rational, usize> = HashMap::default();
+        self.get_constants(&mut constant_map, nvars);
+
+        let mut constants: Vec<_> = constant_map.iter().collect();
+        constants.sort_by_key(|(_, c)| *c);
+
+        let mut instr: Vec<_> = (0..nvars)
+            .map(|i| Instruction::Init(Variable::Var(i)))
+            .collect();
+
+        for x in constants {
+            instr.push(Instruction::Init(Variable::Constant(x.0.clone())));
+        }
+
+        let v = self.to_instr_rec(&mut instr, &mut seen, &mut constant_map);
         instr.push(Instruction::Yield(v));
         InstructionList { instr }
     }
@@ -594,7 +631,8 @@ impl HornerScheme<RationalField> {
         &'a self,
         instr: &mut Vec<Instruction<Rational>>,
         seen: &mut HashMap<BorrowedHornerNode<'a, RationalField>, usize>,
-    ) -> Variable<Rational> {
+        constant_seen: &mut HashMap<Rational, usize>,
+    ) -> usize {
         match self {
             HornerScheme::Node(n) => {
                 let nb = BorrowedHornerNode::from(n);
@@ -602,13 +640,11 @@ impl HornerScheme<RationalField> {
                 // check if n = var^pow*content+rest is seen before
                 if let Some(v) = seen.get(&nb) {
                     return if n.gcd != Rational::one() {
-                        instr.push(Instruction::Mul(vec![
-                            Variable::Index(*v),
-                            Variable::Constant(n.gcd.clone()),
-                        ]));
-                        Variable::Index(instr.len() - 1)
+                        let gcd = *constant_seen.get(&n.gcd).unwrap();
+                        instr.push(Instruction::Mul(vec![gcd, *v]));
+                        instr.len() - 1
                     } else {
-                        Variable::Index(*v)
+                        *v
                     };
                 }
 
@@ -617,63 +653,114 @@ impl HornerScheme<RationalField> {
                 b.rest = None;
 
                 let v1 = if let Some(v) = seen.get(&b) {
-                    Variable::Index(*v)
+                    *v
                 } else {
                     // check if var^pow is seen before
                     let vp = if n.pow > 1 {
                         let mut c = b.clone();
                         c.content = None;
                         if let Some(v) = seen.get(&c) {
-                            Variable::Index(*v)
+                            *v
                         } else {
-                            instr.push(Instruction::Mul(vec![Variable::Var(n.var, n.pow)]));
-                            seen.insert(c, instr.len() - 1);
-                            Variable::Index(instr.len() - 1)
+                            /// Binary exponentiation
+                            fn bin_exp(
+                                var: usize,
+                                p: usize,
+                                instr: &mut Vec<Instruction<Rational>>,
+                                seen: &mut HashMap<BorrowedHornerNode<'_, RationalField>, usize>,
+                            ) -> usize {
+                                if p == 1 {
+                                    return var;
+                                }
+
+                                // create a borrowed node with the proper power
+                                let mut h = AHasher::default();
+                                h.write_u8(0);
+                                var.hash(&mut h);
+                                p.hash(&mut h);
+                                let hash = h.finish();
+                                let a = BorrowedHornerNode {
+                                    var,
+                                    pow: p,
+                                    gcd: Rational::one(),
+                                    content: None,
+                                    rest: None,
+                                    hash: (hash, hash, hash),
+                                };
+
+                                if let Some(a) = seen.get(&a) {
+                                    return *a;
+                                }
+
+                                if p % 2 == 0 {
+                                    let p_half = bin_exp(var, p / 2, instr, seen);
+                                    instr.push(Instruction::Mul(vec![p_half.clone(), p_half]));
+                                } else {
+                                    let p_minone = bin_exp(var, p - 1, instr, seen);
+                                    instr.push(Instruction::Mul(vec![var, p_minone]));
+                                }
+
+                                seen.insert(a, instr.len() - 1);
+
+                                instr.len() - 1
+                            }
+
+                            bin_exp(n.var, n.pow, instr, seen)
                         }
                     } else {
-                        Variable::Var(n.var, n.pow)
+                        n.var
                     };
 
                     if let Some(s) = &n.content_rest.0 {
-                        let v1 = s.to_instr_rec(instr, seen);
-                        instr.push(Instruction::Mul(vec![vp, v1]));
+                        let v1 = s.to_instr_rec(instr, seen, constant_seen);
+
+                        if v1 < vp {
+                            instr.push(Instruction::Mul(vec![v1, vp]));
+                        } else {
+                            instr.push(Instruction::Mul(vec![vp, v1]));
+                        }
                         seen.insert(b, instr.len() - 1);
-                        Variable::Index(instr.len() - 1)
+                        instr.len() - 1
                     } else {
                         vp
                     }
                 };
 
                 let vr = if let Some(s) = &n.content_rest.1 {
-                    let v2 = s.to_instr_rec(instr, seen);
-                    instr.push(Instruction::Add(vec![v1, v2]));
+                    let v2 = s.to_instr_rec(instr, seen, constant_seen);
+
+                    if v1 < v2 {
+                        instr.push(Instruction::Add(vec![v1, v2]));
+                    } else {
+                        instr.push(Instruction::Add(vec![v2, v1]));
+                    }
+
                     seen.insert(nb, instr.len() - 1);
-                    Variable::Index(instr.len() - 1)
+                    instr.len() - 1
                 } else {
                     v1
                 };
 
                 if n.gcd != Rational::one() {
-                    instr.push(Instruction::Mul(vec![
-                        vr,
-                        Variable::Constant(n.gcd.clone()),
-                    ]));
-                    Variable::Index(instr.len() - 1)
+                    let gcd = *constant_seen.get(&n.gcd).unwrap();
+                    instr.push(Instruction::Mul(vec![gcd, vr]));
+                    instr.len() - 1
                 } else {
                     vr
                 }
             }
-            HornerScheme::Leaf(_, l) => Variable::Constant(l.clone()),
+            HornerScheme::Leaf(_, l) => *constant_seen.get(l).unwrap(),
         }
     }
 }
 
 // An arithmetical instruction that is part of an `InstructionList`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Instruction<N: NumericalFloatLike> {
-    Add(Vec<Variable<N>>),
-    Mul(Vec<Variable<N>>),
-    Yield(Variable<N>),
+    Init(Variable<N>),
+    Add(Vec<usize>),
+    Mul(Vec<usize>),
+    Yield(usize),
     Empty,
 }
 
@@ -681,45 +768,8 @@ pub enum Instruction<N: NumericalFloatLike> {
 // which may refer to another instruction in the instruction list.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Variable<N: NumericalFloatLike> {
-    Index(usize),
-    Var(usize, usize), // var^pow
+    Var(usize),
     Constant(N),
-}
-
-impl<N: NumericalFloatLike> PartialOrd for Variable<N> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self, other) {
-            (Variable::Index(i1), Variable::Index(i2)) => i1.partial_cmp(i2),
-            (Variable::Index(_), _) => Some(std::cmp::Ordering::Less),
-            (_, Variable::Index(_)) => Some(std::cmp::Ordering::Greater),
-            (Variable::Var(v1, _), Variable::Var(v2, _)) => v1.partial_cmp(v2),
-            (Variable::Var(_, _), _) => Some(std::cmp::Ordering::Less),
-            (_, Variable::Var(_, _)) => Some(std::cmp::Ordering::Greater),
-            (Variable::Constant(_), Variable::Constant(_)) => None, // should never be needed
-        }
-    }
-}
-
-impl<N: NumericalFloatLike + Eq> Eq for Variable<N> {}
-
-impl<N: NumericalFloatLike + Eq + Hash> Ord for Variable<N> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
-    }
-}
-
-impl<N: NumericalFloatLike + Eq + Hash> Hash for Variable<N> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        core::mem::discriminant(self).hash(state);
-        match self {
-            Variable::Index(i) => i.hash(state),
-            Variable::Var(v, p) => {
-                v.hash(state);
-                p.hash(state);
-            }
-            Variable::Constant(c) => c.hash(state),
-        }
-    }
 }
 
 impl Variable<Rational> {
@@ -730,19 +780,9 @@ impl Variable<Rational> {
         mode: InstructionSetMode,
     ) -> String {
         match self {
-            Variable::Index(i) => format!("Z{}", i),
-            Variable::Var(v, p) => {
+            Variable::Var(v) => {
                 let var = state.get_name(var_map[*v]).unwrap();
-                if *p == 1 {
-                    format!("{}", var.as_str())
-                } else if *p == 2 {
-                    format!("{0}*{0}", var)
-                } else {
-                    match mode {
-                        InstructionSetMode::Plain => format!("{}^{}", v, p),
-                        InstructionSetMode::CPP(_) => format!("std::pow({},{})", v, p),
-                    }
-                }
+                format!("{}", var.as_str())
             }
             Variable::Constant(c) => match mode {
                 InstructionSetMode::Plain => format!("{}", c),
@@ -761,15 +801,7 @@ impl Variable<Rational> {
 impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Variable::Index(i) => f.write_fmt(format_args!("Z{}", i)),
-            Variable::Var(v, p) => {
-                if *p == 1 {
-                    f.write_fmt(format_args!("x{}", v))
-                } else {
-                    f.write_fmt(format_args!("x{}^{}", v, p))
-                }
-            }
-
+            Variable::Var(v) => f.write_fmt(format_args!("x{}", v)),
             Variable::Constant(c) => c.fmt(f),
         }
     }
@@ -778,34 +810,14 @@ impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
 impl<N: NumericalFloatLike> Variable<N> {
     pub fn convert<'a, NO: NumericalFloatLike + From<&'a N>>(&'a self) -> Variable<NO> {
         match self {
-            Variable::Index(i) => Variable::Index(*i),
-            Variable::Var(v, p) => Variable::Var(*v, *p),
+            Variable::Var(v) => Variable::Var(*v),
             Variable::Constant(c) => Variable::Constant(NO::from(c)),
-        }
-    }
-
-    #[inline(always)]
-    pub fn evaluate(&self, samples: &[N], instr_eval: &[N]) -> N {
-        // TODO: write everything in registers to avoid branching
-        match self {
-            Variable::Index(i) => instr_eval[*i].clone(),
-            Variable::Var(v, p) => {
-                if *p == 2 {
-                    samples[*v].mul(&samples[*v])
-                } else if *p == 3 {
-                    samples[*v].mul(&samples[*v]).mul(&samples[*v])
-                } else {
-                    samples[*v].pow(*p as u64)
-                }
-            }
-            Variable::Constant(c) => c.clone(),
         }
     }
 
     pub fn op_count(&self, is_mul: bool) -> isize {
         match self {
-            Variable::Index(_) => 1,
-            Variable::Var(_, p) => *p as isize,
+            Variable::Var(_) => 1,
             Variable::Constant(l) => {
                 if is_mul && l.abs().is_one() {
                     0
@@ -833,33 +845,39 @@ impl InstructionList {
                 Instruction::Add(a) => {
                     let mut r = Rational::zero();
                     for x in a {
-                        r += &x.evaluate(samples, &eval);
+                        r += &eval[*x];
                     }
                     eval[reg] = r;
                 }
                 Instruction::Mul(m) => {
                     let mut r = Rational::one();
                     for x in m {
-                        r *= &x.evaluate(samples, &eval);
+                        r *= &eval[*x];
                     }
                     eval[reg] = r;
                 }
-                Instruction::Yield(y) => return y.evaluate(samples, &eval),
+                Instruction::Yield(y) => return eval[*y].clone(),
                 Instruction::Empty => panic!("Evaluation of empty instruction requested"),
+                Instruction::Init(i) => match i {
+                    Variable::Var(v) => eval[reg] = samples[*v].clone(),
+                    Variable::Constant(c) => eval[reg] = c.clone(),
+                },
             }
         }
         unreachable!()
     }
 
     /// Return the number of arithmetical operations required for evaluation.
-    pub fn op_count(&self) -> isize {
+    pub fn op_count(&self) -> usize {
         let mut sum = 0;
+        // TODO: detect -1 in init and discount it to stay in line with the FORM counting
         for x in &self.instr {
             sum += match x {
-                Instruction::Add(a) => a.iter().map(|x| x.op_count(false)).sum::<isize>() - 1,
-                Instruction::Mul(m) => m.iter().map(|x| x.op_count(true)).sum::<isize>() - 1,
+                Instruction::Add(a) => a.len() - 1,
+                Instruction::Mul(m) => m.len() - 1,
                 Instruction::Yield(_) => 0,
                 Instruction::Empty => 0,
+                Instruction::Init(_) => 0,
             };
         }
         sum
@@ -869,68 +887,54 @@ impl InstructionList {
     pub fn fuse_operations(&mut self) {
         let mut use_count: Vec<usize> = vec![0; self.instr.len()];
 
-        for x in &self.instr {
+        for (i, x) in self.instr.iter().enumerate() {
             match x {
                 Instruction::Add(a) => {
-                    for v in a {
-                        if let Variable::Index(ii) = v {
-                            if let Instruction::Mul(_) = self.instr[*ii] {
-                                use_count[*ii] = 2; // different type, so disable
-                            } else {
-                                use_count[*ii] += 1;
-                            }
+                    for &v in a {
+                        if let Instruction::Mul(_) = self.instr[v] {
+                            use_count[v] = 2; // different type, so disable
+                        } else {
+                            use_count[v] += 1;
                         }
                     }
                 }
                 Instruction::Mul(m) => {
-                    for v in m {
-                        if let Variable::Index(ii) = v {
-                            if let Instruction::Add(_) = self.instr[*ii] {
-                                use_count[*ii] = 2;
-                            } else {
-                                use_count[*ii] += 1;
-                            }
+                    for &v in m {
+                        if let Instruction::Add(_) = self.instr[v] {
+                            use_count[v] = 2;
+                        } else {
+                            use_count[v] += 1;
                         }
                     }
                 }
                 Instruction::Yield(v) => {
-                    if let Variable::Index(ii) = v {
-                        use_count[*ii] = 2; // always different type
-                    }
+                    use_count[*v] = 2; // always different type
                 }
                 Instruction::Empty => {}
+                Instruction::Init(_) => {
+                    use_count[i] = 2;
+                }
             };
         }
 
         for i in 0..self.instr.len() {
             // we could be in chain of single use -> single use -> etc so work from the start
             if let Instruction::Add(a) | Instruction::Mul(a) = &self.instr[i] {
-                if a.iter().any(|v| {
-                    if let Variable::Index(ii) = v {
-                        use_count[*ii] == 1
-                    } else {
-                        false
-                    }
-                }) {
+                if a.iter().any(|v| use_count[*v] == 1) {
                     let mut instr = std::mem::replace(&mut self.instr[i], Instruction::Empty);
 
                     if let Instruction::Add(a) | Instruction::Mul(a) = &mut instr {
                         let mut new_a = Vec::with_capacity(a.len());
                         for v in a.drain(..) {
-                            if let Variable::Index(ii) = v {
-                                if use_count[ii] == 1 {
-                                    if let Instruction::Add(aa) | Instruction::Mul(aa) =
-                                        &self.instr[ii]
-                                    {
-                                        for x in aa {
-                                            new_a.push(x.clone());
-                                        }
-                                        self.instr[ii] = Instruction::Empty;
-                                    } else {
-                                        unreachable!()
+                            if use_count[v] == 1 {
+                                if let Instruction::Add(aa) | Instruction::Mul(aa) = &self.instr[v]
+                                {
+                                    for x in aa {
+                                        new_a.push(x.clone());
                                     }
+                                    self.instr[v] = Instruction::Empty;
                                 } else {
-                                    new_a.push(v);
+                                    unreachable!()
                                 }
                             } else {
                                 new_a.push(v);
@@ -964,17 +968,14 @@ impl InstructionList {
             match &mut x {
                 Instruction::Add(a) | Instruction::Mul(a) => {
                     for v in a {
-                        if let Variable::Index(ii) = v {
-                            *ii -= cum_step[*ii];
-                        }
+                        *v -= cum_step[*v];
                     }
                 }
                 Instruction::Yield(v) => {
-                    if let Variable::Index(ii) = v {
-                        *ii -= cum_step[*ii];
-                    }
+                    *v -= cum_step[*v];
                 }
                 Instruction::Empty => {}
+                Instruction::Init(_) => {}
             };
             new_instr.push(x);
         }
@@ -989,8 +990,9 @@ impl InstructionList {
     /// are larger than pairs can also be extracted.
     pub fn common_pair_elimination(&mut self) -> bool {
         let mut pair_count = HashMap::default();
+        let mut last_init = 0;
 
-        for x in &self.instr {
+        for (i, x) in self.instr.iter().enumerate() {
             match x {
                 Instruction::Add(m) | Instruction::Mul(m) => {
                     for i in 0..m.len() - 1 {
@@ -1002,6 +1004,9 @@ impl InstructionList {
                     }
                 }
                 Instruction::Yield(_) | Instruction::Empty => {}
+                Instruction::Init(_) => {
+                    last_init = i + 1;
+                }
             };
         }
 
@@ -1014,12 +1019,7 @@ impl InstructionList {
 
         // TODO: instead of only doing the first, do all non-overlapping replacements
 
-        let insert_index = match (&v[0].0 .1, &v[0].0 .2) {
-            (Variable::Index(i1), Variable::Index(i2)) => i1.max(i2) + 1,
-            (Variable::Index(i1), _) => i1 + 1,
-            (_, Variable::Index(i2)) => i2 + 1,
-            _ => 0,
-        };
+        let insert_index = last_init.max(&v[0].0 .1 + 1).max(&v[0].0 .2 + 1);
 
         self.instr.insert(
             insert_index,
@@ -1046,15 +1046,14 @@ impl InstructionList {
                     };
 
                     for v in &mut *a {
-                        if let Variable::Index(ii) = v {
-                            if *ii >= insert_index {
-                                *ii += 1;
-                            }
+                        if *v >= insert_index {
+                            *v += 1;
                         }
                     }
 
                     if hit {
-                        a.push(Variable::Index(insert_index));
+                        a.push(insert_index);
+                        a.sort();
                     }
                 }
                 Instruction::Mul(m) => {
@@ -1066,25 +1065,23 @@ impl InstructionList {
                     };
 
                     for v in &mut *m {
-                        if let Variable::Index(ii) = v {
-                            if *ii >= insert_index {
-                                *ii += 1;
-                            }
+                        if *v >= insert_index {
+                            *v += 1;
                         }
                     }
 
                     if hit {
-                        m.push(Variable::Index(insert_index));
+                        m.push(insert_index);
+                        m.sort()
                     }
                 }
                 Instruction::Yield(v) => {
-                    if let Variable::Index(ii) = v {
-                        if *ii >= insert_index {
-                            *ii += 1;
-                        }
+                    if *v >= insert_index {
+                        *v += 1;
                     }
                 }
                 Instruction::Empty => {}
+                Instruction::Init(_) => {}
             };
         }
 
@@ -1094,25 +1091,20 @@ impl InstructionList {
             match x {
                 Instruction::Add(a) | Instruction::Mul(a) => {
                     if a.len() == 1 {
-                        if let Variable::Index(ii) = a[0] {
-                            map[i] = ii;
-                            *x = Instruction::Empty;
-                            continue;
-                        }
+                        map[i] = a[0];
+                        *x = Instruction::Empty;
+                        continue;
                     }
 
                     for v in a {
-                        if let Variable::Index(ii) = v {
-                            *ii = map[*ii];
-                        }
+                        *v = map[*v];
                     }
                 }
                 Instruction::Yield(v) => {
-                    if let Variable::Index(ii) = v {
-                        *ii = map[*ii];
-                    }
+                    *v = map[*v];
                 }
                 Instruction::Empty => {}
+                Instruction::Init(_) => {}
             };
         }
 
@@ -1137,18 +1129,21 @@ impl InstructionList {
             match x {
                 Instruction::Add(a) | Instruction::Mul(a) => {
                     for v in a {
-                        if let Variable::Index(ii) = v {
-                            last_use[*ii] = i;
-                        }
+                        last_use[*v] = i;
                     }
                 }
                 Instruction::Yield(v) => {
-                    if let Variable::Index(ii) = v {
-                        last_use[*ii] = i;
-                    }
+                    last_use[*v] = i;
                 }
-                Instruction::Empty => {}
+                Instruction::Empty | Instruction::Init(_) => {}
             };
+        }
+
+        // prevent init slots from being overwritten
+        for (i, x) in self.instr.iter().enumerate() {
+            if let Instruction::Init(_) = x {
+                last_use[i] = self.instr.len();
+            }
         }
 
         let mut rename_map: Vec<_> = (0..self.instr.len()).collect();
@@ -1172,17 +1167,13 @@ impl InstructionList {
             match &mut x {
                 Instruction::Add(a) | Instruction::Mul(a) => {
                     for v in a {
-                        if let Variable::Index(ii) = v {
-                            *ii = rename_map[*ii];
-                        }
+                        *v = rename_map[*v];
                     }
                 }
                 Instruction::Yield(v) => {
-                    if let Variable::Index(ii) = v {
-                        *ii = rename_map[*ii];
-                    }
+                    *v = rename_map[*v];
                 }
-                Instruction::Empty => {}
+                Instruction::Empty | Instruction::Init(_) => {}
             };
 
             output.push((reg, x));
@@ -1197,6 +1188,111 @@ pub struct InstructionListOutput<N: NumericalFloatLike> {
     instr: Vec<(usize, Instruction<N>)>,
 }
 
+/// An efficient structure that performs a range of operations.
+/// `Add(reg,index,len)` means: `eval[reg] = eval[indices[index]] +...+ eval[indices[index_pos]]`.
+enum InstructionRange {
+    Add(usize, usize, usize), // reg, index, len
+    Mul(usize, usize, usize),
+}
+/// A fast polynomial evaluator that evaluates polynomials written
+/// in the form:
+/// ```
+/// Z0 = x
+/// Z1 = y
+/// Z2 = 2.
+/// Z3 = 5.
+/// Z4 = Z0*Z2
+/// Z5 = Z3+Z1+Z0
+/// Z4 = Z4*Z3
+/// ```
+/// where `Z0,Z1` is the range of sample points that get overwritten
+/// at every call, `Z2,Z3` is a range of numerical constants
+/// that are set only once, and `Z4,Z5` are instructions that
+/// get overwritten at every call. These instructions only use
+/// indices in the `Z` array and their evaluation can therefore
+/// be done efficiently.
+pub struct InstructionEvaluator<N: NumericalFloatLike> {
+    instr: Vec<InstructionRange>,
+    indices: Vec<usize>, // 
+    eval: Vec<N>, // evaluation buffer
+    num_init: usize, // number of initialization cells
+}
+
+impl<N: NumericalFloatLike> InstructionEvaluator<N> {
+    /// Evaluate a polynomial at a given sample point.
+    /// 
+    /// The user must ensure that `samples` has the
+    /// same length as the number of variables in the
+    /// polynomial (including non-occurring ones).
+    pub fn evaluate(&mut self, samples: &[N]) -> N {
+        macro_rules! get_eval {
+            ($i:expr) => {
+                unsafe {
+                    self.eval
+                        .get_unchecked(*self.indices.get_unchecked($i))
+                        .clone()
+                }
+            };
+        }
+
+        // write the sample point into the evaluation buffer
+        // all constant numbers are still in the evaluation buffer
+        self.eval[..samples.len()].clone_from_slice(samples);
+
+        for x in &self.instr {
+            match x {
+                InstructionRange::Add(reg, pos, len) => {
+                    // unroll the loop for additional performance
+                    *unsafe { self.eval.get_unchecked_mut(*reg as usize) } = match len {
+                        2 => get_eval!(*pos).add(&get_eval!(*pos + 1)),
+                        3 => get_eval!(*pos)
+                            .add(&get_eval!(*pos + 1))
+                            .add(&get_eval!(*pos + 2)),
+                        4 => get_eval!(*pos)
+                            .add(&get_eval!(*pos + 1))
+                            .add(&get_eval!(*pos + 2))
+                            .add(&get_eval!(*pos + 3)),
+                        _ => {
+                            let mut tmp = N::zero();
+                            for aa in unsafe {
+                                self.indices
+                                    .get_unchecked(*pos as usize..(pos + len) as usize)
+                            } {
+                                tmp += unsafe { self.eval.get_unchecked(*aa as usize) };
+                            }
+                            tmp
+                        }
+                    };
+                }
+                InstructionRange::Mul(reg, pos, len) => {
+                    *unsafe { self.eval.get_unchecked_mut(*reg as usize) } = match len {
+                        2 => get_eval!(*pos).mul(&get_eval!(*pos + 1)),
+                        3 => get_eval!(*pos)
+                            .mul(&get_eval!(*pos + 1))
+                            .mul(&get_eval!(*pos + 2)),
+                        4 => get_eval!(*pos)
+                            .mul(&get_eval!(*pos + 1))
+                            .mul(&get_eval!(*pos + 2))
+                            .mul(&get_eval!(*pos + 3)),
+                        _ => {
+                            let mut tmp = N::one();
+                            for aa in unsafe {
+                                self.indices
+                                    .get_unchecked(*pos as usize..(pos + len) as usize)
+                            } {
+                                tmp *= unsafe { self.eval.get_unchecked(*aa as usize) };
+                            }
+                            tmp
+                        }
+                    };
+                }
+            }
+        }
+
+        self.eval[self.num_init].clone()
+    }
+}
+
 impl<N: NumericalFloatLike> InstructionListOutput<N> {
     /// Convert all numbers in the instruction list from the field `N` to the field `NO`.
     pub fn convert<'a, NO: NumericalFloatLike + From<&'a N>>(
@@ -1206,71 +1302,56 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
 
         for (reg, inst) in &self.instr {
             let new_instr = match inst {
-                Instruction::Add(a) => Instruction::Add(a.iter().map(|v| v.convert()).collect()),
-                Instruction::Mul(a) => Instruction::Mul(a.iter().map(|v| v.convert()).collect()),
-                Instruction::Yield(y) => Instruction::Yield(y.convert()),
+                Instruction::Add(a) => Instruction::Add(a.clone()),
+                Instruction::Mul(a) => Instruction::Mul(a.clone()),
+                Instruction::Yield(y) => Instruction::Yield(*y),
                 Instruction::Empty => unreachable!("No empty slots allowed in output"),
+                Instruction::Init(v) => Instruction::Init(v.convert()),
             };
             instr.push((*reg, new_instr));
         }
         InstructionListOutput { instr }
     }
 
-    /// Evaluate the instructions and yield the result.
-    pub fn evaluate(&self, samples: &[N]) -> N {
-        let max_register = self.instr.iter().map(|r| r.0).max().unwrap_or(0);
-        let mut eval: Vec<N> = vec![N::zero(); max_register + 1];
+    /// Create a fast numerical evaluator.
+    pub fn evaluator(&self) -> InstructionEvaluator<N> {
+        let mut eval = vec![N::zero(); self.instr.len()];
+        let mut init = 0;
 
-        for (reg, x) in &self.instr {
-            match x {
+        let mut simple_instr = vec![];
+        let mut indices: Vec<usize> = vec![];
+        for (reg, ins) in &self.instr {
+            match ins {
+                Instruction::Init(x) => {
+                    // fill in all constants into the buffer
+                    // these entries will never be overwritten
+                    if let Variable::Constant(c) = x {
+                        eval[*reg] = c.clone();
+                    }
+
+                    init += 1;
+                }
                 Instruction::Add(a) => {
-                    let mut r = N::zero();
-                    for x in a {
-                        r += &x.evaluate(samples, &eval);
-                    }
-                    eval[*reg] = r;
+                    let len = indices.len();
+                    indices.extend(a);
+                    simple_instr.push(InstructionRange::Add(*reg, len, indices.len() - len));
                 }
-                Instruction::Mul(m) => {
-                    let mut r = N::one();
-                    for x in m {
-                        r *= &x.evaluate(samples, &eval);
-                    }
-                    eval[*reg] = r;
+                Instruction::Mul(a) => {
+                    let len = indices.len();
+                    indices.extend(a);
+                    simple_instr.push(InstructionRange::Mul(*reg, len, indices.len() - len));
                 }
-                Instruction::Yield(y) => return y.evaluate(samples, &eval),
-                Instruction::Empty => panic!("Evaluation of empty instruction requested"),
-            }
-        }
-        unreachable!()
-    }
-
-    pub fn evaluate_faster(&self, samples: &[N], eval: &mut Vec<N>) -> N {
-        let max_register = self.instr.iter().map(|r| r.0).max().unwrap_or(0);
-        eval.clear();
-        eval.resize(max_register + 1, N::zero());
-
-        let mut tmp;
-        for (reg, x) in &self.instr {
-            match x {
-                Instruction::Add(a) => {
-                    tmp = N::zero();
-                    for x in a {
-                        tmp += &x.evaluate(samples, &eval);
-                    }
-                    eval[*reg] = tmp;
-                }
-                Instruction::Mul(m) => {
-                    tmp = N::one();
-                    for x in m {
-                        tmp *= &x.evaluate(samples, &eval);
-                    }
-                    eval[*reg] = tmp;
-                }
-                Instruction::Yield(y) => return y.evaluate(samples, &eval),
+                Instruction::Yield(_) => {} //skip
                 Instruction::Empty => {}
             }
         }
-        N::zero() // unreachable
+
+        InstructionEvaluator {
+            instr: simple_instr,
+            indices,
+            eval,
+            num_init: init,
+        }
     }
 }
 
@@ -1296,6 +1377,9 @@ impl std::fmt::Display for InstructionList {
                 ))?,
                 Instruction::Yield(y) => f.write_fmt(format_args!("Z{} = {};\n", reg, y))?,
                 Instruction::Empty => f.write_fmt(format_args!("Z{} = NOP;\n", reg))?,
+                Instruction::Init(i) => {
+                    f.write_fmt(format_args!("Z{} = {};\n", reg, i.to_string()))?
+                }
             }
         }
 
@@ -1333,18 +1417,10 @@ pub struct InstructionSetPrinter<'a> {
     pub mode: InstructionSetMode,
 }
 
-impl<'a> InstructionSetPrinter<'a> {
-    /*pub fn new(inst) -> InstructionSetPrinter<'a, N> {
-        InstructionSetPrinter { instr: (), var_map: (), state: (), mode: () }
-    }*/
-}
-
 impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let InstructionSetMode::CPP(s) = self.mode {
             if s.write_header_and_test {
-                f.write_str("#include <cstdlib>\n")?;
-                f.write_str("#include <cmath>\n")?;
                 f.write_str("#include <iostream>\n")?;
                 f.write_str("\n")?;
             }
@@ -1375,7 +1451,7 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                     "\tZ{} = {};\n",
                     reg,
                     a.iter()
-                        .map(|x| x.to_pretty_string(self.var_map, self.state, self.mode))
+                        .map(|x| format!("Z{}", x))
                         .collect::<Vec<_>>()
                         .join("+")
                 ))?,
@@ -1383,17 +1459,22 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                     "\tZ{} = {};\n",
                     reg,
                     m.iter()
-                        .map(|x| x.to_pretty_string(self.var_map, self.state, self.mode))
+                        .map(|x| format!("Z{}", x))
                         .collect::<Vec<_>>()
                         .join("*")
                 ))?,
                 Instruction::Yield(y) => match self.mode {
                     InstructionSetMode::Plain => {
-                        f.write_fmt(format_args!("Z{} = {};\n", reg, y))?
+                        f.write_fmt(format_args!("\tZ{} = {};\n", reg, y))?
                     }
-                    InstructionSetMode::CPP(_) => f.write_fmt(format_args!("return {};\n", y))?,
+                    InstructionSetMode::CPP(_) => f.write_fmt(format_args!("\treturn {};\n", y))?,
                 },
-                Instruction::Empty => f.write_fmt(format_args!("Z{} = NOP;\n", reg))?,
+                Instruction::Empty => f.write_fmt(format_args!("\tZ{} = NOP;\n", reg))?,
+                Instruction::Init(x) => f.write_fmt(format_args!(
+                    "\tZ{} = {};\n",
+                    reg,
+                    x.to_pretty_string(self.var_map, self.state, self.mode)
+                ))?,
             }
         }
 

@@ -24,7 +24,7 @@ fn main() {
         .unwrap();
 
     let (h, scheme) = poly.optimize_horner_scheme(4000);
-    let mut i = h.to_instr();
+    let mut i = h.to_instr(poly.nvars);
 
     println!(
         "Number of operations={}, with scheme={:?}",
@@ -66,9 +66,11 @@ fn main() {
     )
     .unwrap();
 
+    let mut evaluator = o_f64.evaluator();
+
     println!("Final number of operations={}", op_count);
     println!(
         "Evaluation = {}",
-        o_f64.evaluate(&(0..poly.nvars).map(|x| x as f64 + 1.).collect::<Vec<_>>())
+        evaluator.evaluate(&(0..poly.nvars).map(|x| x as f64 + 1.).collect::<Vec<_>>())
     );
 }

@@ -515,10 +515,32 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
     pub fn optimize_horner_scheme(
         &self,
         num_tries: usize,
-    ) -> (HornerScheme<RationalField>, Vec<usize>) {
+    ) -> (HornerScheme<RationalField>, usize, Vec<usize>) {
+        let (mut hs, op_count, scheme) =
+            HornerScheme::optimize_multiple(std::slice::from_ref(&self), num_tries);
+        (hs.pop().unwrap(), op_count, scheme)
+    }
+}
+
+impl HornerScheme<RationalField> {
+    pub fn optimize_multiple<E: Exponent>(
+        polys: &[&MultivariatePolynomial<RationalField, E>],
+        num_tries: usize,
+    ) -> (Vec<HornerScheme<RationalField>>, usize, Vec<usize>) {
+        if polys.is_empty() {
+            return (vec![], 0, vec![]);
+        }
+
+        assert!(
+            polys
+                .windows(2)
+                .all(|r| r[0].var_map == r[1].var_map && r[0].nvars == r[1].nvars),
+            "Variable maps of all polynomials must be the same"
+        );
+
         // the starting scheme is the descending order of occurrence of variables
-        let mut occurrence: Vec<_> = (0..self.nvars).map(|x| (x, 0)).collect();
-        for es in self.exponents.chunks(self.nvars) {
+        let mut occurrence: Vec<_> = (0..polys[0].nvars).map(|x| (x, 0)).collect();
+        for es in polys[0].exponents.chunks(polys[0].nvars) {
             for ((_, o), e) in occurrence.iter_mut().zip(es) {
                 if *e > E::zero() {
                     *o += 1;
@@ -529,44 +551,77 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
 
         let mut scheme: Vec<_> = occurrence.into_iter().map(|(v, _)| v).collect();
 
-        let mut indices: Vec<_> = (0..self.nterms).collect();
-        let mut power_sub = vec![E::zero(); self.nvars];
+        let mut indices: Vec<_> = vec![];
+        let mut power_sub = vec![E::zero(); polys[0].nvars];
 
         let mut horner_boxes = vec![];
 
-        let mut best =
-            self.to_horner_scheme_impl(&scheme, &mut indices, 0, &mut power_sub, &mut horner_boxes);
-        let mut best_score = BorrowedHornerScheme::from(&best).op_count_cse();
+        let mut best = Vec::with_capacity(polys.len());
+        let mut best_score = 0;
+        for x in polys {
+            indices.clear();
+            indices.extend(0..x.nterms);
 
-        let mut best_scheme = scheme.clone();
-        let mut rng = thread_rng();
-
-        // TODO: for few variables, test all permutations
-        for i in 0..num_tries {
-            let a = rng.gen_range(0..self.nvars);
-            let b = rng.gen_range(0..self.nvars);
-            scheme.swap(a, b);
-
-            let mut new = self.to_horner_scheme_impl(
+            let h = x.to_horner_scheme_impl(
                 &scheme,
                 &mut indices,
                 0,
                 &mut power_sub,
                 &mut horner_boxes,
             );
+            best_score += BorrowedHornerScheme::from(&h).op_count_cse();
+            best.push(h);
+        }
 
-            // TODO: recycle
+        let mut best_scheme = scheme.clone();
+        let mut rng = thread_rng();
+
+        let mut new_best = Vec::with_capacity(polys.len());
+
+        // TODO: for few variables, test all permutations
+        for i in 0..num_tries {
+            let a = rng.gen_range(0..polys[0].nvars);
+            let b = rng.gen_range(0..polys[0].nvars);
+            scheme.swap(a, b);
+
+            let mut new_oc = 0;
+
+            // use the same hash set for all polynomials
             let mut hash_set = HashSet::with_capacity(best_score * 2);
-            let new_oc = BorrowedHornerScheme::from(&new).op_count_cse_impl(&mut hash_set);
+            for x in polys {
+                indices.clear();
+                indices.extend(0..x.nterms);
+
+                let h = x.to_horner_scheme_impl(
+                    &scheme,
+                    &mut indices,
+                    0,
+                    &mut power_sub,
+                    &mut horner_boxes,
+                );
+                new_best.push(h);
+            }
+
+            for x in &new_best {
+                new_oc += BorrowedHornerScheme::from(x).op_count_cse_impl(&mut hash_set);
+            }
 
             if new_oc <= best_score {
                 // accept move
-                best.cleanup(&mut horner_boxes);
-                best = new;
+                for mut x in best.drain(..) {
+                    x.cleanup(&mut horner_boxes);
+                }
+
+                for x in new_best.drain(..) {
+                    best.push(x);
+                }
+
                 best_score = new_oc;
                 best_scheme.copy_from_slice(&scheme);
             } else {
-                new.cleanup(&mut horner_boxes);
+                for mut x in new_best.drain(..) {
+                    x.cleanup(&mut horner_boxes);
+                }
             }
 
             // see if we reject the change
@@ -576,11 +631,9 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
             }
         }
 
-        (best, best_scheme)
+        (best, best_score, best_scheme)
     }
-}
 
-impl HornerScheme<RationalField> {
     fn get_constants(&self, constants: &mut HashMap<Rational, usize>, shift: usize) {
         match self {
             HornerScheme::Node(n) => {
@@ -602,14 +655,19 @@ impl HornerScheme<RationalField> {
         }
     }
 
-    /// Convert the Horner scheme to a list of instructions, suitable for numerical evaluation.
-    pub fn to_instr<'a>(&'a self, nvars: usize) -> InstructionList {
-        let mut seen: HashMap<BorrowedHornerNode<'a, RationalField>, usize> = HashMap::default();
+    /// Convert the Horner schemes to a list of instructions, suitable for numerical evaluation.
+    pub fn to_instr_multiple(
+        schemes: &[HornerScheme<RationalField>],
+        nvars: usize,
+    ) -> InstructionList {
+        let mut seen: HashMap<BorrowedHornerNode<'_, RationalField>, usize> = HashMap::default();
 
         // collect all unique constants
-
         let mut constant_map: HashMap<Rational, usize> = HashMap::default();
-        self.get_constants(&mut constant_map, nvars);
+
+        for s in schemes {
+            s.get_constants(&mut constant_map, nvars);
+        }
 
         let mut constants: Vec<_> = constant_map.iter().collect();
         constants.sort_by_key(|(_, c)| *c);
@@ -622,9 +680,17 @@ impl HornerScheme<RationalField> {
             instr.push(Instruction::Init(Variable::Constant(x.0.clone())));
         }
 
-        let v = self.to_instr_rec(&mut instr, &mut seen, &mut constant_map);
-        instr.push(Instruction::Yield(v));
+        for s in schemes {
+            let v = s.to_instr_rec(&mut instr, &mut seen, &mut constant_map);
+            instr.push(Instruction::Yield(v));
+        }
+
         InstructionList { instr }
+    }
+
+    /// Convert the Horner scheme to a list of instructions, suitable for numerical evaluation.
+    pub fn to_instr<'a>(&'a self, nvars: usize) -> InstructionList {
+        Self::to_instr_multiple(std::slice::from_ref(self), nvars)
     }
 
     fn to_instr_rec<'a>(
@@ -838,7 +904,7 @@ impl InstructionList {
     /// Evaluate the instructions and yield the result.
     /// For a more efficient evaluation, call `to_output()` first.
     pub fn evaluate(&self, samples: &[Rational]) -> Rational {
-        let mut eval: Vec<Rational> = vec![Rational::zero(); self.instr.len() + 1];
+        let mut eval: Vec<Rational> = vec![Rational::zero(); self.instr.len()];
 
         for (reg, x) in self.instr.iter().enumerate() {
             match x {
@@ -856,12 +922,12 @@ impl InstructionList {
                     }
                     eval[reg] = r;
                 }
-                Instruction::Yield(y) => return eval[*y].clone(),
-                Instruction::Empty => panic!("Evaluation of empty instruction requested"),
                 Instruction::Init(i) => match i {
                     Variable::Var(v) => eval[reg] = samples[*v].clone(),
                     Variable::Constant(c) => eval[reg] = c.clone(),
                 },
+                Instruction::Yield(y) => return eval[*y].clone(),
+                Instruction::Empty => {}
             }
         }
         unreachable!()
@@ -1019,60 +1085,59 @@ impl InstructionList {
 
         // TODO: instead of only doing the first, do all non-overlapping replacements
 
-        let insert_index = last_init.max(&v[0].0 .1 + 1).max(&v[0].0 .2 + 1);
+        let (is_add, idx1, idx2) = v[0].0;
 
+        let insert_index = last_init.max(idx1 + 1).max(idx2 + 1);
         self.instr.insert(
             insert_index,
-            if v[0].0 .0 {
-                Instruction::Add(vec![v[0].0 .1.clone(), v[0].0 .2.clone()])
+            if is_add {
+                Instruction::Add(vec![idx1, idx2])
             } else {
-                Instruction::Mul(vec![v[0].0 .1.clone(), v[0].0 .2.clone()])
+                Instruction::Mul(vec![idx1, idx2])
             },
         );
 
-        // now remove the old labels and renumber all
-        for (i, x) in self.instr.iter_mut().enumerate() {
-            if i <= insert_index {
-                continue;
-            }
+        // substitute the pair in all instructions
+        for x in self.instr.iter_mut().skip(insert_index + 1) {
+            let same_op = is_add == matches!(x, Instruction::Add(_));
 
             match x {
-                Instruction::Add(a) => {
-                    let hit = if v[0].0 .0 && a.contains(&v[0].0 .1) && a.contains(&v[0].0 .2) {
-                        a.retain(|x| x != &v[0].0 .1 && x != &v[0].0 .2);
-                        true
-                    } else {
-                        false
-                    };
-
+                Instruction::Add(a) | Instruction::Mul(a) => {
                     for v in &mut *a {
                         if *v >= insert_index {
                             *v += 1;
                         }
                     }
 
-                    if hit {
-                        a.push(insert_index);
-                        a.sort();
-                    }
-                }
-                Instruction::Mul(m) => {
-                    let hit = if !v[0].0 .0 && m.contains(&v[0].0 .1) && m.contains(&v[0].0 .2) {
-                        m.retain(|x| x != &v[0].0 .1 && x != &v[0].0 .2);
-                        true
-                    } else {
-                        false
-                    };
-
-                    for v in &mut *m {
-                        if *v >= insert_index {
-                            *v += 1;
+                    if same_op {
+                        let mut idx1_count = 0;
+                        let mut idx2_count = 0;
+                        for v in &*a {
+                            if *v == idx1 {
+                                idx1_count += 1;
+                            }
+                            if *v == idx2 {
+                                idx2_count += 1;
+                            }
                         }
-                    }
 
-                    if hit {
-                        m.push(insert_index);
-                        m.sort()
+                        let pair_count = idx1_count.min(idx2_count);
+
+                        if pair_count > 0 {
+                            a.retain(|x| x != &idx1 && x != &idx2);
+
+                            // add back removed indices in cases such as idx1*idx2*idx2
+                            if idx1_count > pair_count {
+                                a.extend(std::iter::repeat(idx1).take(idx1_count - pair_count));
+                            }
+                            if idx2_count > pair_count {
+                                a.extend(std::iter::repeat(idx2).take(idx2_count - pair_count));
+                            }
+
+                            // TODO: Z2=Z1 can be detected here with a.is_empty() && pair_count == 1
+                            a.extend(std::iter::repeat(insert_index).take(pair_count));
+                            a.sort();
+                        }
                     }
                 }
                 Instruction::Yield(v) => {
@@ -1080,12 +1145,11 @@ impl InstructionList {
                         *v += 1;
                     }
                 }
-                Instruction::Empty => {}
-                Instruction::Init(_) => {}
+                Instruction::Empty | Instruction::Init(_) => {}
             };
         }
 
-        // remove Z2=Z1
+        // remove trivial relabeling instructions, e.g. Z2=Z1, that could have been created
         let mut map: Vec<_> = (0..self.instr.len()).collect();
         for (i, x) in self.instr.iter_mut().enumerate() {
             match x {
@@ -1193,6 +1257,7 @@ pub struct InstructionListOutput<N: NumericalFloatLike> {
 enum InstructionRange {
     Add(usize, usize, usize), // reg, index, len
     Mul(usize, usize, usize),
+    Out(usize),
 }
 /// A fast polynomial evaluator that evaluates polynomials written
 /// in the form:
@@ -1213,18 +1278,19 @@ enum InstructionRange {
 /// be done efficiently.
 pub struct InstructionEvaluator<N: NumericalFloatLike> {
     instr: Vec<InstructionRange>,
-    indices: Vec<usize>, // 
+    indices: Vec<usize>,
     eval: Vec<N>, // evaluation buffer
-    num_init: usize, // number of initialization cells
+    out: Vec<N>,  // output buffer
 }
 
 impl<N: NumericalFloatLike> InstructionEvaluator<N> {
-    /// Evaluate a polynomial at a given sample point.
-    /// 
+    /// Evaluate the converted polynomials at a given sample point and
+    /// write the values in `out`.
+    ///
     /// The user must ensure that `samples` has the
     /// same length as the number of variables in the
-    /// polynomial (including non-occurring ones).
-    pub fn evaluate(&mut self, samples: &[N]) -> N {
+    /// polynomials (including non-occurring ones).
+    pub fn evaluate(&mut self, samples: &[N]) -> &[N] {
         macro_rules! get_eval {
             ($i:expr) => {
                 unsafe {
@@ -1238,6 +1304,8 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
         // write the sample point into the evaluation buffer
         // all constant numbers are still in the evaluation buffer
         self.eval[..samples.len()].clone_from_slice(samples);
+
+        let mut out_counter = 0;
 
         for x in &self.instr {
             match x {
@@ -1286,10 +1354,17 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
                         }
                     };
                 }
+                InstructionRange::Out(pos) => {
+                    unsafe {
+                        *self.out.get_unchecked_mut(out_counter) =
+                            self.eval.get_unchecked(*pos as usize).clone()
+                    };
+                    out_counter += 1;
+                }
             }
         }
 
-        self.eval[self.num_init].clone()
+        &self.out
     }
 }
 
@@ -1316,8 +1391,8 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
     /// Create a fast numerical evaluator.
     pub fn evaluator(&self) -> InstructionEvaluator<N> {
         let mut eval = vec![N::zero(); self.instr.len()];
-        let mut init = 0;
 
+        let mut out_counter = 0;
         let mut simple_instr = vec![];
         let mut indices: Vec<usize> = vec![];
         for (reg, ins) in &self.instr {
@@ -1328,8 +1403,6 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
                     if let Variable::Constant(c) = x {
                         eval[*reg] = c.clone();
                     }
-
-                    init += 1;
                 }
                 Instruction::Add(a) => {
                     let len = indices.len();
@@ -1341,7 +1414,10 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
                     indices.extend(a);
                     simple_instr.push(InstructionRange::Mul(*reg, len, indices.len() - len));
                 }
-                Instruction::Yield(_) => {} //skip
+                Instruction::Yield(i) => {
+                    simple_instr.push(InstructionRange::Out(*i));
+                    out_counter += 1;
+                }
                 Instruction::Empty => {}
             }
         }
@@ -1350,20 +1426,21 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
             instr: simple_instr,
             indices,
             eval,
-            num_init: init,
+            out: vec![N::zero(); out_counter],
         }
     }
 }
 
 impl std::fmt::Display for InstructionList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out_counter = 0;
         for (reg, x) in self.instr.iter().enumerate() {
             match x {
                 Instruction::Add(a) => f.write_fmt(format_args!(
                     "Z{} = {};\n",
                     reg,
                     a.iter()
-                        .map(|x| x.to_string())
+                        .map(|x| format!("Z{}", x))
                         .collect::<Vec<_>>()
                         .join("+")
                 ))?,
@@ -1371,11 +1448,14 @@ impl std::fmt::Display for InstructionList {
                     "Z{} = {};\n",
                     reg,
                     m.iter()
-                        .map(|x| x.to_string())
+                        .map(|x| format!("Z{}", x))
                         .collect::<Vec<_>>()
                         .join("*")
                 ))?,
-                Instruction::Yield(y) => f.write_fmt(format_args!("Z{} = {};\n", reg, y))?,
+                Instruction::Yield(y) => {
+                    f.write_fmt(format_args!("OUT{} = Z{};\n", out_counter, y))?;
+                    out_counter += 1;
+                }
                 Instruction::Empty => f.write_fmt(format_args!("Z{} = NOP;\n", reg))?,
                 Instruction::Init(i) => {
                     f.write_fmt(format_args!("Z{} = {};\n", reg, i.to_string()))?
@@ -1402,6 +1482,7 @@ impl CPPPrinter {
 #[derive(Clone, Copy)]
 pub struct InstructionSetModeCPPSettings {
     pub write_header_and_test: bool,
+    pub always_pass_output_array: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1419,6 +1500,19 @@ pub struct InstructionSetPrinter<'a> {
 
 impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let has_only_one_return_value = self
+            .instr
+            .instr
+            .iter()
+            .filter(|x| matches!(x.1, Instruction::Yield(_)))
+            .count()
+            == 1;
+        let use_return_value = has_only_one_return_value
+            && match self.mode {
+                InstructionSetMode::Plain => false,
+                InstructionSetMode::CPP(s) => !s.always_pass_output_array,
+            };
+
         if let InstructionSetMode::CPP(s) = self.mode {
             if s.write_header_and_test {
                 f.write_str("#include <iostream>\n")?;
@@ -1426,13 +1520,16 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
             }
 
             f.write_str("template<typename T>\n")?;
+
             f.write_fmt(format_args!(
-                "T evaluate({}) {{\n",
+                "{} evaluate({}{}) {{\n",
+                if use_return_value { "T" } else { "void" },
                 self.var_map
                     .iter()
                     .map(|x| format!("T {}", self.state.get_name(*x).unwrap()))
                     .collect::<Vec<_>>()
                     .join(","),
+                if use_return_value { "" } else { ", T* out" }
             ))?;
 
             let max_register = self.instr.instr.iter().map(|r| r.0).max().unwrap_or(0);
@@ -1444,6 +1541,8 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                     .join(","),
             ))?;
         }
+
+        let mut out_counter = 0;
 
         for (reg, x) in &self.instr.instr {
             match x {
@@ -1463,12 +1562,21 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                         .collect::<Vec<_>>()
                         .join("*")
                 ))?,
-                Instruction::Yield(y) => match self.mode {
-                    InstructionSetMode::Plain => {
-                        f.write_fmt(format_args!("\tZ{} = {};\n", reg, y))?
+                Instruction::Yield(y) => {
+                    match self.mode {
+                        InstructionSetMode::Plain => {
+                            f.write_fmt(format_args!("\tOUT{} = Z{};\n", out_counter, y))?
+                        }
+                        InstructionSetMode::CPP(_) => {
+                            if use_return_value {
+                                f.write_fmt(format_args!("\treturn Z{};\n", y))?
+                            } else {
+                                f.write_fmt(format_args!("\tout[{}] = Z{};\n", out_counter, y))?
+                            }
+                        }
                     }
-                    InstructionSetMode::CPP(_) => f.write_fmt(format_args!("\treturn {};\n", y))?,
-                },
+                    out_counter += 1;
+                }
                 Instruction::Empty => f.write_fmt(format_args!("\tZ{} = NOP;\n", reg))?,
                 Instruction::Init(x) => f.write_fmt(format_args!(
                     "\tZ{} = {};\n",
@@ -1486,10 +1594,22 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                     .map(|i| ((i + 1) as f64 / (self.var_map.len() + 2) as f64).to_string())
                     .collect();
 
-                f.write_fmt(format_args!(
-                    "\nint main() {{\n\tstd::cout << evaluate({}) << std::endl;\n}}",
-                    points.join(",")
-                ))?;
+                if use_return_value {
+                    f.write_fmt(format_args!(
+                        "\nint main() {{\n\tstd::cout << evaluate<double>({}) << std::endl;\n}}",
+                        points.join(",")
+                    ))?;
+                } else {
+                    f.write_fmt(format_args!(
+                        "\nint main() {{\n\tdouble out[{}];\n\tevaluate({}, out);\n\tstd::cout << {} << std::endl;\n}}",
+                        out_counter,
+                        points.join(","),
+                        (0..out_counter)
+                            .map(|i| format!("out[{}]", i))
+                            .collect::<Vec<_>>()
+                            .join(" << \", \" << ")
+                    ))?;
+                }
             }
         }
 

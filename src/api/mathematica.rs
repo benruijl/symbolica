@@ -65,8 +65,7 @@ fn set_vars(vars: String) {
     }
 }
 
-/// Simplify a rational polynomial. The return value is only valid until the next call to
-/// `simplify`.
+/// Simplify a rational polynomial.
 #[wll::export(name = "SymbolicaSimplify")]
 fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> String {
     let mut symbolica = STATE.write().unwrap();

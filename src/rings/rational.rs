@@ -4,13 +4,16 @@ use std::{
 };
 
 use rand::Rng;
-use rug::{ops::Pow, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryPrecisionRational};
+use rug::{
+    integer::IntegerExt64, ops::Pow, Integer as ArbitraryPrecisionInteger,
+    Rational as ArbitraryPrecisionRational,
+};
 
-use crate::utils;
+use crate::{poly::gcd::LARGE_U32_PRIMES, utils};
 
 use super::{
-    finite_field::{FiniteField, FiniteFieldCore, ToFiniteField},
-    integer::Integer,
+    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
+    integer::{Integer, IntegerRing},
     EuclideanDomain, Field, Ring,
 };
 
@@ -23,7 +26,14 @@ impl RationalField {
     }
 }
 
-// FIXME: PartialEq can only work when Large simplifies to Natural whenever possible
+/// A rational number.
+///
+/// Explicit construction of `Rational::Natural`
+/// is only valid if the conventions are followed:
+/// `Rational::Natural(n,d)` should have `d > 0` and
+/// `gcd(n,d)=1`.
+// TODO: convert to Rational(Integer, Integer)?
+// TODO: prevent construction of explicit rational
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Rational {
     Natural(i64, i64),
@@ -52,8 +62,57 @@ impl ToFiniteField<u32> for Rational {
 }
 
 impl Rational {
-    pub fn new(num: i64, den: i64) -> Rational {
-        Rational::Natural(num, den)
+    pub fn new(mut num: i64, mut den: i64) -> Rational {
+        if den == 0 {
+            panic!("Division by zero");
+        }
+
+        let gcd = utils::gcd_signed(num, den);
+        if gcd != 1 {
+            if gcd == i64::MAX as u64 + 1 {
+                // num = den = u64::MIN
+                num = 1;
+                den = 1;
+            } else {
+                num /= gcd as i64;
+                den /= gcd as i64;
+            }
+        }
+
+        if den < 0 {
+            if let Some(neg) = den.checked_neg() {
+                Rational::Natural(num, neg).neg()
+            } else {
+                Rational::Large(ArbitraryPrecisionRational::from((num, den)))
+            }
+        } else {
+            Rational::Natural(num, den)
+        }
+    }
+
+    pub fn from_num_den(num: Integer, den: Integer) -> Rational {
+        match (num, den) {
+            (Integer::Natural(n), Integer::Natural(d)) => Rational::new(n, d),
+            (Integer::Natural(n), Integer::Large(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Large(n), Integer::Natural(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Large(n), Integer::Large(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+        }
+    }
+
+    pub fn from_large(r: ArbitraryPrecisionRational) -> Rational {
+        if let Some(d) = r.denom().to_i64() {
+            if let Some(n) = r.numer().to_i64() {
+                return Rational::Natural(n, d);
+            }
+        }
+
+        Rational::Large(r)
     }
 
     pub fn from_finite_field_u32(
@@ -139,8 +198,8 @@ impl Rational {
         match self {
             Rational::Natural(n, d) => {
                 if *n < 0 {
-                    if let Some(neg) = d.checked_neg() {
-                        Rational::Natural(neg, -n)
+                    if let Some(neg) = n.checked_neg() {
+                        Rational::Natural(-d, neg)
                     } else {
                         Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).recip())
                     }
@@ -148,7 +207,7 @@ impl Rational {
                     Rational::Natural(*d, *n)
                 }
             }
-            Rational::Large(r) => Rational::Large(r.clone().recip()),
+            Rational::Large(r) => Rational::from_large(r.clone().recip()),
         }
     }
 
@@ -161,8 +220,156 @@ impl Rational {
                     Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).neg())
                 }
             }
-            Rational::Large(r) => Rational::Large(r.neg().into()),
+            Rational::Large(r) => Rational::from_large(r.neg().into()),
         }
+    }
+
+    /// Reconstruct a rational number `q` from a value `v` in a prime field `p`,
+    /// such that `q ≡ v mod p`.
+    ///
+    /// From "Maximal Quotient Rational Reconstruction: An Almost
+    /// Optimal Algorithm for Rational Reconstruction" by Monagan.
+    pub fn maximal_quotient_reconstruction(
+        v: &Integer,
+        p: &Integer,
+        acceptance_scale: Option<Integer>,
+    ) -> Result<Rational, &'static str> {
+        let mut acceptance_scale = match acceptance_scale {
+            Some(t) => t.clone(),
+            None => {
+                // set t to 2^20*ceil(log2(m))
+                let ceil_log2 = match &p {
+                    Integer::Natural(n) => u64::BITS as u64 - (*n as u64).leading_zeros() as u64,
+                    Integer::Large(n) => {
+                        let mut pos = 0;
+                        while let Some(p) = n.find_one_64(pos) {
+                            if p == i64::MAX as u64 {
+                                return Err("Could not reconstruct, as the log is too large");
+                            }
+                            pos = p + 1;
+                        }
+                        pos
+                    }
+                };
+
+                &Integer::new(2i64 << 10) * &Integer::new(ceil_log2 as i64)
+            }
+        };
+
+        if v.is_zero() {
+            return if p > &acceptance_scale {
+                Ok(Rational::zero())
+            } else {
+                Err("Could not reconstruct: u=0 and t <= m")
+            };
+        }
+
+        let mut n = Integer::zero();
+        let mut d = Integer::zero();
+        let (mut t, mut old_t) = (Integer::one(), Integer::zero());
+        let (mut r, mut old_r) = (v.clone(), p.clone());
+
+        while !r.is_one() && old_r > acceptance_scale {
+            let q = &old_r / &r;
+            if q > acceptance_scale {
+                n = r.clone();
+                d = t.clone();
+                acceptance_scale = q.clone();
+            }
+            (r, old_r) = (&old_r - &(&q * &r), r);
+            (t, old_t) = (&old_t - &(&q * &t), t);
+        }
+
+        if d.is_zero() || !IntegerRing::new().gcd(&n, &d).is_one() {
+            return Err("Reconstruction failed");
+        }
+        if d < Integer::zero() {
+            n = n.neg();
+            d = d.neg();
+        }
+
+        Ok(Rational::from_num_den(n, d))
+    }
+
+    /// Return the rational number that corresponds to `f` evaluated at sample point `sample`,
+    /// i.e. `f(sample)`, if such a number exists and if the evaluations were not unlucky.
+    ///
+    /// The procedure can be repeated with a different starting prime, by setting `prime_start`
+    /// to a non-zero value.
+    pub fn rational_reconstruction<
+        F: Fn(
+            &FiniteField<u32>,
+            &[<FiniteField<u32> as Ring>::Element],
+        ) -> <FiniteField<u32> as Ring>::Element,
+        R: Ring,
+    >(
+        f: F,
+        sample: &[R::Element],
+        prime_start: Option<usize>,
+    ) -> Result<Rational, &'static str>
+    where
+        FiniteField<u32>: FiniteFieldCore<u32>,
+        R::Element: ToFiniteField<u32>,
+    {
+        let mut cur_result = Integer::one();
+        let mut prime_accum = Integer::one();
+        let mut prime_sample_point = vec![];
+        let mut prime_start = prime_start.unwrap_or(0);
+
+        let mut last_guess = Rational::zero();
+        for i in 0..sample.len() {
+            if prime_start + i >= LARGE_U32_PRIMES.len() {
+                return Err("Ran out of primes for rational reconstruction");
+            }
+
+            let p = LARGE_U32_PRIMES[prime_start]; // TODO: support u64
+            prime_start += 1;
+
+            let field = FiniteField::new(p);
+            prime_sample_point.clear();
+            for x in sample {
+                prime_sample_point.push(x.to_finite_field(&field));
+            }
+
+            let eval = f(&field, &prime_sample_point);
+
+            // NOTE: check bounds if upgraded to u64 primes!
+            let eval_conv = Integer::Natural(field.from_element(eval).to_u64() as i64);
+
+            if i == 0 {
+                cur_result = eval_conv;
+            } else {
+                let new_result = Integer::chinese_remainder(
+                    eval_conv,
+                    cur_result.clone(),
+                    Integer::Natural(p as i64),
+                    prime_accum.clone(),
+                );
+
+                if cur_result == new_result {
+                    return Ok(last_guess);
+                }
+                cur_result = new_result;
+            }
+
+            prime_accum *= &Integer::Natural(p as i64);
+
+            if cur_result < Integer::zero() {
+                cur_result += &prime_accum;
+            }
+
+            if let Ok(q) =
+                Rational::maximal_quotient_reconstruction(&cur_result, &prime_accum, None)
+            {
+                if q == last_guess {
+                    return Ok(q);
+                } else {
+                    last_guess = q;
+                }
+            }
+        }
+
+        Err("Reconstruction failed")
     }
 }
 
@@ -195,28 +402,27 @@ impl Ring for RationalField {
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         match (a, b) {
             (Rational::Natural(n1, d1), Rational::Natural(n2, d2)) => {
-                if let Some(lcm) = d2.checked_mul(d1 / utils::gcd_signed(*d1, *d2)) {
+                if let Some(lcm) = d2.checked_mul(d1 / utils::gcd_signed(*d1, *d2) as i64) {
                     if let Some(num2) = n2.checked_mul(lcm / d2) {
                         if let Some(num1) = n1.checked_mul(lcm / d1) {
                             if let Some(num) = num1.checked_add(num2) {
-                                let g = utils::gcd_signed(num, lcm);
+                                let g = utils::gcd_signed(num, lcm) as i64;
                                 return Rational::Natural(num / g, lcm / g);
                             }
                         }
                     }
                 }
-                Rational::Large(
+                Rational::from_large(
                     ArbitraryPrecisionRational::from((*n1, *d1))
                         + ArbitraryPrecisionRational::from((*n2, *d2)),
                 )
             }
-            // TODO: check downcast
             (Rational::Natural(n1, d1), Rational::Large(r2))
             | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
                 let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
-                Rational::Large(r1 + r2)
+                Rational::from_large(r1 + r2)
             }
-            (Rational::Large(r1), Rational::Large(r2)) => Rational::Large((r1 + r2).into()),
+            (Rational::Large(r1), Rational::Large(r2)) => Rational::from_large((r1 + r2).into()),
         }
     }
 
@@ -229,32 +435,40 @@ impl Ring for RationalField {
         match (a, b) {
             (Rational::Natural(n1, d1), Rational::Natural(n2, d2)) => {
                 let gcd1 = utils::gcd_signed(*n1, *d2);
-                let gcd2 = utils::gcd_signed(*d1, *n2);
+                let (n1, d2) = if gcd1 == i64::MAX as u64 + 1 {
+                    (-1, -1)
+                } else {
+                    (n1 / gcd1 as i64, d2 / gcd1 as i64)
+                };
 
-                match (n2 / gcd2).checked_mul(n1 / gcd1) {
-                    Some(nn) => match (d1 / gcd2).checked_mul(d2 / gcd1) {
+                let gcd2 = utils::gcd_signed(*d1, *n2);
+                let (d1, n2) = if gcd2 == i64::MAX as u64 + 1 {
+                    (-1, -1)
+                } else {
+                    (d1 / gcd2 as i64, n2 / gcd2 as i64)
+                };
+
+                match (n2).checked_mul(n1) {
+                    Some(nn) => match (d1).checked_mul(d2) {
                         Some(nd) => Rational::Natural(nn, nd),
                         None => Rational::Large(ArbitraryPrecisionRational::from((
                             nn,
-                            ArbitraryPrecisionInteger::from(d1 / gcd2)
-                                * ArbitraryPrecisionInteger::from(d2 / gcd1),
+                            ArbitraryPrecisionInteger::from(d1)
+                                * ArbitraryPrecisionInteger::from(d2),
                         ))),
                     },
                     None => Rational::Large(ArbitraryPrecisionRational::from((
-                        ArbitraryPrecisionInteger::from(n1 / gcd1)
-                            * ArbitraryPrecisionInteger::from(n2 / gcd2),
-                        ArbitraryPrecisionInteger::from(d1 / gcd2)
-                            * ArbitraryPrecisionInteger::from(d2 / gcd1),
+                        ArbitraryPrecisionInteger::from(n1) * ArbitraryPrecisionInteger::from(n2),
+                        ArbitraryPrecisionInteger::from(d1) * ArbitraryPrecisionInteger::from(d2),
                     ))),
                 }
             }
-            // FIXME: downcast
             (Rational::Natural(n1, d1), Rational::Large(r2))
             | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
                 let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
-                Rational::Large(r1 * r2)
+                Rational::from_large(r1 * r2)
             }
-            (Rational::Large(r1), Rational::Large(r2)) => Rational::Large((r1 * r2).into()),
+            (Rational::Large(r1), Rational::Large(r2)) => Rational::from_large((r1 * r2).into()),
         }
     }
 
@@ -298,18 +512,14 @@ impl Ring for RationalField {
     fn is_zero(a: &Self::Element) -> bool {
         match a {
             Rational::Natural(r, _) => *r == 0,
-            // TODO: not needed anymore when automatically simplifying
-            Rational::Large(r) => r.numer().to_u8().map(|x| x == 0).unwrap_or(false),
+            Rational::Large(_) => false,
         }
     }
 
     fn is_one(&self, a: &Self::Element) -> bool {
         match a {
             Rational::Natural(r, d) => *r == 1 && *d == 1,
-            Rational::Large(r) => {
-                r.numer().to_u8().map(|x| x == 1).unwrap_or(false)
-                    && r.denom().to_u8().map(|x| x == 1).unwrap_or(false)
-            }
+            Rational::Large(_) => false,
         }
     }
 
@@ -350,27 +560,33 @@ impl EuclideanDomain for RationalField {
                 let gcd_num = utils::gcd_signed(*n1, *n2);
                 let gcd_den = utils::gcd_signed(*d1, *d2);
 
-                if let Some(lcm) = d2.checked_mul(d1 / gcd_den) {
-                    Rational::Natural(gcd_num, lcm)
+                let d1 = if gcd_den == i64::MAX as u64 + 1 {
+                    -1
                 } else {
-                    Rational::Large(ArbitraryPrecisionRational::from((
+                    *d1 / gcd_den as i64
+                };
+
+                let lcm = d2.checked_mul(d1);
+
+                if gcd_num == i64::MAX as u64 + 1 || lcm.is_none() {
+                    return Rational::Large(ArbitraryPrecisionRational::from((
                         ArbitraryPrecisionInteger::from(gcd_num),
-                        ArbitraryPrecisionInteger::from(*d2)
-                            * ArbitraryPrecisionInteger::from(d1 / gcd_den),
-                    )))
+                        ArbitraryPrecisionInteger::from(*d2) * ArbitraryPrecisionInteger::from(d1),
+                    )));
+                } else {
+                    Rational::Natural(gcd_num as i64, lcm.unwrap())
                 }
             }
-            // FIXME: downcast
             (Rational::Natural(n1, d1), Rational::Large(r2))
             | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
                 let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
-                Rational::Large(ArbitraryPrecisionRational::from((
+                Rational::from_large(ArbitraryPrecisionRational::from((
                     r1.numer().clone().gcd(r2.numer()),
                     r1.denom().clone().lcm(r2.denom()),
                 )))
             }
             (Rational::Large(r1), Rational::Large(r2)) => {
-                Rational::Large(ArbitraryPrecisionRational::from((
+                Rational::from_large(ArbitraryPrecisionRational::from((
                     r1.numer().clone().gcd(r2.numer()),
                     r1.denom().clone().lcm(r2.denom()),
                 )))

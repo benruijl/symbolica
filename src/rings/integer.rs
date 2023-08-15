@@ -238,8 +238,8 @@ impl Integer {
     }
 
     /// Use Garner's algorithm for the Chinese remainder theorem
-    /// to reconstruct an x that satisfies n1 = x % p1 and n2 = x % p2.
-    /// The x will be in the range [-p1*p2/2,p1*p2/2].
+    /// to reconstruct an `x` that satisfies `n1 = x % p1` and `n2 = x % p2`.
+    /// The `x` will be in the range `[-p1*p2/2,p1*p2/2]`.
     pub fn chinese_remainder(n1: Integer, n2: Integer, p1: Integer, p2: Integer) -> Integer {
         // make sure n1 < n2
         if match (&n1, &n2) {
@@ -578,7 +578,13 @@ impl EuclideanDomain for IntegerRing {
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         match (a, b) {
             (Integer::Natural(n1), Integer::Natural(n2)) => {
-                Integer::Natural(utils::gcd_signed(*n1, *n2))
+                let gcd = utils::gcd_signed(*n1, *n2);
+                if gcd == i64::MAX as u64 + 1 {
+                    // n1 == n2 == u64::MIN
+                    Integer::Large(ArbitraryPrecisionInteger::from(gcd))
+                } else {
+                    Integer::Natural(gcd as i64)
+                }
             }
             (Integer::Natural(n1), Integer::Large(r2))
             | (Integer::Large(r2), Integer::Natural(n1)) => {

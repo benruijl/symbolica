@@ -225,10 +225,10 @@ where
 impl BorrowedNumber<'_> {
     pub fn normalize(&self) -> Number {
         match self {
-            BorrowedNumber::Natural(num, den) => {
-                let gcd = utils::gcd_signed(*num, *den);
-                Number::Natural(*num / gcd, *den / gcd)
-            }
+            BorrowedNumber::Natural(num, den) => match Rational::new(*num, *den) {
+                Rational::Natural(n, d) => Number::Natural(n, d),
+                Rational::Large(l) => Number::Large(l),
+            },
             BorrowedNumber::Large(_)
             | BorrowedNumber::FiniteField(_, _)
             | BorrowedNumber::RationalPolynomial(_) => self.to_owned(),

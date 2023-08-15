@@ -14,7 +14,7 @@ pub fn gcd_unsigned(mut a: u64, mut b: u64) -> u64 {
     b
 }
 
-pub fn gcd_signed(mut a: i64, mut b: i64) -> i64 {
+pub fn gcd_signed(mut a: i64, mut b: i64) -> u64 {
     let mut c;
     while a != 0 {
         c = a;
@@ -22,7 +22,7 @@ pub fn gcd_signed(mut a: i64, mut b: i64) -> i64 {
         a = b.wrapping_rem(a);
         b = c;
     }
-    b.abs()
+    b.unsigned_abs()
 }
 
 pub struct CombinationIterator {

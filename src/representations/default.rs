@@ -20,10 +20,10 @@ const ADD_ID: u8 = 6;
 const TYPE_MASK: u8 = 0b00000111;
 const DIRTY_FLAG: u8 = 0b10000000;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct DefaultRepresentation {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct OwnedNumD {
     data: Vec<u8>,
 }
@@ -110,7 +110,7 @@ impl ResettableBuffer for OwnedNumD {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct OwnedVarD {
     data: Vec<u8>,
 }
@@ -176,7 +176,7 @@ impl ResettableBuffer for OwnedVarD {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct OwnedFunD {
     data: Vec<u8>,
 }
@@ -303,7 +303,7 @@ impl ResettableBuffer for OwnedFunD {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct OwnedPowD {
     data: Vec<u8>,
 }
@@ -378,7 +378,7 @@ impl ResettableBuffer for OwnedPowD {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Hash)]
 pub struct OwnedMulD {
     data: Vec<u8>,
 }
@@ -550,7 +550,7 @@ impl ResettableBuffer for OwnedMulD {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Hash)]
 pub struct OwnedAddD {
     data: Vec<u8>,
 }
@@ -897,7 +897,7 @@ impl OwnedAtom<DefaultRepresentation> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq)]
+#[derive(Debug, Copy, Clone, Eq, Hash)]
 pub struct VarViewD<'a> {
     pub data: &'a [u8],
 }
@@ -908,7 +908,7 @@ impl<'a, 'b> PartialEq<VarViewD<'b>> for VarViewD<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq)]
+#[derive(Debug, Copy, Clone, Eq, Hash)]
 pub struct FnViewD<'a> {
     pub data: &'a [u8],
 }
@@ -974,7 +974,7 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq)]
+#[derive(Debug, Copy, Clone, Eq, Hash)]
 pub struct NumViewD<'a> {
     pub data: &'a [u8],
 }
@@ -1010,7 +1010,7 @@ impl<'a> Num<'a> for NumViewD<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq)]
+#[derive(Debug, Copy, Clone, Eq, Hash)]
 pub struct PowViewD<'a> {
     pub data: &'a [u8],
 }
@@ -1063,7 +1063,7 @@ impl<'a> Pow<'a> for PowViewD<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq)]
+#[derive(Debug, Copy, Clone, Eq, Hash)]
 pub struct MulViewD<'a> {
     pub data: &'a [u8],
 }
@@ -1121,7 +1121,7 @@ impl<'a> Mul<'a> for MulViewD<'a> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq)]
+#[derive(Debug, Copy, Clone, Eq, Hash)]
 pub struct AddViewD<'a> {
     pub data: &'a [u8],
 }

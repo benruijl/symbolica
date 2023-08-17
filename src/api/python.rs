@@ -1,5 +1,6 @@
 use std::{
     borrow::{Borrow, BorrowMut},
+    hash::{Hash, Hasher},
     ops::Neg,
     sync::{Arc, RwLock},
 };
@@ -235,7 +236,7 @@ impl PythonPattern {
 }
 
 #[pyclass(name = "Expression")]
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonExpression {
     pub expr: Arc<OwnedAtom<DefaultRepresentation>>,
 }
@@ -436,6 +437,12 @@ impl PythonExpression {
                 print_mode: PrintMode::default(),
             }
         ))
+    }
+
+    pub fn __hash__(&self) -> u64 {
+        let mut hasher = ahash::AHasher::default();
+        self.expr.hash(&mut hasher);
+        hasher.finish()
     }
 
     /// Create a wildcard from a variable name.
@@ -746,25 +753,44 @@ impl PythonExpression {
         }
     }
 
-    fn __richcmp__(&self, other: i64, op: CompareOp) -> PyResult<PythonPatternRestriction> {
-        match self.expr.to_view() {
-            AtomView::Var(v) => {
-                let name = v.get_name();
-                if !STATE.read().unwrap().is_wildcard(name).unwrap_or(false) {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
-                }
+    fn __richcmp__(
+        &self,
+        other: ConvertibleToExpression,
+        op: CompareOp,
+        py: Python<'_>,
+    ) -> PyResult<PyObject> {
+        match other {
+            ConvertibleToExpression::Int(i) => {
+                // when comparing an expression with an int, construct a pattern restriction
+                // TODO: find another way to construct a pattern restriction
+                match self.expr.to_view() {
+                    AtomView::Var(v) => {
+                        let name = v.get_name();
+                        if !STATE.read().unwrap().is_wildcard(name).unwrap_or(false) {
+                            return Err(exceptions::PyTypeError::new_err(
+                                "Only wildcards can be restricted.",
+                            ));
+                        }
 
-                Ok(PythonPatternRestriction {
-                    restrictions: Arc::new(vec![SimplePatternRestriction::NumberCmp(
-                        name, op, other,
-                    )]),
-                })
+                        Ok(PythonPatternRestriction {
+                            restrictions: Arc::new(vec![SimplePatternRestriction::NumberCmp(
+                                name, op, i,
+                            )]),
+                        }
+                        .into_py(py))
+                    }
+                    _ => Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    )),
+                }
             }
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Only wildcards can be restricted.",
-            )),
+            ConvertibleToExpression::Expression(e) => match op {
+                CompareOp::Eq => Ok((self.expr == e.expr).into_py(py)),
+                CompareOp::Ne => Ok((self.expr != e.expr).into_py(py)),
+                _ => Err(exceptions::PyTypeError::new_err(
+                    "Inequalities between expression are not allowed",
+                )),
+            },
         }
     }
 
@@ -1176,7 +1202,7 @@ impl PythonMatchIterator {
         slf
     }
 
-    fn __next__(&mut self) -> Option<Vec<(PythonExpression, PythonExpression)>> {
+    fn __next__(&mut self) -> Option<HashMap<PythonExpression, PythonExpression>> {
         self.with_dependent_mut(|_, i| {
             i.next().map(|(_, _, _, matches)| {
                 matches

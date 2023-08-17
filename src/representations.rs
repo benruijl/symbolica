@@ -3,7 +3,7 @@ pub mod number;
 pub mod tree;
 
 use crate::state::{ResettableBuffer, State, Workspace};
-use std::{cmp::Ordering, ops::Range};
+use std::{cmp::Ordering, hash::Hash, ops::Range};
 
 use self::{
     number::{BorrowedNumber, Number},
@@ -40,7 +40,7 @@ impl Identifier {
 }
 
 /// Represents all atoms of a mathematical expression.
-pub trait Atom: PartialEq + 'static {
+pub trait Atom: PartialEq + Eq + Hash + 'static {
     type N<'a>: Num<'a, P = Self>;
     type V<'a>: Var<'a, P = Self>;
     type F<'a>: Fun<'a, P = Self>;
@@ -70,7 +70,7 @@ pub trait Convert<P: Atom> {
     fn to_owned_mul(self) -> P::OM;
 }
 
-pub trait OwnedNum: Clone + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedNum: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_from_number(&mut self, num: Number);
@@ -80,7 +80,7 @@ pub trait OwnedNum: Clone + ResettableBuffer + Convert<Self::P> {
     fn to_num_view(&self) -> <Self::P as Atom>::N<'_>;
 }
 
-pub trait OwnedVar: Clone + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedVar: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_from_id(&mut self, id: Identifier);
@@ -88,7 +88,7 @@ pub trait OwnedVar: Clone + ResettableBuffer + Convert<Self::P> {
     fn to_var_view(&self) -> <Self::P as Atom>::V<'_>;
 }
 
-pub trait OwnedFun: Clone + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedFun: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_from_view(&mut self, view: &<Self::P as Atom>::F<'_>);
@@ -98,7 +98,7 @@ pub trait OwnedFun: Clone + ResettableBuffer + Convert<Self::P> {
     fn to_fun_view(&self) -> <Self::P as Atom>::F<'_>;
 }
 
-pub trait OwnedPow: Clone + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedPow: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_from_view(&mut self, view: &<Self::P as Atom>::P<'_>);
@@ -107,7 +107,7 @@ pub trait OwnedPow: Clone + ResettableBuffer + Convert<Self::P> {
     fn to_pow_view(&self) -> <Self::P as Atom>::P<'_>;
 }
 
-pub trait OwnedMul: Clone + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedMul: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_dirty(&mut self, dirty: bool);
@@ -117,7 +117,7 @@ pub trait OwnedMul: Clone + ResettableBuffer + Convert<Self::P> {
     fn to_mul_view(&self) -> <Self::P as Atom>::M<'_>;
 }
 
-pub trait OwnedAdd: Clone + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedAdd: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
     type P: Atom;
 
     fn set_dirty(&mut self, dirty: bool);
@@ -126,7 +126,7 @@ pub trait OwnedAdd: Clone + ResettableBuffer + Convert<Self::P> {
     fn to_add_view(&self) -> <Self::P as Atom>::A<'_>;
 }
 
-pub trait Num<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
+pub trait Num<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
     type P: Atom;
 
     fn is_zero(&self) -> bool;
@@ -136,14 +136,14 @@ pub trait Num<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::N<'b>> {
     fn to_view(&self) -> AtomView<'a, Self::P>;
 }
 
-pub trait Var<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::V<'b>> {
+pub trait Var<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as Atom>::V<'b>> {
     type P: Atom;
 
     fn get_name(&self) -> Identifier;
     fn to_view(&self) -> AtomView<'a, Self::P>;
 }
 
-pub trait Fun<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::F<'b>> {
+pub trait Fun<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as Atom>::F<'b>> {
     type P: Atom;
     type I: Iterator<Item = AtomView<'a, Self::P>>;
 
@@ -156,7 +156,7 @@ pub trait Fun<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::F<'b>> {
     fn to_slice(&self) -> <Self::P as Atom>::S<'a>;
 }
 
-pub trait Pow<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::P<'b>> {
+pub trait Pow<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as Atom>::P<'b>> {
     type P: Atom;
 
     fn get_base(&self) -> AtomView<'a, Self::P>;
@@ -169,7 +169,7 @@ pub trait Pow<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::P<'b>> {
     fn to_slice(&self) -> <Self::P as Atom>::S<'a>;
 }
 
-pub trait Mul<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
+pub trait Mul<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
     type P: Atom;
     type I: Iterator<Item = AtomView<'a, Self::P>>;
 
@@ -180,7 +180,7 @@ pub trait Mul<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::M<'b>> {
     fn to_slice(&self) -> <Self::P as Atom>::S<'a>;
 }
 
-pub trait Add<'a>: Copy + Clone + for<'b> PartialEq<<Self::P as Atom>::A<'b>> {
+pub trait Add<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as Atom>::A<'b>> {
     type P: Atom;
     type I: Iterator<Item = AtomView<'a, Self::P>>;
 
@@ -252,7 +252,7 @@ impl<'a, 'b, P: Atom> PartialEq<AtomView<'b, P>> for AtomView<'a, P> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone)]
 pub enum OwnedAtom<P: Atom> {
     Num(P::ON),
     Var(P::OV),
@@ -261,6 +261,36 @@ pub enum OwnedAtom<P: Atom> {
     Mul(P::OM),
     Add(P::OA),
     Empty, // for internal use only
+}
+
+impl<P: Atom> PartialEq for OwnedAtom<P> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Num(l0), Self::Num(r0)) => l0 == r0,
+            (Self::Var(l0), Self::Var(r0)) => l0 == r0,
+            (Self::Fun(l0), Self::Fun(r0)) => l0 == r0,
+            (Self::Pow(l0), Self::Pow(r0)) => l0 == r0,
+            (Self::Mul(l0), Self::Mul(r0)) => l0 == r0,
+            (Self::Add(l0), Self::Add(r0)) => l0 == r0,
+            _ => false,
+        }
+    }
+}
+
+impl<P: Atom> Eq for OwnedAtom<P> {}
+
+impl<P: Atom> Hash for OwnedAtom<P> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            OwnedAtom::Num(a) => a.hash(state),
+            OwnedAtom::Var(a) => a.hash(state),
+            OwnedAtom::Fun(a) => a.hash(state),
+            OwnedAtom::Pow(a) => a.hash(state),
+            OwnedAtom::Mul(a) => a.hash(state),
+            OwnedAtom::Add(a) => a.hash(state),
+            OwnedAtom::Empty => 1.hash(state),
+        }
+    }
 }
 
 impl<P: Atom> std::fmt::Debug for OwnedAtom<P> {

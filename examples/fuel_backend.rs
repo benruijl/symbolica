@@ -1,5 +1,6 @@
 use std::io::{self, BufRead, Write};
 
+use smartstring::{LazyCompact, SmartString};
 use symbolica::{
     parser::parse,
     printer::{PrintMode, RationalPolynomialPrinter},
@@ -24,13 +25,14 @@ fn main() {
         .parse::<usize>()
         .expect("Number of vars should be a non-negative integer");
 
-    let mut var_names = vec![];
+    let mut var_names: Vec<SmartString<LazyCompact>> = vec![];
     for _ in 0..num_vars {
         var_names.push(
             num_vars_and_var_names
                 .next()
                 .expect("Expected variable")
-                .trim_end(),
+                .trim_end()
+                .into(),
         );
     }
 
@@ -47,18 +49,15 @@ fn main() {
             break;
         }
 
-        let atom = parse(&buffer)
+        let r: RationalPolynomial<IntegerRing, u16> = parse(&buffer)
             .unwrap()
-            .to_atom(&mut state, &workspace)
-            .unwrap();
-        let r: RationalPolynomial<IntegerRing, u8> = atom
-            .to_view()
             .to_rational_polynomial(
                 &workspace,
-                &state,
+                &mut state,
                 RationalField::new(),
                 IntegerRing::new(),
-                Some(&vars),
+                &vars,
+                &var_names,
             )
             .unwrap();
 

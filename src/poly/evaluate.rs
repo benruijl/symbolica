@@ -880,19 +880,6 @@ impl<N: NumericalFloatLike> Variable<N> {
             Variable::Constant(c) => Variable::Constant(NO::from(c)),
         }
     }
-
-    pub fn op_count(&self, is_mul: bool) -> isize {
-        match self {
-            Variable::Var(_) => 1,
-            Variable::Constant(l) => {
-                if is_mul && l.abs().is_one() {
-                    0
-                } else {
-                    1
-                }
-            }
-        }
-    }
 }
 
 /// A list of instructions suitable for fast numerical evaluation.
@@ -1218,7 +1205,7 @@ impl InstructionList {
             let cur_last_use = last_use[i];
             // find first free variable
             let reg = if let Some((new_v, lu)) =
-                last_use[..i].iter_mut().enumerate().find(|(_, r)| **r < i)
+                last_use[..i].iter_mut().enumerate().find(|(_, r)| **r <= i)
             {
                 *lu = cur_last_use; // set the last use to the current variable last use
                 last_use[i] = 0; // make the current index available

@@ -610,6 +610,83 @@ impl Field for RationalField {
     }
 }
 
+impl PartialOrd for Rational {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if let (Rational::Large(n1), Rational::Large(n2)) = (self, other) {
+            return n1.partial_cmp(n2);
+        }
+
+        let a = &self.numerator() * &other.denominator();
+        let b = &self.denominator() * &other.numerator();
+
+        a.partial_cmp(&b)
+    }
+}
+
+impl Add<Rational> for Rational {
+    type Output = Rational;
+
+    fn add(self, other: Rational) -> Self::Output {
+        RationalField::new().add(&self, &other)
+    }
+}
+
+impl Sub<Rational> for Rational {
+    type Output = Rational;
+
+    fn sub(self, other: Rational) -> Self::Output {
+        self.add(&other.neg())
+    }
+}
+
+impl Mul<Rational> for Rational {
+    type Output = Rational;
+
+    fn mul(self, other: Rational) -> Self::Output {
+        RationalField::new().mul(&self, &other)
+    }
+}
+
+impl Div<Rational> for Rational {
+    type Output = Rational;
+
+    fn div(self, other: Rational) -> Self::Output {
+        RationalField::new().div(&self, &other)
+    }
+}
+
+impl<'a> Add<&'a Rational> for Rational {
+    type Output = Rational;
+
+    fn add(self, other: &'a Rational) -> Self::Output {
+        RationalField::new().add(&self, other)
+    }
+}
+
+impl<'a> Sub<&'a Rational> for Rational {
+    type Output = Rational;
+
+    fn sub(self, other: &'a Rational) -> Self::Output {
+        self.add(&other.neg())
+    }
+}
+
+impl<'a> Mul<&'a Rational> for Rational {
+    type Output = Rational;
+
+    fn mul(self, other: &'a Rational) -> Self::Output {
+        RationalField::new().mul(&self, other)
+    }
+}
+
+impl<'a> Div<&'a Rational> for Rational {
+    type Output = Rational;
+
+    fn div(self, other: &'a Rational) -> Self::Output {
+        RationalField::new().div(&self, other)
+    }
+}
+
 impl<'a, 'b> Add<&'a Rational> for &'b Rational {
     type Output = Rational;
 
@@ -670,5 +747,35 @@ impl<'a> MulAssign<&'a Rational> for Rational {
 impl<'a> DivAssign<&'a Rational> for Rational {
     fn div_assign(&mut self, other: &'a Rational) {
         RationalField::new().div_assign(self, other)
+    }
+}
+
+impl AddAssign<Rational> for Rational {
+    fn add_assign(&mut self, other: Rational) {
+        RationalField::new().add_assign(self, &other)
+    }
+}
+
+impl SubAssign<Rational> for Rational {
+    fn sub_assign(&mut self, other: Rational) {
+        self.add_assign(&other.neg())
+    }
+}
+
+impl MulAssign<Rational> for Rational {
+    fn mul_assign(&mut self, other: Rational) {
+        RationalField::new().mul_assign(self, &other)
+    }
+}
+
+impl DivAssign<Rational> for Rational {
+    fn div_assign(&mut self, other: Rational) {
+        RationalField::new().div_assign(self, &other)
+    }
+}
+
+impl<'a> std::iter::Sum<&'a Self> for Rational {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.fold(Rational::zero(), |a, b| a + b)
     }
 }

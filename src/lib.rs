@@ -2,8 +2,8 @@ pub mod api;
 pub mod coefficient;
 pub mod expand;
 pub mod id;
-pub mod transformer;
 pub mod normalize;
+pub mod numerical_integration;
 pub mod parser;
 pub mod poly;
 pub mod printer;
@@ -11,6 +11,7 @@ pub mod representations;
 pub mod rings;
 pub mod state;
 pub mod streaming;
+pub mod transformer;
 pub mod utils;
 
 #[cfg(feature = "faster_alloc")]

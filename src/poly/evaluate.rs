@@ -868,7 +868,7 @@ impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Variable::Var(v) => f.write_fmt(format_args!("x{}", v)),
-            Variable::Constant(c) => c.fmt(f),
+            Variable::Constant(c) => <N as std::fmt::Display>::fmt(c, f),
         }
     }
 }
@@ -1280,11 +1280,7 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
     pub fn evaluate(&mut self, samples: &[N]) -> &[N] {
         macro_rules! get_eval {
             ($i:expr) => {
-                unsafe {
-                    self.eval
-                        .get_unchecked(*self.indices.get_unchecked($i))
-                        .clone()
-                }
+                unsafe { self.eval.get_unchecked(*self.indices.get_unchecked($i)) }
             };
         }
 
@@ -1299,14 +1295,14 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
                 InstructionRange::Add(reg, pos, len) => {
                     // unroll the loop for additional performance
                     *unsafe { self.eval.get_unchecked_mut(*reg as usize) } = match len {
-                        2 => get_eval!(*pos).add(&get_eval!(*pos + 1)),
-                        3 => get_eval!(*pos)
-                            .add(&get_eval!(*pos + 1))
-                            .add(&get_eval!(*pos + 2)),
-                        4 => get_eval!(*pos)
-                            .add(&get_eval!(*pos + 1))
-                            .add(&get_eval!(*pos + 2))
-                            .add(&get_eval!(*pos + 3)),
+                        2 => get_eval!(*pos).clone() + get_eval!(*pos + 1),
+                        3 => get_eval!(*pos).clone() + get_eval!(*pos + 1) + get_eval!(*pos + 2),
+                        4 => {
+                            get_eval!(*pos).clone()
+                                + get_eval!(*pos + 1)
+                                + get_eval!(*pos + 2)
+                                + get_eval!(*pos + 3)
+                        }
                         _ => {
                             let mut tmp = N::zero();
                             for aa in unsafe {
@@ -1321,14 +1317,14 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
                 }
                 InstructionRange::Mul(reg, pos, len) => {
                     *unsafe { self.eval.get_unchecked_mut(*reg as usize) } = match len {
-                        2 => get_eval!(*pos).mul(&get_eval!(*pos + 1)),
-                        3 => get_eval!(*pos)
-                            .mul(&get_eval!(*pos + 1))
-                            .mul(&get_eval!(*pos + 2)),
-                        4 => get_eval!(*pos)
-                            .mul(&get_eval!(*pos + 1))
-                            .mul(&get_eval!(*pos + 2))
-                            .mul(&get_eval!(*pos + 3)),
+                        2 => get_eval!(*pos).clone() * get_eval!(*pos + 1),
+                        3 => get_eval!(*pos).clone() * get_eval!(*pos + 1) * get_eval!(*pos + 2),
+                        4 => {
+                            get_eval!(*pos).clone()
+                                * get_eval!(*pos + 1)
+                                * get_eval!(*pos + 2)
+                                * get_eval!(*pos + 3)
+                        }
                         _ => {
                             let mut tmp = N::one();
                             for aa in unsafe {

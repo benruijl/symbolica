@@ -119,6 +119,7 @@ unsafe extern "C" fn simplify(
                         print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
                             terms_on_new_line: false,
                             color_top_level_sum: false,
+                            color_builtin_functions: false,
                             print_finite_field: false,
                             explicit_rational_polynomial
                         })
@@ -149,6 +150,7 @@ unsafe extern "C" fn simplify(
                             print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
+                                color_builtin_functions: false,
                                 print_finite_field: false,
                                 explicit_rational_polynomial
                             })
@@ -178,6 +180,7 @@ unsafe extern "C" fn simplify(
                             print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
+                                color_builtin_functions: false,
                                 print_finite_field: false,
                                 explicit_rational_polynomial
                             })

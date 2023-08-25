@@ -11,6 +11,7 @@ use crate::{
 pub enum Transformer<P: Atom + 'static> {
     Input,
     Expand(Pattern<P>),
+    Derivative(Pattern<P>, Identifier),
     ReplaceAll(
         Pattern<P>,
         Pattern<P>,
@@ -23,12 +24,13 @@ impl<P: Atom> std::fmt::Debug for Transformer<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Input => f.debug_tuple("Input").finish(),
-            Self::Expand(arg0) => f.debug_tuple("Expand").field(arg0).finish(),
-            Self::ReplaceAll(arg0, arg1, arg2, ..) => f
+            Self::Expand(e) => f.debug_tuple("Expand").field(e).finish(),
+            Self::Derivative(e, x) => f.debug_tuple("Derivative").field(e).field(x).finish(),
+            Self::ReplaceAll(pat, input, rhs, ..) => f
                 .debug_tuple("ReplaceAll")
-                .field(arg0)
-                .field(arg1)
-                .field(arg2)
+                .field(pat)
+                .field(input)
+                .field(rhs)
                 .finish(),
         }
     }
@@ -56,6 +58,11 @@ impl<P: Atom> Transformer<P> {
                 let mut h = workspace.new_atom();
                 e.substitute_wildcards(state, workspace, &mut h, match_stack);
                 h.to_view().expand(workspace, state, out);
+            }
+            Transformer::Derivative(e, x) => {
+                let mut h = workspace.new_atom();
+                e.substitute_wildcards(state, workspace, &mut h, match_stack);
+                h.to_view().derivative(*x, workspace, state, out);
             }
             Transformer::ReplaceAll(pat, input, rhs, cond) => {
                 // prepare the target by executing the transformers

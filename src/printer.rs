@@ -15,6 +15,7 @@ use crate::{
 pub struct SymbolicaPrintOptions {
     pub terms_on_new_line: bool,
     pub color_top_level_sum: bool,
+    pub color_builtin_functions: bool,
     pub print_finite_field: bool,
     pub explicit_rational_polynomial: bool,
 }
@@ -24,6 +25,7 @@ impl Default for SymbolicaPrintOptions {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: true,
+            color_builtin_functions: true,
             print_finite_field: true,
             explicit_rational_polynomial: false,
         }
@@ -56,9 +58,16 @@ impl PrintMode {
         }
     }
 
-    pub fn get_color_top_level_sum(&self) -> bool {
+    pub fn color_top_level_sum(&self) -> bool {
         match self {
             PrintMode::Symbolica(options) => options.color_top_level_sum,
+            PrintMode::Mathematica => false,
+        }
+    }
+
+    pub fn color_builtin_functions(&self) -> bool {
+        match self {
+            PrintMode::Symbolica(options) => options.color_builtin_functions,
             PrintMode::Mathematica => false,
         }
     }
@@ -312,7 +321,19 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         state: &State,
         mut print_state: PrintState,
     ) -> fmt::Result {
-        f.write_str(state.get_name(self.get_name()).unwrap())?;
+        let id = self.get_name();
+        let name = state.get_name(id).unwrap();
+        if name.ends_with('_') {
+            f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))?;
+        } else {
+            // check if the function name is built in
+            if print_mode.color_builtin_functions() && State::is_builtin(id) {
+                f.write_fmt(format_args!("{}", name.as_str().purple()))?;
+            } else {
+                f.write_str(name)?;
+            }
+        }
+
         f.write_char('(')?;
 
         print_state.level += 1;
@@ -417,7 +438,7 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
                     f.write_char('\t')?;
                 }
 
-                if print_state.level == 1 && print_mode.get_color_top_level_sum() {
+                if print_state.level == 1 && print_mode.color_top_level_sum() {
                     f.write_fmt(format_args!("{}", "+".yellow()))?;
                 } else {
                     f.write_char('+')?;

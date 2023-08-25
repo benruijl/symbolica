@@ -206,6 +206,9 @@ class Expression:
         Expand the expression.
         """
 
+    def derivative(self, x: Expression) -> Expression:
+        """ Derive the expression w.r.t the variable `x`. """
+
     def to_rational_polynomial(
         self,
         vars: Optional[Sequence[Expression]] = None,
@@ -313,6 +316,9 @@ class Transformer:
 
     def expand(self) -> Transformer:
         """ Expand products and powers. """
+
+    def derivative(self, x: Transformer | Expression) -> Transformer:
+        """ Create a transformer that derives `self` w.r.t the variable `x`. """
 
     def replace_all(
         self,

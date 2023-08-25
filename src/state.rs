@@ -22,6 +22,13 @@ pub enum FunctionAttribute {
     Symmetric,
 }
 
+pub const EXP: Identifier = Identifier::init(0);
+pub const LOG: Identifier = Identifier::init(1);
+pub const SIN: Identifier = Identifier::init(2);
+pub const COS: Identifier = Identifier::init(3);
+pub const DERIVATIVE: Identifier = Identifier::init(4);
+pub(crate) const BUILTIN_VAR_LIST: [&'static str; 5] = ["exp", "log", "sin", "cos", "der"];
+
 /// A global state, that stores mappings from variable and function names to ids.
 #[derive(Clone)]
 pub struct State {
@@ -34,12 +41,23 @@ pub struct State {
 
 impl State {
     pub fn new() -> State {
-        State {
+        let mut state = State {
             str_to_var_id: HashMap::new(),
             function_attributes: HashMap::new(),
             var_to_str_map: vec![],
             finite_fields: vec![],
+        };
+
+        for x in BUILTIN_VAR_LIST {
+            state.get_or_insert_var(x);
         }
+
+        state
+    }
+
+    /// Returns `true` iff this identifier is defined by Symbolica.
+    pub fn is_builtin(id: Identifier) -> bool {
+        id.to_u32() < BUILTIN_VAR_LIST.len() as u32
     }
 
     // note: could be made immutable by using frozen collections

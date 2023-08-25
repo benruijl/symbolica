@@ -100,6 +100,33 @@ impl PythonPattern {
         })
     }
 
+    pub fn derivative(&self, x: ConvertibleToPattern) -> PyResult<PythonPattern> {
+        let id = match &*x.to_pattern().expr {
+            Pattern::Literal(x) => {
+                if let AtomView::Var(x) = x.to_view() {
+                    x.get_name()
+                } else {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Derivative must be taken wrt a variable",
+                    ));
+                }
+            }
+            Pattern::Wildcard(x) => *x,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Derivative must be taken wrt a variable",
+                ))
+            }
+        };
+
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Derivative(
+                (*self.expr).clone(),
+                id,
+            )))),
+        })
+    }
+
     pub fn replace_all(
         &self,
         lhs: ConvertibleToPattern,
@@ -880,6 +907,26 @@ impl PythonExpression {
         });
 
         PythonExpression { expr: Arc::new(b) }
+    }
+
+    pub fn derivative(&self, x: ConvertibleToExpression) -> PyResult<PythonExpression> {
+        let id = if let AtomView::Var(x) = x.to_expression().expr.to_view() {
+            x.get_name()
+        } else {
+            return Err(exceptions::PyValueError::new_err(
+                "Derivative must be taken wrt a variable",
+            ));
+        };
+
+        let b = WORKSPACE.with(|workspace| {
+            let mut b = OwnedAtom::new();
+            self.expr
+                .to_view()
+                .derivative(id, workspace, STATE.read().unwrap().borrow(), &mut b);
+            b
+        });
+
+        Ok(PythonExpression { expr: Arc::new(b) })
     }
 
     pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {

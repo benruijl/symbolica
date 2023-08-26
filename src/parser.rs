@@ -325,12 +325,13 @@ impl std::fmt::Display for Token {
     }
 }
 
+/// Parse a Symbolica expression.
 pub fn parse(input: &str) -> Result<Token, String> {
     let mut stack: Vec<_> = Vec::with_capacity(20);
     stack.push(Token::Start);
     let mut state = ParseState::Any;
 
-    let delims = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
+    let ops = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
     let whitespace = [' ', '\t', '\n', '\r', '\\'];
 
     let mut char_iter = input.chars();
@@ -339,17 +340,10 @@ pub fn parse(input: &str) -> Result<Token, String> {
 
     let mut id_buffer = String::with_capacity(30);
 
-    let mut i = 0;
     loop {
-        if whitespace.contains(&c) {
-            i += 1;
-            c = char_iter.next().unwrap_or('\0');
-            continue;
-        }
-
         match state {
             ParseState::Identifier => {
-                if delims.contains(&c) {
+                if ops.contains(&c) || whitespace.contains(&c) {
                     state = ParseState::Any;
                     stack.push(Token::ID(id_buffer.as_str().into()));
                     id_buffer.clear();
@@ -359,19 +353,10 @@ pub fn parse(input: &str) -> Result<Token, String> {
             }
             ParseState::Number => {
                 if c != '_' && !c.is_ascii_digit() {
-                    if !delims.contains(&c) {
-                        return Err(format!(
-                            "Parsing error at index {}. Unexpected continuation of number",
-                            i
-                        ));
-                    }
-
                     // drag in the neg operator
-                    if state == ParseState::Any {
-                        if let Some(Token::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
-                            stack.pop();
-                            id_buffer.insert(0, '-');
-                        }
+                    if let Some(Token::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
+                        stack.pop();
+                        id_buffer.insert(0, '-');
                     }
 
                     state = ParseState::Any;
@@ -389,10 +374,8 @@ pub fn parse(input: &str) -> Result<Token, String> {
                     id_buffer.clear();
 
                     state = ParseState::Any;
-                    i += 1;
                     c = char_iter.next().unwrap_or('\0');
-                    continue; // whitespace may have to be skipped
-                } else {
+                } else if !whitespace.contains(&c) {
                     id_buffer.push(c);
                 }
             }
@@ -400,25 +383,25 @@ pub fn parse(input: &str) -> Result<Token, String> {
         }
 
         if state == ParseState::Any {
-            if !c.is_ascii() {
-                state = ParseState::Identifier;
-                id_buffer.push(c);
+            if whitespace.contains(&c) {
+                c = char_iter.next().unwrap_or('\0');
+                continue;
             }
 
-            match c as u8 {
-                b'+' => {
+            match c {
+                '+' => {
                     if matches!(
                         unsafe { stack.last().unwrap_unchecked() },
                         Token::Start | Token::OpenParenthesis | Token::Op(_, true, _, _)
                     ) {
-                        // unary operator, can be ignored as plus is the default
+                        // unary + operator, can be ignored as plus is the default
                     } else {
                         stack.push(Token::Op(true, true, Operator::Add, vec![]))
                     }
                 }
-                b'^' => stack.push(Token::Op(true, true, Operator::Pow, vec![])),
-                b'*' => stack.push(Token::Op(true, true, Operator::Mul, vec![])),
-                b'-' => {
+                '^' => stack.push(Token::Op(true, true, Operator::Pow, vec![])),
+                '*' => stack.push(Token::Op(true, true, Operator::Mul, vec![])),
+                '-' => {
                     if matches!(
                         unsafe { stack.last().unwrap_unchecked() },
                         Token::Start | Token::OpenParenthesis | Token::Op(_, true, _, _)
@@ -430,7 +413,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         extra_ops.push('-'); // push a unary minus
                     }
                 }
-                b'(' => {
+                '(' => {
                     // check if the opening bracket belongs to a function
                     if let Some(Token::ID(_)) = stack.last() {
                         let name = unsafe { stack.pop().unwrap_unchecked() };
@@ -438,12 +421,17 @@ pub fn parse(input: &str) -> Result<Token, String> {
                             stack.push(Token::Fn(true, vec![name])); // serves as open paren
                         }
                     } else {
-                        // TODO: crash when a number if written before it
-                        stack.push(Token::OpenParenthesis)
+                        if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
+                            // insert multiplication: x(...) -> x*(...)
+                            stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                            extra_ops.push(c);
+                        } else {
+                            stack.push(Token::OpenParenthesis)
+                        }
                     }
                 }
-                b')' => stack.push(Token::CloseParenthesis),
-                b'/' => {
+                ')' => stack.push(Token::CloseParenthesis),
+                '/' => {
                     if matches!(
                         stack.last().unwrap(),
                         Token::Start | Token::OpenParenthesis | Token::Op(_, true, _, _)
@@ -455,18 +443,30 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         extra_ops.push('/'); // push a (unary) inverse
                     }
                 }
-                b',' => stack.push(Token::Op(true, true, Operator::Argument, vec![])),
-                b'\0' => stack.push(Token::EOF),
-                b'[' => {
-                    state = ParseState::RationalPolynomial;
+                ',' => stack.push(Token::Op(true, true, Operator::Argument, vec![])),
+                '\0' => stack.push(Token::EOF),
+                '[' => {
+                    if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
+                        // insert multiplication: x[3,4] -> x*[3,4]
+                        stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                        extra_ops.push(c);
+                    } else {
+                        state = ParseState::RationalPolynomial;
+                    }
                 }
                 x => {
-                    if x.is_ascii_digit() {
-                        state = ParseState::Number;
-                        id_buffer.push(c);
+                    if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
+                        // insert multiplication: x y -> x*y
+                        stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                        extra_ops.push(c);
                     } else {
-                        state = ParseState::Identifier;
-                        id_buffer.push(c);
+                        if x.is_ascii_digit() {
+                            state = ParseState::Number;
+                            id_buffer.push(c);
+                        } else {
+                            state = ParseState::Identifier;
+                            id_buffer.push(c);
+                        }
                     }
                 }
             }
@@ -552,7 +552,6 @@ pub fn parse(input: &str) -> Result<Token, String> {
 
         // first drain the queue of extra operators
         if extra_ops.is_empty() {
-            i += 1;
             c = char_iter.next().unwrap_or('\0');
         } else {
             c = extra_ops.remove(0);

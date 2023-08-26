@@ -86,6 +86,10 @@ pub struct SerializedRational<'a> {
 }
 
 impl<'a> SerializedRational<'a> {
+    pub fn is_negative(&self) -> bool {
+        self.is_negative
+    }
+
     pub fn to_rat(&self) -> ArbitraryPrecisionRational {
         let mut num = ArbitraryPrecisionInteger::from_digits(self.num_digits, Order::Lsf);
         let den = ArbitraryPrecisionInteger::from_digits(self.den_digits, Order::Lsf);
@@ -339,7 +343,7 @@ impl BorrowedNumber<'_> {
                 Number::Large(r1 * r2.to_rat())
             }
             (BorrowedNumber::Large(r1), BorrowedNumber::Large(r2)) => {
-                Number::Large(r1.to_rat() + r2.to_rat())
+                Number::Large(r1.to_rat() * r2.to_rat())
             }
             (BorrowedNumber::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
                 if i1 != i2 {

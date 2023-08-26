@@ -392,7 +392,10 @@ pub fn parse(input: &str) -> Result<Token, String> {
                 '+' => {
                     if matches!(
                         unsafe { stack.last().unwrap_unchecked() },
-                        Token::Start | Token::OpenParenthesis | Token::Op(_, true, _, _)
+                        Token::Start
+                            | Token::OpenParenthesis
+                            | Token::Fn(_, _)
+                            | Token::Op(_, true, _, _)
                     ) {
                         // unary + operator, can be ignored as plus is the default
                     } else {
@@ -404,7 +407,10 @@ pub fn parse(input: &str) -> Result<Token, String> {
                 '-' => {
                     if matches!(
                         unsafe { stack.last().unwrap_unchecked() },
-                        Token::Start | Token::OpenParenthesis | Token::Op(_, true, _, _)
+                        Token::Start
+                            | Token::OpenParenthesis
+                            | Token::Fn(_, _)
+                            | Token::Op(_, true, _, _)
                     ) {
                         // unary minus only requires an argument to the right
                         stack.push(Token::Op(false, true, Operator::Neg, vec![]));
@@ -434,7 +440,10 @@ pub fn parse(input: &str) -> Result<Token, String> {
                 '/' => {
                     if matches!(
                         stack.last().unwrap(),
-                        Token::Start | Token::OpenParenthesis | Token::Op(_, true, _, _)
+                        Token::Start
+                            | Token::OpenParenthesis
+                            | Token::Fn(_, _)
+                            | Token::Op(_, true, _, _)
                     ) {
                         // unary inv only requires an argument to the right
                         stack.push(Token::Op(false, true, Operator::Inv, vec![]));

@@ -92,6 +92,7 @@ impl Default for PrintMode {
 #[derive(Debug, Copy, Clone)]
 pub struct PrintState {
     pub level: usize,
+    pub explicit_sign: bool,
 }
 
 macro_rules! define_formatters {
@@ -145,7 +146,10 @@ impl<'a, 'b, P: Atom> AtomPrinter<'a, 'b, P> {
 
 impl<'a, 'b, P: Atom> fmt::Display for AtomPrinter<'a, 'b, P> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let print_state = PrintState { level: 0 };
+        let print_state = PrintState {
+            level: 0,
+            explicit_sign: false,
+        };
         self.atom
             .fmt_output(f, self.print_mode, self.state, print_state)
     }
@@ -191,10 +195,18 @@ impl<'a, A: Var<'a>> FormattedPrintVar for A {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
-        _print_mode: PrintMode,
+        print_mode: PrintMode,
         state: &State,
-        _print_state: PrintState,
+        print_state: PrintState,
     ) -> fmt::Result {
+        if print_state.explicit_sign {
+            if print_state.level == 1 && print_mode.color_top_level_sum() {
+                f.write_fmt(format_args!("{}", "+".yellow()))?;
+            } else {
+                f.write_char('+')?;
+            }
+        }
+
         let name = state.get_name(self.get_name()).unwrap();
         if name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))
@@ -233,19 +245,39 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
         f: &mut fmt::Formatter,
         print_mode: PrintMode,
         state: &State,
-        _print_state: PrintState,
+        print_state: PrintState,
     ) -> fmt::Result {
         let d = self.get_number_view();
+
+        let is_negative = match d {
+            BorrowedNumber::Natural(n, _) => n < 0,
+            BorrowedNumber::Large(r) => r.is_negative(),
+            _ => false,
+        };
+
+        if is_negative {
+            if print_state.level == 1 && print_mode.color_top_level_sum() {
+                f.write_fmt(format_args!("{}", "-".yellow()))?;
+            } else {
+                f.write_char('-')?;
+            }
+        } else if print_state.explicit_sign {
+            if print_state.level == 1 && print_mode.color_top_level_sum() {
+                f.write_fmt(format_args!("{}", "+".yellow()))?;
+            } else {
+                f.write_char('+')?;
+            }
+        }
 
         match d {
             BorrowedNumber::Natural(num, den) => {
                 if den != 1 {
-                    f.write_fmt(format_args!("{}/{}", num, den))
+                    f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))
                 } else {
-                    f.write_fmt(format_args!("{}", num))
+                    f.write_fmt(format_args!("{}", num.unsigned_abs()))
                 }
             }
-            BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r.to_rat())),
+            BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r.to_rat().abs())),
             BorrowedNumber::FiniteField(num, fi) => {
                 let ff = state.get_finite_field(fi);
                 f.write_fmt(format_args!(
@@ -293,9 +325,40 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
         state: &State,
         mut print_state: PrintState,
     ) -> fmt::Result {
+        // write the coefficient first
         let mut first = true;
+        let mut skip_num = false;
+        if let Some(AtomView::Num(n)) = self.iter().last() {
+            // write -1*x as -x
+            if n.get_number_view() == BorrowedNumber::Natural(-1, 1) {
+                if print_state.level == 1 && print_mode.color_top_level_sum() {
+                    f.write_fmt(format_args!("{}", "-".yellow()))?;
+                } else {
+                    f.write_char('-')?;
+                }
+
+                first = true;
+            } else {
+                n.fmt_output(f, print_mode, state, print_state)?;
+                first = false;
+            }
+
+            skip_num = true;
+        } else if print_state.explicit_sign {
+            if print_state.level == 1 && print_mode.color_top_level_sum() {
+                f.write_fmt(format_args!("{}", "+".yellow()))?;
+            } else {
+                f.write_char('+')?;
+            }
+        }
+
         print_state.level += 1;
-        for x in self.iter() {
+        print_state.explicit_sign = false;
+        for x in self.iter().take(if skip_num {
+            self.get_nargs() - 1
+        } else {
+            self.get_nargs()
+        }) {
             if !first {
                 f.write_char('*')?;
             }
@@ -321,6 +384,14 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         state: &State,
         mut print_state: PrintState,
     ) -> fmt::Result {
+        if print_state.explicit_sign {
+            if print_state.level == 1 && print_mode.color_top_level_sum() {
+                f.write_fmt(format_args!("{}", "+".yellow()))?;
+            } else {
+                f.write_char('+')?;
+            }
+        }
+
         let id = self.get_name();
         let name = state.get_name(id).unwrap();
         if name.ends_with('_') {
@@ -337,6 +408,7 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         f.write_char('(')?;
 
         print_state.level += 1;
+        print_state.explicit_sign = false;
         let mut first = true;
         for x in self.iter() {
             if !first {
@@ -375,9 +447,18 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         state: &State,
         mut print_state: PrintState,
     ) -> fmt::Result {
+        if print_state.explicit_sign {
+            if print_state.level == 1 && print_mode.color_top_level_sum() {
+                f.write_fmt(format_args!("{}", "+".yellow()))?;
+            } else {
+                f.write_char('+')?;
+            }
+        }
+
         let b = self.get_base();
 
         print_state.level += 1;
+        print_state.explicit_sign = false;
         if let AtomView::Add(_) | AtomView::Mul(_) | AtomView::Pow(_) = b {
             f.write_char('(')?;
             b.fmt_output(f, print_mode, state, print_state)?;
@@ -431,19 +512,15 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
     ) -> fmt::Result {
         let mut first = true;
         print_state.level += 1;
+
         for x in self.iter() {
             if !first {
                 if print_state.level == 1 && print_mode.get_terms_on_new_line() {
                     f.write_char('\n')?;
                     f.write_char('\t')?;
                 }
-
-                if print_state.level == 1 && print_mode.color_top_level_sum() {
-                    f.write_fmt(format_args!("{}", "+".yellow()))?;
-                } else {
-                    f.write_char('+')?;
-                }
             }
+            print_state.explicit_sign = !first;
             first = false;
 
             x.fmt_output(f, print_mode, state, print_state)?;

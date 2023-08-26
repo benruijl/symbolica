@@ -394,7 +394,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         unsafe { stack.last().unwrap_unchecked() },
                         Token::Start
                             | Token::OpenParenthesis
-                            | Token::Fn(_, _)
+                            | Token::Fn(true, _)
                             | Token::Op(_, true, _, _)
                     ) {
                         // unary + operator, can be ignored as plus is the default
@@ -409,7 +409,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         unsafe { stack.last().unwrap_unchecked() },
                         Token::Start
                             | Token::OpenParenthesis
-                            | Token::Fn(_, _)
+                            | Token::Fn(true, _)
                             | Token::Op(_, true, _, _)
                     ) {
                         // unary minus only requires an argument to the right
@@ -442,7 +442,7 @@ pub fn parse(input: &str) -> Result<Token, String> {
                         stack.last().unwrap(),
                         Token::Start
                             | Token::OpenParenthesis
-                            | Token::Fn(_, _)
+                            | Token::Fn(true, _)
                             | Token::Op(_, true, _, _)
                     ) {
                         // unary inv only requires an argument to the right

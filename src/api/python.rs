@@ -19,6 +19,7 @@ use smallvec::SmallVec;
 
 use crate::{
     id::{Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction},
+    numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, Sample},
     parser::parse,
     poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
     printer::{AtomPrinter, PolynomialPrinter, PrintMode, RationalPolynomialPrinter},
@@ -53,6 +54,8 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonIntegerPolynomial>()?;
     m.add_class::<PythonRationalPolynomial>()?;
     m.add_class::<PythonRationalPolynomialSmallExponent>()?;
+    m.add_class::<PythonNumericalIntegrator>()?;
+    m.add_class::<PythonSample>()?;
 
     Ok(())
 }
@@ -1592,3 +1595,232 @@ macro_rules! generate_rat_methods {
 
 generate_rat_methods!(PythonRationalPolynomial);
 generate_rat_methods!(PythonRationalPolynomialSmallExponent);
+
+#[pyclass(name = "Sample")]
+#[derive(Clone)]
+pub struct PythonSample {
+    #[pyo3(get)]
+    /// The weights the integrator assigned to this sample point, given in descending order:
+    /// first the discrete layer weights and then the continuous layer weight.
+    weights: Vec<f64>,
+    #[pyo3(get)]
+    /// A sample point per (nested) discrete layer. Empty if not present.
+    d: Vec<usize>,
+    #[pyo3(get)]
+    /// A sample in the continuous layer. Empty if not present.
+    c: Vec<f64>,
+}
+
+impl PythonSample {
+    fn to_sample(self) -> Sample<f64> {
+        assert_eq!(
+            self.weights.len(),
+            self.d.len() + if self.c.is_empty() { 0 } else { 1 }
+        );
+        let mut weight_index = self.weights.len() - 1;
+
+        let mut sample = if !self.c.is_empty() {
+            let s = Some(Sample::Continuous(self.weights[weight_index], self.c));
+            weight_index -= 1;
+            s
+        } else {
+            None
+        };
+
+        for dd in self.d.iter().rev() {
+            sample = Some(Sample::Discrete(
+                self.weights[weight_index],
+                *dd,
+                sample.map(|s| Box::new(s)),
+            ));
+            weight_index -= 1;
+        }
+
+        sample.unwrap()
+    }
+
+    fn from_sample(mut sample: &Sample<f64>) -> PythonSample {
+        let mut weights = vec![];
+        let mut d = vec![];
+        let mut c = vec![];
+
+        loop {
+            match sample {
+                Sample::Continuous(w, cs) => {
+                    weights.push(*w);
+                    c.extend_from_slice(cs);
+                    break;
+                }
+                Sample::Discrete(w, i, s) => {
+                    weights.push(*w);
+                    d.push(*i);
+                    if let Some(ss) = s {
+                        sample = ss;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        PythonSample { weights, d, c }
+    }
+}
+
+#[pyclass(name = "NumericalIntegrator")]
+#[derive(Clone)]
+struct PythonNumericalIntegrator {
+    grid: Grid<f64>,
+}
+
+#[pymethods]
+impl PythonNumericalIntegrator {
+    #[classmethod]
+    #[pyo3(signature =
+        (n_dims, n_bins = 128,
+        min_samples_for_update = 100,
+        bin_number_evolution = None,
+        train_on_avg = false)
+    )]
+    pub fn continuous(
+        _cls: &PyType,
+        n_dims: usize,
+        n_bins: usize,
+        min_samples_for_update: usize,
+        bin_number_evolution: Option<Vec<usize>>,
+        train_on_avg: bool,
+    ) -> PythonNumericalIntegrator {
+        PythonNumericalIntegrator {
+            grid: Grid::Continuous(ContinuousGrid::new(
+                n_dims,
+                n_bins,
+                min_samples_for_update,
+                bin_number_evolution,
+                train_on_avg,
+            )),
+        }
+    }
+
+    #[classmethod]
+    #[pyo3(signature =
+        (bins,
+        max_prob_ratio = 100.,
+        train_on_avg = false)
+    )]
+    pub fn discrete(
+        _cls: &PyType,
+        bins: Vec<Option<PythonNumericalIntegrator>>,
+        max_prob_ratio: f64,
+        train_on_avg: bool,
+    ) -> PythonNumericalIntegrator {
+        let bins = bins.into_iter().map(|b| b.map(|bb| bb.grid)).collect();
+
+        PythonNumericalIntegrator {
+            grid: Grid::Discrete(DiscreteGrid::new(bins, max_prob_ratio, train_on_avg)),
+        }
+    }
+
+    pub fn sample(&mut self, num_samples: usize) -> Vec<PythonSample> {
+        let mut rng = rand::thread_rng();
+        let mut sample = Sample::new();
+
+        let mut samples = Vec::with_capacity(num_samples);
+        for _ in 0..num_samples {
+            self.grid.sample(&mut rng, &mut sample);
+            samples.push(PythonSample::from_sample(&sample));
+        }
+
+        samples
+    }
+
+    fn add_training_samples(
+        &mut self,
+        samples: Vec<PythonSample>,
+        evals: Vec<f64>,
+    ) -> PyResult<()> {
+        if evals.len() != samples.len() {
+            return PyResult::Err(pyo3::exceptions::PyAssertionError::new_err(
+                "Number of returned values does not equal number of samples",
+            ));
+        }
+
+        for (s, f) in samples.into_iter().zip(evals) {
+            self.grid
+                .add_training_sample(&s.to_sample(), f)
+                .map_err(|e| pyo3::exceptions::PyAssertionError::new_err(e))?;
+        }
+
+        Ok(())
+    }
+
+    fn update(&mut self, learing_rate: f64) -> PyResult<(f64, f64, f64)> {
+        self.grid.update(learing_rate);
+
+        let stats = self.grid.get_statistics();
+        Ok((stats.avg, stats.err, stats.chi_sq))
+    }
+
+    #[pyo3(signature =
+        (integrand,
+        max_n_iter = 10_000_000,
+        min_error = 0.01,
+        n_samples_per_iter = 10_000,
+        show_stats = true)
+    )]
+    pub fn integrate(
+        &mut self,
+        py: Python,
+        integrand: PyObject,
+        max_n_iter: usize,
+        min_error: f64,
+        n_samples_per_iter: usize,
+        show_stats: bool,
+    ) -> PyResult<(f64, f64, f64)> {
+        let mut rng = rand::thread_rng();
+
+        let mut samples = vec![Sample::new(); n_samples_per_iter];
+        for iteration in 1..=max_n_iter {
+            for sample in &mut samples {
+                self.grid.sample(&mut rng, sample);
+            }
+
+            let p_samples: Vec<_> = samples
+                .iter()
+                .map(|s| PythonSample::from_sample(s))
+                .collect();
+
+            let res = integrand
+                .call(py, (p_samples,), None)?
+                .extract::<Vec<f64>>(py)?;
+
+            if res.len() != n_samples_per_iter {
+                return Err(exceptions::PyValueError::new_err(
+                    "Wrong number of arguments returned for integration function.",
+                ));
+            }
+
+            for (s, r) in samples.iter().zip(res) {
+                self.grid.add_training_sample(&s, r).unwrap();
+            }
+
+            self.grid.update(1.5);
+
+            let stats = self.grid.get_statistics();
+            if show_stats {
+                println!(
+                    "Iteration {:2}: {}  {:.2} χ²",
+                    iteration,
+                    stats.format_uncertainty(),
+                    stats.chi_sq / stats.cur_iter as f64
+                );
+            }
+
+            if stats.avg != 0. && stats.err / stats.avg <= min_error {
+                break;
+            }
+        }
+
+        let stats = self.grid.get_statistics();
+        Ok((stats.avg, stats.err, stats.chi_sq / stats.cur_iter as f64))
+    }
+}

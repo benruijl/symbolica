@@ -52,6 +52,7 @@ pub trait NumericalFloatComparison: NumericalFloatLike + PartialOrd {
     fn max(&self, other: &Self) -> Self;
 
     fn to_usize_clamped(&self) -> usize;
+    fn to_f64(&self) -> f64;
 }
 
 pub trait Real: NumericalFloatLike + Clone + Copy {
@@ -135,6 +136,10 @@ impl NumericalFloatComparison for f64 {
 
     fn to_usize_clamped(&self) -> usize {
         *self as usize
+    }
+
+    fn to_f64(&self) -> f64 {
+        *self
     }
 }
 
@@ -329,5 +334,9 @@ impl NumericalFloatComparison for Rational {
 
     fn to_usize_clamped(&self) -> usize {
         f64::from(self).to_usize_clamped()
+    }
+
+    fn to_f64(&self) -> f64 {
+        f64::from(self)
     }
 }

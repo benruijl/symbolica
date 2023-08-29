@@ -194,6 +194,104 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
 
         true
     }
+
+    /// Format `mean ± sdev` as `mean(sdev)` in a human-readable way with the correct number of digits.
+    ///
+    /// Based on the Python package [gvar](https://github.com/gplepage/gvar) by Peter Lepage.
+    pub fn format_uncertainty(&self) -> String {
+        Self::format_uncertainty_impl(self.avg.to_f64(), self.err.to_f64())
+    }
+
+    fn format_uncertainty_impl(mean: f64, sdev: f64) -> String {
+        fn ndec(x: f64, offset: usize) -> i32 {
+            let mut ans = (offset as f64 - x.log10()) as i32;
+            if ans > 0 && x * 10.0f64.powi(ans) >= [0.5, 9.5, 99.5][offset] {
+                ans -= 1;
+            }
+            if ans < 0 {
+                0
+            } else {
+                ans
+            }
+        }
+        let v = mean;
+        let dv = sdev;
+
+        // special cases
+        if v.is_nan() || dv.is_nan() {
+            format!("{:e} ± {:e}", v, dv)
+        } else if dv.is_infinite() {
+            format!("{:e} ± inf", v)
+        } else if v == 0. && (dv >= 1e5 || dv < 1e-4) {
+            if dv == 0. {
+                "0(0)".to_owned()
+            } else {
+                let e = format!("{:.1e}", dv);
+                let mut ans = e.split('e');
+                let e1 = ans.next().unwrap();
+                let e2 = ans.next().unwrap();
+                "0.0(".to_owned() + e1 + ")e" + e2
+            }
+        } else if v == 0. {
+            if dv >= 9.95 {
+                format!("0({:.0})", dv)
+            } else if dv >= 0.995 {
+                format!("0.0({:.1})", dv)
+            } else {
+                let ndecimal = ndec(dv, 2);
+                format!(
+                    "{:.*}({:.0})",
+                    ndecimal as usize,
+                    v,
+                    dv * 10.0f64.powi(ndecimal)
+                )
+            }
+        } else if dv == 0. {
+            let e = format!("{:e}", v);
+            let mut ans = e.split('e');
+            let e1 = ans.next().unwrap();
+            let e2 = ans.next().unwrap();
+            if e2 != "0" {
+                e1.to_owned() + "(0)e" + e2
+            } else {
+                e1.to_owned() + "(0)"
+            }
+        } else if dv > 1e4 * v.abs() {
+            format!("{:.1e} ± {:.2e}", v, dv)
+        } else if v.abs() >= 1e6 || v.abs() < 1e-5 {
+            // exponential notation for large |self.mean|
+            let exponent = v.abs().log10().floor();
+            let fac = 10.0.powf(exponent);
+            let mantissa = Self::format_uncertainty_impl(v / fac, dv / fac);
+            let e = format!("{:.0e}", fac);
+            let mut ee = e.split('e');
+            mantissa + "e" + ee.nth(1).unwrap()
+        }
+        // normal cases
+        else if dv >= 9.95 {
+            if v.abs() >= 9.5 {
+                format!("{:.0}({:.0})", v, dv)
+            } else {
+                let ndecimal = ndec(v.abs(), 1);
+                format!("{:.*}({:.*})", ndecimal as usize, v, ndecimal as usize, dv)
+            }
+        } else if dv >= 0.995 {
+            if v.abs() >= 0.95 {
+                format!("{:.1}({:.1})", v, dv)
+            } else {
+                let ndecimal = ndec(v.abs(), 1);
+                format!("{:.*}({:.*})", ndecimal as usize, v, ndecimal as usize, dv)
+            }
+        } else {
+            let ndecimal = ndec(v.abs(), 1).max(ndec(dv, 2));
+            format!(
+                "{:.*}({:.0})",
+                ndecimal as usize,
+                v,
+                dv * 10.0f64.powi(ndecimal)
+            )
+        }
+    }
 }
 
 /// A sample taken from a [Grid] that approximates a function. The sample is more likely to fall in a region
@@ -305,10 +403,18 @@ impl<T: Real + NumericalFloatComparison> Grid<T> {
     }
 
     /// Update the grid based on the samples added through [`Grid::add_training_sample`].
-    pub fn update<'a>(&mut self, learning_rate: f64) {
+    pub fn update(&mut self, learning_rate: f64) {
         match self {
             Grid::Continuous(g) => g.update(learning_rate),
             Grid::Discrete(g) => g.update(learning_rate),
+        }
+    }
+
+    /// Get the statistics of this grid.
+    pub fn get_statistics(&mut self) -> &StatisticsAccumulator<T> {
+        match self {
+            Grid::Continuous(g) => &g.accumulator,
+            Grid::Discrete(g) => &g.accumulator,
         }
     }
 }
@@ -362,7 +468,7 @@ pub struct DiscreteGrid<T: Real + NumericalFloatComparison> {
 }
 
 impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
-    /// Create a new discrete grid with `sub_grids.len()` number of bins, where
+    /// Create a new discrete grid with `bins.len()` number of bins, where
     /// each bin may have a sub-grid.
     ///
     /// Also set the maximal probability ratio between bins, `max_prob_ratio`,
@@ -370,13 +476,13 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
     ///
     /// If you want to train on the average instead of the error, set `train_on_avg` to `true` (not recommended).
     pub fn new(
-        sub_grids: Vec<Option<Grid<T>>>,
+        bins: Vec<Option<Grid<T>>>,
         max_prob_ratio: T,
         train_on_avg: bool,
     ) -> DiscreteGrid<T> {
-        let pdf = T::from_usize(1) / T::from_usize(sub_grids.len());
+        let pdf = T::from_usize(1) / T::from_usize(bins.len());
         DiscreteGrid {
-            bins: sub_grids
+            bins: bins
                 .into_iter()
                 .map(|s| Bin {
                     pdf,

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import overload, Iterator, Optional, Sequence, Tuple
+from typing import Callable, overload, Iterator, Optional, Sequence, Tuple, List
 
 
 class Expression:
@@ -435,3 +435,102 @@ class RationalPolynomial:
 
     def gcd(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
+
+
+class NumericalIntegrator:
+    def continuous(n_dims: int, n_bins: int = 128,
+                   min_samples_for_update: int = 100,
+                   bin_number_evolution: List[int] = None,
+                   train_on_avg: bool = False) -> NumericalIntegrator:
+        """ Create a new continuous grid for the numerical integrator."""
+
+    def discrete(bins: List[Optional[NumericalIntegrator]],
+                 max_prob_ratio: float = 100.,
+                 train_on_avg: bool = False) -> NumericalIntegrator:
+        """ Create a new discrete grid for the numerical integrator. Each
+        bin can have a sub-grid.
+
+        Examples
+        --------
+        >>> def integrand(samples: list[Sample]):
+        >>>     res = []
+        >>>     for sample in samples:
+        >>>         if sample.d[0] == 0:
+        >>>             res.append(sample.c[0]**2)
+        >>>         else:
+        >>>             res.append(sample.c[0]**1/2)
+        >>>     return res
+        >>> 
+        >>> integrator = NumericalIntegrator.discrete(
+        >>>     [NumericalIntegrator.continuous(1), NumericalIntegrator.continuous(1)])
+        >>> integrator.integrate(integrand, True, 10, 10000)
+        """
+
+    def sample(self, num_samples: int) -> List[Sample]:
+        """Sample `num_samples` points from the grid."""
+
+    def add_training_samples(self, samples: List[Sample], evals: List[float]):
+        """Add the samples and their corresponding function evaluations to the grid.
+        Call `update` after to update the grid and to obtain the new expected value for the integral."""
+
+    def update(self, learning_rate: float) -> Tuple[float, float, float]:
+        """Update the grid using the `learning_rate`. 
+        Examples
+        --------
+        >>> from symbolica import NumericalIntegrator, Sample
+        >>>
+        >>> def integrand(samples: list[Sample]):
+        >>>     res = []
+        >>>     for sample in samples:
+        >>>         res.append(sample.c[0]**2+sample.c[1]**2)
+        >>>     return res
+        >>> 
+        >>> integrator = NumericalIntegrator.continuous(2)
+        >>> for i in range(10):
+        >>>     samples = integrator.sample(10000 + i * 1000)
+        >>>     res = integrand(samples)
+        >>>     integrator.add_training_samples(samples, res)
+        >>>     avg, err, chi_sq = integrator.update(1.5)
+        >>>     print('Iteration {}: {:.6} +- {:.6}, chi={:.6}'.format(i+1, avg, err, chi_sq))
+        """
+
+    def integrate(self,
+                  integrand: Callable[[List[Sample]], List[float]],
+                  max_n_iter: int = 10000000,
+                  min_error: float = 0.01,
+                  n_samples_per_iter: int = 10000, show_stats: bool = True) -> Tuple[float, float, float]:
+        """ Integrate the function `integrand` that maps a list of `Sample`s to a list of `float`s.
+        The return value is the average, the statistical error, and chi-squared of the integral.
+
+        With `show_stats=True`, intermediate statistics will be printed. `max_n_iter` determines the number
+        of iterations and `n_samples_per_iter` determine the number of samples per iteration. This is
+        the same amount of samples that the integrand function will be called with.
+
+        For more flexibility, use `sample`, `add_training_samples` and `update`. See `update` for an example.
+
+        Examples
+        --------
+        >>> from symbolica import NumericalIntegrator, Sample
+        >>>
+        >>> def integrand(samples: list[Sample]):
+        >>>     res = []
+        >>>     for sample in samples:
+        >>>         res.append(sample.c[0]**2+sample.c[1]**2)
+        >>>     return res
+        >>>
+        >>> avg, err = NumericalIntegrator.continuous(2).integrate(integrand, True, 10, 100000)
+        >>> print('Result: {} +- {}'.format(avg, err))
+        """
+
+
+class Sample:
+    """ A sample from the Symbolica integrator. It could consist of discrete layers,
+     accessible with `d` (empty when there are not discrete layers), and the final continous layer `c` if it is present. """
+
+    """ The weights the integrator assigned to this sample point, given in descending order:
+    first the discrete layer weights and then the continuous layer weight."""
+    weights: List[float]
+    d: List[int]
+    """ A sample point per (nested) discrete layer. Empty if not present."""
+    c: List[float]
+    """ A sample in the continuous layer. Empty if not present."""

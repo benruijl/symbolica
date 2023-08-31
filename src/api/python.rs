@@ -80,6 +80,7 @@ impl ConvertibleToPattern {
     }
 }
 
+/// Operations that transform an expression.
 #[pyclass(name = "Transformer")]
 #[derive(Clone)]
 pub struct PythonPattern {
@@ -88,6 +89,7 @@ pub struct PythonPattern {
 
 #[pymethods]
 impl PythonPattern {
+    /// Create a new transformer for a term provided by `Expression.map`.
     #[new]
     pub fn new() -> PythonPattern {
         PythonPattern {
@@ -95,6 +97,7 @@ impl PythonPattern {
         }
     }
 
+    /// Expand products and powers.
     pub fn expand(&self) -> PyResult<PythonPattern> {
         Ok(PythonPattern {
             expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Expand(
@@ -103,6 +106,7 @@ impl PythonPattern {
         })
     }
 
+    /// Create a transformer that derives `self` w.r.t the variable `x`.
     pub fn derivative(&self, x: ConvertibleToPattern) -> PyResult<PythonPattern> {
         let id = match &*x.to_pattern().expr {
             Pattern::Literal(x) => {
@@ -130,6 +134,17 @@ impl PythonPattern {
         })
     }
 
+    /// Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
+    /// Restrictions on pattern can be supplied through `cond`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> x, w1_, w2_ = Expression.vars('x','w1_','w2_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(3,x)
+    /// >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
+    /// >>> print(r)
     pub fn replace_all(
         &self,
         lhs: ConvertibleToPattern,
@@ -146,6 +161,7 @@ impl PythonPattern {
         })
     }
 
+    /// Add this transformer to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
         let res = WORKSPACE.with(|workspace| {
             self.expr.add(
@@ -160,19 +176,23 @@ impl PythonPattern {
         }
     }
 
+    /// Add this transformer to `other`, returning the result.
     pub fn __radd__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
         self.__add__(rhs)
     }
 
+    ///  Subtract `other` from this transformer, returning the result.
     pub fn __sub__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
         self.__add__(ConvertibleToPattern::Pattern(rhs.to_pattern().__neg__()))
     }
 
+    ///  Subtract this transformer from `other`, returning the result.
     pub fn __rsub__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
         rhs.to_pattern()
             .__add__(ConvertibleToPattern::Pattern(self.__neg__()))
     }
 
+    /// Add this transformer to `other`, returning the result.
     pub fn __mul__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
         let res = WORKSPACE.with(|workspace| {
             self.expr.mul(
@@ -187,10 +207,12 @@ impl PythonPattern {
         }
     }
 
+    /// Add this transformer to `other`, returning the result.
     pub fn __rmul__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
         self.__mul__(rhs)
     }
 
+    /// Divide this transformer by `other`, returning the result.
     pub fn __truediv__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
         let res = WORKSPACE.with(|workspace| {
             self.expr.div(
@@ -205,11 +227,13 @@ impl PythonPattern {
         }
     }
 
+    /// Divide `other` by this transformer, returning the result.
     pub fn __rtruediv__(&self, rhs: ConvertibleToPattern) -> PythonPattern {
         rhs.to_pattern()
             .__truediv__(ConvertibleToPattern::Pattern(self.clone()))
     }
 
+    /// Take `self` to power `exp`, returning the result.
     pub fn __pow__(
         &self,
         rhs: ConvertibleToPattern,
@@ -234,6 +258,7 @@ impl PythonPattern {
         })
     }
 
+    /// Take `base` to power `self`, returning the result.
     pub fn __rpow__(
         &self,
         rhs: ConvertibleToPattern,
@@ -243,18 +268,21 @@ impl PythonPattern {
             .__pow__(ConvertibleToPattern::Pattern(self.clone()), number)
     }
 
+    /// Returns a warning that `**` should be used instead of `^` for taking a power.
     pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonPattern> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
+    /// Returns a warning that `**` should be used instead of `^` for taking a power.
     pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonPattern> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
+    /// Negate the current transformer, returning the result.
     pub fn __neg__(&self) -> PythonPattern {
         let res =
             WORKSPACE.with(|workspace| self.expr.neg(workspace, STATE.read().unwrap().borrow()));
@@ -265,6 +293,16 @@ impl PythonPattern {
     }
 }
 
+/// A Symbolica expression.
+///
+/// Supports standard arithmetic operations, such
+/// as addition and multiplication.
+///
+/// Examples
+/// --------
+/// >>> x = Expression.var('x')
+/// >>> e = x**2 + 2 - x + 1 / x**4
+/// >>> print(e)
 #[pyclass(name = "Expression")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonExpression {
@@ -281,6 +319,7 @@ pub enum SimplePatternRestriction {
     NumberCmp(Identifier, CompareOp, i64),
 }
 
+/// A restriction on wildcards.
 #[pyclass(name = "PatternRestriction")]
 #[derive(Debug, Clone)]
 pub struct PythonPatternRestriction {
@@ -348,6 +387,7 @@ impl PythonPatternRestriction {
 
 #[pymethods]
 impl PythonPatternRestriction {
+    /// Create a new pattern restriction that is the logical and operation between two restrictions (i.e., both should hold).
     pub fn __and__(&self, other: Self) -> PythonPatternRestriction {
         PythonPatternRestriction {
             restrictions: Arc::new(
@@ -385,6 +425,14 @@ impl ConvertibleToExpression {
 
 #[pymethods]
 impl PythonExpression {
+    /// Creates a Symbolica expression that is a single variable.
+    ///
+    /// Examples
+    /// --------
+    /// >>> var_x = Expression.var('x')
+    /// >>> print(var_x)
+    /// x
+    ///
     #[classmethod]
     pub fn var(_cls: &PyType, name: &str) -> PyResult<PythonExpression> {
         let mut guard = STATE.write().unwrap();
@@ -400,6 +448,7 @@ impl PythonExpression {
         })
     }
 
+    /// Create a Symbolica variable for every name in `*names`.
     #[pyo3(signature = (*args,))]
     #[classmethod]
     pub fn vars(_cls: &PyType, args: &PyTuple) -> PyResult<Vec<PythonExpression>> {
@@ -423,11 +472,20 @@ impl PythonExpression {
         Ok(result)
     }
 
+    /// Creates a new Symbolica function with a given name.
+    ///
+    /// Examples
+    /// --------
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(1,2)
+    /// >>> print(e)
+    /// f(1,2)
     #[classmethod]
     pub fn fun(_cls: &PyType, name: &str, is_symmetric: Option<bool>) -> PyResult<PythonFunction> {
         PythonFunction::__new__(name, is_symmetric)
     }
 
+    /// Create a Symbolica function for every name in `*names`.
     #[pyo3(signature = (*args,))]
     #[classmethod]
     pub fn funs(_cls: &PyType, args: &PyTuple) -> PyResult<Vec<PythonFunction>> {
@@ -440,6 +498,24 @@ impl PythonExpression {
         Ok(result)
     }
 
+    /// Parse a Symbolica expression from a string.
+    ///
+    /// Parameters
+    /// ----------
+    /// input: str
+    ///     An input string. UTF-8 character are allowed.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = Expression.parse('x^2+y+y*4')
+    /// >>> print(e)
+    /// x^2+5*y
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the input is not a valid Symbolica expression.
+    ///
     #[classmethod]
     pub fn parse(_cls: &PyType, arg: &str) -> PyResult<PythonExpression> {
         let e = WORKSPACE.with(|f| {
@@ -452,12 +528,14 @@ impl PythonExpression {
         Ok(PythonExpression { expr: Arc::new(e) })
     }
 
+    /// Copy the expression.
     pub fn __copy__(&self) -> PythonExpression {
         PythonExpression {
             expr: Arc::new((*self.expr).clone()),
         }
     }
 
+    /// Convert the expression into a human-readable string.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(format!(
             "{}",
@@ -469,14 +547,15 @@ impl PythonExpression {
         ))
     }
 
+    /// Hash the expression.
     pub fn __hash__(&self) -> u64 {
         let mut hasher = ahash::AHasher::default();
         self.expr.hash(&mut hasher);
         hasher.finish()
     }
 
-    /// Create a wildcard from a variable name.
-    ///
+    /// Create a wildcard from a variable name by appending a _
+    /// if none is present yet.
     #[getter]
     fn get_w(&self) -> PyResult<PythonExpression> {
         let mut guard = STATE.write().unwrap();
@@ -520,6 +599,7 @@ impl PythonExpression {
         })
     }
 
+    /// Add this expression to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
@@ -539,21 +619,25 @@ impl PythonExpression {
         PythonExpression { expr: Arc::new(b) }
     }
 
+    /// Add this expression to `other`, returning the result.
     pub fn __radd__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         self.__add__(rhs)
     }
 
+    /// Subtract `other` from this expression, returning the result.
     pub fn __sub__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         self.__add__(ConvertibleToExpression::Expression(
             rhs.to_expression().__neg__(),
         ))
     }
 
+    /// Subtract this expression from `other`, returning the result.
     pub fn __rsub__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         rhs.to_expression()
             .__add__(ConvertibleToExpression::Expression(self.__neg__()))
     }
 
+    /// Add this expression to `other`, returning the result.
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
@@ -573,10 +657,12 @@ impl PythonExpression {
         PythonExpression { expr: Arc::new(b) }
     }
 
+    /// Add this expression to `other`, returning the result.
     pub fn __rmul__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         self.__mul__(rhs)
     }
 
+    /// Divide this expression by `other`, returning the result.
     pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         let b = WORKSPACE.with(|workspace| {
             let mut pow = workspace.new_atom();
@@ -604,11 +690,13 @@ impl PythonExpression {
         PythonExpression { expr: Arc::new(b) }
     }
 
+    /// Divide `other` by this expression, returning the result.
     pub fn __rtruediv__(&self, rhs: ConvertibleToExpression) -> PythonExpression {
         rhs.to_expression()
             .__truediv__(ConvertibleToExpression::Expression(self.clone()))
     }
 
+    /// Take `self` to power `exp`, returning the result.
     pub fn __pow__(
         &self,
         rhs: ConvertibleToExpression,
@@ -637,6 +725,7 @@ impl PythonExpression {
         Ok(PythonExpression { expr: Arc::new(b) })
     }
 
+    /// Take `base` to power `self`, returning the result.
     pub fn __rpow__(
         &self,
         rhs: ConvertibleToExpression,
@@ -646,18 +735,21 @@ impl PythonExpression {
             .__pow__(ConvertibleToExpression::Expression(self.clone()), number)
     }
 
+    /// Returns a warning that `**` should be used instead of `^` for taking a power.
     pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonExpression> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
+    /// Returns a warning that `**` should be used instead of `^` for taking a power.
     pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonExpression> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
+    /// Negate the current expression, returning the result.
     pub fn __neg__(&self) -> PythonExpression {
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
@@ -681,6 +773,7 @@ impl PythonExpression {
         PythonExpression { expr: Arc::new(b) }
     }
 
+    /// Return the number of terms in this expression.
     fn __len__(&self) -> usize {
         match self.expr.to_view() {
             AtomView::Add(a) => a.get_nargs(),
@@ -690,6 +783,7 @@ impl PythonExpression {
         }
     }
 
+    /// Convert the input to a transformer, on which subsequent transformations can be applied.
     pub fn transform(&self) -> PythonPattern {
         PythonPattern {
             expr: Arc::new(self.expr.into_pattern(&STATE.read().unwrap())),
@@ -723,6 +817,7 @@ impl PythonExpression {
         }
     }
 
+    /// Create a pattern restriction that tests if a wildcard is a variable.
     pub fn is_var(&self) -> PyResult<PythonPatternRestriction> {
         match self.expr.to_view() {
             AtomView::Var(v) => {
@@ -743,6 +838,7 @@ impl PythonExpression {
         }
     }
 
+    /// Create a pattern restriction that tests if a wildcard is a number.
     pub fn is_num(&self) -> PyResult<PythonPatternRestriction> {
         match self.expr.to_view() {
             AtomView::Var(v) => {
@@ -763,6 +859,8 @@ impl PythonExpression {
         }
     }
 
+    /// Create a pattern restriction that treats the wildcard as a literal variable,
+    /// so that it only matches to itself.
     pub fn is_lit(&self) -> PyResult<PythonPatternRestriction> {
         match self.expr.to_view() {
             AtomView::Var(v) => {
@@ -783,6 +881,7 @@ impl PythonExpression {
         }
     }
 
+    /// Create a pattern restriction based on a comparison of a wildcard with a number.
     fn __richcmp__(
         &self,
         other: ConvertibleToExpression,
@@ -824,6 +923,7 @@ impl PythonExpression {
         }
     }
 
+    /// Create an iterator over all atoms in the expression.
     fn __iter__(&self) -> PyResult<PythonAtomIterator> {
         match self.expr.to_view() {
             AtomView::Add(_) | AtomView::Mul(_) | AtomView::Fun(_) => {}
@@ -838,13 +938,22 @@ impl PythonExpression {
         Ok(PythonAtomIterator::from_expr(self.clone()))
     }
 
+    /// Map the transformations to every term in the expression.
+    ///     The execution happen in parallel.
+    ///
+    ///     Examples
+    ///     --------
+    ///     >>> x, x_ = Expression.vars('x', 'x_')
+    ///     >>> e = (1+x)**2
+    ///     >>> r = e.map(Transformer().expand().replace_all(x, 6))
+    ///     >>> print(r)
     pub fn map(&self, op: PythonPattern) -> PyResult<PythonExpression> {
         let t = match op.expr.as_ref() {
             Pattern::Transformer(t) => t,
             _ => {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "Operation must of a transformer",
-                )));
+                return Err(exceptions::PyValueError::new_err(
+                    "Operation must of a transformer".to_string(),
+                ));
             }
         };
 
@@ -872,6 +981,13 @@ impl PythonExpression {
         Ok(PythonExpression { expr: Arc::new(b) })
     }
 
+    /// Set the coefficient ring to contain the variables in the `vars` list.
+    /// This will move all variables into a rational polynomial function.
+
+    /// Parameters
+    /// ----------
+    /// vars : List[Expression]
+    ///         A list of variables
     pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonExpression> {
         let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
         for v in vars {
@@ -900,6 +1016,7 @@ impl PythonExpression {
         Ok(PythonExpression { expr: Arc::new(b) })
     }
 
+    /// Expand the expression.
     pub fn expand(&self) -> PythonExpression {
         let b = WORKSPACE.with(|workspace| {
             let mut b = OwnedAtom::new();
@@ -912,6 +1029,7 @@ impl PythonExpression {
         PythonExpression { expr: Arc::new(b) }
     }
 
+    /// Derive the expression w.r.t the variable `x`.
     pub fn derivative(&self, x: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.to_view() {
             x.get_name()
@@ -932,6 +1050,7 @@ impl PythonExpression {
         Ok(PythonExpression { expr: Arc::new(b) })
     }
 
+    /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
     pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {
         let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
 
@@ -968,6 +1087,14 @@ impl PythonExpression {
             })
     }
 
+    /// Convert the expression to a rational polynomial, optionally, with the variables and the ordering specified in `vars`.
+    /// The latter is useful if it is known in advance that more variables may be added in the future to the
+    /// rational polynomial through composition with other rational polynomials.
+    ///
+    /// Examples
+    /// --------
+    /// >>> a = Expression.parse('(1 + 3*x1 + 5*x2 + 7*x3 + 9*x4 + 11*x5 + 13*x6 + 15*x7)^2 - 1').to_rational_polynomial()
+    /// >>> print(a)
     pub fn to_rational_polynomial(
         &self,
         vars: Option<Vec<PythonExpression>>,
@@ -1012,7 +1139,7 @@ impl PythonExpression {
         })
     }
 
-    // TODO: use macro as the body is the same as for to_rational_polynomial
+    /// Similar to [PythonExpression::to_rational_polynomial()], but the power of each variable limited to 255.
     pub fn to_rational_polynomial_small_exponent(
         &self,
         vars: Option<Vec<PythonExpression>>,
@@ -1057,6 +1184,18 @@ impl PythonExpression {
         })
     }
 
+    /// Return an iterator over the pattern `self` matching to `lhs`.
+    /// Restrictions on pattern can be supplied through `cond`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> x, x_ = Expression.vars('x','x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(x)*f(1)*f(2)*f(3)
+    /// >>> for match in e.match(f(x_)):
+    /// >>>    for map in match:
+    /// >>>        print(map[0],'=', map[1])
     #[pyo3(name = "r#match")]
     pub fn pattern_match(
         &self,
@@ -1077,6 +1216,17 @@ impl PythonExpression {
         )
     }
 
+    /// Replace all patterns matching the left-hand side `lhs` by the right-hand side `rhs`.
+    /// Restrictions on pattern can be supplied through `cond`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> x, w1_, w2_ = Expression.vars('x','w1_','w2_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(3,x)
+    /// >>> r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
+    /// >>> print(r)
     pub fn replace_all(
         &self,
         lhs: ConvertibleToPattern,
@@ -1091,7 +1241,7 @@ impl PythonExpression {
         WORKSPACE.with(|workspace| {
             pattern.replace_all(
                 self.expr.to_view(),
-                &rhs,
+                rhs,
                 &STATE.read().unwrap(),
                 workspace,
                 &restrictions,
@@ -1108,7 +1258,7 @@ impl PythonExpression {
 /// A function class for python that constructs an `Expression` when called with arguments.
 /// This allows to write:
 /// ```python
-/// f = Function("f")
+/// f = Expression.fun("f")
 /// e = f(1,2,3)
 /// ```
 #[pyclass(name = "Function")]
@@ -1118,6 +1268,8 @@ pub struct PythonFunction {
 
 #[pymethods]
 impl PythonFunction {
+    /// Create a new function from a `name`. Can be turned into a symmetric function
+    /// using `is_symmetric=True`.
     #[new]
     pub fn __new__(name: &str, is_symmetric: Option<bool>) -> PyResult<Self> {
         // TODO: parse and check if this is a valid function name
@@ -1142,6 +1294,15 @@ impl PythonFunction {
         PythonFunction { id: self.id }
     }
 
+    /// Create a Symbolica expression or transformer by calling the function with appropriate arguments.
+    ///
+    /// Examples
+    /// -------
+    /// >>> x = Expression.vars('x')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(3,x)
+    /// >>> print(e)
+    /// f(3,x)
     #[pyo3(signature = (*args,))]
     pub fn __call__(&self, args: &PyTuple, py: Python) -> PyResult<PyObject> {
         let mut fn_args = Vec::with_capacity(args.len());
@@ -1238,6 +1399,7 @@ type OwnedMatch = (
 type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a, DefaultRepresentation>;
 
 self_cell!(
+    /// An iterator over matches.
     #[pyclass]
     pub struct PythonMatchIterator {
         owner: OwnedMatch,
@@ -1248,10 +1410,12 @@ self_cell!(
 
 #[pymethods]
 impl PythonMatchIterator {
+    /// Create the iterator.
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
 
+    /// Return the next match.
     fn __next__(&mut self) -> Option<HashMap<PythonExpression, PythonExpression>> {
         self.with_dependent_mut(|_, i| {
             i.next().map(|(_, _, _, matches)| {
@@ -1289,6 +1453,7 @@ pub struct PythonPolynomial {
 
 #[pymethods]
 impl PythonPolynomial {
+    /// Convert the polynomial to a polynomial with integer coefficients, if possible.
     pub fn to_integer_polynomial(&self) -> PyResult<PythonIntegerPolynomial> {
         let mut poly_int = MultivariatePolynomial::new(
             self.poly.nvars,
@@ -1337,12 +1502,14 @@ macro_rules! generate_methods {
     ($type:ty) => {
         #[pymethods]
         impl $type {
+            /// Copy the polynomial.
             pub fn __copy__(&self) -> Self {
                 Self {
                     poly: Arc::new((*self.poly).clone()),
                 }
             }
 
+            /// Print the polynomial in a human-readable format.
             pub fn __str__(&self) -> PyResult<String> {
                 Ok(format!(
                     "{}",
@@ -1354,10 +1521,12 @@ macro_rules! generate_methods {
                 ))
             }
 
+            /// Print the polynomial in a debug representation.
             pub fn __repr__(&self) -> PyResult<String> {
                 Ok(format!("{:?}", self.poly))
             }
 
+            /// Add two polynomials `self and `rhs`, returning the result.
             pub fn __add__(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
@@ -1373,10 +1542,12 @@ macro_rules! generate_methods {
                 }
             }
 
+            /// Subtract polynomials `rhs` from `self`, returning the result.
             pub fn __sub__(&self, rhs: Self) -> Self {
                 self.__add__(rhs.__neg__())
             }
 
+            /// Multiply two polynomials `self and `rhs`, returning the result.
             pub fn __mul__(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
@@ -1392,6 +1563,7 @@ macro_rules! generate_methods {
                 }
             }
 
+            /// Divide the polynomial `self` by `rhs` if possible, returning the result.
             pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
                 let (q, r) = if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     self.poly.quot_rem(&rhs.poly, false)
@@ -1413,6 +1585,7 @@ macro_rules! generate_methods {
                 }
             }
 
+            /// Divide `self` by `rhs`, returning the quotient and remainder.
             pub fn quot_rem(&self, rhs: Self) -> (Self, Self) {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     let (q, r) = self.poly.quot_rem(&rhs.poly, false);
@@ -1429,12 +1602,14 @@ macro_rules! generate_methods {
                 }
             }
 
+            /// Negate the polynomial.
             pub fn __neg__(&self) -> Self {
                 Self {
                     poly: Arc::new((*self.poly).clone().neg()),
                 }
             }
 
+            /// Compute the greatest common divisor (GCD) of two polynomials.
             pub fn gcd(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
@@ -1456,6 +1631,7 @@ macro_rules! generate_methods {
 generate_methods!(PythonPolynomial);
 generate_methods!(PythonIntegerPolynomial);
 
+/// A Symbolica rational polynomial.
 #[pyclass(name = "RationalPolynomial")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomial {
@@ -1464,6 +1640,7 @@ pub struct PythonRationalPolynomial {
 
 #[pymethods]
 impl PythonRationalPolynomial {
+    /// Create a new rational polynomial from a numerator and denominator polynomial.
     #[new]
     pub fn __new__(num: &PythonPolynomial, den: &PythonPolynomial) -> Self {
         Self {
@@ -1477,6 +1654,7 @@ impl PythonRationalPolynomial {
     }
 }
 
+/// A Symbolica rational polynomial with variable powers limited to 255.
 #[pyclass(name = "RationalPolynomialSmallExponent")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomialSmallExponent {
@@ -1488,12 +1666,14 @@ macro_rules! generate_rat_methods {
     ($type:ty) => {
         #[pymethods]
         impl $type {
+            /// Copy the rational polynomial.
             pub fn __copy__(&self) -> Self {
                 Self {
                     poly: Arc::new((*self.poly).clone()),
                 }
             }
 
+            /// Print the rational polynomial in a human-readable format.
             pub fn __str__(&self) -> PyResult<String> {
                 Ok(format!(
                     "{}",
@@ -1505,10 +1685,12 @@ macro_rules! generate_rat_methods {
                 ))
             }
 
+            /// Print the rational polynomial in a debug representation.
             pub fn __repr__(&self) -> PyResult<String> {
                 Ok(format!("{:?}", self.poly))
             }
 
+            /// Add two rational polynomials `self and `rhs`, returning the result.
             pub fn __add__(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
@@ -1524,6 +1706,7 @@ macro_rules! generate_rat_methods {
                 }
             }
 
+            /// Subtract rational polynomials `rhs` from `self`, returning the result.
             pub fn __sub__(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
@@ -1539,6 +1722,7 @@ macro_rules! generate_rat_methods {
                 }
             }
 
+            /// Multiply two rational polynomials `self and `rhs`, returning the result.
             pub fn __mul__(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
@@ -1554,6 +1738,7 @@ macro_rules! generate_rat_methods {
                 }
             }
 
+            /// Divide the rational polynomial `self` by `rhs` if possible, returning the result.
             pub fn __truediv__(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
@@ -1569,12 +1754,14 @@ macro_rules! generate_rat_methods {
                 }
             }
 
+            /// Negate the rational polynomial.
             pub fn __neg__(&self) -> Self {
                 Self {
                     poly: Arc::new((*self.poly).clone().neg()),
                 }
             }
 
+            /// Compute the greatest common divisor (GCD) of two rational polynomials.
             pub fn gcd(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
@@ -1596,6 +1783,8 @@ macro_rules! generate_rat_methods {
 generate_rat_methods!(PythonRationalPolynomial);
 generate_rat_methods!(PythonRationalPolynomialSmallExponent);
 
+/// A sample from the Symbolica integrator. It could consist of discrete layers,
+/// accessible with `d` (empty when there are not discrete layers), and the final continous layer `c` if it is present.
 #[pyclass(name = "Sample")]
 #[derive(Clone)]
 pub struct PythonSample {
@@ -1612,7 +1801,7 @@ pub struct PythonSample {
 }
 
 impl PythonSample {
-    fn to_sample(self) -> Sample<f64> {
+    fn into_sample(self) -> Sample<f64> {
         assert_eq!(
             self.weights.len(),
             self.d.len() + if self.c.is_empty() { 0 } else { 1 }
@@ -1631,7 +1820,7 @@ impl PythonSample {
             sample = Some(Sample::Discrete(
                 self.weights[weight_index],
                 *dd,
-                sample.map(|s| Box::new(s)),
+                sample.map(Box::new),
             ));
             weight_index -= 1;
         }
@@ -1675,6 +1864,7 @@ struct PythonNumericalIntegrator {
 
 #[pymethods]
 impl PythonNumericalIntegrator {
+    /// Create a new continuous grid for the numerical integrator.
     #[classmethod]
     #[pyo3(signature =
         (n_dims, n_bins = 128,
@@ -1701,6 +1891,23 @@ impl PythonNumericalIntegrator {
         }
     }
 
+    /// Create a new discrete grid for the numerical integrator.
+    /// Each bin can have a sub-grid.
+    ///
+    /// Examples
+    /// --------
+    /// >>> def integrand(samples: list[Sample]):
+    /// >>>     res = []
+    /// >>>     for sample in samples:
+    /// >>>         if sample.d[0] == 0:
+    /// >>>             res.append(sample.c[0]**2)
+    /// >>>         else:
+    /// >>>             res.append(sample.c[0]**1/2)
+    /// >>>     return res
+    /// >>>
+    /// >>> integrator = NumericalIntegrator.discrete(
+    /// >>>     [NumericalIntegrator.continuous(1), NumericalIntegrator.continuous(1)])
+    /// >>> integrator.integrate(integrand, True, 10, 10000)
     #[classmethod]
     #[pyo3(signature =
         (bins,
@@ -1720,6 +1927,7 @@ impl PythonNumericalIntegrator {
         }
     }
 
+    /// Sample `num_samples` points from the grid.
     pub fn sample(&mut self, num_samples: usize) -> Vec<PythonSample> {
         let mut rng = rand::thread_rng();
         let mut sample = Sample::new();
@@ -1733,6 +1941,8 @@ impl PythonNumericalIntegrator {
         samples
     }
 
+    /// Add the samples and their corresponding function evaluations to the grid.
+    /// Call `update` after to update the grid and to obtain the new expected value for the integral.
     fn add_training_samples(
         &mut self,
         samples: Vec<PythonSample>,
@@ -1746,13 +1956,31 @@ impl PythonNumericalIntegrator {
 
         for (s, f) in samples.into_iter().zip(evals) {
             self.grid
-                .add_training_sample(&s.to_sample(), f)
-                .map_err(|e| pyo3::exceptions::PyAssertionError::new_err(e))?;
+                .add_training_sample(&s.into_sample(), f)
+                .map_err(pyo3::exceptions::PyAssertionError::new_err)?;
         }
 
         Ok(())
     }
 
+    /// Update the grid using the `learning_rate`.
+    /// Examples
+    /// --------
+    /// >>> from symbolica import NumericalIntegrator, Sample
+    /// >>>
+    /// >>> def integrand(samples: list[Sample]):
+    /// >>>     res = []
+    /// >>>     for sample in samples:
+    /// >>>         res.append(sample.c[0]**2+sample.c[1]**2)
+    /// >>>     return res
+    /// >>>
+    /// >>> integrator = NumericalIntegrator.continuous(2)
+    /// >>> for i in range(10):
+    /// >>>     samples = integrator.sample(10000 + i * 1000)
+    /// >>>     res = integrand(samples)
+    /// >>>     integrator.add_training_samples(samples, res)
+    /// >>>     avg, err, chi_sq = integrator.update(1.5)
+    /// >>>     print('Iteration {}: {:.6} +- {:.6}, chi={:.6}'.format(i+1, avg, err, chi_sq))
     fn update(&mut self, learing_rate: f64) -> PyResult<(f64, f64, f64)> {
         self.grid.update(learing_rate);
 
@@ -1760,6 +1988,27 @@ impl PythonNumericalIntegrator {
         Ok((stats.avg, stats.err, stats.chi_sq))
     }
 
+    /// Integrate the function `integrand` that maps a list of `Sample`s to a list of `float`s.
+    /// The return value is the average, the statistical error, and chi-squared of the integral.
+    ///
+    /// With `show_stats=True`, intermediate statistics will be printed. `max_n_iter` determines the number
+    /// of iterations and `n_samples_per_iter` determine the number of samples per iteration. This is
+    /// the same amount of samples that the integrand function will be called with.
+    ///
+    /// For more flexibility, use `sample`, `add_training_samples` and `update`. See `update` for an example.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import NumericalIntegrator, Sample
+    /// >>>
+    /// >>> def integrand(samples: list[Sample]):
+    /// >>>     res = []
+    /// >>>     for sample in samples:
+    /// >>>         res.append(sample.c[0]**2+sample.c[1]**2)
+    /// >>>     return res
+    /// >>>
+    /// >>> avg, err = NumericalIntegrator.continuous(2).integrate(integrand, True, 10, 100000)
+    /// >>> print('Result: {} +- {}'.format(avg, err))
     #[pyo3(signature =
         (integrand,
         max_n_iter = 10_000_000,
@@ -1784,10 +2033,7 @@ impl PythonNumericalIntegrator {
                 self.grid.sample(&mut rng, sample);
             }
 
-            let p_samples: Vec<_> = samples
-                .iter()
-                .map(|s| PythonSample::from_sample(s))
-                .collect();
+            let p_samples: Vec<_> = samples.iter().map(PythonSample::from_sample).collect();
 
             let res = integrand
                 .call(py, (p_samples,), None)?
@@ -1800,7 +2046,7 @@ impl PythonNumericalIntegrator {
             }
 
             for (s, r) in samples.iter().zip(res) {
-                self.grid.add_training_sample(&s, r).unwrap();
+                self.grid.add_training_sample(s, r).unwrap();
             }
 
             self.grid.update(1.5);

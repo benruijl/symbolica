@@ -1,8 +1,25 @@
+"""
+Symbolica Python API.
+"""
+
 from __future__ import annotations
-from typing import Callable, overload, Iterator, Optional, Sequence, Tuple, List
+from typing import Any, Callable, overload, Iterator, Optional, Sequence, Tuple, List
 
 
 class Expression:
+    """
+    A Symbolica expression.
+
+    Supports standard arithmetic operations, such
+    as addition and multiplication.
+
+    Examples
+    --------
+    >>> x = Expression.var('x')
+    >>> e = x**2 + 2 - x + 1 / x**4
+    >>> print(e)
+    """
+
     @classmethod
     def var(_cls, name: str) -> Expression:
         """
@@ -77,6 +94,11 @@ class Expression:
         Convert the expression into a debug string.
         """
 
+    def __hash__(self) -> str:
+        """
+        Hash the expression.
+        """
+
     def __add__(self, other: Expression | int) -> Expression:
         """
         Add this expression to `other`, returning the result.
@@ -127,6 +149,16 @@ class Expression:
         Take `base` to power `self`, returning the result.
         """
 
+    def __xor__(self, a: Any) -> Expression:
+        """
+        Returns a warning that `**` should be used instead of `^` for taking a power.
+        """
+
+    def __rxor__(self, a: Any) -> Expression:
+        """
+        Returns a warning that `**` should be used instead of `^` for taking a power.
+        """
+
     def __neg__(self) -> Expression:
         """
         Negate the current expression, returning the result.
@@ -143,17 +175,6 @@ class Expression:
         transformations can be applied.
         """
 
-    def set_coefficient_ring(self, vars: Sequence[Expression]) -> Expression:
-        """
-        Set the coefficient ring to contain the variables in the `vars` list.
-        This will move all variables into a rational polynomial function.
-
-        Parameters
-        ----------
-        vars : List[Expression]
-                A list of variables
-        """
-
     def len(self, min_length: int, max_length: int | None) -> PatternRestriction:
         """
         Create a pattern restriction on a pattern based on length.
@@ -164,15 +185,15 @@ class Expression:
         Create a pattern restriction that tests if a wildcard is a variable.
         """
 
+    def is_num(self) -> PatternRestriction:
+        """
+        Create a pattern restriction that tests if a wildcard is a number.
+        """
+
     def is_lit(self) -> PatternRestriction:
         """
         Create a pattern restriction that treats the wildcard as a literal variable,
         so that it only matches to itself.
-        """
-
-    def is_num(self) -> PatternRestriction:
-        """
-        Create a pattern restriction that tests if a wildcard is a number.
         """
 
     def __richcmp__(self, other: int, op: CompareOp) -> PatternRestriction:
@@ -201,6 +222,17 @@ class Expression:
         >>> print(r)
         """
 
+    def set_coefficient_ring(self, vars: Sequence[Expression]) -> Expression:
+        """
+        Set the coefficient ring to contain the variables in the `vars` list.
+        This will move all variables into a rational polynomial function.
+
+        Parameters
+        ----------
+        vars : List[Expression]
+                A list of variables
+        """
+
     def expand(self) -> Expression:
         """
         Expand the expression.
@@ -209,12 +241,15 @@ class Expression:
     def derivative(self, x: Expression) -> Expression:
         """ Derive the expression w.r.t the variable `x`. """
 
+    def to_polynomial(self,  vars: Optional[Sequence[Expression]] = None) -> Polynomial:
+        """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`."""
+
     def to_rational_polynomial(
         self,
         vars: Optional[Sequence[Expression]] = None,
     ) -> RationalPolynomial:
         """
-        Convert the expression to a rational polynomial, optionally, with the variables specified in `vars`.
+        Convert the expression to a rational polynomial, optionally, with the variables and the ordering specified in `vars`.
         The latter is useful if it is known in advance that more variables may be added in the future to the
         rational polynomial through composition with other rational polynomials.
 
@@ -223,6 +258,12 @@ class Expression:
         >>> a = Expression.parse('(1 + 3*x1 + 5*x2 + 7*x3 + 9*x4 + 11*x5 + 13*x6 + 15*x7)^2 - 1').to_rational_polynomial()
         >>> print(a)
         """
+
+    def to_rational_polynomial_small_exponent(
+        self,
+        vars: Optional[Sequence[Expression]] = None,
+    ) -> RationalPolynomial:
+        """Similar to `to_rational_polynomial()`, but the power of each variable is limited to 255."""
 
     def match(
         self,
@@ -279,6 +320,13 @@ class CompareOp:
 class Function:
     """ A Symbolica function. Will turn into an expression or a transformer when called with arguments."""
 
+    @staticmethod
+    def __new__(name: str, is_symmetric: Optional[bool]) -> Function:
+        """ 
+        Create a new function from a `name`. Can be turned into a symmetric function
+        using `is_symmetric=True`.
+        """
+
     @overload
     def __call__(self, *args: Expression | int) -> Expression:
         """
@@ -309,7 +357,7 @@ class Function:
 
 
 class Transformer:
-    """ Transform an expression. """
+    """ Operations that transform an expression. """
 
     def __init__() -> Transformer:
         """ Create a new transformer for a term provided by `Expression.map`. """
@@ -390,6 +438,16 @@ class Transformer:
         Take `base` to power `self`, returning the result.
         """
 
+    def __xor__(self, a: Any) -> Transformer:
+        """
+        Returns a warning that `**` should be used instead of `^` for taking a power.
+        """
+
+    def __rxor__(self, a: Any) -> Transformer:
+        """
+        Returns a warning that `**` should be used instead of `^` for taking a power.
+        """
+
     def __neg__(self) -> Transformer:
         """
         Negate the current transformer, returning the result.
@@ -406,8 +464,83 @@ class MatchIterator:
         """ Return the next match. """
 
 
+class Polynomial:
+    """ A Symbolica polynomial with rational coefficients. """
+
+    def __copy__(self) -> Polynomial:
+        """Copy the polynomial."""
+
+    def __str__(self) -> str:
+        """Print the polynomial in a human-readable format."""
+
+    def __repr__(self) -> str:
+        """Print the polynomial in a debug representation."""
+
+    def __add__(self, rhs: Polynomial) -> Polynomial:
+        """Add two polynomials `self and `rhs`, returning the result."""
+
+    def __sub__(self, rhs: Polynomial) -> Polynomial:
+        """Subtract polynomials `rhs` from `self`, returning the result."""
+
+    def __mul__(self, rhs: Polynomial) -> Polynomial:
+        """Multiply two polynomials `self and `rhs`, returning the result."""
+
+    def __truediv__(self, rhs: Polynomial) -> Polynomial:
+        """Divide the polynomial `self` by `rhs` if possible, returning the result."""
+
+    def quot_rem(self, rhs: Polynomial) -> Polynomial:
+        """Divide `self` by `rhs`, returning the quotient and remainder."""
+
+    def __neg__(self) -> Polynomial:
+        """Negate the polynomial."""
+
+    def gcd(self, rhs: Polynomial) -> Polynomial:
+        """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def to_integer_polynomial(self) -> IntegerPolynomial:
+        """Convert the polynomial to a polynomial with integer coefficients, if possible."""
+
+
+class IntegerPolynomial:
+    """ A Symbolica polynomial with integer coefficients. """
+
+    def __copy__(self) -> IntegerPolynomial:
+        """Copy the polynomial."""
+
+    def __str__(self) -> str:
+        """Print the polynomial in a human-readable format."""
+
+    def __repr__(self) -> str:
+        """Print the polynomial in a debug representation."""
+
+    def __add__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
+        """Add two polynomials `self and `rhs`, returning the result."""
+
+    def __sub__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
+        """Subtract polynomials `rhs` from `self`, returning the result."""
+
+    def __mul__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
+        """Multiply two polynomials `self and `rhs`, returning the result."""
+
+    def __truediv__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
+        """Divide the polynomial `self` by `rhs` if possible, returning the result."""
+
+    def quot_rem(self, rhs: Polynomial) -> Polynomial:
+        """Divide `self` by `rhs`, returning the quotient and remainder."""
+
+    def __neg__(self) -> IntegerPolynomial:
+        """Negate the polynomial."""
+
+    def gcd(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
+        """Compute the greatest common divisor (GCD) of two polynomials."""
+
+
 class RationalPolynomial:
     """ A Symbolica rational polynomial. """
+
+    @staticmethod
+    def __new__(num: Polynomial, den: Polynomial) -> RationalPolynomial:
+        """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     def __copy__(self) -> RationalPolynomial:
         """Copy the rational polynomial."""
@@ -434,6 +567,37 @@ class RationalPolynomial:
         """Negate the rational polynomial."""
 
     def gcd(self, rhs: RationalPolynomial) -> RationalPolynomial:
+        """Compute the greatest common divisor (GCD) of two rational polynomials."""
+
+
+class RationalPolynomialSmallExponent:
+    """ A Symbolica rational polynomial with variable powers limited to 255. """
+
+    def __copy__(self) -> RationalPolynomialSmallExponent:
+        """Copy the rational polynomial."""
+
+    def __str__(self) -> str:
+        """Print the rational polynomial in a human-readable format."""
+
+    def __repr__(self) -> str:
+        """Print the rational polynomial in a debug representation."""
+
+    def __add__(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
+        """Add two rational polynomials `self and `rhs`, returning the result."""
+
+    def __sub__(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
+        """Subtract rational polynomials `rhs` from `self`, returning the result."""
+
+    def __mul__(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
+        """Multiply two rational polynomials `self and `rhs`, returning the result."""
+
+    def __truediv__(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
+        """Divide the rational polynomial `self` by `rhs` if possible, returning the result."""
+
+    def __neg__(self) -> RationalPolynomialSmallExponent:
+        """Negate the rational polynomial."""
+
+    def gcd(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
 
 

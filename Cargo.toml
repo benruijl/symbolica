@@ -19,7 +19,7 @@ crate-type = ["cdylib", "rlib", "staticlib"]
 name = "symbolica"
 
 [features]
-default = ["python_api"]
+default = []
 # if using this, make sure jemalloc is compiled with --disable-initial-exec-tls
 # if symbolica is used as a dynamic library (as is the case for the Python API)
 faster_alloc = ["tikv-jemallocator"]

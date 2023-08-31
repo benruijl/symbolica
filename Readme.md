@@ -19,6 +19,8 @@
 [Symbolica](https://symbolica.io) is a computer algebra system which aims to handle expressions with billions
 of terms, taking up terabytes of diskspace. It can easily be incorporated into existing projects using its Python, Rust or C++ bindings.
 
+For documentation and more, see [symbolica.io](https://symbolica.io).
+
 ## Quick Example
 
 Symbolica allows you to build and manipulate mathematical expressions through matching and replacing patterns, similar to `regex` for text:
@@ -66,7 +68,7 @@ Alternatively, one can install Symbolica manually. Compile Symbolica with a rece
 ```sh
 git clone https://github.com/benruijl/symbolica.git
 cd symbolica
-cargo build --release
+cargo build --release --features python_api
 ```
 and copy the shared library to your destination location, stripping the leading `lib` from the filename:
 ```sh
@@ -114,4 +116,4 @@ which yields `(45+13*x+50*x*y^2+152*x^2+25*x^2*y^4+300*x^3*y^2+150*x^4*y^4)/(5+2
 
 ## Development
 
-Symbolica is in early development. Follow the development and discussions on [Zulip](https://reform.zulipchat.com)!
+Follow the development and discussions on [Zulip](https://reform.zulipchat.com)!

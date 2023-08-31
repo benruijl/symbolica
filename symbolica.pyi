@@ -467,6 +467,26 @@ class MatchIterator:
 class Polynomial:
     """ A Symbolica polynomial with rational coefficients. """
 
+    @classmethod
+    def parse(_cls, input: str, vars: [str]) -> Polynomial:
+        """
+        Parse a polynomial with integer coefficients from a string.
+        The input must be written in an expanded format and a list of all
+        the variables must be provided.
+
+        If these requirements are too strict, use `Expression.to_polynomial()` or
+        `RationalPolynomial.parse()` instead.
+
+        Examples
+        --------
+        >>> e = Polynomial.parse('3*x^2+y+y*4', ['x', 'y'])
+
+        Raises
+        ------
+        ValueError
+            If the input is not a valid Symbolica polynomial.
+        """
+
     def __copy__(self) -> Polynomial:
         """Copy the polynomial."""
 
@@ -503,6 +523,26 @@ class Polynomial:
 
 class IntegerPolynomial:
     """ A Symbolica polynomial with integer coefficients. """
+
+    @classmethod
+    def parse(_cls, input: str, vars: [str]) -> Polynomial:
+        """
+        Parse a polynomial with integer coefficients from a string.
+        The input must be written in an expanded format and a list of all
+        the variables must be provided.
+
+        If these requirements are too strict, use `Expression.to_polynomial()` or
+        `RationalPolynomial.parse()` instead.
+
+        Examples
+        --------
+        >>> e = Polynomial.parse('3*x^2+y+y*4', ['x', 'y'])
+
+        Raises
+        ------
+        ValueError
+            If the input is not a valid Symbolica polynomial.
+        """
 
     def __copy__(self) -> IntegerPolynomial:
         """Copy the polynomial."""
@@ -542,6 +582,24 @@ class RationalPolynomial:
     def __new__(num: Polynomial, den: Polynomial) -> RationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
+    @classmethod
+    def parse(_cls, input: str, vars: [str]) -> RationalPolynomial:
+        """
+        Parse a rational polynomial from a string.
+        The list of all the variables must be provided.
+
+        If this requirements is too strict, use `Expression.to_polynomial()` instead.
+
+        Examples
+        --------
+        >>> e = Polynomial.parse('3/4*x^2+y+y*4', ['x', 'y'])
+
+        Raises
+        ------
+        ValueError
+            If the input is not a valid Symbolica rational polynomial.
+        """
+
     def __copy__(self) -> RationalPolynomial:
         """Copy the rational polynomial."""
 
@@ -572,6 +630,24 @@ class RationalPolynomial:
 
 class RationalPolynomialSmallExponent:
     """ A Symbolica rational polynomial with variable powers limited to 255. """
+
+    @classmethod
+    def parse(_cls, input: str, vars: [str]) -> RationalPolynomial:
+        """
+        Parse a rational polynomial from a string.
+        The list of all the variables must be provided.
+
+        If this requirements is too strict, use `Expression.to_polynomial()` instead.
+
+        Examples
+        --------
+        >>> e = Polynomial.parse('3/4*x^2+y+y*4', ['x', 'y'])
+
+        Raises
+        ------
+        ValueError
+            If the input is not a valid Symbolica rational polynomial.
+        """
 
     def __copy__(self) -> RationalPolynomialSmallExponent:
         """Copy the rational polynomial."""

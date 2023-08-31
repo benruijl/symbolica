@@ -23,3 +23,6 @@ classifiers = [
 [project.urls]
 homepage = "https://symbolica.io"
 repository = "https://github.com/benruijl/symbolica"
+
+[tool.maturin]
+features = ["python_api"]

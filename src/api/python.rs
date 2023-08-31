@@ -16,6 +16,7 @@ use pyo3::{
 };
 use self_cell::self_cell;
 use smallvec::SmallVec;
+use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     id::{Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction},
@@ -1453,6 +1454,44 @@ pub struct PythonPolynomial {
 
 #[pymethods]
 impl PythonPolynomial {
+    /// Parse a polynomial with rational coefficients from a string.
+    /// The input must be written in an expanded format and a list of all
+    /// the variables must be provided.
+    ///
+    /// If these requirements are too strict, use `Expression.to_polynomial()` or
+    /// `RationalPolynomial.parse()` instead.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = Polynomial.parse('3/4*x^2+y+y*4', ['x', 'y'])
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the input is not a valid Symbolica polynomial.
+    #[classmethod]
+    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
+        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
+            SmallVec::new();
+
+        {
+            let mut state = STATE.write().unwrap();
+            for v in vars {
+                let id = state.get_or_insert_var(v);
+                var_map.push(id);
+                var_name_map.push(v.into());
+            }
+        }
+
+        let e = parse(arg)
+            .map_err(exceptions::PyValueError::new_err)?
+            .to_polynomial(RationalField::new(), &var_map, &var_name_map)
+            .map_err(exceptions::PyValueError::new_err)?;
+
+        Ok(Self { poly: Arc::new(e) })
+    }
+
     /// Convert the polynomial to a polynomial with integer coefficients, if possible.
     pub fn to_integer_polynomial(&self) -> PyResult<PythonIntegerPolynomial> {
         let mut poly_int = MultivariatePolynomial::new(
@@ -1496,6 +1535,47 @@ impl PythonPolynomial {
 #[derive(Clone)]
 pub struct PythonIntegerPolynomial {
     pub poly: Arc<MultivariatePolynomial<IntegerRing, u8>>,
+}
+
+#[pymethods]
+impl PythonIntegerPolynomial {
+    /// Parse a polynomial with integer coefficients from a string.
+    /// The input must be written in an expanded format and a list of all
+    /// the variables must be provided.
+    ///
+    /// If these requirements are too strict, use `Expression.to_polynomial()` or
+    /// `RationalPolynomial.parse()` instead.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = Polynomial.parse('3*x^2+y+y*4', ['x', 'y'])
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the input is not a valid Symbolica polynomial.
+    #[classmethod]
+    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
+        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
+            SmallVec::new();
+
+        {
+            let mut state = STATE.write().unwrap();
+            for v in vars {
+                let id = state.get_or_insert_var(v);
+                var_map.push(id);
+                var_name_map.push(v.into());
+            }
+        }
+
+        let e = parse(arg)
+            .map_err(exceptions::PyValueError::new_err)?
+            .to_polynomial(IntegerRing::new(), &var_map, &var_name_map)
+            .map_err(exceptions::PyValueError::new_err)?;
+
+        Ok(Self { poly: Arc::new(e) })
+    }
 }
 
 macro_rules! generate_methods {
@@ -1666,6 +1746,50 @@ macro_rules! generate_rat_methods {
     ($type:ty) => {
         #[pymethods]
         impl $type {
+            /// Parse a rational polynomial from a string.
+            /// The list of all the variables must be provided.
+            ///
+            /// If this requirements is too strict, use `Expression.to_polynomial()` instead.
+            ///
+            ///
+            /// Examples
+            /// --------
+            /// >>> e = Polynomial.parse('3/4*x^2+y+y*4', ['x', 'y'])
+            ///
+            /// Raises
+            /// ------
+            /// ValueError
+            ///     If the input is not a valid Symbolica rational polynomial.
+            #[classmethod]
+            pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
+                let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+                let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
+                    SmallVec::new();
+
+                let mut state = STATE.write().unwrap();
+                for v in vars {
+                    let id = state.get_or_insert_var(v);
+                    var_map.push(id);
+                    var_name_map.push(v.into());
+                }
+
+                let e = WORKSPACE.with(|workspace| {
+                    parse(arg)
+                        .map_err(exceptions::PyValueError::new_err)?
+                        .to_rational_polynomial(
+                            workspace,
+                            &mut state,
+                            RationalField::new(),
+                            IntegerRing::new(),
+                            &var_map,
+                            &var_name_map,
+                        )
+                        .map_err(exceptions::PyValueError::new_err)
+                })?;
+
+                Ok(Self { poly: Arc::new(e) })
+            }
+
             /// Copy the rational polynomial.
             pub fn __copy__(&self) -> Self {
                 Self {

@@ -28,7 +28,7 @@ use crate::{
         default::ListIteratorD,
         number::{BorrowedNumber, Number},
         Add, Atom, AtomView, Fun, Identifier, Mul, Num, OwnedAdd, OwnedFun, OwnedMul, OwnedNum,
-        OwnedPow, Var,
+        OwnedPow, OwnedVar, Var,
     },
     rings::integer::IntegerRing,
     rings::{
@@ -54,8 +54,21 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonRationalPolynomialSmallExponent>()?;
     m.add_class::<PythonNumericalIntegrator>()?;
     m.add_class::<PythonSample>()?;
+    m.add_class::<PythonAtomType>()?;
 
     Ok(())
+}
+
+/// Specifies the type of the atom.
+#[derive(Clone, Copy)]
+#[pyclass(name = "AtomType")]
+pub enum PythonAtomType {
+    Num,
+    Var,
+    Fn,
+    Add,
+    Mul,
+    Pow,
 }
 
 #[derive(FromPyObject)]
@@ -590,6 +603,37 @@ impl PythonExpression {
         let mut hasher = ahash::AHasher::default();
         self.expr.hash(&mut hasher);
         hasher.finish()
+    }
+
+    /// Get the type of the atom.
+    pub fn get_type(&self) -> PythonAtomType {
+        match self.expr.as_ref() {
+            Atom::Num(_) => PythonAtomType::Num,
+            Atom::Var(_) => PythonAtomType::Var,
+            Atom::Fun(_) => PythonAtomType::Fn,
+            Atom::Add(_) => PythonAtomType::Add,
+            Atom::Mul(_) => PythonAtomType::Mul,
+            Atom::Pow(_) => PythonAtomType::Pow,
+            Atom::Empty => unreachable!(),
+        }
+    }
+
+    /// Get the name of a variable or function if the current atom
+    /// is a variable or function.
+    pub fn get_name(&self) -> Option<String> {
+        match self.expr.as_ref() {
+            Atom::Var(v) => STATE
+                .read()
+                .unwrap()
+                .get_name(v.to_var_view().get_name())
+                .map(|x| x.to_string()),
+            Atom::Fun(f) => STATE
+                .read()
+                .unwrap()
+                .get_name(f.to_fun_view().get_name())
+                .map(|x| x.to_string()),
+            _ => None,
+        }
     }
 
     /// Create a wildcard from a variable name by appending a _

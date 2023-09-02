@@ -3,8 +3,16 @@ Symbolica Python API.
 """
 
 from __future__ import annotations
+from enum import Enum
 from typing import Any, Callable, overload, Iterator, Optional, Sequence, Tuple, List
 
+class AtomType(Enum):
+    Num = 1,
+    Var = 2,
+    Fn = 3,
+    Add = 4,
+    Mul = 5,
+    Pow = 6,
 
 class Expression:
     """
@@ -95,7 +103,7 @@ class Expression:
                    color_builtin_functions: bool = True,
                    print_finite_field: bool = True,
                    explicit_rational_polynomial: bool = False,
-                   number_thousands_separator: bool = None,
+                   number_thousands_separator: Optional[str] = None,
                    multiplication_operator: str = '*',
                    square_brackets_for_function: bool = False,
                    num_exp_as_superscript: bool = True,
@@ -118,6 +126,15 @@ class Expression:
     def __hash__(self) -> str:
         """
         Hash the expression.
+        """
+
+    def get_type(self) -> AtomType:
+        """ Get the type of the atom."""
+
+    def get_name(self) -> Optional[str]:
+        """
+        Get the name of a variable or function if the current atom
+        is a variable or function.
         """
 
     def __add__(self, other: Expression | int) -> Expression:

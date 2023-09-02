@@ -1,13 +1,11 @@
 use symbolica::{
-    parser::parse,
-    printer::{self, AtomPrinter},
-    representations::{default::DefaultRepresentation, OwnedAtom},
+    representations::Atom,
     state::{ResettableBuffer, State, Workspace},
 };
 
 fn main() {
     let mut state = State::new();
-    let workspace: Workspace<DefaultRepresentation> = Workspace::new();
+    let workspace: Workspace = Workspace::default();
 
     let inputs = [
         "(1+2*x)^(5+x)",
@@ -17,20 +15,13 @@ fn main() {
     ];
 
     for input in inputs {
-        let input = parse(input)
-            .unwrap()
-            .to_atom(&mut state, &workspace)
-            .unwrap();
+        let input = Atom::parse(input, &mut state, &workspace).unwrap();
 
-        let mut a = OwnedAtom::new();
+        let mut a = Atom::new();
         input
-            .to_view()
+            .as_view()
             .derivative(state.get_or_insert_var("x"), &workspace, &state, &mut a);
 
-        println!(
-            "d({})/dx = {}:",
-            AtomPrinter::new(input.to_view(), printer::PrintMode::default(), &state),
-            AtomPrinter::new(a.to_view(), printer::PrintMode::default(), &state)
-        );
+        println!("d({})/dx = {}:", input.printer(&state), a.printer(&state));
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     representations::{
         number::{ConvertToRing, Number},
         tree::AtomTree,
-        Atom, Identifier, OwnedAtom,
+        Atom, AtomSet, Identifier,
     },
     rings::Ring,
     state::{State, Workspace},
@@ -25,7 +25,7 @@ enum ParseState {
     Any,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Operator {
     Mul,
     Add,
@@ -69,7 +69,7 @@ impl Operator {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Token {
     Number(SmartString<LazyCompact>),
     ID(SmartString<LazyCompact>),
@@ -80,6 +80,65 @@ pub enum Token {
     OpenParenthesis,
     CloseParenthesis,
     EOF,
+}
+
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::Number(n) => f.write_str(n),
+            Token::ID(v) => f.write_str(v),
+            Token::RationalPolynomial(v) => {
+                f.write_char('[')?;
+                f.write_str(v)?;
+                f.write_char(']')
+            }
+            Token::Op(_, _, o, m) => {
+                let mut first = true;
+                f.write_char('(')?;
+
+                for mm in m {
+                    if !first {
+                        match o {
+                            Operator::Mul => f.write_char('*')?,
+                            Operator::Add => f.write_char('+')?,
+                            Operator::Pow => f.write_char('^')?,
+                            Operator::Argument => f.write_char(',')?,
+                            Operator::Neg => f.write_char('-')?,
+                            Operator::Inv => f.write_str("1/")?,
+                        }
+                    } else if *o == Operator::Neg {
+                        f.write_char('-')?;
+                    } else if *o == Operator::Inv {
+                        f.write_str("1/")?;
+                    }
+                    first = false;
+
+                    mm.fmt(f)?;
+                }
+                f.write_char(')')
+            }
+            Token::Fn(_, args) => {
+                let mut first = true;
+
+                match &args[0] {
+                    Token::ID(s) => f.write_str(s)?,
+                    _ => unreachable!(),
+                };
+
+                f.write_char('(')?;
+                for aa in args.iter().skip(1) {
+                    if !first {
+                        f.write_char(',')?;
+                    }
+                    first = false;
+
+                    aa.fmt(f)?;
+                }
+                f.write_char(')')
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Token {
@@ -189,6 +248,7 @@ impl Token {
         }
     }
 
+    // TODO: deprecate and create atom immediately
     pub fn to_atom_tree(&self, state: &mut State) -> Result<AtomTree, String> {
         match self {
             Token::Number(n) => {
@@ -256,178 +316,117 @@ impl Token {
         }
     }
 
-    pub fn to_atom<P: Atom>(
+    pub fn to_atom<P: AtomSet>(
         &self,
         state: &mut State,
         workspace: &Workspace<P>,
-    ) -> Result<OwnedAtom<P>, String> {
+    ) -> Result<Atom<P>, String> {
         let a = self.to_atom_tree(state)?;
         Ok(P::from_tree(&a, state, workspace))
     }
-}
 
-impl std::fmt::Display for Token {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Token::Number(n) => f.write_str(n),
-            Token::ID(v) => f.write_str(v),
-            Token::RationalPolynomial(v) => {
-                f.write_char('[')?;
-                f.write_str(v)?;
-                f.write_char(']')
-            }
-            Token::Op(_, _, o, m) => {
-                let mut first = true;
-                f.write_char('(')?;
+    /// Parse a Symbolica expression.
+    pub fn parse(input: &str) -> Result<Token, String> {
+        let mut stack: Vec<_> = Vec::with_capacity(20);
+        stack.push(Token::Start);
+        let mut state = ParseState::Any;
 
-                for mm in m {
-                    if !first {
-                        match o {
-                            Operator::Mul => f.write_char('*')?,
-                            Operator::Add => f.write_char('+')?,
-                            Operator::Pow => f.write_char('^')?,
-                            Operator::Argument => f.write_char(',')?,
-                            Operator::Neg => f.write_char('-')?,
-                            Operator::Inv => f.write_str("1/")?,
+        let ops = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
+        let whitespace = [' ', '\t', '\n', '\r', '\\'];
+
+        let mut char_iter = input.chars();
+        let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token
+        let mut extra_ops: SmallVec<[char; 6]> = SmallVec::new();
+
+        let mut id_buffer = String::with_capacity(30);
+
+        loop {
+            match state {
+                ParseState::Identifier => {
+                    if ops.contains(&c) || whitespace.contains(&c) {
+                        state = ParseState::Any;
+                        stack.push(Token::ID(id_buffer.as_str().into()));
+                        id_buffer.clear();
+                    } else {
+                        id_buffer.push(c);
+                    }
+                }
+                ParseState::Number => {
+                    if c != '_' && !c.is_ascii_digit() {
+                        // drag in the neg operator
+                        if let Some(Token::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
+                            stack.pop();
+                            id_buffer.insert(0, '-');
                         }
-                    } else if *o == Operator::Neg {
-                        f.write_char('-')?;
-                    } else if *o == Operator::Inv {
-                        f.write_str("1/")?;
+
+                        state = ParseState::Any;
+
+                        stack.push(Token::Number(id_buffer.as_str().into()));
+
+                        id_buffer.clear();
+                    } else {
+                        id_buffer.push(c);
                     }
-                    first = false;
-
-                    mm.fmt(f)?;
                 }
-                f.write_char(')')
-            }
-            Token::Fn(_, args) => {
-                let mut first = true;
+                ParseState::RationalPolynomial => {
+                    if c == ']' {
+                        stack.push(Token::RationalPolynomial(id_buffer.as_str().into()));
+                        id_buffer.clear();
 
-                match &args[0] {
-                    Token::ID(s) => f.write_str(s)?,
-                    _ => unreachable!(),
-                };
-
-                f.write_char('(')?;
-                for aa in args.iter().skip(1) {
-                    if !first {
-                        f.write_char(',')?;
+                        state = ParseState::Any;
+                        c = char_iter.next().unwrap_or('\0');
+                    } else if !whitespace.contains(&c) {
+                        id_buffer.push(c);
                     }
-                    first = false;
-
-                    aa.fmt(f)?;
                 }
-                f.write_char(')')
+                ParseState::Any => {}
             }
-            _ => unreachable!(),
-        }
-    }
-}
 
-/// Parse a Symbolica expression.
-pub fn parse(input: &str) -> Result<Token, String> {
-    let mut stack: Vec<_> = Vec::with_capacity(20);
-    stack.push(Token::Start);
-    let mut state = ParseState::Any;
-
-    let ops = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
-    let whitespace = [' ', '\t', '\n', '\r', '\\'];
-
-    let mut char_iter = input.chars();
-    let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token
-    let mut extra_ops: SmallVec<[char; 6]> = SmallVec::new();
-
-    let mut id_buffer = String::with_capacity(30);
-
-    loop {
-        match state {
-            ParseState::Identifier => {
-                if ops.contains(&c) || whitespace.contains(&c) {
-                    state = ParseState::Any;
-                    stack.push(Token::ID(id_buffer.as_str().into()));
-                    id_buffer.clear();
-                } else {
-                    id_buffer.push(c);
-                }
-            }
-            ParseState::Number => {
-                if c != '_' && !c.is_ascii_digit() {
-                    // drag in the neg operator
-                    if let Some(Token::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
-                        stack.pop();
-                        id_buffer.insert(0, '-');
-                    }
-
-                    state = ParseState::Any;
-
-                    stack.push(Token::Number(id_buffer.as_str().into()));
-
-                    id_buffer.clear();
-                } else {
-                    id_buffer.push(c);
-                }
-            }
-            ParseState::RationalPolynomial => {
-                if c == ']' {
-                    stack.push(Token::RationalPolynomial(id_buffer.as_str().into()));
-                    id_buffer.clear();
-
-                    state = ParseState::Any;
+            if state == ParseState::Any {
+                if whitespace.contains(&c) {
                     c = char_iter.next().unwrap_or('\0');
-                } else if !whitespace.contains(&c) {
-                    id_buffer.push(c);
+                    continue;
                 }
-            }
-            ParseState::Any => {}
-        }
 
-        if state == ParseState::Any {
-            if whitespace.contains(&c) {
-                c = char_iter.next().unwrap_or('\0');
-                continue;
-            }
-
-            match c {
-                '+' => {
-                    if matches!(
-                        unsafe { stack.last().unwrap_unchecked() },
-                        Token::Start
-                            | Token::OpenParenthesis
-                            | Token::Fn(true, _)
-                            | Token::Op(_, true, _, _)
-                    ) {
-                        // unary + operator, can be ignored as plus is the default
-                    } else {
-                        stack.push(Token::Op(true, true, Operator::Add, vec![]))
-                    }
-                }
-                '^' => stack.push(Token::Op(true, true, Operator::Pow, vec![])),
-                '*' => stack.push(Token::Op(true, true, Operator::Mul, vec![])),
-                '-' => {
-                    if matches!(
-                        unsafe { stack.last().unwrap_unchecked() },
-                        Token::Start
-                            | Token::OpenParenthesis
-                            | Token::Fn(true, _)
-                            | Token::Op(_, true, _, _)
-                    ) {
-                        // unary minus only requires an argument to the right
-                        stack.push(Token::Op(false, true, Operator::Neg, vec![]));
-                    } else {
-                        stack.push(Token::Op(true, true, Operator::Add, vec![]));
-                        extra_ops.push('-'); // push a unary minus
-                    }
-                }
-                '(' => {
-                    // check if the opening bracket belongs to a function
-                    if let Some(Token::ID(_)) = stack.last() {
-                        let name = unsafe { stack.pop().unwrap_unchecked() };
-                        if let Token::ID(_) = name {
-                            stack.push(Token::Fn(true, vec![name])); // serves as open paren
+                match c {
+                    '+' => {
+                        if matches!(
+                            unsafe { stack.last().unwrap_unchecked() },
+                            Token::Start
+                                | Token::OpenParenthesis
+                                | Token::Fn(true, _)
+                                | Token::Op(_, true, _, _)
+                        ) {
+                            // unary + operator, can be ignored as plus is the default
+                        } else {
+                            stack.push(Token::Op(true, true, Operator::Add, vec![]))
                         }
-                    } else {
-                        if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
+                    }
+                    '^' => stack.push(Token::Op(true, true, Operator::Pow, vec![])),
+                    '*' => stack.push(Token::Op(true, true, Operator::Mul, vec![])),
+                    '-' => {
+                        if matches!(
+                            unsafe { stack.last().unwrap_unchecked() },
+                            Token::Start
+                                | Token::OpenParenthesis
+                                | Token::Fn(true, _)
+                                | Token::Op(_, true, _, _)
+                        ) {
+                            // unary minus only requires an argument to the right
+                            stack.push(Token::Op(false, true, Operator::Neg, vec![]));
+                        } else {
+                            stack.push(Token::Op(true, true, Operator::Add, vec![]));
+                            extra_ops.push('-'); // push a unary minus
+                        }
+                    }
+                    '(' => {
+                        // check if the opening bracket belongs to a function
+                        if let Some(Token::ID(_)) = stack.last() {
+                            let name = unsafe { stack.pop().unwrap_unchecked() };
+                            if let Token::ID(_) = name {
+                                stack.push(Token::Fn(true, vec![name])); // serves as open paren
+                            }
+                        } else if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
                             // insert multiplication: x(...) -> x*(...)
                             stack.push(Token::Op(true, true, Operator::Mul, vec![]));
                             extra_ops.push(c);
@@ -435,41 +434,39 @@ pub fn parse(input: &str) -> Result<Token, String> {
                             stack.push(Token::OpenParenthesis)
                         }
                     }
-                }
-                ')' => stack.push(Token::CloseParenthesis),
-                '/' => {
-                    if matches!(
-                        stack.last().unwrap(),
-                        Token::Start
-                            | Token::OpenParenthesis
-                            | Token::Fn(true, _)
-                            | Token::Op(_, true, _, _)
-                    ) {
-                        // unary inv only requires an argument to the right
-                        stack.push(Token::Op(false, true, Operator::Inv, vec![]));
-                    } else {
-                        stack.push(Token::Op(true, true, Operator::Mul, vec![]));
-                        extra_ops.push('/'); // push a (unary) inverse
+                    ')' => stack.push(Token::CloseParenthesis),
+                    '/' => {
+                        if matches!(
+                            stack.last().unwrap(),
+                            Token::Start
+                                | Token::OpenParenthesis
+                                | Token::Fn(true, _)
+                                | Token::Op(_, true, _, _)
+                        ) {
+                            // unary inv only requires an argument to the right
+                            stack.push(Token::Op(false, true, Operator::Inv, vec![]));
+                        } else {
+                            stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                            extra_ops.push('/'); // push a (unary) inverse
+                        }
                     }
-                }
-                ',' => stack.push(Token::Op(true, true, Operator::Argument, vec![])),
-                '\0' => stack.push(Token::EOF),
-                '[' => {
-                    if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
-                        // insert multiplication: x[3,4] -> x*[3,4]
-                        stack.push(Token::Op(true, true, Operator::Mul, vec![]));
-                        extra_ops.push(c);
-                    } else {
-                        state = ParseState::RationalPolynomial;
+                    ',' => stack.push(Token::Op(true, true, Operator::Argument, vec![])),
+                    '\0' => stack.push(Token::EOF),
+                    '[' => {
+                        if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
+                            // insert multiplication: x[3,4] -> x*[3,4]
+                            stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                            extra_ops.push(c);
+                        } else {
+                            state = ParseState::RationalPolynomial;
+                        }
                     }
-                }
-                x => {
-                    if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
-                        // insert multiplication: x y -> x*y
-                        stack.push(Token::Op(true, true, Operator::Mul, vec![]));
-                        extra_ops.push(c);
-                    } else {
-                        if x.is_ascii_digit() {
+                    x => {
+                        if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
+                            // insert multiplication: x y -> x*y
+                            stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                            extra_ops.push(c);
+                        } else if x.is_ascii_digit() {
                             state = ParseState::Number;
                             id_buffer.push(c);
                         } else {
@@ -479,204 +476,145 @@ pub fn parse(input: &str) -> Result<Token, String> {
                     }
                 }
             }
-        }
 
-        // match on triplets of type operator identifier operator
-        while state == ParseState::Any && stack.len() > 2 {
-            if !unsafe { stack.get_unchecked(stack.len() - 2) }.is_normal() {
-                // no simplification, get new token
-                break;
-            }
-
-            let mut last = unsafe { stack.pop().unwrap_unchecked() };
-            let middle = unsafe { stack.pop().unwrap_unchecked() };
-            let mut first = unsafe { stack.last_mut().unwrap_unchecked() };
-
-            match first.get_precedence().cmp(&last.get_precedence()) {
-                std::cmp::Ordering::Greater => {
-                    first.add_right(middle);
-                    stack.push(last);
+            // match on triplets of type operator identifier operator
+            while state == ParseState::Any && stack.len() > 2 {
+                if !unsafe { stack.get_unchecked(stack.len() - 2) }.is_normal() {
+                    // no simplification, get new token
+                    break;
                 }
-                std::cmp::Ordering::Less => {
-                    last.add_left(middle);
-                    stack.push(last);
-                }
-                std::cmp::Ordering::Equal => {
-                    // same degree, special merges!
-                    match (&mut first, middle, last) {
-                        (Token::Start, mid, Token::EOF) => {
-                            *first = mid;
-                        }
-                        (Token::Fn(mr, args), mid, Token::CloseParenthesis) => {
-                            debug_assert!(*mr);
-                            *mr = false;
 
-                            if let Token::Op(_, _, Operator::Argument, arg2) = mid {
-                                args.extend(arg2);
-                            } else {
-                                args.push(mid);
+                let mut last = unsafe { stack.pop().unwrap_unchecked() };
+                let middle = unsafe { stack.pop().unwrap_unchecked() };
+                let mut first = unsafe { stack.last_mut().unwrap_unchecked() };
+
+                match first.get_precedence().cmp(&last.get_precedence()) {
+                    std::cmp::Ordering::Greater => {
+                        first.add_right(middle);
+                        stack.push(last);
+                    }
+                    std::cmp::Ordering::Less => {
+                        last.add_left(middle);
+                        stack.push(last);
+                    }
+                    std::cmp::Ordering::Equal => {
+                        // same degree, special merges!
+                        match (&mut first, middle, last) {
+                            (Token::Start, mid, Token::EOF) => {
+                                *first = mid;
                             }
-                        }
-                        (Token::OpenParenthesis, mid, Token::CloseParenthesis) => {
-                            *first = mid;
-                        }
-                        (Token::Op(ml1, mr1, o1, m), mid, Token::Op(ml2, mr2, mut o2, mut mm)) => {
-                            debug_assert!(!*ml1);
-                            debug_assert!(*mr1 && ml2);
-                            // same precedence, so left associate
+                            (Token::Fn(mr, args), mid, Token::CloseParenthesis) => {
+                                debug_assert!(*mr);
+                                *mr = false;
 
-                            // flatten if middle identifier is also a binary operator of the same type that
-                            // is also right associative
-                            if let Token::Op(_, _, o_mid, mut m_mid) = mid {
-                                if o_mid == *o1 && o_mid.right_associative() {
-                                    m.append(&mut m_mid);
+                                if let Token::Op(_, _, Operator::Argument, arg2) = mid {
+                                    args.extend(arg2);
                                 } else {
-                                    m.push(Token::Op(false, false, o_mid, m_mid));
+                                    args.push(mid);
                                 }
-                            } else {
-                                m.push(mid)
                             }
+                            (Token::OpenParenthesis, mid, Token::CloseParenthesis) => {
+                                *first = mid;
+                            }
+                            (
+                                Token::Op(ml1, mr1, o1, m),
+                                mid,
+                                Token::Op(ml2, mr2, mut o2, mut mm),
+                            ) => {
+                                debug_assert!(!*ml1);
+                                debug_assert!(*mr1 && ml2);
+                                // same precedence, so left associate
 
-                            // may not be the same operator, in the case of * and /
-                            if *o1 == o2 {
-                                m.append(&mut mm);
-                                *mr1 = mr2;
-                            } else {
-                                // embed operator 1 in operator 2
-                                *mr1 = mr2;
-                                std::mem::swap(o1, &mut o2);
-                                std::mem::swap(m, &mut mm);
-                                m.insert(0, Token::Op(false, false, o2, mm));
+                                // flatten if middle identifier is also a binary operator of the same type that
+                                // is also right associative
+                                if let Token::Op(_, _, o_mid, mut m_mid) = mid {
+                                    if o_mid == *o1 && o_mid.right_associative() {
+                                        m.append(&mut m_mid);
+                                    } else {
+                                        m.push(Token::Op(false, false, o_mid, m_mid));
+                                    }
+                                } else {
+                                    m.push(mid)
+                                }
+
+                                // may not be the same operator, in the case of * and /
+                                if *o1 == o2 {
+                                    m.append(&mut mm);
+                                    *mr1 = mr2;
+                                } else {
+                                    // embed operator 1 in operator 2
+                                    *mr1 = mr2;
+                                    std::mem::swap(o1, &mut o2);
+                                    std::mem::swap(m, &mut mm);
+                                    m.insert(0, Token::Op(false, false, o2, mm));
+                                }
                             }
+                            _ => return Err("Cannot merge operator".to_string()),
                         }
-                        _ => return Err("Cannot merge operator".to_string()),
                     }
                 }
             }
-        }
 
-        if c == '\0' {
-            break;
-        }
-
-        // first drain the queue of extra operators
-        if extra_ops.is_empty() {
-            c = char_iter.next().unwrap_or('\0');
-        } else {
-            c = extra_ops.remove(0);
-        }
-    }
-
-    if stack.len() == 1 {
-        Ok(stack.pop().unwrap())
-    } else {
-        Err(format!("Parsing error: {:?}", stack))
-    }
-}
-
-/// A special routine that can parse a polynomial written in expanded form,
-/// where the coefficient comes first.
-pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
-    mut input: &'a [u8],
-    var_map: &[Identifier],
-    var_name_map: &[SmartString<LazyCompact>],
-    field: R,
-) -> (&'a [u8], MultivariatePolynomial<R, E>) {
-    let mut exponents = vec![E::zero(); var_name_map.len()];
-    let mut poly = MultivariatePolynomial::new(var_name_map.len(), field, None, Some(var_map));
-
-    let mut last_pos = input;
-    let mut c = input.get_u8();
-    loop {
-        if c == b'(' || c == b')' || c == b'/' {
-            break;
-        }
-
-        // read a term
-        let mut coeff = field.one();
-        for e in &mut exponents {
-            *e = E::zero();
-        }
-
-        if c == b'+' {
-            last_pos = input;
-            c = input.get_u8();
-        }
-
-        // read number
-        let num_start = last_pos;
-        if c == b'-' {
-            last_pos = input;
-            c = input.get_u8();
-        }
-
-        loop {
-            if !c.is_ascii_digit() {
+            if c == '\0' {
                 break;
             }
 
-            if input.is_empty() {
-                break;
-            }
-
-            last_pos = input;
-            c = input.get_u8();
-        }
-
-        // construct number
-        let mut len = unsafe { input.as_ptr().offset_from(num_start.as_ptr()) } as usize;
-        if !c.is_ascii_digit() && (len > 1 || c != b'-') {
-            len -= 1;
-        }
-
-        if len > 0 {
-            let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
-
-            if len == 1 && num_start[0] == b'-' {
-                coeff = field.neg(&field.one());
+            // first drain the queue of extra operators
+            if extra_ops.is_empty() {
+                c = char_iter.next().unwrap_or('\0');
             } else {
-                coeff = if let Ok(x) = n.parse::<i64>() {
-                    field.element_from_number(Number::Natural(x, 1))
-                } else {
-                    match Integer::parse(n) {
-                        Ok(x) => {
-                            let p = x.complete().into();
-                            field.element_from_number(Number::Large(p))
-                        }
-                        Err(e) => panic!("Could not parse number: {}", e),
-                    }
-                };
+                c = extra_ops.remove(0);
             }
         }
 
-        if c == b'-' {
-            // done with the term
-            poly.append_monomial(coeff, &exponents);
-            continue;
+        if stack.len() == 1 {
+            Ok(stack.pop().unwrap())
+        } else {
+            Err(format!("Parsing error: {:?}", stack))
         }
+    }
 
-        // read var^pow
+    /// A special routine that can parse a polynomial written in expanded form,
+    /// where the coefficient comes first.
+    pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
+        mut input: &'a [u8],
+        var_map: &[Identifier],
+        var_name_map: &[SmartString<LazyCompact>],
+        field: R,
+    ) -> (&'a [u8], MultivariatePolynomial<R, E>) {
+        let mut exponents = vec![E::zero(); var_name_map.len()];
+        let mut poly = MultivariatePolynomial::new(var_name_map.len(), field, None, Some(var_map));
+
+        let mut last_pos = input;
+        let mut c = input.get_u8();
         loop {
-            let before_star = last_pos;
-            if c == b'*' {
-                if input.is_empty() {
-                    break;
-                }
-
-                last_pos = input;
-                c = input.get_u8();
-            }
-            if !c.is_ascii_alphabetic() {
-                if before_star[0] == b'*' {
-                    last_pos = before_star; // bring back the *
-                }
+            if c == b'(' || c == b')' || c == b'/' {
                 break;
             }
 
-            let var_start = last_pos;
+            // read a term
+            let mut coeff = field.one();
+            for e in &mut exponents {
+                *e = E::zero();
+            }
 
-            // read var
-            while c.is_ascii_alphanumeric() {
+            if c == b'+' {
+                last_pos = input;
+                c = input.get_u8();
+            }
+
+            // read number
+            let num_start = last_pos;
+            if c == b'-' {
+                last_pos = input;
+                c = input.get_u8();
+            }
+
+            loop {
+                if !c.is_ascii_digit() {
+                    break;
+                }
+
                 if input.is_empty() {
                     break;
                 }
@@ -685,56 +623,120 @@ pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
                 c = input.get_u8();
             }
 
-            let mut len = unsafe { input.as_ptr().offset_from(var_start.as_ptr()) } as usize;
-            if !c.is_ascii_alphanumeric() {
+            // construct number
+            let mut len = unsafe { input.as_ptr().offset_from(num_start.as_ptr()) } as usize;
+            if !c.is_ascii_digit() && (len > 1 || c != b'-') {
                 len -= 1;
             }
 
-            let name = unsafe { std::str::from_utf8_unchecked(&var_start[..len]) };
-            let index = var_name_map
-                .iter()
-                .position(|x| x == name)
-                .expect("Undefined variable");
+            if len > 0 {
+                let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
 
-            // read pow
-            if c == b'^' {
-                let pow_start = input;
+                if len == 1 && num_start[0] == b'-' {
+                    coeff = field.neg(&field.one());
+                } else {
+                    coeff = if let Ok(x) = n.parse::<i64>() {
+                        field.element_from_number(Number::Natural(x, 1))
+                    } else {
+                        match Integer::parse(n) {
+                            Ok(x) => {
+                                let p = x.complete().into();
+                                field.element_from_number(Number::Large(p))
+                            }
+                            Err(e) => panic!("Could not parse number: {}", e),
+                        }
+                    };
+                }
+            }
 
-                // read pow
-                loop {
-                    last_pos = input;
-                    c = input.get_u8();
+            if c == b'-' {
+                // done with the term
+                poly.append_monomial(coeff, &exponents);
+                continue;
+            }
 
-                    if !c.is_ascii_digit() || input.is_empty() {
+            // read var^pow
+            loop {
+                let before_star = last_pos;
+                if c == b'*' {
+                    if input.is_empty() {
                         break;
                     }
+
+                    last_pos = input;
+                    c = input.get_u8();
+                }
+                if !c.is_ascii_alphabetic() {
+                    if before_star[0] == b'*' {
+                        last_pos = before_star; // bring back the *
+                    }
+                    break;
                 }
 
-                let mut len = unsafe { input.as_ptr().offset_from(pow_start.as_ptr()) } as usize;
-                if !c.is_ascii_digit() {
+                let var_start = last_pos;
+
+                // read var
+                while c.is_ascii_alphanumeric() {
+                    if input.is_empty() {
+                        break;
+                    }
+
+                    last_pos = input;
+                    c = input.get_u8();
+                }
+
+                let mut len = unsafe { input.as_ptr().offset_from(var_start.as_ptr()) } as usize;
+                if !c.is_ascii_alphanumeric() {
                     len -= 1;
                 }
-                let n = unsafe { std::str::from_utf8_unchecked(&pow_start[..len]) };
-                exponents[index] = E::from_u32(n.parse::<u32>().unwrap());
-            } else {
-                exponents[index] = E::one();
+
+                let name = unsafe { std::str::from_utf8_unchecked(&var_start[..len]) };
+                let index = var_name_map
+                    .iter()
+                    .position(|x| x == name)
+                    .expect("Undefined variable");
+
+                // read pow
+                if c == b'^' {
+                    let pow_start = input;
+
+                    // read pow
+                    loop {
+                        last_pos = input;
+                        c = input.get_u8();
+
+                        if !c.is_ascii_digit() || input.is_empty() {
+                            break;
+                        }
+                    }
+
+                    let mut len =
+                        unsafe { input.as_ptr().offset_from(pow_start.as_ptr()) } as usize;
+                    if !c.is_ascii_digit() {
+                        len -= 1;
+                    }
+                    let n = unsafe { std::str::from_utf8_unchecked(&pow_start[..len]) };
+                    exponents[index] = E::from_u32(n.parse::<u32>().unwrap());
+                } else {
+                    exponents[index] = E::one();
+                }
+
+                if input.is_empty() {
+                    break;
+                }
             }
+
+            // contruct a new term
+            poly.append_monomial(coeff, &exponents);
 
             if input.is_empty() {
                 break;
             }
         }
-
-        // contruct a new term
-        poly.append_monomial(coeff, &exponents);
-
         if input.is_empty() {
-            break;
+            (input, poly)
+        } else {
+            (last_pos, poly)
         }
-    }
-    if input.is_empty() {
-        (input, poly)
-    } else {
-        (last_pos, poly)
     }
 }

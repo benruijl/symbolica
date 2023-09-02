@@ -468,7 +468,7 @@ class Polynomial:
     """ A Symbolica polynomial with rational coefficients. """
 
     @classmethod
-    def parse(_cls, input: str, vars: [str]) -> Polynomial:
+    def parse(_cls, input: str, vars: List[str]) -> Polynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -525,7 +525,7 @@ class IntegerPolynomial:
     """ A Symbolica polynomial with integer coefficients. """
 
     @classmethod
-    def parse(_cls, input: str, vars: [str]) -> Polynomial:
+    def parse(_cls, input: str, vars: List[str]) -> Polynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -583,7 +583,7 @@ class RationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
-    def parse(_cls, input: str, vars: [str]) -> RationalPolynomial:
+    def parse(_cls, input: str, vars: List[str]) -> RationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -632,7 +632,7 @@ class RationalPolynomialSmallExponent:
     """ A Symbolica rational polynomial with variable powers limited to 255. """
 
     @classmethod
-    def parse(_cls, input: str, vars: [str]) -> RationalPolynomial:
+    def parse(_cls, input: str, vars: List[str]) -> RationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.

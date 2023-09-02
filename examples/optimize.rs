@@ -1,7 +1,6 @@
 use symbolica::{
-    parser::parse,
     poly::evaluate::{BorrowedHornerScheme, InstructionSetPrinter},
-    representations::default::DefaultRepresentation,
+    representations::Atom,
     rings::rational::RationalField,
     state::{State, Workspace},
 };
@@ -14,13 +13,11 @@ const SIGMA: &str = "+32*amel2^3*zk^2*xcp3 +32*amel2^3*zk^2*xcp1 -48*amel2^3*zk^
 
 fn main() {
     let mut state = State::new();
-    let workspace = Workspace::<DefaultRepresentation>::new();
+    let workspace = Workspace::default();
 
-    let poly: MultivariatePolynomial<_, u8> = parse(SIGMA)
+    let poly: MultivariatePolynomial<_, u8> = Atom::parse(SIGMA, &mut state, &workspace)
         .unwrap()
-        .to_atom(&mut state, &workspace)
-        .unwrap()
-        .to_view()
+        .as_view()
         .to_polynomial(RationalField::new(), None)
         .unwrap();
 

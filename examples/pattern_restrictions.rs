@@ -1,29 +1,18 @@
 use ahash::HashMap;
 use symbolica::{
     id::{Match, Pattern, PatternAtomTreeIterator, PatternRestriction},
-    parser::parse,
-    printer::AtomPrinter,
-    representations::{
-        default::DefaultRepresentation, number::BorrowedNumber, AtomView, Num, OwnedAtom,
-    },
+    representations::{number::BorrowedNumber, Atom, AtomView, Num},
     rings::finite_field,
     state::{State, Workspace},
 };
 fn main() {
     let mut state = State::new();
-    let workspace = Workspace::new();
+    let workspace = Workspace::default();
 
-    let expr: OwnedAtom<DefaultRepresentation> = parse("f(1,2,3,4,5,6,7)")
-        .unwrap()
-        .to_atom(&mut state, &workspace)
-        .unwrap();
+    let expr = Atom::parse("f(1,2,3,4,5,6,7)", &mut state, &workspace).unwrap();
+    let pat_expr = Atom::parse("f(x_,y_,z_,w_)", &mut state, &workspace).unwrap();
 
-    let pat_expr = parse("f(x_,y_,z_,w_)")
-        .unwrap()
-        .to_atom(&mut state, &workspace)
-        .unwrap();
-
-    let pattern = Pattern::from_view(pat_expr.to_view(), &state);
+    let pattern = Pattern::from_view(pat_expr.as_view(), &state);
     let mut restrictions = HashMap::default();
     restrictions.insert(
         state.get_or_insert_var("x_"),
@@ -51,19 +40,17 @@ fn main() {
     );
     restrictions.insert(
         state.get_or_insert_var("z_"),
-        vec![PatternRestriction::Filter(Box::new(
-            |x: &Match<DefaultRepresentation>| {
-                if let Match::Single(AtomView::Num(num)) = x {
-                    if let BorrowedNumber::Natural(x, y) = num.get_number_view() {
-                        y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
-                    } else {
-                        false
-                    }
+        vec![PatternRestriction::Filter(Box::new(|x: &Match| {
+            if let Match::Single(AtomView::Num(num)) = x {
+                if let BorrowedNumber::Natural(x, y) = num.get_number_view() {
+                    y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
                 } else {
                     false
                 }
-            },
-        ))],
+            } else {
+                false
+            }
+        }))],
     );
     restrictions.insert(
         state.get_or_insert_var("w_"),
@@ -72,27 +59,23 @@ fn main() {
 
     println!(
         "> Matching pattern {} : 0 <= len(x) <= 2, 0 <= len(y) <= 4, len(x) >= len(y) & is_prime(z) to {}:",
-        AtomPrinter::new(pat_expr.to_view(), symbolica::printer::PrintMode::default(), &state),
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state)
+        pat_expr.printer(&state),
+        expr.printer(&state)
     );
 
-    let mut it = PatternAtomTreeIterator::new(&pattern, expr.to_view(), &state, &restrictions);
+    let mut it = PatternAtomTreeIterator::new(&pattern, expr.as_view(), &state, &restrictions);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\tMatch at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {
             print!("\t\t{} = ", state.get_name(*id).unwrap());
             match v {
-                Match::Single(s) => print!(
-                    "{}",
-                    AtomPrinter::new(*s, symbolica::printer::PrintMode::default(), &state),
-                ),
+                Match::Single(s) => {
+                    print!("{}", s.printer(&state))
+                }
                 Match::Multiple(slice_type, mm) => {
                     print!("{:?} ", slice_type);
                     for vv in mm {
-                        print!(
-                            "{}",
-                            AtomPrinter::new(*vv, symbolica::printer::PrintMode::default(), &state),
-                        );
+                        print!("{}", vv.printer(&state));
                         print!(", ")
                     }
                 }

@@ -5,13 +5,13 @@ use smallvec::SmallVec;
 use crate::{
     representations::{
         number::{BorrowedNumber, Number},
-        Add, Atom, AtomView, Fun, ListSlice, Mul, Num, OwnedAdd, OwnedAtom, OwnedFun, OwnedMul,
+        Add, Atom, AtomSet, AtomView, Fun, ListSlice, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
         OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
     state::{BufferHandle, FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace},
 };
 
-impl<'a, P: Atom> AtomView<'a, P> {
+impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Compare two atoms.
     fn cmp(&self, other: &AtomView<'_, P>) -> Ordering {
         match (&self, other) {
@@ -271,15 +271,15 @@ impl<'a, P: Atom> AtomView<'a, P> {
     }
 }
 
-impl<P: Atom> OwnedAtom<P> {
+impl<P: AtomSet> Atom<P> {
     /// Merge two factors if possible. If this function returns `true`, `self`
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
     fn merge_factors(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
         // x^a * x^b = x^(a + b)
-        if let OwnedAtom::Pow(p1) = self {
-            if let OwnedAtom::Pow(p2) = other {
-                let new_exp = helper.transform_to_num();
+        if let Atom::Pow(p1) = self {
+            if let Atom::Pow(p2) = other {
+                let new_exp = helper.to_num();
 
                 let (base2, exp2) = p2.to_pow_view().get_base_exp();
 
@@ -302,7 +302,7 @@ impl<P: Atom> OwnedAtom<P> {
                     new_exp.add(n2, state);
 
                     if new_exp.to_num_view().is_zero() {
-                        let num = self.transform_to_num();
+                        let num = self.to_num();
                         num.set_from_number(Number::Natural(1, 1));
                     } else if new_exp.to_num_view().is_one() {
                         self.from_view(&base2);
@@ -318,26 +318,26 @@ impl<P: Atom> OwnedAtom<P> {
         }
 
         // x * x^n = x^(n+1)
-        if let OwnedAtom::Pow(p) = other {
+        if let Atom::Pow(p) = other {
             let pv = p.to_pow_view();
             let (base, exp) = pv.get_base_exp();
 
-            if self.to_view() == base {
+            if self.as_view() == base {
                 if let AtomView::Num(n) = &exp {
-                    let num = helper.transform_to_num();
+                    let num = helper.to_num();
 
                     let new_exp = n
                         .get_number_view()
                         .add(&BorrowedNumber::Natural(1, 1), state);
 
                     if new_exp.is_zero() {
-                        let num = self.transform_to_num();
+                        let num = self.to_num();
                         num.set_from_number(Number::Natural(1, 1));
                     } else if Number::Natural(1, 1) == new_exp {
                         self.from_view(&base);
                     } else {
                         num.set_from_number(new_exp);
-                        let op = self.transform_to_pow();
+                        let op = self.to_pow();
                         op.set_from_base_and_exp(base, AtomView::Num(num.to_num_view()));
                     }
 
@@ -351,8 +351,8 @@ impl<P: Atom> OwnedAtom<P> {
         }
 
         // simplify num1 * num2
-        if let OwnedAtom::Num(n1) = self {
-            if let OwnedAtom::Num(n2) = other {
+        if let Atom::Num(n1) = self {
+            if let Atom::Num(n2) = other {
                 n1.mul(&n2.to_num_view(), state);
                 return true;
             } else {
@@ -361,17 +361,17 @@ impl<P: Atom> OwnedAtom<P> {
         }
 
         // x * x => x^2
-        if self.to_view() == other.to_view() {
+        if self.as_view() == other.as_view() {
             // add powers
-            let exp = other.transform_to_num();
+            let exp = other.to_num();
             exp.set_from_number(Number::Natural(2, 1));
 
             //let mut a = workspace.get_atom_test_buf();
-            let new_pow = helper.transform_to_pow();
-            new_pow.set_from_base_and_exp(self.to_view(), AtomView::Num(exp.to_num_view()));
+            let new_pow = helper.to_pow();
+            new_pow.set_from_base_and_exp(self.as_view(), AtomView::Num(exp.to_num_view()));
 
             // overwrite self with the new power view
-            let pow_handle = self.transform_to_pow();
+            let pow_handle = self.to_pow();
             pow_handle.set_from_view(&new_pow.to_pow_view());
 
             return true;
@@ -384,8 +384,8 @@ impl<P: Atom> OwnedAtom<P> {
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
     pub fn merge_terms(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
-        if let OwnedAtom::Num(n1) = self {
-            if let OwnedAtom::Num(n2) = other {
+        if let Atom::Num(n1) = self {
+            if let Atom::Num(n2) = other {
                 n1.add(&n2.to_num_view(), state);
                 return true;
             } else {
@@ -394,7 +394,7 @@ impl<P: Atom> OwnedAtom<P> {
         }
 
         // compare the non-coefficient part of terms and add the coefficients if they are the same
-        if let OwnedAtom::Mul(m) = self {
+        if let Atom::Mul(m) = self {
             let slice = m.to_mul_view().to_slice();
 
             let last_elem = slice.get(slice.len() - 1);
@@ -405,7 +405,7 @@ impl<P: Atom> OwnedAtom<P> {
                 (m.to_mul_view().to_slice(), false)
             };
 
-            if let OwnedAtom::Mul(m2) = other {
+            if let Atom::Mul(m2) = other {
                 let slice2 = m2.to_mul_view().to_slice();
                 let last_elem2 = slice2.get(slice2.len() - 1);
 
@@ -436,25 +436,25 @@ impl<P: Atom> OwnedAtom<P> {
                     drop(slice);
 
                     if new_coeff.is_zero() {
-                        let num = self.transform_to_num();
+                        let num = self.to_num();
                         num.set_from_number(new_coeff);
 
                         return true;
                     }
 
-                    let on = helper.transform_to_num();
+                    let on = helper.to_num();
                     on.set_from_number(new_coeff);
 
                     if has_coeff {
-                        m.replace_last(on.to_num_view().to_view());
+                        m.replace_last(on.to_num_view().as_view());
                     } else {
-                        m.extend(on.to_num_view().to_view());
+                        m.extend(on.to_num_view().as_view());
                     }
 
                     return true;
                 }
             } else {
-                if non_coeff1.len() != 1 || other.to_view() != slice.get(0) {
+                if non_coeff1.len() != 1 || other.as_view() != slice.get(0) {
                     return false;
                 }
 
@@ -470,20 +470,20 @@ impl<P: Atom> OwnedAtom<P> {
                 drop(non_coeff1);
 
                 if new_coeff.is_zero() {
-                    let num = self.transform_to_num();
+                    let num = self.to_num();
                     num.set_from_number(new_coeff);
 
                     return true;
                 }
 
-                let on = helper.transform_to_num();
+                let on = helper.to_num();
                 on.set_from_number(new_coeff);
 
-                m.replace_last(on.to_num_view().to_view());
+                m.replace_last(on.to_num_view().as_view());
 
                 return true;
             }
-        } else if let OwnedAtom::Mul(m) = other {
+        } else if let Atom::Mul(m) = other {
             let slice = m.to_mul_view().to_slice();
 
             if slice.len() != 2 {
@@ -492,7 +492,7 @@ impl<P: Atom> OwnedAtom<P> {
 
             let last_elem = slice.get(slice.len() - 1);
 
-            if self.to_view() == slice.get(0) {
+            if self.as_view() == slice.get(0) {
                 let (new_coeff, has_num) = if let AtomView::Num(n) = &last_elem {
                     (
                         n.get_number_view()
@@ -507,33 +507,33 @@ impl<P: Atom> OwnedAtom<P> {
                 drop(slice);
 
                 if new_coeff.is_zero() {
-                    let num = self.transform_to_num();
+                    let num = self.to_num();
                     num.set_from_number(new_coeff);
 
                     return true;
                 }
 
-                let on = helper.transform_to_num();
+                let on = helper.to_num();
                 on.set_from_number(new_coeff);
 
                 if has_num {
-                    m.replace_last(on.to_num_view().to_view());
+                    m.replace_last(on.to_num_view().as_view());
                 } else {
-                    m.extend(on.to_num_view().to_view());
+                    m.extend(on.to_num_view().as_view());
                 }
 
                 std::mem::swap(self, other);
 
                 return true;
             }
-        } else if self.to_view() == other.to_view() {
-            let mul = helper.transform_to_mul();
+        } else if self.as_view() == other.as_view() {
+            let mul = helper.to_mul();
 
-            let num = other.transform_to_num();
+            let num = other.to_num();
             num.set_from_number(Number::Natural(2, 1));
 
-            mul.extend(self.to_view());
-            mul.extend(other.to_view());
+            mul.extend(self.as_view());
+            mul.extend(other.as_view());
 
             std::mem::swap(self, helper);
             return true;
@@ -543,7 +543,7 @@ impl<P: Atom> OwnedAtom<P> {
     }
 }
 
-impl<'a, P: Atom> AtomView<'a, P> {
+impl<'a, P: AtomSet> AtomView<'a, P> {
     #[inline(always)]
     pub fn is_dirty(&self) -> bool {
         match self {
@@ -557,7 +557,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
     }
 
     /// Normalize an atom.
-    pub fn normalize(&self, workspace: &Workspace<P>, state: &State, out: &mut OwnedAtom<P>) {
+    pub fn normalize(&self, workspace: &Workspace<P>, state: &State, out: &mut Atom<P>) {
         if !self.is_dirty() {
             out.from_view(self);
             return;
@@ -565,7 +565,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
 
         match self {
             AtomView::Mul(t) => {
-                let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
+                let mut atom_test_buf: SmallVec<[BufferHandle<Atom<P>>; 20]> = SmallVec::new();
 
                 for a in t.iter() {
                     let mut handle = workspace.new_atom();
@@ -577,7 +577,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         new_at.from_view(&a);
                     }
 
-                    if let OwnedAtom::Mul(mul) = new_at {
+                    if let Atom::Mul(mul) = new_at {
                         for c in mul.to_mul_view().iter() {
                             // TODO: remove this copy
                             let mut handle = workspace.new_atom();
@@ -593,7 +593,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             atom_test_buf.push(handle);
                         }
                     } else {
-                        if let AtomView::Num(n) = handle.get().to_view() {
+                        if let AtomView::Num(n) = handle.get().as_view() {
                             if n.is_one() {
                                 continue;
                             }
@@ -603,10 +603,10 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     }
                 }
 
-                atom_test_buf.sort_by(|a, b| a.get().to_view().cmp_factors(&b.get().to_view()));
+                atom_test_buf.sort_by(|a, b| a.get().as_view().cmp_factors(&b.get().as_view()));
 
                 if !atom_test_buf.is_empty() {
-                    let out_mul = out.transform_to_mul();
+                    let out_mul = out.to_mul();
 
                     let mut last_buf = atom_test_buf.remove(0);
 
@@ -621,14 +621,14 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         {
                             // we are done merging
                             {
-                                let v = last_buf.get().to_view();
+                                let v = last_buf.get().as_view();
                                 if let AtomView::Num(n) = v {
                                     if !n.is_one() {
-                                        out_mul.extend(last_buf.get().to_view());
+                                        out_mul.extend(last_buf.get().as_view());
                                         cur_len += 1;
                                     }
                                 } else {
-                                    out_mul.extend(last_buf.get().to_view());
+                                    out_mul.extend(last_buf.get().as_view());
                                     cur_len += 1;
                                 }
                             }
@@ -637,31 +637,31 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     }
 
                     if cur_len == 0 {
-                        out.from_view(&last_buf.get().to_view());
+                        out.from_view(&last_buf.get().as_view());
                     } else {
-                        out_mul.extend(last_buf.get().to_view());
+                        out_mul.extend(last_buf.get().as_view());
                     }
                 } else {
-                    let on = out.transform_to_num();
+                    let on = out.to_num();
                     on.set_from_number(Number::Natural(1, 1));
                 }
             }
             AtomView::Num(n) => {
                 let normalized_num = n.get_number_view().normalize();
-                let nn = out.transform_to_num();
+                let nn = out.to_num();
                 nn.set_from_number(normalized_num);
             }
             AtomView::Var(v) => {
-                let vv = out.transform_to_var();
+                let vv = out.to_var();
                 vv.set_from_view(v);
             }
             AtomView::Fun(f) => {
                 let name = f.get_name();
-                let out = out.transform_to_fun();
+                let out = out.to_fun();
                 out.set_from_name(name);
 
                 if state.get_function_attributes(name).contains(&Symmetric) {
-                    let mut arg_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
+                    let mut arg_buf: SmallVec<[BufferHandle<Atom<P>>; 20]> = SmallVec::new();
 
                     for a in f.iter() {
                         let mut handle = workspace.new_atom();
@@ -673,10 +673,10 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         arg_buf.push(handle);
                     }
 
-                    arg_buf.sort_by(|a, b| a.get().to_view().cmp(&b.get().to_view()));
+                    arg_buf.sort_by(|a, b| a.get().as_view().cmp(&b.get().as_view()));
 
                     for a in arg_buf {
-                        out.add_arg(a.to_view());
+                        out.add_arg(a.as_view());
                     }
                 } else {
                     let mut handle = workspace.new_atom();
@@ -684,7 +684,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         if a.is_dirty() {
                             handle.reset(); // TODO: needed?
                             a.normalize(workspace, state, &mut handle);
-                            out.add_arg(handle.to_view());
+                            out.add_arg(handle.as_view());
                         } else {
                             out.add_arg(a);
                         }
@@ -712,33 +712,33 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 };
 
                 'pow_simplify: {
-                    if let AtomView::Num(e) = exp_handle.get().to_view() {
+                    if let AtomView::Num(e) = exp_handle.get().as_view() {
                         if let BorrowedNumber::Natural(0, 1) = &e.get_number_view() {
                             // x^0 = 1
-                            let n = out.transform_to_num();
+                            let n = out.to_num();
                             n.set_from_number(Number::Natural(1, 1));
                             break 'pow_simplify;
                         } else if let BorrowedNumber::Natural(1, 1) = &e.get_number_view() {
                             // remove power of 1
-                            out.from_view(&base_handle.get().to_view());
+                            out.from_view(&base_handle.get().as_view());
                             break 'pow_simplify;
-                        } else if let AtomView::Num(n) = base_handle.get().to_view() {
+                        } else if let AtomView::Num(n) = base_handle.get().as_view() {
                             // simplify a number to a numerical power
                             let (new_base_num, new_exp_num) =
                                 n.get_number_view().pow(&e.get_number_view(), state);
 
                             if let Number::Natural(1, 1) = &new_exp_num {
-                                let out = out.transform_to_num();
+                                let out = out.to_num();
                                 out.set_from_number(new_base_num);
                                 break 'pow_simplify;
                             }
 
-                            let nb = base_handle.get_mut().transform_to_num();
+                            let nb = base_handle.get_mut().to_num();
                             nb.set_from_number(new_base_num);
 
-                            let ne = exp_handle.get_mut().transform_to_num();
+                            let ne = exp_handle.get_mut().to_num();
                             ne.set_from_number(new_exp_num);
-                        } else if let AtomView::Pow(p_base) = base_handle.get().to_view() {
+                        } else if let AtomView::Pow(p_base) = base_handle.get().as_view() {
                             // simplify x^2^3
                             let (p_base_base, p_base_exp) = p_base.get_base_exp();
                             if let AtomView::Num(n) = p_base_exp {
@@ -749,29 +749,29 @@ impl<'a, P: Atom> AtomView<'a, P> {
                                     break 'pow_simplify;
                                 }
 
-                                let ne = exp_handle.get_mut().transform_to_num();
+                                let ne = exp_handle.get_mut().to_num();
                                 ne.set_from_number(new_exp);
 
-                                let out = out.transform_to_pow();
-                                out.set_from_base_and_exp(p_base_base, exp_handle.get().to_view());
+                                let out = out.to_pow();
+                                out.set_from_base_and_exp(p_base_base, exp_handle.get().as_view());
 
                                 break 'pow_simplify;
                             }
-                        } else if let AtomView::Mul(_) = base_handle.get().to_view() {
+                        } else if let AtomView::Mul(_) = base_handle.get().as_view() {
                             // TODO: turn (x*y)^2 into x^2*y^2?
                             // for now, expand() needs to be used
                         }
                     }
 
-                    let out = out.transform_to_pow();
+                    let out = out.to_pow();
                     out.set_from_base_and_exp(
-                        base_handle.get().to_view(),
-                        exp_handle.get().to_view(),
+                        base_handle.get().as_view(),
+                        exp_handle.get().as_view(),
                     );
                 }
             }
             AtomView::Add(a) => {
-                let mut atom_test_buf: SmallVec<[BufferHandle<OwnedAtom<P>>; 20]> = SmallVec::new();
+                let mut atom_test_buf: SmallVec<[BufferHandle<Atom<P>>; 20]> = SmallVec::new();
 
                 for a in a.iter() {
                     let mut handle = workspace.new_atom();
@@ -783,7 +783,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         new_at.from_view(&a);
                     }
 
-                    if let OwnedAtom::Add(new_add) = new_at {
+                    if let Atom::Add(new_add) = new_at {
                         for c in new_add.to_add_view().iter() {
                             // TODO: remove this copy
                             let mut handle = workspace.new_atom();
@@ -799,7 +799,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             atom_test_buf.push(handle);
                         }
                     } else {
-                        if let AtomView::Num(n) = handle.get().to_view() {
+                        if let AtomView::Num(n) = handle.get().as_view() {
                             if n.is_zero() {
                                 continue;
                             }
@@ -808,10 +808,10 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     }
                 }
 
-                atom_test_buf.sort_by(|a, b| a.get().to_view().cmp_terms(&b.get().to_view()));
+                atom_test_buf.sort_by(|a, b| a.get().as_view().cmp_terms(&b.get().as_view()));
 
                 if !atom_test_buf.is_empty() {
-                    let out_add = out.transform_to_add();
+                    let out_add = out.to_add();
 
                     let mut last_buf = atom_test_buf.remove(0);
 
@@ -826,14 +826,14 @@ impl<'a, P: Atom> AtomView<'a, P> {
                         {
                             // we are done merging
                             {
-                                let v = last_buf.get().to_view();
+                                let v = last_buf.get().as_view();
                                 if let AtomView::Num(n) = v {
                                     if !n.is_zero() {
-                                        out_add.extend(last_buf.get().to_view());
+                                        out_add.extend(last_buf.get().as_view());
                                         cur_len += 1;
                                     }
                                 } else {
-                                    out_add.extend(last_buf.get().to_view());
+                                    out_add.extend(last_buf.get().as_view());
                                     cur_len += 1;
                                 }
                             }
@@ -842,12 +842,12 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     }
 
                     if cur_len == 0 {
-                        out.from_view(&last_buf.get().to_view());
+                        out.from_view(&last_buf.get().as_view());
                     } else {
-                        out_add.extend(last_buf.get().to_view());
+                        out_add.extend(last_buf.get().as_view());
                     }
                 } else {
-                    let on = out.transform_to_num();
+                    let on = out.to_num();
                     on.set_from_number(Number::Natural(0, 1));
                 }
             }

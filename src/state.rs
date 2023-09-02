@@ -8,7 +8,10 @@ use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
 
 use crate::{
-    representations::{Atom, Identifier, OwnedAtom},
+    representations::{
+        default::Linear, number::Number, AsAtomView, Atom, AtomSet, AtomView, Identifier, OwnedNum,
+        OwnedVar,
+    },
     rings::finite_field::{FiniteField, FiniteFieldCore},
 };
 
@@ -27,7 +30,7 @@ pub const LOG: Identifier = Identifier::init(1);
 pub const SIN: Identifier = Identifier::init(2);
 pub const COS: Identifier = Identifier::init(3);
 pub const DERIVATIVE: Identifier = Identifier::init(4);
-pub(crate) const BUILTIN_VAR_LIST: [&'static str; 5] = ["exp", "log", "sin", "cos", "der"];
+pub(crate) const BUILTIN_VAR_LIST: [&str; 5] = ["exp", "log", "sin", "cos", "der"];
 
 /// A global state, that stores mappings from variable and function names to ids.
 #[derive(Clone)]
@@ -148,19 +151,39 @@ impl State {
 }
 
 /// A workspace that stores reusable buffers.
-pub struct Workspace<P: Atom> {
-    atom_stack: Stack<OwnedAtom<P>>,
+pub struct Workspace<P: AtomSet = Linear> {
+    atom_stack: Stack<Atom<P>>,
 }
 
-impl<P: Atom> Workspace<P> {
-    pub fn new() -> Workspace<P> {
+impl<P: AtomSet> Workspace<P> {
+    pub fn new() -> Self {
         Workspace {
             atom_stack: Stack::new(),
         }
     }
 
-    pub fn new_atom(&self) -> BufferHandle<OwnedAtom<P>> {
+    pub fn new_atom(&self) -> BufferHandle<Atom<P>> {
         self.atom_stack.get_buf_ref()
+    }
+
+    pub fn new_var(&self, id: Identifier) -> BufferHandle<Atom<P>> {
+        let mut owned = self.new_atom();
+        owned.to_var().set_from_id(id);
+        owned
+    }
+
+    pub fn new_num<T: Into<Number>>(&self, num: T) -> BufferHandle<Atom<P>> {
+        let mut owned = self.new_atom();
+        owned.to_num().set_from_number(num.into());
+        owned
+    }
+}
+
+impl Default for Workspace<Linear> {
+    fn default() -> Self {
+        Self {
+            atom_stack: Stack::new(),
+        }
     }
 }
 
@@ -258,5 +281,11 @@ impl<'a, T: ResettableBuffer> Drop for BufferHandle<'a, T> {
     fn drop(&mut self) {
         self.parent
             .return_arg(std::mem::take(&mut self.buf).unwrap())
+    }
+}
+
+impl<'a, 'b, P: AtomSet> AsAtomView<'b, P> for &'b BufferHandle<'a, Atom<P>> {
+    fn as_atom_view(self) -> AtomView<'b, P> {
+        self.as_view()
     }
 }

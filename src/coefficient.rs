@@ -4,8 +4,8 @@ use crate::{
     poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
     representations::{
         number::{BorrowedNumber, Number},
-        Add, Atom, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedAtom, OwnedMul, OwnedNum,
-        OwnedPow, Pow, Var,
+        Add, Atom, AtomSet, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow,
+        Pow, Var,
     },
     rings::{
         integer::{Integer, IntegerRing},
@@ -14,13 +14,13 @@ use crate::{
     state::{ResettableBuffer, State, Workspace},
 };
 
-impl<'a, P: Atom> AtomView<'a, P> {
+impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn set_coefficient_ring(
         &self,
         vars: &[Identifier],
         state: &State,
         workspace: &Workspace<P>,
-        out: &mut OwnedAtom<P>,
+        out: &mut Atom<P>,
     ) -> bool {
         match self {
             AtomView::Num(n) => {
@@ -39,39 +39,37 @@ impl<'a, P: Atom> AtomView<'a, P> {
                             r.denominator = r.denominator.rearrange_with_growth(&order);
                             r.numerator.var_map = Some(vars.into());
                             r.denominator.var_map = Some(vars.into());
-                            out.transform_to_num()
-                                .set_from_number(Number::RationalPolynomial(r));
+                            out.to_num().set_from_number(Number::RationalPolynomial(r));
                             true
                         } else {
                             let mut n1 = workspace.new_atom();
                             n1.from_polynomial(workspace, state, &r.numerator);
 
                             let mut n1_conv = workspace.new_atom();
-                            n1.to_view()
+                            n1.as_view()
                                 .set_coefficient_ring(vars, state, workspace, &mut n1_conv);
 
                             let mut n2 = workspace.new_atom();
                             n2.from_polynomial(workspace, state, &r.denominator);
 
                             let mut n2_conv = workspace.new_atom();
-                            n2.to_view()
+                            n2.as_view()
                                 .set_coefficient_ring(vars, state, workspace, &mut n2_conv);
 
                             // create n1/n2
                             let mut n3 = workspace.new_atom();
                             let mut exp = workspace.new_atom();
-                            exp.transform_to_num()
-                                .set_from_number(Number::Natural(-1, 1));
-                            let n3p = n3.transform_to_pow();
-                            n3p.set_from_base_and_exp(n2_conv.to_view(), exp.to_view());
+                            exp.to_num().set_from_number(Number::Natural(-1, 1));
+                            let n3p = n3.to_pow();
+                            n3p.set_from_base_and_exp(n2_conv.as_view(), exp.as_view());
                             n3p.set_dirty(true);
 
                             let mut m = workspace.new_atom();
-                            let mm = m.transform_to_mul();
-                            mm.extend(n1_conv.to_view());
-                            mm.extend(n3.to_view());
+                            let mm = m.to_mul();
+                            mm.extend(n1_conv.as_view());
+                            mm.extend(n3.as_view());
                             mm.set_dirty(true);
-                            m.to_view().normalize(workspace, state, out);
+                            m.as_view().normalize(workspace, state, out);
                             true
                         }
                     } else {
@@ -98,7 +96,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     poly.append_monomial(Integer::one(), &e);
                     let den = MultivariatePolynomial::new_from_constant(&poly, Integer::one());
 
-                    out.transform_to_num()
+                    out.to_num()
                         .set_from_number(Number::RationalPolynomial(RationalPolynomial {
                             numerator: poly,
                             denominator: den,
@@ -115,11 +113,11 @@ impl<'a, P: Atom> AtomView<'a, P> {
                 let mut nb = workspace.new_atom();
                 if base.set_coefficient_ring(vars, state, workspace, &mut nb) {
                     let mut o = workspace.new_atom();
-                    let pow = o.transform_to_pow();
-                    pow.set_from_base_and_exp(nb.to_view(), exp);
+                    let pow = o.to_pow();
+                    pow.set_from_base_and_exp(nb.as_view(), exp);
                     pow.set_dirty(true);
 
-                    o.to_view().normalize(workspace, state, out);
+                    o.as_view().normalize(workspace, state, out);
                     true
                 } else {
                     out.from_view(self);
@@ -128,7 +126,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
             }
             AtomView::Mul(m) => {
                 let mut o = workspace.new_atom();
-                let mul = o.transform_to_mul();
+                let mul = o.to_mul();
 
                 let mut changed = false;
 
@@ -137,7 +135,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     arg_o.reset();
 
                     changed |= arg.set_coefficient_ring(vars, state, workspace, &mut arg_o);
-                    mul.extend(arg_o.to_view());
+                    mul.extend(arg_o.as_view());
                 }
 
                 mul.set_dirty(changed);
@@ -146,13 +144,13 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     std::mem::swap(out, &mut o);
                     false
                 } else {
-                    o.to_view().normalize(workspace, state, out);
+                    o.as_view().normalize(workspace, state, out);
                     true
                 }
             }
             AtomView::Add(a) => {
                 let mut o = workspace.new_atom();
-                let mul = o.transform_to_add();
+                let mul = o.to_add();
 
                 let mut changed = false;
 
@@ -161,7 +159,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     arg_o.reset();
 
                     changed |= arg.set_coefficient_ring(vars, state, workspace, &mut arg_o);
-                    mul.extend(arg_o.to_view());
+                    mul.extend(arg_o.as_view());
                 }
 
                 mul.set_dirty(changed);
@@ -170,7 +168,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                     std::mem::swap(out, &mut o);
                     false
                 } else {
-                    o.to_view().normalize(workspace, state, out);
+                    o.as_view().normalize(workspace, state, out);
                     true
                 }
             }

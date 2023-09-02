@@ -569,10 +569,10 @@ impl EuclideanDomain for RationalField {
                 let lcm = d2.checked_mul(d1);
 
                 if gcd_num == i64::MAX as u64 + 1 || lcm.is_none() {
-                    return Rational::Large(ArbitraryPrecisionRational::from((
+                    Rational::Large(ArbitraryPrecisionRational::from((
                         ArbitraryPrecisionInteger::from(gcd_num),
                         ArbitraryPrecisionInteger::from(*d2) * ArbitraryPrecisionInteger::from(d1),
-                    )));
+                    )))
                 } else {
                     Rational::Natural(gcd_num as i64, lcm.unwrap())
                 }

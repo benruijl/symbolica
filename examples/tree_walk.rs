@@ -1,8 +1,6 @@
 use symbolica::{
     id::AtomTreeIterator,
-    parser::parse,
-    printer::AtomPrinter,
-    representations::{default::DefaultRepresentation, OwnedAtom},
+    representations::Atom,
     state::{State, Workspace},
 };
 
@@ -10,21 +8,11 @@ fn main() {
     let mut state = State::new();
     let workspace = Workspace::new();
 
-    let expr: OwnedAtom<DefaultRepresentation> = parse("f(z)*f(f(x),z)*f(y)")
-        .unwrap()
-        .to_atom(&mut state, &workspace)
-        .unwrap();
+    let expr: Atom = Atom::parse("f(z)*f(f(x),z)*f(y)", &mut state, &workspace).unwrap();
 
-    println!(
-        "> Tree walk of {}:",
-        AtomPrinter::new(expr.to_view(), symbolica::printer::PrintMode::default(), &state)
-    );
+    println!("> Tree walk of {}:", expr.printer(&state));
 
-    for (loc, view) in AtomTreeIterator::new(expr.to_view()) {
-        println!(
-            "\tAtom at location {:?}: {}",
-            loc,
-            AtomPrinter::new(view, symbolica::printer::PrintMode::default(), &state)
-        );
+    for (loc, view) in AtomTreeIterator::new(expr.as_view()) {
+        println!("\tAtom at location {:?}: {}", loc, view.printer(&state));
     }
 }

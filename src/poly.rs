@@ -11,10 +11,10 @@ use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
-use crate::parser::{parse_polynomial, Operator, Token};
+use crate::parser::{Operator, Token};
 use crate::representations::number::{BorrowedNumber, ConvertToRing, Number};
 use crate::representations::{
-    Add, Atom, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedAtom, OwnedMul, OwnedNum, OwnedPow,
+    Add, Atom, AtomSet, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow,
     OwnedVar, Pow, Var,
 };
 use crate::rings::integer::{Integer, IntegerRing};
@@ -282,7 +282,7 @@ impl Exponent for u8 {
     }
 }
 
-impl<'a, P: Atom> AtomView<'a, P> {
+impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Convert an expression to a polynomial.
     ///
     /// This function requires an expanded polynomial. If this yields too many terms, consider using
@@ -292,7 +292,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
         field: R,
         var_map: Option<&[Identifier]>,
     ) -> Result<MultivariatePolynomial<R, E>, &'static str> {
-        fn check_factor<P: Atom>(
+        fn check_factor<P: AtomSet>(
             factor: &AtomView<'_, P>,
             vars: &mut SmallVec<[Identifier; INLINED_EXPONENTS]>,
             allow_new_vars: bool,
@@ -366,7 +366,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
             }
         }
 
-        fn check_term<P: Atom>(
+        fn check_term<P: AtomSet>(
             term: &AtomView<'_, P>,
             vars: &mut SmallVec<[Identifier; INLINED_EXPONENTS]>,
             allow_new_vars: bool,
@@ -399,7 +399,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
             }
         }
 
-        fn parse_factor<P: Atom, R: Ring + ConvertToRing, E: Exponent>(
+        fn parse_factor<P: AtomSet, R: Ring + ConvertToRing, E: Exponent>(
             factor: &AtomView<'_, P>,
             vars: &[Identifier],
             coefficient: &mut R::Element,
@@ -446,7 +446,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
             }
         }
 
-        fn parse_term<P: Atom, R: Ring + ConvertToRing, E: Exponent>(
+        fn parse_term<P: AtomSet, R: Ring + ConvertToRing, E: Exponent>(
             term: &AtomView<'_, P>,
             vars: &[Identifier],
             poly: &mut MultivariatePolynomial<R, E>,
@@ -536,7 +536,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
                                     Ok(r.pow(nn as u64))
                                 }
                             } else {
-                                h.get().to_view().to_rational_polynomial(
+                                h.get().as_view().to_rational_polynomial(
                                     workspace, state, field, out_field, var_map,
                                 )
                             }
@@ -581,7 +581,7 @@ impl<'a, P: Atom> AtomView<'a, P> {
     }
 }
 
-impl<P: Atom> OwnedAtom<P> {
+impl<P: AtomSet> Atom<P> {
     pub fn from_polynomial<E: Exponent>(
         &mut self,
         workspace: &Workspace<P>,
@@ -593,49 +593,49 @@ impl<P: Atom> OwnedAtom<P> {
             .as_ref()
             .expect("No variable map present in polynomial");
 
-        let add = self.transform_to_add();
+        let add = self.to_add();
 
         for monomial in poly {
             let mut mul_h = workspace.new_atom();
-            let mul = mul_h.transform_to_mul();
+            let mul = mul_h.to_mul();
 
             for (&var_id, &pow) in var_map.iter().zip(monomial.exponents) {
                 if pow > E::zero() {
                     let mut var_h = workspace.new_atom();
-                    let var = var_h.transform_to_var();
+                    let var = var_h.to_var();
                     var.set_from_id(var_id);
 
                     if pow > E::one() {
                         let mut num_h = workspace.new_atom();
-                        let num = num_h.transform_to_num();
+                        let num = num_h.to_num();
                         num.set_from_number(Number::Natural(pow.to_u32() as i64, 1));
 
                         let mut pow_h = workspace.new_atom();
-                        let pow = pow_h.transform_to_pow();
-                        pow.set_from_base_and_exp(var_h.get().to_view(), num_h.get().to_view());
-                        mul.extend(pow_h.get().to_view());
+                        let pow = pow_h.to_pow();
+                        pow.set_from_base_and_exp(var_h.get().as_view(), num_h.get().as_view());
+                        mul.extend(pow_h.get().as_view());
                     } else {
-                        mul.extend(var_h.get().to_view());
+                        mul.extend(var_h.get().as_view());
                     }
                 }
             }
 
             let mut num_h = workspace.new_atom();
-            let num = num_h.transform_to_num();
+            let num = num_h.to_num();
             let number = match monomial.coefficient {
                 Integer::Natural(n) => Number::Natural(*n, 1),
                 Integer::Large(r) => Number::Large(r.into()),
             };
             num.set_from_number(number);
-            mul.extend(num_h.get().to_view());
+            mul.extend(num_h.get().as_view());
             mul.set_dirty(true);
 
-            add.extend(mul_h.get().to_view());
+            add.extend(mul_h.get().as_view());
         }
         add.set_dirty(true);
 
         let mut norm = workspace.new_atom();
-        self.to_view().normalize(workspace, state, &mut norm);
+        self.as_view().normalize(workspace, state, &mut norm);
         std::mem::swap(norm.get_mut(), self);
     }
 }
@@ -670,7 +670,9 @@ impl Token {
                     field.mul_assign(coefficient, &num);
                 }
                 Token::ID(x) => {
-                    let index = var_name_map.iter().position(|v| v == x).unwrap();
+                    let Some(index) = var_name_map.iter().position(|v| v == x) else {
+                        Err(format!("Variable {} not specified in variable map", x))?
+                    };
                     exponents[index] += E::one();
                 }
                 Token::Op(_, _, Operator::Neg, args) => {
@@ -687,7 +689,10 @@ impl Token {
                     }
 
                     let var_index = match &args[0] {
-                        Token::ID(v) => var_name_map.iter().position(|v1| v == v1).unwrap(),
+                        Token::ID(v) => match var_name_map.iter().position(|v1| v == v1) {
+                            Some(p) => p,
+                            None => Err(format!("Variable {} not specified in variable map", v))?,
+                        },
                         _ => Err("Unsupported base")?,
                     };
 
@@ -806,7 +811,7 @@ impl Token {
     /// is faster if the parsed expression is already in the same format
     /// i.e. the ordering is the same
     pub fn to_rational_polynomial<
-        P: Atom,
+        P: AtomSet,
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
@@ -826,11 +831,13 @@ impl Token {
         // use a faster routine to parse the rational polynomial
         if let Token::RationalPolynomial(r) = self {
             let mut iter = r.split(',');
-            let num = iter.next().unwrap();
+            let Some(num) = iter.next() else {
+                Err("Empty [] in input")?
+            };
 
-            let num = parse_polynomial(num.as_bytes(), var_map, var_name_map, field).1;
+            let num = Token::parse_polynomial(num.as_bytes(), var_map, var_name_map, field).1;
             let den = if let Some(den) = iter.next() {
-                parse_polynomial(den.as_bytes(), var_map, var_name_map, field).1
+                Token::parse_polynomial(den.as_bytes(), var_map, var_name_map, field).1
             } else {
                 num.new_from_constant(field.one())
             };
@@ -879,7 +886,7 @@ impl Token {
                     Ok(r.inv())
                 } else {
                     let atom = self.to_atom(state, workspace)?;
-                    atom.to_view().to_rational_polynomial(
+                    atom.as_view().to_rational_polynomial(
                         workspace,
                         state,
                         field,
@@ -935,7 +942,7 @@ impl Token {
             }
             _ => {
                 let atom = self.to_atom(state, workspace)?;
-                atom.to_view().to_rational_polynomial(
+                atom.as_view().to_rational_polynomial(
                     workspace,
                     state,
                     field,

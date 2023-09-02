@@ -67,6 +67,12 @@ pub enum Number {
     RationalPolynomial(RationalPolynomial<IntegerRing, u16>),
 }
 
+impl From<i64> for Number {
+    fn from(value: i64) -> Self {
+        Number::Natural(value, 1)
+    }
+}
+
 impl Number {
     pub fn is_zero(&self) -> bool {
         match self {
@@ -431,7 +437,7 @@ impl BorrowedNumber<'_> {
                 if n2 < 0 {
                     let r = r.clone().inv();
                     (
-                        Number::RationalPolynomial(r.pow(n2.unsigned_abs() as u64)),
+                        Number::RationalPolynomial(r.pow(n2.unsigned_abs())),
                         Number::Natural(1, d2),
                     )
                 } else {
@@ -569,7 +575,7 @@ impl PackedRationalNumberWriter for Number {
             Number::Large(l) => {
                 let n = l.numer().significant_digits::<u8>() as i64;
                 let d = l.denom().significant_digits::<u8>() as i64;
-                1 + (n as i64, d as i64).get_packed_size() + n as u64 + d as u64
+                1 + (n, d).get_packed_size() + n as u64 + d as u64
             }
             Number::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
             Number::RationalPolynomial(_) => {

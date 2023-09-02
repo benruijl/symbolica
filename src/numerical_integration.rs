@@ -107,12 +107,12 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
 
         if self.max_eval_positive_xs.is_none() || eval > self.max_eval_positive {
             self.max_eval_positive = eval;
-            self.max_eval_positive_xs = sample.map(|x| x.clone());
+            self.max_eval_positive_xs = sample.cloned();
         }
 
         if self.max_eval_negative_xs.is_none() || eval < self.max_eval_negative {
             self.max_eval_negative = eval;
-            self.max_eval_negative_xs = sample.map(|x| x.clone());
+            self.max_eval_negative_xs = sample.cloned();
         }
     }
 
@@ -137,12 +137,12 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
         self.new_zero_evaluations += other.new_zero_evaluations;
 
         if other.max_eval_positive > self.max_eval_positive {
-            self.max_eval_positive = other.max_eval_positive.clone();
+            self.max_eval_positive = other.max_eval_positive;
             self.max_eval_positive_xs = other.max_eval_positive_xs.clone();
         }
 
         if other.max_eval_negative < self.max_eval_negative {
-            self.max_eval_negative = other.max_eval_negative.clone();
+            self.max_eval_negative = other.max_eval_negative;
             self.max_eval_negative_xs = other.max_eval_negative_xs.clone();
         }
     }
@@ -222,7 +222,7 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
             format!("{:e} ± {:e}", v, dv)
         } else if dv.is_infinite() {
             format!("{:e} ± inf", v)
-        } else if v == 0. && (dv >= 1e5 || dv < 1e-4) {
+        } else if v == 0. && !(1e-4..1e5).contains(&dv) {
             if dv == 0. {
                 "0(0)".to_owned()
             } else {
@@ -437,7 +437,7 @@ impl<T: Real + NumericalFloatComparison> Bin<T> {
 
         match (&self.sub_grid, &other.sub_grid) {
             (None, None) => Ok(()),
-            (Some(s1), Some(s2)) => s1.is_mergeable(&s2),
+            (Some(s1), Some(s2)) => s1.is_mergeable(s2),
             (None, Some(_)) | (Some(_), None) => Err("Sub-grid not equivalent".to_owned()),
         }
     }
@@ -551,14 +551,12 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
 
             if self.train_on_avg {
                 bin.pdf = acc.avg.abs()
+            } else if acc.processed_samples < 2 {
+                bin.pdf = T::zero();
             } else {
-                if acc.processed_samples < 2 {
-                    bin.pdf = T::zero();
-                } else {
-                    let n_samples = T::from_usize(acc.processed_samples - 1);
-                    let var = acc.err * n_samples.sqrt();
-                    bin.pdf = var;
-                }
+                let n_samples = T::from_usize(acc.processed_samples - 1);
+                let var = acc.err * n_samples.sqrt();
+                bin.pdf = var;
             }
 
             if bin.pdf > max_per_bin {
@@ -619,7 +617,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
             self.accumulator.add_sample(eval * weight, Some(sample));
 
             // undo the weight of the bin, which is 1 / pdf
-            let bin_weight = weight.clone() * &self.bins[*index].pdf;
+            let bin_weight = *weight * self.bins[*index].pdf;
             self.bins[*index]
                 .accumulator
                 .add_sample(bin_weight * eval, Some(sample));
@@ -632,7 +630,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
 
             Ok(())
         } else {
-            return Err(format!("Discrete sample expected: {:?}", sample));
+            Err(format!("Discrete sample expected: {:?}", sample))
         }
     }
 
@@ -879,9 +877,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
             .partitioning
             .binary_search_by(|v| v.partial_cmp(&sample).unwrap())
             .unwrap_or_else(|e| e);
-        if index > 0 {
-            index -= 1;
-        }
+        index = index.saturating_sub(1);
 
         self.bin_accumulator[index].add_sample(weight * eval, None);
         Ok(())
@@ -890,7 +886,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
     /// Update the grid based on the added training samples. This will move the partition bounds of every dimension.
     ///
     /// The `learning_rate` determines the speed of the adaptation. If it is set to `0`, no training will be performed.
-    fn update<'a>(&mut self, learning_rate: f64) {
+    fn update(&mut self, learning_rate: f64) {
         for (bi, acc) in self.bin_importance.iter_mut().zip(&self.bin_accumulator) {
             if self.train_on_avg {
                 *bi += &acc.sum
@@ -1016,7 +1012,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
     /// and `Err` when the grids have a different shape.
     fn is_mergeable(&self, other: &ContinuousDimension<T>) -> Result<(), String> {
         if self.partitioning != other.partitioning {
-            return Err("Partitions do not match".to_owned());
+            Err("Partitions do not match".to_owned())
         } else {
             Ok(())
         }

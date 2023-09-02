@@ -1,7 +1,6 @@
 use symbolica::{
-    parser::parse,
-    printer::{PrintMode, RationalPolynomialPrinter},
-    representations::default::DefaultRepresentation,
+    parser::Token,
+    printer::{PrintOptions, RationalPolynomialPrinter},
     rings::{
         integer::IntegerRing,
         linear_system::Matrix,
@@ -13,7 +12,7 @@ use symbolica::{
 
 fn main() {
     let mut state = State::new();
-    let workspace = Workspace::<DefaultRepresentation>::new();
+    let workspace: Workspace = Workspace::default();
 
     let system = [["c", "c+1", "c^2+5"], ["1", "c", "c+1"], ["c-1", "-1", "c"]];
     let rhs = ["1", "2", "-1"];
@@ -29,11 +28,11 @@ fn main() {
         .iter()
         .flatten()
         .map(|s| {
-            parse(s)
+            Token::parse(s)
                 .unwrap()
                 .to_atom(&mut state, &workspace)
                 .unwrap()
-                .to_view()
+                .as_view()
                 .to_rational_polynomial(
                     &workspace,
                     &state,
@@ -48,11 +47,11 @@ fn main() {
     let rhs_rat: Vec<RationalPolynomial<IntegerRing, u8>> = rhs
         .iter()
         .map(|s| {
-            parse(s)
+            Token::parse(s)
                 .unwrap()
                 .to_atom(&mut state, &workspace)
                 .unwrap()
-                .to_view()
+                .as_view()
                 .to_rational_polynomial(
                     &workspace,
                     &state,
@@ -84,9 +83,9 @@ fn main() {
                     .map(|r| format!(
                         "{}",
                         RationalPolynomialPrinter {
-                            poly: &r,
+                            poly: r,
                             state: &state,
-                            print_mode: PrintMode::default(),
+                            opts: PrintOptions::default(),
                         }
                     ))
                     .collect::<Vec<_>>()

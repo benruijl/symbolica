@@ -20,7 +20,7 @@ fn main() {
     let r = Rational::rational_reconstruction::<_, RationalField>(
         black_box,
         &[Rational::Natural(1, 2), Rational::Natural(3, 1)],
-        None
+        None,
     );
 
     assert_eq!(r, Ok(Rational::Natural(-5, 4)));

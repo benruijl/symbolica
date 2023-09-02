@@ -7,7 +7,7 @@ use crate::state::{ResettableBuffer, State, Workspace};
 use super::{
     number::{BorrowedNumber, Number, PackedRationalNumberReader, PackedRationalNumberWriter},
     tree::AtomTree,
-    Add, Atom, AtomView, Convert, Fun, Identifier, ListSlice, Mul, Num, OwnedAdd, OwnedAtom,
+    Add, Atom, AtomSet, AtomView, Convert, Fun, Identifier, ListSlice, Mul, Num, OwnedAdd,
     OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, SliceType, Var,
 };
 
@@ -21,7 +21,7 @@ const TYPE_MASK: u8 = 0b00000111;
 const DIRTY_FLAG: u8 = 0b10000000;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct DefaultRepresentation {}
+pub struct Linear {}
 
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub struct OwnedNumD {
@@ -29,7 +29,7 @@ pub struct OwnedNumD {
 }
 
 impl OwnedNum for OwnedNumD {
-    type P = DefaultRepresentation;
+    type P = Linear;
 
     fn set_from_number(&mut self, num: Number) {
         self.data.clear();
@@ -68,7 +68,7 @@ impl OwnedNum for OwnedNumD {
     }
 }
 
-impl Convert<DefaultRepresentation> for OwnedNumD {
+impl Convert<Linear> for OwnedNumD {
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
@@ -116,7 +116,7 @@ pub struct OwnedVarD {
 }
 
 impl OwnedVar for OwnedVarD {
-    type P = DefaultRepresentation;
+    type P = Linear;
 
     fn set_from_id(&mut self, id: Identifier) {
         self.data.clear();
@@ -124,7 +124,7 @@ impl OwnedVar for OwnedVarD {
         (id.to_u32() as u64, 1).write_packed(&mut self.data);
     }
 
-    fn to_var_view(&self) -> <Self::P as Atom>::V<'_> {
+    fn to_var_view(&self) -> <Self::P as AtomSet>::V<'_> {
         VarViewD { data: &self.data }
     }
 
@@ -134,7 +134,7 @@ impl OwnedVar for OwnedVarD {
     }
 }
 
-impl Convert<DefaultRepresentation> for OwnedVarD {
+impl Convert<Linear> for OwnedVarD {
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
@@ -182,7 +182,7 @@ pub struct OwnedFunD {
 }
 
 impl OwnedFun for OwnedFunD {
-    type P = DefaultRepresentation;
+    type P = Linear;
 
     fn set_from_name(&mut self, id: Identifier) {
         self.data.clear();
@@ -251,17 +251,17 @@ impl OwnedFun for OwnedFunD {
             .unwrap();
     }
 
-    fn to_fun_view(&self) -> <Self::P as Atom>::F<'_> {
+    fn to_fun_view(&self) -> <Self::P as AtomSet>::F<'_> {
         FnViewD { data: &self.data }
     }
 
-    fn set_from_view(&mut self, view: &<Self::P as Atom>::F<'_>) {
+    fn set_from_view(&mut self, view: &<Self::P as AtomSet>::F<'_>) {
         self.data.clear();
         self.data.extend(view.data);
     }
 }
 
-impl Convert<DefaultRepresentation> for OwnedFunD {
+impl Convert<Linear> for OwnedFunD {
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
@@ -309,7 +309,7 @@ pub struct OwnedPowD {
 }
 
 impl OwnedPow for OwnedPowD {
-    type P = DefaultRepresentation;
+    type P = Linear;
 
     fn set_from_base_and_exp(&mut self, base: AtomView<Self::P>, exp: AtomView<Self::P>) {
         self.data.clear();
@@ -326,17 +326,17 @@ impl OwnedPow for OwnedPowD {
         }
     }
 
-    fn to_pow_view(&self) -> <Self::P as Atom>::P<'_> {
+    fn to_pow_view(&self) -> <Self::P as AtomSet>::P<'_> {
         PowViewD { data: &self.data }
     }
 
-    fn set_from_view(&mut self, view: &<Self::P as Atom>::P<'_>) {
+    fn set_from_view(&mut self, view: &<Self::P as AtomSet>::P<'_>) {
         self.data.clear();
         self.data.extend(view.data);
     }
 }
 
-impl Convert<DefaultRepresentation> for OwnedPowD {
+impl Convert<Linear> for OwnedPowD {
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
@@ -384,7 +384,7 @@ pub struct OwnedMulD {
 }
 
 impl OwnedMul for OwnedMulD {
-    type P = DefaultRepresentation;
+    type P = Linear;
 
     fn set_dirty(&mut self, dirty: bool) {
         if dirty {
@@ -394,12 +394,12 @@ impl OwnedMul for OwnedMulD {
         }
     }
 
-    fn set_from_view(&mut self, view: &<Self::P as Atom>::M<'_>) {
+    fn set_from_view(&mut self, view: &<Self::P as AtomSet>::M<'_>) {
         self.data.clear();
         self.data.extend(view.data);
     }
 
-    fn extend(&mut self, other: AtomView<'_, DefaultRepresentation>) {
+    fn extend(&mut self, other: AtomView<'_, Linear>) {
         if self.data.is_empty() {
             self.data.put_u8(MUL_ID);
             self.data.put_u32_le(0_u32);
@@ -503,12 +503,12 @@ impl OwnedMul for OwnedMulD {
             .unwrap();
     }
 
-    fn to_mul_view(&self) -> <Self::P as Atom>::M<'_> {
+    fn to_mul_view(&self) -> <Self::P as AtomSet>::M<'_> {
         MulViewD { data: &self.data }
     }
 }
 
-impl Convert<DefaultRepresentation> for OwnedMulD {
+impl Convert<Linear> for OwnedMulD {
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
@@ -556,7 +556,7 @@ pub struct OwnedAddD {
 }
 
 impl OwnedAdd for OwnedAddD {
-    type P = DefaultRepresentation;
+    type P = Linear;
 
     fn set_dirty(&mut self, dirty: bool) {
         if dirty {
@@ -566,7 +566,7 @@ impl OwnedAdd for OwnedAddD {
         }
     }
 
-    fn extend(&mut self, other: AtomView<'_, DefaultRepresentation>) {
+    fn extend(&mut self, other: AtomView<'_, Linear>) {
         if self.data.is_empty() {
             self.data.put_u8(ADD_ID);
             self.data.put_u32_le(0_u32);
@@ -624,17 +624,17 @@ impl OwnedAdd for OwnedAddD {
             .unwrap();
     }
 
-    fn to_add_view(&self) -> <Self::P as Atom>::A<'_> {
+    fn to_add_view(&self) -> <Self::P as AtomSet>::A<'_> {
         AddViewD { data: &self.data }
     }
 
-    fn set_from_view(&mut self, view: &<Self::P as Atom>::A<'_>) {
+    fn set_from_view(&mut self, view: &<Self::P as AtomSet>::A<'_>) {
         self.data.clear();
         self.data.extend(view.data);
     }
 }
 
-impl Convert<DefaultRepresentation> for OwnedAddD {
+impl Convert<Linear> for OwnedAddD {
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
@@ -684,7 +684,7 @@ impl ResettableBuffer for OwnedAddD {
     }
 }
 
-impl Atom for DefaultRepresentation {
+impl AtomSet for Linear {
     type N<'a> = NumViewD<'a>;
     type V<'a> = VarViewD<'a>;
     type F<'a> = FnViewD<'a>;
@@ -699,59 +699,55 @@ impl Atom for DefaultRepresentation {
     type OA = OwnedAddD;
     type S<'a> = ListSliceD<'a>;
 
-    fn from_tree(
-        tree: &AtomTree,
-        state: &State,
-        workspace: &Workspace<Self>,
-    ) -> OwnedAtom<DefaultRepresentation> {
-        let mut oa = OwnedAtom::new();
+    fn from_tree(tree: &AtomTree, state: &State, workspace: &Workspace<Self>) -> Atom<Linear> {
+        let mut oa = Atom::new();
         oa.from_tree(tree);
 
-        let mut oa_norm = OwnedAtom::new();
-        oa.to_view().normalize(workspace, state, &mut oa_norm);
+        let mut oa_norm = Atom::new();
+        oa.as_view().normalize(workspace, state, &mut oa_norm);
 
         oa_norm
     }
 }
 
 impl<'a> Var<'a> for VarViewD<'a> {
-    type P = DefaultRepresentation;
+    type P = Linear;
 
     #[inline]
     fn get_name(&self) -> Identifier {
         Identifier::from(self.data[1..].get_frac_i64().0 as u32)
     }
 
-    fn to_view(&self) -> AtomView<'a, Self::P> {
+    fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Var(*self)
     }
 }
 
-impl OwnedAtom<DefaultRepresentation> {
+impl Atom<Linear> {
     pub fn from_tree(&mut self, atom: &AtomTree) {
         match atom {
             AtomTree::Var(_) => {
-                let x = self.transform_to_var();
+                let x = self.to_var();
                 Self::linearize(&mut x.data, atom);
             }
             AtomTree::Fn(_, _) => {
-                let x = self.transform_to_fun();
+                let x = self.to_fun();
                 Self::linearize(&mut x.data, atom);
             }
             AtomTree::Num(_) => {
-                let x = self.transform_to_num();
+                let x = self.to_num();
                 Self::linearize(&mut x.data, atom);
             }
             AtomTree::Pow(_) => {
-                let x = self.transform_to_pow();
+                let x = self.to_pow();
                 Self::linearize(&mut x.data, atom);
             }
             AtomTree::Mul(_) => {
-                let x = self.transform_to_mul();
+                let x = self.to_mul();
                 Self::linearize(&mut x.data, atom);
             }
             AtomTree::Add(_) => {
-                let x = self.transform_to_add();
+                let x = self.to_add();
                 Self::linearize(&mut x.data, atom);
             }
         }
@@ -759,13 +755,13 @@ impl OwnedAtom<DefaultRepresentation> {
 
     pub fn get_data(&self) -> &[u8] {
         match self {
-            OwnedAtom::Num(n) => &n.data,
-            OwnedAtom::Var(v) => &v.data,
-            OwnedAtom::Fun(f) => &f.data,
-            OwnedAtom::Pow(p) => &p.data,
-            OwnedAtom::Mul(m) => &m.data,
-            OwnedAtom::Add(a) => &a.data,
-            OwnedAtom::Empty => unreachable!(),
+            Atom::Num(n) => &n.data,
+            Atom::Var(v) => &v.data,
+            Atom::Fun(f) => &f.data,
+            Atom::Pow(p) => &p.data,
+            Atom::Mul(m) => &m.data,
+            Atom::Add(a) => &a.data,
+            Atom::Empty => unreachable!(),
         }
     }
 
@@ -920,7 +916,7 @@ impl<'a, 'b> PartialEq<FnViewD<'b>> for FnViewD<'a> {
 }
 
 impl<'a> Fun<'a> for FnViewD<'a> {
-    type P = DefaultRepresentation;
+    type P = Linear;
     type I = ListIteratorD<'a>;
 
     fn get_name(&self) -> Identifier {
@@ -954,7 +950,7 @@ impl<'a> Fun<'a> for FnViewD<'a> {
         }
     }
 
-    fn to_view(&self) -> AtomView<'a, Self::P> {
+    fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Fun(*self)
     }
 
@@ -986,7 +982,7 @@ impl<'a, 'b> PartialEq<NumViewD<'b>> for NumViewD<'a> {
 }
 
 impl<'a> Num<'a> for NumViewD<'a> {
-    type P = DefaultRepresentation;
+    type P = Linear;
 
     fn is_zero(&self) -> bool {
         self.data.is_zero_rat()
@@ -1005,7 +1001,7 @@ impl<'a> Num<'a> for NumViewD<'a> {
         self.data[1..].get_number_view().0
     }
 
-    fn to_view(&self) -> AtomView<'a, Self::P> {
+    fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Num(*self)
     }
 }
@@ -1022,7 +1018,7 @@ impl<'a, 'b> PartialEq<PowViewD<'b>> for PowViewD<'a> {
 }
 
 impl<'a> Pow<'a> for PowViewD<'a> {
-    type P = DefaultRepresentation;
+    type P = Linear;
 
     #[inline]
     fn get_base(&self) -> AtomView<'a, Self::P> {
@@ -1050,7 +1046,7 @@ impl<'a> Pow<'a> for PowViewD<'a> {
         (it.next().unwrap(), it.next().unwrap())
     }
 
-    fn to_view(&self) -> AtomView<'a, Self::P> {
+    fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Pow(*self)
     }
 
@@ -1075,7 +1071,7 @@ impl<'a, 'b> PartialEq<MulViewD<'b>> for MulViewD<'a> {
 }
 
 impl<'a> Mul<'a> for MulViewD<'a> {
-    type P = DefaultRepresentation;
+    type P = Linear;
     type I = ListIteratorD<'a>;
 
     fn is_dirty(&self) -> bool {
@@ -1101,7 +1097,7 @@ impl<'a> Mul<'a> for MulViewD<'a> {
         }
     }
 
-    fn to_view(&self) -> AtomView<'a, Self::P> {
+    fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Mul(*self)
     }
 
@@ -1133,7 +1129,7 @@ impl<'a, 'b> PartialEq<AddViewD<'b>> for AddViewD<'a> {
 }
 
 impl<'a> Add<'a> for AddViewD<'a> {
-    type P = DefaultRepresentation;
+    type P = Linear;
     type I = ListIteratorD<'a>;
 
     fn is_dirty(&self) -> bool {
@@ -1159,7 +1155,7 @@ impl<'a> Add<'a> for AddViewD<'a> {
         }
     }
 
-    fn to_view(&self) -> AtomView<'a, Self::P> {
+    fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Add(*self)
     }
 
@@ -1179,8 +1175,8 @@ impl<'a> Add<'a> for AddViewD<'a> {
     }
 }
 
-impl<'a> AtomView<'a, DefaultRepresentation> {
-    pub fn from(source: &'a [u8]) -> AtomView<'a, DefaultRepresentation> {
+impl<'a> AtomView<'a, Linear> {
+    pub fn from(source: &'a [u8]) -> AtomView<'a, Linear> {
         match source[0] {
             VAR_ID => AtomView::Var(VarViewD { data: source }),
             FUN_ID => AtomView::Fun(FnViewD { data: source }),
@@ -1211,7 +1207,7 @@ pub struct ListIteratorD<'a> {
 }
 
 impl<'a> Iterator for ListIteratorD<'a> {
-    type Item = AtomView<'a, DefaultRepresentation>;
+    type Item = AtomView<'a, Linear>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1350,7 +1346,7 @@ impl<'a> ListSliceD<'a> {
         }
     }
 
-    fn get_entry(start: &'a [u8]) -> (AtomView<'a, DefaultRepresentation>, &[u8]) {
+    fn get_entry(start: &'a [u8]) -> (AtomView<'a, Linear>, &[u8]) {
         let start_id = start[0] & TYPE_MASK;
         let end = Self::skip_one(start);
         let len = unsafe { end.as_ptr().offset_from(start.as_ptr()) } as usize;
@@ -1372,7 +1368,7 @@ impl<'a> ListSliceD<'a> {
 }
 
 impl<'a> ListSlice<'a> for ListSliceD<'a> {
-    type P = DefaultRepresentation;
+    type P = Linear;
     type ListSliceIterator = ListSliceIteratorD<'a>;
 
     fn len(&self) -> usize {
@@ -1426,7 +1422,7 @@ pub struct ListSliceIteratorD<'a> {
 }
 
 impl<'a> Iterator for ListSliceIteratorD<'a> {
-    type Item = AtomView<'a, DefaultRepresentation>;
+    type Item = AtomView<'a, Linear>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.data.length > 0 {
@@ -1488,7 +1484,7 @@ pub fn representation_size() {
     );
     println!("expr={:?}", a);
 
-    let mut b = OwnedAtom::new();
+    let mut b = Atom::new();
     b.from_tree(&a);
 
     println!("lin size: {:?} bytes", b.get_data().len());
@@ -1499,5 +1495,5 @@ pub fn representation_size() {
         panic!("in and out is different: {:?} vs {:?}", a, c);
     }
 
-    println!("{:?}", b.to_view());
+    println!("{:?}", b.as_view());
 }

@@ -1,7 +1,6 @@
 use symbolica::{
-    parser::parse,
-    printer::{PrintMode, RationalPolynomialPrinter},
-    representations::{default::DefaultRepresentation, OwnedAtom},
+    printer::{PrintOptions, RationalPolynomialPrinter},
+    representations::Atom,
     rings::{
         integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
     },
@@ -10,14 +9,16 @@ use symbolica::{
 
 fn main() {
     let mut state = State::new();
-    let workspace = Workspace::new();
+    let workspace = Workspace::default();
 
-    let expr: OwnedAtom<DefaultRepresentation> = parse("(x*y^2*5+5)^2/(2*x+5)+(x+4)/(6*x^2+1)")
-        .unwrap()
-        .to_atom(&mut state, &workspace)
-        .unwrap();
+    let expr = Atom::parse(
+        "(x*y^2*5+5)^2/(2*x+5)+(x+4)/(6*x^2+1)",
+        &mut state,
+        &workspace,
+    )
+    .unwrap();
     let rat: RationalPolynomial<IntegerRing, u8> = expr
-        .to_view()
+        .as_view()
         .to_rational_polynomial(
             &workspace,
             &state,
@@ -28,6 +29,6 @@ fn main() {
         .unwrap();
     println!(
         "{}",
-        RationalPolynomialPrinter::new(&rat, &state, PrintMode::default())
+        RationalPolynomialPrinter::new(&rat, &state, PrintOptions::default())
     );
 }

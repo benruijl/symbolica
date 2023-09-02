@@ -1,64 +1,34 @@
 use ahash::HashMap;
 use symbolica::{
     id::{Pattern, ReplaceIterator},
-    parser::parse,
-    printer::AtomPrinter,
-    representations::{default::DefaultRepresentation, OwnedAtom},
+    representations::Atom,
     state::{ResettableBuffer, State, Workspace},
 };
 
 fn main() {
     let mut state = State::new();
-    let workspace = Workspace::new();
+    let workspace = Workspace::default();
 
-    let expr: OwnedAtom<DefaultRepresentation> = parse("f(z)*f(f(x))*f(y)")
-        .unwrap()
-        .to_atom(&mut state, &workspace)
-        .unwrap();
-    let pat_expr = parse("f(x_)")
-        .unwrap()
-        .to_atom(&mut state, &workspace)
-        .unwrap();
+    let expr = Atom::parse("f(z)*f(f(x))*f(y)", &mut state, &workspace).unwrap();
+    let pat_expr = Atom::parse("f(x_)", &mut state, &workspace).unwrap();
 
-    let rhs_expr = parse("g(x_)")
-        .unwrap()
-        .to_atom(&mut state, &workspace)
-        .unwrap();
-    let rhs = Pattern::from_view(rhs_expr.to_view(), &state);
+    let rhs_expr = Atom::parse("g(x_)", &mut state, &workspace).unwrap();
+    let rhs = Pattern::from_view(rhs_expr.as_view(), &state);
 
-    let pattern = Pattern::from_view(pat_expr.to_view(), &state);
+    let pattern = Pattern::from_view(pat_expr.as_view(), &state);
     let restrictions = HashMap::default();
 
     println!(
         "> Replace once {}={} in {}:",
-        AtomPrinter::new(
-            pat_expr.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
-        AtomPrinter::new(
-            rhs_expr.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
-        AtomPrinter::new(
-            expr.to_view(),
-            symbolica::printer::PrintMode::default(),
-            &state
-        ),
+        pat_expr.as_view().printer(&state),
+        rhs_expr.as_view().printer(&state),
+        expr.as_view().printer(&state)
     );
 
-    let mut replaced = OwnedAtom::new();
+    let mut replaced = Atom::new();
 
-    let mut it = ReplaceIterator::new(&pattern, expr.to_view(), &rhs, &state, &restrictions);
+    let mut it = ReplaceIterator::new(&pattern, expr.as_view(), &rhs, &state, &restrictions);
     while let Some(()) = it.next(&state, &workspace, &mut replaced) {
-        println!(
-            "\t{}",
-            AtomPrinter::new(
-                replaced.to_view(),
-                symbolica::printer::PrintMode::default(),
-                &state
-            ),
-        );
+        println!("\t{}", replaced.printer(&state));
     }
 }

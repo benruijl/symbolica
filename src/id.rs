@@ -4,50 +4,59 @@ use smallvec::{smallvec, SmallVec};
 
 use crate::{
     representations::{
-        number::Number, Add, Atom, AtomView, Fun, Identifier, ListSlice, Mul, OwnedAdd, OwnedAtom,
-        OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, SliceType, Var,
+        default::Linear, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice,
+        Mul, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, SliceType, Var,
     },
     state::{FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace},
     transformer::Transformer,
 };
 
 #[derive(Clone)]
-pub enum Pattern<P: Atom> {
+pub enum Pattern<P: AtomSet = Linear> {
+    Literal(Atom<P>),
     Wildcard(Identifier),
     Fn(Identifier, bool, Vec<Pattern<P>>), // bool signifies that the identifier is a wildcard
     Pow(Box<[Pattern<P>; 2]>),
     Mul(Vec<Pattern<P>>),
     Add(Vec<Pattern<P>>),
-    Literal(OwnedAtom<P>),
     Transformer(Box<Transformer<P>>),
 }
 
-impl<P: Atom> OwnedAtom<P> {
+impl<P: AtomSet> Atom<P> {
     pub fn into_pattern(&self, state: &State) -> Pattern<P> {
-        Pattern::from_view(self.to_view(), state)
+        Pattern::from_view(self.as_view(), state)
     }
 }
 
-impl<'a, P: Atom> AtomView<'a, P> {
+impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn into_pattern(self, state: &State) -> Pattern<P> {
         Pattern::from_view(self, state)
     }
 }
 
-impl<P: Atom + Clone> Pattern<P> {
+impl<P: AtomSet> Pattern<P> {
+    pub fn parse(
+        input: &str,
+        state: &mut State,
+        workspace: &Workspace<P>,
+    ) -> Result<Pattern<P>, String> {
+        // TODO: use workspace instead of owned atom
+        Ok(Atom::parse(input, state, workspace)?.into_pattern(state))
+    }
+
     pub fn add(&self, rhs: &Self, workspace: &Workspace<P>, state: &State) -> Self {
         if let Pattern::Literal(l1) = self {
             if let Pattern::Literal(l2) = rhs {
                 // create new literal
                 let mut e = workspace.new_atom();
-                let a = e.transform_to_add();
+                let a = e.to_add();
 
-                a.extend(l1.to_view());
-                a.extend(l2.to_view());
+                a.extend(l1.as_view());
+                a.extend(l2.as_view());
                 a.set_dirty(true);
 
-                let mut b = OwnedAtom::<P>::new();
-                e.get().to_view().normalize(workspace, state, &mut b);
+                let mut b = Atom::<P>::new();
+                e.get().as_view().normalize(workspace, state, &mut b);
 
                 return Pattern::Literal(b);
             }
@@ -73,14 +82,14 @@ impl<P: Atom + Clone> Pattern<P> {
         if let Pattern::Literal(l1) = self {
             if let Pattern::Literal(l2) = rhs {
                 let mut e = workspace.new_atom();
-                let a = e.transform_to_mul();
+                let a = e.to_mul();
 
-                a.extend(l1.to_view());
-                a.extend(l2.to_view());
+                a.extend(l1.as_view());
+                a.extend(l2.as_view());
                 a.set_dirty(true);
 
-                let mut b = OwnedAtom::<P>::new();
-                e.get().to_view().normalize(workspace, state, &mut b);
+                let mut b = Atom::<P>::new();
+                e.get().as_view().normalize(workspace, state, &mut b);
 
                 return Pattern::Literal(b);
             }
@@ -105,16 +114,16 @@ impl<P: Atom + Clone> Pattern<P> {
     pub fn div(&self, rhs: &Self, workspace: &Workspace<P>, state: &State) -> Self {
         if let Pattern::Literal(l2) = rhs {
             let mut pow = workspace.new_atom();
-            let pow_num = pow.transform_to_num();
+            let pow_num = pow.to_num();
             pow_num.set_from_number(Number::Natural(-1, 1));
 
             let mut e = workspace.new_atom();
-            let a = e.transform_to_pow();
-            a.set_from_base_and_exp(l2.to_view(), pow.get().to_view());
+            let a = e.to_pow();
+            a.set_from_base_and_exp(l2.as_view(), pow.get().as_view());
             a.set_dirty(true);
 
-            let mut b = OwnedAtom::<P>::new();
-            e.to_view().normalize(workspace, state, &mut b);
+            let mut b = Atom::<P>::new();
+            e.as_view().normalize(workspace, state, &mut b);
 
             match self {
                 Pattern::Mul(m) => {
@@ -124,21 +133,21 @@ impl<P: Atom + Clone> Pattern<P> {
                 }
                 Pattern::Literal(l1) => {
                     let mut m = workspace.new_atom();
-                    let md = m.transform_to_mul();
+                    let md = m.to_mul();
 
-                    md.extend(l1.to_view());
-                    md.extend(b.to_view());
+                    md.extend(l1.as_view());
+                    md.extend(b.as_view());
                     md.set_dirty(true);
 
-                    let mut b = OwnedAtom::<P>::new();
-                    m.get().to_view().normalize(workspace, state, &mut b);
+                    let mut b = Atom::<P>::new();
+                    m.get().as_view().normalize(workspace, state, &mut b);
                     Pattern::Literal(b)
                 }
                 _ => Pattern::Mul(vec![self.clone(), Pattern::Literal(b)]),
             }
         } else {
-            let mut pow = OwnedAtom::<P>::new();
-            let pow_num = pow.transform_to_num();
+            let mut pow = Atom::<P>::new();
+            let pow_num = pow.to_num();
             pow_num.set_from_number(Number::Natural(-1, 1));
 
             let rhs = Pattern::Mul(vec![
@@ -161,13 +170,13 @@ impl<P: Atom + Clone> Pattern<P> {
         if let Pattern::Literal(l1) = self {
             if let Pattern::Literal(l2) = rhs {
                 let mut e = workspace.new_atom();
-                let a = e.transform_to_pow();
+                let a = e.to_pow();
 
-                a.set_from_base_and_exp(l1.to_view(), l2.to_view());
+                a.set_from_base_and_exp(l1.as_view(), l2.as_view());
                 a.set_dirty(true);
 
-                let mut b = OwnedAtom::new();
-                e.get().to_view().normalize(workspace, state, &mut b);
+                let mut b = Atom::new();
+                e.get().as_view().normalize(workspace, state, &mut b);
 
                 return Pattern::Literal(b);
             }
@@ -179,23 +188,23 @@ impl<P: Atom + Clone> Pattern<P> {
     pub fn neg(&self, workspace: &Workspace<P>, state: &State) -> Self {
         if let Pattern::Literal(l1) = self {
             let mut e = workspace.new_atom();
-            let a = e.transform_to_mul();
+            let a = e.to_mul();
 
             let mut sign = workspace.new_atom();
-            let sign_num = sign.transform_to_num();
+            let sign_num = sign.to_num();
             sign_num.set_from_number(Number::Natural(-1, 1));
 
-            a.extend(l1.to_view());
-            a.extend(sign.get().to_view());
+            a.extend(l1.as_view());
+            a.extend(sign.get().as_view());
             a.set_dirty(true);
 
-            let mut b = OwnedAtom::new();
-            e.get().to_view().normalize(workspace, state, &mut b);
+            let mut b = Atom::new();
+            e.get().as_view().normalize(workspace, state, &mut b);
 
             Pattern::Literal(b)
         } else {
-            let mut pow = OwnedAtom::<P>::new();
-            let pow_num = pow.transform_to_num();
+            let mut pow = Atom::<P>::new();
+            let pow_num = pow.to_num();
             pow_num.set_from_number(Number::Natural(-1, 1));
 
             // TODO: simplify if a literal is already present
@@ -204,7 +213,7 @@ impl<P: Atom + Clone> Pattern<P> {
     }
 }
 
-impl<P: Atom> Pattern<P> {
+impl<P: AtomSet> Pattern<P> {
     /// Check if the expression `atom` contains a wildcard.
     fn has_wildcard(atom: AtomView<'_, P>, state: &State) -> bool {
         match atom {
@@ -289,7 +298,7 @@ impl<P: Atom> Pattern<P> {
                 AtomView::Num(_) => unreachable!("Number cannot have wildcard"),
             }
         } else {
-            let mut oa = OwnedAtom::new();
+            let mut oa = Atom::new();
             oa.from_view(&atom);
             Pattern::Literal(oa)
         }
@@ -300,7 +309,7 @@ impl<P: Atom> Pattern<P> {
         &self,
         state: &State,
         workspace: &Workspace<P>,
-        out: &mut OwnedAtom<P>,
+        out: &mut Atom<P>,
         match_stack: &MatchStack<P>,
     ) {
         match self {
@@ -331,7 +340,7 @@ impl<P: Atom> Pattern<P> {
                 }
 
                 let mut func_h = workspace.new_atom();
-                let func = func_h.transform_to_fun();
+                let func = func_h.to_fun();
                 func.set_from_name(name);
                 func.set_dirty(true);
 
@@ -350,7 +359,7 @@ impl<P: Atom> Pattern<P> {
                                         let mut handle = workspace.new_atom();
                                         let oa = handle.get_mut();
                                         w.to_atom(oa);
-                                        func.add_arg(oa.to_view())
+                                        func.add_arg(oa.as_view())
                                     }
                                 },
                                 Match::FunctionName(_) => {
@@ -367,10 +376,10 @@ impl<P: Atom> Pattern<P> {
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
                     arg.substitute_wildcards(state, workspace, oa, match_stack);
-                    func.add_arg(oa.to_view());
+                    func.add_arg(oa.as_view());
                 }
 
-                func_h.to_view().normalize(workspace, state, out);
+                func_h.as_view().normalize(workspace, state, out);
             }
             Pattern::Pow(base_and_exp) => {
                 let mut base = workspace.new_atom();
@@ -386,7 +395,7 @@ impl<P: Atom> Pattern<P> {
                                     let mut handle = workspace.new_atom();
                                     let oa = handle.get_mut();
                                     w.to_atom(oa);
-                                    out.from_view(&oa.to_view())
+                                    out.from_view(&oa.as_view())
                                 }
                                 Match::FunctionName(_) => {
                                     unreachable!("Wildcard cannot be function name")
@@ -402,18 +411,18 @@ impl<P: Atom> Pattern<P> {
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
                     arg.substitute_wildcards(state, workspace, oa, match_stack);
-                    out.from_view(&oa.to_view());
+                    out.from_view(&oa.as_view());
                 }
 
                 let mut pow_h = workspace.new_atom();
-                let pow = pow_h.transform_to_pow();
-                pow.set_from_base_and_exp(oas[0].to_view(), oas[1].to_view());
+                let pow = pow_h.to_pow();
+                pow.set_from_base_and_exp(oas[0].as_view(), oas[1].as_view());
                 pow.set_dirty(true);
-                pow_h.to_view().normalize(workspace, state, out);
+                pow_h.as_view().normalize(workspace, state, out);
             }
             Pattern::Mul(args) => {
                 let mut mul_h = workspace.new_atom();
-                let mul = mul_h.transform_to_mul();
+                let mul = mul_h.to_mul();
 
                 for arg in args {
                     if let Pattern::Wildcard(w) = arg {
@@ -430,7 +439,7 @@ impl<P: Atom> Pattern<P> {
                                         let mut handle = workspace.new_atom();
                                         let oa = handle.get_mut();
                                         w.to_atom(oa);
-                                        mul.extend(oa.to_view())
+                                        mul.extend(oa.as_view())
                                     }
                                 },
                                 Match::FunctionName(_) => {
@@ -447,14 +456,14 @@ impl<P: Atom> Pattern<P> {
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
                     arg.substitute_wildcards(state, workspace, oa, match_stack);
-                    mul.extend(oa.to_view());
+                    mul.extend(oa.as_view());
                 }
                 mul.set_dirty(true);
-                mul_h.to_view().normalize(workspace, state, out);
+                mul_h.as_view().normalize(workspace, state, out);
             }
             Pattern::Add(args) => {
                 let mut add_h = workspace.new_atom();
-                let add = add_h.transform_to_add();
+                let add = add_h.to_add();
 
                 for arg in args {
                     if let Pattern::Wildcard(w) = arg {
@@ -471,7 +480,7 @@ impl<P: Atom> Pattern<P> {
                                         let mut handle = workspace.new_atom();
                                         let oa = handle.get_mut();
                                         w.to_atom(oa);
-                                        add.extend(oa.to_view())
+                                        add.extend(oa.as_view())
                                     }
                                 },
                                 Match::FunctionName(_) => {
@@ -488,13 +497,13 @@ impl<P: Atom> Pattern<P> {
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
                     arg.substitute_wildcards(state, workspace, oa, match_stack);
-                    add.extend(oa.to_view());
+                    add.extend(oa.as_view());
                 }
                 add.set_dirty(true);
-                add_h.to_view().normalize(workspace, state, out);
+                add_h.as_view().normalize(workspace, state, out);
             }
             Pattern::Literal(oa) => {
-                out.from_view(&oa.to_view());
+                out.from_view(&oa.as_view());
             }
             Pattern::Transformer(t) => {
                 // execute the transformer with the match stack as input
@@ -512,7 +521,7 @@ impl<P: Atom> Pattern<P> {
         state: &'a State,
         workspace: &Workspace<P>,
         restrictions: &HashMap<Identifier, Vec<PatternRestriction<P>>>,
-        out: &mut OwnedAtom<P>,
+        out: &mut Atom<P>,
     ) -> bool {
         let mut match_stack = MatchStack::new(restrictions);
         let mut it = SubSliceIterator::new(self, target, state, &match_stack, true);
@@ -523,7 +532,7 @@ impl<P: Atom> Pattern<P> {
 
             match target {
                 AtomView::Mul(m) => {
-                    let out = out.transform_to_mul();
+                    let out = out.to_mul();
 
                     for (child, used) in m.iter().zip(used_flags) {
                         if !used {
@@ -531,11 +540,11 @@ impl<P: Atom> Pattern<P> {
                         }
                     }
 
-                    out.extend(rhs_subs.to_view());
+                    out.extend(rhs_subs.as_view());
                     out.set_dirty(true);
                 }
                 AtomView::Add(a) => {
-                    let out = out.transform_to_add();
+                    let out = out.to_add();
 
                     for (child, used) in a.iter().zip(used_flags) {
                         if !used {
@@ -543,18 +552,18 @@ impl<P: Atom> Pattern<P> {
                         }
                     }
 
-                    out.extend(rhs_subs.to_view());
+                    out.extend(rhs_subs.as_view());
                     out.set_dirty(true);
                 }
                 _ => {
-                    out.from_view(&rhs_subs.to_view());
+                    out.from_view(&rhs_subs.as_view());
                 }
             }
 
             // normalize the expression
             let mut handle_norm = workspace.new_atom();
             let norm = handle_norm.get_mut();
-            out.to_view().normalize(workspace, state, norm);
+            out.as_view().normalize(workspace, state, norm);
             std::mem::swap(out, norm);
 
             true
@@ -562,7 +571,7 @@ impl<P: Atom> Pattern<P> {
             // no match found at this level, so check the children
             let submatch = match target {
                 AtomView::Fun(f) => {
-                    let out = out.transform_to_fun();
+                    let out = out.to_fun();
                     out.set_from_name(f.get_name());
 
                     let mut submatch = false;
@@ -574,14 +583,14 @@ impl<P: Atom> Pattern<P> {
                         submatch |=
                             self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
 
-                        out.add_arg(child_buf.to_view());
+                        out.add_arg(child_buf.as_view());
                     }
 
                     out.set_dirty(submatch | f.is_dirty());
                     submatch
                 }
                 AtomView::Pow(p) => {
-                    let out = out.transform_to_pow();
+                    let out = out.to_pow();
 
                     let (base, exp) = p.get_base_exp();
 
@@ -594,13 +603,13 @@ impl<P: Atom> Pattern<P> {
                     let exp_out = exp_handle.get_mut();
                     submatch |= self.replace_all(exp, rhs, state, workspace, restrictions, exp_out);
 
-                    out.set_from_base_and_exp(base_out.to_view(), exp_out.to_view());
+                    out.set_from_base_and_exp(base_out.as_view(), exp_out.as_view());
 
                     out.set_dirty(submatch | p.is_dirty());
                     submatch
                 }
                 AtomView::Mul(m) => {
-                    let mul = out.transform_to_mul();
+                    let mul = out.to_mul();
 
                     let mut submatch = false;
                     for child in m.iter() {
@@ -610,14 +619,14 @@ impl<P: Atom> Pattern<P> {
                         submatch |=
                             self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
 
-                        mul.extend(child_buf.to_view());
+                        mul.extend(child_buf.as_view());
                     }
 
                     mul.set_dirty(submatch | m.is_dirty());
                     submatch
                 }
                 AtomView::Add(a) => {
-                    let out = out.transform_to_add();
+                    let out = out.to_add();
                     let mut submatch = false;
                     for child in a.iter() {
                         let mut child_handle = workspace.new_atom();
@@ -626,7 +635,7 @@ impl<P: Atom> Pattern<P> {
                         submatch |=
                             self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
 
-                        out.extend(child_buf.to_view());
+                        out.extend(child_buf.as_view());
                     }
                     out.set_dirty(submatch | a.is_dirty());
                     submatch
@@ -640,7 +649,7 @@ impl<P: Atom> Pattern<P> {
             if submatch {
                 let mut handle_norm = workspace.new_atom();
                 let norm = handle_norm.get_mut();
-                out.to_view().normalize(workspace, state, norm);
+                out.as_view().normalize(workspace, state, norm);
                 std::mem::swap(out, norm);
             }
             submatch
@@ -648,7 +657,7 @@ impl<P: Atom> Pattern<P> {
     }
 }
 
-impl<P: Atom> std::fmt::Debug for Pattern<P> {
+impl<P: AtomSet> std::fmt::Debug for Pattern<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Wildcard(arg0) => f.debug_tuple("Wildcard").field(arg0).finish(),
@@ -667,19 +676,22 @@ impl<P: Atom> std::fmt::Debug for Pattern<P> {
     }
 }
 
-pub trait FilterFn<P: Atom>:
+pub trait FilterFn<P: AtomSet>:
     for<'a, 'b> Fn(&'a Match<'b, P>) -> bool + DynClone + Send + Sync
 {
 }
-dyn_clone::clone_trait_object!(<P: Atom> FilterFn<P>);
-impl<P: Atom, T: Clone + Send + Sync + for<'a, 'b> Fn(&'a Match<'b, P>) -> bool> FilterFn<P> for T {}
+dyn_clone::clone_trait_object!(<P: AtomSet> FilterFn<P>);
+impl<P: AtomSet, T: Clone + Send + Sync + for<'a, 'b> Fn(&'a Match<'b, P>) -> bool> FilterFn<P>
+    for T
+{
+}
 
-pub trait CmpFn<P: Atom>:
+pub trait CmpFn<P: AtomSet>:
     for<'a, 'b> Fn(&Match<'_, P>, &Match<'_, P>) -> bool + DynClone + Send + Sync
 {
 }
-dyn_clone::clone_trait_object!(<P: Atom> CmpFn<P>);
-impl<P: Atom, T: Clone + Send + Sync + for<'a, 'b> Fn(&Match<'_, P>, &Match<'_, P>) -> bool>
+dyn_clone::clone_trait_object!(<P: AtomSet> CmpFn<P>);
+impl<P: AtomSet, T: Clone + Send + Sync + for<'a, 'b> Fn(&Match<'_, P>, &Match<'_, P>) -> bool>
     CmpFn<P> for T
 {
 }
@@ -689,9 +701,9 @@ impl<P: Atom, T: Clone + Send + Sync + for<'a, 'b> Fn(&Match<'_, P>, &Match<'_, 
 /// `x_*f(x_) : length(x) == 2`
 /// does not match to `x*y*f(x*y)`, since the pattern `x_` has length
 /// 1 inside the function argument.
-pub enum PatternRestriction<P>
+pub enum PatternRestriction<P = Linear>
 where
-    P: Atom,
+    P: AtomSet,
 {
     Length(usize, Option<usize>), // min-max range
     IsVar,
@@ -701,27 +713,27 @@ where
     Cmp(Identifier, Box<dyn CmpFn<P>>),
 }
 
-impl<P: Atom + 'static> Clone for PatternRestriction<P> {
+impl<P: AtomSet + 'static> Clone for PatternRestriction<P> {
     fn clone(&self) -> Self {
         match self {
-            Self::Length(min, max) => Self::Length(min.clone(), max.clone()),
+            Self::Length(min, max) => Self::Length(*min, *max),
             Self::IsVar => Self::IsVar,
             Self::IsNumber => Self::IsNumber,
-            Self::IsLiteralWildcard(w) => Self::IsLiteralWildcard(w.clone()),
+            Self::IsLiteralWildcard(w) => Self::IsLiteralWildcard(*w),
             Self::Filter(f) => Self::Filter(dyn_clone::clone_box(f)),
-            Self::Cmp(i, f) => Self::Cmp(i.clone(), dyn_clone::clone_box(f)),
+            Self::Cmp(i, f) => Self::Cmp(*i, dyn_clone::clone_box(f)),
         }
     }
 }
 
 #[derive(Clone, PartialEq)]
-pub enum Match<'a, P: Atom> {
+pub enum Match<'a, P: AtomSet = Linear> {
     Single(AtomView<'a, P>),
     Multiple(SliceType, SmallVec<[AtomView<'a, P>; 10]>),
     FunctionName(Identifier),
 }
 
-impl<'a, P: Atom> std::fmt::Debug for Match<'a, P> {
+impl<'a, P: AtomSet> std::fmt::Debug for Match<'a, P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Single(a) => f.debug_tuple("").field(a).finish(),
@@ -731,22 +743,22 @@ impl<'a, P: Atom> std::fmt::Debug for Match<'a, P> {
     }
 }
 
-impl<'a, P: Atom> Match<'a, P> {
+impl<'a, P: AtomSet> Match<'a, P> {
     /// Create a new atom from a matched subexpression.
-    pub fn to_atom(&self, out: &mut OwnedAtom<P>) {
+    pub fn to_atom(&self, out: &mut Atom<P>) {
         match self {
             Self::Single(v) => {
                 out.from_view(v);
             }
             Self::Multiple(t, wargs) => match t {
                 SliceType::Add => {
-                    let add = out.transform_to_add();
+                    let add = out.to_add();
                     for arg in wargs {
                         add.extend(*arg);
                     }
                 }
                 SliceType::Mul => {
-                    let mul = out.transform_to_mul();
+                    let mul = out.to_mul();
                     for arg in wargs {
                         mul.extend(*arg);
                     }
@@ -757,7 +769,7 @@ impl<'a, P: Atom> Match<'a, P> {
                     )
                 }
                 SliceType::Pow => {
-                    let pow = out.transform_to_pow();
+                    let pow = out.to_pow();
                     pow.set_from_base_and_exp(wargs[0], wargs[1]);
                 }
                 SliceType::One => {
@@ -766,7 +778,7 @@ impl<'a, P: Atom> Match<'a, P> {
                 SliceType::Empty => unreachable!("Cannot create owned version of empty list"),
             },
             Self::FunctionName(n) => {
-                let fun = out.transform_to_fun();
+                let fun = out.to_fun();
                 fun.set_from_name(*n);
             }
         }
@@ -776,12 +788,12 @@ impl<'a, P: Atom> Match<'a, P> {
 /// An insertion-ordered map of wildcard identifiers to a subexpressions.
 /// It keeps track of all restrictions on wilcards and will check them
 /// before inserting.
-pub struct MatchStack<'a, 'b, P: Atom> {
+pub struct MatchStack<'a, 'b, P: AtomSet> {
     stack: SmallVec<[(Identifier, Match<'a, P>); 10]>,
     restrictions: &'b HashMap<Identifier, Vec<PatternRestriction<P>>>,
 }
 
-impl<'a, 'b, P: Atom> std::fmt::Debug for MatchStack<'a, 'b, P> {
+impl<'a, 'b, P: AtomSet> std::fmt::Debug for MatchStack<'a, 'b, P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MatchStack")
             .field("stack", &self.stack)
@@ -789,7 +801,7 @@ impl<'a, 'b, P: Atom> std::fmt::Debug for MatchStack<'a, 'b, P> {
     }
 }
 
-impl<'a, 'b, P: Atom> MatchStack<'a, 'b, P> {
+impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
     /// Create a new match stack.
     pub fn new(
         restrictions: &'b HashMap<Identifier, Vec<PatternRestriction<P>>>,
@@ -947,7 +959,7 @@ impl<'a, 'b, P: Atom> MatchStack<'a, 'b, P> {
     }
 }
 
-impl<'a, 'b, 'c, P: Atom> IntoIterator for &'c MatchStack<'a, 'b, P> {
+impl<'a, 'b, 'c, P: AtomSet> IntoIterator for &'c MatchStack<'a, 'b, P> {
     type Item = &'c (Identifier, Match<'a, P>);
     type IntoIter = std::slice::Iter<'c, (Identifier, Match<'a, P>)>;
 
@@ -964,7 +976,7 @@ struct WildcardIter {
     max_size: u32,
 }
 
-enum PatternIter<'a, 'b, P: Atom> {
+enum PatternIter<'a, 'b, P: AtomSet> {
     Literal(Option<usize>, AtomView<'b, P>),
     Wildcard(WildcardIter),
     Fn(
@@ -989,7 +1001,7 @@ enum PatternIter<'a, 'b, P: Atom> {
 /// slice `target`. The flag `ordered_gapless` determines whether the the patterns
 /// may match the slice of atoms in any order. For a non-symmetric function, this
 /// flag should likely be set.
-pub struct SubSliceIterator<'a, 'b, P: Atom> {
+pub struct SubSliceIterator<'a, 'b, P: AtomSet> {
     pattern: &'b [Pattern<P>], // input term
     target: P::S<'a>,
     iterators: SmallVec<[PatternIter<'a, 'b, P>; 10]>,
@@ -1002,7 +1014,7 @@ pub struct SubSliceIterator<'a, 'b, P: Atom> {
     do_not_match_to_single_atom_in_list: bool,
 }
 
-impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
+impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
     /// Create an iterator over a pattern applied to a target.
     pub fn new(
         pattern: &'b Pattern<P>,
@@ -1182,7 +1194,7 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
                     Pattern::Add(pat) => {
                         PatternIter::Sequence(None, SliceType::Add, pat, Box::new(None))
                     }
-                    Pattern::Literal(atom) => PatternIter::Literal(None, atom.to_view()),
+                    Pattern::Literal(atom) => PatternIter::Literal(None, atom.as_view()),
                     Pattern::Transformer(_) => panic!("Transformer is not allowed on lhs"),
                 };
 
@@ -1510,11 +1522,11 @@ impl<'a, 'b, P: Atom> SubSliceIterator<'a, 'b, P> {
 }
 
 /// Iterator over the atoms of an expression tree.
-pub struct AtomTreeIterator<'a, P: Atom> {
+pub struct AtomTreeIterator<'a, P: AtomSet> {
     stack: SmallVec<[(Option<usize>, AtomView<'a, P>); 10]>,
 }
 
-impl<'a, P: Atom> AtomTreeIterator<'a, P> {
+impl<'a, P: AtomSet> AtomTreeIterator<'a, P> {
     pub fn new(target: AtomView<'a, P>) -> AtomTreeIterator<'a, P> {
         AtomTreeIterator {
             stack: smallvec![(None, target)],
@@ -1522,7 +1534,7 @@ impl<'a, P: Atom> AtomTreeIterator<'a, P> {
     }
 }
 
-impl<'a, P: Atom> Iterator for AtomTreeIterator<'a, P> {
+impl<'a, P: AtomSet> Iterator for AtomTreeIterator<'a, P> {
     type Item = (SmallVec<[usize; 10]>, AtomView<'a, P>);
 
     /// Return the next position and atom in the tree.
@@ -1562,7 +1574,7 @@ impl<'a, P: Atom> Iterator for AtomTreeIterator<'a, P> {
 }
 
 /// Match a pattern to any subexpression of a target expression.
-pub struct PatternAtomTreeIterator<'a, 'b, P: Atom> {
+pub struct PatternAtomTreeIterator<'a, 'b, P: AtomSet> {
     pattern: &'b Pattern<P>,
     atom_tree_iterator: AtomTreeIterator<'a, P>,
     current_target: Option<AtomView<'a, P>>,
@@ -1573,7 +1585,7 @@ pub struct PatternAtomTreeIterator<'a, 'b, P: Atom> {
     first_match: bool,
 }
 
-impl<'a: 'b, 'b, P: Atom> PatternAtomTreeIterator<'a, 'b, P> {
+impl<'a: 'b, 'b, P: AtomSet> PatternAtomTreeIterator<'a, 'b, P> {
     pub fn new(
         pattern: &'b Pattern<P>,
         target: AtomView<'a, P>,
@@ -1641,13 +1653,13 @@ impl<'a: 'b, 'b, P: Atom> PatternAtomTreeIterator<'a, 'b, P> {
 
 /// Replace a pattern in the target once. Every  call to `next`,
 /// will return a new match and replacement until the options are exhausted.
-pub struct ReplaceIterator<'a, 'b, P: Atom> {
+pub struct ReplaceIterator<'a, 'b, P: AtomSet> {
     rhs: &'b Pattern<P>,
     pattern_tree_iterator: PatternAtomTreeIterator<'a, 'b, P>,
     target: AtomView<'a, P>,
 }
 
-impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
+impl<'a: 'b, 'b, P: AtomSet + 'a + 'b> ReplaceIterator<'a, 'b, P> {
     pub fn new(
         pattern: &'b Pattern<P>,
         target: AtomView<'a, P>,
@@ -1668,7 +1680,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
     }
 
     fn copy_and_replace(
-        out: &mut OwnedAtom<P>,
+        out: &mut Atom<P>,
         position: &[usize],
         used_flags: &[bool],
         target: AtomView<'a, P>,
@@ -1680,7 +1692,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                 AtomView::Fun(f) => {
                     let slice = f.to_slice();
 
-                    let out = out.transform_to_fun();
+                    let out = out.to_fun();
                     out.set_from_name(f.get_name());
 
                     for (index, arg) in slice.iter().enumerate() {
@@ -1688,7 +1700,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                             let mut handle = workspace.new_atom();
                             let oa = handle.get_mut();
                             Self::copy_and_replace(oa, rest, used_flags, arg, rhs, workspace);
-                            out.add_arg(oa.to_view());
+                            out.add_arg(oa.as_view());
                         } else {
                             out.add_arg(arg);
                         }
@@ -1699,18 +1711,18 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                 AtomView::Pow(p) => {
                     let slice = p.to_slice();
 
-                    let out = out.transform_to_pow();
+                    let out = out.to_pow();
 
                     if *first == 0 {
                         let mut handle = workspace.new_atom();
                         let oa = handle.get_mut();
                         Self::copy_and_replace(oa, rest, used_flags, slice.get(0), rhs, workspace);
-                        out.set_from_base_and_exp(oa.to_view(), slice.get(1));
+                        out.set_from_base_and_exp(oa.as_view(), slice.get(1));
                     } else {
                         let mut handle = workspace.new_atom();
                         let oa = handle.get_mut();
                         Self::copy_and_replace(oa, rest, used_flags, slice.get(1), rhs, workspace);
-                        out.set_from_base_and_exp(slice.get(0), oa.to_view());
+                        out.set_from_base_and_exp(slice.get(0), oa.as_view());
                     }
 
                     out.set_dirty(true);
@@ -1718,7 +1730,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                 AtomView::Mul(m) => {
                     let slice = m.to_slice();
 
-                    let out = out.transform_to_mul();
+                    let out = out.to_mul();
 
                     for (index, arg) in slice.iter().enumerate() {
                         if index == *first {
@@ -1727,7 +1739,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                             Self::copy_and_replace(oa, rest, used_flags, arg, rhs, workspace);
 
                             // TODO: do type check or just extend? could be that we get x*y*z -> x*(w*u)*z
-                            out.extend(oa.to_view());
+                            out.extend(oa.as_view());
                         } else {
                             out.extend(arg);
                         }
@@ -1738,7 +1750,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                 AtomView::Add(a) => {
                     let slice = a.to_slice();
 
-                    let out = out.transform_to_add();
+                    let out = out.to_add();
 
                     for (index, arg) in slice.iter().enumerate() {
                         if index == *first {
@@ -1746,7 +1758,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                             let oa = handle.get_mut();
                             Self::copy_and_replace(oa, rest, used_flags, arg, rhs, workspace);
 
-                            out.extend(oa.to_view());
+                            out.extend(oa.as_view());
                         } else {
                             out.extend(arg);
                         }
@@ -1759,7 +1771,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
         } else {
             match target {
                 AtomView::Mul(m) => {
-                    let out = out.transform_to_mul();
+                    let out = out.to_mul();
 
                     for (child, used) in m.iter().zip(used_flags) {
                         if !used {
@@ -1771,7 +1783,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                     out.set_dirty(true);
                 }
                 AtomView::Add(a) => {
-                    let out = out.transform_to_add();
+                    let out = out.to_add();
 
                     for (child, used) in a.iter().zip(used_flags) {
                         if !used {
@@ -1794,7 +1806,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
         &mut self,
         state: &State,
         workspace: &Workspace<P>,
-        out: &mut OwnedAtom<P>,
+        out: &mut Atom<P>,
     ) -> Option<()> {
         if let Some((position, used_flags, _target, match_stack)) =
             self.pattern_tree_iterator.next()
@@ -1810,7 +1822,7 @@ impl<'a: 'b, 'b, P: Atom + 'a + 'b> ReplaceIterator<'a, 'b, P> {
                 position,
                 &used_flags,
                 self.target,
-                new_rhs.to_view(),
+                new_rhs.as_view(),
                 workspace,
             );
 

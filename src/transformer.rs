@@ -2,13 +2,13 @@ use ahash::HashMap;
 
 use crate::{
     id::{MatchStack, Pattern, PatternRestriction},
-    representations::{Atom, Identifier, OwnedAtom},
+    representations::{Atom, AtomSet, Identifier},
     state::{State, Workspace, INPUT_ID},
 };
 
 /// Operations that take a pattern as the input and produce an expression
 #[derive(Clone)]
-pub enum Transformer<P: Atom + 'static> {
+pub enum Transformer<P: AtomSet + 'static> {
     Input,
     Expand(Pattern<P>),
     Derivative(Pattern<P>, Identifier),
@@ -20,7 +20,7 @@ pub enum Transformer<P: Atom + 'static> {
     ),
 }
 
-impl<P: Atom> std::fmt::Debug for Transformer<P> {
+impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Input => f.debug_tuple("Input").finish(),
@@ -36,13 +36,13 @@ impl<P: Atom> std::fmt::Debug for Transformer<P> {
     }
 }
 
-impl<P: Atom> Transformer<P> {
+impl<P: AtomSet> Transformer<P> {
     pub fn execute(
         &self,
         state: &State,
         workspace: &Workspace<P>,
         match_stack: &MatchStack<P>,
-        out: &mut OwnedAtom<P>,
+        out: &mut Atom<P>,
     ) {
         match self {
             Transformer::Input => {
@@ -57,18 +57,18 @@ impl<P: Atom> Transformer<P> {
             Transformer::Expand(e) => {
                 let mut h = workspace.new_atom();
                 e.substitute_wildcards(state, workspace, &mut h, match_stack);
-                h.to_view().expand(workspace, state, out);
+                h.as_view().expand(workspace, state, out);
             }
             Transformer::Derivative(e, x) => {
                 let mut h = workspace.new_atom();
                 e.substitute_wildcards(state, workspace, &mut h, match_stack);
-                h.to_view().derivative(*x, workspace, state, out);
+                h.as_view().derivative(*x, workspace, state, out);
             }
             Transformer::ReplaceAll(pat, input, rhs, cond) => {
                 // prepare the target by executing the transformers
                 let mut h = workspace.new_atom();
                 input.substitute_wildcards(state, workspace, &mut h, match_stack);
-                pat.replace_all(h.to_view(), rhs, state, workspace, cond, out);
+                pat.replace_all(h.as_view(), rhs, state, workspace, cond, out);
             }
         }
     }

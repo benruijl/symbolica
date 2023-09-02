@@ -2,9 +2,8 @@ use std::io::{self, BufRead, Write};
 
 use smartstring::{LazyCompact, SmartString};
 use symbolica::{
-    parser::parse,
-    printer::{PrintMode, RationalPolynomialPrinter},
-    representations::default::DefaultRepresentation,
+    parser::Token,
+    printer::{PrintOptions, RationalPolynomialPrinter},
     rings::{
         integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
     },
@@ -37,7 +36,7 @@ fn main() {
     }
 
     let mut state = State::new();
-    let workspace = Workspace::<DefaultRepresentation>::new();
+    let workspace = Workspace::default();
     let vars: Vec<_> = var_names
         .iter()
         .map(|v| state.get_or_insert_var(v))
@@ -49,7 +48,7 @@ fn main() {
             break;
         }
 
-        let r: RationalPolynomial<IntegerRing, u16> = parse(&buffer)
+        let r: RationalPolynomial<IntegerRing, u16> = Token::parse(&buffer)
             .unwrap()
             .to_rational_polynomial(
                 &workspace,
@@ -66,7 +65,7 @@ fn main() {
             RationalPolynomialPrinter {
                 poly: &r,
                 state: &state,
-                print_mode: PrintMode::default()
+                opts: PrintOptions::default()
             }
         );
 

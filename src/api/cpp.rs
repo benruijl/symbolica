@@ -4,15 +4,14 @@ use std::os::raw::c_ulonglong;
 
 use smartstring::{LazyCompact, SmartString};
 
-use crate::printer::SymbolicaPrintOptions;
+use crate::parser::Token;
 use crate::representations::Identifier;
 use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
 use crate::rings::integer::IntegerRing;
 use crate::rings::rational::RationalField;
 use crate::{
-    parser::parse,
-    printer::{PrintMode, RationalPolynomialPrinter},
-    representations::default::DefaultRepresentation,
+    printer::{PrintOptions, RationalPolynomialPrinter},
+    representations::default::Linear,
     rings::rational_polynomial::RationalPolynomial,
     state::{State, Workspace},
 };
@@ -27,7 +26,7 @@ struct LocalState {
 
 struct Symbolica {
     state: State,
-    workspace: Workspace<DefaultRepresentation>,
+    workspace: Workspace<Linear>,
     local_state: LocalState,
 }
 
@@ -93,7 +92,7 @@ unsafe extern "C" fn simplify(
 
     let symbolica = unsafe { &mut *symbolica };
 
-    let token = parse(cstr).unwrap();
+    let token = Token::parse(cstr).unwrap();
 
     macro_rules! to_rational {
         ($in_field: ty, $exp_size: ty) => {
@@ -116,13 +115,13 @@ unsafe extern "C" fn simplify(
                     RationalPolynomialPrinter {
                         poly: &r,
                         state: &symbolica.state,
-                        print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                        opts: PrintOptions {
                             terms_on_new_line: false,
                             color_top_level_sum: false,
                             color_builtin_functions: false,
                             print_finite_field: false,
                             explicit_rational_polynomial
-                        })
+                        }
                     }
                 )
                 .unwrap();
@@ -147,13 +146,13 @@ unsafe extern "C" fn simplify(
                         RationalPolynomialPrinter {
                             poly: &rf,
                             state: &symbolica.state,
-                            print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                            opts: PrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
                                 color_builtin_functions: false,
                                 print_finite_field: false,
                                 explicit_rational_polynomial
-                            })
+                            }
                         }
                     )
                     .unwrap();
@@ -177,13 +176,13 @@ unsafe extern "C" fn simplify(
                         RationalPolynomialPrinter {
                             poly: &rf,
                             state: &symbolica.state,
-                            print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                            opts: PrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
                                 color_builtin_functions: false,
                                 print_finite_field: false,
                                 explicit_rational_polynomial
-                            })
+                            }
                         }
                     )
                     .unwrap();

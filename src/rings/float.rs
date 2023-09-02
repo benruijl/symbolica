@@ -257,7 +257,7 @@ simd_impl!(f64x4);
 
 impl NumericalFloatLike for Rational {
     fn mul_add(&self, a: &Self, c: &Self) -> Self {
-        &(self * a) + &c
+        &(self * a) + c
     }
 
     fn neg(&self) -> Self {

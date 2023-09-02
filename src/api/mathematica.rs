@@ -13,7 +13,6 @@ use crate::rings::rational::RationalField;
 use crate::{
     parser::parse,
     printer::{PrintMode, RationalPolynomialPrinter},
-    representations::default::DefaultRepresentation,
     rings::rational_polynomial::RationalPolynomial,
     state::{State, Workspace},
 };
@@ -31,7 +30,7 @@ static STATE: Lazy<RwLock<Symbolica>> = Lazy::new(|| {
         },
     })
 });
-thread_local!(static WORKSPACE: Workspace<DefaultRepresentation> = Workspace::new());
+thread_local!(static WORKSPACE: Workspace = Workspace::new());
 
 struct LocalState {
     buffer: String,
@@ -94,12 +93,12 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                     RationalPolynomialPrinter {
                         poly: &r,
                         state: &symbolica.state,
-                        print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                        opts: PrintOptions {
                             terms_on_new_line: false,
                             color_top_level_sum: false,
                             print_finite_field: false,
                             explicit_rational_polynomial
-                        })
+                        }
                     }
                 )
             } else {
@@ -124,12 +123,12 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                         RationalPolynomialPrinter {
                             poly: &rf,
                             state: &symbolica.state,
-                            print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                            opts: PrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
                                 print_finite_field: false,
                                 explicit_rational_polynomial
-                            })
+                            }
                         }
                     )
                 } else {
@@ -153,12 +152,12 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                         RationalPolynomialPrinter {
                             poly: &rf,
                             state: &symbolica.state,
-                            print_mode: PrintMode::Symbolica(SymbolicaPrintOptions {
+                            opts: PrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
                                 print_finite_field: false,
                                 explicit_rational_polynomial
-                            })
+                            }
                         }
                     )
                 }

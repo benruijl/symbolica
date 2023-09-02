@@ -48,8 +48,8 @@ impl<'a, R: Ring> Eq for BorrowedHornerNode<'a, R> where R::Element: Hash + Eq {
 
 impl<'a> Hash for BorrowedHornerNode<'a, RationalField> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let hash = if let Some(_) = self.content {
-            if let Some(_) = self.rest {
+        let hash = if self.content.is_some() {
+            if self.rest.is_some() {
                 self.hash.2
             } else {
                 self.hash.1
@@ -398,10 +398,10 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
             }
         }
 
-        power_sub[var] = power_sub[var] + min_pow;
+        power_sub[var] += min_pow;
 
         let mut content =
-            self.to_horner_scheme_impl(&order, indices, new_index_start, power_sub, boxes);
+            self.to_horner_scheme_impl(order, indices, new_index_start, power_sub, boxes);
 
         power_sub[var] = power_sub[var] - min_pow;
 
@@ -689,7 +689,7 @@ impl HornerScheme<RationalField> {
     }
 
     /// Convert the Horner scheme to a list of instructions, suitable for numerical evaluation.
-    pub fn to_instr<'a>(&'a self, nvars: usize) -> InstructionList {
+    pub fn to_instr(&self, nvars: usize) -> InstructionList {
         Self::to_instr_multiple(std::slice::from_ref(self), nvars)
     }
 
@@ -760,7 +760,7 @@ impl HornerScheme<RationalField> {
 
                                 if p % 2 == 0 {
                                     let p_half = bin_exp(var, p / 2, instr, seen);
-                                    instr.push(Instruction::Mul(vec![p_half.clone(), p_half]));
+                                    instr.push(Instruction::Mul(vec![p_half, p_half]));
                                 } else {
                                     let p_minone = bin_exp(var, p - 1, instr, seen);
                                     instr.push(Instruction::Mul(vec![var, p_minone]));
@@ -848,7 +848,7 @@ impl Variable<Rational> {
         match self {
             Variable::Var(v) => {
                 let var = state.get_name(var_map[*v]).unwrap();
-                format!("{}", var.as_str())
+                var.as_str().to_string()
             }
             Variable::Constant(c) => match mode {
                 InstructionSetMode::Plain => format!("{}", c),
@@ -983,7 +983,7 @@ impl InstructionList {
                                 if let Instruction::Add(aa) | Instruction::Mul(aa) = &self.instr[v]
                                 {
                                     for x in aa {
-                                        new_a.push(x.clone());
+                                        new_a.push(*x);
                                     }
                                     self.instr[v] = Instruction::Empty;
                                 } else {
@@ -1051,7 +1051,7 @@ impl InstructionList {
                     for i in 0..m.len() - 1 {
                         for j in &m[i + 1..] {
                             *pair_count
-                                .entry((matches!(x, Instruction::Add(_)), m[i].clone(), j.clone()))
+                                .entry((matches!(x, Instruction::Add(_)), m[i], *j))
                                 .or_insert(0) += 1;
                         }
                     }
@@ -1066,7 +1066,7 @@ impl InstructionList {
         let mut v: Vec<_> = pair_count.into_iter().collect();
         v.sort_by_key(|k| Reverse(k.1));
 
-        if v.len() == 0 || v[0].1 < 2 {
+        if v.is_empty() || v[0].1 < 2 {
             return false;
         }
 
@@ -1294,7 +1294,7 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
             match x {
                 InstructionRange::Add(reg, pos, len) => {
                     // unroll the loop for additional performance
-                    *unsafe { self.eval.get_unchecked_mut(*reg as usize) } = match len {
+                    *unsafe { self.eval.get_unchecked_mut(*reg) } = match len {
                         2 => get_eval!(*pos).clone() + get_eval!(*pos + 1),
                         3 => get_eval!(*pos).clone() + get_eval!(*pos + 1) + get_eval!(*pos + 2),
                         4 => {
@@ -1305,18 +1305,15 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
                         }
                         _ => {
                             let mut tmp = N::zero();
-                            for aa in unsafe {
-                                self.indices
-                                    .get_unchecked(*pos as usize..(pos + len) as usize)
-                            } {
-                                tmp += unsafe { self.eval.get_unchecked(*aa as usize) };
+                            for aa in unsafe { self.indices.get_unchecked(*pos..(pos + len)) } {
+                                tmp += unsafe { self.eval.get_unchecked(*aa) };
                             }
                             tmp
                         }
                     };
                 }
                 InstructionRange::Mul(reg, pos, len) => {
-                    *unsafe { self.eval.get_unchecked_mut(*reg as usize) } = match len {
+                    *unsafe { self.eval.get_unchecked_mut(*reg) } = match len {
                         2 => get_eval!(*pos).clone() * get_eval!(*pos + 1),
                         3 => get_eval!(*pos).clone() * get_eval!(*pos + 1) * get_eval!(*pos + 2),
                         4 => {
@@ -1327,11 +1324,8 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
                         }
                         _ => {
                             let mut tmp = N::one();
-                            for aa in unsafe {
-                                self.indices
-                                    .get_unchecked(*pos as usize..(pos + len) as usize)
-                            } {
-                                tmp *= unsafe { self.eval.get_unchecked(*aa as usize) };
+                            for aa in unsafe { self.indices.get_unchecked(*pos..(pos + len)) } {
+                                tmp *= unsafe { self.eval.get_unchecked(*aa) };
                             }
                             tmp
                         }
@@ -1340,7 +1334,7 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
                 InstructionRange::Out(pos) => {
                     unsafe {
                         *self.out.get_unchecked_mut(out_counter) =
-                            self.eval.get_unchecked(*pos as usize).clone()
+                            self.eval.get_unchecked(*pos).clone()
                     };
                     out_counter += 1;
                 }
@@ -1440,9 +1434,7 @@ impl std::fmt::Display for InstructionList {
                     out_counter += 1;
                 }
                 Instruction::Empty => f.write_fmt(format_args!("Z{} = NOP;\n", reg))?,
-                Instruction::Init(i) => {
-                    f.write_fmt(format_args!("Z{} = {};\n", reg, i.to_string()))?
-                }
+                Instruction::Init(i) => f.write_fmt(format_args!("Z{} = {};\n", reg, i))?,
             }
         }
 

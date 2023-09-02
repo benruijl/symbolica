@@ -850,9 +850,7 @@ where
                         );
 
                         for x in mat.row_iter() {
-                            if x[..vars_second]
-                                .iter()
-                                .all(|y| FiniteField::<UField>::is_zero(y))
+                            if x[..vars_second].iter().all(FiniteField::<UField>::is_zero)
                                 && x.iter().any(|y| !FiniteField::<UField>::is_zero(y))
                             {
                                 scaling_var_relations.push(x[vars_second..].to_vec());

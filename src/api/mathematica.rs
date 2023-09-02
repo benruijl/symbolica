@@ -5,14 +5,12 @@ use std::sync::RwLock;
 
 use smartstring::{LazyCompact, SmartString};
 
-use crate::printer::SymbolicaPrintOptions;
 use crate::representations::Identifier;
 use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
 use crate::rings::integer::IntegerRing;
 use crate::rings::rational::RationalField;
 use crate::{
-    parser::parse,
-    printer::{PrintMode, RationalPolynomialPrinter},
+    printer::{PrintOptions, RationalPolynomialPrinter},
     rings::rational_polynomial::RationalPolynomial,
     state::{State, Workspace},
 };
@@ -96,8 +94,14 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                         opts: PrintOptions {
                             terms_on_new_line: false,
                             color_top_level_sum: false,
+                            color_builtin_functions: false,
                             print_finite_field: false,
-                            explicit_rational_polynomial
+                            explicit_rational_polynomial,
+                            number_thousands_separator: None,
+                            multiplication_operator: '*',
+                            square_brackets_for_function: false,
+                            num_exp_as_superscript: false,
+                            latex: false,
                         }
                     }
                 )
@@ -126,8 +130,14 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                             opts: PrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
+                                color_builtin_functions: false,
                                 print_finite_field: false,
-                                explicit_rational_polynomial
+                                explicit_rational_polynomial,
+                                number_thousands_separator: None,
+                                multiplication_operator: '*',
+                                square_brackets_for_function: false,
+                                num_exp_as_superscript: false,
+                                latex: false,
                             }
                         }
                     )
@@ -155,8 +165,14 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                             opts: PrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
+                                color_builtin_functions: false,
                                 print_finite_field: false,
-                                explicit_rational_polynomial
+                                explicit_rational_polynomial,
+                                number_thousands_separator: None,
+                                multiplication_operator: '*',
+                                square_brackets_for_function: false,
+                                num_exp_as_superscript: false,
+                                latex: false,
                             }
                         }
                     )

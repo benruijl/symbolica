@@ -515,6 +515,15 @@ impl BorrowedNumber<'_> {
             _ => unreachable!(),
         }
     }
+
+    pub fn is_integer(&self) -> bool {
+        match self {
+            BorrowedNumber::Natural(_, d) => *d == 1,
+            BorrowedNumber::Large(r) => r.to_rat().is_integer(),
+            BorrowedNumber::FiniteField(_, _) => true,
+            BorrowedNumber::RationalPolynomial(_) => false,
+        }
+    }
 }
 
 impl PackedRationalNumberWriter for Number {

@@ -89,6 +89,27 @@ class Expression:
         Convert the expression into a human-readable string.
         """
 
+    def pretty_str(self,
+                   terms_on_new_line: bool = False,
+                   color_top_level_sum: bool = True,
+                   color_builtin_functions: bool = True,
+                   print_finite_field: bool = True,
+                   explicit_rational_polynomial: bool = False,
+                   number_thousands_separator: bool = None,
+                   multiplication_operator: str = '*',
+                   square_brackets_for_function: bool = False,
+                   num_exp_as_superscript: bool = True,
+                   latex: bool = False
+                   ) -> str:
+        """
+        Convert the expression into a human-readable string, with tunable settings.
+
+        Examples
+        --------
+        >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
+        >>> print(a.pretty_str(latex=True))
+        """
+
     def __repr__(self) -> str:
         """
         Convert the expression into a debug string.

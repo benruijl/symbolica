@@ -533,6 +533,58 @@ impl PythonExpression {
         ))
     }
 
+    /// Convert the expression into a human-readable string, with tunable settings.
+    ///
+    /// Examples
+    /// --------
+    /// >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
+    /// >>> print(a.pretty_str(latex=True))
+    #[pyo3(signature =
+    (terms_on_new_line = false,
+        color_top_level_sum = true,
+        color_builtin_functions = true,
+        print_finite_field = true,
+        explicit_rational_polynomial = false,
+        number_thousands_separator = None,
+        multiplication_operator = '*',
+        square_brackets_for_function = false,
+        num_exp_as_superscript = true,
+        latex = false)
+    )]
+    pub fn pretty_str(
+        &self,
+        terms_on_new_line: bool,
+        color_top_level_sum: bool,
+        color_builtin_functions: bool,
+        print_finite_field: bool,
+        explicit_rational_polynomial: bool,
+        number_thousands_separator: Option<char>,
+        multiplication_operator: char,
+        square_brackets_for_function: bool,
+        num_exp_as_superscript: bool,
+        latex: bool,
+    ) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            AtomPrinter::new_with_options(
+                self.expr.as_view(),
+                PrintOptions {
+                    terms_on_new_line,
+                    color_top_level_sum,
+                    color_builtin_functions,
+                    print_finite_field,
+                    explicit_rational_polynomial,
+                    number_thousands_separator,
+                    multiplication_operator,
+                    square_brackets_for_function,
+                    num_exp_as_superscript,
+                    latex
+                },
+                &STATE.read().unwrap(),
+            )
+        ))
+    }
+
     /// Hash the expression.
     pub fn __hash__(&self) -> u64 {
         let mut hasher = ahash::AHasher::default();

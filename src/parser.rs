@@ -352,7 +352,7 @@ impl Token {
                     }
                 }
                 ParseState::Number => {
-                    if c != '_' && !c.is_ascii_digit() {
+                    if c != '_' && c != ' ' && !c.is_ascii_digit() {
                         // drag in the neg operator
                         if let Some(Token::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
                             stack.pop();
@@ -364,7 +364,7 @@ impl Token {
                         stack.push(Token::Number(id_buffer.as_str().into()));
 
                         id_buffer.clear();
-                    } else {
+                    } else if c != '_' && c != ' ' {
                         id_buffer.push(c);
                     }
                 }

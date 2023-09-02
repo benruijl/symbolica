@@ -120,7 +120,12 @@ unsafe extern "C" fn simplify(
                             color_top_level_sum: false,
                             color_builtin_functions: false,
                             print_finite_field: false,
-                            explicit_rational_polynomial
+                            explicit_rational_polynomial,
+                            number_thousands_separator: None,
+                            multiplication_operator: '*',
+                            square_brackets_for_function: false,
+                            num_exp_as_superscript: false,
+                            latex: false,
                         }
                     }
                 )
@@ -151,7 +156,12 @@ unsafe extern "C" fn simplify(
                                 color_top_level_sum: false,
                                 color_builtin_functions: false,
                                 print_finite_field: false,
-                                explicit_rational_polynomial
+                                explicit_rational_polynomial,
+                                number_thousands_separator: None,
+                                multiplication_operator: '*',
+                                square_brackets_for_function: false,
+                                num_exp_as_superscript: false,
+                                latex: false,
                             }
                         }
                     )
@@ -181,7 +191,12 @@ unsafe extern "C" fn simplify(
                                 color_top_level_sum: false,
                                 color_builtin_functions: false,
                                 print_finite_field: false,
-                                explicit_rational_polynomial
+                                explicit_rational_polynomial,
+                                number_thousands_separator: None,
+                                multiplication_operator: '*',
+                                square_brackets_for_function: false,
+                                num_exp_as_superscript: false,
+                                latex: false,
                             }
                         }
                     )

@@ -18,10 +18,15 @@ pub struct PrintOptions {
     pub color_builtin_functions: bool,
     pub print_finite_field: bool,
     pub explicit_rational_polynomial: bool,
+    pub number_thousands_separator: Option<char>,
+    pub multiplication_operator: char,
+    pub square_brackets_for_function: bool,
+    pub num_exp_as_superscript: bool,
+    pub latex: bool,
 }
 
 impl PrintOptions {
-    /// Print the output in a Mathematica fashion
+    /// Print the output in a Mathematica-readable format.
     pub fn mathematica() -> PrintOptions {
         Self {
             terms_on_new_line: false,
@@ -29,6 +34,27 @@ impl PrintOptions {
             color_builtin_functions: false,
             print_finite_field: true,
             explicit_rational_polynomial: false,
+            number_thousands_separator: None,
+            multiplication_operator: ' ',
+            square_brackets_for_function: true,
+            num_exp_as_superscript: false,
+            latex: false,
+        }
+    }
+
+    /// Print the output in a Latex input format.
+    pub fn latex() -> PrintOptions {
+        Self {
+            terms_on_new_line: false,
+            color_top_level_sum: false,
+            color_builtin_functions: false,
+            print_finite_field: true,
+            explicit_rational_polynomial: false,
+            number_thousands_separator: None,
+            multiplication_operator: ' ',
+            square_brackets_for_function: false,
+            num_exp_as_superscript: false,
+            latex: true,
         }
     }
 }
@@ -41,6 +67,11 @@ impl Default for PrintOptions {
             color_builtin_functions: true,
             print_finite_field: true,
             explicit_rational_polynomial: false,
+            number_thousands_separator: None,
+            multiplication_operator: '*',
+            square_brackets_for_function: false,
+            num_exp_as_superscript: false,
+            latex: false,
         }
     }
 }
@@ -49,6 +80,7 @@ impl Default for PrintOptions {
 pub struct PrintState {
     pub level: usize,
     pub explicit_sign: bool,
+    pub superscript: bool,
 }
 
 macro_rules! define_formatters {
@@ -114,9 +146,21 @@ impl<'a, 'b, P: AtomSet> fmt::Display for AtomPrinter<'a, 'b, P> {
         let print_state = PrintState {
             level: 0,
             explicit_sign: false,
+            superscript: false,
         };
+
+        if self.print_opts.latex {
+            f.write_str("$$")?;
+        }
+
         self.atom
-            .fmt_output(f, self.print_opts, self.state, print_state)
+            .fmt_output(f, self.print_opts, self.state, print_state)?;
+
+        if self.print_opts.latex {
+            f.write_str("$$")
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -212,6 +256,40 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
         state: &State,
         print_state: PrintState,
     ) -> fmt::Result {
+        /// Input must be digits only.
+        fn format_num(
+            mut s: String,
+            opts: &PrintOptions,
+            print_state: &PrintState,
+            f: &mut fmt::Formatter,
+        ) -> fmt::Result {
+            if print_state.superscript {
+                let map = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
+                s = s
+                    .as_bytes()
+                    .iter()
+                    .map(|x| map[(x - '0' as u8) as usize])
+                    .collect();
+
+                return f.write_str(&s);
+            }
+
+            if let Some(c) = opts.number_thousands_separator {
+                let mut first = true;
+                for triplet in s.as_bytes().chunks(3) {
+                    if !first {
+                        f.write_char(c)?;
+                    }
+                    f.write_str(std::str::from_utf8(triplet).unwrap())?;
+                    first = false;
+                }
+
+                Ok(())
+            } else {
+                f.write_str(&s)
+            }
+        }
+
         let d = self.get_number_view();
 
         let is_negative = match d {
@@ -223,6 +301,8 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
         if is_negative {
             if print_state.level == 1 && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "-".yellow()))?;
+            } else if print_state.superscript {
+                f.write_char('⁻')?;
             } else {
                 f.write_char('-')?;
             }
@@ -236,13 +316,54 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
 
         match d {
             BorrowedNumber::Natural(num, den) => {
-                if den != 1 {
-                    f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))
+                if !opts.latex
+                    && (opts.number_thousands_separator.is_some() || print_state.superscript)
+                {
+                    format_num(num.unsigned_abs().to_string(), &opts, &print_state, f)?;
+                    if den != 1 {
+                        f.write_char('/')?;
+                        format_num(den.to_string(), &opts, &print_state, f)?;
+                    }
+                    Ok(())
                 } else {
-                    f.write_fmt(format_args!("{}", num.unsigned_abs()))
+                    if den != 1 {
+                        if opts.latex {
+                            f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", num.unsigned_abs(), den))
+                        } else {
+                            f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))
+                        }
+                    } else {
+                        f.write_fmt(format_args!("{}", num.unsigned_abs()))
+                    }
                 }
             }
-            BorrowedNumber::Large(r) => f.write_fmt(format_args!("{}", r.to_rat().abs())),
+            BorrowedNumber::Large(r) => {
+                let rat = r.to_rat().abs();
+                if !opts.latex
+                    && (opts.number_thousands_separator.is_some() || print_state.superscript)
+                {
+                    format_num(rat.numer().to_string(), &opts, &print_state, f)?;
+                    if !rat.is_integer() {
+                        f.write_char('/')?;
+                        format_num(rat.denom().to_string(), &opts, &print_state, f)?;
+                    }
+                    Ok(())
+                } else {
+                    if !rat.is_integer() {
+                        if opts.latex {
+                            f.write_fmt(format_args!(
+                                "\\frac{{{}}}{{{}}}",
+                                rat.numer(),
+                                rat.denom(),
+                            ))
+                        } else {
+                            f.write_fmt(format_args!("{}/{}", rat.numer(), rat.denom()))
+                        }
+                    } else {
+                        f.write_fmt(format_args!("{}", rat.numer()))
+                    }
+                }
+            }
             BorrowedNumber::FiniteField(num, fi) => {
                 let ff = state.get_finite_field(fi);
                 f.write_fmt(format_args!(
@@ -325,7 +446,11 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
             self.get_nargs()
         }) {
             if !first {
-                f.write_char('*')?;
+                if opts.latex {
+                    f.write_char(' ')?;
+                } else {
+                    f.write_char(opts.multiplication_operator)?;
+                }
             }
             first = false;
 
@@ -370,7 +495,11 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
             }
         }
 
-        f.write_char('(')?;
+        if opts.square_brackets_for_function {
+            f.write_char('[')?;
+        } else {
+            f.write_char('(')?;
+        }
 
         print_state.level += 1;
         print_state.explicit_sign = false;
@@ -384,7 +513,11 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
             x.fmt_output(f, opts, state, print_state)?;
         }
 
-        f.write_char(')')
+        if opts.square_brackets_for_function {
+            f.write_char(']')
+        } else {
+            f.write_char(')')
+        }
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -421,10 +554,36 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         }
 
         let b = self.get_base();
+        let e = self.get_exp();
 
         print_state.level += 1;
         print_state.explicit_sign = false;
-        if let AtomView::Add(_) | AtomView::Mul(_) | AtomView::Pow(_) = b {
+
+        let mut superscript_exponent = false;
+        if opts.latex {
+            if let AtomView::Num(n) = e {
+                if n.get_number_view() == BorrowedNumber::Natural(-1, 1) {
+                    // TODO: construct the numerator
+                    f.write_str("\\frac{1}{")?;
+                    b.fmt_output(f, opts, state, print_state)?;
+                    return f.write_char('}');
+                }
+            }
+        } else if opts.num_exp_as_superscript {
+            if let AtomView::Num(n) = e {
+                superscript_exponent = n.get_number_view().is_integer()
+            }
+        }
+
+        let base_needs_parentheses =
+            matches!(b, AtomView::Add(_) | AtomView::Mul(_) | AtomView::Pow(_))
+                || if let AtomView::Num(n) = b {
+                    !n.get_number_view().is_integer()
+                } else {
+                    false
+                };
+
+        if base_needs_parentheses {
             f.write_char('(')?;
             b.fmt_output(f, opts, state, print_state)?;
             f.write_char(')')?;
@@ -432,15 +591,30 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
             b.fmt_output(f, opts, state, print_state)?;
         }
 
-        f.write_char('^')?;
+        if !superscript_exponent {
+            f.write_char('^')?;
+        }
 
-        let e = self.get_exp();
-        if let AtomView::Add(_) | AtomView::Mul(_) = e {
-            f.write_char('(')?;
+        if opts.latex {
+            f.write_char('{')?;
             e.fmt_output(f, opts, state, print_state)?;
-            f.write_char(')')
+            f.write_char('}')
         } else {
-            e.fmt_output(f, opts, state, print_state)
+            let exp_needs_parentheses = matches!(e, AtomView::Add(_) | AtomView::Mul(_))
+                || if let AtomView::Num(n) = e {
+                    !n.get_number_view().is_integer()
+                } else {
+                    false
+                };
+
+            if exp_needs_parentheses {
+                f.write_char('(')?;
+                e.fmt_output(f, opts, state, print_state)?;
+                f.write_char(')')
+            } else {
+                print_state.superscript = superscript_exponent;
+                e.fmt_output(f, opts, state, print_state)
+            }
         }
     }
 

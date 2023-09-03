@@ -27,8 +27,8 @@ use crate::{
     representations::{
         default::ListIteratorD,
         number::{BorrowedNumber, Number},
-        Add, Atom, AtomView, Fun, Identifier, Mul, Num, OwnedAdd, OwnedFun, OwnedMul, OwnedNum,
-        OwnedPow, OwnedVar, Var,
+        Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
+        OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
     rings::integer::IntegerRing,
     rings::{
@@ -55,6 +55,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonNumericalIntegrator>()?;
     m.add_class::<PythonSample>()?;
     m.add_class::<PythonAtomType>()?;
+    m.add_class::<PythonAtomTree>()?;
 
     Ok(())
 }
@@ -69,6 +70,85 @@ pub enum PythonAtomType {
     Add,
     Mul,
     Pow,
+}
+
+/// A Python representation of a Symbolica expression.
+/// The type of the atom is provided in `atom_type`.
+///
+/// The `head` contains the string representation of:
+/// - a number if the type is `Num`
+/// - the variable if the type is `Var`
+/// - the function name if the type is `Fn`
+/// - otherwise it is `None`.
+///
+/// The tail contains the child atoms:
+/// - the summand for type `Add`
+/// - the factors for type `Mul`
+/// - the base and exponent for type `Pow`
+/// - the function arguments for type `Fn`
+#[derive(Clone)]
+#[pyclass(name = "AtomTree")]
+pub struct PythonAtomTree {
+    /// The type of this atom.
+    #[pyo3(get)]
+    pub atom_type: PythonAtomType,
+    /// The string data of this atom.
+    #[pyo3(get)]
+    pub head: Option<String>,
+    /// The list of child atoms of this atom.
+    #[pyo3(get)]
+    pub tail: Vec<PythonAtomTree>,
+}
+
+impl<'a, P: AtomSet> From<AtomView<'a, P>> for PythonAtomTree {
+    fn from(atom: AtomView<'a, P>) -> Self {
+        match atom {
+            AtomView::Num(_) => PythonAtomTree {
+                atom_type: PythonAtomType::Num,
+                head: Some(format!(
+                    "{}",
+                    AtomPrinter::new(atom, &STATE.read().unwrap())
+                )),
+                tail: vec![],
+            },
+            AtomView::Var(v) => PythonAtomTree {
+                atom_type: PythonAtomType::Var,
+                head: STATE
+                    .read()
+                    .unwrap()
+                    .get_name(v.get_name())
+                    .map(|x| x.to_string()),
+                tail: vec![],
+            },
+            AtomView::Fun(f) => PythonAtomTree {
+                atom_type: PythonAtomType::Fn,
+                head: STATE
+                    .read()
+                    .unwrap()
+                    .get_name(f.get_name())
+                    .map(|x| x.to_string()),
+                tail: f.iter().map(|x| x.into()).collect(),
+            },
+            AtomView::Add(a) => PythonAtomTree {
+                atom_type: PythonAtomType::Add,
+                head: None,
+                tail: a.iter().map(|x| x.into()).collect(),
+            },
+            AtomView::Mul(m) => PythonAtomTree {
+                atom_type: PythonAtomType::Mul,
+                head: None,
+                tail: m.iter().map(|x| x.into()).collect(),
+            },
+            AtomView::Pow(p) => {
+                let (b, e) = p.get_base_exp();
+                PythonAtomTree {
+                    atom_type: PythonAtomType::Pow,
+                    head: None,
+                    tail: vec![b.into(), e.into()],
+                }
+            }
+        }
+    }
 }
 
 #[derive(FromPyObject)]
@@ -539,11 +619,11 @@ impl PythonExpression {
     }
 
     /// Convert the expression into a human-readable string.
-    pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
+    pub fn __str__(&self) -> String {
+        format!(
             "{}",
             AtomPrinter::new(self.expr.as_view(), &STATE.read().unwrap())
-        ))
+        )
     }
 
     /// Convert the expression into a human-readable string, with tunable settings.
@@ -616,6 +696,11 @@ impl PythonExpression {
             Atom::Pow(_) => PythonAtomType::Pow,
             Atom::Empty => unreachable!(),
         }
+    }
+
+    /// Convert the expression to a tree.
+    pub fn to_atom_tree(&self) -> PythonAtomTree {
+        self.expr.as_view().into()
     }
 
     /// Get the name of a variable or function if the current atom

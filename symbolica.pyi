@@ -6,13 +6,42 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Callable, overload, Iterator, Optional, Sequence, Tuple, List
 
+
 class AtomType(Enum):
+    """Specifies the type of the atom."""
     Num = 1,
     Var = 2,
     Fn = 3,
     Add = 4,
     Mul = 5,
     Pow = 6,
+
+
+class AtomTree:
+    """
+    A Python representation of a Symbolica expression.
+    The type of the atom is provided in `atom_type`.
+
+    The `head` contains the string representation of:
+    - a number if the type is `Num`
+    - the variable if the type is `Var`
+    - the function name if the type is `Fn`
+    - otherwise it is `None`.
+
+    The tail contains the child atoms:
+    - the summand for type `Add`
+    - the factors for type `Mul`
+    - the base and exponent for type `Pow`
+    - the function arguments for type `Fn`
+    """
+
+    atom_type: AtomType
+    """ The type of this atom."""
+    head: Optional[str]
+    """The string data of this atom."""
+    tail: List[AtomTree]
+    """The list of child atoms of this atom."""
+
 
 class Expression:
     """
@@ -130,6 +159,9 @@ class Expression:
 
     def get_type(self) -> AtomType:
         """ Get the type of the atom."""
+
+    def to_atom_tree(self) -> AtomTree:
+        """Convert the expression to a tree."""
 
     def get_name(self) -> Optional[str]:
         """

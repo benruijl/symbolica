@@ -655,6 +655,15 @@ impl<P: AtomSet> Pattern<P> {
             submatch
         }
     }
+
+    pub fn pattern_match<'a>(
+        &'a self,
+        target: AtomView<'a, P>,
+        state: &'a State,
+        restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
+    ) -> PatternAtomTreeIterator<'a, 'a, P> {
+        PatternAtomTreeIterator::new(self, target, state, restrictions)
+    }
 }
 
 impl<P: AtomSet> std::fmt::Debug for Pattern<P> {
@@ -696,6 +705,16 @@ impl<P: AtomSet, T: Clone + Send + Sync + for<'a, 'b> Fn(&Match<'_, P>, &Match<'
 {
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum AtomType {
+    Num,
+    Var,
+    Add,
+    Mul,
+    Pow,
+    Fun,
+}
+
 /// Restrictions for a wildcard. Note that a length restriction
 /// applies at any level and therefore
 /// `x_*f(x_) : length(x) == 2`
@@ -706,8 +725,7 @@ where
     P: AtomSet,
 {
     Length(usize, Option<usize>), // min-max range
-    IsVar,
-    IsNumber,
+    IsAtomType(AtomType),
     IsLiteralWildcard(Identifier),
     Filter(Box<dyn FilterFn<P>>),
     Cmp(Identifier, Box<dyn CmpFn<P>>),
@@ -717,11 +735,24 @@ impl<P: AtomSet + 'static> Clone for PatternRestriction<P> {
     fn clone(&self) -> Self {
         match self {
             Self::Length(min, max) => Self::Length(*min, *max),
-            Self::IsVar => Self::IsVar,
-            Self::IsNumber => Self::IsNumber,
+            Self::IsAtomType(t) => Self::IsAtomType(*t),
             Self::IsLiteralWildcard(w) => Self::IsLiteralWildcard(*w),
             Self::Filter(f) => Self::Filter(dyn_clone::clone_box(f)),
             Self::Cmp(i, f) => Self::Cmp(*i, dyn_clone::clone_box(f)),
+        }
+    }
+}
+
+impl<P: AtomSet + 'static> std::fmt::Debug for PatternRestriction<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Length(arg0, arg1) => f.debug_tuple("Length").field(arg0).field(arg1).finish(),
+            Self::IsAtomType(t) => write!(f, "Is{:?}", t),
+            Self::IsLiteralWildcard(arg0) => {
+                f.debug_tuple("IsLiteralWildcard").field(arg0).finish()
+            }
+            Self::Filter(_) => f.debug_tuple("Filter").finish(),
+            Self::Cmp(arg0, _) => f.debug_tuple("Cmp").field(arg0).finish(),
         }
     }
 }
@@ -830,8 +861,27 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
         if let Some(res) = self.restrictions.get(&key) {
             for r in res {
                 match r {
-                    PatternRestriction::IsVar => {
-                        if let Match::Single(AtomView::Var(_)) = value {
+                    PatternRestriction::IsAtomType(t) => {
+                        if match t {
+                            AtomType::Num => matches!(value, Match::Single(AtomView::Num(_))),
+                            AtomType::Var => matches!(value, Match::Single(AtomView::Var(_))),
+                            AtomType::Add => matches!(
+                                value,
+                                Match::Single(AtomView::Add(_))
+                                    | Match::Multiple(SliceType::Add, _)
+                            ),
+                            AtomType::Mul => matches!(
+                                value,
+                                Match::Single(AtomView::Mul(_))
+                                    | Match::Multiple(SliceType::Mul, _)
+                            ),
+                            AtomType::Pow => matches!(
+                                value,
+                                Match::Single(AtomView::Pow(_))
+                                    | Match::Multiple(SliceType::Pow, _)
+                            ),
+                            AtomType::Fun => matches!(value, Match::Single(AtomView::Fun(_))),
+                        } {
                             continue;
                         }
                     }
@@ -840,11 +890,6 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
                             if wc == &v.get_name() {
                                 continue;
                             }
-                        }
-                    }
-                    PatternRestriction::IsNumber => {
-                        if let Match::Single(AtomView::Num(_)) = value {
-                            continue;
                         }
                     }
                     PatternRestriction::Length(min, max) => match &value {
@@ -866,19 +911,33 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
                         }
                     }
                     PatternRestriction::Cmp(other_id, f) => {
-                        // get match stack to get the value of other_id
                         if let Some((_, value2)) = self.stack.iter().find(|(k, _)| k == other_id) {
                             if f(&value, value2) {
                                 continue;
                             }
                         } else {
-                            // TODO: if the value does not exist, add this check to a list of checks to perform in the future
                             continue;
                         }
                     }
                 }
 
                 return None;
+            }
+        }
+
+        // check if the new key appears in any of the other restrictions
+        // TODO: improve performance
+        for (other_id, rs) in self.restrictions {
+            if let Some((_, other_value)) = self.stack.iter().find(|(k, _)| k == other_id) {
+                for r in rs {
+                    if let PatternRestriction::Cmp(key2, f) = r {
+                        if key == *key2 {
+                            if !f(&other_value, &value) {
+                                return None;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -943,8 +1002,9 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
                         minimal = Some(minimal.map_or(*min, |v: usize| v.max(*min)));
                         maximal = max.map_or(maximal, |v| Some(maximal.map_or(v, |v1| v.min(v1))));
                     }
-                    PatternRestriction::IsVar
-                    | PatternRestriction::IsNumber
+                    PatternRestriction::IsAtomType(
+                        AtomType::Var | AtomType::Num | AtomType::Fun,
+                    )
                     | PatternRestriction::IsLiteralWildcard(_) => {
                         minimal = Some(1);
                         maximal = Some(1);

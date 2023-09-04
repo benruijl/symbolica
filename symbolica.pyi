@@ -245,30 +245,73 @@ class Expression:
         transformations can be applied.
         """
 
-    def len(self, min_length: int, max_length: int | None) -> PatternRestriction:
+    def req_len(self, min_length: int, max_length: int | None) -> PatternRestriction:
         """
-        Create a pattern restriction on a pattern based on length.
-        """
-
-    def is_var(self) -> PatternRestriction:
-        """
-        Create a pattern restriction that tests if a wildcard is a variable.
+        Create a pattern restriction based on the wildcard length before downcasting.
         """
 
-    def is_num(self) -> PatternRestriction:
+    def req_type(self, atom_type: AtomType) -> PatternRestriction:
         """
-        Create a pattern restriction that tests if a wildcard is a number.
+        Create a pattern restriction that tests the type of the atom.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, AtomType
+        >>> x, x_ = Expression.vars('x', 'x_')
+        >>> f = Expression.fun("f")
+        >>> e = f(x)*f(2)*f(f(3))
+        >>> e = e.replace_all(f(x_), 1, x_.req_type(AtomType.Num))
+        >>> print(e)
+
+        Yields `f(x)*f(1)`.
         """
 
-    def is_lit(self) -> PatternRestriction:
+    def req_lit(self) -> PatternRestriction:
         """
         Create a pattern restriction that treats the wildcard as a literal variable,
         so that it only matches to itself.
         """
 
-    def __richcmp__(self, other: int, op: CompareOp) -> PatternRestriction:
+    def req(self, filter_fn: Callable[[Expression], bool],) -> PatternRestriction:
         """
-        Create a pattern restriction based on a comparison of a wildcard with a number.
+        Create a new pattern restriction that calls the function `filter_fn` with the matched
+        atom that should return a boolean. If true, the pattern matches.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1)*f(2)*f(3)
+        >>> e = e.replace_all(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
+        """
+
+    def req_cmp(
+        self,
+        other: Expression | int,
+        cmp_fn: Callable[[Expression, Expression], bool],
+    ) -> PatternRestriction:
+        """
+        Create a new pattern restriction that calls the function `cmp_fn` with another the matched
+        atom and the match atom of the `other` wildcard that should return a boolean. If true, the pattern matches.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_, y_ = Expression.vars('x_', 'y_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1)*f(2)*f(3)
+        >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
+        """
+
+    def __eq__(self, other: Expression | int) -> bool:
+        """
+        Compare two expressions.
+        """
+
+    def __neq__(self, other: Expression | int) -> bool:
+        """
+        Compare two expressions.
         """
 
     def __iter__(self) -> Iterator[Expression]:

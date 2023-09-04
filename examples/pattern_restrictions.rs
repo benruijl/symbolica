@@ -63,7 +63,7 @@ fn main() {
         expr.printer(&state)
     );
 
-    let mut it = PatternAtomTreeIterator::new(&pattern, expr.as_view(), &state, &restrictions);
+    let mut it = pattern.pattern_match(expr.as_view(), &state, &restrictions);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\tMatch at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {

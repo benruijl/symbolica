@@ -1,6 +1,6 @@
 use ahash::HashMap;
 use symbolica::{
-    id::{Match, Pattern, PatternAtomTreeIterator, PatternRestriction},
+    id::{Match, Pattern, PatternRestriction},
     representations::{number::BorrowedNumber, Atom, AtomView, Num},
     rings::finite_field,
     state::{State, Workspace},

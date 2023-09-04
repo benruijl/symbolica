@@ -7,7 +7,7 @@ use crate::{
         default::Linear, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice,
         Mul, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, SliceType, Var,
     },
-    state::{FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace},
+    state::{FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace, ARG},
     transformer::Transformer,
 };
 
@@ -512,6 +512,17 @@ impl<P: AtomSet> Pattern<P> {
         }
     }
 
+    /// Return an iterator that replaces the pattern in the target once.
+    pub fn replace_iter<'a>(
+        &'a self,
+        target: AtomView<'a, P>,
+        rhs: &'a Pattern<P>,
+        state: &'a State,
+        restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
+    ) -> ReplaceIterator<'a, 'a, P> {
+        ReplaceIterator::new(self, target, rhs, state, restrictions)
+    }
+
     /// Replace all occurrences of the pattern in the target.
     /// For every matched atom, the first canonical match is used and then the atom is skipped.
     pub fn replace_all<'a>(
@@ -776,6 +787,7 @@ impl<'a, P: AtomSet> std::fmt::Debug for Match<'a, P> {
 
 impl<'a, P: AtomSet> Match<'a, P> {
     /// Create a new atom from a matched subexpression.
+    /// Arguments lists are wrapped in the function `arg`.
     pub fn to_atom(&self, out: &mut Atom<P>) {
         match self {
             Self::Single(v) => {
@@ -795,9 +807,11 @@ impl<'a, P: AtomSet> Match<'a, P> {
                     }
                 }
                 SliceType::Arg => {
-                    unreachable!(
-                        "Cannot create owned version of arg list as no function name is known"
-                    )
+                    let fun = out.to_fun();
+                    fun.set_from_name(ARG);
+                    for arg in wargs {
+                        fun.add_arg(*arg);
+                    }
                 }
                 SliceType::Pow => {
                     let pow = out.to_pow();
@@ -806,7 +820,10 @@ impl<'a, P: AtomSet> Match<'a, P> {
                 SliceType::One => {
                     out.from_view(&wargs[0]);
                 }
-                SliceType::Empty => unreachable!("Cannot create owned version of empty list"),
+                SliceType::Empty => {
+                    let fun = out.to_fun();
+                    fun.set_from_name(ARG);
+                }
             },
             Self::FunctionName(n) => {
                 let fun = out.to_fun();

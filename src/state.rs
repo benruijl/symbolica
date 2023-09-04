@@ -25,12 +25,13 @@ pub enum FunctionAttribute {
     Symmetric,
 }
 
-pub const EXP: Identifier = Identifier::init(0);
-pub const LOG: Identifier = Identifier::init(1);
-pub const SIN: Identifier = Identifier::init(2);
-pub const COS: Identifier = Identifier::init(3);
-pub const DERIVATIVE: Identifier = Identifier::init(4);
-pub(crate) const BUILTIN_VAR_LIST: [&str; 5] = ["exp", "log", "sin", "cos", "der"];
+pub const ARG: Identifier = Identifier::init(0);
+pub const EXP: Identifier = Identifier::init(1);
+pub const LOG: Identifier = Identifier::init(2);
+pub const SIN: Identifier = Identifier::init(3);
+pub const COS: Identifier = Identifier::init(4);
+pub const DERIVATIVE: Identifier = Identifier::init(5);
+pub(crate) const BUILTIN_VAR_LIST: [&str; 6] = ["arg", "exp", "log", "sin", "cos", "der"];
 
 /// A global state, that stores mappings from variable and function names to ids.
 #[derive(Clone)]

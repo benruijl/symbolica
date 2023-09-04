@@ -19,7 +19,10 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    id::{AtomType, Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction},
+    id::{
+        AtomType, Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction,
+        ReplaceIterator,
+    },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, Sample},
     parser::Token,
     poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
@@ -925,7 +928,7 @@ impl PythonExpression {
     /// >>> e = f(x)*f(2)*f(f(3))
     /// >>> e = e.replace_all(f(x_), 1, x_.req_type(AtomType.Num))
     /// >>> print(e)
-    /// 
+    ///
     /// Yields `f(x)*f(1)`.
     pub fn req_type(&self, atom_type: PythonAtomType) -> PyResult<PythonPatternRestriction> {
         match self.expr.as_view() {
@@ -1433,6 +1436,49 @@ impl PythonExpression {
         )
     }
 
+    /// Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
+    /// Restrictions on pattern can be supplied through `cond`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(1)*f(2)*f(3)
+    /// >>> for r in e.replace(f(x_), f(x_ + 1)):
+    /// >>>     print(r)
+    ///
+    /// Yields:
+    /// ```
+    /// f(2)*f(2)*f(3)
+    /// f(1)*f(3)*f(3)
+    /// f(1)*f(2)*f(4)
+    /// ```
+    pub fn replace(
+        &self,
+        lhs: ConvertibleToPattern,
+        rhs: ConvertibleToPattern,
+        cond: Option<PythonPatternRestriction>,
+    ) -> PythonReplaceIterator {
+        let restrictions = cond
+            .map(|r| Arc::into_inner(r.restrictions).unwrap())
+            .unwrap_or(HashMap::default());
+
+        PythonReplaceIterator::new(
+            (
+                lhs.to_pattern().expr,
+                self.expr.clone(),
+                rhs.to_pattern().expr,
+                restrictions,
+                STATE.read().unwrap().clone(), // FIXME: state is cloned
+            ),
+            move |(lhs, target, rhs, res, state)| {
+                ReplaceIterator::new(lhs, target.as_view(), rhs, state, res)
+            },
+        )
+    }
+
     /// Replace all patterns matching the left-hand side `lhs` by the right-hand side `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
@@ -1654,6 +1700,47 @@ impl PythonMatchIterator {
                         )
                     })
                     .collect()
+            })
+        })
+    }
+}
+
+type OwnedReplace = (
+    Arc<Pattern>,
+    Arc<Atom>,
+    Arc<Pattern>,
+    HashMap<Identifier, Vec<PatternRestriction>>,
+    State,
+);
+type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a, crate::representations::default::Linear>;
+
+self_cell!(
+    /// An iterator over all single replacements.
+    #[pyclass]
+    pub struct PythonReplaceIterator {
+        owner: OwnedReplace,
+        #[not_covariant]
+        dependent: ReplaceIteratorOne,
+    }
+);
+
+#[pymethods]
+impl PythonReplaceIterator {
+    /// Create the iterator.
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// Return the next replacement.
+    fn __next__(&mut self) -> Option<PythonExpression> {
+        self.with_dependent_mut(|_, i| {
+            WORKSPACE.with(|workspace| {
+                let mut out = Atom::new();
+                i.next(&STATE.read().unwrap(), workspace, &mut out)?;
+
+                Some(PythonExpression {
+                    expr: Arc::new(out),
+                })
             })
         })
     }

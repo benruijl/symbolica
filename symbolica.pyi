@@ -398,6 +398,34 @@ class Expression:
         >>>        print(map[0],'=', map[1])
         """
 
+    def replace(
+        self,
+        lhs: Transformer | Expression | int,
+        rhs: Transformer | Expression | int,
+        cond: Optional[PatternRestriction] = None,
+    ) -> ReplaceIterator:
+        """
+        Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
+        Restrictions on pattern can be supplied through `cond`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun('f')
+        >>> e = f(1)*f(2)*f(3)
+        >>> for r in e.replace(f(x_), f(x_ + 1)):
+        >>>     print(r)
+
+        Yields:
+        ```
+        f(2)*f(2)*f(3)
+        f(1)*f(3)*f(3)
+        f(1)*f(2)*f(4)
+        ```
+        """
+
     def replace_all(
         self,
         lhs: Transformer | Expression | int,
@@ -575,6 +603,16 @@ class MatchIterator:
 
     def __next__(self) -> Sequence[Tuple[Expression, Expression]]:
         """ Return the next match. """
+
+
+class ReplaceIterator:
+    """ An iterator over single replacments. """
+
+    def __iter__(self) -> ReplaceIterator:
+        """ Create the iterator. """
+
+    def __next__(self) -> Expression:
+        """ Return the next replacement. """
 
 
 class Polynomial:

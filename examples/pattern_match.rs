@@ -1,6 +1,6 @@
 use ahash::HashMap;
 use symbolica::{
-    id::{Match, Pattern, PatternAtomTreeIterator, PatternRestriction},
+    id::{Match, Pattern, PatternRestriction},
     representations::Atom,
     state::{State, Workspace},
 };

@@ -1,6 +1,6 @@
 use ahash::HashMap;
 use symbolica::{
-    id::{Pattern, ReplaceIterator},
+    id::Pattern,
     representations::Atom,
     state::{ResettableBuffer, State, Workspace},
 };
@@ -27,7 +27,7 @@ fn main() {
 
     let mut replaced = Atom::new();
 
-    let mut it = ReplaceIterator::new(&pattern, expr.as_view(), &rhs, &state, &restrictions);
+    let mut it = pattern.replace_iter(expr.as_view(), &rhs, &state, &restrictions);
     while let Some(()) = it.next(&state, &workspace, &mut replaced) {
         println!("\t{}", replaced.printer(&state));
     }

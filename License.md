@@ -1,16 +1,16 @@
 # Symbolica licenses
 
-The source code and development process of Symbolica is open for viewing to the community. Its use may be restricted however, and depends on the capacity in which you use the product.
+The source code of Symbolica is publicly available. It is not permitted to copy or distribute any part of the Symbolica code without express prior permission.
 
-## Personal use
+Visit https://symbolica.io/license/ to read more about the license philosophy behind Symbolica or to acquire a license.
+## Hobbyist / student license
 
-If you are a student or a hobbyist, usage of Symbolica and its source code is permitted and is free for personal use. The source code cannot be distributed in derivative works.
+For personal non-professional use of Symbolica, for example for studies or for a hobby, a free hobbyist license can be acquired.
 
-## Non-personal non-commercial use
+## Professional non-commercial license
 
-If you intend to use Symbolica or its source code as part of your work at an educational / research institute, for example to produce papers, your institute needs to obtain a non-personal non-commercial license. Symbolica can be tested for one month for free.
+For professional non-commercial use of Symbolica, for example for work at an educational / research institute, you or your employer must acquire a professional non-commercial license.
 
-## Commercial use
+## Commercial license
 
-If you intend to use Symbolica or its source code as part of work with a commercial goal or private monetary compensation, you need to obtain a commercial license. Symbolica can be tested for one month for free.
-
+For professional commercial use of Symbolica, you or your employer must acquire a commercial license.

@@ -13,6 +13,7 @@ use crate::{
         OwnedVar,
     },
     rings::finite_field::{FiniteField, FiniteFieldCore},
+    LicenseManager, LICENSE_MANAGER,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +46,10 @@ pub struct State {
 
 impl State {
     pub fn new() -> State {
+        LICENSE_MANAGER
+            .get_or_init(|| LicenseManager::new())
+            .check();
+
         let mut state = State {
             str_to_var_id: HashMap::new(),
             function_attributes: HashMap::new(),
@@ -158,6 +163,10 @@ pub struct Workspace<P: AtomSet = Linear> {
 
 impl<P: AtomSet> Workspace<P> {
     pub fn new() -> Self {
+        LICENSE_MANAGER
+            .get_or_init(|| LicenseManager::new())
+            .check();
+
         Workspace {
             atom_stack: Stack::new(),
         }

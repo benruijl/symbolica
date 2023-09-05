@@ -10,9 +10,9 @@ use once_cell::sync::Lazy;
 use pyo3::{
     exceptions, pyclass,
     pyclass::CompareOp,
-    pymethods, pymodule,
+    pyfunction, pymethods, pymodule,
     types::{PyModule, PyTuple, PyType},
-    FromPyObject, IntoPy, PyObject, PyRef, PyResult, Python,
+    wrap_pyfunction, FromPyObject, IntoPy, PyObject, PyRef, PyResult, Python,
 };
 use self_cell::self_cell;
 use smallvec::SmallVec;
@@ -39,6 +39,7 @@ use crate::{
     state::{FunctionAttribute, ResettableBuffer, State, Workspace, INPUT_ID},
     streaming::TermStreamer,
     transformer::Transformer,
+    LicenseManager,
 };
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
@@ -58,7 +59,35 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonAtomType>()?;
     m.add_class::<PythonAtomTree>()?;
 
+    m.add_function(wrap_pyfunction!(set_license_key, m)?)?;
+    m.add_function(wrap_pyfunction!(request_hobbyist_license, m)?)?;
+    m.add_function(wrap_pyfunction!(request_trial_license, m)?)?;
+
     Ok(())
+}
+
+/// Set the Symbolica license key for this computer. Can only be called before calling any other Symbolica functions.
+#[pyfunction]
+fn set_license_key(key: String) -> PyResult<()> {
+    LicenseManager::set_license_key(&key).map_err(|e| exceptions::PyException::new_err(e))
+}
+
+/// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address
+/// `email`.
+#[pyfunction]
+fn request_hobbyist_license(name: String, email: String) -> PyResult<()> {
+    LicenseManager::request_hobbyist_license(&name, &email)
+        .map(|_| println!("A license key was sent to your e-mail address."))
+        .map_err(|e| exceptions::PyConnectionError::new_err(e))
+}
+
+/// Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address
+/// `email`.
+#[pyfunction]
+fn request_trial_license(name: String, email: String, company: String) -> PyResult<()> {
+    LicenseManager::request_trial_license(&name, &email, &company)
+        .map(|_| println!("A license key was sent to your e-mail address."))
+        .map_err(|e| exceptions::PyConnectionError::new_err(e))
 }
 
 /// Specifies the type of the atom.

@@ -7,6 +7,18 @@ from enum import Enum
 from typing import Any, Callable, overload, Iterator, Optional, Sequence, Tuple, List
 
 
+def set_license_key(key: str) -> None:
+    """Set the Symbolica license key for this computer. Can only be called before calling any other Symbolica functions."""
+
+
+def request_hobbyist_license(name: str, email: str) -> None:
+    """Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address `email`."""
+
+
+def request_trial_license(name: str, email: str, company: str) -> None:
+    """Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address `email`."""
+
+
 class AtomType(Enum):
     """Specifies the type of the atom."""
     Num = 1,

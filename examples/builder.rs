@@ -1,6 +1,6 @@
 use symbolica::{
-    representations::{AsAtomView, Atom, AtomBuilder},
-    state::{ResettableBuffer, State, Workspace},
+    representations::{AsAtomView, Atom, FunctionBuilder},
+    state::{FunctionAttribute, State, Workspace},
 };
 
 fn main() {
@@ -9,18 +9,16 @@ fn main() {
 
     let x = Atom::parse("x", &mut state, &ws).unwrap();
     let y = Atom::parse("y", &mut state, &ws).unwrap();
-
-    // instead of parsing an expression, we build it from components
-    let mut e = Atom::new();
-    x.add(&state, &ws, &y, &mut e);
-    println!("{}", e.printer(&state));
+    let f_id = state.get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric]));
+    let f = FunctionBuilder::new(f_id, &state, &ws)
+        .add_arg(&ws.new_num(1))
+        .finish();
 
     // the cumbersome passing of the state and workspace can be avoided by using an
     // AtomBuilder, which accumulates the result
-    let mut res = Atom::new();
-    let mut xb = AtomBuilder::new(&x, &state, &ws, &mut res);
+    let mut xb = x.builder(&state, &ws);
 
-    xb = (-(xb + &y + &x) * &y * &ws.new_num(6)).pow(&ws.new_num(5)) / &y;
+    xb = (-(xb + &y + &x) * &y * &ws.new_num(6)).pow(&ws.new_num(5)) / &y * &f;
 
-    println!("{}", xb.to_atom_mut().printer(&state));
+    println!("{}", xb.as_atom_view().printer(&state));
 }

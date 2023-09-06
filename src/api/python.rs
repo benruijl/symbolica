@@ -2514,7 +2514,7 @@ impl PythonNumericalIntegrator {
                 );
             }
 
-            if stats.avg != 0. && stats.err / stats.avg <= min_error {
+            if stats.avg != 0. && stats.err / stats.avg.abs() <= min_error {
                 break;
             }
         }

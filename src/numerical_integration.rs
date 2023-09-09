@@ -951,7 +951,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
             } else if *bi == T::zero() {
                 T::zero()
             } else {
-                ((*bi / sum - T::one()) / (*bi / sum).ln()).powf(learning_rate)
+                ((*bi / sum - T::one()) / (*bi / sum).log()).powf(learning_rate)
             };
             *bi = m;
             imp_sum += m;

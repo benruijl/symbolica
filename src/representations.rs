@@ -241,6 +241,8 @@ impl<'a, P: AtomSet> Clone for AtomView<'a, P> {
 
 impl<'a, P: AtomSet> Copy for AtomView<'a, P> {}
 
+impl<'a, P: AtomSet> Eq for AtomView<'a, P> {}
+
 impl<'a, 'b, P: AtomSet> PartialEq<AtomView<'b, P>> for AtomView<'a, P> {
     fn eq(&self, other: &AtomView<P>) -> bool {
         match (self, other) {
@@ -251,6 +253,19 @@ impl<'a, 'b, P: AtomSet> PartialEq<AtomView<'b, P>> for AtomView<'a, P> {
             (AtomView::Mul(m1), AtomView::Mul(m2)) => m1 == m2,
             (AtomView::Add(a1), AtomView::Add(a2)) => a1 == a2,
             _ => false,
+        }
+    }
+}
+
+impl<'a, P: AtomSet> Hash for AtomView<'a, P> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            AtomView::Num(a) => a.hash(state),
+            AtomView::Var(a) => a.hash(state),
+            AtomView::Fun(a) => a.hash(state),
+            AtomView::Pow(a) => a.hash(state),
+            AtomView::Mul(a) => a.hash(state),
+            AtomView::Add(a) => a.hash(state),
         }
     }
 }
@@ -777,7 +792,7 @@ impl<P: AtomSet> ResettableBuffer for Atom<P> {
 /// # fn main() {
 /// let mut state = State::new();
 /// let ws: Workspace = Workspace::new();
-/// 
+///
 /// let f_id = state.get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric]));
 /// let fb = FunctionBuilder::new(f_id, &state, &ws);
 /// let a = fb
@@ -785,7 +800,7 @@ impl<P: AtomSet> ResettableBuffer for Atom<P> {
 ///     .add_arg(&ws.new_num(2))
 ///     .add_arg(&ws.new_num(1))
 ///     .finish();
-/// 
+///
 /// println!("{}", a.as_atom_view().printer(&state));
 /// # }
 /// ```

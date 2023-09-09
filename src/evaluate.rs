@@ -11,18 +11,24 @@ use crate::{
     state::{COS, EXP, LOG, SIN},
 };
 
-type EvalFnType<T> =
-    Box<dyn Fn(&[T], &HashMap<Identifier, T>, &HashMap<Identifier, EvaluationFn<T>>) -> T>;
+type EvalFnType<T, P> = Box<
+    dyn Fn(
+        &[T],
+        &HashMap<Identifier, T>,
+        &HashMap<Identifier, EvaluationFn<T, P>>,
+        &mut HashMap<AtomView<'_, P>, T>,
+    ) -> T,
+>;
 
-pub struct EvaluationFn<T>(EvalFnType<T>);
+pub struct EvaluationFn<T, P: AtomSet>(EvalFnType<T, P>);
 
-impl<T> EvaluationFn<T> {
-    pub fn new(f: EvalFnType<T>) -> EvaluationFn<T> {
+impl<T, P: AtomSet> EvaluationFn<T, P> {
+    pub fn new(f: EvalFnType<T, P>) -> EvaluationFn<T, P> {
         EvaluationFn(f)
     }
 
     /// Get a reference to the function that can be called to evaluate it.
-    pub fn get(&self) -> &EvalFnType<T> {
+    pub fn get(&self) -> &EvalFnType<T, P> {
         &self.0
     }
 }
@@ -34,7 +40,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn evaluate<T: Real + NumericalFloatComparison + for<'b> From<&'b Rational>>(
         &self,
         var_map: &HashMap<Identifier, T>,
-        function_map: &HashMap<Identifier, EvaluationFn<T>>,
+        function_map: &HashMap<Identifier, EvaluationFn<T, P>>,
+        cache: &mut HashMap<AtomView<'a, P>, T>,
     ) -> T {
         match self {
             AtomView::Num(n) => match n.get_number_view() {
@@ -53,7 +60,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 if [EXP, LOG, SIN, COS].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
-                    let arg_eval = arg.evaluate(var_map, function_map);
+                    let arg_eval = arg.evaluate(var_map, function_map, cache);
 
                     return match f.get_name() {
                         EXP => arg_eval.exp(),
@@ -64,18 +71,25 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     };
                 }
 
+                if let Some(eval) = cache.get(self) {
+                    return *eval;
+                }
+
                 let mut args = Vec::with_capacity(f.get_nargs());
                 for arg in f.iter() {
-                    args.push(arg.evaluate(var_map, function_map));
+                    args.push(arg.evaluate(var_map, function_map, cache));
                 }
 
                 let fun = function_map.get(&f.get_name()).unwrap();
-                fun.get()(&args, var_map, function_map)
+                let eval = fun.get()(&args, var_map, function_map, cache);
+
+                cache.insert(*self, eval);
+                eval
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
-                let b_eval = b.evaluate(var_map, function_map);
-                let e_eval = e.evaluate(var_map, function_map);
+                let b_eval = b.evaluate(var_map, function_map, cache);
+                let e_eval = e.evaluate(var_map, function_map, cache);
 
                 // FIXME
                 b_eval.powf(e_eval.to_f64())
@@ -83,14 +97,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             AtomView::Mul(m) => {
                 let mut r = T::one();
                 for arg in m.iter() {
-                    r *= arg.evaluate(var_map, function_map);
+                    r *= arg.evaluate(var_map, function_map, cache);
                 }
                 r
             }
             AtomView::Add(a) => {
                 let mut r = T::zero();
                 for arg in a.iter() {
-                    r += arg.evaluate(var_map, function_map);
+                    r += arg.evaluate(var_map, function_map, cache);
                 }
                 r
             }

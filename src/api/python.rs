@@ -277,7 +277,7 @@ impl PythonPattern {
                 (*lhs.to_pattern().expr).clone(),
                 (*self.expr).clone(),
                 (*rhs.to_pattern().expr).clone(),
-                cond.map(|r| Arc::into_inner(r.restrictions).unwrap())
+                cond.map(|r| HashMap::clone(&r.restrictions))
                     .unwrap_or(HashMap::default()),
             )))),
         })
@@ -1450,8 +1450,8 @@ impl PythonExpression {
         cond: Option<PythonPatternRestriction>,
     ) -> PythonMatchIterator {
         let restrictions = cond
-            .map(|r| Arc::into_inner(r.restrictions).unwrap())
-            .unwrap_or(HashMap::default());
+            .map(|r| r.restrictions.clone())
+            .unwrap_or(Arc::new(HashMap::default()));
         PythonMatchIterator::new(
             (
                 lhs.to_pattern().expr,
@@ -1491,8 +1491,8 @@ impl PythonExpression {
         cond: Option<PythonPatternRestriction>,
     ) -> PythonReplaceIterator {
         let restrictions = cond
-            .map(|r| Arc::into_inner(r.restrictions).unwrap())
-            .unwrap_or(HashMap::default());
+            .map(|r| r.restrictions.clone())
+            .unwrap_or(Arc::new(HashMap::default()));
 
         PythonReplaceIterator::new(
             (
@@ -1686,7 +1686,7 @@ impl PythonAtomIterator {
 type OwnedMatch = (
     Arc<Pattern>,
     Arc<Atom>,
-    HashMap<Identifier, Vec<PatternRestriction>>,
+    Arc<HashMap<Identifier, Vec<PatternRestriction>>>,
     State,
 );
 type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a, crate::representations::default::Linear>;
@@ -1738,7 +1738,7 @@ type OwnedReplace = (
     Arc<Pattern>,
     Arc<Atom>,
     Arc<Pattern>,
-    HashMap<Identifier, Vec<PatternRestriction>>,
+    Arc<HashMap<Identifier, Vec<PatternRestriction>>>,
     State,
 );
 type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a, crate::representations::default::Linear>;

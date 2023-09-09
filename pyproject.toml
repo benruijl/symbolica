@@ -25,4 +25,4 @@ homepage = "https://symbolica.io"
 repository = "https://github.com/benruijl/symbolica"
 
 [tool.maturin]
-features = ["python_api"]
+features = ["python_api", "python_abi3"]

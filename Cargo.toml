@@ -25,9 +25,11 @@ default = []
 faster_alloc = ["tikv-jemallocator"]
 mathematica_api = ["wolfram-library-link"]
 python_api = ["pyo3", "self_cell"]
+# build a module that is independent of the specific Python version
+python_abi3 = ["pyo3/abi3", "pyo3/abi3-py37"]
 
 [dependencies.pyo3]
-features = ["extension-module", "multiple-pymethods"]
+features = ["extension-module", "multiple-pymethods", "abi3"]
 optional = true
 version = "0.19"
 

@@ -7,6 +7,7 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Neg, Sub};
 
+use ahash::HashMap;
 use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
@@ -576,6 +577,117 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     r = &r + &arg_r;
                 }
                 Ok(r)
+            }
+        }
+    }
+
+    pub fn to_polynomial_with_map<R: EuclideanDomain + ConvertToRing, E: Exponent>(
+        &self,
+        new_var_prefix: &str,
+        state: &mut State,
+        field: R,
+        var_map: Option<&[Identifier]>,
+        map: &mut HashMap<AtomView<'a, P>, Identifier>,
+    ) -> MultivariatePolynomial<R, E> {
+        // see if the current term can be cast into a polynomial using a fast routine
+        if let Ok(num) = self.to_polynomial(field, var_map) {
+            return num;
+        }
+
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) => {
+                // done by simple routine above
+                unreachable!()
+            }
+            AtomView::Pow(p) => {
+                // the case var^exp is already treated, so this must be a case that requires a map
+                // check if the exponent is a positive integer, if so the base must be mapped
+                // otherwise, map the entire power
+
+                let (base, exp) = p.get_base_exp();
+
+                if let AtomView::Num(n) = exp {
+                    let num_n = n.get_number_view();
+                    if let BorrowedNumber::Natural(nn, nd) = num_n {
+                        if nd == 1 && nn > 0 && nn < u32::MAX as i64 {
+                            let id = if let Some(x) = map.get(&base) {
+                                *x
+                            } else {
+                                let new_id = state.get_or_insert_var(format!(
+                                    "{}_{}",
+                                    new_var_prefix,
+                                    map.len()
+                                ));
+                                map.insert(base, new_id);
+                                new_id
+                            };
+
+                            // generate id^pow
+                            let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
+                            r.append_monomial(field.one(), &[E::from_u32(nn as u32)]);
+                            return r;
+                        }
+                    }
+                }
+
+                let id = if let Some(x) = map.get(self) {
+                    *x
+                } else {
+                    let new_id =
+                        state.get_or_insert_var(format!("{}_{}", new_var_prefix, map.len()));
+                    map.insert(*self, new_id);
+                    new_id
+                };
+
+                // TODO: use provided var_map
+                let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
+                r.append_monomial(field.one(), &[E::one()]);
+                r
+            }
+            AtomView::Fun(_) => {
+                let id = if let Some(x) = map.get(self) {
+                    *x
+                } else {
+                    let new_id =
+                        state.get_or_insert_var(format!("{}_{}", new_var_prefix, map.len()));
+                    map.insert(*self, new_id);
+                    new_id
+                };
+
+                let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
+                r.append_monomial(field.one(), &[E::one()]);
+                r
+            }
+            AtomView::Mul(m) => {
+                let mut r = MultivariatePolynomial::new(
+                    var_map.map(|x| x.len()).unwrap_or(0),
+                    field,
+                    Some(var_map.map(|x| x.len()).unwrap_or(1)),
+                    var_map,
+                );
+                r = r.add_monomial(field.one());
+                for arg in m.iter() {
+                    let mut arg_r =
+                        arg.to_polynomial_with_map(new_var_prefix, state, field, var_map, map);
+                    r.unify_var_map(&mut arg_r);
+                    r = &r * &arg_r;
+                }
+                r
+            }
+            AtomView::Add(a) => {
+                let mut r = MultivariatePolynomial::new(
+                    var_map.map(|x| x.len()).unwrap_or(0),
+                    field,
+                    Some(var_map.map(|x| x.len()).unwrap_or(1)),
+                    var_map,
+                );
+                for arg in a.iter() {
+                    let mut arg_r =
+                        arg.to_polynomial_with_map(new_var_prefix, state, field, var_map, map);
+                    r.unify_var_map(&mut arg_r);
+                    r = &r + &arg_r;
+                }
+                r
             }
         }
     }

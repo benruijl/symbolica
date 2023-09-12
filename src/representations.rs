@@ -1,6 +1,5 @@
 pub mod default;
 pub mod number;
-pub mod tree;
 
 use crate::{
     parser::Token,
@@ -16,7 +15,6 @@ use std::{
 use self::{
     default::Linear,
     number::{BorrowedNumber, Number},
-    tree::AtomTree,
 };
 
 /// An identifier, for example for a variable or function.
@@ -64,10 +62,6 @@ pub trait AtomSet: Copy + Clone + PartialEq + Eq + Hash + 'static {
     type OM: OwnedMul<P = Self>;
     type OA: OwnedAdd<P = Self>;
     type S<'a>: ListSlice<'a, P = Self>;
-
-    fn from_tree(tree: &AtomTree, state: &State, workspace: &Workspace<Self>) -> Atom<Self>
-    where
-        Self: Sized;
 }
 
 /// Convert the owned atoms by recycling and clearing their interal buffers.
@@ -777,7 +771,7 @@ impl<P: AtomSet> ResettableBuffer for Atom<P> {
 /// # fn main() {
 /// let mut state = State::new();
 /// let ws: Workspace = Workspace::new();
-/// 
+///
 /// let f_id = state.get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric]));
 /// let fb = FunctionBuilder::new(f_id, &state, &ws);
 /// let a = fb
@@ -785,7 +779,7 @@ impl<P: AtomSet> ResettableBuffer for Atom<P> {
 ///     .add_arg(&ws.new_num(2))
 ///     .add_arg(&ws.new_num(1))
 ///     .finish();
-/// 
+///
 /// println!("{}", a.as_atom_view().printer(&state));
 /// # }
 /// ```

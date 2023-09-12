@@ -10,11 +10,10 @@ use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent},
     representations::{
         number::{ConvertToRing, Number},
-        tree::AtomTree,
-        Atom, AtomSet, Identifier,
+        Atom, AtomSet, Identifier, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar,
     },
     rings::Ring,
-    state::{State, Workspace},
+    state::{ResettableBuffer, State, Workspace},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -248,81 +247,134 @@ impl Token {
         }
     }
 
-    // TODO: deprecate and create atom immediately
-    pub fn to_atom_tree(&self, state: &mut State) -> Result<AtomTree, String> {
+    /// Parse the token into an atom.
+    pub fn to_atom<P: AtomSet>(
+        &self,
+        state: &mut State,
+        workspace: &Workspace<P>,
+    ) -> Result<Atom<P>, String> {
+        let mut atom = Atom::new();
+        self.to_atom_with_output(state, workspace, &mut atom)?;
+        Ok(atom)
+    }
+
+    /// Parse the token into the atom `out`.
+    pub fn to_atom_with_output<P: AtomSet>(
+        &self,
+        state: &mut State,
+        workspace: &Workspace<P>,
+        out: &mut Atom<P>,
+    ) -> Result<(), String> {
         match self {
             Token::Number(n) => {
                 if let Ok(x) = n.parse::<i64>() {
-                    Ok(AtomTree::Num(Number::Natural(x, 1)))
+                    out.to_num().set_from_number(Number::Natural(x, 1));
                 } else {
                     match Integer::parse(n) {
-                        Ok(x) => Ok(AtomTree::Num(Number::Large(x.complete().into()))),
-                        Err(e) => Err(format!("Could not parse number: {}", e)),
-                    }
-                }
-            }
-            Token::ID(x) => Ok(AtomTree::Var(state.get_or_insert_var(x))),
-            Token::Op(_, _, op, args) => {
-                let mut atom_args = vec![];
-                for a in args {
-                    atom_args.push(a.to_atom_tree(state)?);
-                }
-
-                match op {
-                    Operator::Mul => Ok(AtomTree::Mul(atom_args)),
-                    Operator::Add => Ok(AtomTree::Add(atom_args)),
-                    Operator::Pow => {
-                        let base = atom_args.remove(0);
-                        let exp = atom_args.remove(0);
-
-                        let mut pow = AtomTree::Pow(Box::new((base, exp)));
-
-                        for e in atom_args {
-                            pow = AtomTree::Pow(Box::new((pow, e)));
+                        Ok(x) => {
+                            out.to_num()
+                                .set_from_number(Number::Large(x.complete().into()));
                         }
-
-                        Ok(pow)
-                    }
-                    Operator::Argument => Err("Unexpected argument operator".into()),
-                    Operator::Neg => {
-                        debug_assert!(atom_args.len() == 1);
-                        Ok(AtomTree::Mul(vec![
-                            atom_args.pop().unwrap(),
-                            AtomTree::Num(Number::Natural(-1, 1)),
-                        ]))
-                    }
-                    Operator::Inv => {
-                        debug_assert!(atom_args.len() == 1);
-                        Ok(AtomTree::Pow(Box::new((
-                            atom_args.pop().unwrap(),
-                            AtomTree::Num(Number::Natural(-1, 1)),
-                        ))))
+                        Err(e) => return Err(format!("Could not parse number: {}", e)),
                     }
                 }
             }
+            Token::ID(x) => {
+                out.to_var().set_from_id(state.get_or_insert_var(x));
+            }
+            Token::Op(_, _, op, args) => match op {
+                Operator::Mul => {
+                    let mut mul_h = workspace.new_atom();
+                    let mul = mul_h.to_mul();
+
+                    let mut atom = workspace.new_atom();
+                    for a in args {
+                        a.to_atom_with_output(state, workspace, &mut atom)?;
+                        mul.extend(atom.as_view());
+                    }
+
+                    mul.set_dirty(true);
+                    mul_h.as_view().normalize(workspace, state, out);
+                }
+                Operator::Add => {
+                    let mut add_h = workspace.new_atom();
+                    let add = add_h.to_add();
+
+                    let mut atom = workspace.new_atom();
+                    for a in args {
+                        a.to_atom_with_output(state, workspace, &mut atom)?;
+                        add.extend(atom.as_view());
+                    }
+
+                    add.set_dirty(true);
+                    add_h.as_view().normalize(workspace, state, out);
+                }
+                Operator::Pow => {
+                    let mut base = workspace.new_atom();
+                    args[0].to_atom_with_output(state, workspace, &mut base)?;
+
+                    let mut exp = workspace.new_atom();
+                    args[1].to_atom_with_output(state, workspace, &mut exp)?;
+
+                    let mut pow_h = workspace.new_atom();
+                    let pow = pow_h.to_pow();
+                    pow.set_from_base_and_exp(base.as_view(), exp.as_view());
+                    pow.set_dirty(true);
+                    pow_h.as_view().normalize(workspace, state, out);
+                }
+                Operator::Argument => return Err("Unexpected argument operator".into()),
+                Operator::Neg => {
+                    debug_assert!(args.len() == 1);
+
+                    let mut base = workspace.new_atom();
+                    args[0].to_atom_with_output(state, workspace, &mut base)?;
+
+                    let num = workspace.new_num(-1);
+
+                    let mut mul_h = workspace.new_atom();
+                    let mul = mul_h.to_mul();
+                    mul.extend(base.as_view());
+                    mul.extend(num.as_view());
+                    mul.set_dirty(true);
+                    mul_h.as_view().normalize(workspace, state, out);
+                }
+                Operator::Inv => {
+                    debug_assert!(args.len() == 1);
+
+                    let mut base = workspace.new_atom();
+                    args[0].to_atom_with_output(state, workspace, &mut base)?;
+
+                    let num = workspace.new_num(-1);
+
+                    let mut pow_h = workspace.new_atom();
+                    let mul = pow_h.to_pow();
+                    mul.set_from_base_and_exp(base.as_view(), num.as_view());
+                    mul.set_dirty(true);
+                    pow_h.as_view().normalize(workspace, state, out);
+                }
+            },
             Token::Fn(_, args) => {
                 let name = match &args[0] {
                     Token::ID(s) => s,
                     _ => unreachable!(),
                 };
 
-                let mut atom_args = Vec::with_capacity(args.len() - 1);
+                let mut fun_h = workspace.new_atom();
+                let fun = fun_h.to_fun();
+                fun.set_from_name(state.get_or_insert_var(name));
+                fun.set_dirty(true);
+                let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
-                    atom_args.push(a.to_atom_tree(state)?);
+                    a.to_atom_with_output(state, workspace, &mut atom)?;
+                    fun.add_arg(atom.as_view());
                 }
-                Ok(AtomTree::Fn(state.get_or_insert_var(name), atom_args))
-            }
-            x => Err(format!("Unexpected token {}", x)),
-        }
-    }
 
-    pub fn to_atom<P: AtomSet>(
-        &self,
-        state: &mut State,
-        workspace: &Workspace<P>,
-    ) -> Result<Atom<P>, String> {
-        let a = self.to_atom_tree(state)?;
-        Ok(P::from_tree(&a, state, workspace))
+                fun_h.as_view().normalize(workspace, state, out);
+            }
+            x => return Err(format!("Unexpected token {}", x)),
+        }
+
+        Ok(())
     }
 
     /// Parse a Symbolica expression.

@@ -1,12 +1,11 @@
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
-use std::{cmp::Ordering, io::Cursor};
+use std::cmp::Ordering;
 
-use crate::state::{ResettableBuffer, State, Workspace};
+use crate::state::{ResettableBuffer, State};
 
 use super::{
     number::{BorrowedNumber, Number, PackedRationalNumberReader, PackedRationalNumberWriter},
-    tree::AtomTree,
     Add, Atom, AtomSet, AtomView, Convert, Fun, Identifier, ListSlice, Mul, Num, OwnedAdd,
     OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, SliceType, Var,
 };
@@ -698,16 +697,6 @@ impl AtomSet for Linear {
     type OM = OwnedMulD;
     type OA = OwnedAddD;
     type S<'a> = ListSliceD<'a>;
-
-    fn from_tree(tree: &AtomTree, state: &State, workspace: &Workspace<Self>) -> Atom<Linear> {
-        let mut oa = Atom::new();
-        oa.from_tree(tree);
-
-        let mut oa_norm = Atom::new();
-        oa.as_view().normalize(workspace, state, &mut oa_norm);
-
-        oa_norm
-    }
 }
 
 impl<'a> Var<'a> for VarViewD<'a> {
@@ -724,35 +713,6 @@ impl<'a> Var<'a> for VarViewD<'a> {
 }
 
 impl Atom<Linear> {
-    pub fn from_tree(&mut self, atom: &AtomTree) {
-        match atom {
-            AtomTree::Var(_) => {
-                let x = self.to_var();
-                Self::linearize(&mut x.data, atom);
-            }
-            AtomTree::Fn(_, _) => {
-                let x = self.to_fun();
-                Self::linearize(&mut x.data, atom);
-            }
-            AtomTree::Num(_) => {
-                let x = self.to_num();
-                Self::linearize(&mut x.data, atom);
-            }
-            AtomTree::Pow(_) => {
-                let x = self.to_pow();
-                Self::linearize(&mut x.data, atom);
-            }
-            AtomTree::Mul(_) => {
-                let x = self.to_mul();
-                Self::linearize(&mut x.data, atom);
-            }
-            AtomTree::Add(_) => {
-                let x = self.to_add();
-                Self::linearize(&mut x.data, atom);
-            }
-        }
-    }
-
     pub fn get_data(&self) -> &[u8] {
         match self {
             Atom::Num(n) => &n.data,
@@ -765,131 +725,9 @@ impl Atom<Linear> {
         }
     }
 
+    /// Get the total byte length of the atom and its children.
     pub fn len(&self) -> usize {
         self.get_data().len()
-    }
-
-    pub fn to_tree(&self) -> AtomTree {
-        Self::write_to_tree(self.get_data()).0
-    }
-
-    fn linearize(data: &mut Vec<u8>, atom: &AtomTree) {
-        match atom {
-            AtomTree::Var(name) => {
-                data.put_u8(VAR_ID);
-                (name.to_u32() as u64, 1).write_packed(data);
-            }
-            AtomTree::Fn(name, args) => {
-                data.put_u8(FUN_ID | DIRTY_FLAG);
-                let size_pos = data.len();
-                data.put_u32_le(0_u32); // length of entire fn without flag
-                let buf_pos = data.len();
-
-                // pack name and args
-                (name.to_u32() as u64, args.len() as u64).write_packed(data);
-
-                for a in args {
-                    Self::linearize(data, a);
-                }
-                let new_buf_pos = data.len();
-
-                let mut cursor: Cursor<&mut [u8]> = Cursor::new(&mut data[size_pos..]);
-
-                cursor
-                    .write_u32::<LittleEndian>((new_buf_pos - buf_pos) as u32)
-                    .unwrap();
-            }
-            AtomTree::Num(n) => {
-                data.put_u8(NUM_ID | DIRTY_FLAG);
-                n.write_packed(data);
-            }
-            AtomTree::Pow(p) => {
-                data.put_u8(POW_ID | DIRTY_FLAG);
-                Self::linearize(data, &p.0);
-                Self::linearize(data, &p.1);
-            }
-            AtomTree::Mul(args) | AtomTree::Add(args) => {
-                if let AtomTree::Mul(_) = atom {
-                    data.put_u8(MUL_ID | DIRTY_FLAG);
-                } else {
-                    data.put_u8(ADD_ID | DIRTY_FLAG);
-                }
-
-                let size_pos = data.len();
-                data.put_u32_le(0_u32); // length of entire fn without flag
-                let buf_pos = data.len();
-
-                (args.len() as u64, 1).write_packed(data);
-
-                for a in args {
-                    Self::linearize(data, a);
-                }
-                let new_buf_pos = data.len();
-
-                let mut cursor: Cursor<&mut [u8]> = Cursor::new(&mut data[size_pos..]);
-
-                cursor
-                    .write_u32::<LittleEndian>((new_buf_pos - buf_pos) as u32)
-                    .unwrap();
-            }
-        }
-    }
-
-    fn write_to_tree(mut source: &[u8]) -> (AtomTree, &[u8]) {
-        let d = source.get_u8() & TYPE_MASK;
-        match d {
-            VAR_ID => {
-                let name;
-                (name, _, source) = source.get_frac_i64();
-                (AtomTree::Var(Identifier::from(name as u32)), source)
-            }
-            FUN_ID => {
-                source.get_u32_le(); // size
-
-                let (name, n_args);
-                (name, n_args, source) = source.get_frac_i64();
-
-                let mut args = Vec::with_capacity(n_args as usize);
-                for _ in 0..n_args {
-                    let (a, s) = Self::write_to_tree(source);
-                    source = s;
-                    args.push(a);
-                }
-
-                (AtomTree::Fn(Identifier::from(name as u32), args), source)
-            }
-            NUM_ID => {
-                let n;
-                (n, source) = source.get_number_view();
-                (AtomTree::Num(n.to_owned()), source)
-            }
-            POW_ID => {
-                let (base, exp);
-                (base, source) = Self::write_to_tree(source);
-                (exp, source) = Self::write_to_tree(source);
-                (AtomTree::Pow(Box::new((base, exp))), source)
-            }
-            MUL_ID | ADD_ID => {
-                source.get_u32_le(); // size
-
-                let n_args;
-                (n_args, _, source) = source.get_frac_i64();
-
-                let mut args = Vec::with_capacity(n_args as usize);
-                for _ in 0..n_args {
-                    let (a, s) = Self::write_to_tree(source);
-                    source = s;
-                    args.push(a);
-                }
-
-                if d == MUL_ID {
-                    (AtomTree::Mul(args), source)
-                } else {
-                    (AtomTree::Add(args), source)
-                }
-            }
-            x => unreachable!("Bad id: {}", x),
-        }
     }
 }
 
@@ -1438,62 +1276,4 @@ impl<'a> Iterator for ListSliceIteratorD<'a> {
             None
         }
     }
-}
-
-#[test]
-pub fn representation_size() {
-    let a = AtomTree::Fn(
-        Identifier::from(1),
-        vec![
-            AtomTree::Var(Identifier::from(2)),
-            AtomTree::Fn(
-                Identifier::from(3),
-                vec![
-                    AtomTree::Mul(vec![
-                        AtomTree::Num(Number::Natural(3, 1)),
-                        AtomTree::Num(Number::Natural(13, 1)),
-                    ]),
-                    AtomTree::Add(vec![
-                        AtomTree::Num(Number::Natural(3, 1)),
-                        AtomTree::Num(Number::Natural(13, 1)),
-                    ]),
-                    AtomTree::Mul(vec![
-                        AtomTree::Num(Number::Natural(3, 1)),
-                        AtomTree::Num(Number::Natural(13, 1)),
-                    ]),
-                    AtomTree::Mul(vec![
-                        AtomTree::Num(Number::Natural(3, 1)),
-                        AtomTree::Num(Number::Natural(13, 1)),
-                    ]),
-                    AtomTree::Num(Number::Natural(4, 2)),
-                    AtomTree::Num(Number::Natural(4, 2)),
-                    AtomTree::Num(Number::Natural(4, 2)),
-                    AtomTree::Num(Number::Natural(4, 2)),
-                ],
-            ),
-            AtomTree::Var(Identifier::from(6)),
-            AtomTree::Num(Number::Natural(2, 1)),
-            AtomTree::Pow(Box::new((
-                AtomTree::Add(vec![
-                    AtomTree::Num(Number::Natural(3, 1)),
-                    AtomTree::Num(Number::Natural(13, 1)),
-                ]),
-                AtomTree::Var(Identifier::from(2)),
-            ))),
-        ],
-    );
-    println!("expr={:?}", a);
-
-    let mut b = Atom::new();
-    b.from_tree(&a);
-
-    println!("lin size: {:?} bytes", b.get_data().len());
-
-    let c = b.to_tree();
-
-    if a != c {
-        panic!("in and out is different: {:?} vs {:?}", a, c);
-    }
-
-    println!("{:?}", b.as_view());
 }

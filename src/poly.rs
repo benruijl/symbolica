@@ -885,7 +885,8 @@ impl Token {
                     )?;
                     Ok(r.inv())
                 } else {
-                    let atom = self.to_atom(state, workspace)?;
+                    let mut atom = workspace.new_atom();
+                    self.to_atom_with_output(state, workspace, &mut atom)?;
                     atom.as_view().to_rational_polynomial(
                         workspace,
                         state,
@@ -941,7 +942,8 @@ impl Token {
                 Ok(r.neg())
             }
             _ => {
-                let atom = self.to_atom(state, workspace)?;
+                let mut atom = workspace.new_atom();
+                self.to_atom_with_output(state, workspace, &mut atom)?;
                 atom.as_view().to_rational_polynomial(
                     workspace,
                     state,

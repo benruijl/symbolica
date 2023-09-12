@@ -52,67 +52,21 @@ const MULTIPLE_INSTANCE_WARNING: &'static str = "┌─────────�
 
 impl LicenseManager {
     pub fn new() -> LicenseManager {
-        let key = LICENSE_KEY
-            .get()
-            .cloned()
-            .or(env::var("SYMBOLICA_LICENSE").ok());
-
         let pid = std::process::id();
         let thread_id = std::thread::current().id();
 
-        if let Some(key) = key {
-            if let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") {
-                let mut m: HashMap<String, JsonValue> = HashMap::default();
-                m.insert(
-                    "version".to_owned(),
-                    env!("CARGO_PKG_VERSION").to_owned().into(),
-                );
-                m.insert("license".to_owned(), key.into());
-                let mut v = JsonValue::from(m).stringify().unwrap();
-                v.push('\n');
-
-                stream.write_all(v.as_bytes()).unwrap();
-
-                let mut buf = Vec::new();
-                stream.read_to_end(&mut buf).unwrap();
-                let read_str = std::str::from_utf8(&buf).unwrap();
-
-                if read_str == "{\"status\":\"ok\"}\n" {
-                    return LicenseManager {
-                        lock: None,
-                        core_limit: None,
-                        pid,
-                        thread_id,
-                        has_license: true,
-                    };
-                } else {
-                    if read_str.is_empty() {
-                        eprintln!(
-                            "┌──────────────────────────────────────────┐
-│ Could not activate the Symbolica license │
-└──────────────────────────────────────────┘"
-                        );
-                    } else {
-                        let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-                        let message_parsed: &HashMap<_, _> = message.get().unwrap();
-                        let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-                        eprintln!(
-                            "┌──────────────────────────────────────────┐
-│ Could not activate the Symbolica license │
-└──────────────────────────────────────────┘
-Error: {}",
-                            status
-                        );
-                    }
-                }
-            } else {
-                eprintln!(
-                    "┌────────────────────────────────────────────────┐
-│ Could not connect to Symbolica license server. │
-│                                                │
-│ Please check your network configuration.       │
-└────────────────────────────────────────────────┘"
-                );
+        match Self::check_license_key() {
+            Ok(()) => {
+                return LicenseManager {
+                    lock: None,
+                    core_limit: None,
+                    pid,
+                    thread_id,
+                    has_license: true,
+                };
+            }
+            Err(e) => {
+                eprintln!("{}", e);
             }
         }
 
@@ -184,6 +138,66 @@ Error: {}",
         }
     }
 
+    fn check_license_key() -> Result<(), String> {
+        let key = LICENSE_KEY
+            .get()
+            .cloned()
+            .or(env::var("SYMBOLICA_LICENSE").ok());
+
+        let Some(key) = key else {
+            return Err("┌──────────────────────────┐
+│ No license key specified │
+└──────────────────────────┘"
+                .to_owned());
+        };
+
+        let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") else {
+            return Err("┌────────────────────────────────────────────────┐
+│ Could not connect to Symbolica license server. │
+│                                                │
+│ Please check your network configuration.       │
+└────────────────────────────────────────────────┘"
+                .to_owned());
+        };
+
+        let mut m: HashMap<String, JsonValue> = HashMap::default();
+        m.insert(
+            "version".to_owned(),
+            env!("CARGO_PKG_VERSION").to_owned().into(),
+        );
+        m.insert("license".to_owned(), key.into());
+        let mut v = JsonValue::from(m).stringify().unwrap();
+        v.push('\n');
+
+        stream.write_all(v.as_bytes()).unwrap();
+
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).unwrap();
+        let read_str = std::str::from_utf8(&buf).unwrap();
+
+        if read_str == "{\"status\":\"ok\"}\n" {
+            Ok(())
+        } else {
+            if read_str.is_empty() {
+                Err("┌──────────────────────────────────────────┐
+│ Could not activate the Symbolica license │
+└──────────────────────────────────────────┘"
+                    .to_owned())
+            } else {
+                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
+                let message_parsed: &HashMap<_, _> = message.get().unwrap();
+                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+                Err(format!(
+                    "┌──────────────────────────────────────────┐
+│ Could not activate the Symbolica license │
+└──────────────────────────────────────────┘
+Error: {}",
+                    status,
+                ))
+            }
+        }
+    }
+
     fn check(&self) {
         if self.has_license {
             return;
@@ -199,10 +213,17 @@ Error: {}",
     }
 
     /// Set the license key. Can only be called before calling any other Symbolica functions.
-    pub fn set_license_key(key: &str) -> Result<(), &'static str> {
+    pub fn set_license_key(key: &str) -> Result<(), String> {
         LICENSE_KEY
             .set(key.to_owned())
-            .map_err(|_| "License key is already set")
+            .map_err(|_| "License key is already set".to_owned())?;
+
+        Self::check_license_key()
+    }
+
+    /// Returns `true` iff this instance has a valid license key set.
+    pub fn is_licensed() -> bool {
+        Self::check_license_key().is_ok()
     }
 
     /// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address

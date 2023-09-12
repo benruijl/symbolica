@@ -7,6 +7,10 @@ from enum import Enum
 from typing import Any, Callable, overload, Iterator, Optional, Sequence, Tuple, List
 
 
+def is_licensed() -> bool:
+    """Check if the current Symbolica instance has a valid license key set."""
+
+
 def set_license_key(key: str) -> None:
     """Set the Symbolica license key for this computer. Can only be called before calling any other Symbolica functions."""
 

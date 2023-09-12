@@ -9,6 +9,7 @@ use crate::representations::Identifier;
 use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
 use crate::rings::integer::IntegerRing;
 use crate::rings::rational::RationalField;
+use crate::LicenseManager;
 use crate::{
     printer::{PrintOptions, RationalPolynomialPrinter},
     representations::default::Linear,
@@ -28,6 +29,52 @@ struct Symbolica {
     state: State,
     workspace: Workspace<Linear>,
     local_state: LocalState,
+}
+
+/// Set the Symbolica license key for this computer. Can only be called before calling any other Symbolica functions.
+#[no_mangle]
+unsafe extern "C" fn set_license_key(key: *const c_char) -> bool {
+    let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap();
+    LicenseManager::set_license_key(key)
+        .map_err(|e| eprintln!("{}", e))
+        .is_ok()
+}
+
+/// Check if the current Symbolica instance has a valid license key set.
+#[no_mangle]
+unsafe extern "C" fn is_licensed() -> bool {
+    LicenseManager::is_licensed()
+}
+
+/// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address
+/// `email`.
+#[no_mangle]
+unsafe extern "C" fn request_hobbyist_license(name: *const c_char, email: *const c_char) -> bool {
+    let name = unsafe { CStr::from_ptr(name) }.to_str().unwrap();
+    let email = unsafe { CStr::from_ptr(email) }.to_str().unwrap();
+
+    LicenseManager::request_hobbyist_license(&name, &email)
+        .map(|_| println!("A license key was sent to your e-mail address."))
+        .map_err(|e| eprintln!("{}", e))
+        .is_ok()
+}
+
+/// Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address
+/// `email`.
+#[no_mangle]
+unsafe extern "C" fn request_trial_license(
+    name: *const c_char,
+    email: *const c_char,
+    company: *const c_char,
+) -> bool {
+    let name = unsafe { CStr::from_ptr(name) }.to_str().unwrap();
+    let email = unsafe { CStr::from_ptr(email) }.to_str().unwrap();
+    let company = unsafe { CStr::from_ptr(company) }.to_str().unwrap();
+
+    LicenseManager::request_trial_license(&name, &email, &company)
+        .map(|_| println!("A license key was sent to your e-mail address."))
+        .map_err(|e| eprintln!("{}", e))
+        .is_ok()
 }
 
 /// Create a new Symbolica handle.

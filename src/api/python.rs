@@ -59,11 +59,18 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonAtomType>()?;
     m.add_class::<PythonAtomTree>()?;
 
+    m.add_function(wrap_pyfunction!(is_licensed, m)?)?;
     m.add_function(wrap_pyfunction!(set_license_key, m)?)?;
     m.add_function(wrap_pyfunction!(request_hobbyist_license, m)?)?;
     m.add_function(wrap_pyfunction!(request_trial_license, m)?)?;
 
     Ok(())
+}
+
+/// Check if the current Symbolica instance has a valid license key set.
+#[pyfunction]
+fn is_licensed() -> bool {
+    LicenseManager::is_licensed()
 }
 
 /// Set the Symbolica license key for this computer. Can only be called before calling any other Symbolica functions.

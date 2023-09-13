@@ -268,7 +268,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                 s = s
                     .as_bytes()
                     .iter()
-                    .map(|x| map[(x - '0' as u8) as usize])
+                    .map(|x| map[(x - b'0') as usize])
                     .collect();
 
                 return f.write_str(&s);
@@ -325,16 +325,14 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                         format_num(den.to_string(), &opts, &print_state, f)?;
                     }
                     Ok(())
-                } else {
-                    if den != 1 {
-                        if opts.latex {
-                            f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", num.unsigned_abs(), den))
-                        } else {
-                            f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))
-                        }
+                } else if den != 1 {
+                    if opts.latex {
+                        f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", num.unsigned_abs(), den))
                     } else {
-                        f.write_fmt(format_args!("{}", num.unsigned_abs()))
+                        f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))
                     }
+                } else {
+                    f.write_fmt(format_args!("{}", num.unsigned_abs()))
                 }
             }
             BorrowedNumber::Large(r) => {
@@ -348,20 +346,18 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                         format_num(rat.denom().to_string(), &opts, &print_state, f)?;
                     }
                     Ok(())
-                } else {
-                    if !rat.is_integer() {
-                        if opts.latex {
-                            f.write_fmt(format_args!(
-                                "\\frac{{{}}}{{{}}}",
-                                rat.numer(),
-                                rat.denom(),
-                            ))
-                        } else {
-                            f.write_fmt(format_args!("{}/{}", rat.numer(), rat.denom()))
-                        }
+                } else if !rat.is_integer() {
+                    if opts.latex {
+                        f.write_fmt(format_args!(
+                            "\\frac{{{}}}{{{}}}",
+                            rat.numer(),
+                            rat.denom(),
+                        ))
                     } else {
-                        f.write_fmt(format_args!("{}", rat.numer()))
+                        f.write_fmt(format_args!("{}/{}", rat.numer(), rat.denom()))
                     }
+                } else {
+                    f.write_fmt(format_args!("{}", rat.numer()))
                 }
             }
             BorrowedNumber::FiniteField(num, fi) => {

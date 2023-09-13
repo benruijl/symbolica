@@ -520,7 +520,52 @@ class Transformer:
         """ Create a new transformer for a term provided by `Expression.map`. """
 
     def expand(self) -> Transformer:
-        """ Expand products and powers. """
+        """ Create a transformer that expands products and powers.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, Transformer
+        >>> x, x_ = Expression.vars('x', 'x_')
+        >>> f = Expression.fun('f')
+        >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
+        >>> print(e)
+        """
+
+    def prod(self) -> Transformer:
+        """ Create a transformer that computes the product of a list of arguments.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, Transformer
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun('f')
+        >>> e = f(2,3).replace_all(f(x_), x_.transform().prod())
+        >>> print(e)
+        """
+
+    def sum(self) -> Transformer:
+        """ Create a transformer that computes the sum of a list of arguments.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, Transformer
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun('f')
+        >>> e = f(2,3).replace_all(f(x_), x_.transform().sum())
+        >>> print(e)
+        """
+
+    def map(self, f: Callable[[Expression | int], Expression]) -> Transformer:
+        """ Create a transformer that expands products and powers.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, Transformer
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun('f')
+        >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
+        >>> print(e)
+        """
 
     def derivative(self, x: Transformer | Expression) -> Transformer:
         """ Create a transformer that derives `self` w.r.t the variable `x`. """

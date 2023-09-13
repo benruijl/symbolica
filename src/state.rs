@@ -47,7 +47,7 @@ pub struct State {
 impl State {
     pub fn new() -> State {
         LICENSE_MANAGER
-            .get_or_init(|| LicenseManager::new())
+            .get_or_init(LicenseManager::new)
             .check();
 
         let mut state = State {
@@ -164,7 +164,7 @@ pub struct Workspace<P: AtomSet = Linear> {
 impl<P: AtomSet> Workspace<P> {
     pub fn new() -> Self {
         LICENSE_MANAGER
-            .get_or_init(|| LicenseManager::new())
+            .get_or_init(LicenseManager::new)
             .check();
 
         Workspace {

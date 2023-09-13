@@ -346,6 +346,13 @@ impl<'a, P: AtomSet> AsAtomView<'a, P> for &'a Atom<P> {
     }
 }
 
+impl<'a, P: AtomSet> From<AtomView<'a, P>> for Atom<P> {
+    /// Convert an `AtomView` into an `Atom` by allocating.
+    fn from(val: AtomView<'a, P>) -> Self {
+        Atom::new_from_view(&val)
+    }
+}
+
 impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Create a pretty-printer for an atom.
     pub fn printer<'b>(&self, state: &'b State) -> AtomPrinter<'a, 'b, P> {
@@ -696,11 +703,11 @@ impl<P: AtomSet> Atom<P> {
     /// This function allocates a new OwnedAtom with the same content as `view`.
     pub fn new_from_view(view: &AtomView<P>) -> Atom<P> {
         let mut owned = Atom::new();
-        owned.from_view(view);
+        owned.set_from_view(view);
         owned
     }
 
-    pub fn from_view(&mut self, view: &AtomView<P>) {
+    pub fn set_from_view(&mut self, view: &AtomView<P>) {
         match view {
             AtomView::Num(n) => {
                 let num = self.to_num();
@@ -868,7 +875,7 @@ impl<'a, P: AtomSet, A: DerefMut<Target = Atom<P>>> AtomBuilder<'a, A, P> {
         workspace: &'a Workspace<P>,
         mut out: A,
     ) -> AtomBuilder<'a, A, P> {
-        out.from_view(&atom.as_atom_view());
+        out.set_from_view(&atom.as_atom_view());
         AtomBuilder {
             state,
             workspace,

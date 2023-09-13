@@ -73,11 +73,11 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             true
                         }
                     } else {
-                        out.from_view(self);
+                        out.set_from_view(self);
                         false
                     }
                 } else {
-                    out.from_view(self);
+                    out.set_from_view(self);
                     false
                 }
             }
@@ -103,7 +103,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         }));
                     true
                 } else {
-                    out.from_view(self);
+                    out.set_from_view(self);
                     false
                 }
             }
@@ -120,7 +120,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     o.as_view().normalize(workspace, state, out);
                     true
                 } else {
-                    out.from_view(self);
+                    out.set_from_view(self);
                     false
                 }
             }
@@ -174,7 +174,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             }
             AtomView::Fun(_) => {
                 // do not propagate into functions
-                out.from_view(self);
+                out.set_from_view(self);
                 false
             }
         }

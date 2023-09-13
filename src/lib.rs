@@ -45,7 +45,7 @@ pub struct LicenseManager {
     has_license: bool,
 }
 
-const MULTIPLE_INSTANCE_WARNING: &'static str = "┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+const MULTIPLE_INSTANCE_WARNING: &str = "┌───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Cannot start new unlicensed Symbolica instance since there is already another one running on the machine. │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
 ;
@@ -177,24 +177,22 @@ impl LicenseManager {
 
         if read_str == "{\"status\":\"ok\"}\n" {
             Ok(())
-        } else {
-            if read_str.is_empty() {
-                Err("┌──────────────────────────────────────────┐
+        } else if read_str.is_empty() {
+            Err("┌──────────────────────────────────────────┐
 │ Could not activate the Symbolica license │
 └──────────────────────────────────────────┘"
-                    .to_owned())
-            } else {
-                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-                let message_parsed: &HashMap<_, _> = message.get().unwrap();
-                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-                Err(format!(
-                    "┌──────────────────────────────────────────┐
+                .to_owned())
+        } else {
+            let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
+            let message_parsed: &HashMap<_, _> = message.get().unwrap();
+            let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+            Err(format!(
+                "┌──────────────────────────────────────────┐
 │ Could not activate the Symbolica license │
 └──────────────────────────────────────────┘
 Error: {}",
-                    status,
-                ))
-            }
+                status,
+            ))
         }
     }
 
@@ -245,15 +243,13 @@ Error: {}",
 
             if read_str == "{\"status\":\"email sent\"}\n" {
                 Ok(())
+            } else if read_str.is_empty() {
+                Err("Empty response".to_owned())
             } else {
-                if read_str.is_empty() {
-                    Err("Empty response".to_owned())
-                } else {
-                    let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-                    let message_parsed: &HashMap<_, _> = message.get().unwrap();
-                    let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-                    Err(status.clone())
-                }
+                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
+                let message_parsed: &HashMap<_, _> = message.get().unwrap();
+                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+                Err(status.clone())
             }
         } else {
             Err("Could not connect to the license server".to_owned())
@@ -280,15 +276,13 @@ Error: {}",
 
             if read_str == "{\"status\":\"email sent\"}\n" {
                 Ok(())
+            } else if read_str.is_empty() {
+                Err("Empty response".to_owned())
             } else {
-                if read_str.is_empty() {
-                    Err("Empty response".to_owned())
-                } else {
-                    let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-                    let message_parsed: &HashMap<_, _> = message.get().unwrap();
-                    let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-                    Err(status.clone())
-                }
+                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
+                let message_parsed: &HashMap<_, _> = message.get().unwrap();
+                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+                Err(status.clone())
             }
         } else {
             Err("Could not connect to the license server".to_owned())

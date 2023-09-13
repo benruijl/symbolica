@@ -74,7 +74,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     let mut fn_der = workspace.new_atom();
                     match f.get_name() {
                         EXP => {
-                            fn_der.from_view(self);
+                            fn_der.set_from_view(self);
                         }
                         LOG => {
                             let mut n = workspace.new_atom();
@@ -216,7 +216,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
 
                     if !base_der_non_zero {
-                        out.from_view(&exp_der_contrib.as_view());
+                        out.set_from_view(&exp_der_contrib.as_view());
                         return true;
                     }
                 }

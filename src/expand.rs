@@ -190,7 +190,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         for child in a.iter() {
                             for s in &sum {
                                 let mut b = workspace.new_atom();
-                                b.get_mut().from_view(&s.get().as_view());
+                                b.get_mut().set_from_view(&s.get().as_view());
 
                                 if let Atom::Mul(m) = b.get_mut() {
                                     m.extend(child);
@@ -208,7 +208,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                             if sum.is_empty() {
                                 let mut b = workspace.new_atom();
-                                b.get_mut().from_view(&child);
+                                b.get_mut().set_from_view(&child);
                                 new_sum.push(b);
                             }
                         }
@@ -268,7 +268,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 changed
             }
             _ => {
-                out.from_view(self);
+                out.set_from_view(self);
                 false
             }
         }

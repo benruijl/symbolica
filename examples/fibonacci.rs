@@ -28,7 +28,7 @@ fn main() {
 
     let input = Atom::parse("f(10)", &mut state, &workspace).unwrap();
     let mut target = workspace.new_atom();
-    target.from_view(&input.as_view());
+    target.set_from_view(&input.as_view());
 
     println!(
         "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {}:",

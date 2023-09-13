@@ -53,7 +53,7 @@ unsafe extern "C" fn request_hobbyist_license(name: *const c_char, email: *const
     let name = unsafe { CStr::from_ptr(name) }.to_str().unwrap();
     let email = unsafe { CStr::from_ptr(email) }.to_str().unwrap();
 
-    LicenseManager::request_hobbyist_license(&name, &email)
+    LicenseManager::request_hobbyist_license(name, email)
         .map(|_| println!("A license key was sent to your e-mail address."))
         .map_err(|e| eprintln!("{}", e))
         .is_ok()
@@ -71,7 +71,7 @@ unsafe extern "C" fn request_trial_license(
     let email = unsafe { CStr::from_ptr(email) }.to_str().unwrap();
     let company = unsafe { CStr::from_ptr(company) }.to_str().unwrap();
 
-    LicenseManager::request_trial_license(&name, &email, &company)
+    LicenseManager::request_trial_license(name, email, company)
         .map(|_| println!("A license key was sent to your e-mail address."))
         .map_err(|e| eprintln!("{}", e))
         .is_ok()

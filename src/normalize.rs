@@ -305,7 +305,7 @@ impl<P: AtomSet> Atom<P> {
                         let num = self.to_num();
                         num.set_from_number(Number::Natural(1, 1));
                     } else if new_exp.to_num_view().is_one() {
-                        self.from_view(&base2);
+                        self.set_from_view(&base2);
                     } else {
                         p1.set_from_base_and_exp(base2, AtomView::Num(new_exp.to_num_view()));
                     }
@@ -334,7 +334,7 @@ impl<P: AtomSet> Atom<P> {
                         let num = self.to_num();
                         num.set_from_number(Number::Natural(1, 1));
                     } else if Number::Natural(1, 1) == new_exp {
-                        self.from_view(&base);
+                        self.set_from_view(&base);
                     } else {
                         num.set_from_number(new_exp);
                         let op = self.to_pow();
@@ -559,7 +559,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Normalize an atom.
     pub fn normalize(&self, workspace: &Workspace<P>, state: &State, out: &mut Atom<P>) {
         if !self.is_dirty() {
-            out.from_view(self);
+            out.set_from_view(self);
             return;
         }
 
@@ -574,7 +574,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     if a.is_dirty() {
                         a.normalize(workspace, state, new_at);
                     } else {
-                        new_at.from_view(&a);
+                        new_at.set_from_view(&a);
                     }
 
                     if let Atom::Mul(mul) = new_at {
@@ -582,7 +582,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             // TODO: remove this copy
                             let mut handle = workspace.new_atom();
                             let child_copy = handle.get_mut();
-                            child_copy.from_view(&c);
+                            child_copy.set_from_view(&c);
 
                             if let AtomView::Num(n) = c {
                                 if n.is_one() {
@@ -637,7 +637,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
 
                     if cur_len == 0 {
-                        out.from_view(&last_buf.get().as_view());
+                        out.set_from_view(&last_buf.get().as_view());
                     } else {
                         out_mul.extend(last_buf.get().as_view());
                     }
@@ -668,7 +668,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         if a.is_dirty() {
                             a.normalize(workspace, state, &mut handle);
                         } else {
-                            handle.from_view(&a);
+                            handle.set_from_view(&a);
                         }
                         arg_buf.push(handle);
                     }
@@ -701,14 +701,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     base.normalize(workspace, state, base_handle.get_mut());
                 } else {
                     // TODO: prevent copy
-                    base_handle.get_mut().from_view(&base);
+                    base_handle.get_mut().set_from_view(&base);
                 };
 
                 if exp.is_dirty() {
                     exp.normalize(workspace, state, exp_handle.get_mut());
                 } else {
                     // TODO: prevent copy
-                    exp_handle.get_mut().from_view(&exp);
+                    exp_handle.get_mut().set_from_view(&exp);
                 };
 
                 'pow_simplify: {
@@ -720,7 +720,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             break 'pow_simplify;
                         } else if let BorrowedNumber::Natural(1, 1) = &e.get_number_view() {
                             // remove power of 1
-                            out.from_view(&base_handle.get().as_view());
+                            out.set_from_view(&base_handle.get().as_view());
                             break 'pow_simplify;
                         } else if let AtomView::Num(n) = base_handle.get().as_view() {
                             // simplify a number to a numerical power
@@ -745,7 +745,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 let new_exp = n.get_number_view().mul(&e.get_number_view(), state);
 
                                 if let Number::Natural(1, 1) = &new_exp {
-                                    out.from_view(&p_base_base);
+                                    out.set_from_view(&p_base_base);
                                     break 'pow_simplify;
                                 }
 
@@ -780,7 +780,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     if a.is_dirty() {
                         a.normalize(workspace, state, new_at);
                     } else {
-                        new_at.from_view(&a);
+                        new_at.set_from_view(&a);
                     }
 
                     if let Atom::Add(new_add) = new_at {
@@ -788,7 +788,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             // TODO: remove this copy
                             let mut handle = workspace.new_atom();
                             let child_copy = handle.get_mut();
-                            child_copy.from_view(&c);
+                            child_copy.set_from_view(&c);
 
                             if let AtomView::Num(n) = c {
                                 if n.is_zero() {
@@ -842,7 +842,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
 
                     if cur_len == 0 {
-                        out.from_view(&last_buf.get().as_view());
+                        out.set_from_view(&last_buf.get().as_view());
                     } else {
                         out_add.extend(last_buf.get().as_view());
                     }

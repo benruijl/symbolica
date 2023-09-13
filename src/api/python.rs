@@ -76,7 +76,7 @@ fn is_licensed() -> bool {
 /// Set the Symbolica license key for this computer. Can only be called before calling any other Symbolica functions.
 #[pyfunction]
 fn set_license_key(key: String) -> PyResult<()> {
-    LicenseManager::set_license_key(&key).map_err(|e| exceptions::PyException::new_err(e))
+    LicenseManager::set_license_key(&key).map_err(exceptions::PyException::new_err)
 }
 
 /// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address
@@ -85,7 +85,7 @@ fn set_license_key(key: String) -> PyResult<()> {
 fn request_hobbyist_license(name: String, email: String) -> PyResult<()> {
     LicenseManager::request_hobbyist_license(&name, &email)
         .map(|_| println!("A license key was sent to your e-mail address."))
-        .map_err(|e| exceptions::PyConnectionError::new_err(e))
+        .map_err(exceptions::PyConnectionError::new_err)
 }
 
 /// Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address
@@ -94,7 +94,7 @@ fn request_hobbyist_license(name: String, email: String) -> PyResult<()> {
 fn request_trial_license(name: String, email: String, company: String) -> PyResult<()> {
     LicenseManager::request_trial_license(&name, &email, &company)
         .map(|_| println!("A license key was sent to your e-mail address."))
-        .map_err(|e| exceptions::PyConnectionError::new_err(e))
+        .map_err(exceptions::PyConnectionError::new_err)
 }
 
 /// Specifies the type of the atom.
@@ -225,11 +225,84 @@ impl PythonPattern {
         }
     }
 
-    /// Expand products and powers.
+    /// Create a transformer that expands products and powers.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x, x_ = Expression.vars('x', 'x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
+    /// >>> print(e)
     pub fn expand(&self) -> PyResult<PythonPattern> {
         Ok(PythonPattern {
             expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Expand(
                 (*self.expr).clone(),
+            )))),
+        })
+    }
+
+    /// Create a transformer that computes the product of a list of arguments.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(2).replace_all(f(x_), x_.transform().prod())
+    /// >>> print(e)
+    pub fn prod(&self) -> PyResult<PythonPattern> {
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Product(
+                (*self.expr).clone(),
+            )))),
+        })
+    }
+
+    /// Create a transformer that computes the sum of a list of arguments.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(2).replace_all(f(x_), x_.transform().sum())
+    /// >>> print(e)
+    pub fn sum(&self) -> PyResult<PythonPattern> {
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Sum(
+                (*self.expr).clone(),
+            )))),
+        })
+    }
+
+    /// Create a transformer that apply a function `f`.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
+    /// >>> print(e)
+    pub fn map(&self, f: PyObject) -> PyResult<PythonPattern> {
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Map(
+                (*self.expr).clone(),
+                Box::new(move |expr, out| {
+                    let expr = PythonExpression {
+                        expr: Arc::new(expr.into()),
+                    };
+
+                    let res = Python::with_gil(|py| {
+                        f.call(py, (expr,), None)
+                            .expect("Bad callback function")
+                            .extract::<ConvertibleToExpression>(py)
+                            .expect("Function does not return a pattern")
+                    });
+
+                    out.set_from_view(&res.to_expression().expr.as_view());
+                }),
             )))),
         })
     }
@@ -440,7 +513,7 @@ pub struct PythonExpression {
 
 /// A restriction on wildcards.
 #[pyclass(name = "PatternRestriction")]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PythonPatternRestriction {
     pub restrictions: Arc<HashMap<Identifier, Vec<PatternRestriction>>>,
 }
@@ -1201,7 +1274,7 @@ impl PythonExpression {
     ///     >>> e = (1+x)**2
     ///     >>> r = e.map(Transformer().expand().replace_all(x, 6))
     ///     >>> print(r)
-    pub fn map(&self, op: PythonPattern) -> PyResult<PythonExpression> {
+    pub fn map(&self, op: PythonPattern, py: Python) -> PyResult<PythonExpression> {
         let t = match op.expr.as_ref() {
             Pattern::Transformer(t) => t,
             _ => {
@@ -1211,22 +1284,26 @@ impl PythonExpression {
             }
         };
 
-        let mut stream = TermStreamer::new_from((*self.expr).clone());
+        // release the GIL as Python functions may be called from
+        // within the term mapper
+        let mut stream = py.allow_threads(move || {
+            // map every term in the expression
+            let stream = TermStreamer::new_from((*self.expr).clone());
+            stream.map(|workspace, x| {
+                let mut out = Atom::new();
+                let restrictions = HashMap::default();
+                let mut match_stack = MatchStack::new(&restrictions);
+                match_stack.insert(INPUT_ID, Match::Single(x.as_view()));
 
-        // map every term in the expression
-        stream = stream.map(|workspace, x| {
-            let mut out = Atom::new();
-            let restrictions = HashMap::default();
-            let mut match_stack = MatchStack::new(&restrictions);
-            match_stack.insert(INPUT_ID, Match::Single(x.as_view()));
+                t.execute(
+                    STATE.read().unwrap().borrow(),
+                    workspace,
+                    &match_stack,
+                    &mut out,
+                );
 
-            t.execute(
-                STATE.read().unwrap().borrow(),
-                workspace,
-                &match_stack,
-                &mut out,
-            );
-            out
+                out
+            })
         });
 
         let b = WORKSPACE
@@ -1682,7 +1759,7 @@ impl PythonAtomIterator {
             i.next().map(|e| PythonExpression {
                 expr: Arc::new({
                     let mut owned = Atom::new();
-                    owned.from_view(&e);
+                    owned.set_from_view(&e);
                     owned
                 }),
             })

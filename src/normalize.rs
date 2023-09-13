@@ -8,7 +8,7 @@ use crate::{
         Add, Atom, AtomSet, AtomView, Fun, ListSlice, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
         OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
-    state::{BufferHandle, FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace},
+    state::{BufferHandle, FunctionAttribute::Symmetric, State, Workspace, ARG},
 };
 
 impl<'a, P: AtomSet> AtomView<'a, P> {
@@ -657,37 +657,51 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             }
             AtomView::Fun(f) => {
                 let name = f.get_name();
-                let out = out.to_fun();
-                out.set_from_name(name);
+                let out_f = out.to_fun();
+                out_f.set_from_name(name);
+
+                /// Add an argument `a` to `f` and flatten nested `arg`s.
+                #[inline(always)]
+                fn add_arg<P: AtomSet>(f: &mut P::OF, a: AtomView<P>) {
+                    if let AtomView::Fun(fa) = a {
+                        if fa.get_name() == ARG {
+                            // flatten f(arg(...)) = f(...)
+                            for aa in fa.iter() {
+                                f.add_arg(aa);
+                            }
+
+                            return;
+                        }
+                    }
+
+                    f.add_arg(a);
+                }
+
+                let mut handle = workspace.new_atom();
+                for a in f.iter() {
+                    if a.is_dirty() {
+                        a.normalize(workspace, state, &mut handle);
+                        add_arg(out_f, handle.as_view());
+                    } else {
+                        add_arg(out_f, a);
+                    }
+                }
 
                 if state.get_function_attributes(name).contains(&Symmetric) {
                     let mut arg_buf: SmallVec<[BufferHandle<Atom<P>>; 20]> = SmallVec::new();
 
-                    for a in f.iter() {
+                    for a in out_f.to_fun_view().iter() {
                         let mut handle = workspace.new_atom();
-                        if a.is_dirty() {
-                            a.normalize(workspace, state, &mut handle);
-                        } else {
-                            handle.set_from_view(&a);
-                        }
+                        handle.set_from_view(&a);
                         arg_buf.push(handle);
                     }
 
                     arg_buf.sort_by(|a, b| a.get().as_view().cmp(&b.get().as_view()));
 
+                    let out_f = out.to_fun();
+                    out_f.set_from_name(name);
                     for a in arg_buf {
-                        out.add_arg(a.as_view());
-                    }
-                } else {
-                    let mut handle = workspace.new_atom();
-                    for a in f.iter() {
-                        if a.is_dirty() {
-                            handle.reset(); // TODO: needed?
-                            a.normalize(workspace, state, &mut handle);
-                            out.add_arg(handle.as_view());
-                        } else {
-                            out.add_arg(a);
-                        }
+                        out_f.add_arg(a.as_view());
                     }
                 }
             }

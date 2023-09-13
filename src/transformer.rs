@@ -3,7 +3,9 @@ use dyn_clone::DynClone;
 
 use crate::{
     id::{MatchStack, Pattern, PatternRestriction},
-    representations::{Atom, AtomSet, AtomView, Fun, Identifier, OwnedAdd, OwnedMul},
+    representations::{
+        Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedFun, OwnedMul,
+    },
     state::{State, Workspace, ARG, INPUT_ID},
 };
 
@@ -32,6 +34,8 @@ pub enum Transformer<P: AtomSet + 'static> {
     Sum(Pattern<P>),
     /// Map the rhs with a user-specified function.
     Map(Pattern<P>, Box<dyn Map<P>>),
+    /// Split a `Mul` or `Add` into a list of arguments.
+    Split(Pattern<P>),
 }
 
 impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
@@ -49,6 +53,7 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
             Self::Product(p) => f.debug_tuple("Product").field(p).finish(),
             Self::Sum(p) => f.debug_tuple("Sum").field(p).finish(),
             Self::Map(p, _) => f.debug_tuple("Map").field(p).finish(),
+            Self::Split(p) => f.debug_tuple("Split").field(p).finish(),
         }
     }
 }
@@ -133,6 +138,42 @@ impl<P: AtomSet> Transformer<P> {
                 }
 
                 out.set_from_view(&h.as_view());
+            }
+            Transformer::Split(e) => {
+                let mut h = workspace.new_atom();
+                e.substitute_wildcards(state, workspace, &mut h, match_stack);
+
+                match h.as_view() {
+                    AtomView::Mul(m) => {
+                        let mut arg_h = workspace.new_atom();
+                        let arg = arg_h.to_fun();
+                        arg.set_from_name(ARG);
+
+                        for factor in m.iter() {
+                            arg.add_arg(factor);
+                        }
+
+                        arg.set_dirty(true);
+                        arg_h.as_view().normalize(workspace, state, out);
+                        return;
+                    }
+                    AtomView::Add(a) => {
+                        let mut arg_h = workspace.new_atom();
+                        let arg = arg_h.to_fun();
+                        arg.set_from_name(ARG);
+
+                        for summand in a.iter() {
+                            arg.add_arg(summand);
+                        }
+
+                        arg.set_dirty(true);
+                        arg_h.as_view().normalize(workspace, state, out);
+                        return;
+                    }
+                    _ => {
+                        out.set_from_view(&h.as_view());
+                    }
+                }
             }
         }
     }

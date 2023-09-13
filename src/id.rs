@@ -315,21 +315,7 @@ impl<P: AtomSet> Pattern<P> {
         match self {
             Pattern::Wildcard(name) => {
                 if let Some(w) = match_stack.get(*name) {
-                    match w {
-                        Match::Single(s) => out.set_from_view(s),
-                        Match::Multiple(SliceType::Arg, wargs) => {
-                            // wrap arguments in the arg function
-                            let fun = out.to_fun();
-                            fun.set_from_name(ARG);
-                            for arg in wargs {
-                                fun.add_arg(*arg);
-                            }
-                        }
-                        Match::Multiple(_, _) => {
-                            unreachable!("Wildcard cannot consist of multiple factors")
-                        }
-                        Match::FunctionName(_) => unreachable!("Wildcard cannot be function name"),
-                    }
+                    w.to_atom(out);
                 } else {
                     panic!("Unsubstituted wildcard {}", name.to_u32());
                 }
@@ -382,9 +368,8 @@ impl<P: AtomSet> Pattern<P> {
                     }
 
                     let mut handle = workspace.new_atom();
-                    let oa = handle.get_mut();
-                    arg.substitute_wildcards(state, workspace, oa, match_stack);
-                    func.add_arg(oa.as_view());
+                    arg.substitute_wildcards(state, workspace, &mut handle, match_stack);
+                    func.add_arg(handle.as_view());
                 }
 
                 func_h.as_view().normalize(workspace, state, out);
@@ -417,9 +402,8 @@ impl<P: AtomSet> Pattern<P> {
                     }
 
                     let mut handle = workspace.new_atom();
-                    let oa = handle.get_mut();
-                    arg.substitute_wildcards(state, workspace, oa, match_stack);
-                    out.set_from_view(&oa.as_view());
+                    arg.substitute_wildcards(state, workspace, &mut handle, match_stack);
+                    out.set_from_view(&handle.as_view());
                 }
 
                 let mut pow_h = workspace.new_atom();
@@ -445,9 +429,8 @@ impl<P: AtomSet> Pattern<P> {
                                     }
                                     _ => {
                                         let mut handle = workspace.new_atom();
-                                        let oa = handle.get_mut();
-                                        w.to_atom(oa);
-                                        mul.extend(oa.as_view())
+                                        w.to_atom(&mut handle);
+                                        mul.extend(handle.as_view())
                                     }
                                 },
                                 Match::FunctionName(_) => {
@@ -462,9 +445,8 @@ impl<P: AtomSet> Pattern<P> {
                     }
 
                     let mut handle = workspace.new_atom();
-                    let oa = handle.get_mut();
-                    arg.substitute_wildcards(state, workspace, oa, match_stack);
-                    mul.extend(oa.as_view());
+                    arg.substitute_wildcards(state, workspace, &mut handle, match_stack);
+                    mul.extend(handle.as_view());
                 }
                 mul.set_dirty(true);
                 mul_h.as_view().normalize(workspace, state, out);

@@ -276,6 +276,23 @@ impl PythonPattern {
         })
     }
 
+    /// Create a transformer that split a sum or product into a list of arguments.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x, x_ = Expression.vars('x', 'x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = (x + 1).replace_all(x_, f(x_.transform().split()))
+    /// >>> print(e)
+    pub fn split(&self) -> PyResult<PythonPattern> {
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Split(
+                (*self.expr).clone(),
+            )))),
+        })
+    }
+
     /// Create a transformer that apply a function `f`.
     ///
     /// Examples

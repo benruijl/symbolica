@@ -555,6 +555,18 @@ class Transformer:
         >>> print(e)
         """
 
+    def split(self) -> Transformer:
+        """ Create a transformer that split a sum or product into a list of arguments.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, Transformer
+        >>> x, x_ = Expression.vars('x', 'x_')
+        >>> f = Expression.fun('f')
+        >>> e = (x + 1).replace_all(x_, f(x_.transform().split()))
+        >>> print(e)
+        """
+
     def map(self, f: Callable[[Expression | int], Expression]) -> Transformer:
         """ Create a transformer that expands products and powers.
 

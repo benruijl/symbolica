@@ -7,7 +7,9 @@ use std::{
 
 use crate::{
     poly::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent},
+    printer::RationalPolynomialPrinter,
     representations::Identifier,
+    state::State,
 };
 
 use super::{
@@ -73,6 +75,11 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
 
         self.numerator.unify_var_map(&mut other.numerator);
         self.denominator.unify_var_map(&mut other.denominator);
+    }
+
+    /// Constuct a pretty-printer for the rational polynomial.
+    pub fn printer<'a,'b>(&'a self, state: &'b State) -> RationalPolynomialPrinter<'a, 'b, R, E> {
+        RationalPolynomialPrinter::new(self, state)
     }
 }
 

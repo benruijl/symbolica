@@ -6,8 +6,10 @@ use std::fmt::Display;
 use std::mem;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
+use crate::printer::PolynomialPrinter;
 use crate::representations::Identifier;
 use crate::rings::{EuclideanDomain, Field, Ring, RingPrinter};
+use crate::state::State;
 
 use super::{Exponent, INLINED_EXPONENTS};
 use smallvec::{smallvec, SmallVec};
@@ -91,6 +93,11 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
             field: self.field,
             var_map: self.var_map.clone(),
         }
+    }
+
+    /// Constuct a pretty-printer for the polynomial.
+    pub fn printer<'a, 'b>(&'a self, state: &'b State) -> PolynomialPrinter<'a, 'b, F, E> {
+        PolynomialPrinter::new(self, state)
     }
 
     /// Get the ith monomial

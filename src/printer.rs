@@ -348,11 +348,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                     Ok(())
                 } else if !rat.is_integer() {
                     if opts.latex {
-                        f.write_fmt(format_args!(
-                            "\\frac{{{}}}{{{}}}",
-                            rat.numer(),
-                            rat.denom(),
-                        ))
+                        f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", rat.numer(), rat.denom(),))
                     } else {
                         f.write_fmt(format_args!("{}/{}", rat.numer(), rat.denom()))
                     }
@@ -685,6 +681,17 @@ impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
     pub fn new(
         poly: &'a RationalPolynomial<R, E>,
         state: &'b State,
+    ) -> RationalPolynomialPrinter<'a, 'b, R, E> {
+        RationalPolynomialPrinter {
+            poly,
+            state,
+            opts: PrintOptions::default(),
+        }
+    }
+
+    pub fn new_with_options(
+        poly: &'a RationalPolynomial<R, E>,
+        state: &'b State,
         opts: PrintOptions,
     ) -> RationalPolynomialPrinter<'a, 'b, R, E> {
         RationalPolynomialPrinter { poly, state, opts }
@@ -736,6 +743,22 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                 }
             ))
         } else {
+            if self.opts.latex {
+                return f.write_fmt(format_args!(
+                    "\\frac{{{}}}{{{}}}",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        opts: self.opts,
+                    },
+                    PolynomialPrinter {
+                        poly: &self.poly.denominator,
+                        state: self.state,
+                        opts: self.opts,
+                    }
+                ));
+            }
+
             if self.poly.numerator.nterms < 2 {
                 f.write_fmt(format_args!(
                     "{}",
@@ -801,12 +824,23 @@ pub struct PolynomialPrinter<'a, 'b, F: Ring + Display, E: Exponent> {
     pub opts: PrintOptions,
 }
 
-impl<'a, 'b, F: Ring + Display, E: Exponent> PolynomialPrinter<'a, 'b, F, E> {
+impl<'a, 'b, R: Ring + Display, E: Exponent> PolynomialPrinter<'a, 'b, R, E> {
     pub fn new(
-        poly: &'a MultivariatePolynomial<F, E>,
+        poly: &'a MultivariatePolynomial<R, E>,
+        state: &'b State,
+    ) -> PolynomialPrinter<'a, 'b, R, E> {
+        PolynomialPrinter {
+            poly,
+            state,
+            opts: PrintOptions::default(),
+        }
+    }
+
+    pub fn new_with_options(
+        poly: &'a MultivariatePolynomial<R, E>,
         state: &'b State,
         opts: PrintOptions,
-    ) -> PolynomialPrinter<'a, 'b, F, E> {
+    ) -> PolynomialPrinter<'a, 'b, R, E> {
         PolynomialPrinter { poly, state, opts }
     }
 }

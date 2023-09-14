@@ -2126,6 +2126,18 @@ macro_rules! generate_methods {
                 ))
             }
 
+            /// Convert the polynomial into a LaTeX string.
+            pub fn to_latex(&self) -> PyResult<String> {
+                Ok(format!(
+                    "{}",
+                    PolynomialPrinter::new_with_options(
+                        &self.poly,
+                        &STATE.read().unwrap(),
+                        PrintOptions::latex(),
+                    )
+                ))
+            }
+
             /// Print the polynomial in a debug representation.
             pub fn __repr__(&self) -> PyResult<String> {
                 Ok(format!("{:?}", self.poly))
@@ -2331,6 +2343,18 @@ macro_rules! generate_rat_methods {
                         state: &STATE.read().unwrap(),
                         opts: PrintOptions::default()
                     }
+                ))
+            }
+
+            /// Convert the rational polynomial into a LaTeX string.
+            pub fn to_latex(&self) -> PyResult<String> {
+                Ok(format!(
+                    "{}",
+                    RationalPolynomialPrinter::new_with_options(
+                        &self.poly,
+                        &STATE.read().unwrap(),
+                        PrintOptions::latex(),
+                    )
                 ))
             }
 

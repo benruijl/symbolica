@@ -731,6 +731,9 @@ class Polynomial:
     def __str__(self) -> str:
         """Print the polynomial in a human-readable format."""
 
+    def to_latex(self) -> str:
+        """Convert the polynomial into a LaTeX string."""
+
     def __repr__(self) -> str:
         """Print the polynomial in a debug representation."""
 
@@ -796,6 +799,9 @@ class IntegerPolynomial:
     def __str__(self) -> str:
         """Print the polynomial in a human-readable format."""
 
+    def to_latex(self) -> str:
+        """Convert the polynomial into a LaTeX string."""
+
     def __repr__(self) -> str:
         """Print the polynomial in a debug representation."""
 
@@ -852,6 +858,9 @@ class RationalPolynomial:
     def __str__(self) -> str:
         """Print the rational polynomial in a human-readable format."""
 
+    def to_latex(self) -> str:
+        """Convert the rational polynomial into a LaTeX string."""
+
     def __repr__(self) -> str:
         """Print the rational polynomial in a debug representation."""
 
@@ -900,6 +909,9 @@ class RationalPolynomialSmallExponent:
 
     def __str__(self) -> str:
         """Print the rational polynomial in a human-readable format."""
+
+    def to_latex(self) -> str:
+        """Convert the rational polynomial into a LaTeX string."""
 
     def __repr__(self) -> str:
         """Print the rational polynomial in a debug representation."""

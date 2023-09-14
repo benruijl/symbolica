@@ -46,9 +46,7 @@ pub struct State {
 
 impl State {
     pub fn new() -> State {
-        LICENSE_MANAGER
-            .get_or_init(LicenseManager::new)
-            .check();
+        LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
         let mut state = State {
             str_to_var_id: HashMap::new(),
@@ -98,10 +96,9 @@ impl State {
         match self.str_to_var_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
-                if match self.function_attributes.entry(r) {
-                    Entry::Occupied(o) => Some(o.get()) == attributes.as_ref(),
-                    Entry::Vacant(_) => attributes.map(|a| a.is_empty()).unwrap_or(true),
-                } {
+                let old_attrib = self.function_attributes.get(&r).unwrap();
+
+                if &attributes.unwrap_or(vec![]) == old_attrib {
                     r
                 } else {
                     panic!("Function redefined with new attributes");
@@ -163,9 +160,7 @@ pub struct Workspace<P: AtomSet = Linear> {
 
 impl<P: AtomSet> Workspace<P> {
     pub fn new() -> Self {
-        LICENSE_MANAGER
-            .get_or_init(LicenseManager::new)
-            .check();
+        LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
         Workspace {
             atom_stack: Stack::new(),

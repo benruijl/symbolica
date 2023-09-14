@@ -160,7 +160,21 @@ class Expression:
         Examples
         --------
         >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
-        >>> print(a.pretty_str(latex=True))
+        >>> print(a.pretty_str(number_thousands_separator='_', multiplication_operator=' '))
+
+        Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
+        """
+
+    def to_latex(self) -> str:
+        """
+        Convert the expression into a LaTeX string.
+
+        Examples
+        --------
+        >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
+        >>> print(a.to_latex())
+
+        Yields `$$z^{34}+x^{x+2}+y^{4}+f(x,x^{2})+128378127123 z^{\\frac{2}{3}} w^{2} \\frac{1}{x} \\frac{1}{y}+\\frac{3}{5}$$`.
         """
 
     def __repr__(self) -> str:
@@ -744,6 +758,14 @@ class Polynomial:
     def to_integer_polynomial(self) -> IntegerPolynomial:
         """Convert the polynomial to a polynomial with integer coefficients, if possible."""
 
+    def optimize(self, iterations: int = 1000, to_file: str | None = None) -> Evaluator:
+        """
+        Optimize the polynomial for evaluation using `iterations` number of iterations.
+        The optimized output can be exported in a C++ format using `to_file`.
+
+        Returns an evaluator for the polynomial.
+        """
+
 
 class IntegerPolynomial:
     """ A Symbolica polynomial with integer coefficients. """
@@ -900,6 +922,9 @@ class RationalPolynomialSmallExponent:
     def gcd(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
 
+class Evaluator:
+    def evaluate(self, inputs: List[List[float]]) -> List[float]:
+        """Evaluate the polynomial for multiple inputs and return the result."""
 
 class NumericalIntegrator:
     def continuous(n_dims: int, n_bins: int = 128,

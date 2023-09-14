@@ -25,7 +25,14 @@ use crate::{
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, Sample},
     parser::Token,
-    poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
+    poly::{
+        evaluate::{
+            InstructionEvaluator, InstructionSetMode, InstructionSetModeCPPSettings,
+            InstructionSetPrinter,
+        },
+        polynomial::MultivariatePolynomial,
+        INLINED_EXPONENTS,
+    },
     printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::{
         default::ListIteratorD, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul,
@@ -58,6 +65,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonSample>()?;
     m.add_class::<PythonAtomType>()?;
     m.add_class::<PythonAtomTree>()?;
+    m.add_class::<PythonInstructionEvaluator>()?;
 
     m.add_function(wrap_pyfunction!(is_licensed, m)?)?;
     m.add_function(wrap_pyfunction!(set_license_key, m)?)?;
@@ -249,7 +257,7 @@ impl PythonPattern {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x_ = Expression.var('x_')
     /// >>> f = Expression.fun('f')
-    /// >>> e = f(2).replace_all(f(x_), x_.transform().prod())
+    /// >>> e = f(2,3).replace_all(f(x_), x_.transform().prod())
     /// >>> print(e)
     pub fn prod(&self) -> PyResult<PythonPattern> {
         Ok(PythonPattern {
@@ -266,7 +274,7 @@ impl PythonPattern {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x_ = Expression.var('x_')
     /// >>> f = Expression.fun('f')
-    /// >>> e = f(2).replace_all(f(x_), x_.transform().sum())
+    /// >>> e = f(2,3).replace_all(f(x_), x_.transform().sum())
     /// >>> print(e)
     pub fn sum(&self) -> PyResult<PythonPattern> {
         Ok(PythonPattern {
@@ -690,7 +698,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
-    /// >>> print(a.pretty_str(latex=True))
+    /// >>> print(a.pretty_str(number_thousands_separator='_', multiplication_operator=' '))
     #[pyo3(signature =
     (terms_on_new_line = false,
         color_top_level_sum = true,
@@ -732,6 +740,25 @@ impl PythonExpression {
                     num_exp_as_superscript,
                     latex
                 },
+                &STATE.read().unwrap(),
+            )
+        ))
+    }
+
+    /// Convert the expression into a LaTeX string.
+    ///
+    /// Examples
+    /// --------
+    /// >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
+    /// >>> print(a.to_latex())
+    ///
+    /// Yields `$$z^{34}+x^{x+2}+y^{4}+f(x,x^{2})+128378127123 z^{\\frac{2}{3}} w^{2} \\frac{1}{x} \\frac{1}{y}+\\frac{3}{5}$$`.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            AtomPrinter::new_with_options(
+                self.expr.as_view(),
+                PrintOptions::latex(),
                 &STATE.read().unwrap(),
             )
         ))
@@ -1958,6 +1985,74 @@ impl PythonPolynomial {
         Ok(PythonIntegerPolynomial {
             poly: Arc::new(poly_int),
         })
+    }
+
+    #[pyo3(signature =
+        (iterations = 1000,
+        to_file = None)
+    )]
+    /// Optimize the polynomial for evaluation using `iterations` number of iterations.
+    /// The optimized output can be exported in a C++ format using `to_file`.
+    ///
+    /// Returns an evaluator for the polynomial.
+    pub fn optimize(
+        &self,
+        iterations: usize,
+        to_file: Option<String>,
+    ) -> PythonInstructionEvaluator {
+        let (h, _ops, _scheme) = self.poly.optimize_horner_scheme(iterations);
+        let mut i = h.to_instr(self.poly.nvars);
+
+        i.fuse_operations();
+
+        for _ in 0..100_000 {
+            if !i.common_pair_elimination() {
+                break;
+            }
+            i.fuse_operations();
+        }
+
+        let o = i.to_output(true);
+
+        if let Some(file) = to_file.as_ref() {
+            std::fs::write(
+                file,
+                format!(
+                    "{}",
+                    InstructionSetPrinter {
+                        instr: &o,
+                        var_map: self.poly.var_map.as_ref().unwrap(),
+                        state: &STATE.read().unwrap(),
+                        mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {
+                            write_header_and_test: true,
+                            always_pass_output_array: false,
+                        })
+                    }
+                ),
+            )
+            .unwrap();
+        }
+
+        let o_f64 = o.convert::<f64>();
+        PythonInstructionEvaluator {
+            instr: Arc::new(o_f64.evaluator()),
+        }
+    }
+}
+
+#[pyclass(name = "Evaluator")]
+#[derive(Clone)]
+pub struct PythonInstructionEvaluator {
+    pub instr: Arc<InstructionEvaluator<f64>>,
+}
+
+#[pymethods]
+impl PythonInstructionEvaluator {
+    /// Evaluate the polynomial for multiple inputs and return the result.
+    fn evaluate(&self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
+        let mut eval = (*self.instr).clone();
+
+        inputs.iter().map(|s| eval.evaluate(s)[0]).collect()
     }
 }
 

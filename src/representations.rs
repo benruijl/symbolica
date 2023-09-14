@@ -48,7 +48,7 @@ impl Identifier {
 
 /// Represents the collection of all types appearing in a mathematical expression, where
 /// each type has a compatible memory representation.
-pub trait AtomSet: Copy + Clone + PartialEq + Eq + Hash + 'static {
+pub trait AtomSet: Copy + Clone + PartialEq + Eq + Hash + Send + 'static {
     type N<'a>: Num<'a, P = Self>;
     type V<'a>: Var<'a, P = Self>;
     type F<'a>: Fun<'a, P = Self>;
@@ -74,7 +74,7 @@ pub trait Convert<P: AtomSet> {
     fn to_owned_mul(self) -> P::OM;
 }
 
-pub trait OwnedNum: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedNum: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
     type P: AtomSet;
 
     fn set_from_number(&mut self, num: Number);
@@ -84,7 +84,7 @@ pub trait OwnedNum: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::
     fn to_num_view(&self) -> <Self::P as AtomSet>::N<'_>;
 }
 
-pub trait OwnedVar: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedVar: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
     type P: AtomSet;
 
     fn set_from_id(&mut self, id: Identifier);
@@ -92,7 +92,7 @@ pub trait OwnedVar: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::
     fn to_var_view(&self) -> <Self::P as AtomSet>::V<'_>;
 }
 
-pub trait OwnedFun: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedFun: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
     type P: AtomSet;
 
     fn set_from_view(&mut self, view: &<Self::P as AtomSet>::F<'_>);
@@ -102,7 +102,7 @@ pub trait OwnedFun: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::
     fn to_fun_view(&self) -> <Self::P as AtomSet>::F<'_>;
 }
 
-pub trait OwnedPow: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedPow: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
     type P: AtomSet;
 
     fn set_from_view(&mut self, view: &<Self::P as AtomSet>::P<'_>);
@@ -111,7 +111,7 @@ pub trait OwnedPow: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::
     fn to_pow_view(&self) -> <Self::P as AtomSet>::P<'_>;
 }
 
-pub trait OwnedMul: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedMul: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
     type P: AtomSet;
 
     fn set_dirty(&mut self, dirty: bool);
@@ -121,7 +121,7 @@ pub trait OwnedMul: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::
     fn to_mul_view(&self) -> <Self::P as AtomSet>::M<'_>;
 }
 
-pub trait OwnedAdd: Clone + PartialEq + Hash + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedAdd: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
     type P: AtomSet;
 
     fn set_dirty(&mut self, dirty: bool);

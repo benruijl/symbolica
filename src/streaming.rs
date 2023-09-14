@@ -60,7 +60,7 @@ impl<P: AtomSet> TermOutputStream<P> {
     /// Sort all the terms.
     fn sort(&mut self, workspace: &Workspace<P>, state: &State) {
         self.mem_buf
-            .sort_by(|a, b| a.as_view().cmp_terms(&b.as_view()));
+            .par_sort_by(|a, b| a.as_view().cmp_terms(&b.as_view()));
 
         let mut out = Vec::with_capacity(self.mem_buf.len());
 

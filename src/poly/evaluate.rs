@@ -1241,6 +1241,7 @@ pub struct InstructionListOutput<N: NumericalFloatLike> {
 
 /// An efficient structure that performs a range of operations.
 /// `Add(reg,index,len)` means: `eval[reg] = eval[indices[index]] +...+ eval[indices[index_pos]]`.
+#[derive(Clone, Copy)]
 enum InstructionRange {
     Add(usize, usize, usize), // reg, index, len
     Mul(usize, usize, usize),
@@ -1263,6 +1264,7 @@ enum InstructionRange {
 /// get overwritten at every call. These instructions only use
 /// indices in the `Z` array and their evaluation can therefore
 /// be done efficiently.
+#[derive(Clone)]
 pub struct InstructionEvaluator<N: NumericalFloatLike> {
     instr: Vec<InstructionRange>,
     indices: Vec<usize>,

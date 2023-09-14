@@ -422,9 +422,9 @@ impl<T: Real + NumericalFloatComparison> Grid<T> {
 /// A bin of a discrete grid, which may contain a subgrid.
 #[derive(Debug, Clone)]
 pub struct Bin<T: Real + NumericalFloatComparison> {
-    pdf: T,
-    accumulator: StatisticsAccumulator<T>,
-    sub_grid: Option<Grid<T>>,
+    pub pdf: T,
+    pub accumulator: StatisticsAccumulator<T>,
+    pub sub_grid: Option<Grid<T>>,
 }
 
 impl<T: Real + NumericalFloatComparison> Bin<T> {

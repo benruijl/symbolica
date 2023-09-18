@@ -888,14 +888,18 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, '
                 }
                 if is_first_factor {
                     is_first_factor = false;
-                } else {
+                } else if !self.opts.latex {
                     write!(f, "*")?;
                 }
 
                 f.write_str(self.state.get_name(*var_id).unwrap())?;
 
                 if e.to_u32() != 1 {
-                    write!(f, "^{}", e)?;
+                    if self.opts.latex {
+                        write!(f, "^{{{}}}", e)?;
+                    } else {
+                        write!(f, "^{}", e)?;
+                    }
                 }
             }
             if is_first_factor {

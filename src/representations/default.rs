@@ -68,31 +68,37 @@ impl OwnedNum for OwnedNumD {
 }
 
 impl Convert<Linear> for OwnedNumD {
+    #[inline(always)]
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_pow(mut self) -> OwnedPowD {
         self.data.clear();
         OwnedPowD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_num(mut self) -> OwnedNumD {
         self.data.clear();
         OwnedNumD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_fun(mut self) -> OwnedFunD {
         self.data.clear();
         OwnedFunD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_add(mut self) -> OwnedAddD {
         self.data.clear();
         OwnedAddD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_mul(mut self) -> OwnedMulD {
         self.data.clear();
         OwnedMulD { data: self.data }
@@ -100,10 +106,12 @@ impl Convert<Linear> for OwnedNumD {
 }
 
 impl ResettableBuffer for OwnedNumD {
+    #[inline(always)]
     fn new() -> Self {
         OwnedNumD { data: vec![] }
     }
 
+    #[inline(always)]
     fn reset(&mut self) {
         self.data.clear();
     }
@@ -134,31 +142,37 @@ impl OwnedVar for OwnedVarD {
 }
 
 impl Convert<Linear> for OwnedVarD {
+    #[inline(always)]
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_pow(mut self) -> OwnedPowD {
         self.data.clear();
         OwnedPowD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_num(mut self) -> OwnedNumD {
         self.data.clear();
         OwnedNumD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_fun(mut self) -> OwnedFunD {
         self.data.clear();
         OwnedFunD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_add(mut self) -> OwnedAddD {
         self.data.clear();
         OwnedAddD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_mul(mut self) -> OwnedMulD {
         self.data.clear();
         OwnedMulD { data: self.data }
@@ -166,10 +180,12 @@ impl Convert<Linear> for OwnedVarD {
 }
 
 impl ResettableBuffer for OwnedVarD {
+    #[inline(always)]
     fn new() -> Self {
         OwnedVarD { data: vec![] }
     }
 
+    #[inline(always)]
     fn reset(&mut self) {
         self.data.clear();
     }
@@ -250,6 +266,7 @@ impl OwnedFun for OwnedFunD {
             .unwrap();
     }
 
+    #[inline(always)]
     fn to_fun_view(&self) -> <Self::P as AtomSet>::F<'_> {
         FnViewD { data: &self.data }
     }
@@ -261,31 +278,37 @@ impl OwnedFun for OwnedFunD {
 }
 
 impl Convert<Linear> for OwnedFunD {
+    #[inline(always)]
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_pow(mut self) -> OwnedPowD {
         self.data.clear();
         OwnedPowD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_num(mut self) -> OwnedNumD {
         self.data.clear();
         OwnedNumD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_fun(mut self) -> OwnedFunD {
         self.data.clear();
         OwnedFunD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_add(mut self) -> OwnedAddD {
         self.data.clear();
         OwnedAddD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_mul(mut self) -> OwnedMulD {
         self.data.clear();
         OwnedMulD { data: self.data }
@@ -293,9 +316,11 @@ impl Convert<Linear> for OwnedFunD {
 }
 
 impl ResettableBuffer for OwnedFunD {
+    #[inline(always)]
     fn new() -> Self {
         OwnedFunD { data: vec![] }
     }
+    #[inline(always)]
 
     fn reset(&mut self) {
         self.data.clear();
@@ -325,10 +350,12 @@ impl OwnedPow for OwnedPowD {
         }
     }
 
+    #[inline(always)]
     fn to_pow_view(&self) -> <Self::P as AtomSet>::P<'_> {
         PowViewD { data: &self.data }
     }
 
+    #[inline(always)]
     fn set_from_view(&mut self, view: &<Self::P as AtomSet>::P<'_>) {
         self.data.clear();
         self.data.extend(view.data);
@@ -336,31 +363,37 @@ impl OwnedPow for OwnedPowD {
 }
 
 impl Convert<Linear> for OwnedPowD {
+    #[inline(always)]
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_pow(mut self) -> OwnedPowD {
         self.data.clear();
         OwnedPowD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_num(mut self) -> OwnedNumD {
         self.data.clear();
         OwnedNumD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_fun(mut self) -> OwnedFunD {
         self.data.clear();
         OwnedFunD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_add(mut self) -> OwnedAddD {
         self.data.clear();
         OwnedAddD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_mul(mut self) -> OwnedMulD {
         self.data.clear();
         OwnedMulD { data: self.data }
@@ -368,10 +401,12 @@ impl Convert<Linear> for OwnedPowD {
 }
 
 impl ResettableBuffer for OwnedPowD {
+    #[inline(always)]
     fn new() -> Self {
         OwnedPowD { data: vec![] }
     }
 
+    #[inline(always)]
     fn reset(&mut self) {
         self.data.clear();
     }
@@ -508,31 +543,37 @@ impl OwnedMul for OwnedMulD {
 }
 
 impl Convert<Linear> for OwnedMulD {
+    #[inline(always)]
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_pow(mut self) -> OwnedPowD {
         self.data.clear();
         OwnedPowD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_num(mut self) -> OwnedNumD {
         self.data.clear();
         OwnedNumD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_fun(mut self) -> OwnedFunD {
         self.data.clear();
         OwnedFunD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_add(mut self) -> OwnedAddD {
         self.data.clear();
         OwnedAddD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_mul(mut self) -> OwnedMulD {
         self.data.clear();
         OwnedMulD { data: self.data }
@@ -540,10 +581,12 @@ impl Convert<Linear> for OwnedMulD {
 }
 
 impl ResettableBuffer for OwnedMulD {
+    #[inline(always)]
     fn new() -> Self {
         OwnedMulD { data: vec![] }
     }
 
+    #[inline(always)]
     fn reset(&mut self) {
         self.data.clear();
     }
@@ -623,10 +666,12 @@ impl OwnedAdd for OwnedAddD {
             .unwrap();
     }
 
+    #[inline(always)]
     fn to_add_view(&self) -> <Self::P as AtomSet>::A<'_> {
         AddViewD { data: &self.data }
     }
 
+    #[inline(always)]
     fn set_from_view(&mut self, view: &<Self::P as AtomSet>::A<'_>) {
         self.data.clear();
         self.data.extend(view.data);
@@ -634,31 +679,37 @@ impl OwnedAdd for OwnedAddD {
 }
 
 impl Convert<Linear> for OwnedAddD {
+    #[inline(always)]
     fn to_owned_var(mut self) -> OwnedVarD {
         self.data.clear();
         OwnedVarD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_pow(mut self) -> OwnedPowD {
         self.data.clear();
         OwnedPowD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_num(mut self) -> OwnedNumD {
         self.data.clear();
         OwnedNumD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_fun(mut self) -> OwnedFunD {
         self.data.clear();
         OwnedFunD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_add(mut self) -> OwnedAddD {
         self.data.clear();
         OwnedAddD { data: self.data }
     }
 
+    #[inline(always)]
     fn to_owned_mul(mut self) -> OwnedMulD {
         self.data.clear();
         OwnedMulD { data: self.data }
@@ -702,11 +753,12 @@ impl AtomSet for Linear {
 impl<'a> Var<'a> for VarViewD<'a> {
     type P = Linear;
 
-    #[inline]
+    #[inline(always)]
     fn get_name(&self) -> Identifier {
         Identifier::from(self.data[1..].get_frac_i64().0 as u32)
     }
 
+    #[inline]
     fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Var(*self)
     }
@@ -757,18 +809,22 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     type P = Linear;
     type I = ListIteratorD<'a>;
 
+    #[inline(always)]
     fn get_name(&self) -> Identifier {
         Identifier::from(self.data[1 + 4..].get_frac_i64().0 as u32)
     }
 
+    #[inline(always)]
     fn get_nargs(&self) -> usize {
         self.data[1 + 4..].get_frac_i64().1 as usize
     }
 
+    #[inline(always)]
     fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
 
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
         self.get_name().cmp(&other.get_name())
     }
@@ -814,6 +870,7 @@ pub struct NumViewD<'a> {
 }
 
 impl<'a, 'b> PartialEq<NumViewD<'b>> for NumViewD<'a> {
+    #[inline]
     fn eq(&self, other: &NumViewD<'b>) -> bool {
         self.data == other.data
     }
@@ -822,14 +879,17 @@ impl<'a, 'b> PartialEq<NumViewD<'b>> for NumViewD<'a> {
 impl<'a> Num<'a> for NumViewD<'a> {
     type P = Linear;
 
+    #[inline]
     fn is_zero(&self) -> bool {
         self.data.is_zero_rat()
     }
 
+    #[inline]
     fn is_one(&self) -> bool {
         self.data.is_one_rat()
     }
 
+    #[inline]
     fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
@@ -850,6 +910,7 @@ pub struct PowViewD<'a> {
 }
 
 impl<'a, 'b> PartialEq<PowViewD<'b>> for PowViewD<'a> {
+    #[inline]
     fn eq(&self, other: &PowViewD<'b>) -> bool {
         self.data == other.data
     }
@@ -870,6 +931,7 @@ impl<'a> Pow<'a> for PowViewD<'a> {
         e
     }
 
+    #[inline]
     fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
@@ -903,6 +965,7 @@ pub struct MulViewD<'a> {
 }
 
 impl<'a, 'b> PartialEq<MulViewD<'b>> for MulViewD<'a> {
+    #[inline]
     fn eq(&self, other: &MulViewD<'b>) -> bool {
         self.data == other.data
     }
@@ -912,6 +975,7 @@ impl<'a> Mul<'a> for MulViewD<'a> {
     type P = Linear;
     type I = ListIteratorD<'a>;
 
+    #[inline]
     fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
@@ -961,6 +1025,7 @@ pub struct AddViewD<'a> {
 }
 
 impl<'a, 'b> PartialEq<AddViewD<'b>> for AddViewD<'a> {
+    #[inline]
     fn eq(&self, other: &AddViewD<'b>) -> bool {
         self.data == other.data
     }
@@ -970,10 +1035,12 @@ impl<'a> Add<'a> for AddViewD<'a> {
     type P = Linear;
     type I = ListIteratorD<'a>;
 
+    #[inline(always)]
     fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
 
+    #[inline(always)]
     fn get_nargs(&self) -> usize {
         self.data[1 + 4..].get_frac_i64().0 as usize
     }
@@ -993,6 +1060,7 @@ impl<'a> Add<'a> for AddViewD<'a> {
         }
     }
 
+    #[inline]
     fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Add(*self)
     }
@@ -1129,15 +1197,15 @@ pub struct ListSliceD<'a> {
 }
 
 impl<'a> ListSliceD<'a> {
-    #[inline]
+    #[inline(always)]
     fn skip_one(mut pos: &[u8]) -> &[u8] {
-        let start_id = pos.get_u8() & TYPE_MASK;
-        let mut cur_id = start_id;
-
         // store how many more atoms to read
         // can be used instead of storing the byte length of an atom
-        let mut skip_count = 1;
-        loop {
+        let mut skip_count = 1u32;
+        while skip_count > 0 {
+            let cur_id = pos.get_u8() & TYPE_MASK;
+            skip_count -= 1;
+
             match cur_id {
                 VAR_ID => {
                     pos = pos.skip_rational();
@@ -1157,14 +1225,6 @@ impl<'a> ListSliceD<'a> {
                     pos.advance(n_size as usize);
                 }
                 x => unreachable!("Bad id {}", x),
-            }
-
-            skip_count -= 1;
-
-            if skip_count == 0 {
-                break;
-            } else {
-                cur_id = pos.get_u8() & TYPE_MASK;
             }
         }
         pos
@@ -1209,6 +1269,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
     type P = Linear;
     type ListSliceIterator = ListSliceIteratorD<'a>;
 
+    #[inline]
     fn len(&self) -> usize {
         self.length
     }
@@ -1234,14 +1295,17 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
         }
     }
 
+    #[inline]
     fn eq(&self, other: &ListSliceD<'_>) -> bool {
         self.data == other.data
     }
 
+    #[inline]
     fn get_type(&self) -> SliceType {
         self.slice_type
     }
 
+    #[inline]
     fn from_one(view: AtomView<'a, Self::P>) -> Self {
         ListSliceD {
             data: view.get_data(),
@@ -1250,6 +1314,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
         }
     }
 
+    #[inline]
     fn iter(&self) -> Self::ListSliceIterator {
         ListSliceIteratorD { data: *self }
     }
@@ -1262,6 +1327,7 @@ pub struct ListSliceIteratorD<'a> {
 impl<'a> Iterator for ListSliceIteratorD<'a> {
     type Item = AtomView<'a, Linear>;
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         if self.data.length > 0 {
             let (res, end) = ListSliceD::get_entry(self.data.data);

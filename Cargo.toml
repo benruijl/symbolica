@@ -12,7 +12,7 @@ version = "0.1.0"
 
 [profile.dev-optim]
 inherits = "dev"
-opt-level = 2
+opt-level = 3
 
 [lib]
 crate-type = ["cdylib", "rlib", "staticlib"]

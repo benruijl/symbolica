@@ -14,6 +14,11 @@ use crate::{
 impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Compare two atoms.
     fn cmp(&self, other: &AtomView<'_, P>) -> Ordering {
+        if self == other {
+            // equality comparison is a fast check
+            return Ordering::Equal;
+        }
+
         match (&self, other) {
             (AtomView::Num(n1), AtomView::Num(n2)) => {
                 n1.get_number_view().cmp(&n2.get_number_view())
@@ -588,6 +593,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 if n.is_one() {
                                     continue;
                                 }
+
+                                if n.is_zero() {
+                                    let on = out.to_num();
+                                    on.set_from_number(Number::Natural(0, 1));
+                                    return;
+                                }
                             }
 
                             atom_test_buf.push(handle);
@@ -596,6 +607,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         if let AtomView::Num(n) = handle.get().as_view() {
                             if n.is_one() {
                                 continue;
+                            }
+
+                            if n.is_zero() {
+                                let on = out.to_num();
+                                on.set_from_number(Number::Natural(0, 1));
+                                return;
                             }
                         }
 

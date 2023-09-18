@@ -1,5 +1,4 @@
 use symbolica::{
-    printer::{PrintOptions, RationalPolynomialPrinter},
     representations::Atom,
     rings::{
         integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
@@ -27,8 +26,5 @@ fn main() {
             None,
         )
         .unwrap();
-    println!(
-        "{}",
-        RationalPolynomialPrinter::new(&rat, &state, PrintOptions::default())
-    );
+    println!("{}", rat.printer(&state));
 }

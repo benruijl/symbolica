@@ -214,6 +214,21 @@ impl<P: AtomSet> Pattern<P> {
 }
 
 impl<P: AtomSet> Pattern<P> {
+    /// A quick check to see if a pattern can match.
+    #[inline]
+    pub fn could_match(&self, target: AtomView<P>) -> bool {
+        match (self, target) {
+            (Pattern::Fn(f1, wc, _), AtomView::Fun(f2)) => *wc || *f1 == f2.get_name(),
+            (Pattern::Mul(_), AtomView::Mul(_)) => true,
+            (Pattern::Add(_), AtomView::Add(_)) => true,
+            (Pattern::Wildcard(_), _) => true,
+            (Pattern::Pow(_), AtomView::Pow(_)) => true,
+            (Pattern::Literal(p), _) => p.as_view() == target,
+            (Pattern::Transformer(_), _) => unreachable!(),
+            (_, _) => false,
+        }
+    }
+
     /// Check if the expression `atom` contains a wildcard.
     fn has_wildcard(atom: AtomView<'_, P>, state: &State) -> bool {
         match atom {
@@ -525,136 +540,139 @@ impl<P: AtomSet> Pattern<P> {
         out: &mut Atom<P>,
     ) -> bool {
         let mut match_stack = MatchStack::new(restrictions);
-        let mut it = SubSliceIterator::new(self, target, state, &match_stack, true);
-        if let Some((_, used_flags)) = it.next(&mut match_stack) {
-            let mut handle = workspace.new_atom();
-            let rhs_subs = handle.get_mut();
-            rhs.substitute_wildcards(state, workspace, rhs_subs, &match_stack);
 
-            match target {
-                AtomView::Mul(m) => {
-                    let out = out.to_mul();
+        if self.could_match(target) {
+            let mut it = SubSliceIterator::new(self, target, state, &match_stack, true);
+            if let Some((_, used_flags)) = it.next(&mut match_stack) {
+                let mut handle = workspace.new_atom();
+                let rhs_subs = handle.get_mut();
+                rhs.substitute_wildcards(state, workspace, rhs_subs, &match_stack);
 
-                    for (child, used) in m.iter().zip(used_flags) {
-                        if !used {
-                            out.extend(child);
+                match target {
+                    AtomView::Mul(m) => {
+                        let out = out.to_mul();
+
+                        for (child, used) in m.iter().zip(used_flags) {
+                            if !used {
+                                out.extend(child);
+                            }
                         }
+
+                        out.extend(rhs_subs.as_view());
+                        out.set_dirty(true);
                     }
+                    AtomView::Add(a) => {
+                        let out = out.to_add();
 
-                    out.extend(rhs_subs.as_view());
-                    out.set_dirty(true);
-                }
-                AtomView::Add(a) => {
-                    let out = out.to_add();
-
-                    for (child, used) in a.iter().zip(used_flags) {
-                        if !used {
-                            out.extend(child);
+                        for (child, used) in a.iter().zip(used_flags) {
+                            if !used {
+                                out.extend(child);
+                            }
                         }
+
+                        out.extend(rhs_subs.as_view());
+                        out.set_dirty(true);
                     }
-
-                    out.extend(rhs_subs.as_view());
-                    out.set_dirty(true);
-                }
-                _ => {
-                    out.set_from_view(&rhs_subs.as_view());
-                }
-            }
-
-            // normalize the expression
-            let mut handle_norm = workspace.new_atom();
-            let norm = handle_norm.get_mut();
-            out.as_view().normalize(workspace, state, norm);
-            std::mem::swap(out, norm);
-
-            true
-        } else {
-            // no match found at this level, so check the children
-            let submatch = match target {
-                AtomView::Fun(f) => {
-                    let out = out.to_fun();
-                    out.set_from_name(f.get_name());
-
-                    let mut submatch = false;
-
-                    for child in f.iter() {
-                        let mut child_handle = workspace.new_atom();
-                        let child_buf = child_handle.get_mut();
-
-                        submatch |=
-                            self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
-
-                        out.add_arg(child_buf.as_view());
+                    _ => {
+                        out.set_from_view(&rhs_subs.as_view());
                     }
-
-                    out.set_dirty(submatch | f.is_dirty());
-                    submatch
                 }
-                AtomView::Pow(p) => {
-                    let out = out.to_pow();
 
-                    let (base, exp) = p.get_base_exp();
-
-                    let mut base_handle = workspace.new_atom();
-                    let base_out = base_handle.get_mut();
-                    let mut submatch =
-                        self.replace_all(base, rhs, state, workspace, restrictions, base_out);
-
-                    let mut exp_handle = workspace.new_atom();
-                    let exp_out = exp_handle.get_mut();
-                    submatch |= self.replace_all(exp, rhs, state, workspace, restrictions, exp_out);
-
-                    out.set_from_base_and_exp(base_out.as_view(), exp_out.as_view());
-
-                    out.set_dirty(submatch | p.is_dirty());
-                    submatch
-                }
-                AtomView::Mul(m) => {
-                    let mul = out.to_mul();
-
-                    let mut submatch = false;
-                    for child in m.iter() {
-                        let mut child_handle = workspace.new_atom();
-                        let child_buf = child_handle.get_mut();
-
-                        submatch |=
-                            self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
-
-                        mul.extend(child_buf.as_view());
-                    }
-
-                    mul.set_dirty(submatch | m.is_dirty());
-                    submatch
-                }
-                AtomView::Add(a) => {
-                    let out = out.to_add();
-                    let mut submatch = false;
-                    for child in a.iter() {
-                        let mut child_handle = workspace.new_atom();
-                        let child_buf = child_handle.get_mut();
-
-                        submatch |=
-                            self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
-
-                        out.extend(child_buf.as_view());
-                    }
-                    out.set_dirty(submatch | a.is_dirty());
-                    submatch
-                }
-                _ => {
-                    out.set_from_view(&target); // no children
-                    false
-                }
-            };
-
-            if submatch {
+                // normalize the expression
                 let mut handle_norm = workspace.new_atom();
                 let norm = handle_norm.get_mut();
                 out.as_view().normalize(workspace, state, norm);
                 std::mem::swap(out, norm);
+
+                return true;
             }
-            submatch
         }
+
+        // no match found at this level, so check the children
+        let submatch = match target {
+            AtomView::Fun(f) => {
+                let out = out.to_fun();
+                out.set_from_name(f.get_name());
+
+                let mut submatch = false;
+
+                for child in f.iter() {
+                    let mut child_handle = workspace.new_atom();
+                    let child_buf = child_handle.get_mut();
+
+                    submatch |=
+                        self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
+
+                    out.add_arg(child_buf.as_view());
+                }
+
+                out.set_dirty(submatch | f.is_dirty());
+                submatch
+            }
+            AtomView::Pow(p) => {
+                let out = out.to_pow();
+
+                let (base, exp) = p.get_base_exp();
+
+                let mut base_handle = workspace.new_atom();
+                let base_out = base_handle.get_mut();
+                let mut submatch =
+                    self.replace_all(base, rhs, state, workspace, restrictions, base_out);
+
+                let mut exp_handle = workspace.new_atom();
+                let exp_out = exp_handle.get_mut();
+                submatch |= self.replace_all(exp, rhs, state, workspace, restrictions, exp_out);
+
+                out.set_from_base_and_exp(base_out.as_view(), exp_out.as_view());
+
+                out.set_dirty(submatch | p.is_dirty());
+                submatch
+            }
+            AtomView::Mul(m) => {
+                let mul = out.to_mul();
+
+                let mut submatch = false;
+                for child in m.iter() {
+                    let mut child_handle = workspace.new_atom();
+                    let child_buf = child_handle.get_mut();
+
+                    submatch |=
+                        self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
+
+                    mul.extend(child_buf.as_view());
+                }
+
+                mul.set_dirty(submatch | m.is_dirty());
+                submatch
+            }
+            AtomView::Add(a) => {
+                let out = out.to_add();
+                let mut submatch = false;
+                for child in a.iter() {
+                    let mut child_handle = workspace.new_atom();
+                    let child_buf = child_handle.get_mut();
+
+                    submatch |=
+                        self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
+
+                    out.extend(child_buf.as_view());
+                }
+                out.set_dirty(submatch | a.is_dirty());
+                submatch
+            }
+            _ => {
+                out.set_from_view(&target); // no children
+                false
+            }
+        };
+
+        if submatch {
+            let mut handle_norm = workspace.new_atom();
+            let norm = handle_norm.get_mut();
+            out.as_view().normalize(workspace, state, norm);
+            std::mem::swap(out, norm);
+        }
+        submatch
     }
 
     pub fn pattern_match<'a>(

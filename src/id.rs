@@ -539,6 +539,28 @@ impl<P: AtomSet> Pattern<P> {
         restrictions: &HashMap<Identifier, Vec<PatternRestriction<P>>>,
         out: &mut Atom<P>,
     ) -> bool {
+        let matched = self.replace_all_no_norm(target, rhs, state, workspace, restrictions, out);
+
+        if matched {
+            let mut handle_norm = workspace.new_atom();
+            let norm = handle_norm.get_mut();
+            out.as_view().normalize(workspace, state, norm);
+            std::mem::swap(out, norm);
+        }
+
+        matched
+    }
+
+    /// Replace all occurrences of the pattern in the target, without normalizing the output.
+    fn replace_all_no_norm<'a>(
+        &self,
+        target: AtomView<'a, P>,
+        rhs: &Pattern<P>,
+        state: &'a State,
+        workspace: &Workspace<P>,
+        restrictions: &HashMap<Identifier, Vec<PatternRestriction<P>>>,
+        out: &mut Atom<P>,
+    ) -> bool {
         let mut match_stack = MatchStack::new(restrictions);
 
         if self.could_match(target) {
@@ -547,6 +569,12 @@ impl<P: AtomSet> Pattern<P> {
                 let mut handle = workspace.new_atom();
                 let rhs_subs = handle.get_mut();
                 rhs.substitute_wildcards(state, workspace, rhs_subs, &match_stack);
+
+                if used_flags.iter().all(|x| *x) {
+                    // all used, return rhs
+                    out.set_from_view(&rhs_subs.as_view());
+                    return true;
+                }
 
                 match target {
                     AtomView::Mul(m) => {
@@ -578,12 +606,6 @@ impl<P: AtomSet> Pattern<P> {
                     }
                 }
 
-                // normalize the expression
-                let mut handle_norm = workspace.new_atom();
-                let norm = handle_norm.get_mut();
-                out.as_view().normalize(workspace, state, norm);
-                std::mem::swap(out, norm);
-
                 return true;
             }
         }
@@ -600,8 +622,14 @@ impl<P: AtomSet> Pattern<P> {
                     let mut child_handle = workspace.new_atom();
                     let child_buf = child_handle.get_mut();
 
-                    submatch |=
-                        self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
+                    submatch |= self.replace_all_no_norm(
+                        child,
+                        rhs,
+                        state,
+                        workspace,
+                        restrictions,
+                        child_buf,
+                    );
 
                     out.add_arg(child_buf.as_view());
                 }
@@ -617,11 +645,12 @@ impl<P: AtomSet> Pattern<P> {
                 let mut base_handle = workspace.new_atom();
                 let base_out = base_handle.get_mut();
                 let mut submatch =
-                    self.replace_all(base, rhs, state, workspace, restrictions, base_out);
+                    self.replace_all_no_norm(base, rhs, state, workspace, restrictions, base_out);
 
                 let mut exp_handle = workspace.new_atom();
                 let exp_out = exp_handle.get_mut();
-                submatch |= self.replace_all(exp, rhs, state, workspace, restrictions, exp_out);
+                submatch |=
+                    self.replace_all_no_norm(exp, rhs, state, workspace, restrictions, exp_out);
 
                 out.set_from_base_and_exp(base_out.as_view(), exp_out.as_view());
 
@@ -636,8 +665,14 @@ impl<P: AtomSet> Pattern<P> {
                     let mut child_handle = workspace.new_atom();
                     let child_buf = child_handle.get_mut();
 
-                    submatch |=
-                        self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
+                    submatch |= self.replace_all_no_norm(
+                        child,
+                        rhs,
+                        state,
+                        workspace,
+                        restrictions,
+                        child_buf,
+                    );
 
                     mul.extend(child_buf.as_view());
                 }
@@ -652,8 +687,14 @@ impl<P: AtomSet> Pattern<P> {
                     let mut child_handle = workspace.new_atom();
                     let child_buf = child_handle.get_mut();
 
-                    submatch |=
-                        self.replace_all(child, rhs, state, workspace, restrictions, child_buf);
+                    submatch |= self.replace_all_no_norm(
+                        child,
+                        rhs,
+                        state,
+                        workspace,
+                        restrictions,
+                        child_buf,
+                    );
 
                     out.extend(child_buf.as_view());
                 }
@@ -666,12 +707,6 @@ impl<P: AtomSet> Pattern<P> {
             }
         };
 
-        if submatch {
-            let mut handle_norm = workspace.new_atom();
-            let norm = handle_norm.get_mut();
-            out.as_view().normalize(workspace, state, norm);
-            std::mem::swap(out, norm);
-        }
         submatch
     }
 

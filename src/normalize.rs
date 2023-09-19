@@ -82,19 +82,23 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     return name_comp;
                 }
 
-                let len_cmp = f1.get_nargs().cmp(&f2.get_nargs());
-                if len_cmp != Ordering::Equal {
-                    return len_cmp;
-                }
-
-                for (arg1, arg2) in f1.iter().zip(f2.iter()) {
-                    let argcmp = arg1.cmp(&arg2);
-                    if argcmp != Ordering::Equal {
-                        return argcmp;
+                if cfg!(feature = "full_fn_cmp") {
+                    let len_cmp = f1.get_nargs().cmp(&f2.get_nargs());
+                    if len_cmp != Ordering::Equal {
+                        return len_cmp;
                     }
-                }
 
-                Ordering::Equal
+                    for (arg1, arg2) in f1.iter().zip(f2.iter()) {
+                        let argcmp = arg1.cmp(&arg2);
+                        if argcmp != Ordering::Equal {
+                            return argcmp;
+                        }
+                    }
+
+                    Ordering::Equal
+                } else {
+                    f1.fast_cmp(*f2)
+                }
             }
         }
     }
@@ -147,25 +151,28 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             (_, AtomView::Add(_)) => Ordering::Greater,
 
             (AtomView::Fun(f1), AtomView::Fun(f2)) => {
-                // TODO: implement cmp for Fun instead and call that
                 let name_comp = f1.get_name().cmp(&f2.get_name());
                 if name_comp != Ordering::Equal {
                     return name_comp;
                 }
 
-                let len_cmp = f1.get_nargs().cmp(&f2.get_nargs());
-                if len_cmp != Ordering::Equal {
-                    return len_cmp;
-                }
-
-                for (arg1, arg2) in f1.iter().zip(f2.iter()) {
-                    let argcmp = arg1.cmp(&arg2);
-                    if argcmp != Ordering::Equal {
-                        return argcmp;
+                if cfg!(feature = "full_fn_cmp") {
+                    let len_cmp = f1.get_nargs().cmp(&f2.get_nargs());
+                    if len_cmp != Ordering::Equal {
+                        return len_cmp;
                     }
-                }
 
-                Ordering::Equal
+                    for (arg1, arg2) in f1.iter().zip(f2.iter()) {
+                        let argcmp = arg1.cmp(&arg2);
+                        if argcmp != Ordering::Equal {
+                            return argcmp;
+                        }
+                    }
+
+                    Ordering::Equal
+                } else {
+                    f1.fast_cmp(*f2)
+                }
             }
         }
     }
@@ -186,19 +193,16 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 b1.cmp(&b2).then_with(|| e1.cmp(&e2))
             }
             (AtomView::Mul(m1), AtomView::Mul(m2)) => {
-                let it1 = m1.to_slice();
-                let it2 = m2.to_slice();
-
-                let actual_len1 = if let AtomView::Num(_) = it1.get(it1.len() - 1) {
-                    it1.len() - 1
+                let actual_len1 = if m1.has_coefficient() {
+                    m1.get_nargs() - 1
                 } else {
-                    it1.len()
+                    m1.get_nargs()
                 };
 
-                let actual_len2 = if let AtomView::Num(_) = it2.get(it2.len() - 1) {
-                    it2.len() - 1
+                let actual_len2 = if m2.has_coefficient() {
+                    m2.get_nargs() - 1
                 } else {
-                    it2.len()
+                    m2.get_nargs()
                 };
 
                 let len_cmp = actual_len1.cmp(&actual_len2);
@@ -206,7 +210,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     return len_cmp;
                 }
 
-                for (t1, t2) in it1.iter().zip(it2.iter()) {
+                for (t1, t2) in m1.iter().zip(m2.iter()) {
                     if let AtomView::Num(_) = t1 {
                         break;
                     }
@@ -223,27 +227,19 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 Ordering::Equal
             }
             (AtomView::Mul(m1), a2) => {
-                let it1 = m1.to_slice();
-                if it1.len() != 2 {
+                if !m1.has_coefficient() || m1.get_nargs() != 2 {
                     return Ordering::Greater;
                 }
-                if let AtomView::Num(_) = it1.get(it1.len() - 1) {
-                } else {
-                    return Ordering::Greater;
-                };
 
+                let it1 = m1.to_slice();
                 it1.get(0).cmp(a2)
             }
             (a1, AtomView::Mul(m2)) => {
-                let it2 = m2.to_slice();
-                if it2.len() != 2 {
+                if !m2.has_coefficient() || m2.get_nargs() != 2 {
                     return Ordering::Less;
                 }
-                if let AtomView::Num(_) = it2.get(it2.len() - 1) {
-                } else {
-                    return Ordering::Less;
-                };
 
+                let it2 = m2.to_slice();
                 a1.cmp(&it2.get(0))
             }
             (AtomView::Var(_), _) => Ordering::Less,
@@ -257,19 +253,23 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     return name_comp;
                 }
 
-                let len_cmp = f1.get_nargs().cmp(&f2.get_nargs());
-                if len_cmp != Ordering::Equal {
-                    return len_cmp;
-                }
-
-                for (arg1, arg2) in f1.iter().zip(f2.iter()) {
-                    let argcmp = arg1.cmp(&arg2);
-                    if argcmp != Ordering::Equal {
-                        return argcmp;
+                if cfg!(feature = "full_fn_cmp") {
+                    let len_cmp = f1.get_nargs().cmp(&f2.get_nargs());
+                    if len_cmp != Ordering::Equal {
+                        return len_cmp;
                     }
-                }
 
-                Ordering::Equal
+                    for (arg1, arg2) in f1.iter().zip(f2.iter()) {
+                        let argcmp = arg1.cmp(&arg2);
+                        if argcmp != Ordering::Equal {
+                            return argcmp;
+                        }
+                    }
+
+                    Ordering::Equal
+                } else {
+                    f1.fast_cmp(*f2)
+                }
             }
             (AtomView::Add(_), _) | (_, AtomView::Add(_)) => unreachable!("Cannot have nested add"),
         }
@@ -638,14 +638,15 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         {
                             // we are done merging
                             {
-                                let v = last_buf.get().as_view();
+                                let v = last_buf.as_view();
                                 if let AtomView::Num(n) = v {
+                                    out_mul.set_has_coefficient(!n.is_one());
                                     if !n.is_one() {
-                                        out_mul.extend(last_buf.get().as_view());
+                                        out_mul.extend(v);
                                         cur_len += 1;
                                     }
                                 } else {
-                                    out_mul.extend(last_buf.get().as_view());
+                                    out_mul.extend(v);
                                     cur_len += 1;
                                 }
                             }
@@ -654,9 +655,17 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
 
                     if cur_len == 0 {
-                        out.set_from_view(&last_buf.get().as_view());
+                        out.set_from_view(&last_buf.as_view());
                     } else {
-                        out_mul.extend(last_buf.get().as_view());
+                        let v = last_buf.as_view();
+                        if let AtomView::Num(n) = v {
+                            out_mul.set_has_coefficient(!n.is_one());
+                            if !n.is_one() {
+                                out_mul.extend(v);
+                            }
+                        } else {
+                            out_mul.extend(v);
+                        }
                     }
                 } else {
                     let on = out.to_num();
@@ -809,6 +818,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     let new_at = handle.get_mut();
 
                     if a.is_dirty() {
+                        // TODO: if a is a nested addition, prevent a sort
                         a.normalize(workspace, state, new_at);
                     } else {
                         new_at.set_from_view(&a);

@@ -18,6 +18,7 @@ const POW_ID: u8 = 5;
 const ADD_ID: u8 = 6;
 const TYPE_MASK: u8 = 0b00000111;
 const DIRTY_FLAG: u8 = 0b10000000;
+const HAS_COEFF_FLAG: u8 = 0b01000000;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Linear {}
@@ -540,6 +541,14 @@ impl OwnedMul for OwnedMulD {
     fn to_mul_view(&self) -> <Self::P as AtomSet>::M<'_> {
         MulViewD { data: &self.data }
     }
+
+    fn set_has_coefficient(&mut self, has_coeff: bool) {
+        if has_coeff {
+            self.data[0] |= HAS_COEFF_FLAG;
+        } else {
+            self.data[0] &= !HAS_COEFF_FLAG;
+        }
+    }
 }
 
 impl Convert<Linear> for OwnedMulD {
@@ -825,11 +834,6 @@ impl<'a> Fun<'a> for FnViewD<'a> {
     }
 
     #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.get_name().cmp(&other.get_name())
-    }
-
-    #[inline]
     fn iter(&self) -> Self::I {
         let mut c = self.data;
         c.get_u8();
@@ -861,6 +865,10 @@ impl<'a> Fun<'a> for FnViewD<'a> {
             length: n_args as usize,
             slice_type: SliceType::Arg,
         }
+    }
+
+    fn fast_cmp(&self, other: <Self::P as AtomSet>::F<'_>) -> Ordering {
+        self.data.cmp(other.data)
     }
 }
 
@@ -1016,6 +1024,11 @@ impl<'a> Mul<'a> for MulViewD<'a> {
             length: n_args as usize,
             slice_type: SliceType::Mul,
         }
+    }
+
+    #[inline]
+    fn has_coefficient(&self) -> bool {
+        (self.data[0] & HAS_COEFF_FLAG) != 0
     }
 }
 
@@ -1203,10 +1216,9 @@ impl<'a> ListSliceD<'a> {
         // can be used instead of storing the byte length of an atom
         let mut skip_count = 1u32;
         while skip_count > 0 {
-            let cur_id = pos.get_u8() & TYPE_MASK;
             skip_count -= 1;
 
-            match cur_id {
+            match pos.get_u8() & TYPE_MASK {
                 VAR_ID => {
                     pos = pos.skip_rational();
                 }

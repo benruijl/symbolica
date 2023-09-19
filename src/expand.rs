@@ -12,9 +12,21 @@ use crate::{
 };
 
 impl<'a, P: AtomSet> AtomView<'a, P> {
+    /// Expand an expression.
     pub fn expand(&self, workspace: &Workspace<P>, state: &State, out: &mut Atom<P>) -> bool {
-        assert!(!self.is_dirty());
+        let changed = self.expand_no_norm(workspace, state, out);
 
+        if changed {
+            let mut a = workspace.new_atom();
+            out.as_view().normalize(workspace, state, &mut a);
+            std::mem::swap(out, &mut a);
+        }
+
+        changed
+    }
+
+    /// Expand an expression, but do not normalize the result.
+    fn expand_no_norm(&self, workspace: &Workspace<P>, state: &State, out: &mut Atom<P>) -> bool {
         match self {
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
@@ -234,19 +246,21 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
 
+                if !changed {
+                    out.set_from_view(self);
+                    return false;
+                }
+
                 debug_assert!(!sum.is_empty());
 
                 if sum.len() == 1 {
                     sum[0].get().as_view().normalize(workspace, state, out);
                 } else {
-                    let mut add_h = workspace.new_atom();
-                    let add = add_h.get_mut().to_add();
+                    let add = out.to_add();
                     for x in sum {
-                        add.extend(x.get().as_view());
+                        add.extend(x.as_view());
                     }
-
                     add.set_dirty(true);
-                    add_h.get().as_view().normalize(workspace, state, out);
                 }
 
                 changed
@@ -254,17 +268,15 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             AtomView::Add(a) => {
                 let mut changed = false;
 
-                let mut add_h = workspace.new_atom();
-                let add = add_h.get_mut().to_add();
+                let add = out.to_add();
 
+                let mut new_arg = workspace.new_atom();
                 for arg in a.iter() {
-                    let mut new_arg = workspace.new_atom();
-                    changed |= arg.expand(workspace, state, new_arg.get_mut());
+                    changed |= arg.expand_no_norm(workspace, state, new_arg.get_mut());
                     add.extend(new_arg.get().as_view());
                 }
 
                 add.set_dirty(changed);
-                add_h.get().as_view().normalize(workspace, state, out);
                 changed
             }
             _ => {

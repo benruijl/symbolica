@@ -115,6 +115,7 @@ pub trait OwnedMul: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert
     type P: AtomSet;
 
     fn set_dirty(&mut self, dirty: bool);
+    fn set_has_coefficient(&mut self, has_coeff: bool);
     fn set_from_view(&mut self, view: &<Self::P as AtomSet>::M<'_>);
     fn extend(&mut self, other: AtomView<Self::P>);
     fn replace_last(&mut self, other: AtomView<Self::P>);
@@ -154,10 +155,13 @@ pub trait Fun<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>:
     fn get_name(&self) -> Identifier;
     fn get_nargs(&self) -> usize;
     fn is_dirty(&self) -> bool;
-    fn cmp(&self, other: &Self) -> Ordering;
     fn iter(&self) -> Self::I;
     fn as_view(&self) -> AtomView<'a, Self::P>;
     fn to_slice(&self) -> <Self::P as AtomSet>::S<'a>;
+
+    /// Perform a fast comparison between two functions. This function may use
+    /// conditions that rely on the underlying data format and is not suitable for human interpretation.
+    fn fast_cmp(&self, other: <Self::P as AtomSet>::F<'_>) -> Ordering;
 }
 
 pub trait Pow<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>::P<'b>> {
@@ -182,6 +186,9 @@ pub trait Mul<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>:
     fn iter(&self) -> Self::I;
     fn as_view(&self) -> AtomView<'a, Self::P>;
     fn to_slice(&self) -> <Self::P as AtomSet>::S<'a>;
+
+    /// Return true if the multiplication has a coefficient that is not 1
+    fn has_coefficient(&self) -> bool;
 }
 
 pub trait Add<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>::A<'b>> {

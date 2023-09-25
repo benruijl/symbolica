@@ -34,6 +34,19 @@ pub enum Operator {
     Inv,      // left side should be tagged as 'finished', for internal use
 }
 
+impl std::fmt::Display for Operator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Operator::Mul => f.write_char('*'),
+            Operator::Add => f.write_char('+'),
+            Operator::Pow => f.write_char('^'),
+            Operator::Argument => f.write_char(','),
+            Operator::Neg => f.write_char('-'),
+            Operator::Inv => f.write_char('/'),
+        }
+    }
+}
+
 impl Operator {
     #[inline]
     pub fn get_arity(&self) -> usize {
@@ -66,6 +79,11 @@ impl Operator {
             Operator::Inv => true,
         }
     }
+}
+
+pub struct Position {
+    pub line_number: usize,
+    pub char_pos: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -135,7 +153,10 @@ impl std::fmt::Display for Token {
                 }
                 f.write_char(')')
             }
-            _ => unreachable!(),
+            Token::Start => f.write_str("START"),
+            Token::OpenParenthesis => f.write_char('('),
+            Token::CloseParenthesis => f.write_char(')'),
+            Token::EOF => f.write_str("EOF"),
         }
     }
 }
@@ -168,26 +189,29 @@ impl Token {
 
     /// Add `other` to the left side of `self`, where `self` is a binary operation.
     #[inline]
-    fn add_left(&mut self, other: Token) {
-        match self {
-            Token::Op(ml, _, o1, args) => {
-                debug_assert!(*ml);
-                *ml = false;
+    fn add_left(&mut self, other: Token) -> Result<(), String> {
+        if let Token::Op(ml, _, o1, args) = self {
+            debug_assert!(*ml);
+            *ml = false;
 
-                if let Token::Op(ml, mr, o2, mut args2) = other {
-                    debug_assert!(!ml && !mr);
-                    if *o1 == o2 {
-                        // add from the left by swapping and then extending from the right
-                        std::mem::swap(args, &mut args2);
-                        args.append(&mut args2);
-                    } else {
-                        args.insert(0, Token::Op(false, false, o2, args2));
-                    }
+            if let Token::Op(ml, mr, o2, mut args2) = other {
+                debug_assert!(!ml && !mr);
+                if *o1 == o2 {
+                    // add from the left by swapping and then extending from the right
+                    std::mem::swap(args, &mut args2);
+                    args.append(&mut args2);
                 } else {
-                    args.insert(0, other);
+                    args.insert(0, Token::Op(false, false, o2, args2));
                 }
+            } else {
+                args.insert(0, other);
             }
-            _ => unreachable!("Cannot left-append to non-operator"),
+            Ok(())
+        } else {
+            Err(format!(
+                "operator expected, but found '{}'. Are parentheses unbalanced?",
+                self
+            ))
         }
     }
 
@@ -214,36 +238,40 @@ impl Token {
 
     /// Add `other` to right side of `self`, where `self` is a binary operation.
     #[inline]
-    fn add_right(&mut self, mut other: Token) {
-        match self {
-            Token::Op(_, mr, o1, args) => {
-                debug_assert!(*mr);
-                *mr = false;
+    fn add_right(&mut self, mut other: Token) -> Result<(), String> {
+        if let Token::Op(_, mr, o1, args) = self {
+            debug_assert!(*mr);
+            *mr = false;
 
-                if *o1 == Operator::Neg {
-                    other.distribute_neg();
-                    *self = other;
-                    return;
-                }
+            if *o1 == Operator::Neg {
+                other.distribute_neg();
+                *self = other;
+                return Ok(());
+            }
 
-                if let Token::Op(ml, mr, o2, mut args2) = other {
-                    debug_assert!(!ml && !mr);
-                    if *o1 == o2 && o2.right_associative() {
-                        if o2 == Operator::Neg || o2 == Operator::Inv {
-                            // twice unary minus or inv cancels out
-                            debug_assert!(args2.len() == 1);
-                            *self = args2.pop().unwrap();
-                        } else {
-                            args.append(&mut args2)
-                        }
+            if let Token::Op(ml, mr, o2, mut args2) = other {
+                debug_assert!(!ml && !mr);
+                if *o1 == o2 && o2.right_associative() {
+                    if o2 == Operator::Neg || o2 == Operator::Inv {
+                        // twice unary minus or inv cancels out
+                        debug_assert!(args2.len() == 1);
+                        *self = args2.pop().unwrap();
                     } else {
-                        args.push(Token::Op(false, false, o2, args2));
+                        args.append(&mut args2)
                     }
                 } else {
-                    args.push(other);
+                    args.push(Token::Op(false, false, o2, args2));
                 }
+            } else {
+                args.push(other);
             }
-            _ => unreachable!("Cannot right-append to non-operator"),
+
+            Ok(())
+        } else {
+            Err(format!(
+                "operator expected, but found '{}'. Are parentheses unbalanced?",
+                self
+            ))
         }
     }
 
@@ -385,12 +413,16 @@ impl Token {
 
         let ops = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
         let whitespace = [' ', '\t', '\n', '\r', '\\'];
+        let forbidden = [';', ':', '&', '!', '%'];
 
         let mut char_iter = input.chars();
         let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token
         let mut extra_ops: SmallVec<[char; 6]> = SmallVec::new();
 
         let mut id_buffer = String::with_capacity(30);
+
+        let mut line_counter = 1;
+        let mut column_counter = 1;
 
         loop {
             match state {
@@ -399,8 +431,15 @@ impl Token {
                         state = ParseState::Any;
                         stack.push(Token::ID(id_buffer.as_str().into()));
                         id_buffer.clear();
-                    } else {
+                    } else if !forbidden.contains(&c) {
                         id_buffer.push(c);
+                    } else {
+                        // check for some symbols that could be the result of copy-paste errors
+                        // when importing from other languages
+                        Err(format!(
+                            "Unexpected '{}' in input at line {} and column {}",
+                            c, line_counter, column_counter
+                        ))?;
                     }
                 }
                 ParseState::Number => {
@@ -426,6 +465,8 @@ impl Token {
                         id_buffer.clear();
 
                         state = ParseState::Any;
+
+                        column_counter += 1;
                         c = char_iter.next().unwrap_or('\0');
                     } else if !whitespace.contains(&c) {
                         id_buffer.push(c);
@@ -436,6 +477,13 @@ impl Token {
 
             if state == ParseState::Any {
                 if whitespace.contains(&c) {
+                    if c == '\n' {
+                        column_counter = 1;
+                        line_counter += 1;
+                    } else {
+                        column_counter += 1;
+                    }
+
                     c = char_iter.next().unwrap_or('\0');
                     continue;
                 }
@@ -513,17 +561,22 @@ impl Token {
                             state = ParseState::RationalPolynomial;
                         }
                     }
-                    x => {
+                    _ => {
                         if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
                             // insert multiplication: x y -> x*y
                             stack.push(Token::Op(true, true, Operator::Mul, vec![]));
                             extra_ops.push(c);
-                        } else if x.is_ascii_digit() {
+                        } else if c.is_ascii_digit() {
                             state = ParseState::Number;
                             id_buffer.push(c);
-                        } else {
+                        } else if !forbidden.contains(&c) {
                             state = ParseState::Identifier;
                             id_buffer.push(c);
+                        } else {
+                            Err(format!(
+                                "Unexpected '{}' in input at line {} and column {}",
+                                c, line_counter, column_counter
+                            ))?;
                         }
                     }
                 }
@@ -532,6 +585,33 @@ impl Token {
             // match on triplets of type operator identifier operator
             while state == ParseState::Any && stack.len() > 2 {
                 if !unsafe { stack.get_unchecked(stack.len() - 2) }.is_normal() {
+                    // check for the empty function
+
+                    // check if the left operator needs a right-hand side and the new operator still needs a left-hand side
+                    match unsafe { stack.get_unchecked(stack.len() - 1) } {
+                        Token::Op(true, _, op, _) => {
+                            Err(format!(
+                            "Error at line {} and position {}: operator '{}' is missing left-hand side",
+                            line_counter, column_counter, op,
+                        ))?;
+                        }
+
+                        Token::CloseParenthesis => {
+                            let pos = stack.len() - 2;
+                            // check if we have an empty function
+                            if let Token::Fn(f, _) = unsafe { stack.get_unchecked_mut(pos) } {
+                                *f = false;
+                                stack.pop();
+                            } else {
+                                Err(format!(
+                                    "Error at line {} and position {}: unexpected ')'",
+                                    line_counter, column_counter,
+                                ))?;
+                            }
+                        }
+                        _ => {}
+                    }
+
                     // no simplification, get new token
                     break;
                 }
@@ -542,11 +622,22 @@ impl Token {
 
                 match first.get_precedence().cmp(&last.get_precedence()) {
                     std::cmp::Ordering::Greater => {
-                        first.add_right(middle);
+                        first.add_right(middle).map_err(|e| {
+                            format!(
+                                "Error at line {} and position {}: ",
+                                line_counter, column_counter
+                            ) + e.as_str()
+                        })?;
                         stack.push(last);
                     }
                     std::cmp::Ordering::Less => {
-                        last.add_left(middle);
+                        last.add_left(middle).map_err(|e| {
+                            format!(
+                                "Error at line {} and position {}: ",
+                                line_counter, column_counter
+                            ) + e.as_str()
+                        })?;
+
                         stack.push(last);
                     }
                     std::cmp::Ordering::Equal => {
@@ -613,6 +704,13 @@ impl Token {
 
             // first drain the queue of extra operators
             if extra_ops.is_empty() {
+                if c == '\n' {
+                    column_counter = 1;
+                    line_counter += 1;
+                } else {
+                    column_counter += 1;
+                }
+
                 c = char_iter.next().unwrap_or('\0');
             } else {
                 c = extra_ops.remove(0);
@@ -622,7 +720,22 @@ impl Token {
         if stack.len() == 1 {
             Ok(stack.pop().unwrap())
         } else {
-            Err(format!("Parsing error: {:?}", stack))
+            match stack.get(stack.len() - 2) {
+                Some(Token::Op(false, true, op, _)) => Err(format!(
+                    "Unexpected end of input: missing right-hand side for operator '{}'",
+                    op
+                )),
+                Some(Token::OpenParenthesis) => Err(format!(
+                    "Unexpected end of input: open parenthesis is not closed"
+                )),
+
+                Some(Token::Fn(true, args)) => Err(format!(
+                    "Unexpected end of input: Missing closing parenthesis for function '{}'",
+                    args[0]
+                )),
+                Some(Token::Start) => Err(format!("Expression is empty")),
+                _ => Err(format!("Unknown parsing error: {:?}", stack)),
+            }
         }
     }
 

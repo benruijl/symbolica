@@ -256,6 +256,34 @@ impl<'a, 'b, P: AtomSet> PartialEq<AtomView<'b, P>> for AtomView<'a, P> {
     }
 }
 
+impl<'a, P: AtomSet> Eq for AtomView<'a, P> {}
+
+impl<'a, P: AtomSet> PartialOrd for AtomView<'a, P> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a, P: AtomSet> Ord for AtomView<'a, P> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.cmp(other)
+    }
+}
+
+impl<'a, P: AtomSet> Hash for AtomView<'a, P> {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            AtomView::Num(a) => a.hash(state),
+            AtomView::Var(a) => a.hash(state),
+            AtomView::Fun(a) => a.hash(state),
+            AtomView::Pow(a) => a.hash(state),
+            AtomView::Mul(a) => a.hash(state),
+            AtomView::Add(a) => a.hash(state),
+        }
+    }
+}
+
 /// A trait for any type that can be converted into an `AtomView`.
 /// To be used for functions that accept any argument that can be
 /// converted to an `AtomView`.

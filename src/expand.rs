@@ -7,8 +7,7 @@ use crate::{
         Add, Atom, AtomSet, AtomView, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow, Pow,
     },
     rings::integer::Integer,
-    state::{BufferHandle, State, Workspace},
-    utils::CombinationIterator,
+    state::{BufferHandle, State, Workspace}, combinatorics::CombinationIterator,
 };
 
 impl<'a, P: AtomSet> AtomView<'a, P> {

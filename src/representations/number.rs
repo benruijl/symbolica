@@ -73,6 +73,24 @@ impl From<i64> for Number {
     }
 }
 
+impl From<Integer> for Number {
+    fn from(value: Integer) -> Self {
+        match value {
+            Integer::Natural(n) => Number::Natural(n, 1),
+            Integer::Large(r) => Number::Large(ArbitraryPrecisionRational::from(r)),
+        }
+    }
+}
+
+impl From<Rational> for Number {
+    fn from(value: Rational) -> Self {
+        match value {
+            Rational::Natural(n, d) => Number::Natural(n, d),
+            Rational::Large(r) => Number::Large(r),
+        }
+    }
+}
+
 impl Number {
     pub fn is_zero(&self) -> bool {
         match self {

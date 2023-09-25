@@ -179,6 +179,19 @@ impl Integer {
         }
     }
 
+    /// Compute `n` factorial (`n!`).
+    pub fn factorial(n: u32) -> Integer {
+        if n <= 20 {
+            let mut f: i64 = 1;
+            for x in 2..=n as i64 {
+                f *= x;
+            }
+            Integer::Natural(f)
+        } else {
+            Integer::Large(rug::Integer::factorial(n).complete())
+        }
+    }
+
     /// Compute the binomial coefficient `(n k) = n!/(k!(n-k)!)`.
     ///
     /// The implementation does not to overflow.

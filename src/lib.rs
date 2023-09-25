@@ -14,6 +14,7 @@ use tinyjson::JsonValue;
 
 pub mod api;
 pub mod coefficient;
+pub mod combinatorics;
 pub mod derivative;
 pub mod expand;
 pub mod id;

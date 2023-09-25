@@ -13,7 +13,7 @@ use crate::{
 
 impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Compare two atoms.
-    fn cmp(&self, other: &AtomView<'_, P>) -> Ordering {
+    pub fn cmp(&self, other: &AtomView<'_, P>) -> Ordering {
         if self == other {
             // equality comparison is a fast check
             return Ordering::Equal;
@@ -104,7 +104,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     }
 
     /// Compare factors in a term. `x` and `x^2` are placed next to each other by sorting a power based on the base only.
-    fn cmp_factors(&self, other: &AtomView<'_, P>) -> Ordering {
+    pub(crate) fn cmp_factors(&self, other: &AtomView<'_, P>) -> Ordering {
         match (&self, other) {
             (AtomView::Num(_), AtomView::Num(_)) => Ordering::Equal,
             (AtomView::Num(_), _) => Ordering::Greater,
@@ -178,10 +178,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     }
 
     /// Compare terms in an expression. `x` and `x*2` are placed next to each other.
-    pub fn cmp_terms(&self, other: &AtomView<'_, P>) -> Ordering {
+    pub(crate) fn cmp_terms(&self, other: &AtomView<'_, P>) -> Ordering {
         debug_assert!(!matches!(self, AtomView::Add(_)));
         debug_assert!(!matches!(other, AtomView::Add(_)));
-        match (&self, other) {
+        match (self, other) {
             (AtomView::Num(_), AtomView::Num(_)) => Ordering::Equal,
             (AtomView::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,

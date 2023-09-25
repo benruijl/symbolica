@@ -96,9 +96,9 @@ impl State {
         match self.str_to_var_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
-                let old_attrib = self.function_attributes.get(&r).unwrap();
+                let old_attrib = self.function_attributes.get(&r);
 
-                if &attributes.unwrap_or(vec![]) == old_attrib {
+                if &attributes.unwrap_or(vec![]) == old_attrib.unwrap_or(&vec![]) {
                     r
                 } else {
                     panic!("Function redefined with new attributes");

@@ -2,6 +2,7 @@ use ahash::HashMap;
 use dyn_clone::DynClone;
 
 use crate::{
+    combinatorics::partitions,
     id::{MatchStack, Pattern, PatternRestriction},
     representations::{
         Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedFun, OwnedMul,
@@ -36,29 +37,64 @@ pub enum Transformer<P: AtomSet + 'static> {
     Map(Pattern<P>, Box<dyn Map<P>>),
     /// Split a `Mul` or `Add` into a list of arguments.
     Split(Pattern<P>),
+    Partition(Pattern<P>, Vec<(Identifier, usize)>, bool, bool),
+    Sort(Pattern<P>),
 }
 
 impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Input => f.debug_tuple("Input").finish(),
-            Self::Expand(e) => f.debug_tuple("Expand").field(e).finish(),
-            Self::Derivative(e, x) => f.debug_tuple("Derivative").field(e).field(x).finish(),
-            Self::ReplaceAll(pat, input, rhs, ..) => f
+            Transformer::Input => f.debug_tuple("Input").finish(),
+            Transformer::Expand(e) => f.debug_tuple("Expand").field(e).finish(),
+            Transformer::Derivative(e, x) => f.debug_tuple("Derivative").field(e).field(x).finish(),
+            Transformer::ReplaceAll(pat, input, rhs, ..) => f
                 .debug_tuple("ReplaceAll")
                 .field(pat)
                 .field(input)
                 .field(rhs)
                 .finish(),
-            Self::Product(p) => f.debug_tuple("Product").field(p).finish(),
-            Self::Sum(p) => f.debug_tuple("Sum").field(p).finish(),
-            Self::Map(p, _) => f.debug_tuple("Map").field(p).finish(),
-            Self::Split(p) => f.debug_tuple("Split").field(p).finish(),
+            Transformer::Product(p) => f.debug_tuple("Product").field(p).finish(),
+            Transformer::Sum(p) => f.debug_tuple("Sum").field(p).finish(),
+            Transformer::Map(p, _) => f.debug_tuple("Map").field(p).finish(),
+            Transformer::Split(p) => f.debug_tuple("Split").field(p).finish(),
+            Transformer::Partition(p, g, b1, b2) => f
+                .debug_tuple("Partition")
+                .field(p)
+                .field(g)
+                .field(b1)
+                .field(b2)
+                .finish(),
+            Transformer::Sort(p) => f.debug_tuple("Sort").field(p).finish(),
         }
     }
 }
 
 impl<P: AtomSet> Transformer<P> {
+    /// Create a new partition transformer that must exactly fit the input.
+    pub fn new_partition_exact(
+        pat: Pattern<P>,
+        partitions: Vec<(Identifier, usize)>,
+    ) -> Transformer<P> {
+        Transformer::Partition(pat, partitions, false, false)
+    }
+
+    /// Create a new partition transformer that collects all left-over
+    /// atoms in the last bin.
+    pub fn new_partition_collect_in_last(
+        pat: Pattern<P>,
+        mut partitions: Vec<(Identifier, usize)>,
+        rest: Identifier,
+    ) -> Transformer<P> {
+        partitions.push((rest, 0));
+        Transformer::Partition(pat, partitions, true, false)
+    }
+
+    /// Create a new partition transformer that repeats the partitions so that it can fit
+    /// the input.
+    pub fn new_partition_repeat(pat: Pattern<P>, partition: (Identifier, usize)) -> Transformer<P> {
+        Transformer::Partition(pat, vec![partition], false, true)
+    }
+
     pub fn execute(
         &self,
         state: &State,
@@ -174,6 +210,81 @@ impl<P: AtomSet> Transformer<P> {
                         out.set_from_view(&h.as_view());
                     }
                 }
+            }
+            Transformer::Partition(e, bins, fill_last, repeat) => {
+                let mut h = workspace.new_atom();
+                e.substitute_wildcards(state, workspace, &mut h, match_stack);
+
+                if let AtomView::Fun(f) = h.as_view() {
+                    if f.get_name() == ARG {
+                        let args: Vec<_> = f.iter().collect();
+
+                        let mut sum_h = workspace.new_atom();
+                        let sum = sum_h.to_add();
+
+                        let partitions = partitions(&args, bins, *fill_last, *repeat);
+
+                        if partitions.is_empty() {
+                            out.set_from_view(&workspace.new_num(0).as_view());
+                            return;
+                        }
+
+                        for (p, args) in partitions {
+                            let mut mul_h = workspace.new_atom();
+                            let mul = mul_h.to_mul();
+
+                            if !p.is_one() {
+                                mul.extend(workspace.new_num(p).as_view());
+                            }
+
+                            for (name, f_args) in args {
+                                let mut fun_h = workspace.new_atom();
+                                let fun = fun_h.to_fun();
+                                fun.set_from_name(name);
+                                for x in f_args {
+                                    fun.add_arg(x);
+                                }
+                                fun.set_dirty(true);
+
+                                mul.extend(fun_h.as_view());
+                            }
+
+                            mul.set_dirty(true);
+                            sum.extend(mul_h.as_view());
+                        }
+
+                        sum.set_dirty(true);
+                        sum_h.as_view().normalize(workspace, state, out);
+                        return;
+                    }
+                }
+
+                out.set_from_view(&h.as_view());
+            }
+            Transformer::Sort(e) => {
+                let mut h = workspace.new_atom();
+                e.substitute_wildcards(state, workspace, &mut h, match_stack);
+
+                if let AtomView::Fun(f) = h.as_view() {
+                    if f.get_name() == ARG {
+                        let mut args: Vec<_> = f.iter().collect();
+                        args.sort();
+
+                        let mut fun_h = workspace.new_atom();
+                        let fun = fun_h.to_fun();
+                        fun.set_from_name(ARG);
+
+                        for arg in args {
+                            fun.add_arg(arg);
+                        }
+
+                        fun.set_dirty(true);
+                        fun_h.as_view().normalize(workspace, state, out);
+                        return;
+                    }
+                }
+
+                out.set_from_view(&h.as_view());
             }
         }
     }

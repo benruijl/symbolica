@@ -284,6 +284,23 @@ impl PythonPattern {
         })
     }
 
+    /// Create a transformer that sorts a list of arguments.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(3,2,1).replace_all(f(x_), x_.transform().sort())
+    /// >>> print(e)
+    pub fn sort(&self) -> PyResult<PythonPattern> {
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Sort(
+                (*self.expr).clone(),
+            )))),
+        })
+    }
+
     /// Create a transformer that split a sum or product into a list of arguments.
     ///
     /// Examples
@@ -297,6 +314,70 @@ impl PythonPattern {
         Ok(PythonPattern {
             expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Split(
                 (*self.expr).clone(),
+            )))),
+        })
+    }
+
+    /// Create a transformer partition a list of arguments into bins of sets with a given tag and the length of the set,
+    /// returning all partitions and their multiplicity.
+    ///
+    /// If the set `elements` is larger than the bins, setting the flag `fill_last`
+    /// will add all remaining elements to the last set.
+    ///
+    /// Setting the flag `repeat` means that the bins will be repeated to exactly fit all elements,
+    /// if possible.
+    ///
+    /// Note that the functions names to be provided for the bin names must be generated through `Expression.var`.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x_, f_id, g_id = Expression.vars('x_', 'f', 'g')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
+    /// >>> print(e)
+    ///
+    /// yields:
+    /// ```
+    /// 2*f(1)*f(1,2)*g(3)+2*f(1)*f(1,3)*g(2)+2*f(1)*f(2,3)*g(1)+f(2)*f(1,1)*g(3)+2*f(2)*f(1,3)*g(1)+f(3)*f(1,1)*g(2)+2*f(3)*f(1,2)*g(1)
+    /// ```
+    #[pyo3(signature = (bins, fill_last = false, repeat = false))]
+    pub fn partitions(
+        &self,
+        bins: Vec<(ConvertibleToPattern, usize)>,
+        fill_last: bool,
+        repeat: bool,
+    ) -> PyResult<PythonPattern> {
+        let mut conv_bins = vec![];
+
+        for (x, len) in bins {
+            let id = match &*x.to_pattern().expr {
+                Pattern::Literal(x) => {
+                    if let AtomView::Var(x) = x.as_view() {
+                        x.get_name()
+                    } else {
+                        return Err(exceptions::PyValueError::new_err(
+                            "Derivative must be taken wrt a variable",
+                        ));
+                    }
+                }
+                Pattern::Wildcard(x) => *x,
+                _ => {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Derivative must be taken wrt a variable",
+                    ))
+                }
+            };
+
+            conv_bins.push((id, len));
+        }
+
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Partition(
+                (*self.expr).clone(),
+                conv_bins,
+                fill_last,
+                repeat,
             )))),
         })
     }
@@ -1636,7 +1717,7 @@ impl PythonExpression {
         )
     }
 
-    /// Replace all patterns matching the left-hand side `lhs` by the right-hand side `rhs`.
+    /// Replace all atoms matching the pattern `pattern` by the right-hand side `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
     /// Examples
@@ -1649,11 +1730,11 @@ impl PythonExpression {
     /// >>> print(r)
     pub fn replace_all(
         &self,
-        lhs: ConvertibleToPattern,
+        pattern: ConvertibleToPattern,
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
     ) -> PyResult<PythonExpression> {
-        let pattern = &lhs.to_pattern().expr;
+        let pattern = &pattern.to_pattern().expr;
         let rhs = &rhs.to_pattern().expr;
         let mut out = Atom::new();
 

@@ -213,9 +213,9 @@ Error: {}",
 
     /// Set the license key. Can only be called before calling any other Symbolica functions.
     pub fn set_license_key(key: &str) -> Result<(), String> {
-        LICENSE_KEY
-            .set(key.to_owned())
-            .map_err(|_| "License key is already set".to_owned())?;
+        if LICENSE_KEY.get_or_init(|| key.to_owned()) != key {
+            Err("Different license key cannot be set in same session")?;
+        }
 
         Self::check_license_key()
     }

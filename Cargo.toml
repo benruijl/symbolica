@@ -8,7 +8,7 @@ license-file = "License.md"
 name = "symbolica"
 readme = "Readme.md"
 repository = "https://github/benruijl/symbolica"
-version = "0.1.0"
+version = "0.1.1"
 
 [profile.dev-optim]
 inherits = "dev"

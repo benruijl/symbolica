@@ -1,18 +1,18 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
+requires = ["maturin>=1.0,<2.0"]
 
 [project]
-name = "symbolica"
-version = "0.1.0"
-description = "Symbolica is a blazing fast symbolic manipulation toolkit"
-readme = "Readme.md"
-license = {file = "License.md"}
-keywords = ["math", "algebra", "polynomial", "expression", "manipulation"]
 authors = [
   {email = "benruyl@gmail.com"},
-  {name = "Ben Ruijl"}
+  {name = "Ben Ruijl"},
 ]
+description = "Symbolica is a blazing fast symbolic manipulation toolkit"
+keywords = ["math", "algebra", "polynomial", "expression", "manipulation"]
+license = {file = "License.md"}
+name = "symbolica"
+readme = "Readme.md"
+version = "0.1.1"
 
 classifiers = [
   "Development Status :: 3 - Alpha",

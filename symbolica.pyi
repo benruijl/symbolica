@@ -581,6 +581,22 @@ class Transformer:
         >>> print(e)
         """
 
+
+    def deduplicate(self) -> Transformer:
+        """ Create a transformer that removes elements from a list if they occur
+        earlier in the list as well.
+            
+        Examples
+        --------
+        >>> from symbolica import Expression, Transformer
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun('f')
+        >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().deduplicate())
+        >>> print(e)
+
+        Yields `f(1,2)`.
+        """
+
     def split(self) -> Transformer:
         """ Create a transformer that split a sum or product into a list of arguments.
 
@@ -599,11 +615,11 @@ class Transformer:
         fill_last: bool = False,
         repeat: bool = False,
     ) -> Transformer:
-        """ Create a transformer partition a list of arguments into bins of sets with a given tag and the length of the set,
+        """ Create a transformer that partitions a list of arguments into named bins of a given length,
         returning all partitions and their multiplicity.
         
-        If the set `elements` is larger than the bins, setting the flag `fill_last`
-        will add all remaining elements to the last set.
+        If the unordered list `elements` is larger than the bins, setting the flag `fill_last`
+        will add all remaining elements to the last bin.
         
         Setting the flag `repeat` means that the bins will be repeated to exactly fit all elements,
         if possible.
@@ -617,10 +633,27 @@ class Transformer:
         >>> f = Expression.fun('f')
         >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
         >>> print(e)
-        
+
         yields:
         ```
         2*f(1)*f(1,2)*g(3)+2*f(1)*f(1,3)*g(2)+2*f(1)*f(2,3)*g(1)+f(2)*f(1,1)*g(3)+2*f(2)*f(1,3)*g(1)+f(3)*f(1,1)*g(2)+2*f(3)*f(1,2)*g(1)
+        ```
+        """
+
+    def permutations(self, function_name: Transformer | Expression) -> Transformer:
+        """ Create a transformer that generates all permutations of a list of arguments.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, Transformer
+        >>> x_, f_id = Expression.vars('x_', 'f')
+        >>> f = Expression.fun('f')
+        >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id)
+        >>> print(e)
+
+        yields:
+        ```
+        4*f(1,1,2,2)+4*f(1,2,1,2)+4*f(1,2,2,1)+4*f(2,1,1,2)+4*f(2,1,2,1)+4*f(2,2,1,1)
         ```
         """
 

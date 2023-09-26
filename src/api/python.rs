@@ -301,6 +301,26 @@ impl PythonPattern {
         })
     }
 
+    /// Create a transformer that removes elements from a list if they occur
+    /// earlier in the list as well.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().deduplicate())
+    /// >>> print(e)
+    ///
+    /// Yields `f(1,2)`.
+    pub fn deduplicate(&self) -> PyResult<PythonPattern> {
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Deduplicate(
+                (*self.expr).clone(),
+            )))),
+        })
+    }
+
     /// Create a transformer that split a sum or product into a list of arguments.
     ///
     /// Examples
@@ -318,11 +338,11 @@ impl PythonPattern {
         })
     }
 
-    /// Create a transformer partition a list of arguments into bins of sets with a given tag and the length of the set,
+    /// Create a transformer that partitions a list of arguments into named bins of a given length,
     /// returning all partitions and their multiplicity.
     ///
-    /// If the set `elements` is larger than the bins, setting the flag `fill_last`
-    /// will add all remaining elements to the last set.
+    /// If the unordered list `elements` is larger than the bins, setting the flag `fill_last`
+    /// will add all remaining elements to the last bin.
     ///
     /// Setting the flag `repeat` means that the bins will be repeated to exactly fit all elements,
     /// if possible.
@@ -378,6 +398,47 @@ impl PythonPattern {
                 conv_bins,
                 fill_last,
                 repeat,
+            )))),
+        })
+    }
+
+    /// Create a transformer that generates all permutations of a list of arguments.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x_, f_id = Expression.vars('x_', 'f')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id)
+    /// >>> print(e)
+    ///
+    /// yields:
+    /// ```
+    /// 4*f(1,1,2,2)+4*f(1,2,1,2)+4*f(1,2,2,1)+4*f(2,1,1,2)+4*f(2,1,2,1)+4*f(2,2,1,1)
+    /// ```
+    pub fn permutations(&self, function_name: ConvertibleToPattern) -> PyResult<PythonPattern> {
+        let id = match &*function_name.to_pattern().expr {
+            Pattern::Literal(x) => {
+                if let AtomView::Var(x) = x.as_view() {
+                    x.get_name()
+                } else {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Derivative must be taken wrt a variable",
+                    ));
+                }
+            }
+            Pattern::Wildcard(x) => *x,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Derivative must be taken wrt a variable",
+                ))
+            }
+        };
+
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Permutations(
+                (*self.expr).clone(),
+                id,
             )))),
         })
     }

@@ -68,7 +68,56 @@ impl CombinationIterator {
     }
 }
 
-/// Partition the set `elements` into bins of sets with a given tag and the length of the set,
+/// Generate all unique permutations of the `list` entries.
+///
+/// The combinatorial prefactor of each element is `list.len()! / out.len()` where
+/// `out` is the returned list.
+pub fn unique_permutations<T: Clone + Hash + Ord>(list: &[T]) -> (Integer, Vec<Vec<T>>) {
+    let mut unique: HashMap<&T, usize> = HashMap::default();
+    for e in list {
+        *unique.entry(e).or_insert(0) += 1;
+    }
+    let mut unique: Vec<_> = unique.into_iter().collect();
+
+    // determine pre-factor
+    let mut prefactor = Integer::one();
+    for (_, count) in &unique {
+        prefactor *= &Integer::factorial(*count as u32);
+    }
+
+    let mut out = vec![];
+    unique_permutations_impl(
+        &mut unique,
+        &mut Vec::with_capacity(list.len()),
+        list.len(),
+        &mut out,
+    );
+    (prefactor, out)
+}
+
+fn unique_permutations_impl<T: Clone>(
+    unique: &mut Vec<(&T, usize)>,
+    accum: &mut Vec<T>,
+    len: usize,
+    out: &mut Vec<Vec<T>>,
+) {
+    if accum.len() == len {
+        out.push(accum.to_vec());
+    }
+
+    for i in 0..unique.len() {
+        let (entry, count) = &mut unique[i];
+        if *count > 0 {
+            *count -= 1;
+            accum.push(entry.clone());
+            unique_permutations_impl(unique, accum, len, out);
+            accum.pop();
+            unique[i].1 += 1;
+        }
+    }
+}
+
+/// Partition the unordered list `elements` into named bins of unordered lists with a given length,
 /// returning all partitions and their multiplicity.
 ///
 /// For example:
@@ -86,7 +135,7 @@ impl CombinationIterator {
 /// ('f', [1, 2])]), (6, [('g', [2]), ('f', [1, 1]), ('f', [1, 2])])]
 /// ```
 ///
-/// If the set `elements` is larger than the bins, setting the flag `fill_last`
+/// If the unordered list `elements` is larger than the bins, setting the flag `fill_last`
 /// will add all remaining elements to the last set.
 ///
 /// Setting the flag `repeat` means that the bins will be repeated to exactly fit all elements,

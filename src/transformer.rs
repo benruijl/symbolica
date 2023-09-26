@@ -2,7 +2,7 @@ use ahash::HashMap;
 use dyn_clone::DynClone;
 
 use crate::{
-    combinatorics::partitions,
+    combinatorics::{partitions, unique_permutations},
     id::{MatchStack, Pattern, PatternRestriction},
     representations::{
         Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedFun, OwnedMul,
@@ -39,6 +39,8 @@ pub enum Transformer<P: AtomSet + 'static> {
     Split(Pattern<P>),
     Partition(Pattern<P>, Vec<(Identifier, usize)>, bool, bool),
     Sort(Pattern<P>),
+    Deduplicate(Pattern<P>),
+    Permutations(Pattern<P>, Identifier),
 }
 
 impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
@@ -65,6 +67,10 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
                 .field(b2)
                 .finish(),
             Transformer::Sort(p) => f.debug_tuple("Sort").field(p).finish(),
+            Transformer::Deduplicate(p) => f.debug_tuple("Deduplicate").field(p).finish(),
+            Transformer::Permutations(p, i) => {
+                f.debug_tuple("Permutations").field(p).field(i).finish()
+            }
         }
     }
 }
@@ -280,6 +286,87 @@ impl<P: AtomSet> Transformer<P> {
 
                         fun.set_dirty(true);
                         fun_h.as_view().normalize(workspace, state, out);
+                        return;
+                    }
+                }
+
+                out.set_from_view(&h.as_view());
+            }
+            Transformer::Deduplicate(e) => {
+                let mut h = workspace.new_atom();
+                e.substitute_wildcards(state, workspace, &mut h, match_stack);
+
+                if let AtomView::Fun(f) = h.as_view() {
+                    if f.get_name() == ARG {
+                        let args: Vec<_> = f.iter().collect();
+                        let mut args_dedup: Vec<_> = Vec::with_capacity(args.len());
+
+                        for a in args {
+                            // check last argument first, so that the sorted list case is fast
+                            if args_dedup.last() != Some(&a) {
+                                if !args_dedup.contains(&a) {
+                                    args_dedup.push(a);
+                                }
+                            }
+                        }
+
+                        let mut fun_h = workspace.new_atom();
+                        let fun = fun_h.to_fun();
+                        fun.set_from_name(ARG);
+
+                        for arg in args_dedup {
+                            fun.add_arg(arg);
+                        }
+
+                        fun.set_dirty(true);
+                        fun_h.as_view().normalize(workspace, state, out);
+                        return;
+                    }
+                }
+
+                out.set_from_view(&h.as_view());
+            }
+            Transformer::Permutations(e, f_name) => {
+                let mut h = workspace.new_atom();
+                e.substitute_wildcards(state, workspace, &mut h, match_stack);
+
+                if let AtomView::Fun(f) = h.as_view() {
+                    if f.get_name() == ARG {
+                        let args: Vec<_> = f.iter().collect();
+
+                        let mut sum_h = workspace.new_atom();
+                        let sum = sum_h.to_add();
+
+                        let (prefactor, permutations) = unique_permutations(&args);
+
+                        if permutations.is_empty() {
+                            out.set_from_view(&workspace.new_num(0).as_view());
+                            return;
+                        }
+
+                        for a in permutations {
+                            let mut fun_h = workspace.new_atom();
+                            let fun = fun_h.to_fun();
+                            fun.set_from_name(*f_name);
+                            for x in a {
+                                fun.add_arg(x);
+                            }
+                            fun.set_dirty(true);
+
+                            if !prefactor.is_one() {
+                                let mut mul_h = workspace.new_atom();
+                                let mul = mul_h.to_mul();
+                                mul.extend(fun_h.as_view());
+                                mul.extend(workspace.new_num(prefactor.clone()).as_view());
+                                mul.set_dirty(true);
+                                sum.extend(mul_h.as_view());
+                            } else {
+                                sum.extend(fun_h.as_view());
+                            }
+                        }
+
+                        sum.set_dirty(true);
+                        sum_h.as_view().normalize(workspace, state, out);
                         return;
                     }
                 }

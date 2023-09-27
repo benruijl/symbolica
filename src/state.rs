@@ -86,22 +86,25 @@ impl State {
         }
     }
 
-    /// Get the id for a certain name if the name is already registered,
+    /// Get the id of a certain function name if the name is already registered,
     /// else register it and return a new id.
+    ///
+    /// Providing an attribute `None` means that the attributes will be fetched from
+    /// the state if the function exists, or the attribute list will be empty if not.
     pub fn get_or_insert_fn<S: AsRef<str>>(
         &mut self,
         name: S,
         attributes: Option<Vec<FunctionAttribute>>,
-    ) -> Identifier {
+    ) -> Result<Identifier, String> {
         match self.str_to_var_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
                 let old_attrib = self.function_attributes.get(&r);
 
-                if &attributes.unwrap_or(vec![]) == old_attrib.unwrap_or(&vec![]) {
-                    r
+                if attributes.is_none() || attributes.as_ref() == old_attrib {
+                    Ok(r)
                 } else {
-                    panic!("Function redefined with new attributes");
+                    Err(format!("Function {} redefined with new attributes", name.as_ref()).into())
                 }
             }
             Entry::Vacant(v) => {
@@ -116,7 +119,7 @@ impl State {
                 self.function_attributes
                     .insert(new_id, attributes.unwrap_or(vec![]));
 
-                new_id
+                Ok(new_id)
             }
         }
     }

@@ -427,6 +427,10 @@ impl BorrowedNumber<'_> {
         match (self, other) {
             (&BorrowedNumber::Natural(mut n1, mut d1), &BorrowedNumber::Natural(mut n2, d2)) => {
                 if n2 < 0 {
+                    if n1 == 0 {
+                        panic!("Division by 0");
+                    }
+
                     n2 = n2.saturating_abs();
                     (n1, d1) = (d1, n1);
                 }

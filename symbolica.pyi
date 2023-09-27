@@ -357,6 +357,11 @@ class Expression:
         Map the transformations to every term in the expression.
         The execution happen in parallel.
 
+
+        No new functions or variables can be defined and no new
+        expressions can be parsed inside the map. Doing so will
+        result in a deadlock.
+
         Examples
         --------
         >>> x, x_ = Expression.vars('x', 'x_')
@@ -496,6 +501,8 @@ class Function:
         """ 
         Create a new function from a `name`. Can be turned into a symmetric function
         using `is_symmetric=True`.
+
+        Once attributes are defined on a function, they cannot be redefined later.
         """
 
     @overload

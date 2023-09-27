@@ -389,7 +389,7 @@ impl Token {
 
                 let mut fun_h = workspace.new_atom();
                 let fun = fun_h.to_fun();
-                fun.set_from_name(state.get_or_insert_fn(name, None));
+                fun.set_from_name(state.get_or_insert_fn(name, None)?);
                 fun.set_dirty(true);
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {

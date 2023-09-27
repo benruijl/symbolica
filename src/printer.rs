@@ -148,19 +148,8 @@ impl<'a, 'b, P: AtomSet> fmt::Display for AtomPrinter<'a, 'b, P> {
             explicit_sign: false,
             superscript: false,
         };
-
-        if self.print_opts.latex {
-            f.write_str("$$")?;
-        }
-
         self.atom
-            .fmt_output(f, self.print_opts, self.state, print_state)?;
-
-        if self.print_opts.latex {
-            f.write_str("$$")
-        } else {
-            Ok(())
-        }
+            .fmt_output(f, self.print_opts, self.state, print_state)
     }
 }
 

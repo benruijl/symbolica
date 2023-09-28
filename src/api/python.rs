@@ -1304,9 +1304,36 @@ impl PythonExpression {
         match op {
             CompareOp::Eq => Ok(self.expr == other.to_expression().expr),
             CompareOp::Ne => Ok(self.expr != other.to_expression().expr),
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Inequalities between expression are not allowed",
-            )),
+            _ => {
+                let other = other.to_expression();
+                if let n1 @ AtomView::Num(_) = self.expr.as_view() {
+                    if let n2 @ AtomView::Num(_) = other.expr.as_view() {
+                        return Ok(match op {
+                            CompareOp::Eq => n1 == n2,
+                            CompareOp::Ge => n1 >= n2,
+                            CompareOp::Gt => n1 > n2,
+                            CompareOp::Le => n1 <= n2,
+                            CompareOp::Lt => n1 < n2,
+                            CompareOp::Ne => n1 != n2,
+                        });
+                    }
+                }
+
+                Err(exceptions::PyTypeError::new_err(format!(
+                    "Inequalities between expression that are not numbers are not allowed in {} {} {}",
+                    self.__str__()?,
+                    match op {
+                        CompareOp::Eq => "==",
+                        CompareOp::Ge => ">=",
+                        CompareOp::Gt => ">",
+                        CompareOp::Le => "<=",
+                        CompareOp::Lt => "<",
+                        CompareOp::Ne => "!=",
+                    },
+                    other.__str__()?,
+                )
+            ))
+            }
         }
     }
 
@@ -1865,8 +1892,8 @@ impl PythonFunction {
         } else {
             get_state_mut!()?
                 .borrow_mut()
-                .get_or_insert_fn(name, None)
-                .unwrap()
+                .get_or_insert_fn(name, Some(vec![]))
+                .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?
         };
         Ok(PythonFunction { id })
     }

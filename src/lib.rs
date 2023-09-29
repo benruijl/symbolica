@@ -18,6 +18,7 @@ pub mod combinatorics;
 pub mod derivative;
 pub mod expand;
 pub mod id;
+pub mod collect;
 pub mod normalize;
 pub mod numerical_integration;
 pub mod parser;

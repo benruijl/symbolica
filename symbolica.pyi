@@ -25,12 +25,13 @@ def request_trial_license(name: str, email: str, company: str) -> None:
 
 class AtomType(Enum):
     """Specifies the type of the atom."""
-    Num = 1,
-    Var = 2,
-    Fn = 3,
-    Add = 4,
-    Mul = 5,
-    Pow = 6,
+
+    Num = 1
+    Var = 2
+    Fn = 3
+    Add = 4
+    Mul = 5
+    Pow = 6
 
 
 class AtomTree:
@@ -142,18 +143,19 @@ class Expression:
         Convert the expression into a human-readable string.
         """
 
-    def pretty_str(self,
-                   terms_on_new_line: bool = False,
-                   color_top_level_sum: bool = True,
-                   color_builtin_functions: bool = True,
-                   print_finite_field: bool = True,
-                   explicit_rational_polynomial: bool = False,
-                   number_thousands_separator: Optional[str] = None,
-                   multiplication_operator: str = '*',
-                   square_brackets_for_function: bool = False,
-                   num_exp_as_superscript: bool = True,
-                   latex: bool = False
-                   ) -> str:
+    def pretty_str(
+        self,
+        terms_on_new_line: bool = False,
+        color_top_level_sum: bool = True,
+        color_builtin_functions: bool = True,
+        print_finite_field: bool = True,
+        explicit_rational_polynomial: bool = False,
+        number_thousands_separator: Optional[str] = None,
+        multiplication_operator: str = "*",
+        square_brackets_for_function: bool = False,
+        num_exp_as_superscript: bool = True,
+        latex: bool = False,
+    ) -> str:
         """
         Convert the expression into a human-readable string, with tunable settings.
 
@@ -188,7 +190,7 @@ class Expression:
         """
 
     def get_type(self) -> AtomType:
-        """ Get the type of the atom."""
+        """Get the type of the atom."""
 
     def to_atom_tree(self) -> AtomTree:
         """Convert the expression to a tree."""
@@ -302,7 +304,10 @@ class Expression:
         so that it only matches to itself.
         """
 
-    def req(self, filter_fn: Callable[[Expression], bool],) -> PatternRestriction:
+    def req(
+        self,
+        filter_fn: Callable[[Expression], bool],
+    ) -> PatternRestriction:
         """
         Create a new pattern restriction that calls the function `filter_fn` with the matched
         atom that should return a boolean. If true, the pattern matches.
@@ -386,10 +391,67 @@ class Expression:
         Expand the expression.
         """
 
-    def derivative(self, x: Expression) -> Expression:
-        """ Derive the expression w.r.t the variable `x`. """
+    def collect(
+        self,
+        x: Expression,
+        key_map: Optional[Callable[[Expression], Expression]] = None,
+        coeff_map: Optional[Callable[[Expression], Expression]] = None,
+    ) -> Expression:
+        """
+        Collect terms involving the same power of `x`, where `x` is a variable or function name.
+        Return the list of key-coefficient pairs and the remainder that matched no key.
 
-    def to_polynomial(self,  vars: Optional[Sequence[Expression]] = None) -> Polynomial:
+        Both the key (the quantity collected in) and its coefficient can be mapped using
+        `key_map` and `coeff_map` respectively.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x, y = Expression.vars('x', 'y')
+        >>> e = 5*x + x * y + x**2 + 5
+        >>>
+        >>> print(e.collect(x))
+
+        yields `x^2+x*(y+5)+5`.
+
+        >>> from symbolica import Expression
+        >>> x, y = Expression.vars('x', 'y')
+        >>> var, coeff = Expression.funs('var', 'coeff')
+        >>> e = 5*x + x * y + x**2 + 5
+        >>>
+        >>> print(e.collect(x, key_map=lambda x: var(x), coeff_map=lambda x: coeff(x)))
+
+        yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
+        """
+
+    def coefficient_list(
+        self, x: Expression
+    ) -> Sequence[Tuple[Expression, Expression]]:
+        """Collect terms involving the same power of `x`, where `x` is a variable or function name.
+        Return the list of key-coefficient pairs and the remainder that matched no key.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x, y = Expression.vars('x', 'y')
+        >>> e = 5*x + x * y + x**2 + 5
+        >>>
+        >>> for a in e.coefficient_list(x):
+        >>>     print(a[0], a[1])
+
+        yields
+        ```
+        x y+5
+        x^2 1
+        1 5
+        ```
+        """
+
+    def derivative(self, x: Expression) -> Expression:
+        """Derive the expression w.r.t the variable `x`."""
+
+    def to_polynomial(self, vars: Optional[Sequence[Expression]] = None) -> Polynomial:
         """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`."""
 
     def to_rational_polynomial(
@@ -483,22 +545,22 @@ class Expression:
 
 
 class PatternRestriction:
-    """ A restriction on wildcards. """
+    """A restriction on wildcards."""
 
     def __and__(self, other: PatternRestriction) -> PatternRestriction:
-        """ Create a new pattern restriction that is the logical and operation between two restrictions (i.e., both should hold)."""
+        """Create a new pattern restriction that is the logical and operation between two restrictions (i.e., both should hold)."""
 
 
 class CompareOp:
-    """ One of the following comparison operators: `<`,`>`,`<=`,`>=`,`==`,`!=`."""
+    """One of the following comparison operators: `<`,`>`,`<=`,`>=`,`==`,`!=`."""
 
 
 class Function:
-    """ A Symbolica function. Will turn into an expression or a transformer when called with arguments."""
+    """A Symbolica function. Will turn into an expression or a transformer when called with arguments."""
 
     @staticmethod
     def __new__(name: str, is_symmetric: Optional[bool]) -> Function:
-        """ 
+        """
         Create a new function from a `name`. Can be turned into a symmetric function
         using `is_symmetric=True`.
 
@@ -535,13 +597,13 @@ class Function:
 
 
 class Transformer:
-    """ Operations that transform an expression. """
+    """Operations that transform an expression."""
 
     def __init__() -> Transformer:
-        """ Create a new transformer for a term provided by `Expression.map`. """
+        """Create a new transformer for a term provided by `Expression.map`."""
 
     def expand(self) -> Transformer:
-        """ Create a transformer that expands products and powers.
+        """Create a transformer that expands products and powers.
 
         Examples
         --------
@@ -553,7 +615,7 @@ class Transformer:
         """
 
     def prod(self) -> Transformer:
-        """ Create a transformer that computes the product of a list of arguments.
+        """Create a transformer that computes the product of a list of arguments.
 
         Examples
         --------
@@ -565,7 +627,7 @@ class Transformer:
         """
 
     def sum(self) -> Transformer:
-        """ Create a transformer that computes the sum of a list of arguments.
+        """Create a transformer that computes the sum of a list of arguments.
 
         Examples
         --------
@@ -577,7 +639,7 @@ class Transformer:
         """
 
     def sort(self) -> Transformer:
-        """ Create a transformer that sorts a list of arguments.
+        """Create a transformer that sorts a list of arguments.
 
         Examples
         --------
@@ -588,11 +650,10 @@ class Transformer:
         >>> print(e)
         """
 
-
     def deduplicate(self) -> Transformer:
-        """ Create a transformer that removes elements from a list if they occur
+        """Create a transformer that removes elements from a list if they occur
         earlier in the list as well.
-            
+
         Examples
         --------
         >>> from symbolica import Expression, Transformer
@@ -605,7 +666,7 @@ class Transformer:
         """
 
     def split(self) -> Transformer:
-        """ Create a transformer that split a sum or product into a list of arguments.
+        """Create a transformer that split a sum or product into a list of arguments.
 
         Examples
         --------
@@ -622,17 +683,17 @@ class Transformer:
         fill_last: bool = False,
         repeat: bool = False,
     ) -> Transformer:
-        """ Create a transformer that partitions a list of arguments into named bins of a given length,
+        """Create a transformer that partitions a list of arguments into named bins of a given length,
         returning all partitions and their multiplicity.
-        
+
         If the unordered list `elements` is larger than the bins, setting the flag `fill_last`
         will add all remaining elements to the last bin.
-        
+
         Setting the flag `repeat` means that the bins will be repeated to exactly fit all elements,
         if possible.
-        
+
         Note that the functions names to be provided for the bin names must be generated through `Expression.var`.
-        
+
         Examples
         --------
         >>> from symbolica import Expression, Transformer
@@ -648,7 +709,7 @@ class Transformer:
         """
 
     def permutations(self, function_name: Transformer | Expression) -> Transformer:
-        """ Create a transformer that generates all permutations of a list of arguments.
+        """Create a transformer that generates all permutations of a list of arguments.
 
         Examples
         --------
@@ -665,7 +726,7 @@ class Transformer:
         """
 
     def map(self, f: Callable[[Expression | int], Expression]) -> Transformer:
-        """ Create a transformer that expands products and powers.
+        """Create a transformer that expands products and powers.
 
         Examples
         --------
@@ -677,7 +738,7 @@ class Transformer:
         """
 
     def derivative(self, x: Transformer | Expression) -> Transformer:
-        """ Create a transformer that derives `self` w.r.t the variable `x`. """
+        """Create a transformer that derives `self` w.r.t the variable `x`."""
 
     def replace_all(
         self,
@@ -766,27 +827,27 @@ class Transformer:
 
 
 class MatchIterator:
-    """ An iterator over matches. """
+    """An iterator over matches."""
 
     def __iter__(self) -> MatchIterator:
-        """ Create the iterator. """
+        """Create the iterator."""
 
     def __next__(self) -> Sequence[Tuple[Expression, Expression]]:
-        """ Return the next match. """
+        """Return the next match."""
 
 
 class ReplaceIterator:
-    """ An iterator over single replacments. """
+    """An iterator over single replacments."""
 
     def __iter__(self) -> ReplaceIterator:
-        """ Create the iterator. """
+        """Create the iterator."""
 
     def __next__(self) -> Expression:
-        """ Return the next replacement. """
+        """Return the next replacement."""
 
 
 class Polynomial:
-    """ A Symbolica polynomial with rational coefficients. """
+    """A Symbolica polynomial with rational coefficients."""
 
     @classmethod
     def parse(_cls, input: str, vars: List[str]) -> Polynomial:
@@ -854,7 +915,7 @@ class Polynomial:
 
 
 class IntegerPolynomial:
-    """ A Symbolica polynomial with integer coefficients. """
+    """A Symbolica polynomial with integer coefficients."""
 
     @classmethod
     def parse(_cls, input: str, vars: List[str]) -> Polynomial:
@@ -911,7 +972,7 @@ class IntegerPolynomial:
 
 
 class RationalPolynomial:
-    """ A Symbolica rational polynomial. """
+    """A Symbolica rational polynomial."""
 
     @staticmethod
     def __new__(num: Polynomial, den: Polynomial) -> RationalPolynomial:
@@ -967,7 +1028,7 @@ class RationalPolynomial:
 
 
 class RationalPolynomialSmallExponent:
-    """ A Symbolica rational polynomial with variable powers limited to 255. """
+    """A Symbolica rational polynomial with variable powers limited to 255."""
 
     @classmethod
     def parse(_cls, input: str, vars: List[str]) -> RationalPolynomial:
@@ -999,39 +1060,56 @@ class RationalPolynomialSmallExponent:
     def __repr__(self) -> str:
         """Print the rational polynomial in a debug representation."""
 
-    def __add__(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
+    def __add__(
+        self, rhs: RationalPolynomialSmallExponent
+    ) -> RationalPolynomialSmallExponent:
         """Add two rational polynomials `self and `rhs`, returning the result."""
 
-    def __sub__(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
+    def __sub__(
+        self, rhs: RationalPolynomialSmallExponent
+    ) -> RationalPolynomialSmallExponent:
         """Subtract rational polynomials `rhs` from `self`, returning the result."""
 
-    def __mul__(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
+    def __mul__(
+        self, rhs: RationalPolynomialSmallExponent
+    ) -> RationalPolynomialSmallExponent:
         """Multiply two rational polynomials `self and `rhs`, returning the result."""
 
-    def __truediv__(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
+    def __truediv__(
+        self, rhs: RationalPolynomialSmallExponent
+    ) -> RationalPolynomialSmallExponent:
         """Divide the rational polynomial `self` by `rhs` if possible, returning the result."""
 
     def __neg__(self) -> RationalPolynomialSmallExponent:
         """Negate the rational polynomial."""
 
-    def gcd(self, rhs: RationalPolynomialSmallExponent) -> RationalPolynomialSmallExponent:
+    def gcd(
+        self, rhs: RationalPolynomialSmallExponent
+    ) -> RationalPolynomialSmallExponent:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
+
 
 class Evaluator:
     def evaluate(self, inputs: List[List[float]]) -> List[float]:
         """Evaluate the polynomial for multiple inputs and return the result."""
 
-class NumericalIntegrator:
-    def continuous(n_dims: int, n_bins: int = 128,
-                   min_samples_for_update: int = 100,
-                   bin_number_evolution: List[int] = None,
-                   train_on_avg: bool = False) -> NumericalIntegrator:
-        """ Create a new continuous grid for the numerical integrator."""
 
-    def discrete(bins: List[Optional[NumericalIntegrator]],
-                 max_prob_ratio: float = 100.,
-                 train_on_avg: bool = False) -> NumericalIntegrator:
-        """ Create a new discrete grid for the numerical integrator. Each
+class NumericalIntegrator:
+    def continuous(
+        n_dims: int,
+        n_bins: int = 128,
+        min_samples_for_update: int = 100,
+        bin_number_evolution: List[int] = None,
+        train_on_avg: bool = False,
+    ) -> NumericalIntegrator:
+        """Create a new continuous grid for the numerical integrator."""
+
+    def discrete(
+        bins: List[Optional[NumericalIntegrator]],
+        max_prob_ratio: float = 100.0,
+        train_on_avg: bool = False,
+    ) -> NumericalIntegrator:
+        """Create a new discrete grid for the numerical integrator. Each
         bin can have a sub-grid.
 
         Examples
@@ -1044,7 +1122,7 @@ class NumericalIntegrator:
         >>>         else:
         >>>             res.append(sample.c[0]**1/2)
         >>>     return res
-        >>> 
+        >>>
         >>> integrator = NumericalIntegrator.discrete(
         >>>     [NumericalIntegrator.continuous(1), NumericalIntegrator.continuous(1)])
         >>> integrator.integrate(integrand, True, 10, 10000)
@@ -1058,7 +1136,7 @@ class NumericalIntegrator:
         Call `update` after to update the grid and to obtain the new expected value for the integral."""
 
     def update(self, learning_rate: float) -> Tuple[float, float, float]:
-        """Update the grid using the `learning_rate`. 
+        """Update the grid using the `learning_rate`.
         Examples
         --------
         >>> from symbolica import NumericalIntegrator, Sample
@@ -1068,7 +1146,7 @@ class NumericalIntegrator:
         >>>     for sample in samples:
         >>>         res.append(sample.c[0]**2+sample.c[1]**2)
         >>>     return res
-        >>> 
+        >>>
         >>> integrator = NumericalIntegrator.continuous(2)
         >>> for i in range(10):
         >>>     samples = integrator.sample(10000 + i * 1000)
@@ -1078,12 +1156,15 @@ class NumericalIntegrator:
         >>>     print('Iteration {}: {:.6} +- {:.6}, chi={:.6}'.format(i+1, avg, err, chi_sq))
         """
 
-    def integrate(self,
-                  integrand: Callable[[List[Sample]], List[float]],
-                  max_n_iter: int = 10000000,
-                  min_error: float = 0.01,
-                  n_samples_per_iter: int = 10000, show_stats: bool = True) -> Tuple[float, float, float]:
-        """ Integrate the function `integrand` that maps a list of `Sample`s to a list of `float`s.
+    def integrate(
+        self,
+        integrand: Callable[[List[Sample]], List[float]],
+        max_n_iter: int = 10000000,
+        min_error: float = 0.01,
+        n_samples_per_iter: int = 10000,
+        show_stats: bool = True,
+    ) -> Tuple[float, float, float]:
+        """Integrate the function `integrand` that maps a list of `Sample`s to a list of `float`s.
         The return value is the average, the statistical error, and chi-squared of the integral.
 
         With `show_stats=True`, intermediate statistics will be printed. `max_n_iter` determines the number
@@ -1108,8 +1189,8 @@ class NumericalIntegrator:
 
 
 class Sample:
-    """ A sample from the Symbolica integrator. It could consist of discrete layers,
-     accessible with `d` (empty when there are not discrete layers), and the final continous layer `c` if it is present. """
+    """A sample from the Symbolica integrator. It could consist of discrete layers,
+    accessible with `d` (empty when there are not discrete layers), and the final continous layer `c` if it is present."""
 
     """ The weights the integrator assigned to this sample point, given in descending order:
     first the discrete layer weights and then the continuous layer weight."""

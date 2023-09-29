@@ -36,7 +36,7 @@ use crate::{
     printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::{
         default::ListIteratorD, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul,
-        OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+        Num, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
     rings::integer::IntegerRing,
     rings::{
@@ -1587,6 +1587,172 @@ impl PythonExpression {
         });
 
         Ok(PythonExpression { expr: Arc::new(b) })
+    }
+
+    /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
+    /// Return the list of key-coefficient pairs and the remainder that matched no key.
+    ///
+    /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
+    /// `key_map` and `coeff_map` respectively.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> e = 5*x + x * y + x**2 + 5
+    /// >>>
+    /// >>> print(e.collect(x))
+    ///
+    /// yields `x^2+x*(y+5)+5`.
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> exp, coeff = Expression.funs('var', 'coeff')
+    /// >>> e = 5*x + x * y + x**2 + 5
+    /// >>>
+    /// >>> print(e.collect(x, key_map=lambda x: exp(x), coeff_map=lambda x: coeff(x)))
+    ///
+    /// yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
+    pub fn collect(
+        &self,
+        x: ConvertibleToExpression,
+        key_map: Option<PyObject>,
+        coeff_map: Option<PyObject>,
+    ) -> PyResult<PythonExpression> {
+        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
+            x.get_name()
+        } else {
+            return Err(exceptions::PyValueError::new_err(
+                "Collect must be done wrt a variable or function name",
+            ));
+        };
+
+        let state = get_state!()?;
+        let b = WORKSPACE.with(|workspace| {
+            let mut b = Atom::new();
+            self.expr.as_view().collect(
+                id,
+                workspace,
+                state.borrow(),
+                if let Some(key_map) = key_map {
+                    Some(Box::new(move |key, out| {
+                        Python::with_gil(|py| {
+                            let key = PythonExpression {
+                                expr: Arc::new(key.into()),
+                            };
+
+                            out.set_from_view(
+                                &key_map
+                                    .call(py, (key,), None)
+                                    .expect("Bad callback function")
+                                    .extract::<PythonExpression>(py)
+                                    .expect("Key map should return an expression")
+                                    .expr
+                                    .as_view(),
+                            )
+                        });
+                    }))
+                } else {
+                    None
+                },
+                if let Some(coeff_map) = coeff_map {
+                    Some(Box::new(move |coeff, out| {
+                        Python::with_gil(|py| {
+                            let coeff = PythonExpression {
+                                expr: Arc::new(coeff.into()),
+                            };
+
+                            out.set_from_view(
+                                &coeff_map
+                                    .call(py, (coeff,), None)
+                                    .expect("Bad callback function")
+                                    .extract::<PythonExpression>(py)
+                                    .expect("Coeff map should return an expression")
+                                    .expr
+                                    .as_view(),
+                            )
+                        });
+                    }))
+                } else {
+                    None
+                },
+                &mut b,
+            );
+            b
+        });
+
+        Ok(PythonExpression { expr: Arc::new(b) })
+    }
+
+    /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
+    /// Return the list of key-coefficient pairs and the remainder that matched no key.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// from symbolica import Expression
+    /// >>>
+    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> e = 5*x + x * y + x**2 + 5
+    /// >>>
+    /// >>> for a in e.coefficient_list(x):
+    /// >>>     print(a[0], a[1])
+    ///
+    /// yields
+    ///
+    /// ```
+    /// x y+5
+    /// x^2 1
+    /// 1 5
+    /// ```
+    pub fn coefficient_list(
+        &self,
+        x: ConvertibleToExpression,
+    ) -> PyResult<Vec<(PythonExpression, PythonExpression)>> {
+        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
+            x.get_name()
+        } else {
+            return Err(exceptions::PyValueError::new_err(
+                "Coefficient list must be done wrt a variable or function name",
+            ));
+        };
+
+        let state = get_state!()?;
+        WORKSPACE.with(|workspace| {
+            let (list, rest) = self.expr.as_view().coefficient_list(id, workspace, &state);
+
+            let mut py_list: Vec<_> = list
+                .into_iter()
+                .map(|e| {
+                    (
+                        PythonExpression {
+                            expr: Arc::new(e.0.into()),
+                        },
+                        PythonExpression {
+                            expr: Arc::new(e.1),
+                        },
+                    )
+                })
+                .collect();
+
+            if let Atom::Num(n) = &rest {
+                if n.to_num_view().is_zero() {
+                    return Ok(py_list);
+                }
+            }
+
+            py_list.push((
+                PythonExpression {
+                    expr: Arc::new(Atom::new_num(1)),
+                },
+                PythonExpression {
+                    expr: Arc::new(rest),
+                },
+            ));
+
+            Ok(py_list)
+        })
     }
 
     /// Derive the expression w.r.t the variable `x`.

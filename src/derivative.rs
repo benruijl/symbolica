@@ -1,9 +1,12 @@
+use ahash::HashMap;
+
 use crate::{
     representations::{
         number::{BorrowedNumber, Number},
-        Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
-        OwnedNum, OwnedPow, Pow, Var,
+        Add, AsAtomView, Atom, AtomBuilder, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd,
+        OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
     },
+    rings::{integer::Integer, rational::Rational},
     state::{State, Workspace, COS, DERIVATIVE, EXP, LOG, SIN},
 };
 
@@ -11,7 +14,6 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Take a derivative of the expression with respect to `x` and
     /// write the result in `out`.
     /// Returns `true` if the derivative is non-zero.
-    // TODO: support derivative of a function as well
     pub fn derivative(
         &self,
         x: Identifier,
@@ -337,5 +339,95 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 }
             }
         }
+    }
+
+    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
+    pub fn taylor_series(
+        &self,
+        x: Identifier,
+        expansion_point: AtomView<P>,
+        depth: u32,
+        workspace: &Workspace<P>,
+        state: &State,
+        out: &mut Atom<P>,
+    ) -> bool {
+        let mut current_order = workspace.new_atom();
+        current_order.set_from_view(self);
+
+        let mut next_order = workspace.new_atom();
+
+        let var = workspace.new_var(x);
+        let var_pat = var.into_pattern(state);
+        let expansion_point_pat = expansion_point.into_pattern(state);
+
+        // construct x - expansion_point
+        // TODO: check that expansion_point does not involve `x`
+        let mut dist = AtomBuilder::new(var.as_view(), state, workspace, workspace.new_atom());
+        dist = dist - expansion_point;
+
+        let mut series = workspace.new_atom();
+        let series_sum = series.to_add();
+
+        let mut series_contrib = workspace.new_atom();
+
+        for d in 0..=depth {
+            // replace x by expansion_point
+            var_pat.replace_all(
+                current_order.as_view(),
+                &expansion_point_pat,
+                state,
+                workspace,
+                &HashMap::default(),
+                &mut next_order,
+            );
+
+            if d > 0 {
+                let m = series_contrib.to_mul();
+                m.extend(next_order.as_view());
+                if d > 1 {
+                    let mut exp = workspace.new_atom();
+                    let e = exp.to_pow();
+                    e.set_from_base_and_exp(
+                        dist.as_atom_view(),
+                        workspace.new_num(d as i64).as_view(),
+                    );
+                    m.extend(exp.as_atom_view());
+                } else if d == 1 {
+                    m.extend(dist.as_atom_view());
+                }
+
+                let mut fact = workspace.new_atom();
+                fact.to_num().set_from_number(
+                    Rational::from_num_den(Integer::one(), Integer::factorial(d)).into(),
+                );
+
+                m.extend(fact.as_atom_view());
+                m.set_dirty(true);
+
+                series_sum.extend(series_contrib.as_view());
+            } else {
+                series_sum.extend(next_order.as_view());
+            }
+
+            if d < depth
+                && current_order
+                    .as_view()
+                    .derivative(x, workspace, state, &mut next_order)
+            {
+                std::mem::swap(&mut current_order, &mut next_order);
+            } else {
+                if d == 0 {
+                    out.set_from_view(&workspace.new_num(0).as_view());
+                    return false;
+                }
+
+                break;
+            }
+        }
+
+        series_sum.set_dirty(true);
+        series.as_view().normalize(workspace, state, out);
+
+        true
     }
 }

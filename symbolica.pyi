@@ -451,6 +451,14 @@ class Expression:
     def derivative(self, x: Expression) -> Expression:
         """Derive the expression w.r.t the variable `x`."""
 
+    def taylor_series(
+        self,
+        x: Expression,
+        expansion_point: Expression,
+        depth: int,
+    ) -> Expression:
+        """Taylor expand in `x` around `expansion_point` to depth `depth`."""
+
     def to_polynomial(self, vars: Optional[Sequence[Expression]] = None) -> Polynomial:
         """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`."""
 
@@ -739,6 +747,28 @@ class Transformer:
 
     def derivative(self, x: Transformer | Expression) -> Transformer:
         """Create a transformer that derives `self` w.r.t the variable `x`."""
+
+    def taylor_series(
+        self,
+        x: Expression,
+        expansion_point: Expression,
+        depth: int,
+    ) -> Expression:
+        """Create a transformer that Taylor expands in `x` around `expansion_point` to depth `depth`.
+
+        Example
+        -------
+        >>> from symbolica import Expression
+        >>> x, y = Expression.vars('x', 'y')
+        >>> f = Expression.fun('f')
+        >>>
+        >>> e = 2* x**2 * y + f(x)
+        >>> e = e.taylor_series(x, 0, 2)
+        >>>
+        >>> print(e)
+
+        yields `f(0)+x*der(1,f(0))+1/2*x^2*(der(2,f(0))+4*y)`.
+        """
 
     def replace_all(
         self,

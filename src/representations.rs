@@ -410,6 +410,22 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         e
     }
 
+    /// Subtract two atoms and return the buffer that contains the unnormalized result.
+    fn sub_no_norm<'b>(
+        &self,
+        workspace: &'b Workspace<P>,
+        rhs: AtomView<'_, P>,
+    ) -> BufferHandle<'b, Atom<P>> {
+        let mut e = workspace.new_atom();
+        let a = e.to_add();
+
+        // TODO: check if self or rhs is add
+        a.extend(*self);
+        a.extend(rhs.neg_no_norm(workspace).as_atom_view());
+        a.set_dirty(true);
+        e
+    }
+
     /// Multiply two atoms and return the buffer that contains the unnormalized result.
     fn mul_no_norm<'b>(
         &self,
@@ -952,6 +968,21 @@ impl<'a, 'b, 'c, P: AtomSet, T: AsAtomView<'c, P>, A: DerefMut<Target = Atom<P>>
         self.out
             .as_view()
             .add_no_norm(self.workspace, rhs.as_atom_view())
+            .as_view()
+            .normalize(self.workspace, self.state, &mut self.out);
+        self
+    }
+}
+
+impl<'a, 'b, 'c, P: AtomSet, T: AsAtomView<'c, P>, A: DerefMut<Target = Atom<P>>> std::ops::Sub<T>
+    for AtomBuilder<'a, A, P>
+{
+    type Output = AtomBuilder<'a, A, P>;
+
+    fn sub(mut self, rhs: T) -> Self::Output {
+        self.out
+            .as_view()
+            .sub_no_norm(self.workspace, rhs.as_atom_view())
             .as_view()
             .normalize(self.workspace, self.state, &mut self.out);
         self

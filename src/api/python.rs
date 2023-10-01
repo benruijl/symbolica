@@ -516,6 +516,31 @@ impl PythonPattern {
         })
     }
 
+    /// Create a transformer that Taylor expands in `x` around `expansion_point` to depth `depth`.
+    pub fn taylor_series(
+        &self,
+        x: ConvertibleToExpression,
+        expansion_point: ConvertibleToExpression,
+        depth: u32,
+    ) -> PyResult<PythonPattern> {
+        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
+            x.get_name()
+        } else {
+            return Err(exceptions::PyValueError::new_err(
+                "Derivative must be taken wrt a variable",
+            ));
+        };
+
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::TaylorSeries(
+                (*self.expr).clone(),
+                id,
+                (*expansion_point.to_expression().expr).clone(),
+                depth,
+            )))),
+        })
+    }
+
     /// Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
@@ -1771,6 +1796,51 @@ impl PythonExpression {
             self.expr
                 .as_view()
                 .derivative(id, workspace, state.borrow(), &mut b);
+            b
+        });
+
+        Ok(PythonExpression { expr: Arc::new(b) })
+    }
+
+    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
+    ///
+    /// Example
+    /// -------
+    /// >>> from symbolica import Expression
+    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> f = Expression.fun('f')
+    /// >>>
+    /// >>> e = 2* x**2 * y + f(x)
+    /// >>> e = e.taylor_series(x, 0, 2)
+    /// >>>
+    /// >>> print(e)
+    ///
+    /// yields `f(0)+x*der(1,f(0))+1/2*x^2*(der(2,f(0))+4*y)`.
+    pub fn taylor_series(
+        &self,
+        x: ConvertibleToExpression,
+        expansion_point: ConvertibleToExpression,
+        depth: u32,
+    ) -> PyResult<PythonExpression> {
+        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
+            x.get_name()
+        } else {
+            return Err(exceptions::PyValueError::new_err(
+                "Derivative must be taken wrt a variable",
+            ));
+        };
+
+        let state = get_state!()?;
+        let b = WORKSPACE.with(|workspace| {
+            let mut b = Atom::new();
+            self.expr.as_view().taylor_series(
+                id,
+                expansion_point.to_expression().expr.as_view(),
+                depth,
+                workspace,
+                state.borrow(),
+                &mut b,
+            );
             b
         });
 

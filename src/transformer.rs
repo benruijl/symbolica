@@ -22,6 +22,8 @@ pub enum Transformer<P: AtomSet + 'static> {
     Expand(Pattern<P>),
     /// Derive the rhs w.r.t a variable.
     Derivative(Pattern<P>, Identifier),
+    /// Derive the rhs w.r.t a variable.
+    TaylorSeries(Pattern<P>, Identifier, Atom<P>, u32),
     /// Apply find-and-replace on the rhs.
     ReplaceAll(
         Pattern<P>,
@@ -71,6 +73,13 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
             Transformer::Permutations(p, i) => {
                 f.debug_tuple("Permutations").field(p).field(i).finish()
             }
+            Transformer::TaylorSeries(p, x, point, d) => f
+                .debug_tuple("TaylorSeries")
+                .field(p)
+                .field(x)
+                .field(point)
+                .field(d)
+                .finish(),
         }
     }
 }
@@ -132,6 +141,18 @@ impl<P: AtomSet> Transformer<P> {
                 let mut h = workspace.new_atom();
                 e.substitute_wildcards(state, workspace, &mut h, match_stack);
                 h.as_view().derivative(*x, workspace, state, out);
+            }
+            Transformer::TaylorSeries(e, x, expansion_point, depth) => {
+                let mut h = workspace.new_atom();
+                e.substitute_wildcards(state, workspace, &mut h, match_stack);
+                h.as_view().taylor_series(
+                    *x,
+                    expansion_point.as_view(),
+                    *depth,
+                    workspace,
+                    state,
+                    out,
+                );
             }
             Transformer::ReplaceAll(pat, input, rhs, cond) => {
                 // prepare the target by executing the transformers

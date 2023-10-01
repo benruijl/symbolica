@@ -2,12 +2,13 @@ use rug::Rational;
 use smallvec::SmallVec;
 
 use crate::{
+    combinatorics::CombinationIterator,
     representations::{
         number::{BorrowedNumber, Number},
         Add, Atom, AtomSet, AtomView, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow, Pow,
     },
     rings::integer::Integer,
-    state::{BufferHandle, State, Workspace}, combinatorics::CombinationIterator,
+    state::{BufferHandle, State, Workspace},
 };
 
 impl<'a, P: AtomSet> AtomView<'a, P> {

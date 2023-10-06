@@ -5,7 +5,8 @@ use std::sync::RwLock;
 
 use smartstring::{LazyCompact, SmartString};
 
-use crate::representations::Identifier;
+use crate::parser::Token;
+use crate::poly::Variable;
 use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
 use crate::rings::integer::IntegerRing;
 use crate::rings::rational::RationalField;
@@ -32,7 +33,7 @@ thread_local!(static WORKSPACE: Workspace = Workspace::new());
 
 struct LocalState {
     buffer: String,
-    var_map: Vec<Identifier>,
+    var_map: Vec<Variable>,
     var_name_map: Vec<SmartString<LazyCompact>>,
     input_has_rational_numbers: bool,
     exp_fits_in_u8: bool,
@@ -57,7 +58,7 @@ fn set_vars(vars: String) {
 
     for var in vars.split(',') {
         let v = symbolica.state.get_or_insert_var(var);
-        symbolica.local_state.var_map.push(v);
+        symbolica.local_state.var_map.push(v.into());
         symbolica.local_state.var_name_map.push(var.into());
     }
 }
@@ -68,7 +69,7 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
     let mut symbolica = STATE.write().unwrap();
     let symbolica: &mut Symbolica = symbolica.borrow_mut();
 
-    let token = parse(&input).unwrap();
+    let token = Token::parse(&input).unwrap();
 
     macro_rules! to_rational {
         ($in_field: ty, $exp_size: ty) => {
@@ -102,7 +103,8 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                             square_brackets_for_function: false,
                             num_exp_as_superscript: false,
                             latex: false,
-                        }
+                        },
+                        add_parentheses: false
                     }
                 )
             } else {
@@ -138,7 +140,8 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                                 square_brackets_for_function: false,
                                 num_exp_as_superscript: false,
                                 latex: false,
-                            }
+                            },
+                            add_parentheses: false
                         }
                     )
                 } else {
@@ -173,7 +176,8 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                                 square_brackets_for_function: false,
                                 num_exp_as_superscript: false,
                                 latex: false,
-                            }
+                            },
+                            add_parentheses: false
                         }
                     )
                 }

@@ -11,7 +11,7 @@ use crate::rings::{
     rational::{Rational, RationalField},
     EuclideanDomain,
 };
-use crate::{representations::Identifier, rings::Ring, state::State};
+use crate::{rings::Ring, state::State};
 
 use super::{polynomial::MultivariatePolynomial, Exponent};
 
@@ -841,15 +841,12 @@ pub enum Variable<N: NumericalFloatLike> {
 impl Variable<Rational> {
     fn to_pretty_string(
         &self,
-        var_map: &[Identifier],
+        var_map: &[super::Variable],
         state: &State,
         mode: InstructionSetMode,
     ) -> String {
         match self {
-            Variable::Var(v) => {
-                let var = state.get_name(var_map[*v]).unwrap();
-                var.as_str().to_string()
-            }
+            Variable::Var(v) => var_map[*v].to_string(state),
             Variable::Constant(c) => match mode {
                 InstructionSetMode::Plain => format!("{}", c),
                 InstructionSetMode::CPP(_) => {
@@ -1470,7 +1467,7 @@ pub enum InstructionSetMode {
 
 pub struct InstructionSetPrinter<'a> {
     pub instr: &'a InstructionListOutput<Rational>,
-    pub var_map: &'a [Identifier],
+    pub var_map: &'a [super::Variable],
     pub state: &'a State,
     pub mode: InstructionSetMode,
 }
@@ -1503,7 +1500,7 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                 if use_return_value { "T" } else { "void" },
                 self.var_map
                     .iter()
-                    .map(|x| format!("T {}", self.state.get_name(*x).unwrap()))
+                    .map(|x| format!("T {}", x.to_string(self.state)))
                     .collect::<Vec<_>>()
                     .join(","),
                 if use_return_value { "" } else { ", T* out" }

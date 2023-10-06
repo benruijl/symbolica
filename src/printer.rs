@@ -3,7 +3,11 @@ use std::fmt::{self, Display, Write};
 use colored::Colorize;
 
 use crate::{
-    poly::{polynomial::MultivariatePolynomial, Exponent},
+    poly::{
+        polynomial::MultivariatePolynomial,
+        Exponent,
+        Variable::{Identifier, Temporary},
+    },
     representations::{number::BorrowedNumber, Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
     rings::{
         finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
@@ -354,11 +358,12 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                 ))
             }
             BorrowedNumber::RationalPolynomial(p) => f.write_fmt(format_args!(
-                "({})",
+                "{}",
                 RationalPolynomialPrinter {
                     poly: p,
                     state,
                     opts,
+                    add_parentheses: true,
                 }
             )),
         }
@@ -664,6 +669,7 @@ pub struct RationalPolynomialPrinter<'a, 'b, R: Ring, E: Exponent> {
     pub poly: &'a RationalPolynomial<R, E>,
     pub state: &'b State,
     pub opts: PrintOptions,
+    pub add_parentheses: bool,
 }
 
 impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
@@ -675,6 +681,7 @@ impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
             poly,
             state,
             opts: PrintOptions::default(),
+            add_parentheses: false,
         }
     }
 
@@ -683,7 +690,12 @@ impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
         state: &'b State,
         opts: PrintOptions,
     ) -> RationalPolynomialPrinter<'a, 'b, R, E> {
-        RationalPolynomialPrinter { poly, state, opts }
+        RationalPolynomialPrinter {
+            poly,
+            state,
+            opts,
+            add_parentheses: false,
+        }
     }
 }
 
@@ -723,14 +735,25 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
         }
 
         if self.poly.denominator.is_one() {
-            f.write_fmt(format_args!(
-                "{}",
-                PolynomialPrinter {
-                    poly: &self.poly.numerator,
-                    state: self.state,
-                    opts: self.opts,
-                }
-            ))
+            if !self.add_parentheses || self.poly.numerator.nterms < 2 {
+                f.write_fmt(format_args!(
+                    "{}",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        opts: self.opts,
+                    }
+                ))
+            } else {
+                f.write_fmt(format_args!(
+                    "({})",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        opts: self.opts,
+                    }
+                ))
+            }
         } else {
             if self.opts.latex {
                 return f.write_fmt(format_args!(
@@ -836,6 +859,10 @@ impl<'a, 'b, R: Ring + Display, E: Exponent> PolynomialPrinter<'a, 'b, R, E> {
 
 impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, 'b, F, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if f.sign_plus() {
+            f.write_char('+')?;
+        }
+
         let var_map = match self.poly.var_map.as_ref() {
             Some(v) => v,
             None => {
@@ -857,14 +884,18 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, '
                 write!(f, "-")?;
             } else {
                 if is_first_term {
-                    self.poly.field.fmt_display(monomial.coefficient, f)?;
+                    self.poly
+                        .field
+                        .fmt_display(monomial.coefficient, Some(self.state), true, f)?;
                 } else {
                     write!(
                         f,
                         "{:+}",
                         RingPrinter {
                             ring: &self.poly.field,
-                            element: monomial.coefficient
+                            element: monomial.coefficient,
+                            state: Some(self.state),
+                            in_product: true
                         }
                     )?;
                 }
@@ -881,7 +912,10 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, '
                     write!(f, "*")?;
                 }
 
-                f.write_str(self.state.get_name(*var_id).unwrap())?;
+                match var_id {
+                    Identifier(v) => f.write_str(self.state.get_name(*v).unwrap())?,
+                    Temporary(t) => f.write_fmt(format_args!("_MAP_{}", *t))?,
+                }
 
                 if e.to_u32() != 1 {
                     if self.opts.latex {

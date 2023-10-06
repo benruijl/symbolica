@@ -1,3 +1,4 @@
+use std::hash::Hash;
 use std::{
     cell::RefCell,
     collections::hash_map::Entry,
@@ -253,6 +254,20 @@ impl<T: ResettableBuffer> Stack<T> {
 pub struct BufferHandle<'a, T: ResettableBuffer> {
     buf: Option<T>,
     parent: &'a Stack<T>,
+}
+
+impl<'a, T: ResettableBuffer + Eq> Eq for BufferHandle<'a, T> {}
+
+impl<'a, T: ResettableBuffer + PartialEq> PartialEq for BufferHandle<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.buf == other.buf
+    }
+}
+
+impl<'a, T: ResettableBuffer + Hash> Hash for BufferHandle<'a, T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.buf.hash(state);
+    }
 }
 
 impl<'a, T: ResettableBuffer> Deref for BufferHandle<'a, T> {

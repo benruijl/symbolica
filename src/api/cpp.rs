@@ -5,7 +5,7 @@ use std::os::raw::c_ulonglong;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::parser::Token;
-use crate::representations::Identifier;
+use crate::poly::Variable;
 use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
 use crate::rings::integer::IntegerRing;
 use crate::rings::rational::RationalField;
@@ -19,7 +19,7 @@ use crate::{
 
 struct LocalState {
     buffer: String,
-    var_map: Vec<Identifier>,
+    var_map: Vec<Variable>,
     var_name_map: Vec<SmartString<LazyCompact>>,
     input_has_rational_numbers: bool,
     exp_fits_in_u8: bool,
@@ -120,7 +120,7 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
         symbolica
             .local_state
             .var_map
-            .push(symbolica.state.get_or_insert_var(var));
+            .push(Variable::Identifier(symbolica.state.get_or_insert_var(var)));
         symbolica.local_state.var_name_map.push(var.into());
     }
 }
@@ -173,7 +173,8 @@ unsafe extern "C" fn simplify(
                             square_brackets_for_function: false,
                             num_exp_as_superscript: false,
                             latex: false,
-                        }
+                        },
+                        add_parentheses: false,
                     }
                 )
                 .unwrap();
@@ -209,7 +210,8 @@ unsafe extern "C" fn simplify(
                                 square_brackets_for_function: false,
                                 num_exp_as_superscript: false,
                                 latex: false,
-                            }
+                            },
+                            add_parentheses: false,
                         }
                     )
                     .unwrap();
@@ -244,7 +246,8 @@ unsafe extern "C" fn simplify(
                                 square_brackets_for_function: false,
                                 num_exp_as_superscript: false,
                                 latex: false,
-                            }
+                            },
+                            add_parentheses: false,
                         }
                     )
                     .unwrap();

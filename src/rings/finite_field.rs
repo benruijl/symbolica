@@ -2,6 +2,8 @@ use rand::Rng;
 use std::fmt::{Display, Error, Formatter};
 use std::hash::Hash;
 
+use crate::state::State;
+
 use super::{EuclideanDomain, Field, Ring};
 
 const HENSEL_LIFTING_MASK: [u8; 128] = [
@@ -241,7 +243,13 @@ impl Ring for FiniteField<u32> {
         FiniteFieldElement(r as u32)
     }
 
-    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        _state: Option<&State>,
+        _in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
         if f.sign_plus() {
             write!(f, "+{}", self.from_element(*element))
         } else {
@@ -513,7 +521,13 @@ impl Ring for FiniteField<u64> {
         FiniteFieldElement(r as u64)
     }
 
-    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        _state: Option<&State>,
+        _in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
         if f.sign_plus() {
             write!(f, "+{}", self.from_element(*element))
         } else {

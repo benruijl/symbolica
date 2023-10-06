@@ -551,6 +551,24 @@ class Expression:
         >>> print(r)
         """
 
+    @classmethod
+    def solve_linear_system(
+        _cls,
+        system: Sequence[Expression],
+        variables: Sequence[Expression],
+    ) -> Sequence[Expression]:
+        """Solve a linear system in the variables `variables`, where each expression
+        in the system is understood to yield 0.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x, y, c = Expression.vars('x', 'y', 'c')
+        >>> f = Expression.fun('f')
+        >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
+        >>> print('x =', x_r, ', y =', y_r)
+        """
+
 
 class PatternRestriction:
     """A restriction on wildcards."""

@@ -7,10 +7,10 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    poly::{polynomial::MultivariatePolynomial, Exponent},
+    poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
     representations::{
         number::{ConvertToRing, Number},
-        Atom, AtomSet, Identifier, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar,
+        Atom, AtomSet, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar,
     },
     rings::Ring,
     state::{ResettableBuffer, State, Workspace},
@@ -743,7 +743,7 @@ impl Token {
     /// where the coefficient comes first.
     pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
         mut input: &'a [u8],
-        var_map: &[Identifier],
+        var_map: &[Variable],
         var_name_map: &[SmartString<LazyCompact>],
         field: R,
     ) -> (&'a [u8], MultivariatePolynomial<R, E>) {

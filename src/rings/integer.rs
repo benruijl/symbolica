@@ -11,7 +11,7 @@ use rug::{
     Complete, Integer as ArbitraryPrecisionInteger,
 };
 
-use crate::utils;
+use crate::{state::State, utils};
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, ToFiniteField},
@@ -534,7 +534,13 @@ impl Ring for IntegerRing {
         Integer::Natural(r)
     }
 
-    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        _state: Option<&State>,
+        _in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
         element.fmt(f)
     }
 }

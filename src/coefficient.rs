@@ -1,11 +1,11 @@
+use ahash::HashMap;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
-    poly::{polynomial::MultivariatePolynomial, INLINED_EXPONENTS},
+    poly::{polynomial::MultivariatePolynomial, Variable, INLINED_EXPONENTS},
     representations::{
         number::{BorrowedNumber, Number},
-        Add, Atom, AtomSet, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow,
-        Pow, Var,
+        Add, Atom, AtomSet, AtomView, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
     },
     rings::{
         integer::{Integer, IntegerRing},
@@ -17,7 +17,7 @@ use crate::{
 impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn set_coefficient_ring(
         &self,
-        vars: &[Identifier],
+        vars: &[Variable],
         state: &State,
         workspace: &Workspace<P>,
         out: &mut Atom<P>,
@@ -43,14 +43,19 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             true
                         } else {
                             let mut n1 = workspace.new_atom();
-                            n1.from_polynomial(workspace, state, &r.numerator);
+                            n1.from_polynomial(workspace, state, &r.numerator, &HashMap::default());
 
                             let mut n1_conv = workspace.new_atom();
                             n1.as_view()
                                 .set_coefficient_ring(vars, state, workspace, &mut n1_conv);
 
                             let mut n2 = workspace.new_atom();
-                            n2.from_polynomial(workspace, state, &r.denominator);
+                            n2.from_polynomial(
+                                workspace,
+                                state,
+                                &r.denominator,
+                                &HashMap::default(),
+                            );
 
                             let mut n2_conv = workspace.new_atom();
                             n2.as_view()
@@ -83,7 +88,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             }
             AtomView::Var(v) => {
                 let id = v.get_name();
-                if vars.contains(&id) {
+                if vars.contains(&id.into()) {
                     // change variable into coefficient
                     let mut poly = MultivariatePolynomial::new(
                         vars.len(),
@@ -92,7 +97,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         Some(vars),
                     );
                     let mut e: SmallVec<[u16; INLINED_EXPONENTS]> = smallvec![0; vars.len()];
-                    e[vars.iter().position(|x| *x == id).unwrap()] = 1;
+                    e[vars.iter().position(|x| *x == id.into()).unwrap()] = 1;
                     poly.append_monomial(Integer::one(), &e);
                     let den = MultivariatePolynomial::new_from_constant(&poly, Integer::one());
 

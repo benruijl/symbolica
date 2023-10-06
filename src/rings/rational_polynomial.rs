@@ -1,14 +1,15 @@
 use std::{
     borrow::Cow,
-    fmt::{Display, Error, Formatter},
+    fmt::{Display, Error, Formatter, Write},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
+use ahash::HashMap;
+
 use crate::{
-    poly::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent},
-    printer::RationalPolynomialPrinter,
-    representations::Identifier,
+    poly::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent, Variable},
+    printer::{PrintOptions, RationalPolynomialPrinter},
     state::State,
 };
 
@@ -50,7 +51,7 @@ pub struct RationalPolynomial<R: Ring, E: Exponent> {
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
-    pub fn new(field: R, var_map: Option<&[Identifier]>) -> RationalPolynomial<R, E> {
+    pub fn new(field: R, var_map: Option<&[Variable]>) -> RationalPolynomial<R, E> {
         let num = MultivariatePolynomial::new(
             var_map.map(|x| x.len()).unwrap_or(0),
             field,
@@ -65,7 +66,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         }
     }
 
-    pub fn get_var_map(&self) -> Option<&[Identifier]> {
+    pub fn get_var_map(&self) -> Option<&[Variable]> {
         self.numerator.var_map.as_ref().map(|x| x.as_slice())
     }
 
@@ -78,7 +79,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     }
 
     /// Constuct a pretty-printer for the rational polynomial.
-    pub fn printer<'a,'b>(&'a self, state: &'b State) -> RationalPolynomialPrinter<'a, 'b, R, E> {
+    pub fn printer<'a, 'b>(&'a self, state: &'b State) -> RationalPolynomialPrinter<'a, 'b, R, E> {
         RationalPolynomialPrinter::new(self, state)
     }
 }
@@ -272,6 +273,93 @@ where
             denominator: (&other.denominator / &gcd_den) * &self.denominator,
         }
     }
+
+    /// Convert the rational polynomial to a polynomial in the specified
+    /// variables, with rational polynomial coefficients.
+    /// If the specified variables appear in the denominator, an `Err` is returned.
+    ///
+    /// If `ignore_denominator` is `True`, the denominator is considered to be 1,
+    /// after the variable check.
+    pub fn to_polynomial(
+        &self,
+        variables: &[Variable],
+        ignore_denominator: bool,
+    ) -> Result<MultivariatePolynomial<RationalPolynomialField<R, E>, E>, &'static str> {
+        let var_map = self.get_var_map().ok_or("Variable map missing")?;
+        let index_mask: Vec<_> = var_map
+            .iter()
+            .map(|v| variables.iter().position(|vv| vv == v))
+            .collect();
+
+        for e in self.denominator.exponents.chunks(self.denominator.nvars) {
+            for (c, p) in index_mask.iter().zip(e) {
+                if c.is_some() && *p > E::zero() {
+                    return Err("Not a polynomial");
+                }
+            }
+        }
+
+        let mut hm: HashMap<Vec<E>, RationalPolynomial<R, E>> = HashMap::default();
+
+        let mut e_list = vec![E::zero(); variables.len()];
+
+        let mut e_list_coeff = vec![E::zero(); self.numerator.nvars];
+        for e in self.numerator.into_iter() {
+            for ee in &mut e_list {
+                *ee = E::zero();
+            }
+
+            for ((elc, ee), m) in e_list_coeff.iter_mut().zip(e.exponents).zip(&index_mask) {
+                if let Some(p) = m {
+                    e_list[*p] = *ee;
+                    *elc = E::zero();
+                } else {
+                    *elc = *ee;
+                }
+            }
+
+            // TODO: remove variables from the var_map of the coefficient
+            if let Some(r) = hm.get_mut(e_list.as_slice()) {
+                r.numerator
+                    .append_monomial(e.coefficient.clone(), &e_list_coeff);
+            } else {
+                let mut r = RationalPolynomial::new(self.numerator.field, Some(var_map));
+                r.numerator
+                    .append_monomial(e.coefficient.clone(), &e_list_coeff);
+                hm.insert(e_list.clone(), r);
+            }
+        }
+
+        let mut poly = MultivariatePolynomial::new(
+            variables.len(),
+            RationalPolynomialField::new(self.numerator.field),
+            Some(hm.len()),
+            Some(variables),
+        );
+
+        if !ignore_denominator {
+            let denom = RationalPolynomial::from_num_den(
+                MultivariatePolynomial::new_from_constant(
+                    &self.denominator,
+                    self.denominator.field.one(),
+                ),
+                self.denominator.clone(),
+                self.denominator.field,
+                false,
+            );
+
+            for coeff in hm.values_mut() {
+                // divide by the denominator
+                *coeff = coeff.mul(&denom);
+            }
+        }
+
+        for (exp, coeff) in hm {
+            poly.append_monomial(coeff, &exp);
+        }
+
+        Ok(poly)
+    }
 }
 
 impl<R: Ring, E: Exponent> Display for RationalPolynomial<R, E> {
@@ -279,6 +367,10 @@ impl<R: Ring, E: Exponent> Display for RationalPolynomial<R, E> {
         if self.denominator.is_one() {
             self.numerator.fmt(f)
         } else {
+            if f.sign_plus() {
+                f.write_char('+')?;
+            }
+
             f.write_fmt(format_args!("({})/({})", self.numerator, self.denominator))
         }
     }
@@ -392,8 +484,32 @@ where
         todo!("Sampling a polynomial is not possible yet")
     }
 
-    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
-        element.fmt(f)
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        state: Option<&State>,
+        in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
+        if f.sign_plus() {
+            f.write_char('+')?;
+        }
+
+        if let Some(state) = state {
+            f.write_fmt(format_args!(
+                "{}",
+                RationalPolynomialPrinter {
+                    poly: element,
+                    state: state,
+                    opts: PrintOptions::default(),
+                    add_parentheses: in_product
+                },
+            ))
+        } else if in_product {
+            f.write_fmt(format_args!("({})", element))
+        } else {
+            f.write_fmt(format_args!("{}", element))
+        }
     }
 }
 

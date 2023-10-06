@@ -58,7 +58,7 @@ impl<F: Field> Display for Matrix<F> {
         for (ri, r) in self.row_iter().enumerate() {
             f.write_char('{')?;
             for (ci, c) in r.iter().enumerate() {
-                self.field.fmt_display(c, f)?;
+                self.field.fmt_display(c, None, true, f)?;
                 if ci + 1 < self.shape.1 as usize {
                     f.write_char(',')?;
                 }

@@ -39,7 +39,7 @@ fn main() {
     let workspace = Workspace::default();
     let vars: Vec<_> = var_names
         .iter()
-        .map(|v| state.get_or_insert_var(v))
+        .map(|v| state.get_or_insert_var(v).into())
         .collect();
 
     let print_opt = PrintOptions {
@@ -78,7 +78,8 @@ fn main() {
             RationalPolynomialPrinter {
                 poly: &r,
                 state: &state,
-                opts: print_opt
+                opts: print_opt,
+                add_parentheses: false
             }
         );
 

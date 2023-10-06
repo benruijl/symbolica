@@ -1,17 +1,16 @@
 use ahash::{HashMap, HashMapExt};
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BinaryHeap};
-use std::fmt;
 use std::fmt::Display;
+use std::fmt::{self, Write};
 use std::mem;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use crate::printer::PolynomialPrinter;
-use crate::representations::Identifier;
 use crate::rings::{EuclideanDomain, Field, Ring, RingPrinter};
 use crate::state::State;
 
-use super::{Exponent, INLINED_EXPONENTS};
+use super::{Exponent, Variable, INLINED_EXPONENTS};
 use smallvec::{smallvec, SmallVec};
 
 /// Multivariate polynomial with a sparse degree and variable dense representation.
@@ -27,13 +26,13 @@ pub struct MultivariatePolynomial<F: Ring, E: Exponent> {
     pub nterms: usize,
     pub nvars: usize,
     pub field: F,
-    pub var_map: Option<SmallVec<[Identifier; INLINED_EXPONENTS]>>,
+    pub var_map: Option<SmallVec<[Variable; INLINED_EXPONENTS]>>,
 }
 
 impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     /// Constructs a zero polynomial.
     #[inline]
-    pub fn new(nvars: usize, field: F, cap: Option<usize>, var_map: Option<&[Identifier]>) -> Self {
+    pub fn new(nvars: usize, field: F, cap: Option<usize>, var_map: Option<&[Variable]>) -> Self {
         Self {
             coefficients: Vec::with_capacity(cap.unwrap_or(0)),
             exponents: Vec::with_capacity(cap.unwrap_or(0) * nvars),
@@ -212,15 +211,17 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E> {
     }
 
     /// Get the variable map.
-    pub fn get_var_map(
-        &self,
-    ) -> &Option<smallvec::SmallVec<[crate::representations::Identifier; INLINED_EXPONENTS]>> {
+    pub fn get_var_map(&self) -> &Option<smallvec::SmallVec<[Variable; INLINED_EXPONENTS]>> {
         &self.var_map
     }
 
     /// Unify the variable maps of two polynomials, i.e.
     /// rewrite a polynomial in `x` and one in `y` to a
     /// two polynomial in `x` and `y`.
+    ///
+    /// The variable map will be inherited from
+    /// `self` and will be extended by variables occurring
+    /// in `other`.
     pub fn unify_var_map(&mut self, other: &mut Self) {
         assert!(
             (self.var_map.is_some() || self.nvars == 0)
@@ -472,6 +473,10 @@ impl<F: Ring + fmt::Debug, E: Exponent + fmt::Debug> fmt::Debug for Multivariate
 
 impl<F: Ring + Display, E: Exponent> Display for MultivariatePolynomial<F, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if f.sign_plus() {
+            f.write_char('+')?;
+        }
+
         let mut is_first_term = true;
         for monomial in self {
             let mut is_first_factor = true;
@@ -483,14 +488,17 @@ impl<F: Ring + Display, E: Exponent> Display for MultivariatePolynomial<F, E> {
                 write!(f, "-")?;
             } else {
                 if is_first_term {
-                    self.field.fmt_display(monomial.coefficient, f)?;
+                    self.field
+                        .fmt_display(monomial.coefficient, None, true, f)?;
                 } else {
                     write!(
                         f,
                         "{:+}",
                         RingPrinter {
                             ring: &self.field,
-                            element: monomial.coefficient
+                            element: monomial.coefficient,
+                            state: None,
+                            in_product: true
                         }
                     )?;
                 }
@@ -527,15 +535,26 @@ impl<F: Ring + PartialEq, E: Exponent> PartialEq for MultivariatePolynomial<F, E
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         if self.nvars != other.nvars {
-            if self.is_zero() && other.is_zero() {
-                // Both are 0.
-                return true;
-            }
-            if self.is_zero() || other.is_zero() {
-                // One of them is 0.
+            if self.is_constant() != other.is_constant() {
                 return false;
             }
-            panic!("nvars mismatched");
+
+            if self.is_zero() != other.is_zero() {
+                return false;
+            }
+
+            if self.is_zero() {
+                return true;
+            }
+
+            if self.is_constant() {
+                return self.coefficients[0] == other.coefficients[0];
+            }
+
+            // TODO: what is expected here?
+            unimplemented!(
+                "Cannot compare non-constant polynomials with different variable maps yet"
+            );
         }
         if self.nterms != other.nterms {
             return false;

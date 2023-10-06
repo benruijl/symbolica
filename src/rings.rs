@@ -7,6 +7,8 @@ pub mod rational_polynomial;
 
 use std::fmt::{Debug, Display, Error, Formatter};
 
+use crate::state::State;
+
 pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
     type Element: Clone + PartialEq + Debug;
 
@@ -30,7 +32,13 @@ pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
     fn one_is_gcd_unit() -> bool;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
-    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error>;
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        state: Option<&State>,
+        in_product: bool, // can be used to add parentheses
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error>;
 }
 
 pub trait EuclideanDomain: Ring {
@@ -48,10 +56,13 @@ pub trait Field: EuclideanDomain {
 pub struct RingPrinter<'a, R: Ring> {
     pub ring: &'a R,
     pub element: &'a R::Element,
+    pub state: Option<&'a State>,
+    pub in_product: bool,
 }
 
 impl<'a, R: Ring> Display for RingPrinter<'a, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.ring.fmt_display(self.element, f)
+        self.ring
+            .fmt_display(self.element, self.state, self.in_product, f)
     }
 }

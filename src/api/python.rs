@@ -31,7 +31,7 @@ use crate::{
             InstructionSetPrinter,
         },
         polynomial::MultivariatePolynomial,
-        INLINED_EXPONENTS,
+        Variable, INLINED_EXPONENTS,
     },
     printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::{
@@ -1575,10 +1575,10 @@ impl PythonExpression {
     /// vars : List[Expression]
     ///         A list of variables
     pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonExpression> {
-        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
         for v in vars {
             match v.expr.as_view() {
-                AtomView::Var(v) => var_map.push(v.get_name()),
+                AtomView::Var(v) => var_map.push(v.get_name().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
                         "Expected variable instead of {:?}",
@@ -1849,12 +1849,12 @@ impl PythonExpression {
 
     /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
     pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {
-        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
 
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_name()),
+                    AtomView::Var(v) => var_map.push(v.get_name().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
                             "Expected variable instead of {:?}",
@@ -1896,12 +1896,12 @@ impl PythonExpression {
         &self,
         vars: Option<Vec<PythonExpression>>,
     ) -> PyResult<PythonRationalPolynomial> {
-        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
 
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_name()),
+                    AtomView::Var(v) => var_map.push(v.get_name().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
                             "Expected variable instead of {:?}",
@@ -1941,12 +1941,12 @@ impl PythonExpression {
         &self,
         vars: Option<Vec<PythonExpression>>,
     ) -> PyResult<PythonRationalPolynomialSmallExponent> {
-        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
 
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_name()),
+                    AtomView::Var(v) => var_map.push(v.get_name().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
                             "Expected variable instead of {:?}",
@@ -2097,6 +2097,55 @@ impl PythonExpression {
         Ok(PythonExpression {
             expr: Arc::new(out),
         })
+    }
+
+    /// Solve a linear system in the variables `variables`, where each expression
+    /// in the system is understood to yield 0.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x, y, c = Expression.vars('x', 'y', 'c')
+    /// >>> f = Expression.fun('f')
+    /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
+    /// >>> print('x =', x_r, ', y =', y_r)
+    #[classmethod]
+    pub fn solve_linear_system(
+        _cls: &PyType,
+        system: Vec<ConvertibleToExpression>,
+        variables: Vec<PythonExpression>,
+    ) -> PyResult<Vec<PythonExpression>> {
+        let system: Vec<_> = system.into_iter().map(|x| x.to_expression()).collect();
+        let system_b: Vec<_> = system.iter().map(|x| x.expr.as_view()).collect();
+
+        let mut vars = vec![];
+        for v in variables {
+            match v.expr.as_view() {
+                AtomView::Var(v) => vars.push(v.get_name().into()),
+                e => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Expected variable instead of {:?}",
+                        e
+                    )))?;
+                }
+            }
+        }
+
+        let mut guard = get_state_mut!()?;
+        let state = guard.borrow_mut();
+
+        let res = WORKSPACE
+            .with(|workspace| {
+                AtomView::solve_linear_system::<u16>(&system_b, &vars, workspace, state)
+            })
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!("Could not solve system: {:?}", e))
+            })?;
+
+        Ok(res
+            .into_iter()
+            .map(|x| PythonExpression { expr: Arc::new(x) })
+            .collect())
     }
 }
 
@@ -2355,7 +2404,7 @@ impl PythonPolynomial {
     ///     If the input is not a valid Symbolica polynomial.
     #[classmethod]
     pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
-        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
         let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
             SmallVec::new();
 
@@ -2363,7 +2412,7 @@ impl PythonPolynomial {
             let mut state = get_state_mut!()?;
             for v in vars {
                 let id = state.get_or_insert_var(v);
-                var_map.push(id);
+                var_map.push(id.into());
                 var_name_map.push(v.into());
             }
         }
@@ -2508,7 +2557,7 @@ impl PythonIntegerPolynomial {
     ///     If the input is not a valid Symbolica polynomial.
     #[classmethod]
     pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
-        let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
         let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
             SmallVec::new();
 
@@ -2516,7 +2565,7 @@ impl PythonIntegerPolynomial {
             let mut state = get_state_mut!()?;
             for v in vars {
                 let id = state.get_or_insert_var(v);
-                var_map.push(id);
+                var_map.push(id.into());
                 var_name_map.push(v.into());
             }
         }
@@ -2726,14 +2775,14 @@ macro_rules! generate_rat_methods {
             ///     If the input is not a valid Symbolica rational polynomial.
             #[classmethod]
             pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
-                let mut var_map: SmallVec<[Identifier; INLINED_EXPONENTS]> = SmallVec::new();
+                let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
                 let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
                     SmallVec::new();
 
                 let mut state = get_state_mut!()?;
                 for v in vars {
                     let id = state.get_or_insert_var(v);
-                    var_map.push(id);
+                    var_map.push(id.into());
                     var_name_map.push(v.into());
                 }
 
@@ -2768,7 +2817,8 @@ macro_rules! generate_rat_methods {
                     RationalPolynomialPrinter {
                         poly: &self.poly,
                         state: &&get_state!()?,
-                        opts: PrintOptions::default()
+                        opts: PrintOptions::default(),
+                        add_parentheses: false,
                     }
                 ))
             }

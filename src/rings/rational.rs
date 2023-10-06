@@ -9,7 +9,7 @@ use rug::{
     Rational as ArbitraryPrecisionRational,
 };
 
-use crate::{poly::gcd::LARGE_U32_PRIMES, utils};
+use crate::{poly::gcd::LARGE_U32_PRIMES, state::State, utils};
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
@@ -540,7 +540,13 @@ impl Ring for RationalField {
         Rational::Natural(r, 1)
     }
 
-    fn fmt_display(&self, element: &Self::Element, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        _state: Option<&State>,
+        _in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
         element.fmt(f)
     }
 }

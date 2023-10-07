@@ -10,12 +10,16 @@ readme = "Readme.md"
 repository = "https://github/benruijl/symbolica"
 version = "0.1.1"
 
+[profile.release]
+lto = true
+codegen-units = 1
+
 [profile.dev-optim]
 inherits = "dev"
 opt-level = 3
 
 [lib]
-crate-type = ["cdylib", "rlib", "staticlib"]
+crate-type = ["lib"]
 name = "symbolica"
 
 [features]

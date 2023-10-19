@@ -1,5 +1,6 @@
 pub mod evaluate;
 pub mod gcd;
+pub mod groebner;
 pub mod polynomial;
 
 use std::borrow::Cow;

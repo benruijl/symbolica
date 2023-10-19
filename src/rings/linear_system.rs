@@ -81,9 +81,27 @@ pub enum LinearSolverError<F: Field> {
         row_reduced_matrix: Option<Matrix<F>>,
     },
     Inconsistent,
+    NotSquare,
 }
 
 impl<F: Field> Matrix<F> {
+    /// Compute the determinant of the matrix.
+    pub fn det(&mut self) -> Result<F::Element, LinearSolverError<F>> {
+        if self.shape.0 != self.shape.1 {
+            Err(LinearSolverError::NotSquare)?;
+        }
+
+        self.solve_subsystem(self.shape.0)?;
+
+        let mut det = self.field.one();
+        for x in 0..self.shape.0 {
+            self.field
+                .mul_assign(&mut det, &self.data[(x + self.shape.0 * x) as usize]);
+        }
+
+        Ok(det)
+    }
+
     /// Solves `A * x = 0` for the first `max_col` columns in x.
     /// The other columns are augmented.
     pub fn solve_subsystem(&mut self, max_col: u32) -> Result<u32, LinearSolverError<F>> {

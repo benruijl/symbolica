@@ -872,6 +872,9 @@ where
                         debug!("Inconsistent system");
                         return Err(GCDError::BadOriginalImage);
                     }
+                    Err(LinearSolverError::NotSquare) => {
+                        unreachable!()
+                    }
                 }
             }
         }

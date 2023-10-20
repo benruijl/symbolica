@@ -17,6 +17,7 @@ pub mod coefficient;
 pub mod collect;
 pub mod combinatorics;
 pub mod derivative;
+pub mod evaluate;
 pub mod expand;
 pub mod id;
 pub mod normalize;

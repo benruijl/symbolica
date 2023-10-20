@@ -520,6 +520,18 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
             HornerScheme::optimize_multiple(std::slice::from_ref(&self), num_tries);
         (hs.pop().unwrap(), op_count, scheme)
     }
+
+    /// Optimize an expression for evaluation, given `num_iter` tries.
+    pub fn optimize(&self, num_iter: usize) -> InstructionListOutput<Rational> {
+        let (h, _ops, _scheme) = self.optimize_horner_scheme(num_iter);
+        let mut i = h.to_instr(self.nvars);
+        i.fuse_operations();
+        while i.common_pair_elimination() {
+            i.fuse_operations();
+        }
+
+        i.to_output(self.var_map.as_ref().unwrap().to_vec(), true)
+    }
 }
 
 impl HornerScheme<RationalField> {
@@ -1164,10 +1176,15 @@ impl InstructionList {
     /// Convert the instruction list into its output format, where
     /// intermediate registers can be recycled. This vastly improves
     /// the computational memory needed for evaluations.
-    pub fn to_output(self, recycle_registers: bool) -> InstructionListOutput<Rational> {
+    pub fn to_output(
+        self,
+        input_map: Vec<super::Variable>,
+        recycle_registers: bool,
+    ) -> InstructionListOutput<Rational> {
         if !recycle_registers {
             return InstructionListOutput {
                 instr: self.instr.into_iter().enumerate().collect(),
+                input_map,
             };
         }
 
@@ -1227,13 +1244,17 @@ impl InstructionList {
             output.push((reg, x));
         }
 
-        InstructionListOutput { instr: output }
+        InstructionListOutput {
+            instr: output,
+            input_map,
+        }
     }
 }
 
 /// A list of instructions suitable for fast numerical evaluation.
 pub struct InstructionListOutput<N: NumericalFloatLike> {
     instr: Vec<(usize, Instruction<N>)>,
+    input_map: Vec<super::Variable>,
 }
 
 /// An efficient structure that performs a range of operations.
@@ -1361,7 +1382,10 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
             };
             instr.push((*reg, new_instr));
         }
-        InstructionListOutput { instr }
+        InstructionListOutput {
+            instr,
+            input_map: self.input_map.clone(),
+        }
     }
 
     /// Create a fast numerical evaluator.
@@ -1467,7 +1491,6 @@ pub enum InstructionSetMode {
 
 pub struct InstructionSetPrinter<'a> {
     pub instr: &'a InstructionListOutput<Rational>,
-    pub var_map: &'a [super::Variable],
     pub state: &'a State,
     pub mode: InstructionSetMode,
 }
@@ -1498,7 +1521,8 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
             f.write_fmt(format_args!(
                 "{} evaluate({}{}) {{\n",
                 if use_return_value { "T" } else { "void" },
-                self.var_map
+                self.instr
+                    .input_map
                     .iter()
                     .map(|x| format!("T {}", x.to_string(self.state)))
                     .collect::<Vec<_>>()
@@ -1555,7 +1579,7 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                 Instruction::Init(x) => f.write_fmt(format_args!(
                     "\tZ{} = {};\n",
                     reg,
-                    x.to_pretty_string(self.var_map, self.state, self.mode)
+                    x.to_pretty_string(&self.instr.input_map, self.state, self.mode)
                 ))?,
             }
         }
@@ -1564,8 +1588,8 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
             f.write_str("}\n")?;
 
             if s.write_header_and_test {
-                let points: Vec<_> = (0..self.var_map.len())
-                    .map(|i| ((i + 1) as f64 / (self.var_map.len() + 2) as f64).to_string())
+                let points: Vec<_> = (0..self.instr.input_map.len())
+                    .map(|i| ((i + 1) as f64 / (self.instr.input_map.len() + 2) as f64).to_string())
                     .collect();
 
                 if use_return_value {

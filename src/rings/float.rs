@@ -57,7 +57,10 @@ pub trait NumericalFloatComparison: NumericalFloatLike + PartialOrd {
 
 pub trait Real: NumericalFloatLike + Clone + Copy {
     fn sqrt(&self) -> Self;
-    fn ln(&self) -> Self;
+    fn log(&self) -> Self;
+    fn exp(&self) -> Self;
+    fn sin(&self) -> Self;
+    fn cos(&self) -> Self;
     fn powf(&self, e: f64) -> Self;
 }
 
@@ -150,8 +153,23 @@ impl Real for f64 {
     }
 
     #[inline(always)]
-    fn ln(&self) -> Self {
+    fn log(&self) -> Self {
         (*self).ln()
+    }
+
+    #[inline(always)]
+    fn exp(&self) -> Self {
+        (*self).exp()
+    }
+
+    #[inline(always)]
+    fn sin(&self) -> Self {
+        (*self).sin()
+    }
+
+    #[inline(always)]
+    fn cos(&self) -> Self {
+        (*self).cos()
     }
 
     #[inline]
@@ -231,8 +249,23 @@ macro_rules! simd_impl {
             }
 
             #[inline(always)]
-            fn ln(&self) -> Self {
+            fn log(&self) -> Self {
                 (*self).ln()
+            }
+
+            #[inline(always)]
+            fn exp(&self) -> Self {
+                (*self).exp()
+            }
+
+            #[inline(always)]
+            fn sin(&self) -> Self {
+                (*self).sin()
+            }
+
+            #[inline(always)]
+            fn cos(&self) -> Self {
+                (*self).cos()
             }
 
             #[inline(always)]

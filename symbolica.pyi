@@ -77,7 +77,7 @@ class Expression:
     @classmethod
     def var(_cls, name: str) -> Expression:
         """
-        Creates a Symbolica expression that is a single variable.
+        Create a Symbolica expression that is a single variable.
 
         Examples
         --------
@@ -95,7 +95,7 @@ class Expression:
     @classmethod
     def fun(_cls, name: str, is_symmetric: bool = False) -> Function:
         """
-        Creates a new Symbolica function with a given name.
+        Create a new Symbolica function with a given name.
 
         Examples
         --------
@@ -109,6 +109,17 @@ class Expression:
     def funs(_cls, *names: str) -> Sequence[Function]:
         """
         Create a Symbolica function for every name in `*names`.
+        """
+
+    @classmethod
+    def num(_cls, num: int) -> Expression:
+        """Create a new Symbolica number.
+
+        Examples
+        --------
+        >>> e = Expression.num(1) / 2
+        >>> print(e)
+        1/2
         """
 
     @classmethod
@@ -569,6 +580,21 @@ class Expression:
         >>> print('x =', x_r, ', y =', y_r)
         """
 
+    def evaluate(
+        self, vars: dict[Expression, float], funs: dict[Expression, float]
+    ) -> float:
+        """Evaluate the expression, using a map of all the variables and
+        user functions to a float.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> f = Expression.fun('f')
+        >>> e = Expression.parse('cos(x)')*3 + f(x,2)
+        >>> print(e.evaluate({x: 1}, {f: lambda args: args[0]+args[1]}))
+        """
+
 
 class PatternRestriction:
     """A restriction on wildcards."""
@@ -929,6 +955,9 @@ class Polynomial:
     def __repr__(self) -> str:
         """Print the polynomial in a debug representation."""
 
+    def get_var_list(self) -> Sequence[Expression]:
+        """Get the list of variables in the internal ordering of the polynomial."""
+
     def __add__(self, rhs: Polynomial) -> Polynomial:
         """Add two polynomials `self and `rhs`, returning the result."""
 
@@ -997,6 +1026,9 @@ class IntegerPolynomial:
     def __repr__(self) -> str:
         """Print the polynomial in a debug representation."""
 
+    def get_var_list(self) -> Sequence[Expression]:
+        """Get the list of variables in the internal ordering of the polynomial."""
+
     def __add__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Add two polynomials `self and `rhs`, returning the result."""
 
@@ -1056,6 +1088,9 @@ class RationalPolynomial:
     def __repr__(self) -> str:
         """Print the rational polynomial in a debug representation."""
 
+    def get_var_list(self) -> Sequence[Expression]:
+        """Get the list of variables in the internal ordering of the polynomial."""
+
     def __add__(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Add two rational polynomials `self and `rhs`, returning the result."""
 
@@ -1107,6 +1142,9 @@ class RationalPolynomialSmallExponent:
 
     def __repr__(self) -> str:
         """Print the rational polynomial in a debug representation."""
+
+    def get_var_list(self) -> Sequence[Expression]:
+        """Get the list of variables in the internal ordering of the polynomial."""
 
     def __add__(
         self, rhs: RationalPolynomialSmallExponent

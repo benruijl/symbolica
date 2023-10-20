@@ -40,7 +40,7 @@ fn main() {
     }
 
     let op_count = i.op_count();
-    let o = i.to_output(true);
+    let o = i.to_output(poly.var_map.as_ref().unwrap().to_vec(), true);
     let o_f64 = o.convert::<f64>();
 
     println!("Writing output to evaluate.cpp");
@@ -50,7 +50,6 @@ fn main() {
             "{}",
             InstructionSetPrinter {
                 instr: &o,
-                var_map: poly.var_map.as_ref().unwrap(),
                 state: &state,
                 mode: symbolica::poly::evaluate::InstructionSetMode::CPP(
                     symbolica::poly::evaluate::InstructionSetModeCPPSettings {

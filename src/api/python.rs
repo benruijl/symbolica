@@ -11,14 +11,16 @@ use pyo3::{
     exceptions, pyclass,
     pyclass::CompareOp,
     pyfunction, pymethods, pymodule,
-    types::{PyModule, PyTuple, PyType},
+    types::{PyLong, PyModule, PyTuple, PyType},
     wrap_pyfunction, FromPyObject, IntoPy, PyErr, PyObject, PyRef, PyResult, Python,
 };
+use rug::Complete;
 use self_cell::self_cell;
 use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    evaluate::EvaluationFn,
     id::{
         AtomType, Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction,
         ReplaceIterator,
@@ -40,6 +42,7 @@ use crate::{
     },
     rings::integer::IntegerRing,
     rings::{
+        integer::Integer,
         rational::RationalField,
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
     },
@@ -740,29 +743,63 @@ impl PythonPatternRestriction {
     }
 }
 
-#[derive(FromPyObject)]
-pub enum ConvertibleToExpression {
-    Int(i64),
-    Expression(PythonExpression),
+impl<'a> FromPyObject<'a> for ConvertibleToExpression {
+    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+        if let Ok(a) = ob.extract::<PythonExpression>() {
+            Ok(ConvertibleToExpression(a))
+        } else if let Ok(num) = ob.extract::<i64>() {
+            Ok(ConvertibleToExpression(PythonExpression {
+                expr: Arc::new(Atom::new_num(num)),
+            }))
+        } else if let Ok(num) = ob.extract::<&PyLong>() {
+            let a = format!("{}", num);
+            let i = Integer::Large(rug::Integer::parse(&a).unwrap().complete());
+            Ok(ConvertibleToExpression(PythonExpression {
+                expr: Arc::new(Atom::new_num(i)),
+            }))
+        } else {
+            Err(exceptions::PyValueError::new_err(
+                "Cannot convert to expression",
+            ))
+        }
+    }
 }
+
+impl<'a> FromPyObject<'a> for Identifier {
+    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+        if let Ok(a) = ob.extract::<PythonExpression>() {
+            match a.expr.as_view() {
+                AtomView::Var(v) => Ok(v.get_name()),
+                e => Err(exceptions::PyValueError::new_err(format!(
+                    "Expected variable instead of {:?}",
+                    e
+                ))),
+            }
+        } else if let Ok(a) = ob.extract::<PythonFunction>() {
+            Ok(a.id)
+        } else {
+            Err(exceptions::PyValueError::new_err("Not a valid variable"))
+        }
+    }
+}
+
+impl<'a> FromPyObject<'a> for Variable {
+    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+        Ok(Variable::Identifier(Identifier::extract(ob)?))
+    }
+}
+
+pub struct ConvertibleToExpression(PythonExpression);
 
 impl ConvertibleToExpression {
     pub fn to_expression(self) -> PythonExpression {
-        match self {
-            ConvertibleToExpression::Int(i) => {
-                let num = Atom::new_num(Number::Natural(i, 1));
-                PythonExpression {
-                    expr: Arc::new(num),
-                }
-            }
-            ConvertibleToExpression::Expression(e) => e,
-        }
+        self.0
     }
 }
 
 #[pymethods]
 impl PythonExpression {
-    /// Creates a Symbolica expression that is a single variable.
+    /// Create a Symbolica expression that is a single variable.
     ///
     /// Examples
     /// --------
@@ -805,7 +842,7 @@ impl PythonExpression {
         Ok(result)
     }
 
-    /// Creates a new Symbolica function with a given name.
+    /// Create a new Symbolica function with a given name.
     ///
     /// Examples
     /// --------
@@ -829,6 +866,25 @@ impl PythonExpression {
         }
 
         Ok(result)
+    }
+
+    /// Create a new Symbolica number.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = Expression.num(1) / 2
+    /// >>> print(e)
+    /// 1/2
+    #[classmethod]
+    pub fn num(_cls: &PyType, num: &PyLong) -> PyResult<PythonExpression> {
+        if let Ok(num) = num.extract::<i64>() {
+            Ok(PythonExpression {
+                expr: Arc::new(Atom::new_num(num)),
+            })
+        } else {
+            let a = format!("{}", num);
+            PythonExpression::parse(_cls, &a)
+        }
     }
 
     /// Parse a Symbolica expression from a string.
@@ -1055,15 +1111,13 @@ impl PythonExpression {
 
     /// Subtract `other` from this expression, returning the result.
     pub fn __sub__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
-        self.__add__(ConvertibleToExpression::Expression(
-            rhs.to_expression().__neg__()?,
-        ))
+        self.__add__(ConvertibleToExpression(rhs.to_expression().__neg__()?))
     }
 
     /// Subtract this expression from `other`, returning the result.
     pub fn __rsub__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         rhs.to_expression()
-            .__add__(ConvertibleToExpression::Expression(self.__neg__()?))
+            .__add__(ConvertibleToExpression(self.__neg__()?))
     }
 
     /// Add this expression to `other`, returning the result.
@@ -1125,7 +1179,7 @@ impl PythonExpression {
     /// Divide `other` by this expression, returning the result.
     pub fn __rtruediv__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         rhs.to_expression()
-            .__truediv__(ConvertibleToExpression::Expression(self.clone()))
+            .__truediv__(ConvertibleToExpression(self.clone()))
     }
 
     /// Take `self` to power `exp`, returning the result.
@@ -1164,7 +1218,7 @@ impl PythonExpression {
         number: Option<i64>,
     ) -> PyResult<PythonExpression> {
         rhs.to_expression()
-            .__pow__(ConvertibleToExpression::Expression(self.clone()), number)
+            .__pow__(ConvertibleToExpression(self.clone()), number)
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
@@ -2147,6 +2201,43 @@ impl PythonExpression {
             .map(|x| PythonExpression { expr: Arc::new(x) })
             .collect())
     }
+
+    /// Evaluate the expression, using a map of all the variables and
+    /// user functions to a float.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.var('x')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = Expression.parse('cos(x)')*3 + f(x,2)
+    /// >>> print(e.evaluate({x: 1}, {f: lambda args: args[0]+args[1]}))
+    pub fn evaluate(
+        &self,
+        vars: HashMap<Variable, f64>,
+        functions: HashMap<Variable, PyObject>,
+    ) -> f64 {
+        let mut cache = HashMap::default();
+
+        let functions = functions
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    EvaluationFn::new(Box::new(move |args, _, _, _| {
+                        Python::with_gil(|py| {
+                            v.call(py, (args.to_vec(),), None)
+                                .expect("Bad callback function")
+                                .extract::<f64>(py)
+                                .expect("Function does not return a pattern")
+                        })
+                    })),
+                )
+            })
+            .collect();
+
+        self.expr.as_view().evaluate(&vars, &functions, &mut cache)
+    }
 }
 
 /// A function class for python that constructs an `Expression` when called with arguments.
@@ -2156,6 +2247,7 @@ impl PythonExpression {
 /// e = f(1,2,3)
 /// ```
 #[pyclass(name = "Function")]
+#[derive(Clone)]
 pub struct PythonFunction {
     id: Identifier,
 }
@@ -2476,20 +2568,7 @@ impl PythonPolynomial {
         iterations: usize,
         to_file: Option<String>,
     ) -> PyResult<PythonInstructionEvaluator> {
-        let (h, _ops, _scheme) = self.poly.optimize_horner_scheme(iterations);
-        let mut i = h.to_instr(self.poly.nvars);
-
-        i.fuse_operations();
-
-        for _ in 0..100_000 {
-            if !i.common_pair_elimination() {
-                break;
-            }
-            i.fuse_operations();
-        }
-
-        let o = i.to_output(true);
-
+        let o = self.poly.optimize(iterations);
         if let Some(file) = to_file.as_ref() {
             std::fs::write(
                 file,
@@ -2497,7 +2576,6 @@ impl PythonPolynomial {
                     "{}",
                     InstructionSetPrinter {
                         instr: &o,
-                        var_map: self.poly.var_map.as_ref().unwrap(),
                         state: &&get_state!()?,
                         mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {
                             write_header_and_test: true,
@@ -2617,6 +2695,36 @@ macro_rules! generate_methods {
             /// Print the polynomial in a debug representation.
             pub fn __repr__(&self) -> PyResult<String> {
                 Ok(format!("{:?}", self.poly))
+            }
+
+            /// Get the list of variables in the internal ordering of the polynomial.
+            pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+                let mut var_list = vec![];
+
+                let vars = self
+                    .poly
+                    .var_map
+                    .as_ref()
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Variable map missing",
+                    )))?;
+
+                for x in vars {
+                    match x {
+                        Variable::Identifier(x) => {
+                            var_list.push(PythonExpression {
+                                expr: Arc::new(Atom::new_var(*x)),
+                            });
+                        }
+                        _ => {
+                            Err(exceptions::PyValueError::new_err(format!(
+                                "Temporary variable in polynomial",
+                            )))?;
+                        }
+                    }
+                }
+
+                Ok(var_list)
             }
 
             /// Add two polynomials `self and `rhs`, returning the result.
@@ -2808,6 +2916,32 @@ macro_rules! generate_rat_methods {
                 Self {
                     poly: Arc::new((*self.poly).clone()),
                 }
+            }
+
+            /// Get the list of variables in the internal ordering of the polynomial.
+            pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+                let mut var_list = vec![];
+
+                let vars = self.poly.numerator.var_map.as_ref().ok_or(
+                    exceptions::PyValueError::new_err(format!("Variable map missing",)),
+                )?;
+
+                for x in vars {
+                    match x {
+                        Variable::Identifier(x) => {
+                            var_list.push(PythonExpression {
+                                expr: Arc::new(Atom::new_var(*x)),
+                            });
+                        }
+                        _ => {
+                            Err(exceptions::PyValueError::new_err(format!(
+                                "Temporary variable in polynomial",
+                            )))?;
+                        }
+                    }
+                }
+
+                Ok(var_list)
             }
 
             /// Print the rational polynomial in a human-readable format.

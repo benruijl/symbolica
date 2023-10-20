@@ -4,6 +4,7 @@ pub mod groebner;
 pub mod polynomial;
 
 use std::borrow::Cow;
+use std::cmp::Ordering::{self, Equal};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::iter::Sum;
@@ -283,6 +284,52 @@ impl Exponent for u8 {
         for (o, ss) in out.iter_mut().zip(s) {
             *o = ss.swap_bytes() as u8;
         }
+    }
+}
+
+/// A well-order of monomials.
+pub trait MonomialOrder: Clone {
+    fn cmp<E: Exponent>(a: &[E], b: &[E]) -> Ordering;
+}
+
+/// Graded reverse lexicographic ordering of monomials.
+#[derive(Clone)]
+pub struct GrevLexOrder {}
+
+impl MonomialOrder for GrevLexOrder {
+    #[inline]
+    fn cmp<E: Exponent>(a: &[E], b: &[E]) -> Ordering {
+        let deg: E = a.iter().cloned().sum();
+        let deg2: E = b.iter().cloned().sum();
+
+        match deg.cmp(&deg2) {
+            Equal => {}
+            x => {
+                return x;
+            }
+        }
+
+        for (a1, a2) in a.iter().rev().zip(b.iter().rev()) {
+            match a1.cmp(a2) {
+                Equal => {}
+                x => {
+                    return x.reverse();
+                }
+            }
+        }
+
+        Equal
+    }
+}
+
+/// Lexicographic ordering of monomials.
+#[derive(Clone)]
+pub struct LexOrder {}
+
+impl MonomialOrder for LexOrder {
+    #[inline]
+    fn cmp<E: Exponent>(a: &[E], b: &[E]) -> Ordering {
+        a.cmp(b)
     }
 }
 

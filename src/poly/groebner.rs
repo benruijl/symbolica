@@ -1,286 +1,17 @@
-use std::{
-    cmp::Ordering::{self, Equal},
-    marker::PhantomData,
-    rc::Rc,
-};
+use std::{cmp::Ordering, rc::Rc};
 
 use ahash::HashMap;
-use smallvec::SmallVec;
 
 use crate::rings::Field;
 
-use super::{polynomial::MultivariatePolynomial, Exponent, Variable, INLINED_EXPONENTS};
-
-/// A well-order of monomials.
-pub trait MonomialOrder {
-    fn cmp<E: Exponent>(a: &[E], b: &[E]) -> Ordering;
-}
-
-/// Graded reverse lexicographic ordering of monomials.
-pub struct GrevLexOrder {}
-
-impl MonomialOrder for GrevLexOrder {
-    #[inline]
-    fn cmp<E: Exponent>(a: &[E], b: &[E]) -> Ordering {
-        let deg: E = a.iter().cloned().sum();
-        let deg2: E = b.iter().cloned().sum();
-
-        match deg.cmp(&deg2) {
-            Equal => {}
-            x => {
-                return x;
-            }
-        }
-
-        for (a1, a2) in a.iter().rev().zip(b.iter().rev()) {
-            match a1.cmp(a2) {
-                Equal => {}
-                x => {
-                    return x.reverse();
-                }
-            }
-        }
-
-        Equal
-    }
-}
-
-/// Lexicographic ordering of monomials.
-pub struct LexOrder {}
-
-impl MonomialOrder for LexOrder {
-    #[inline]
-    fn cmp<E: Exponent>(a: &[E], b: &[E]) -> Ordering {
-        a.cmp(b)
-    }
-}
-
-// TODO: deprecate in favour of a MultivariatePolynomial<R, E, O = LexOrder>
-#[derive(Debug)]
-pub struct SortedPolynomial<R: Field, E: Exponent, O: MonomialOrder> {
-    coefficients: Vec<R::Element>,
-    exponents: Vec<E>,
-    nvars: usize,
-    field: R,
-    var_map: Option<SmallVec<[Variable; INLINED_EXPONENTS]>>,
-    _phantom: PhantomData<O>,
-}
-
-impl<R: Field, E: Exponent, O: MonomialOrder> Clone for SortedPolynomial<R, E, O> {
-    fn clone(&self) -> Self {
-        Self {
-            coefficients: self.coefficients.clone(),
-            exponents: self.exponents.clone(),
-            nvars: self.nvars.clone(),
-            field: self.field.clone(),
-            var_map: self.var_map.clone(),
-            _phantom: self._phantom.clone(),
-        }
-    }
-}
-
-impl<R: Field, E: Exponent, O: MonomialOrder> Into<SortedPolynomial<R, E, O>>
-    for &MultivariatePolynomial<R, E>
-{
-    fn into(self) -> SortedPolynomial<R, E, O> {
-        let mut sorted_index: Vec<_> = (0..self.nterms).collect();
-        sorted_index.sort_by(|a, b| O::cmp(self.exponents(*a), self.exponents(*b)));
-
-        let coefficients: Vec<_> = sorted_index
-            .iter()
-            .map(|i| self.coefficients[*i].clone())
-            .collect();
-        let exponents: Vec<_> = sorted_index
-            .iter()
-            .map(|i| self.exponents(*i))
-            .flatten()
-            .cloned()
-            .collect();
-
-        SortedPolynomial {
-            coefficients,
-            exponents,
-            nvars: self.nvars,
-            field: self.field,
-            var_map: self.var_map.clone(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<R: Field, E: Exponent, O: MonomialOrder> Into<MultivariatePolynomial<R, E>>
-    for &SortedPolynomial<R, E, O>
-{
-    fn into(self) -> MultivariatePolynomial<R, E> {
-        let mut sorted_index: Vec<_> = (0..self.len()).collect();
-        sorted_index.sort_by(|a, b| self.exponents(*a).cmp(self.exponents(*b)));
-
-        let coefficients: Vec<_> = sorted_index
-            .iter()
-            .map(|i| self.coefficients[*i].clone())
-            .collect();
-        let exponents: Vec<_> = sorted_index
-            .iter()
-            .map(|i| self.exponents(*i))
-            .flatten()
-            .cloned()
-            .collect();
-
-        MultivariatePolynomial {
-            nterms: coefficients.len(),
-            coefficients,
-            exponents,
-            nvars: self.nvars,
-            field: self.field,
-            var_map: self.var_map.clone(),
-        }
-    }
-}
-
-impl<R: Field, E: Exponent, O: MonomialOrder> SortedPolynomial<R, E, O> {
-    pub fn new_from(source: &SortedPolynomial<R, E, O>) -> SortedPolynomial<R, E, O> {
-        SortedPolynomial {
-            coefficients: vec![],
-            exponents: vec![],
-            nvars: source.nvars,
-            field: source.field,
-            var_map: source.var_map.clone(),
-            _phantom: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.coefficients.len()
-    }
-
-    #[inline]
-    pub fn is_zero(&self) -> bool {
-        self.len() == 0
-    }
-
-    #[inline]
-    pub fn exponents(&self, index: usize) -> &[E] {
-        &self.exponents[index * self.nvars..(index + 1) * self.nvars]
-    }
-
-    pub fn add(mut self, mut other: Self) -> Self {
-        if self.coefficients.is_empty() {
-            return other;
-        }
-        if self.coefficients.is_empty() {
-            return self;
-        }
-
-        // Merge the two polynomials, which are assumed to be already sorted.
-
-        let mut new_coefficients = vec![self.field.zero(); self.len() + other.len()];
-        let mut new_exponents: Vec<E> = vec![E::zero(); self.nvars * (self.len() + other.len())];
-        let mut new_nterms = 0;
-        let mut i = 0;
-        let mut j = 0;
-
-        macro_rules! insert_monomial {
-            ($source:expr, $index:expr) => {
-                std::mem::swap(
-                    &mut new_coefficients[new_nterms],
-                    &mut $source.coefficients[$index],
-                );
-
-                new_exponents[new_nterms * $source.nvars..(new_nterms + 1) * $source.nvars]
-                    .clone_from_slice($source.exponents($index));
-                new_nterms += 1;
-            };
-        }
-
-        while i < self.len() && j < other.len() {
-            let c = O::cmp(self.exponents(i), other.exponents(j));
-            match c {
-                Ordering::Less => {
-                    insert_monomial!(self, i);
-                    i += 1;
-                }
-                Ordering::Greater => {
-                    insert_monomial!(other, j);
-                    j += 1;
-                }
-                Ordering::Equal => {
-                    self.field
-                        .add_assign(&mut self.coefficients[i], &other.coefficients[j]);
-                    if !R::is_zero(&self.coefficients[i]) {
-                        insert_monomial!(self, i);
-                    }
-                    i += 1;
-                    j += 1;
-                }
-            }
-        }
-
-        while i < self.len() {
-            insert_monomial!(self, i);
-            i += 1;
-        }
-
-        while j < other.len() {
-            insert_monomial!(other, j);
-            j += 1;
-        }
-
-        new_coefficients.truncate(new_nterms);
-        new_exponents.truncate(self.nvars * new_nterms);
-
-        Self {
-            coefficients: new_coefficients,
-            exponents: new_exponents,
-            nvars: self.nvars,
-            field: self.field,
-            var_map: self.var_map.clone(),
-            _phantom: self._phantom,
-        }
-    }
-
-    /// Add `exponents` to every exponent.
-    pub fn mul_exp(mut self, exponents: &[E]) -> Self {
-        debug_assert_eq!(self.nvars, exponents.len());
-        for e in self.exponents.chunks_mut(self.nvars) {
-            for (e1, e2) in e.iter_mut().zip(exponents) {
-                *e1 = e1.checked_add(e2).expect("overflow in adding exponents");
-            }
-        }
-
-        self
-    }
-
-    pub fn mul_coeff(mut self, coeff: &R::Element) -> Self {
-        for e in &mut self.coefficients {
-            self.field.mul_assign(e, coeff);
-        }
-
-        self
-    }
-
-    #[inline]
-    pub fn max_coeff(&self) -> &R::Element {
-        self.coefficients.last().unwrap()
-    }
-
-    #[inline]
-    pub fn max_exp(&self) -> &[E] {
-        if self.coefficients.is_empty() {
-            panic!("Cannot get max exponent of empty polynomial");
-        }
-
-        let i = self.coefficients.len() - 1;
-        &self.exponents[i * self.nvars..(i + 1) * self.nvars]
-    }
-}
+use super::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder};
 
 #[derive(Debug)]
 pub struct CriticalPair<R: Field, E: Exponent, O: MonomialOrder> {
     lcm_diff_first: Vec<E>,
-    poly_first: Rc<SortedPolynomial<R, E, O>>,
+    poly_first: Rc<MultivariatePolynomial<R, E, O>>,
     lcm_diff_sec: Vec<E>,
-    poly_sec: Rc<SortedPolynomial<R, E, O>>,
+    poly_sec: Rc<MultivariatePolynomial<R, E, O>>,
     lcm: Vec<E>,
     degree: E,
     disjoint: bool,
@@ -288,8 +19,8 @@ pub struct CriticalPair<R: Field, E: Exponent, O: MonomialOrder> {
 
 impl<'a, R: Field, E: Exponent, O: MonomialOrder> CriticalPair<R, E, O> {
     pub fn new(
-        f1: Rc<SortedPolynomial<R, E, O>>,
-        f2: Rc<SortedPolynomial<R, E, O>>,
+        f1: Rc<MultivariatePolynomial<R, E, O>>,
+        f2: Rc<MultivariatePolynomial<R, E, O>>,
     ) -> CriticalPair<R, E, O> {
         // determine the lcm of leading monomials
         let lcm: Vec<E> = f1
@@ -324,7 +55,7 @@ impl<'a, R: Field, E: Exponent, O: MonomialOrder> CriticalPair<R, E, O> {
 }
 
 pub struct GroebnerBasis<R: Field, E: Exponent, O: MonomialOrder> {
-    pub system: Vec<SortedPolynomial<R, E, O>>,
+    pub system: Vec<MultivariatePolynomial<R, E, O>>,
     pub print_stats: bool,
 }
 
@@ -333,7 +64,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
     ///
     /// Progress can be monitored with `print_stats`.
     pub fn new(
-        ideal: &[MultivariatePolynomial<R, E>],
+        ideal: &[MultivariatePolynomial<R, E, O>],
         print_stats: bool,
     ) -> GroebnerBasis<R, E, O> {
         let mut ideal = ideal.to_vec();
@@ -344,10 +75,8 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
             }
         }
 
-        let system: Vec<_> = ideal.iter().map(|s| s.into()).collect();
-
         let mut b = GroebnerBasis {
-            system,
+            system: ideal,
             print_stats,
         };
 
@@ -360,9 +89,9 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
     ///
     /// Adapted from "A Computational Approach to Commutative Algebra" by Thomas Becker Volker Weispfenning.
     fn update(
-        basis: &mut Vec<Rc<SortedPolynomial<R, E, O>>>,
+        basis: &mut Vec<Rc<MultivariatePolynomial<R, E, O>>>,
         critical_pairs: &mut Vec<CriticalPair<R, E, O>>,
-        f: SortedPolynomial<R, E, O>,
+        f: MultivariatePolynomial<R, E, O>,
     ) {
         let f = Rc::new(f);
 
@@ -527,7 +256,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                     if let Some(g) = basis
                         .iter()
                         .filter(|g| monom.iter().zip(g.max_exp()).all(|(pe, ge)| *pe >= *ge))
-                        .min_by_key(|g| g.len())
+                        .min_by_key(|g| g.nterms)
                     {
                         for ((e, pe), ge) in exp.iter_mut().zip(monom).zip(g.max_exp()) {
                             *e = *pe - *ge;
@@ -568,7 +297,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                     "\tMatrix shape={}x{}, density={:.2}%",
                     selected_polys.len(),
                     sorted_monomial_indices.len(),
-                    selected_polys.iter().map(|i| i.len()).sum::<usize>() as f64
+                    selected_polys.iter().map(|i| i.nterms).sum::<usize>() as f64
                         / (sorted_monomial_indices.len() as f64 * selected_polys.len() as f64)
                         * 100.
                 );
@@ -597,6 +326,9 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                     row.push((coeff.clone(), all_monomials.get(exp).unwrap().column));
                 }
             }
+
+            // sort the matrix rows to make it as upper-triangular as possible
+            matrix.sort_unstable_by(|r1, r2| r1[0].1.cmp(&r2[0].1).then(r1.len().cmp(&r2.len())));
 
             // row-reduce the sparse matrix
 
@@ -663,14 +395,12 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                         }
                     }
 
-                    while pos_row < row.len() {
-                        buffer.push((row[pos_row].0.clone(), row[pos_row].1));
-                        pos_row += 1;
+                    for (coeff, col) in &row[pos_row..] {
+                        buffer.push((coeff.clone(), *col));
                     }
 
-                    while pos_pivot < pivot.len() {
-                        buffer.push((field.mul(&ratio, &pivot[pos_pivot].0), pivot[pos_pivot].1));
-                        pos_pivot += 1;
+                    for (coeff, col) in &pivot[pos_pivot..] {
+                        buffer.push((field.mul(&ratio, coeff), *col));
                     }
 
                     std::mem::swap(&mut matrix[r], &mut buffer);
@@ -691,13 +421,12 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
 
                 if selected_polys.iter().all(|p| p.max_exp() != lm) {
                     // create the new polynomial in the proper order
-                    let mut poly = SortedPolynomial::new_from(&selected_polys[0]);
+                    let mut poly =
+                        MultivariatePolynomial::new_from(&selected_polys[0], Some(m.len()));
                     for (coeff, col) in m.iter().rev() {
                         let index = sorted_monomial_indices[*col];
                         let exp = &current_monomials[index * nvars..(index + 1) * nvars];
-
-                        poly.coefficients.push(coeff.clone());
-                        poly.exponents.extend_from_slice(exp);
+                        poly.append_monomial(coeff.clone(), exp);
                     }
 
                     Self::update(&mut basis, &mut critical_pairs, poly);
@@ -711,10 +440,10 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
     /// Completely reduce the polynomial `f` w.r.t the polynomials `gs`.
     /// For example reducing `f=y^2+x` by `g=[x]` yields `y^2`.
     pub fn reduce(
-        p: &SortedPolynomial<R, E, O>,
-        gs: &[SortedPolynomial<R, E, O>],
-    ) -> SortedPolynomial<R, E, O> {
-        let mut q = SortedPolynomial::new_from(p);
+        p: &MultivariatePolynomial<R, E, O>,
+        gs: &[MultivariatePolynomial<R, E, O>],
+    ) -> MultivariatePolynomial<R, E, O> {
+        let mut q = MultivariatePolynomial::new_from(p, Some(p.nterms));
         let mut r = p.clone();
 
         let mut rest_coeff = vec![];
@@ -732,20 +461,14 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                         .zip(g.max_exp())
                         .all(|(h1, h2)| *h1 >= *h2)
                 })
-                .min_by_key(|g| g.len())
+                .min_by_key(|g| g.nterms)
             {
                 for ((e, e1), e2) in monom.iter_mut().zip(r.max_exp()).zip(g.max_exp()) {
                     *e = *e1 - *e2;
                 }
 
                 let ratio = g.field.div(&r.max_coeff(), &g.max_coeff());
-
-                r = r.add(
-                    g.clone()
-                        .mul_exp(&monom)
-                        .mul_coeff(&ratio)
-                        .mul_coeff(&g.field.neg(&g.field.one())),
-                );
+                r = r - g.clone().mul_exp(&monom).mul_coeff(ratio);
 
                 if r.is_zero() {
                     break 'term;
@@ -753,16 +476,15 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
             }
 
             // strip leading monomial that is not reducible
-            rest_exponents.extend_from_slice(r.exponents(r.len() - 1));
+            rest_exponents.extend_from_slice(r.exponents(r.nterms - 1));
             rest_coeff.push(r.coefficients.pop().unwrap());
+            r.nterms -= 1;
         }
 
         // append in sorted order
         while let Some(c) = rest_coeff.pop() {
             let l = rest_coeff.len();
-            q.coefficients.push(c);
-            q.exponents
-                .extend_from_slice(&rest_exponents[l * p.nvars..(l + 1) * p.nvars]);
+            q.append_monomial(c, &rest_exponents[l * p.nvars..(l + 1) * p.nvars]);
         }
 
         q
@@ -800,7 +522,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
             let h = Self::reduce(&lead_reduced[0], &lead_reduced[1..]);
             if !h.is_zero() {
                 let i = h.field.inv(&h.max_coeff());
-                basis.push(h.mul_coeff(&i));
+                basis.push(h.mul_coeff(i));
             }
         }
 
@@ -812,11 +534,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         }
     }
 
-    pub fn to_polynomials(&self) -> Vec<MultivariatePolynomial<R, E>> {
-        self.system.iter().map(|p| p.into()).collect()
-    }
-
-    pub fn is_groebner_basis(system: &[SortedPolynomial<R, E, O>]) -> bool {
+    pub fn is_groebner_basis(system: &[MultivariatePolynomial<R, E, O>]) -> bool {
         for (i, p1) in system.iter().enumerate() {
             for p2 in &system[i + 1..] {
                 let lcm: Vec<E> = p1
@@ -841,14 +559,13 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                 let new_f1 = p1
                     .clone()
                     .mul_exp(&extra_factor_f1)
-                    .mul_coeff(&p1.field.div(&p2.max_coeff(), &p1.max_coeff()));
+                    .mul_coeff(p1.field.div(&p2.max_coeff(), &p1.max_coeff()));
                 let new_f2 = p2
                     .clone()
                     .mul_exp(&extra_factor_f2)
-                    .mul_coeff(&p1.field.div(&p1.max_coeff(), &p2.max_coeff()));
+                    .mul_coeff(p1.field.div(&p1.max_coeff(), &p2.max_coeff()));
 
-                let min_one = new_f1.field.neg(&new_f1.field.one());
-                let s = new_f1.add(new_f2.mul_coeff(&min_one));
+                let s = new_f1 - new_f2;
 
                 if !Self::reduce(&s, system).is_zero() {
                     return false;

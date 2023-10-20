@@ -3,11 +3,7 @@ use std::fmt::{self, Display, Write};
 use colored::Colorize;
 
 use crate::{
-    poly::{
-        polynomial::MultivariatePolynomial,
-        Exponent,
-        Variable::{Identifier, Temporary},
-    },
+    poly::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder},
     representations::{number::BorrowedNumber, Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
     rings::{
         finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
@@ -830,17 +826,17 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
         }
     }
 }
-pub struct PolynomialPrinter<'a, 'b, F: Ring + Display, E: Exponent> {
-    pub poly: &'a MultivariatePolynomial<F, E>,
+pub struct PolynomialPrinter<'a, 'b, F: Ring + Display, E: Exponent, O: MonomialOrder> {
+    pub poly: &'a MultivariatePolynomial<F, E, O>,
     pub state: &'b State,
     pub opts: PrintOptions,
 }
 
-impl<'a, 'b, R: Ring + Display, E: Exponent> PolynomialPrinter<'a, 'b, R, E> {
+impl<'a, 'b, R: Ring + Display, E: Exponent, O: MonomialOrder> PolynomialPrinter<'a, 'b, R, E, O> {
     pub fn new(
-        poly: &'a MultivariatePolynomial<R, E>,
+        poly: &'a MultivariatePolynomial<R, E, O>,
         state: &'b State,
-    ) -> PolynomialPrinter<'a, 'b, R, E> {
+    ) -> PolynomialPrinter<'a, 'b, R, E, O> {
         PolynomialPrinter {
             poly,
             state,
@@ -849,15 +845,17 @@ impl<'a, 'b, R: Ring + Display, E: Exponent> PolynomialPrinter<'a, 'b, R, E> {
     }
 
     pub fn new_with_options(
-        poly: &'a MultivariatePolynomial<R, E>,
+        poly: &'a MultivariatePolynomial<R, E, O>,
         state: &'b State,
         opts: PrintOptions,
-    ) -> PolynomialPrinter<'a, 'b, R, E> {
+    ) -> PolynomialPrinter<'a, 'b, R, E, O> {
         PolynomialPrinter { poly, state, opts }
     }
 }
 
-impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, 'b, F, E> {
+impl<'a, 'b, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
+    for PolynomialPrinter<'a, 'b, F, E, O>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if f.sign_plus() {
             f.write_char('+')?;
@@ -912,10 +910,7 @@ impl<'a, 'b, F: Ring + Display, E: Exponent> Display for PolynomialPrinter<'a, '
                     write!(f, "*")?;
                 }
 
-                match var_id {
-                    Identifier(v) => f.write_str(self.state.get_name(*v).unwrap())?,
-                    Temporary(t) => f.write_fmt(format_args!("_MAP_{}", *t))?,
-                }
+                f.write_str(&var_id.to_string(self.state))?;
 
                 if e.to_u32() != 1 {
                     if self.opts.latex {

@@ -1,8 +1,5 @@
 use symbolica::{
-    poly::{
-        groebner::{GrevLexOrder, GroebnerBasis},
-        polynomial::MultivariatePolynomial,
-    },
+    poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
     representations::Atom,
     rings::finite_field::{FiniteField, FiniteFieldCore},
     state::{State, Workspace},
@@ -24,7 +21,7 @@ fn main() {
         "a + b + c + d",
     ];
 
-    let fs: Vec<MultivariatePolynomial<_, u16>> = polys
+    let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
         .iter()
         .map(|x| {
             let a = Atom::parse(x, &mut state, &workspace).unwrap();
@@ -37,11 +34,18 @@ fn main() {
         .collect();
 
     // compute the Groebner basis with grevlex ordering
-    let gb = GroebnerBasis::<_, _, GrevLexOrder>::new(&fs, true);
+    let gb = GroebnerBasis::new(&ideal, true);
 
-    println!("Basis:");
+    println!("Lex order basis:");
     for g in &gb.system {
-        let p: MultivariatePolynomial<_, _> = g.into();
-        println!("\t{}", p.printer(&state));
+        println!("\t{}", g.printer(&state));
+    }
+
+    // compute the Groebner basis with grevlex ordering by converting the polynomials
+    let grevlex_ideal: Vec<_> = ideal.iter().map(|p| p.reorder::<GrevLexOrder>()).collect();
+    let gb = GroebnerBasis::new(&grevlex_ideal, true);
+    println!("Grevlex order basis:");
+    for g in &gb.system {
+        println!("\t{}", g.printer(&state));
     }
 }

@@ -11,7 +11,7 @@ use crate::poly::INLINED_EXPONENTS;
 use crate::rings::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
 };
-use crate::rings::integer::{Integer, IntegerRing, SMALL_PRIMES};
+use crate::rings::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIMES};
 use crate::rings::linear_system::{LinearSolverError, Matrix};
 use crate::rings::rational::RationalField;
 use crate::rings::{EuclideanDomain, Field, Ring};
@@ -35,6 +35,78 @@ pub const LARGE_U32_PRIMES: [u32; 100] = [
     4293491561, 4293492113, 4293492781, 4293493423, 4293491567, 4293492139, 4293492811, 4293493433,
     4293491591, 4293492169, 4293492821, 4293493487,
 ];
+
+pub const LARGE_U64_PRIMES: [u64; 50] = [
+    18446744073709551557,
+    18446744073709551533,
+    18446744073709551521,
+    18446744073709551437,
+    18446744073709551427,
+    18446744073709551359,
+    18446744073709551337,
+    18446744073709551293,
+    18446744073709551263,
+    18446744073709551253,
+    18446744073709551191,
+    18446744073709551163,
+    18446744073709551113,
+    18446744073709550873,
+    18446744073709550791,
+    18446744073709550773,
+    18446744073709550771,
+    18446744073709550719,
+    18446744073709550717,
+    18446744073709550681,
+    18446744073709550671,
+    18446744073709550593,
+    18446744073709550591,
+    18446744073709550539,
+    18446744073709550537,
+    18446744073709550381,
+    18446744073709550341,
+    18446744073709550293,
+    18446744073709550237,
+    18446744073709550147,
+    18446744073709550141,
+    18446744073709550129,
+    18446744073709550111,
+    18446744073709550099,
+    18446744073709550047,
+    18446744073709550033,
+    18446744073709550009,
+    18446744073709549951,
+    18446744073709549861,
+    18446744073709549817,
+    18446744073709549811,
+    18446744073709549777,
+    18446744073709549757,
+    18446744073709549733,
+    18446744073709549667,
+    18446744073709549621,
+    18446744073709549613,
+    18446744073709549583,
+    18446744073709549571,
+    18446744073709549519,
+];
+
+pub trait LargePrimes: Sized {
+    /// Get a list of large primes that fit in this type.
+    fn get_primes() -> &'static [Self];
+}
+
+impl LargePrimes for u32 {
+    #[inline(always)]
+    fn get_primes() -> &'static [Self] {
+        &LARGE_U32_PRIMES
+    }
+}
+
+impl LargePrimes for u64 {
+    #[inline(always)]
+    fn get_primes() -> &'static [Self] {
+        &LARGE_U64_PRIMES
+    }
+}
 
 /// The maximum power of a variable that is cached
 pub const POW_CACHE_SIZE: usize = 1000;
@@ -1863,21 +1935,22 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
     }
 }
 
-impl<R: Ring + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<R, E>
-where
-    R::Element: ToFiniteField<u32>,
-{
+impl<R: Ring + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<R, E> {
     /// Convert the coefficient from the current field to the given field.
-    pub fn to_finite_field_u32(
+    pub fn to_finite_field<UField: FiniteFieldWorkspace>(
         &self,
-        field: FiniteField<u32>,
-    ) -> MultivariatePolynomial<FiniteField<u32>, E> {
+        field: FiniteField<UField>,
+    ) -> MultivariatePolynomial<FiniteField<UField>, E>
+    where
+        R::Element: ToFiniteField<UField>,
+        FiniteField<UField>: FiniteFieldCore<UField>,
+    {
         let mut newc = Vec::with_capacity(self.coefficients.len());
         let mut newe = Vec::with_capacity(self.exponents.len());
 
         for m in self.into_iter() {
             let nc = m.coefficient.to_finite_field(&field);
-            if !FiniteField::<u32>::is_zero(&nc) {
+            if !FiniteField::<UField>::is_zero(&nc) {
                 newc.push(nc);
                 newe.extend(m.exponents);
             }
@@ -2174,13 +2247,18 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
     /// Compute the gcd of two multivariate polynomials using Zippel's algorithm.
     /// TODO: provide a parallel implementation?
     #[instrument(level = "debug", skip_all)]
-    fn gcd_zippel(
+    fn gcd_zippel<UField: LargePrimes + FiniteFieldWorkspace + 'static>(
         a: &Self,
         b: &Self,
         vars: &[usize], // variables
         bounds: &mut [E],
         tight_bounds: &mut [E],
-    ) -> Self {
+    ) -> Self
+    where
+        FiniteField<UField>: FiniteFieldCore<UField>,
+        <FiniteField<UField> as Ring>::Element: Copy,
+        Integer: ToFiniteField<UField> + FromFiniteField<UField>,
+    {
         debug!("Zippel gcd of {} and {}", a, b);
         #[cfg(debug_assertions)]
         {
@@ -2195,11 +2273,12 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
         debug!("gamma {}", gamma);
 
         let mut pi = 0;
+        let primes = UField::get_primes();
 
         'newfirstprime: loop {
             pi += 1;
 
-            if pi == LARGE_U32_PRIMES.len() {
+            if pi == primes.len() {
                 a.check_consistency();
                 b.check_consistency();
                 panic!(
@@ -2208,16 +2287,16 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 );
             }
 
-            let mut p = LARGE_U32_PRIMES[pi];
-            let mut finite_field = FiniteField::<u32>::new(p);
+            let mut p = primes[pi];
+            let mut finite_field = FiniteField::<UField>::new(p);
             let mut gammap = gamma.to_finite_field(&finite_field);
 
-            if FiniteField::<u32>::is_zero(&gammap) {
+            if FiniteField::<UField>::is_zero(&gammap) {
                 continue 'newfirstprime;
             }
 
-            let ap = a.to_finite_field_u32(finite_field);
-            let bp = b.to_finite_field_u32(finite_field);
+            let ap = a.to_finite_field(finite_field);
+            let bp = b.to_finite_field(finite_field);
 
             debug!("New first image: gcd({},{}) mod {}", ap, bp, p);
 
@@ -2279,10 +2358,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             gm.coefficients = gp
                 .coefficients
                 .iter()
-                .map(|x| Integer::from_finite_field_u32(gp.field, &gp.field.mul(x, &lcoeff_factor)))
+                .map(|x| Integer::from_finite_field(&gp.field, gp.field.mul(x, &lcoeff_factor)))
                 .collect();
 
-            let mut m = Integer::Natural(p as i64); // size of finite field
+            let mut m = Integer::from_prime(&finite_field); // size of finite field
 
             debug!("GCD suggestion with gamma: {} mod {} ", gm, p);
 
@@ -2318,18 +2397,18 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                         );
                     }
 
-                    p = LARGE_U32_PRIMES[pi];
-                    finite_field = FiniteField::<u32>::new(p);
+                    p = primes[pi];
+                    finite_field = FiniteField::<UField>::new(p);
 
                     gammap = gamma.to_finite_field(&finite_field);
 
-                    if !FiniteField::<u32>::is_zero(&gammap) {
+                    if !FiniteField::<UField>::is_zero(&gammap) {
                         break;
                     }
                 }
 
-                let ap = a.to_finite_field_u32(finite_field);
-                let bp = b.to_finite_field_u32(finite_field);
+                let ap = a.to_finite_field(finite_field);
+                let bp = b.to_finite_field(finite_field);
                 debug!("New image: gcd({},{})", ap, bp);
 
                 // for the univariate case, we don't need to construct an image
@@ -2416,13 +2495,13 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                     *gmc = Integer::chinese_remainder(
                         coeff,
-                        Integer::Natural(gp.field.from_element(gpc) as i64),
+                        Integer::from_finite_field(&gp.field, gpc),
                         m.clone(),
-                        Integer::Natural(p as i64),
+                        Integer::from_prime(&gp.field),
                     );
                 }
 
-                a.field.mul_assign(&mut m, &Integer::Natural(p as i64));
+                a.field.mul_assign(&mut m, &Integer::from_prime(&gp.field));
 
                 debug!("gm: {} from ring {}", gm, m);
             }
@@ -2525,7 +2604,7 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         bounds: &mut [E],
         tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<IntegerRing, E> {
-        MultivariatePolynomial::gcd_zippel(a, b, vars, bounds, tight_bounds)
+        MultivariatePolynomial::gcd_zippel::<u32>(a, b, vars, bounds, tight_bounds)
     }
 
     fn get_gcd_var_bounds(
@@ -2537,8 +2616,8 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
         let mut i = 0;
         loop {
-            let ap = a.to_finite_field_u32(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
-            let bp = b.to_finite_field_u32(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
+            let ap = a.to_finite_field(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
+            let bp = b.to_finite_field(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
             if ap.nterms > 0
                 && bp.nterms > 0
                 && ap.last_exponents() == a.last_exponents()
@@ -2614,7 +2693,7 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         }
 
         let res_int =
-            MultivariatePolynomial::gcd_zippel(&a_int, &b_int, vars, bounds, tight_bounds);
+            MultivariatePolynomial::gcd_zippel::<u32>(&a_int, &b_int, vars, bounds, tight_bounds);
 
         let mut res = a.new_from(Some(res_int.nterms));
 
@@ -2637,8 +2716,9 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
         let mut i = 0;
         loop {
-            let ap = a.to_finite_field_u32(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
-            let bp = b.to_finite_field_u32(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
+            let f = FiniteField::<u32>::new(LARGE_U32_PRIMES[i]);
+            let ap = a.to_finite_field(f);
+            let bp = b.to_finite_field(f);
             if ap.nterms > 0
                 && bp.nterms > 0
                 && ap.last_exponents() == a.last_exponents()

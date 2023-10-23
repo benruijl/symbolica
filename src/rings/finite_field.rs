@@ -46,6 +46,9 @@ pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
 
 /// A finite field over a prime that uses Montgomery modular arithmetic
 /// to increase the performance of the multiplication operator.
+///
+/// The special field `Mersenne64` can be used to have even faster arithmetic
+/// for a field with Mersenne prime 2^61-1.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct FiniteField<UField> {
     p: UField,
@@ -184,7 +187,11 @@ impl Ring for FiniteField<u32> {
     /// Computes -x mod n.
     #[inline]
     fn neg(&self, a: &Self::Element) -> Self::Element {
-        FiniteFieldElement(self.p - a.0)
+        if a.0 == 0 {
+            *a
+        } else {
+            FiniteFieldElement(self.p - a.0)
+        }
     }
 
     #[inline]
@@ -398,13 +405,13 @@ impl Ring for FiniteField<u64> {
     /// Add two numbers in Montgomory form.
     #[inline(always)]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        let mut t = a.0 as u128 + b.0 as u128;
-
-        if t >= self.p as u128 {
-            t -= self.p as u128;
+        // avoid f128 arithmetic
+        let (r, overflow) = a.0.overflowing_add(b.0);
+        if overflow || r >= self.p {
+            FiniteFieldElement(r.wrapping_sub(self.p))
+        } else {
+            FiniteFieldElement(r)
         }
-
-        FiniteFieldElement(t as u64)
     }
 
     /// Subtract `b` from `a`, where `a` and `b` are in Montgomory form.
@@ -462,7 +469,11 @@ impl Ring for FiniteField<u64> {
     /// Computes -x mod n.
     #[inline]
     fn neg(&self, a: &Self::Element) -> Self::Element {
-        FiniteFieldElement(self.p - a.0)
+        if a.0 == 0 {
+            *a
+        } else {
+            FiniteFieldElement(self.p - a.0)
+        }
     }
 
     #[inline]
@@ -597,6 +608,264 @@ impl Field for FiniteField<u64> {
             FiniteFieldElement(u1)
         } else {
             FiniteFieldElement(self.p - u1)
+        }
+    }
+}
+
+/// The 64-bit Mersenne prime 2^61 -1.
+///
+/// Can be used for faster finite field arithmetic
+/// w.r.t using Montgomery numbers.
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+pub struct Mersenne64(u64);
+
+impl Mersenne64 {
+    pub fn new() -> Self {
+        Mersenne64(Self::PRIME)
+    }
+
+    const SHIFT: u8 = 61;
+    pub const PRIME: u64 = (1 << Mersenne64::SHIFT) - 1;
+}
+
+impl std::fmt::Debug for Mersenne64 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", Self::PRIME))
+    }
+}
+
+impl Display for Mersenne64 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", Self::PRIME))
+    }
+}
+
+impl FiniteFieldWorkspace for Mersenne64 {
+    fn to_u64(&self) -> u64 {
+        Self::PRIME
+    }
+}
+
+impl FiniteFieldCore<Mersenne64> for FiniteField<Mersenne64> {
+    fn new(p: Mersenne64) -> Self {
+        FiniteField {
+            p,
+            m: p,
+            one: FiniteFieldElement(Mersenne64(1)),
+        }
+    }
+
+    fn get_prime(&self) -> Mersenne64 {
+        Mersenne64(Mersenne64::PRIME)
+    }
+
+    fn to_element(&self, a: Mersenne64) -> Self::Element {
+        if a.0 >= Mersenne64::PRIME {
+            a.0 - Mersenne64::PRIME
+        } else {
+            a.0
+        }
+    }
+
+    fn from_element(&self, a: Self::Element) -> Mersenne64 {
+        Mersenne64(a)
+    }
+}
+
+impl Ring for FiniteField<Mersenne64> {
+    type Element = u64;
+
+    #[inline(always)]
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        let mut sum = a + b; // cannot overflow
+        if sum >= Mersenne64::PRIME {
+            sum -= Mersenne64::PRIME;
+        }
+        sum
+    }
+
+    #[inline(always)]
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        if *a >= *b {
+            *a - *b
+        } else {
+            *a + (Mersenne64::PRIME - *b)
+        }
+    }
+
+    #[inline(always)]
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        let v = *a as u128 * *b as u128;
+        let q = (v >> Mersenne64::SHIFT) as u64;
+        let r = (v as u64 & Mersenne64::PRIME) + (q & Mersenne64::PRIME);
+
+        if r >= Mersenne64::PRIME {
+            r - Mersenne64::PRIME
+        } else {
+            r
+        }
+    }
+
+    #[inline]
+    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.add(a, b);
+    }
+
+    #[inline]
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.sub(a, b);
+    }
+
+    #[inline]
+    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.add_assign(a, &self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.sub_assign(a, &self.mul(b, c));
+    }
+
+    /// Computes -x mod n.
+    #[inline]
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        if *a == 0 {
+            *a
+        } else {
+            Mersenne64::PRIME - a
+        }
+    }
+
+    #[inline]
+    fn zero(&self) -> Self::Element {
+        0
+    }
+
+    /// Return the unit element in Montgomory form.
+    #[inline]
+    fn one(&self) -> Self::Element {
+        1
+    }
+
+    /// Compute b^e % n.
+    #[inline]
+    fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
+        let mut b = *b;
+        let mut x = self.one();
+        while e != 0 {
+            if e & 1 != 0 {
+                x = self.mul(&x, &b);
+            }
+            b = self.mul(&b, &b);
+            e /= 2;
+        }
+
+        x
+    }
+
+    #[inline]
+    fn is_zero(a: &Self::Element) -> bool {
+        *a == 0
+    }
+
+    #[inline]
+    fn is_one(&self, a: &Self::Element) -> bool {
+        *a == 1
+    }
+
+    #[inline]
+    fn get_unit(&self, a: &Self::Element) -> Self::Element {
+        *a
+    }
+
+    #[inline]
+    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
+        self.inv(a)
+    }
+
+    fn one_is_gcd_unit() -> bool {
+        true
+    }
+
+    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
+        let r = rng
+            .gen_range(range.0.max(0)..range.1.min(Mersenne64::PRIME.min(i64::MAX as u64) as i64));
+        r as u64
+    }
+
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        _state: Option<&State>,
+        _in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
+        if f.sign_plus() {
+            write!(f, "+{}", self.from_element(*element))
+        } else {
+            write!(f, "{}", self.from_element(*element))
+        }
+    }
+}
+
+impl EuclideanDomain for FiniteField<Mersenne64> {
+    #[inline]
+    fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        0
+    }
+
+    #[inline]
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        (self.mul(a, &self.inv(b)), 0)
+    }
+
+    #[inline]
+    fn gcd(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        1
+    }
+}
+
+impl Field for FiniteField<Mersenne64> {
+    #[inline]
+    fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        self.mul(a, &self.inv(b))
+    }
+
+    #[inline]
+    fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, &self.inv(b));
+    }
+
+    /// Computes x^-1 mod n.
+    fn inv(&self, a: &Self::Element) -> Self::Element {
+        assert!(*a != 0, "0 is not invertible");
+
+        // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
+        let mut u1: u64 = 1;
+        let mut u3 = *a;
+        let mut v1: u64 = 0;
+        let mut v3 = Mersenne64::PRIME;
+        let mut even_iter: bool = true;
+
+        while v3 != 0 {
+            let q = u3 / v3;
+            let t3 = u3 % v3;
+            let t1 = u1 + q * v1;
+            u1 = v1;
+            v1 = t1;
+            u3 = v3;
+            v3 = t3;
+            even_iter = !even_iter;
+        }
+
+        debug_assert!(u3 == 1);
+        if even_iter {
+            u1
+        } else {
+            Mersenne64::PRIME - u1
         }
     }
 }

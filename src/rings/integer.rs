@@ -14,7 +14,7 @@ use rug::{
 use crate::{state::State, utils};
 
 use super::{
-    finite_field::{FiniteField, FiniteFieldCore, ToFiniteField},
+    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField},
     rational::Rational,
     EuclideanDomain, Ring,
 };
@@ -75,6 +75,75 @@ impl ToFiniteField<u64> for Integer {
     }
 }
 
+impl ToFiniteField<Mersenne64> for Integer {
+    fn to_finite_field(
+        &self,
+        _field: &FiniteField<Mersenne64>,
+    ) -> <FiniteField<Mersenne64> as Ring>::Element {
+        match self {
+            &Integer::Natural(n) => n.rem_euclid(Mersenne64::PRIME as i64) as u64,
+            Integer::Large(r) => r.mod_u64(Mersenne64::PRIME),
+        }
+    }
+}
+
+pub trait FromFiniteField<UField: FiniteFieldWorkspace>
+where
+    FiniteField<UField>: FiniteFieldCore<UField>,
+{
+    fn from_finite_field(
+        field: &FiniteField<UField>,
+        element: <FiniteField<UField> as Ring>::Element,
+    ) -> Self;
+    fn from_prime(field: &FiniteField<UField>) -> Self;
+}
+
+impl FromFiniteField<u32> for Integer {
+    fn from_finite_field(
+        field: &FiniteField<u32>,
+        element: <FiniteField<u32> as Ring>::Element,
+    ) -> Self {
+        Integer::Natural(field.from_element(element) as i64)
+    }
+
+    fn from_prime(field: &FiniteField<u32>) -> Self {
+        Integer::Natural(field.get_prime() as i64)
+    }
+}
+
+impl FromFiniteField<u64> for Integer {
+    fn from_finite_field(
+        field: &FiniteField<u64>,
+        element: <FiniteField<u64> as Ring>::Element,
+    ) -> Self {
+        let r = field.from_element(element);
+        if r <= i64::MAX as u64 {
+            Integer::Natural(r as i64)
+        } else {
+            Integer::Large(ArbitraryPrecisionInteger::from(r))
+        }
+    }
+
+    fn from_prime(field: &FiniteField<u64>) -> Self {
+        let r = field.get_prime();
+        if r <= i64::MAX as u64 {
+            Integer::Natural(r as i64)
+        } else {
+            Integer::Large(ArbitraryPrecisionInteger::from(r))
+        }
+    }
+}
+
+impl FromFiniteField<Mersenne64> for Integer {
+    fn from_finite_field(_field: &FiniteField<Mersenne64>, element: u64) -> Self {
+        Integer::Natural(element as i64)
+    }
+
+    fn from_prime(_field: &FiniteField<Mersenne64>) -> Self {
+        Integer::Natural(Mersenne64::PRIME as i64)
+    }
+}
+
 impl Integer {
     pub fn new(num: i64) -> Integer {
         Integer::Natural(num)
@@ -86,13 +155,6 @@ impl Integer {
         } else {
             Integer::Large(n)
         }
-    }
-
-    pub fn from_finite_field_u32(
-        field: FiniteField<u32>,
-        element: &<FiniteField<u32> as Ring>::Element,
-    ) -> Integer {
-        Integer::Natural(field.from_element(*element) as i64)
     }
 
     pub fn to_rational(&self) -> Rational {

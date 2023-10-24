@@ -1935,35 +1935,6 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
     }
 }
 
-impl<R: Ring + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<R, E> {
-    /// Convert the coefficient from the current field to the given field.
-    pub fn to_finite_field<UField: FiniteFieldWorkspace>(
-        &self,
-        field: FiniteField<UField>,
-    ) -> MultivariatePolynomial<FiniteField<UField>, E>
-    where
-        R::Element: ToFiniteField<UField>,
-        FiniteField<UField>: FiniteFieldCore<UField>,
-    {
-        let mut newc = Vec::with_capacity(self.coefficients.len());
-        let mut newe = Vec::with_capacity(self.exponents.len());
-
-        for m in self.into_iter() {
-            let nc = m.coefficient.to_finite_field(&field);
-            if !FiniteField::<UField>::is_zero(&nc) {
-                newc.push(nc);
-                newe.extend(m.exponents);
-            }
-        }
-
-        let mut a = MultivariatePolynomial::new(self.nvars, field, None, None);
-        a.nterms = newc.len();
-        a.exponents = newe;
-        a.coefficients = newc;
-        a
-    }
-}
-
 #[derive(Debug)]
 pub enum HeuristicGCDError {
     MaxSizeExceeded,

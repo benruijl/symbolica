@@ -874,6 +874,37 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         }
         self.coefficients.last().unwrap().clone()
     }
+
+    /// Convert the coefficient from the current field to a finite field.
+    pub fn to_finite_field<UField: FiniteFieldWorkspace>(
+        &self,
+        field: FiniteField<UField>,
+    ) -> MultivariatePolynomial<FiniteField<UField>, E>
+    where
+        F::Element: ToFiniteField<UField>,
+        FiniteField<UField>: FiniteFieldCore<UField>,
+    {
+        let mut coefficients = Vec::with_capacity(self.coefficients.len());
+        let mut exponents = Vec::with_capacity(self.exponents.len());
+
+        for m in self.into_iter() {
+            let nc = m.coefficient.to_finite_field(&field);
+            if !FiniteField::<UField>::is_zero(&nc) {
+                coefficients.push(nc);
+                exponents.extend(m.exponents);
+            }
+        }
+
+        MultivariatePolynomial {
+            nterms: coefficients.len(),
+            coefficients,
+            exponents,
+            nvars: self.nvars,
+            field,
+            var_map: self.var_map.clone(),
+            _phantom: PhantomData,
+        }
+    }
 }
 
 impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {

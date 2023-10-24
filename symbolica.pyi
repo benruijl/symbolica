@@ -1003,6 +1003,9 @@ class Polynomial:
     def to_integer_polynomial(self) -> IntegerPolynomial:
         """Convert the polynomial to a polynomial with integer coefficients, if possible."""
 
+    def to_finite_field(self, prime: int) -> FiniteFieldPolynomial:
+        """Convert the coefficients of the polynomial to a finite field with prime `prime`."""
+
     def optimize(self, iterations: int = 1000, to_file: str | None = None) -> Evaluator:
         """
         Optimize the polynomial for evaluation using `iterations` number of iterations.
@@ -1072,6 +1075,74 @@ class IntegerPolynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
 
 
+class FiniteFieldPolynomial:
+    """A Symbolica polynomial with finite field coefficients."""
+
+    @classmethod
+    def parse(_cls, input: str, vars: List[str], prime: int) -> FiniteFieldPolynomial:
+        """
+        Parse a polynomial with integer coefficients from a string.
+        The input must be written in an expanded format and a list of all
+        the variables must be provided.
+
+        If these requirements are too strict, use `Expression.to_polynomial()` or
+        `RationalPolynomial.parse()` instead.
+
+        Examples
+        --------
+        >>> e = FiniteFieldPolynomial.parse('18*x^2+y+y*4', ['x', 'y'], 17)
+
+        Raises
+        ------
+        ValueError
+            If the input is not a valid Symbolica polynomial.
+        """
+
+    def __copy__(self) -> FiniteFieldPolynomial:
+        """Copy the polynomial."""
+
+    def __str__(self) -> str:
+        """Print the polynomial in a human-readable format."""
+
+    def to_latex(self) -> str:
+        """Convert the polynomial into a LaTeX string."""
+
+    def __repr__(self) -> str:
+        """Print the polynomial in a debug representation."""
+
+    def get_var_list(self) -> Sequence[Expression]:
+        """Get the list of variables in the internal ordering of the polynomial."""
+
+    def __add__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Add two polynomials `self and `rhs`, returning the result."""
+
+    def __sub__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Subtract polynomials `rhs` from `self`, returning the result."""
+
+    def __mul__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Multiply two polynomials `self and `rhs`, returning the result."""
+
+    def __truediv__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Divide the polynomial `self` by `rhs` if possible, returning the result."""
+
+    def quot_rem(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Divide `self` by `rhs`, returning the quotient and remainder."""
+
+    def __neg__(self) -> FiniteFieldPolynomial:
+        """Negate the polynomial."""
+
+    def gcd(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def optimize(self, iterations: int = 1000, to_file: str | None = None) -> Evaluator:
+        """
+        Optimize the polynomial for evaluation using `iterations` number of iterations.
+        The optimized output can be exported in a C++ format using `to_file`.
+
+        Returns an evaluator for the polynomial.
+        """
+
+
 class RationalPolynomial:
     """A Symbolica rational polynomial."""
 
@@ -1089,7 +1160,7 @@ class RationalPolynomial:
 
         Examples
         --------
-        >>> e = Polynomial.parse('3/4*x^2+y+y*4', ['x', 'y'])
+        >>> e = RationalPolynomial.parse('(3/4*x^2+y+y*4)/(1+x)', ['x', 'y'])
 
         Raises
         ------
@@ -1130,6 +1201,9 @@ class RationalPolynomial:
     def gcd(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
 
+    def to_finite_field(self, prime: int) -> FiniteFieldRationalPolynomial:
+        """Convert the coefficients of the rational polynomial to a finite field with prime `prime`."""
+
 
 class RationalPolynomialSmallExponent:
     """A Symbolica rational polynomial with variable powers limited to 255."""
@@ -1144,7 +1218,7 @@ class RationalPolynomialSmallExponent:
 
         Examples
         --------
-        >>> e = Polynomial.parse('3/4*x^2+y+y*4', ['x', 'y'])
+        >>> e = RationalPolynomialSmallExponent.parse('(3/4*x^2+y+y*4)/(1+x)', ['x', 'y'])
 
         Raises
         ------
@@ -1193,6 +1267,65 @@ class RationalPolynomialSmallExponent:
     def gcd(
         self, rhs: RationalPolynomialSmallExponent
     ) -> RationalPolynomialSmallExponent:
+        """Compute the greatest common divisor (GCD) of two rational polynomials."""
+
+
+class FiniteFieldRationalPolynomial:
+    """A Symbolica rational polynomial."""
+
+    @staticmethod
+    def __new__(num: FiniteFieldPolynomial, den: FiniteFieldPolynomial) -> FiniteFieldRationalPolynomial:
+        """Create a new rational polynomial from a numerator and denominator polynomial."""
+
+    @classmethod
+    def parse(_cls, input: str, vars: List[str], prime: int) -> FiniteFieldRationalPolynomial:
+        """
+        Parse a rational polynomial from a string.
+        The list of all the variables must be provided.
+
+        If this requirements is too strict, use `Expression.to_polynomial()` instead.
+
+        Examples
+        --------
+        >>> e = FiniteFieldRationalPolynomial.parse('3*x^2+y+y*4', ['x', 'y'], 17)
+
+        Raises
+        ------
+        ValueError
+            If the input is not a valid Symbolica rational polynomial.
+        """
+
+    def __copy__(self) -> FiniteFieldRationalPolynomial:
+        """Copy the rational polynomial."""
+
+    def __str__(self) -> str:
+        """Print the rational polynomial in a human-readable format."""
+
+    def to_latex(self) -> str:
+        """Convert the rational polynomial into a LaTeX string."""
+
+    def __repr__(self) -> str:
+        """Print the rational polynomial in a debug representation."""
+
+    def get_var_list(self) -> Sequence[Expression]:
+        """Get the list of variables in the internal ordering of the polynomial."""
+
+    def __add__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
+        """Add two rational polynomials `self and `rhs`, returning the result."""
+
+    def __sub__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
+        """Subtract rational polynomials `rhs` from `self`, returning the result."""
+
+    def __mul__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
+        """Multiply two rational polynomials `self and `rhs`, returning the result."""
+
+    def __truediv__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
+        """Divide the rational polynomial `self` by `rhs` if possible, returning the result."""
+
+    def __neg__(self) -> FiniteFieldRationalPolynomial:
+        """Negate the rational polynomial."""
+
+    def gcd(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
 
 

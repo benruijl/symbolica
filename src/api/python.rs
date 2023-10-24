@@ -40,7 +40,11 @@ use crate::{
         default::ListIteratorD, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul,
         Num, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
-    rings::{float::Complex, integer::IntegerRing},
+    rings::{
+        finite_field::{FiniteField, FiniteFieldCore},
+        float::Complex,
+        integer::IntegerRing,
+    },
     rings::{
         integer::Integer,
         rational::RationalField,
@@ -82,8 +86,10 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonPattern>()?;
     m.add_class::<PythonPolynomial>()?;
     m.add_class::<PythonIntegerPolynomial>()?;
+    m.add_class::<PythonFiniteFieldPolynomial>()?;
     m.add_class::<PythonRationalPolynomial>()?;
     m.add_class::<PythonRationalPolynomialSmallExponent>()?;
+    m.add_class::<PythonFiniteFieldRationalPolynomial>()?;
     m.add_class::<PythonNumericalIntegrator>()?;
     m.add_class::<PythonSample>()?;
     m.add_class::<PythonAtomType>()?;
@@ -2549,7 +2555,7 @@ impl PythonReplaceIterator {
 #[pyclass(name = "Polynomial")]
 #[derive(Clone)]
 pub struct PythonPolynomial {
-    pub poly: Arc<MultivariatePolynomial<RationalField, u32>>,
+    pub poly: Arc<MultivariatePolynomial<RationalField, u16>>,
 }
 
 #[pymethods]
@@ -2613,7 +2619,7 @@ impl PythonPolynomial {
 
             new_exponent.clear();
             for e in t.exponents {
-                if *e > u8::MAX as u32 {
+                if *e > u8::MAX as u16 {
                     Err(exceptions::PyValueError::new_err(format!(
                         "Exponent {} is too large",
                         e
@@ -2628,6 +2634,13 @@ impl PythonPolynomial {
         Ok(PythonIntegerPolynomial {
             poly: Arc::new(poly_int),
         })
+    }
+
+    /// Convert the coefficients of the polynomial to a finite field with prime `prime`.
+    pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldPolynomial {
+        PythonFiniteFieldPolynomial {
+            poly: Arc::new(self.poly.to_finite_field(FiniteField::<u32>::new(prime))),
+        }
     }
 
     #[pyo3(signature =
@@ -2689,6 +2702,13 @@ impl PythonInstructionEvaluator {
 #[derive(Clone)]
 pub struct PythonIntegerPolynomial {
     pub poly: Arc<MultivariatePolynomial<IntegerRing, u8>>,
+}
+
+/// A Symbolica polynomial over finite fields.
+#[pyclass(name = "FiniteField"Polynomial)]
+#[derive(Clone)]
+pub struct PythonFiniteFieldPolynomial {
+    pub poly: Arc<MultivariatePolynomial<FiniteField<u32>, u16>>,
 }
 
 #[pymethods]
@@ -2906,12 +2926,13 @@ macro_rules! generate_methods {
 
 generate_methods!(PythonPolynomial);
 generate_methods!(PythonIntegerPolynomial);
+generate_methods!(PythonFiniteFieldPolynomial);
 
 /// A Symbolica rational polynomial.
 #[pyclass(name = "RationalPolynomial")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomial {
-    pub poly: Arc<RationalPolynomial<IntegerRing, u32>>,
+    pub poly: Arc<RationalPolynomial<IntegerRing, u16>>,
 }
 
 #[pymethods]
@@ -2928,6 +2949,13 @@ impl PythonRationalPolynomial {
             )),
         }
     }
+
+    /// Convert the coefficients to finite fields with prime `prime`.
+    pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldRationalPolynomial {
+        PythonFiniteFieldRationalPolynomial {
+            poly: Arc::new(self.poly.to_finite_field(FiniteField::<u32>::new(prime))),
+        }
+    }
 }
 
 /// A Symbolica rational polynomial with variable powers limited to 255.
@@ -2937,8 +2965,7 @@ pub struct PythonRationalPolynomialSmallExponent {
     pub poly: Arc<RationalPolynomial<IntegerRing, u8>>,
 }
 
-// TODO: unify with polynomial methods
-macro_rules! generate_rat_methods {
+macro_rules! generate_rat_parse {
     ($type:ty) => {
         #[pymethods]
         impl $type {
@@ -2985,7 +3012,73 @@ macro_rules! generate_rat_methods {
 
                 Ok(Self { poly: Arc::new(e) })
             }
+        }
+    };
+}
 
+generate_rat_parse!(PythonRationalPolynomial);
+generate_rat_parse!(PythonRationalPolynomialSmallExponent);
+
+/// A Symbolica rational polynomial over finite fields.
+#[pyclass(name = "RationalPolynomialFiniteField")]
+#[derive(Clone)]
+pub struct PythonFiniteFieldRationalPolynomial {
+    pub poly: Arc<RationalPolynomial<FiniteField<u32>, u16>>,
+}
+
+#[pymethods]
+impl PythonFiniteFieldRationalPolynomial {
+    /// Parse a rational polynomial from a string.
+    /// The list of all the variables must be provided.
+    ///
+    /// If this requirements is too strict, use `Expression.to_polynomial()` instead.
+    ///
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = Polynomial.parse('3/4*x^2+y+y*4', ['x', 'y'])
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the input is not a valid Symbolica rational polynomial.
+    #[classmethod]
+    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>, prime: u32) -> PyResult<Self> {
+        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
+            SmallVec::new();
+
+        let mut state = get_state_mut!()?;
+        for v in vars {
+            let id = state.get_or_insert_var(v);
+            var_map.push(id.into());
+            var_name_map.push(v.into());
+        }
+
+        let field = FiniteField::<u32>::new(prime);
+        let e = WORKSPACE.with(|workspace| {
+            Token::parse(arg)
+                .map_err(exceptions::PyValueError::new_err)?
+                .to_rational_polynomial(
+                    workspace,
+                    &mut state,
+                    field,
+                    field,
+                    &var_map,
+                    &var_name_map,
+                )
+                .map_err(exceptions::PyValueError::new_err)
+        })?;
+
+        Ok(Self { poly: Arc::new(e) })
+    }
+}
+
+// TODO: unify with polynomial methods
+macro_rules! generate_rat_methods {
+    ($type:ty) => {
+        #[pymethods]
+        impl $type {
             /// Copy the rational polynomial.
             pub fn __copy__(&self) -> Self {
                 Self {
@@ -3141,6 +3234,7 @@ macro_rules! generate_rat_methods {
 
 generate_rat_methods!(PythonRationalPolynomial);
 generate_rat_methods!(PythonRationalPolynomialSmallExponent);
+generate_rat_methods!(PythonFiniteFieldRationalPolynomial);
 
 /// A sample from the Symbolica integrator. It could consist of discrete layers,
 /// accessible with `d` (empty when there are not discrete layers), and the final continous layer `c` if it is present.

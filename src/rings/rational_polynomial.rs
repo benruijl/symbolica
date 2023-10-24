@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::{
-    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace},
+    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::IntegerRing,
     rational::RationalField,
     EuclideanDomain, Field, Ring,
@@ -81,6 +81,25 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     /// Constuct a pretty-printer for the rational polynomial.
     pub fn printer<'a, 'b>(&'a self, state: &'b State) -> RationalPolynomialPrinter<'a, 'b, R, E> {
         RationalPolynomialPrinter::new(self, state)
+    }
+
+    /// Convert the coefficient from the current field to a finite field.
+    pub fn to_finite_field<UField: FiniteFieldWorkspace>(
+        &self,
+        field: FiniteField<UField>,
+    ) -> RationalPolynomial<FiniteField<UField>, E>
+    where
+        R::Element: ToFiniteField<UField>,
+        FiniteField<UField>: FiniteFieldCore<UField>,
+        <FiniteField<UField> as Ring>::Element: Copy,
+    {
+        // check the gcd, since the rational polynomial may simplify
+        RationalPolynomial::from_num_den(
+            self.numerator.to_finite_field(field),
+            self.denominator.to_finite_field(field),
+            field,
+            true,
+        )
     }
 }
 

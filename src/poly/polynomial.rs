@@ -8,6 +8,9 @@ use std::mem;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use crate::printer::PolynomialPrinter;
+use crate::rings::finite_field::{
+    FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
+};
 use crate::rings::{EuclideanDomain, Field, Ring, RingPrinter};
 use crate::state::State;
 

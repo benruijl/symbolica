@@ -2705,7 +2705,7 @@ pub struct PythonIntegerPolynomial {
 }
 
 /// A Symbolica polynomial over finite fields.
-#[pyclass(name = "FiniteField"Polynomial)]
+#[pyclass(name = "FiniteFieldPolynomial")]
 #[derive(Clone)]
 pub struct PythonFiniteFieldPolynomial {
     pub poly: Arc<MultivariatePolynomial<FiniteField<u32>, u16>>,
@@ -3020,7 +3020,7 @@ generate_rat_parse!(PythonRationalPolynomial);
 generate_rat_parse!(PythonRationalPolynomialSmallExponent);
 
 /// A Symbolica rational polynomial over finite fields.
-#[pyclass(name = "RationalPolynomialFiniteField")]
+#[pyclass(name = "FiniteFieldRationalPolynomial")]
 #[derive(Clone)]
 pub struct PythonFiniteFieldRationalPolynomial {
     pub poly: Arc<RationalPolynomial<FiniteField<u32>, u16>>,

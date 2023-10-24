@@ -581,7 +581,7 @@ class Expression:
         """
 
     def evaluate(
-        self, vars: dict[Expression, float], funs: dict[Expression, float]
+        self, vars: dict[Expression, float], funs: dict[Expression | Function, Callable[[Sequence[float]], float]]
     ) -> float:
         """Evaluate the expression, using a map of all the variables and
         user functions to a float.
@@ -593,6 +593,20 @@ class Expression:
         >>> f = Expression.fun('f')
         >>> e = Expression.parse('cos(x)')*3 + f(x,2)
         >>> print(e.evaluate({x: 1}, {f: lambda args: args[0]+args[1]}))
+        """
+
+    def evaluate_complex(
+        self, vars: dict[Expression, float | complex], funs: dict[Expression | Function, Callable[[Sequence[complex]], float | complex]]
+    ) -> complex:
+        """Evaluate the expression, using a map of all the variables and
+        user functions to a complex number.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x, y = Expression.vars('x', 'y')
+        >>> e = Expression.parse('sqrt(x)')*y
+        >>> print(e.evaluate_complex({x: 1 + 2j, y: 4 + 3j}, {}))
         """
 
 
@@ -906,7 +920,7 @@ class MatchIterator:
     def __iter__(self) -> MatchIterator:
         """Create the iterator."""
 
-    def __next__(self) -> Sequence[Tuple[Expression, Expression]]:
+    def __next__(self) -> dict[Expression, Expression]:
         """Return the next match."""
 
 

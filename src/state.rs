@@ -32,8 +32,9 @@ pub const EXP: Identifier = Identifier::init(1);
 pub const LOG: Identifier = Identifier::init(2);
 pub const SIN: Identifier = Identifier::init(3);
 pub const COS: Identifier = Identifier::init(4);
-pub const DERIVATIVE: Identifier = Identifier::init(5);
-pub(crate) const BUILTIN_VAR_LIST: [&str; 6] = ["arg", "exp", "log", "sin", "cos", "der"];
+pub const SQRT: Identifier = Identifier::init(5);
+pub const DERIVATIVE: Identifier = Identifier::init(6);
+pub(crate) const BUILTIN_VAR_LIST: [&str; 7] = ["arg", "exp", "log", "sin", "cos", "sqrt", "der"];
 
 /// A global state, that stores mappings from variable and function names to ids.
 #[derive(Clone)]

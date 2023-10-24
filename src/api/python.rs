@@ -11,7 +11,7 @@ use pyo3::{
     exceptions, pyclass,
     pyclass::CompareOp,
     pyfunction, pymethods, pymodule,
-    types::{PyLong, PyModule, PyTuple, PyType},
+    types::{PyComplex, PyLong, PyModule, PyTuple, PyType},
     wrap_pyfunction, FromPyObject, IntoPy, PyErr, PyObject, PyRef, PyResult, Python,
 };
 use rug::Complete;
@@ -40,7 +40,7 @@ use crate::{
         default::ListIteratorD, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul,
         Num, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
-    rings::integer::IntegerRing,
+    rings::{float::Complex, integer::IntegerRing},
     rings::{
         integer::Integer,
         rational::RationalField,
@@ -794,6 +794,20 @@ pub struct ConvertibleToExpression(PythonExpression);
 impl ConvertibleToExpression {
     pub fn to_expression(self) -> PythonExpression {
         self.0
+    }
+}
+
+impl<'a> FromPyObject<'a> for Complex<f64> {
+    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+        if let Ok(a) = ob.extract::<f64>() {
+            Ok(Complex::new(a, 0.))
+        } else if let Ok(a) = ob.extract::<&PyComplex>() {
+            Ok(Complex::new(a.real(), a.imag()))
+        } else {
+            Err(exceptions::PyValueError::new_err(
+                "Not a valid complex number",
+            ))
+        }
     }
 }
 
@@ -2229,7 +2243,7 @@ impl PythonExpression {
                             v.call(py, (args.to_vec(),), None)
                                 .expect("Bad callback function")
                                 .extract::<f64>(py)
-                                .expect("Function does not return a pattern")
+                                .expect("Function does not return a float")
                         })
                     })),
                 )
@@ -2237,6 +2251,51 @@ impl PythonExpression {
             .collect();
 
         self.expr.as_view().evaluate(&vars, &functions, &mut cache)
+    }
+
+    /// Evaluate the expression, using a map of all the variables and
+    /// user functions to a complex number.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> e = Expression.parse('sqrt(x)')*y
+    /// >>> print(e.evaluate_complex({x: 1 + 2j, y: 4 + 3j}, {}))
+    pub fn evaluate_complex<'py>(
+        &self,
+        py: Python<'py>,
+        vars: HashMap<Variable, Complex<f64>>,
+        functions: HashMap<Variable, PyObject>,
+    ) -> &'py PyComplex {
+        let mut cache = HashMap::default();
+
+        let functions = functions
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    EvaluationFn::new(Box::new(move |args: &[Complex<f64>], _, _, _| {
+                        Python::with_gil(|py| {
+                            v.call(
+                                py,
+                                (args
+                                    .iter()
+                                    .map(|x| PyComplex::from_doubles(py, x.re, x.im))
+                                    .collect::<Vec<_>>(),),
+                                None,
+                            )
+                            .expect("Bad callback function")
+                            .extract::<Complex<f64>>(py)
+                            .expect("Function does not return a complex number")
+                        })
+                    })),
+                )
+            })
+            .collect();
+
+        let r = self.expr.as_view().evaluate(&vars, &functions, &mut cache);
+        PyComplex::from_doubles(py, r.re, r.im)
     }
 }
 

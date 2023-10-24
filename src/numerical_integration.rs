@@ -403,7 +403,7 @@ impl<T: Real + NumericalFloatComparison> Grid<T> {
     }
 
     /// Update the grid based on the samples added through [`Grid::add_training_sample`].
-    pub fn update(&mut self, learning_rate: f64) {
+    pub fn update(&mut self, learning_rate: T) {
         match self {
             Grid::Continuous(g) => g.update(learning_rate),
             Grid::Discrete(g) => g.update(learning_rate),
@@ -518,7 +518,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
     /// and adapt all sub-grids based on the new training samples.
     ///
     /// If `learning_rate` is set to 0, no training happens.
-    pub fn update<'a>(&mut self, learning_rate: f64) {
+    pub fn update<'a>(&mut self, learning_rate: T) {
         let mut err_sum = T::zero();
         for bin in &mut self.bins {
             if let Some(sub_grid) = &mut bin.sub_grid {
@@ -533,7 +533,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
             }
         }
 
-        if learning_rate == 0.
+        if learning_rate.is_zero()
             || self.bins.iter().all(|x| {
                 if self.train_on_avg {
                     x.accumulator.avg == T::zero()
@@ -550,7 +550,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
             let acc = &mut bin.accumulator;
 
             if self.train_on_avg {
-                bin.pdf = acc.avg.abs()
+                bin.pdf = acc.avg.norm()
             } else if acc.processed_samples < 2 {
                 bin.pdf = T::zero();
             } else {
@@ -754,7 +754,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousGrid<T> {
     /// Update the grid based on the added training samples. This will move the partition bounds of every dimension.
     ///
     /// The `learning_rate` determines the speed of the adaptation. If it is set to `0`, no training will be performed.
-    pub fn update(&mut self, learning_rate: f64) {
+    pub fn update(&mut self, learning_rate: T) {
         for d in self.continuous_dimensions.iter_mut() {
             d.update(learning_rate);
         }
@@ -886,7 +886,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
     /// Update the grid based on the added training samples. This will move the partition bounds of every dimension.
     ///
     /// The `learning_rate` determines the speed of the adaptation. If it is set to `0`, no training will be performed.
-    fn update(&mut self, learning_rate: f64) {
+    fn update(&mut self, learning_rate: T) {
         for (bi, acc) in self.bin_importance.iter_mut().zip(&self.bin_accumulator) {
             if self.train_on_avg {
                 *bi += &acc.sum
@@ -904,7 +904,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
             return;
         }
 
-        if learning_rate == 0. {
+        if learning_rate.is_zero() {
             self.bin_accumulator.clear();
             self.bin_accumulator
                 .resize(self.partitioning.len() - 1, StatisticsAccumulator::new());
@@ -919,7 +919,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
         let n_bins = self.partitioning.len() - 1;
 
         for avg in self.bin_importance.iter_mut() {
-            *avg = avg.abs();
+            *avg = avg.norm();
         }
 
         // normalize the average

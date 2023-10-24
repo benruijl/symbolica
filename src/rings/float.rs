@@ -1,4 +1,8 @@
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+use std::{
+    fmt::Display,
+    iter::Sum,
+    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+};
 
 use rand::Rng;
 use wide::{f64x2, f64x4};
@@ -11,7 +15,7 @@ pub trait NumericalFloatLike:
     + Clone
     + std::fmt::Debug
     + std::fmt::Display
-    + std::ops::Neg
+    + std::ops::Neg<Output = Self>
     + for<'a> Add<Self, Output = Self>
     + for<'a> Sub<Self, Output = Self>
     + for<'a> Mul<Self, Output = Self>
@@ -32,7 +36,7 @@ pub trait NumericalFloatLike:
 {
     fn mul_add(&self, a: &Self, a: &Self) -> Self;
     fn neg(&self) -> Self;
-    fn abs(&self) -> Self;
+    fn norm(&self) -> Self;
     fn zero() -> Self;
     fn one() -> Self;
     fn pow(&self, e: u64) -> Self;
@@ -61,7 +65,17 @@ pub trait Real: NumericalFloatLike + Clone + Copy {
     fn exp(&self) -> Self;
     fn sin(&self) -> Self;
     fn cos(&self) -> Self;
-    fn powf(&self, e: f64) -> Self;
+    fn tan(&self) -> Self;
+    fn asin(&self) -> Self;
+    fn acos(&self) -> Self;
+    fn atan2(&self, x: &Self) -> Self;
+    fn sinh(&self) -> Self;
+    fn cosh(&self) -> Self;
+    fn tanh(&self) -> Self;
+    fn asinh(&self) -> Self;
+    fn acosh(&self) -> Self;
+    fn atanh(&self) -> Self;
+    fn powf(&self, e: Self) -> Self;
 }
 
 impl NumericalFloatLike for f64 {
@@ -76,7 +90,7 @@ impl NumericalFloatLike for f64 {
     }
 
     #[inline(always)]
-    fn abs(&self) -> Self {
+    fn norm(&self) -> Self {
         f64::abs(*self)
     }
 
@@ -172,6 +186,56 @@ impl Real for f64 {
         (*self).cos()
     }
 
+    #[inline(always)]
+    fn tan(&self) -> Self {
+        (*self).tan()
+    }
+
+    #[inline(always)]
+    fn asin(&self) -> Self {
+        (*self).asin()
+    }
+
+    #[inline(always)]
+    fn acos(&self) -> Self {
+        (*self).acos()
+    }
+
+    #[inline(always)]
+    fn atan2(&self, x: &Self) -> Self {
+        (*self).atan2(*x)
+    }
+
+    #[inline(always)]
+    fn sinh(&self) -> Self {
+        (*self).sinh()
+    }
+
+    #[inline(always)]
+    fn cosh(&self) -> Self {
+        (*self).cosh()
+    }
+
+    #[inline(always)]
+    fn tanh(&self) -> Self {
+        (*self).tanh()
+    }
+
+    #[inline(always)]
+    fn asinh(&self) -> Self {
+        (*self).asinh()
+    }
+
+    #[inline(always)]
+    fn acosh(&self) -> Self {
+        (*self).acosh()
+    }
+
+    #[inline(always)]
+    fn atanh(&self) -> Self {
+        (*self).atanh()
+    }
+
     #[inline]
     fn powf(&self, e: f64) -> Self {
         (*self).powf(e)
@@ -188,7 +252,7 @@ impl From<&Rational> for f64 {
 }
 
 macro_rules! simd_impl {
-    ($t:ty) => {
+    ($t:ty, $p:ident) => {
         impl NumericalFloatLike for $t {
             #[inline(always)]
             fn mul_add(&self, a: &Self, b: &Self) -> Self {
@@ -201,7 +265,7 @@ macro_rules! simd_impl {
             }
 
             #[inline(always)]
-            fn abs(&self) -> Self {
+            fn norm(&self) -> Self {
                 (*self).abs()
             }
 
@@ -269,8 +333,58 @@ macro_rules! simd_impl {
             }
 
             #[inline(always)]
-            fn powf(&self, e: f64) -> Self {
-                (*self).powf(e)
+            fn tan(&self) -> Self {
+                (*self).tan()
+            }
+
+            #[inline(always)]
+            fn asin(&self) -> Self {
+                (*self).asin()
+            }
+
+            #[inline(always)]
+            fn acos(&self) -> Self {
+                (*self).acos()
+            }
+
+            #[inline(always)]
+            fn atan2(&self, x: &Self) -> Self {
+                (*self).atan2(*x)
+            }
+
+            #[inline(always)]
+            fn sinh(&self) -> Self {
+                unimplemented!("Hyperbolic geometric functions are not supported with SIMD");
+            }
+
+            #[inline(always)]
+            fn cosh(&self) -> Self {
+                unimplemented!("Hyperbolic geometric functions are not supported with SIMD");
+            }
+
+            #[inline(always)]
+            fn tanh(&self) -> Self {
+                unimplemented!("Hyperbolic geometric functions are not supported with SIMD");
+            }
+
+            #[inline(always)]
+            fn asinh(&self) -> Self {
+                unimplemented!("Hyperbolic geometric functions are not supported with SIMD");
+            }
+
+            #[inline(always)]
+            fn acosh(&self) -> Self {
+                unimplemented!("Hyperbolic geometric functions are not supported with SIMD");
+            }
+
+            #[inline(always)]
+            fn atanh(&self) -> Self {
+                unimplemented!("Hyperbolic geometric functions are not supported with SIMD");
+            }
+
+            #[inline(always)]
+            fn powf(&self, e: Self) -> Self {
+                (*self).$p(e)
             }
         }
 
@@ -285,8 +399,8 @@ macro_rules! simd_impl {
     };
 }
 
-simd_impl!(f64x2);
-simd_impl!(f64x4);
+simd_impl!(f64x2, pow_f64x2);
+simd_impl!(f64x4, pow_f64x4);
 
 impl NumericalFloatLike for Rational {
     fn mul_add(&self, a: &Self, c: &Self) -> Self {
@@ -297,7 +411,7 @@ impl NumericalFloatLike for Rational {
         self.neg()
     }
 
-    fn abs(&self) -> Self {
+    fn norm(&self) -> Self {
         self.abs()
     }
 
@@ -371,5 +485,360 @@ impl NumericalFloatComparison for Rational {
 
     fn to_f64(&self) -> f64 {
         f64::from(self)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub struct Complex<T: Real> {
+    pub re: T,
+    pub im: T,
+}
+
+impl<T: Real> Complex<T> {
+    #[inline]
+    pub fn new(re: T, im: T) -> Complex<T> {
+        Complex { re, im }
+    }
+
+    #[inline]
+    pub fn norm_squared(&self) -> T {
+        self.re * self.re + self.im * self.im
+    }
+
+    #[inline]
+    pub fn arg(&self) -> T {
+        self.im.atan2(&self.re)
+    }
+
+    #[inline]
+    pub fn to_polar_coordinates(self) -> (T, T) {
+        (self.norm_squared().sqrt(), self.arg())
+    }
+
+    #[inline]
+    pub fn from_polar_coordinates(r: T, phi: T) -> Complex<T> {
+        Complex::new(r * phi.cos(), r * phi.sin())
+    }
+}
+
+impl<T: Real> Add<Complex<T>> for Complex<T> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        Complex::new(self.re + rhs.re, self.im + rhs.im)
+    }
+}
+
+impl<T: Real> Add<&Complex<T>> for Complex<T> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: &Self) -> Self::Output {
+        Complex::new(self.re + rhs.re, self.im + rhs.im)
+    }
+}
+
+impl<T: Real> AddAssign for Complex<T> {
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        self.add_assign(&rhs)
+    }
+}
+
+impl<T: Real> AddAssign<&Complex<T>> for Complex<T> {
+    #[inline]
+    fn add_assign(&mut self, rhs: &Self) {
+        self.re += rhs.re;
+        self.im += rhs.im;
+    }
+}
+
+impl<T: Real> Sub for Complex<T> {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        Complex::new(self.re - rhs.re, self.im - rhs.im)
+    }
+}
+
+impl<T: Real> Sub<&Complex<T>> for Complex<T> {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: &Self) -> Self::Output {
+        Complex::new(self.re - rhs.re, self.im - rhs.im)
+    }
+}
+
+impl<T: Real> SubAssign for Complex<T> {
+    #[inline]
+    fn sub_assign(&mut self, rhs: Self) {
+        self.sub_assign(&rhs)
+    }
+}
+
+impl<T: Real> SubAssign<&Complex<T>> for Complex<T> {
+    #[inline]
+    fn sub_assign(&mut self, rhs: &Self) {
+        self.re -= rhs.re;
+        self.im -= rhs.im;
+    }
+}
+
+impl<T: Real> Mul for Complex<T> {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.mul(&rhs)
+    }
+}
+
+impl<T: Real> Mul<&Complex<T>> for Complex<T> {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: &Self) -> Self::Output {
+        Complex::new(
+            self.re * rhs.re - self.im * rhs.im,
+            self.re * rhs.im + self.im * rhs.re,
+        )
+    }
+}
+
+impl<T: Real> MulAssign for Complex<T> {
+    #[inline]
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = self.mul(rhs);
+    }
+}
+
+impl<T: Real> MulAssign<&Complex<T>> for Complex<T> {
+    #[inline]
+    fn mul_assign(&mut self, rhs: &Self) {
+        *self = self.mul(rhs);
+    }
+}
+
+impl<T: Real> Div for Complex<T> {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: Self) -> Self::Output {
+        self.div(&rhs)
+    }
+}
+
+impl<T: Real> Div<&Complex<T>> for Complex<T> {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: &Self) -> Self::Output {
+        let n = rhs.norm_squared();
+        let re = self.re * rhs.re + self.im * rhs.im;
+        let im = self.im * rhs.re - self.re * rhs.im;
+        Complex::new(re / n, im / n)
+    }
+}
+
+impl<T: Real> DivAssign for Complex<T> {
+    fn div_assign(&mut self, rhs: Self) {
+        *self = self.div(rhs);
+    }
+}
+
+impl<T: Real> DivAssign<&Complex<T>> for Complex<T> {
+    fn div_assign(&mut self, rhs: &Self) {
+        *self = self.div(rhs);
+    }
+}
+
+impl<'a, T: Real> Sum<&'a Complex<T>> for Complex<T> {
+    #[inline]
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        let mut res = Complex::zero();
+        for x in iter {
+            res += *x;
+        }
+        res
+    }
+}
+
+impl<T: Real> Neg for Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn neg(self) -> Complex<T> {
+        Complex::new(-self.re, -self.im)
+    }
+}
+
+impl<T: Real> Display for Complex<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("({}+{}i)", self.re, self.im))
+    }
+}
+
+impl<T: Real> std::fmt::Debug for Complex<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("({:?}+{:?}i)", self.re, self.im))
+    }
+}
+
+impl<T: Real> NumericalFloatLike for Complex<T> {
+    #[inline]
+    fn mul_add(&self, a: &Self, b: &Self) -> Self {
+        *self + &(*a * b)
+    }
+
+    #[inline]
+    fn neg(&self) -> Self {
+        Complex {
+            re: -self.re,
+            im: -self.im,
+        }
+    }
+
+    #[inline]
+    fn norm(&self) -> Self {
+        Complex::new(self.norm_squared().sqrt(), T::zero())
+    }
+
+    #[inline]
+    fn zero() -> Self {
+        Complex {
+            re: T::zero(),
+            im: T::zero(),
+        }
+    }
+
+    fn one() -> Self {
+        Complex {
+            re: T::one(),
+            im: T::zero(),
+        }
+    }
+
+    fn pow(&self, e: u64) -> Self {
+        // FIXME: use binary exponentiation
+        let mut r = Complex::one();
+        for _ in 0..e {
+            r *= self;
+        }
+        r
+    }
+
+    fn inv(&self) -> Self {
+        let n = self.norm_squared();
+        Complex::new(self.re / n, -self.im / n)
+    }
+
+    fn from_usize(a: usize) -> Self {
+        Complex {
+            re: T::from_usize(a),
+            im: T::zero(),
+        }
+    }
+
+    fn from_i64(a: i64) -> Self {
+        Complex {
+            re: T::from_i64(a),
+            im: T::zero(),
+        }
+    }
+
+    fn sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self {
+        Complex {
+            re: T::sample_unit(rng),
+            im: T::zero(),
+        }
+    }
+}
+
+impl<T: Real> Real for Complex<T> {
+    fn sqrt(&self) -> Self {
+        let (r, phi) = self.to_polar_coordinates();
+        Complex::from_polar_coordinates(r.sqrt(), phi / T::from_usize(2))
+    }
+
+    fn log(&self) -> Self {
+        Complex::new(self.norm().re.log(), self.arg())
+    }
+
+    fn exp(&self) -> Self {
+        let r = self.re.exp();
+        Complex::new(r * self.im.cos(), r * self.im.sin())
+    }
+
+    fn sin(&self) -> Self {
+        Complex::new(
+            self.re.sin() * self.im.cosh(),
+            self.re.cos() * self.im.sinh(),
+        )
+    }
+
+    fn cos(&self) -> Self {
+        Complex::new(
+            self.re.cos() * self.im.cosh(),
+            -self.re.sin() * self.im.sinh(),
+        )
+    }
+
+    fn tan(&self) -> Self {
+        todo!("tan on complex numbers are not implemented yet")
+    }
+
+    fn asin(&self) -> Self {
+        todo!("asin on complex numbers are not implemented yet")
+    }
+
+    fn acos(&self) -> Self {
+        todo!("asin on complex numbers are not implemented yet")
+    }
+
+    fn atan2(&self, _x: &Self) -> Self {
+        todo!("Atan2 on complex numbers are not implemented yet")
+    }
+
+    fn sinh(&self) -> Self {
+        Complex::new(
+            self.re.sinh() * self.im.cos(),
+            self.re.cosh() * self.im.sin(),
+        )
+    }
+
+    fn cosh(&self) -> Self {
+        Complex::new(
+            self.re.cosh() * self.im.cos(),
+            self.re.sinh() * self.im.sin(),
+        )
+    }
+
+    fn tanh(&self) -> Self {
+        todo!("tanh on complex numbers are not implemented yet");
+    }
+
+    fn asinh(&self) -> Self {
+        todo!("asinh on complex numbers are not implemented yet");
+    }
+
+    fn acosh(&self) -> Self {
+        todo!("acosh on complex numbers are not implemented yet");
+    }
+
+    fn atanh(&self) -> Self {
+        todo!("atanh on complex numbers are not implemented yet");
+    }
+
+    fn powf(&self, _e: Self) -> Self {
+        todo!("Float exponentiation on complex numbers are not implemented yet")
+    }
+}
+
+impl<'a, T: Real + From<&'a Rational>> From<&'a Rational> for Complex<T> {
+    fn from(value: &'a Rational) -> Self {
+        Complex::new(value.into(), T::zero())
     }
 }

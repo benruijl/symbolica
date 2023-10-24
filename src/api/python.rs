@@ -901,6 +901,15 @@ impl PythonExpression {
         }
     }
 
+    /// Return all defined symbol names (function names and variables).
+    #[classmethod]
+    pub fn get_all_symbol_names(_cls: &PyType) -> PyResult<Vec<String>> {
+        let guard = get_state!()?;
+        let state = guard.borrow();
+
+        Ok(state.symbol_iter().map(|x| x.to_string()).collect())
+    }
+
     /// Parse a Symbolica expression from a string.
     ///
     /// Parameters
@@ -2319,24 +2328,31 @@ impl PythonFunction {
     /// Once attributes are defined on a function, they cannot be redefined later.
     #[new]
     pub fn __new__(name: &str, is_symmetric: Option<bool>) -> PyResult<Self> {
-        // TODO: parse and check if this is a valid function name
-        let id = if is_symmetric.unwrap_or(false) {
-            get_state_mut!()?
-                .borrow_mut()
-                .get_or_insert_fn(name, Some(vec![FunctionAttribute::Symmetric]))
-                .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?
-        } else {
-            get_state_mut!()?
-                .borrow_mut()
-                .get_or_insert_fn(name, Some(vec![]))
-                .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?
+        let opts = match is_symmetric {
+            Some(true) => Some(vec![FunctionAttribute::Symmetric]),
+            Some(false) => Some(vec![]),
+            None => None,
         };
+
+        let id = get_state_mut!()?
+            .borrow_mut()
+            .get_or_insert_fn(name, opts)
+            .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+
         Ok(PythonFunction { id })
     }
 
     #[getter]
     fn get_w(&mut self) -> PythonFunction {
         PythonFunction { id: self.id }
+    }
+
+    /// Returns `True` iff this function is symmetric.
+    pub fn is_symmetric(&self) -> PyResult<bool> {
+        Ok(get_state!()?
+            .borrow_mut()
+            .get_function_attributes(self.id)
+            .contains(&FunctionAttribute::Symmetric))
     }
 
     /// Create a Symbolica expression or transformer by calling the function with appropriate arguments.

@@ -123,6 +123,10 @@ class Expression:
         """
 
     @classmethod
+    def get_all_symbol_names(_cls) -> list[str]:
+        """Return all defined symbol names (function names and variables)."""
+
+    @classmethod
     def parse(_cls, input: str) -> Expression:
         """
         Parse a Symbolica expression from a string.
@@ -632,6 +636,9 @@ class Function:
 
         Once attributes are defined on a function, they cannot be redefined later.
         """
+
+    def is_symmetric(self) -> bool:
+        """Returns `True` iff this function is symmetric."""
 
     @overload
     def __call__(self, *args: Expression | int) -> Expression:

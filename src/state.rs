@@ -64,6 +64,11 @@ impl State {
         state
     }
 
+    /// Iterate over all defined symbols.
+    pub fn symbol_iter(&self) -> impl Iterator<Item = &str> {
+        self.var_to_str_map.iter().map(|s| s.as_str())
+    }
+
     /// Returns `true` iff this identifier is defined by Symbolica.
     pub fn is_builtin(id: Identifier) -> bool {
         id.to_u32() < BUILTIN_VAR_LIST.len() as u32

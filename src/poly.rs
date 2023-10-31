@@ -1,4 +1,5 @@
 pub mod evaluate;
+pub mod factor;
 pub mod gcd;
 pub mod groebner;
 pub mod polynomial;
@@ -8,7 +9,7 @@ use std::cmp::Ordering::{self, Equal};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::iter::Sum;
-use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Neg, Sub};
+use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Neg, Rem, Sub};
 
 use ahash::HashMap;
 use rug::{Complete, Integer as ArbitraryPrecisionInteger};
@@ -39,6 +40,7 @@ pub trait Exponent:
     + Ord
     + OpMul<Output = Self>
     + Div<Output = Self>
+    + Rem<Output = Self>
     + Sub<Output = Self>
     + OpAdd<Output = Self>
     + Sum<Self>

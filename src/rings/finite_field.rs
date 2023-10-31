@@ -205,6 +205,15 @@ impl Ring for FiniteField<u32> {
         self.one
     }
 
+    #[inline]
+    fn nth(&self, n: u64) -> Self::Element {
+        if n > u32::MAX as u64 {
+            self.to_element((n % self.p as u64) as u32)
+        } else {
+            self.to_element(n as u32 % self.p)
+        }
+    }
+
     /// Compute b^e % n.
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
@@ -487,6 +496,11 @@ impl Ring for FiniteField<u64> {
         self.one
     }
 
+    #[inline]
+    fn nth(&self, n: u64) -> Self::Element {
+        self.to_element(n)
+    }
+
     /// Compute b^e % n.
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
@@ -748,6 +762,11 @@ impl Ring for FiniteField<Mersenne64> {
     #[inline]
     fn one(&self) -> Self::Element {
         1
+    }
+
+    #[inline]
+    fn nth(&self, n: u64) -> Self::Element {
+        self.to_element(Mersenne64(n))
     }
 
     /// Compute b^e % n.

@@ -32,6 +32,7 @@ use crate::{
             InstructionEvaluator, InstructionSetMode, InstructionSetModeCPPSettings,
             InstructionSetPrinter,
         },
+        factor::Factorize,
         polynomial::MultivariatePolynomial,
         Variable, INLINED_EXPONENTS,
     },
@@ -2920,6 +2921,24 @@ macro_rules! generate_methods {
                     }
                 }
             }
+
+            /// Compute the square-free factorization of the polynomial.
+            ///
+            /// Examples
+            /// --------
+            ///
+            /// >>> from symbolica import Expression
+            /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+            /// >>> print('Square-free factorization of {}:'.format(p))
+            /// >>> for f, exp in p.factor_square_free():
+            /// >>>     print('\t({})^{}'.format(f, exp))
+            pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+                self.poly
+                    .square_free_factorization()
+                    .into_iter()
+                    .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
+                    .collect()
+            }
         }
     };
 }
@@ -2954,6 +2973,20 @@ impl PythonRationalPolynomial {
     pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldRationalPolynomial {
         PythonFiniteFieldRationalPolynomial {
             poly: Arc::new(self.poly.to_finite_field(FiniteField::<u32>::new(prime))),
+        }
+    }
+
+    /// Get the numerator.
+    pub fn numerator(&self) -> PythonPolynomial {
+        PythonPolynomial {
+            poly: Arc::new((&self.poly.numerator).into()),
+        }
+    }
+
+    /// Get the denominator.
+    pub fn denominator(&self) -> PythonPolynomial {
+        PythonPolynomial {
+            poly: Arc::new((&self.poly.denominator).into()),
         }
     }
 }

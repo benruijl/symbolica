@@ -11,6 +11,8 @@ use crate::printer::PolynomialPrinter;
 use crate::rings::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
 };
+use crate::rings::integer::IntegerRing;
+use crate::rings::rational::RationalField;
 use crate::rings::{EuclideanDomain, Field, Ring, RingPrinter};
 use crate::state::State;
 
@@ -31,7 +33,7 @@ pub struct MultivariatePolynomial<F: Ring, E: Exponent, O: MonomialOrder = LexOr
     pub nvars: usize,
     pub field: F,
     pub var_map: Option<SmallVec<[Variable; INLINED_EXPONENTS]>>,
-    _phantom: PhantomData<O>,
+    pub(crate) _phantom: PhantomData<O>,
 }
 
 impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
@@ -448,6 +450,25 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         let i = l * self.nvars;
         self.exponents.splice(i..i, exponents.iter().cloned());
         self.nterms += 1;
+    }
+
+    /// Take the derivative of the polynomial w.r.t the variable `var`.
+    pub fn derivative(&self, var: usize) -> Self {
+        debug_assert!(var < self.nvars);
+
+        let mut res = MultivariatePolynomial::new_from(self, Some(self.nterms));
+
+        let mut exp = vec![E::zero(); self.nvars];
+        for x in self {
+            if x.exponents[var] > E::zero() {
+                exp.copy_from_slice(x.exponents);
+                let pow = exp[var].to_u32() as u64;
+                exp[var] = exp[var] - E::one();
+                res.append_monomial(self.field.mul(x.coefficient, &self.field.nth(pow)), &exp);
+            }
+        }
+
+        res
     }
 }
 
@@ -2388,6 +2409,22 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         self.synthetic_division(div)
+    }
+}
+
+impl<E: Exponent> Into<MultivariatePolynomial<RationalField, E>>
+    for &MultivariatePolynomial<IntegerRing, E>
+{
+    fn into(self) -> MultivariatePolynomial<RationalField, E> {
+        MultivariatePolynomial {
+            coefficients: self.coefficients.iter().map(|x| x.into()).collect(),
+            exponents: self.exponents.clone(),
+            nterms: self.nterms,
+            nvars: self.nvars,
+            field: RationalField,
+            var_map: self.var_map.clone(),
+            _phantom: PhantomData,
+        }
     }
 }
 

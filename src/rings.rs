@@ -23,6 +23,8 @@ pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
     fn neg(&self, a: &Self::Element) -> Self::Element;
     fn zero(&self) -> Self::Element;
     fn one(&self) -> Self::Element;
+    /// Return the nth element by computing `n * 1`.
+    fn nth(&self, n: u64) -> Self::Element;
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element;
     fn is_zero(a: &Self::Element) -> bool;
     fn is_one(&self, a: &Self::Element) -> bool;

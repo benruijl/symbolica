@@ -1014,6 +1014,19 @@ class Polynomial:
         Returns an evaluator for the polynomial.
         """
 
+    def factor_square_free(self) -> list[Tuple[Polynomial, int]]:
+        """Compute the square-free factorization of the polynomial.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+        >>> print('Square-free factorization of {}:'.format(p))
+        >>> for f, exp in p.factor_square_free():
+        >>>     print('\t({})^{}'.format(f, exp))
+        """
+
 
 class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""
@@ -1073,6 +1086,19 @@ class IntegerPolynomial:
 
     def gcd(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def factor_square_free(self) -> list[Tuple[IntegerPolynomial, int]]:
+        """Compute the square-free factorization of the polynomial.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+        >>> print('Square-free factorization of {}:'.format(p))
+        >>> for f, exp in p.factor_square_free():
+        >>>     print('\t({})^{}'.format(f, exp))
+        """
 
 
 class FiniteFieldPolynomial:
@@ -1142,6 +1168,19 @@ class FiniteFieldPolynomial:
         Returns an evaluator for the polynomial.
         """
 
+    def factor_square_free(self) -> list[Tuple[FiniteFieldPolynomial, int]]:
+        """Compute the square-free factorization of the polynomial.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+        >>> print('Square-free factorization of {}:'.format(p))
+        >>> for f, exp in p.factor_square_free():
+        >>>     print('\t({})^{}'.format(f, exp))
+        """
+
 
 class RationalPolynomial:
     """A Symbolica rational polynomial."""
@@ -1182,6 +1221,12 @@ class RationalPolynomial:
 
     def get_var_list(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""
+
+    def numerator(self) -> Polynomial:
+        """Get the numerator."""
+
+    def denominator(self) -> Polynomial:
+        """Get the denominator."""
 
     def __add__(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Add two rational polynomials `self and `rhs`, returning the result."""

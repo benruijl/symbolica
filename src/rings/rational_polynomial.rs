@@ -459,6 +459,13 @@ where
         }
     }
 
+    fn nth(&self, n: u64) -> Self::Element {
+        RationalPolynomial {
+            numerator: MultivariatePolynomial::one(self.ring).mul_coeff(self.ring.nth(n)),
+            denominator: MultivariatePolynomial::one(self.ring),
+        }
+    }
+
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
         if e > u32::MAX as u64 {
             panic!("Power of exponentation is larger than 2^32: {}", e);

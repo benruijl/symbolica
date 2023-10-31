@@ -555,6 +555,15 @@ impl Ring for IntegerRing {
     }
 
     #[inline]
+    fn nth(&self, n: u64) -> Self::Element {
+        if n <= i64::MAX as u64 {
+            Integer::Natural(n as i64)
+        } else {
+            Integer::Large(ArbitraryPrecisionInteger::from(n))
+        }
+    }
+
+    #[inline]
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
         b.pow(e)
     }

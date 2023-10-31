@@ -61,6 +61,15 @@ impl ToFiniteField<u32> for Rational {
     }
 }
 
+impl Into<Rational> for &Integer {
+    fn into(self) -> Rational {
+        match self {
+            Integer::Natural(n) => Rational::Natural(*n, 1),
+            Integer::Large(l) => Rational::Large(l.into()),
+        }
+    }
+}
+
 impl Rational {
     pub fn new(mut num: i64, mut den: i64) -> Rational {
         if den == 0 {
@@ -503,6 +512,15 @@ impl Ring for RationalField {
 
     fn one(&self) -> Self::Element {
         Rational::Natural(1, 1)
+    }
+
+    #[inline]
+    fn nth(&self, n: u64) -> Self::Element {
+        if n <= i64::MAX as u64 {
+            Rational::Natural(n as i64, 1)
+        } else {
+            Rational::Large(ArbitraryPrecisionRational::from(n))
+        }
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {

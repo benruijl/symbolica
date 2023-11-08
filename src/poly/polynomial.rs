@@ -2332,7 +2332,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     }
 }
 
-impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
+impl<F: Field, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     /// Make the polynomial monic, i.e., make the leading coefficient `1` by
     /// multiplying all monomials with `1/lcoeff`.
     pub fn make_monic(self) -> Self {
@@ -2343,7 +2343,9 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             self
         }
     }
+}
 
+impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     /// Optimized division routine for univariate polynomials over a field, which
     /// makes the divisor monic first.
     pub fn quot_rem_univariate(

@@ -104,6 +104,10 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
 impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder> {
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
+        if self.is_zero() {
+            return vec![];
+        }
+
         let c = self.content();
         let stripped = self.clone().div_coeff(&c);
 

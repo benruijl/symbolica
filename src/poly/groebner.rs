@@ -2,7 +2,11 @@ use std::{cmp::Ordering, rc::Rc};
 
 use ahash::HashMap;
 
-use crate::rings::Field;
+use crate::rings::{
+    finite_field::{FiniteField, FiniteFieldCore, Mersenne64},
+    rational::RationalField,
+    Field, Ring,
+};
 
 use super::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder};
 
@@ -10,8 +14,10 @@ use super::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder};
 pub struct CriticalPair<R: Field, E: Exponent, O: MonomialOrder> {
     lcm_diff_first: Vec<E>,
     poly_first: Rc<MultivariatePolynomial<R, E, O>>,
+    index_first: usize,
     lcm_diff_sec: Vec<E>,
     poly_sec: Rc<MultivariatePolynomial<R, E, O>>,
+    index_sec: usize,
     lcm: Vec<E>,
     degree: E,
     disjoint: bool,
@@ -21,6 +27,8 @@ impl<'a, R: Field, E: Exponent, O: MonomialOrder> CriticalPair<R, E, O> {
     pub fn new(
         f1: Rc<MultivariatePolynomial<R, E, O>>,
         f2: Rc<MultivariatePolynomial<R, E, O>>,
+        index1: usize,
+        index2: usize,
     ) -> CriticalPair<R, E, O> {
         // determine the lcm of leading monomials
         let lcm: Vec<E> = f1
@@ -47,11 +55,18 @@ impl<'a, R: Field, E: Exponent, O: MonomialOrder> CriticalPair<R, E, O> {
             degree: lcm.iter().cloned().sum::<E>(),
             lcm_diff_first,
             poly_first: f1,
+            index_first: index1,
             lcm_diff_sec,
             poly_sec: f2,
+            index_sec: index2,
             lcm,
         }
     }
+}
+
+pub struct MonomialData {
+    present: bool,
+    column: usize,
 }
 
 pub struct GroebnerBasis<R: Field, E: Exponent, O: MonomialOrder> {
@@ -59,7 +74,7 @@ pub struct GroebnerBasis<R: Field, E: Exponent, O: MonomialOrder> {
     pub print_stats: bool,
 }
 
-impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
+impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
     /// Construct a Groebner basis for a polynomial ideal.
     ///
     /// Progress can be monitored with `print_stats`.
@@ -84,64 +99,24 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         b.reduce_basis()
     }
 
-    /// Add a new polynomial to the basis, updating and filtering the existing
-    /// basis and critical pairs, based on Gebauer and Moeller's redundant pair criteria.
-    ///
-    /// Adapted from "A Computational Approach to Commutative Algebra" by Thomas Becker Volker Weispfenning.
-    fn update(
-        basis: &mut Vec<Rc<MultivariatePolynomial<R, E, O>>>,
-        critical_pairs: &mut Vec<CriticalPair<R, E, O>>,
-        f: MultivariatePolynomial<R, E, O>,
-    ) {
-        let f = Rc::new(f);
+    fn simplify(
+        tab: &mut Vec<Vec<(Vec<E>, Rc<MultivariatePolynomial<R, E, O>>)>>,
+        index: usize,
+        lcm: &[E],
+    ) -> Rc<MultivariatePolynomial<R, E, O>> {
+        for (m, f) in tab[index].iter().rev() {
+            if m == lcm {
+                return f.clone();
+            }
 
-        let mut new_pairs: Vec<_> = basis
-            .iter()
-            .map(|b| (CriticalPair::new(b.clone(), f.clone()), true))
-            .collect();
-
-        for i in 0..new_pairs.len() {
-            new_pairs[i].1 = false;
-            new_pairs[i].1 = new_pairs[i].0.disjoint
-                || new_pairs.iter().all(|p2| {
-                    !p2.1
-                        || new_pairs[i]
-                            .0
-                            .lcm
-                            .iter()
-                            .zip(&p2.0.lcm)
-                            .any(|(e1, e2)| *e1 < *e2)
-                });
+            if lcm.iter().zip(m).all(|(el, em)| *el >= *em) {
+                let diff: Vec<_> = lcm.iter().zip(m).map(|(el, em)| *el - *em).collect();
+                let a = Rc::new((**f).clone().mul_exp(&diff));
+                tab[index].push((lcm.to_vec(), a.clone()));
+                return a;
+            }
         }
-
-        new_pairs.retain(|p| p.1 && !p.0.disjoint);
-
-        critical_pairs.retain(|p| {
-            p.lcm.iter().zip(f.max_exp()).any(|(e1, e2)| *e1 < *e2)
-                || p.poly_first
-                    .max_exp()
-                    .iter()
-                    .zip(f.max_exp())
-                    .zip(&p.lcm)
-                    .all(|((e1, e2), ecm)| e1.max(e2) == ecm)
-                || p.poly_sec
-                    .max_exp()
-                    .iter()
-                    .zip(f.max_exp())
-                    .zip(&p.lcm)
-                    .all(|((e1, e2), ecm)| e1.max(e2) == ecm)
-        });
-
-        critical_pairs.extend(new_pairs.into_iter().map(|np| np.0));
-
-        basis.retain(|b| {
-            b.max_exp()
-                .iter()
-                .zip(f.max_exp())
-                .any(|(e1, e2)| *e1 < *e2)
-        });
-
-        basis.push(f);
+        panic!("Unknown polynomial {}", index);
     }
 
     /// The F4 algorithm for computing a Groebner basis.
@@ -149,32 +124,30 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
     /// Adapted from [A new efficient algorithm for computing Gröbner bases (F4)](https://doi.org/10.1016/S0022-4049(99)00005-5) by Jean-Charles Faugére.
     ///
     fn f4(&mut self) {
-        // TODO: strip content
-
         let nvars = self.system[0].nvars;
         let field = self.system[0].field.clone();
 
+        let mut simplifications = vec![];
         let mut basis = vec![];
         let mut critical_pairs = vec![];
 
-        for f in self.system.drain(..) {
-            Self::update(&mut basis, &mut critical_pairs, f.clone());
+        for (i, f) in self.system.drain(..).enumerate() {
+            let poly = Rc::new(f.clone().make_monic());
+            simplifications.push(vec![(vec![E::zero(); nvars], poly.clone())]);
+            Self::update(&mut basis, &mut critical_pairs, poly, i);
         }
 
         let mut matrix = vec![];
-
-        struct MonomialData {
-            present: bool,
-            column: usize,
-        }
 
         let mut all_monomials: HashMap<Vec<E>, MonomialData> = HashMap::default();
         let mut current_monomials = vec![];
         let mut sorted_monomial_indices = vec![];
         let mut exp = vec![E::zero(); nvars];
         let mut new_polys = vec![];
-        let mut buffer = vec![];
         let mut selected_polys = vec![];
+
+        let mut buffer = vec![];
+        let mut pivots: Vec<Option<usize>> = vec![];
 
         let mut iter_count = 1;
         while !critical_pairs.is_empty() {
@@ -194,15 +167,24 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
 
             selected_polys.clear();
             let mut i = critical_pairs.len() - 1;
+
+            let mut l_tmp = vec![];
             loop {
                 if critical_pairs[i].degree == lowest_lcm_deg {
                     let pair = critical_pairs.swap_remove(i);
 
-                    let new_f1 = (*pair.poly_first).clone().mul_exp(&pair.lcm_diff_first);
-                    selected_polys.push(new_f1);
-
-                    let new_f2 = (*pair.poly_sec).clone().mul_exp(&pair.lcm_diff_sec);
-                    selected_polys.push(new_f2);
+                    let e = [
+                        (pair.index_first, pair.lcm_diff_first),
+                        (pair.index_sec, pair.lcm_diff_sec),
+                    ];
+                    for poly_info in e {
+                        if !l_tmp.contains(&poly_info) {
+                            let new_f1 =
+                                Self::simplify(&mut simplifications, poly_info.0, &poly_info.1);
+                            selected_polys.push(new_f1);
+                            l_tmp.push(poly_info);
+                        }
+                    }
                 }
 
                 if i == 0 {
@@ -253,16 +235,16 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                     }
 
                     // search for a reducer and select the smallest for better performance
-                    if let Some(g) = basis
+                    if let Some((index, g)) = basis
                         .iter()
-                        .filter(|g| monom.iter().zip(g.max_exp()).all(|(pe, ge)| *pe >= *ge))
-                        .min_by_key(|g| g.nterms)
+                        .filter(|g| monom.iter().zip(g.1.max_exp()).all(|(pe, ge)| *pe >= *ge))
+                        .min_by_key(|g| g.1.nterms)
                     {
                         for ((e, pe), ge) in exp.iter_mut().zip(monom).zip(g.max_exp()) {
                             *e = *pe - *ge;
                         }
 
-                        let pp = (**g).clone().mul_exp(&exp);
+                        let pp = Self::simplify(&mut simplifications, *index, &exp);
                         new_polys.push(pp);
                     }
                 }
@@ -318,123 +300,133 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                     .column = column;
             }
 
-            matrix.resize(selected_polys.len(), vec![]);
-            for (row, p) in matrix.iter_mut().zip(&mut selected_polys) {
-                row.clear();
-
-                for (coeff, exp) in p.coefficients.iter().zip(p.exponents.chunks(nvars)).rev() {
-                    row.push((coeff.clone(), all_monomials.get(exp).unwrap().column));
-                }
-            }
-
-            // sort the matrix rows to make it as upper-triangular as possible
-            matrix.sort_unstable_by(|r1, r2| r1[0].1.cmp(&r2[0].1).then(r1.len().cmp(&r2.len())));
-
-            // row-reduce the sparse matrix
-
-            let mut non_empty_pivots = 0;
-            for pivot_col in 0..sorted_monomial_indices.len() {
-                // find next pivot
-                let mut best_pivot: Option<(usize, usize)> = None;
-                for (row_index, row) in matrix[non_empty_pivots..].iter().enumerate() {
-                    if row[0].1 == pivot_col
-                        && (best_pivot.is_none() || best_pivot.unwrap().1 > row.len())
-                    {
-                        // find the smallest row as a pivot
-                        best_pivot = Some((non_empty_pivots + row_index, row.len()));
-                    }
-                }
-
-                match best_pivot {
-                    Some(b) => {
-                        matrix.swap(non_empty_pivots, b.0);
-                    }
-                    None => continue,
-                }
-
-                let inv_pivot = field.inv(&matrix[non_empty_pivots][0].0);
-
-                for r in 0..matrix.len() {
-                    let row = &matrix[r];
-                    let pivot = &matrix[non_empty_pivots];
-                    if r == non_empty_pivots || row[0].1 != pivot_col {
-                        continue;
-                    }
-
-                    let ratio = field.neg(&field.mul(&row[0].0, &inv_pivot));
-
-                    let mut pos_pivot = 0;
-                    let mut pos_row = 0;
-
-                    buffer.clear();
-
-                    while pos_row < row.len() && pos_pivot < pivot.len() {
-                        match row[pos_row].1.cmp(&pivot[pos_pivot].1) {
-                            Ordering::Less => {
-                                buffer.push((row[pos_row].0.clone(), row[pos_row].1));
-                                pos_row += 1;
-                            }
-                            Ordering::Greater => {
-                                buffer.push((
-                                    field.mul(&ratio, &pivot[pos_pivot].0),
-                                    pivot[pos_pivot].1,
-                                ));
-                                pos_pivot += 1;
-                            }
-                            Ordering::Equal => {
-                                let new_coeff = field
-                                    .add(&row[pos_row].0, &field.mul(&ratio, &pivot[pos_pivot].0));
-
-                                if !R::is_zero(&new_coeff) {
-                                    buffer.push((new_coeff, row[pos_row].1));
-                                }
-
-                                pos_row += 1;
-                                pos_pivot += 1;
-                            }
-                        }
-                    }
-
-                    for (coeff, col) in &row[pos_row..] {
-                        buffer.push((coeff.clone(), *col));
-                    }
-
-                    for (coeff, col) in &pivot[pos_pivot..] {
-                        buffer.push((field.mul(&ratio, coeff), *col));
-                    }
-
-                    std::mem::swap(&mut matrix[r], &mut buffer);
-                    buffer.clear();
-                }
-
-                matrix.retain(|r| !r.is_empty());
-
-                non_empty_pivots += 1;
-            }
+            R::echelonize(
+                &mut matrix,
+                &mut selected_polys,
+                nvars,
+                &all_monomials,
+                &sorted_monomial_indices,
+                field,
+                &mut buffer,
+                &mut pivots,
+                self.print_stats,
+            );
 
             // construct new polynomials
             for m in &matrix {
                 let lmi = sorted_monomial_indices[m[0].1];
                 let lm = &current_monomials[lmi * nvars..(lmi + 1) * nvars];
 
-                // TODO: update the pivot polynomials, as they have been simplified
+                // create the new polynomial in the proper order
+                let mut poly = MultivariatePolynomial::new_from(&selected_polys[0], Some(m.len()));
+                for (coeff, col) in m.iter().rev() {
+                    let index = sorted_monomial_indices[*col];
+                    let exp = &current_monomials[index * nvars..(index + 1) * nvars];
+                    poly.append_monomial(field.from_larger(coeff), exp);
+                }
+
+                let poly = Rc::new(poly);
 
                 if selected_polys.iter().all(|p| p.max_exp() != lm) {
-                    // create the new polynomial in the proper order
-                    let mut poly =
-                        MultivariatePolynomial::new_from(&selected_polys[0], Some(m.len()));
-                    for (coeff, col) in m.iter().rev() {
-                        let index = sorted_monomial_indices[*col];
-                        let exp = &current_monomials[index * nvars..(index + 1) * nvars];
-                        poly.append_monomial(coeff.clone(), exp);
-                    }
+                    let new_index = simplifications.len();
+                    simplifications.push(vec![(vec![E::zero(); nvars], poly.clone())]);
 
-                    Self::update(&mut basis, &mut critical_pairs, poly);
+                    Self::update(&mut basis, &mut critical_pairs, poly, new_index);
+                } else {
+                    // update entries in the tab with simpler polynomials
+                    let mut diff = vec![E::zero(); nvars];
+                    'bf: for (g_ind, g) in &basis {
+                        if poly
+                            .last_exponents()
+                            .iter()
+                            .zip(g.last_exponents())
+                            .all(|(pi, gi)| *pi >= *gi)
+                        {
+                            for ((d, pi), gi) in diff
+                                .iter_mut()
+                                .zip(poly.last_exponents())
+                                .zip(g.last_exponents())
+                            {
+                                *d = *pi - *gi;
+                            }
+
+                            for (diff_e, p) in &mut simplifications[*g_ind] {
+                                if diff == *diff_e {
+                                    *p = poly.clone();
+                                    continue 'bf;
+                                }
+                            }
+
+                            // new polynomial
+                            simplifications[*g_ind].push((diff.clone(), poly.clone()));
+                        }
+                    }
                 }
             }
         }
 
-        self.system = basis.into_iter().map(|x| (*x).clone()).collect();
+        self.system = basis.into_iter().map(|x| (*x.1).clone()).collect();
+    }
+}
+
+impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
+    /// Add a new polynomial to the basis, updating and filtering the existing
+    /// basis and critical pairs, based on Gebauer and Moeller's redundant pair criteria.
+    ///
+    /// Adapted from "A Computational Approach to Commutative Algebra" by Thomas Becker Volker Weispfenning.
+    fn update(
+        basis: &mut Vec<(usize, Rc<MultivariatePolynomial<R, E, O>>)>,
+        critical_pairs: &mut Vec<CriticalPair<R, E, O>>,
+        f: Rc<MultivariatePolynomial<R, E, O>>,
+        index: usize,
+    ) {
+        let mut new_pairs: Vec<_> = basis
+            .iter()
+            .map(|b| (CriticalPair::new(b.1.clone(), f.clone(), b.0, index), true))
+            .collect();
+
+        for i in 0..new_pairs.len() {
+            new_pairs[i].1 = false;
+            new_pairs[i].1 = new_pairs[i].0.disjoint
+                || new_pairs.iter().all(|p2| {
+                    !p2.1
+                        || new_pairs[i]
+                            .0
+                            .lcm
+                            .iter()
+                            .zip(&p2.0.lcm)
+                            .any(|(e1, e2)| *e1 < *e2)
+                });
+        }
+
+        new_pairs.retain(|p| p.1 && !p.0.disjoint);
+
+        critical_pairs.retain(|p| {
+            p.lcm.iter().zip(f.max_exp()).any(|(e1, e2)| *e1 < *e2)
+                || p.poly_first
+                    .max_exp()
+                    .iter()
+                    .zip(f.max_exp())
+                    .zip(&p.lcm)
+                    .all(|((e1, e2), ecm)| e1.max(e2) == ecm)
+                || p.poly_sec
+                    .max_exp()
+                    .iter()
+                    .zip(f.max_exp())
+                    .zip(&p.lcm)
+                    .all(|((e1, e2), ecm)| e1.max(e2) == ecm)
+        });
+
+        critical_pairs.extend(new_pairs.into_iter().map(|np| np.0));
+
+        basis.retain(|b| {
+            b.1.max_exp()
+                .iter()
+                .zip(f.max_exp())
+                .any(|(e1, e2)| *e1 < *e2)
+        });
+
+        basis.push((index, f));
     }
 
     /// Completely reduce the polynomial `f` w.r.t the polynomials `gs`.
@@ -575,3 +567,371 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         true
     }
 }
+
+/// Echelonize a matrix with entries in the field.
+pub trait Echelonize: Field {
+    type LargerField;
+
+    fn from_larger(&self, element: &Self::LargerField) -> <Self as Ring>::Element;
+    fn echelonize<E: Exponent, O: MonomialOrder>(
+        matrix: &mut Vec<Vec<(Self::LargerField, usize)>>,
+        selected_polys: &mut Vec<Rc<MultivariatePolynomial<Self, E, O>>>,
+        nvars: usize,
+        all_monomials: &HashMap<Vec<E>, MonomialData>,
+        sorted_monomial_indices: &Vec<usize>,
+        field: Self,
+        buffer: &mut Vec<Self::LargerField>,
+        pivots: &mut Vec<Option<usize>>,
+        print_stats: bool,
+    );
+}
+
+impl Echelonize for FiniteField<u32> {
+    type LargerField = i64;
+
+    /// Specialized 32-bit finite field echelonization based on
+    /// "A Compact Parallel Implementation of F4" by Monagan and Pearce.
+    fn echelonize<E: Exponent, O: MonomialOrder>(
+        matrix: &mut Vec<Vec<(i64, usize)>>,
+        selected_polys: &mut Vec<Rc<MultivariatePolynomial<FiniteField<u32>, E, O>>>,
+        nvars: usize,
+        all_monomials: &HashMap<Vec<E>, MonomialData>,
+        sorted_monomial_indices: &Vec<usize>,
+        field: FiniteField<u32>,
+        buffer: &mut Vec<i64>,
+        pivots: &mut Vec<Option<usize>>,
+        print_stats: bool,
+    ) {
+        fn u32_inv(coeff: u32, prime: u32) -> u32 {
+            // extended Euclidean algorithm: a x + b p = gcd(x, p) = 1 or a x = 1 (mod p)
+            let mut u1: u32 = 1;
+            let mut u3 = coeff;
+            let mut v1: u32 = 0;
+            let mut v3 = prime;
+            let mut even_iter: bool = true;
+
+            while v3 != 0 {
+                let q = u3 / v3;
+                let t3 = u3 % v3;
+                let t1 = u1 + q * v1;
+                u1 = v1;
+                v1 = t1;
+                u3 = v3;
+                v3 = t3;
+                even_iter = !even_iter;
+            }
+
+            if even_iter {
+                u1
+            } else {
+                prime - u1
+            }
+        }
+
+        matrix.resize(selected_polys.len(), vec![]);
+        for (row, p) in matrix.iter_mut().zip(selected_polys) {
+            row.clear();
+
+            for (coeff, exp) in p.coefficients.iter().zip(p.exponents.chunks(nvars)).rev() {
+                row.push((
+                    field.from_element(coeff.clone()) as i64,
+                    all_monomials.get(exp).unwrap().column,
+                ));
+            }
+        }
+
+        // sort the matrix rows to sort the shortest and most reduced pivots on top
+        matrix.sort_unstable_by(|r1, r2| {
+            r1[0]
+                .1
+                .cmp(&r2[0].1)
+                .then(r1.len().cmp(&r2.len()))
+                .then_with(|| {
+                    for ((_, i1), (_, i2)) in r1.iter().zip(r2) {
+                        match i1.cmp(i2) {
+                            Ordering::Equal => {}
+                            x => {
+                                return x.reverse();
+                            }
+                        }
+                    }
+
+                    Ordering::Equal
+                })
+        });
+
+        // row-reduce the sparse matrix
+        for p in &mut *pivots {
+            *p = None;
+        }
+
+        buffer.resize(sorted_monomial_indices.len(), 0);
+        pivots.resize(sorted_monomial_indices.len(), None);
+
+        let p = field.get_prime() as i64;
+        let p2 = p * p;
+
+        let mut pc = 0;
+        for r in 0..matrix.len() {
+            // identify all pivots
+            if let Some((coeff, col)) = matrix[r].first_mut() {
+                if pivots[*col].is_none() {
+                    pivots[*col] = Some(r);
+                    pc += 1;
+
+                    if *coeff != 1 {
+                        let inv_pivot = u32_inv(*coeff as u32, field.get_prime());
+
+                        for (coeff, _) in &mut matrix[r] {
+                            *coeff *= inv_pivot as i64;
+                            *coeff %= field.get_prime() as i64;
+                        }
+                    }
+                }
+            }
+        }
+
+        if print_stats {
+            println!("\tPivots={}, rows to reduce={}", pc, matrix.len() - pc);
+        }
+
+        for r in 0..matrix.len() {
+            if matrix[r].is_empty() {
+                continue;
+            }
+
+            if let Some((coeff, col)) = matrix[r].first_mut() {
+                if pivots[*col].is_none() {
+                    pivots[*col] = Some(r);
+                    pc += 1;
+
+                    if *coeff != 1 {
+                        let inv_pivot = u32_inv(*coeff as u32, field.get_prime());
+
+                        for (coeff, _) in &mut matrix[r] {
+                            *coeff *= inv_pivot as i64;
+                            *coeff %= field.get_prime() as i64;
+                        }
+                    }
+                }
+            }
+
+            // do not reduce pivots
+            if pivots.iter().any(|c| *c == Some(r)) {
+                continue;
+            }
+
+            // copy row into the buffer
+            for (coeff, col) in &*matrix[r] {
+                buffer[*col] = *coeff as i64;
+            }
+
+            for i in 0..buffer.len() {
+                if buffer[i] != 0 {
+                    buffer[i] %= p;
+                }
+
+                if buffer[i] == 0 {
+                    continue;
+                }
+
+                let Some(pivot_index) = pivots[i] else {
+                    // keep on reducing this new pivot
+                    continue;
+                };
+
+                let pivot = &matrix[pivot_index];
+                let c = buffer[i].clone();
+
+                buffer[i] = 0;
+
+                let mut t;
+                let mut m;
+                for (coeff, col) in pivot.iter().skip(1) {
+                    t = buffer[*col];
+                    m = *coeff * c;
+
+                    if t >= m {
+                        t -= m;
+                    } else {
+                        t += p2 - m;
+                    }
+
+                    buffer[*col] = t;
+                }
+            }
+
+            matrix[r].clear();
+
+            for (col, coeff) in buffer.iter_mut().enumerate() {
+                if *coeff != 0 {
+                    matrix[r].push((coeff.clone(), col));
+                    *coeff = 0;
+                }
+            }
+
+            if let Some((coeff, col)) = matrix[r].first() {
+                pivots[*col] = Some(r);
+
+                if *coeff != 1 {
+                    let inv_pivot = u32_inv(*coeff as u32, field.get_prime());
+
+                    for (coeff, _) in &mut matrix[r] {
+                        *coeff *= inv_pivot as i64;
+                        *coeff %= field.get_prime() as i64;
+                    }
+                }
+            }
+        }
+
+        // TODO: do back substitution
+        matrix.retain(|r| !r.is_empty());
+    }
+
+    fn from_larger(&self, element: &i64) -> <Self as Ring>::Element {
+        self.to_element(*element as u32)
+    }
+}
+
+macro_rules! echelonize_impl {
+    ($f: ty) => {
+        impl Echelonize for $f {
+            type LargerField = Self::Element;
+
+            #[inline(never)]
+            fn echelonize<E: Exponent, O: MonomialOrder>(
+                matrix: &mut Vec<Vec<(Self::Element, usize)>>,
+                selected_polys: &mut Vec<Rc<MultivariatePolynomial<Self, E, O>>>,
+                nvars: usize,
+                all_monomials: &HashMap<Vec<E>, MonomialData>,
+                sorted_monomial_indices: &Vec<usize>,
+                field: Self,
+                buffer: &mut Vec<Self::Element>,
+                pivots: &mut Vec<Option<usize>>,
+                print_stats: bool,
+            ) {
+                matrix.resize(selected_polys.len(), vec![]);
+                for (row, p) in matrix.iter_mut().zip(selected_polys) {
+                    row.clear();
+
+                    for (coeff, exp) in p.coefficients.iter().zip(p.exponents.chunks(nvars)).rev() {
+                        row.push((coeff.clone(), all_monomials.get(exp).unwrap().column));
+                    }
+                }
+
+                // sort the matrix rows to sort the shortest and most reduced pivots on top
+                matrix.sort_unstable_by(|r1, r2| {
+                    r1[0]
+                        .1
+                        .cmp(&r2[0].1)
+                        .then(r1.len().cmp(&r2.len()))
+                        .then_with(|| {
+                            for ((_, i1), (_, i2)) in r1.iter().zip(r2) {
+                                match i1.cmp(i2) {
+                                    Ordering::Equal => {}
+                                    x => {
+                                        return x.reverse();
+                                    }
+                                }
+                            }
+
+                            Ordering::Equal
+                        })
+                });
+
+                for p in &mut *pivots {
+                    *p = None;
+                }
+
+                buffer.resize(sorted_monomial_indices.len(), field.zero());
+                pivots.resize(sorted_monomial_indices.len(), None);
+
+                let mut pc = 0;
+                for r in 0..matrix.len() {
+                    // identify all pivots
+                    if let Some((coeff, col)) = matrix[r].first_mut() {
+                        if pivots[*col].is_none() {
+                            pivots[*col] = Some(r);
+                            pc += 1;
+
+                            if field.is_one(coeff) {
+                                let inv_pivot = field.inv(coeff);
+
+                                for (coeff, _) in &mut matrix[r] {
+                                    field.mul_assign(coeff, &inv_pivot);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if print_stats {
+                    println!("\tPivots={}, rows to reduce={}", pc, matrix.len() - pc);
+                }
+
+                for r in 0..matrix.len() {
+                    if matrix[r].is_empty() {
+                        continue;
+                    }
+
+                    // do not reduce pivots
+                    if pivots.iter().any(|c| *c == Some(r)) {
+                        continue;
+                    }
+
+                    // copy row into the buffer
+                    for (coeff, col) in &*matrix[r] {
+                        buffer[*col] = coeff.clone();
+                    }
+
+                    for i in 0..buffer.len() {
+                        if Self::is_zero(&buffer[i]) {
+                            continue;
+                        }
+
+                        let Some(pivot_index) = pivots[i] else {
+                            continue;
+                        };
+
+                        let pivot: &Vec<(Self::Element, usize)> = &matrix[pivot_index];
+                        let c = buffer[i].clone();
+
+                        buffer[i] = field.zero();
+
+                        for (coeff, col) in pivot.iter().skip(1) {
+                            field.sub_mul_assign(&mut buffer[*col], coeff, &c);
+                        }
+                    }
+
+                    matrix[r].clear();
+
+                    for (col, coeff) in buffer.iter_mut().enumerate() {
+                        if !Self::is_zero(coeff) {
+                            matrix[r].push((coeff.clone(), col));
+                            *coeff = field.zero();
+                        }
+                    }
+
+                    if let Some((coeff, col)) = matrix[r].first() {
+                        pivots[*col] = Some(r);
+                        let inv_pivot = field.inv(coeff);
+
+                        for (coeff, _) in &mut matrix[r] {
+                            field.mul_assign(coeff, &inv_pivot);
+                        }
+                    }
+                }
+
+                matrix.retain(|r| !r.is_empty());
+            }
+
+            fn from_larger(&self, element: &Self::LargerField) -> <Self as Ring>::Element {
+                element.clone()
+            }
+        }
+    };
+}
+
+echelonize_impl!(FiniteField<u64>);
+echelonize_impl!(FiniteField<Mersenne64>);
+echelonize_impl!(RationalField);

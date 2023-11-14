@@ -1,8 +1,10 @@
 use ahash::HashMap;
+use rand::{thread_rng, Rng};
+use tracing::debug;
 
 use crate::rings::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace},
-    integer::IntegerRing,
+    integer::{Integer, IntegerRing},
     rational::RationalField,
     EuclideanDomain, Field, Ring,
 };
@@ -307,5 +309,127 @@ where
         }
 
         (c, factors)
+    }
+
+    /// Perform distinct degree factorization on a monic, univariate and square-free polynomial.
+    pub fn distinct_degree_factorization(&self) -> Vec<(usize, Self)> {
+        assert!(self.field.get_prime().to_u64() != 2);
+        let Some(var) = self.last_exponents().iter().position(|x| *x > E::zero()) else {
+            return vec![(0, self.clone())]; // constant polynomial
+        };
+
+        let mut e = self.last_exponents().to_vec();
+        e[var] = E::one();
+        let x = Self::new_from_monomial(&self, self.field.one(), e);
+
+        let mut factors = vec![];
+        let mut h = x.clone();
+        let mut f = self.clone();
+        let mut i: usize = 0;
+        while !f.is_one() {
+            i += 1;
+
+            h = h.exp_mod_univariate(self.field.get_prime().to_u64().into(), &mut f);
+
+            let mut g = MultivariatePolynomial::gcd(&(&h - &x), &f);
+
+            if !g.is_one() {
+                f = f.quot_rem_univariate(&mut g).0;
+                factors.push((i, g));
+            }
+
+            if f.last_exponents()[var] < E::from_u32(2 * (i as u32 + 1)) {
+                // f cannot be split more
+                if !f.is_constant() {
+                    factors.push((f.last_exponents()[var].to_u32() as usize, f));
+                }
+                break;
+            }
+        }
+
+        factors
+    }
+
+    /// Perform Cantor-Zassenhaus's probabilistic algorithm for
+    /// finding irreducible factors of degree `d`.
+    pub fn equal_degree_factorization(&self, d: usize) -> Vec<Self> {
+        assert!(self.field.get_prime().to_u64() != 2);
+        let mut s = self.clone().make_monic();
+
+        let Some(var) = self.last_exponents().iter().position(|x| *x > E::zero()) else {
+            if d == 1 {
+                return vec![s];
+            } else {
+                panic!("Degree mismatch");
+            }
+        };
+
+        let n = self.degree(var).to_u32() as usize;
+
+        if n == d {
+            return vec![s];
+        }
+
+        let mut rng = thread_rng();
+        let mut random_poly = Self::new_from(self, Some(d));
+        let mut exp = vec![E::zero(); self.nvars];
+
+        let factor = loop {
+            // generate a random non-constant polynomial
+            random_poly.clear();
+            for i in 0..n {
+                // TODO: generate sparse polynomial?
+                let r = self
+                    .field
+                    .nth(rng.gen_range(0..self.field.get_prime().to_u64()));
+                if !FiniteField::<UField>::is_zero(&r) {
+                    exp[var] = E::from_u32(i as u32);
+                    random_poly.append_monomial(r, &exp);
+                }
+            }
+
+            if random_poly.degree(var) == E::zero() {
+                continue;
+            }
+
+            let g = MultivariatePolynomial::gcd(&random_poly, &s);
+
+            if !g.is_one() {
+                break g;
+            }
+
+            // TODO: use Frobenius map and modular composition to prevent computing large exponent poly^(p^d)
+            let p: Integer = self.field.get_prime().to_u64().into();
+            let b = random_poly
+                .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
+                - Self::new_from_constant(&self, self.field.one());
+
+            let g = MultivariatePolynomial::gcd(&b, &s);
+
+            if !g.is_one() && g != s {
+                break g;
+            }
+        };
+
+        let mut factors = factor.equal_degree_factorization(d);
+        factors.extend((self / &factor).equal_degree_factorization(d));
+        factors
+    }
+
+    pub fn factorize(&self) -> Vec<(Self, usize)> {
+        let sf = self.square_free_factorization();
+
+        let mut factors = vec![];
+        for (f, p) in sf {
+            debug!("SFF {} {}", f, p);
+            for (d2, f2) in f.distinct_degree_factorization() {
+                debug!("DDF {} {}", f2, d2);
+                for f3 in f2.equal_degree_factorization(d2) {
+                    factors.push((f3, p));
+                }
+            }
+        }
+
+        factors
     }
 }

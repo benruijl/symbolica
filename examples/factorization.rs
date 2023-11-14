@@ -8,7 +8,27 @@ use symbolica::{
     state::{ResettableBuffer, State, Workspace},
 };
 
-fn factor_ff() {
+fn factor_ff_univariate() {
+    let mut state = State::new();
+    let workspace: Workspace = Workspace::new();
+    let mut exp = Atom::new();
+    Atom::parse("x^100-1", &mut state, &workspace)
+        .unwrap()
+        .as_view()
+        .expand(&workspace, &mut state, &mut exp);
+
+    let field = FiniteField::<u32>::new(17);
+    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(field, None).unwrap();
+
+    let factors = poly.factorize();
+
+    println!("Factorization of {}:", poly.printer(&state));
+    for (f, pow) in factors {
+        println!("\t({})^{}", f.printer(&state), pow);
+    }
+}
+
+fn factor_ff_square_free() {
     let mut state = State::new();
     let workspace: Workspace = Workspace::new();
     let mut exp = Atom::new();
@@ -28,7 +48,7 @@ fn factor_ff() {
     }
 }
 
-fn factor() {
+fn factor_square_free() {
     let mut state = State::new();
     let workspace: Workspace = Workspace::new();
     let mut exp = Atom::new();
@@ -51,6 +71,7 @@ fn factor() {
 }
 
 fn main() {
-    factor();
-    factor_ff();
+    factor_square_free();
+    factor_ff_square_free();
+    factor_ff_univariate();
 }

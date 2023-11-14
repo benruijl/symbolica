@@ -1,7 +1,7 @@
 use std::{
     cmp::Ordering,
     fmt::{Display, Error, Formatter},
-    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, Sub, SubAssign},
 };
 
 use rand::Rng;
@@ -40,6 +40,24 @@ impl IntegerRing {
 pub enum Integer {
     Natural(i64),
     Large(ArbitraryPrecisionInteger),
+}
+
+impl From<i64> for Integer {
+    #[inline]
+    fn from(value: i64) -> Self {
+        Integer::Natural(value)
+    }
+}
+
+impl From<u64> for Integer {
+    #[inline]
+    fn from(value: u64) -> Self {
+        if value <= i64::MAX as u64 {
+            Integer::Natural(value as i64)
+        } else {
+            Integer::Large(value.into())
+        }
+    }
 }
 
 impl std::fmt::Debug for Integer {
@@ -618,25 +636,7 @@ impl Ring for IntegerRing {
 
 impl EuclideanDomain for IntegerRing {
     fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        match (a, b) {
-            (Integer::Natural(a), Integer::Natural(b)) => {
-                if let Some(r) = a.checked_rem_euclid(*b) {
-                    Integer::Natural(r)
-                } else {
-                    Integer::from_large(
-                        ArbitraryPrecisionInteger::from(*a)
-                            .rem_euc(ArbitraryPrecisionInteger::from(*b)),
-                    )
-                }
-            }
-            (Integer::Natural(a), Integer::Large(b)) => {
-                Integer::from_large(ArbitraryPrecisionInteger::from(*a).rem_euc(b))
-            }
-            (Integer::Large(a), Integer::Natural(b)) => {
-                Integer::from_large(a.rem_euc(ArbitraryPrecisionInteger::from(*b)))
-            }
-            (Integer::Large(a), Integer::Large(b)) => Integer::from_large(a.rem_euc(b).into()),
-        }
+        a % b
     }
 
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
@@ -1005,6 +1005,32 @@ impl<'a> Neg for &'a Integer {
                 }
             }
             Integer::Large(r) => Integer::from_large(r.neg().into()),
+        }
+    }
+}
+
+impl<'a> Rem for &'a Integer {
+    type Output = Integer;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Integer::Natural(a), Integer::Natural(b)) => {
+                if let Some(r) = a.checked_rem_euclid(*b) {
+                    Integer::Natural(r)
+                } else {
+                    Integer::from_large(
+                        ArbitraryPrecisionInteger::from(*a)
+                            .rem_euc(ArbitraryPrecisionInteger::from(*b)),
+                    )
+                }
+            }
+            (Integer::Natural(a), Integer::Large(b)) => {
+                Integer::from_large(ArbitraryPrecisionInteger::from(*a).rem_euc(b))
+            }
+            (Integer::Large(a), Integer::Natural(b)) => {
+                Integer::from_large(a.rem_euc(ArbitraryPrecisionInteger::from(*b)))
+            }
+            (Integer::Large(a), Integer::Large(b)) => Integer::from_large(a.rem_euc(b).into()),
         }
     }
 }

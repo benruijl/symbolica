@@ -11,7 +11,7 @@ use crate::printer::PolynomialPrinter;
 use crate::rings::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
 };
-use crate::rings::integer::IntegerRing;
+use crate::rings::integer::{Integer, IntegerRing};
 use crate::rings::rational::RationalField;
 use crate::rings::{EuclideanDomain, Field, Ring, RingPrinter};
 use crate::state::State;
@@ -2411,6 +2411,28 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         self.synthetic_division(div)
+    }
+
+    /// Compute self^n % m where m is a polynomial
+    pub fn exp_mod_univariate(&self, mut n: Integer, m: &mut Self) -> Self {
+        if n.is_zero() {
+            return Self::new_from_constant(self, self.field.one());
+        }
+
+        // use binary exponentiation and mod at every stage
+        let mut x = self.quot_rem_univariate(m).1;
+        let mut y = Self::new_from_constant(self, self.field.one());
+        while !n.is_one() {
+            if (&n % &Integer::Natural(2)).is_one() {
+                y = (&y * &x).quot_rem_univariate(m).1;
+                n -= &Integer::one();
+            }
+
+            x = (&x * &x).quot_rem_univariate(m).1;
+            n /= 2;
+        }
+
+        (x * &y).quot_rem_univariate(m).1
     }
 }
 

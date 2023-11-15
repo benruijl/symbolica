@@ -101,6 +101,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(set_license_key, m)?)?;
     m.add_function(wrap_pyfunction!(request_hobbyist_license, m)?)?;
     m.add_function(wrap_pyfunction!(request_trial_license, m)?)?;
+    m.add_function(wrap_pyfunction!(request_sublicense, m)?)?;
 
     Ok(())
 }
@@ -131,6 +132,20 @@ fn request_hobbyist_license(name: String, email: String) -> PyResult<()> {
 #[pyfunction]
 fn request_trial_license(name: String, email: String, company: String) -> PyResult<()> {
     LicenseManager::request_trial_license(&name, &email, &company)
+        .map(|_| println!("A license key was sent to your e-mail address."))
+        .map_err(exceptions::PyConnectionError::new_err)
+}
+
+/// Request a sublicense key for the user `name` working at `company` that has the site-wide license `super_license`.
+/// The key will be sent to the e-mail address `email`.
+#[pyfunction]
+fn request_sublicense(
+    name: String,
+    email: String,
+    company: String,
+    super_license: String,
+) -> PyResult<()> {
+    LicenseManager::request_sublicense(&name, &email, &company, &super_license)
         .map(|_| println!("A license key was sent to your e-mail address."))
         .map_err(exceptions::PyConnectionError::new_err)
 }

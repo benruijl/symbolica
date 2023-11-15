@@ -292,4 +292,43 @@ Error: {}",
             Err("Could not connect to the license server".to_owned())
         }
     }
+
+    /// Request a sublicense key for the user `name` working at `company` that has the site-wide license `super_license`.
+    /// The key will be sent to the e-mail address `email`.
+    pub fn request_sublicense(
+        name: &str,
+        email: &str,
+        company: &str,
+        super_license: &str,
+    ) -> Result<(), String> {
+        if let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") {
+            let mut m: HashMap<String, JsonValue> = HashMap::default();
+            m.insert("name".to_owned(), name.to_owned().into());
+            m.insert("email".to_owned(), email.to_owned().into());
+            m.insert("company".to_owned(), company.to_owned().into());
+            m.insert("type".to_owned(), "sublicense".to_owned().into());
+            m.insert("super_license".to_owned(), super_license.to_owned().into());
+            let mut v = JsonValue::from(m).stringify().unwrap();
+            v.push('\n');
+
+            stream.write_all(v.as_bytes()).unwrap();
+
+            let mut buf = Vec::new();
+            stream.read_to_end(&mut buf).unwrap();
+            let read_str = std::str::from_utf8(&buf).unwrap();
+
+            if read_str == "{\"status\":\"email sent\"}\n" {
+                Ok(())
+            } else if read_str.is_empty() {
+                Err("Empty response".to_owned())
+            } else {
+                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
+                let message_parsed: &HashMap<_, _> = message.get().unwrap();
+                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+                Err(status.clone())
+            }
+        } else {
+            Err("Could not connect to the license server".to_owned())
+        }
+    }
 }

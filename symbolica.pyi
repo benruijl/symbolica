@@ -22,6 +22,9 @@ def request_hobbyist_license(name: str, email: str) -> None:
 def request_trial_license(name: str, email: str, company: str) -> None:
     """Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address `email`."""
 
+def request_sublicense(name: str, email: str, company: str, super_licence: str) -> None:
+    """Request a sublicense key for the user `name` working at `company` that has the site-wide license `super_license`.
+    The key will be sent to the e-mail address `email`."""
 
 class AtomType(Enum):
     """Specifies the type of the atom."""

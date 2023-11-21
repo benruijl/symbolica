@@ -1443,6 +1443,8 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                     }
                 }
                 PatternIter::Fn(index, name, is_wildcard, args, s) => {
+                    let mut tried_first_option = false;
+
                     // query an existing iterator
                     let mut ii = match index {
                         Some(jj) => {
@@ -1459,6 +1461,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                                 }
 
                                 self.used_flag[*jj] = false;
+                                tried_first_option = true;
                                 **s = None;
                                 *jj + 1
                             }
@@ -1467,7 +1470,6 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                     };
 
                     // find a new match and create a new iterator
-                    let mut tried_first_option = false;
                     while ii < self.target.len() {
                         if self.used_flag[ii] {
                             ii += 1;
@@ -1533,15 +1535,16 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                     }
                 }
                 PatternIter::Literal(index, atom) => {
+                    let mut tried_first_option = false;
                     let mut ii = match index {
                         Some(jj) => {
                             self.used_flag[*jj] = false;
+                            tried_first_option = true;
                             *jj + 1
                         }
                         None => 0,
                     };
 
-                    let mut tried_first_option = false;
                     while ii < self.target.len() {
                         if self.used_flag[ii] {
                             ii += 1;
@@ -1564,6 +1567,8 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                     }
                 }
                 PatternIter::Sequence(index, slice_type, pattern, s) => {
+                    let mut tried_first_option = false;
+
                     // query an existing iterator
                     let mut ii = match index {
                         Some(jj) => {
@@ -1573,6 +1578,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                                 continue 'next_match;
                             } else {
                                 self.used_flag[*jj] = false;
+                                tried_first_option = true;
                                 *jj + 1
                             }
                         }
@@ -1580,7 +1586,6 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                     };
 
                     // find a new match and create a new iterator
-                    let mut tried_first_option = false;
                     while ii < self.target.len() {
                         if self.used_flag[ii] {
                             ii += 1;

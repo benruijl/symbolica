@@ -4,15 +4,76 @@ use std::{cmp::Ordering, hash::Hash};
 
 use crate::rings::integer::Integer;
 
+/// An iterator for combinations without replacement.
 pub struct CombinationIterator {
+    n: usize,
+    indices: Vec<usize>,
+    init: bool,
+}
+
+impl CombinationIterator {
+    pub fn new(n: usize, k: usize) -> CombinationIterator {
+        CombinationIterator {
+            indices: (0..k).collect(),
+            n,
+            init: false,
+        }
+    }
+
+    pub fn next(&mut self) -> Option<&[usize]> {
+        if self.indices.is_empty() || self.indices.len() as usize > self.n {
+            return None;
+        }
+
+        if !self.init {
+            self.init = true;
+
+            return Some(&self.indices);
+        }
+
+        if self.indices.len() == 0 {
+            return None;
+        }
+
+        let mut done = true;
+        for (i, v) in self.indices.iter().enumerate().rev() {
+            if *v < self.n - self.indices.len() + i {
+                let a = *v + 1;
+                for (p, vv) in &mut self.indices[i..].iter_mut().enumerate() {
+                    *vv = a + p;
+                }
+
+                done = false;
+                break;
+            }
+        }
+
+        if done {
+            None
+        } else {
+            Some(&self.indices)
+        }
+    }
+}
+
+#[test]
+fn test() {
+    let mut c = CombinationIterator::new(10, 5);
+    while let Some(a) = c.next() {
+        println!("{:?}", a);
+    }
+}
+
+/// An iterator for combinations with replacement.
+pub struct CombinationWithReplacementIterator {
     indices: SmallVec<[u32; 10]>,
     k: u32,
     init: bool,
 }
 
-impl CombinationIterator {
-    pub fn new(n: usize, k: u32) -> CombinationIterator {
-        CombinationIterator {
+impl CombinationWithReplacementIterator {
+    pub fn new(n: usize, k: u32) -> CombinationWithReplacementIterator {
+        CombinationWithReplacementIterator {
             indices: (0..n).map(|_| 0).collect(),
             k,
             init: false,

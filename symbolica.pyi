@@ -22,9 +22,11 @@ def request_hobbyist_license(name: str, email: str) -> None:
 def request_trial_license(name: str, email: str, company: str) -> None:
     """Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address `email`."""
 
+
 def request_sublicense(name: str, email: str, company: str, super_licence: str) -> None:
     """Request a sublicense key for the user `name` working at `company` that has the site-wide license `super_license`.
     The key will be sent to the e-mail address `email`."""
+
 
 class AtomType(Enum):
     """Specifies the type of the atom."""
@@ -631,8 +633,7 @@ class CompareOp:
 class Function:
     """A Symbolica function. Will turn into an expression or a transformer when called with arguments."""
 
-    @staticmethod
-    def __new__(name: str, is_symmetric: Optional[bool]) -> Function:
+    def __new__(_cls, name: str, is_symmetric: Optional[bool]) -> Function:
         """
         Create a new function from a `name`. Can be turned into a symmetric function
         using `is_symmetric=True`.
@@ -675,7 +676,7 @@ class Function:
 class Transformer:
     """Operations that transform an expression."""
 
-    def __init__() -> Transformer:
+    def __new__(_cls) -> Transformer:
         """Create a new transformer for a term provided by `Expression.map`."""
 
     def expand(self) -> Transformer:
@@ -1030,12 +1031,27 @@ class Polynomial:
         >>>     print('\t({})^{}'.format(f, exp))
         """
 
+    def factor(self) -> list[Tuple[Polynomial, int]]:
+        """Factorize the polynomial.
+
+        The polynomial must be univariate.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+        >>> print('Factorization of {}:'.format(p))
+        >>> for f, exp in p.factor():
+        >>>     print('\t({})^{}'.format(f, exp))
+        """
+
 
 class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str]) -> Polynomial:
+    def parse(_cls, input: str, vars: List[str]) -> IntegerPolynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -1046,7 +1062,7 @@ class IntegerPolynomial:
 
         Examples
         --------
-        >>> e = Polynomial.parse('3*x^2+y+y*4', ['x', 'y'])
+        >>> e = IntegerPolynomial.parse('3*x^2+y+y*4', ['x', 'y'])
 
         Raises
         ------
@@ -1081,7 +1097,7 @@ class IntegerPolynomial:
     def __truediv__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
 
-    def quot_rem(self, rhs: Polynomial) -> Polynomial:
+    def quot_rem(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
 
     def __neg__(self) -> IntegerPolynomial:
@@ -1097,9 +1113,24 @@ class IntegerPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+        >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial().to_integer_polynomial()
         >>> print('Square-free factorization of {}:'.format(p))
         >>> for f, exp in p.factor_square_free():
+        >>>     print('\t({})^{}'.format(f, exp))
+        """
+
+    def factor(self) -> list[Tuple[IntegerPolynomial, int]]:
+        """Factorize the polynomial.
+
+        The polynomial must be univariate.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial().to_integer_polynomial()
+        >>> print('Factorization of {}:'.format(p))
+        >>> for f, exp in p.factor():
         >>>     print('\t({})^{}'.format(f, exp))
         """
 
@@ -1178,9 +1209,24 @@ class FiniteFieldPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+        >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial().to_finite_field(7)
         >>> print('Square-free factorization of {}:'.format(p))
         >>> for f, exp in p.factor_square_free():
+        >>>     print('\t({})^{}'.format(f, exp))
+        """
+
+    def factor(self) -> list[Tuple[FiniteFieldPolynomial, int]]:
+        """Factorize the polynomial.
+
+        The polynomial must be univariate.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial().to_finite_field(7)
+        >>> print('Factorization of {}:'.format(p))
+        >>> for f, exp in p.factor():
         >>>     print('\t({})^{}'.format(f, exp))
         """
 
@@ -1188,8 +1234,7 @@ class FiniteFieldPolynomial:
 class RationalPolynomial:
     """A Symbolica rational polynomial."""
 
-    @staticmethod
-    def __new__(num: Polynomial, den: Polynomial) -> RationalPolynomial:
+    def __new__(_cls, num: Polynomial, den: Polynomial) -> RationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
@@ -1321,8 +1366,7 @@ class RationalPolynomialSmallExponent:
 class FiniteFieldRationalPolynomial:
     """A Symbolica rational polynomial."""
 
-    @staticmethod
-    def __new__(num: FiniteFieldPolynomial, den: FiniteFieldPolynomial) -> FiniteFieldRationalPolynomial:
+    def __new__(_cls, num: FiniteFieldPolynomial, den: FiniteFieldPolynomial) -> FiniteFieldRationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
@@ -1383,15 +1427,17 @@ class Evaluator:
 
 
 class NumericalIntegrator:
+    @staticmethod
     def continuous(
         n_dims: int,
         n_bins: int = 128,
         min_samples_for_update: int = 100,
-        bin_number_evolution: List[int] = None,
+        bin_number_evolution: Optional[List[int]] = None,
         train_on_avg: bool = False,
     ) -> NumericalIntegrator:
         """Create a new continuous grid for the numerical integrator."""
 
+    @staticmethod
     def discrete(
         bins: List[Optional[NumericalIntegrator]],
         max_prob_ratio: float = 100.0,

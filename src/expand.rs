@@ -2,7 +2,7 @@ use rug::Rational;
 use smallvec::SmallVec;
 
 use crate::{
-    combinatorics::CombinationIterator,
+    combinatorics::CombinationWithReplacementIterator,
     representations::{
         number::{BorrowedNumber, Number},
         Add, Atom, AtomSet, AtomView, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow, Pow,
@@ -65,7 +65,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     let mut add_h = workspace.new_atom();
                     let add = add_h.get_mut().to_add();
 
-                    let mut ci = CombinationIterator::new(args.len(), num);
+                    let mut ci = CombinationWithReplacementIterator::new(args.len(), num);
 
                     while let Some(new_term) = ci.next() {
                         let mut hh = workspace.new_atom();

@@ -380,6 +380,41 @@ impl Integer {
 
         Integer::from_large(res)
     }
+
+    /// Perform the symmetric mod `p` on `self`.
+    pub fn symmetric_mod(&self, p: &Integer) -> Integer {
+        let c = self % p;
+
+        if &c * &2u64.into() > *p {
+            &c - p
+        } else {
+            c
+        }
+    }
+
+    /// Compute the modular inverse of `self` in the ring with size `n`.
+    /// `self` and `n` must be coprime.
+    pub fn mod_inverse(&self, n: &Integer) -> Integer {
+        let mut t0 = Integer::zero();
+        let mut t1 = Integer::one();
+        let mut r0 = n.clone();
+        let mut r1 = self.clone();
+
+        while !r1.is_zero() {
+            let (q, r) = IntegerRing::new().quot_rem(&r0, &r1);
+            (t1, t0) = (&t0 - &(&q * &t1), t1);
+            (r1, r0) = (r, r1);
+        }
+
+        if r0 > Integer::one() {
+            panic!("{} is not invertible in ring {}", self, n);
+        }
+        if t0.is_negative() {
+            t0 += &n;
+        }
+
+        t0
+    }
 }
 
 impl Display for Integer {

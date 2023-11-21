@@ -34,7 +34,7 @@ use crate::{
         },
         factor::Factorize,
         polynomial::MultivariatePolynomial,
-        Variable, INLINED_EXPONENTS,
+        Exponent, Variable, INLINED_EXPONENTS,
     },
     printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::{
@@ -2769,7 +2769,7 @@ impl PythonIntegerPolynomial {
 }
 
 macro_rules! generate_methods {
-    ($type:ty) => {
+    ($type:ty, $exp_type:ty) => {
         #[pymethods]
         impl $type {
             /// Copy the polynomial.
@@ -2954,13 +2954,47 @@ macro_rules! generate_methods {
                     .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
                     .collect()
             }
+
+            /// Factorize the polynomial.
+            ///
+            /// The polynomial must be univariate.
+            ///
+            /// Examples
+            /// --------
+            ///
+            /// >>> from symbolica import Expression
+            /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+            /// >>> print('Factorization of {}:'.format(p))
+            /// >>> for f, exp in p.factor():
+            /// >>>     print('\t({})^{}'.format(f, exp))
+            pub fn factor(&self) -> PyResult<Vec<(Self, usize)>> {
+                let mut found = false;
+                for v in 0..self.poly.nvars {
+                    if self.poly.degree(v) > <$exp_type as Exponent>::zero() {
+                        if !found {
+                            found = true;
+                        } else {
+                            return Err(exceptions::PyValueError::new_err(format!(
+                                "Polynomial is not univariate.",
+                            )));
+                        }
+                    }
+                }
+
+                Ok(self
+                    .poly
+                    .factor_univariate()
+                    .into_iter()
+                    .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
+                    .collect())
+            }
         }
     };
 }
 
-generate_methods!(PythonPolynomial);
-generate_methods!(PythonIntegerPolynomial);
-generate_methods!(PythonFiniteFieldPolynomial);
+generate_methods!(PythonPolynomial, u16);
+generate_methods!(PythonIntegerPolynomial, u8);
+generate_methods!(PythonFiniteFieldPolynomial, u16);
 
 /// A Symbolica rational polynomial.
 #[pyclass(name = "RationalPolynomial")]

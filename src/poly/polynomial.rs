@@ -814,6 +814,34 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         self
     }
 
+    /// Map a coefficient using the function `f`.
+    pub fn map_coeff<U: Ring, T: Fn(&F::Element) -> U::Element>(
+        &self,
+        f: T,
+        field: U,
+    ) -> MultivariatePolynomial<U, E, O> {
+        let mut coefficients = Vec::with_capacity(self.coefficients.len());
+        let mut exponents = Vec::with_capacity(self.exponents.len());
+
+        for m in self.into_iter() {
+            let nc = f(m.coefficient);
+            if !U::is_zero(&nc) {
+                coefficients.push(nc);
+                exponents.extend(m.exponents);
+            }
+        }
+
+        MultivariatePolynomial {
+            nterms: coefficients.len(),
+            coefficients,
+            exponents,
+            nvars: self.nvars,
+            field,
+            var_map: self.var_map.clone(),
+            _phantom: PhantomData,
+        }
+    }
+
     /// Add `exponents` to every exponent.
     pub fn mul_exp(mut self, exponents: &[E]) -> Self {
         debug_assert_eq!(self.nvars, exponents.len());
@@ -894,12 +922,13 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     /// Get the leading coefficient.
     pub fn lcoeff(&self) -> F::Element {
         if self.is_zero() {
-            return self.field.zero();
+            return self.field.one();
         }
         self.coefficients.last().unwrap().clone()
     }
 
     /// Convert the coefficient from the current field to a finite field.
+    /// TODO: deprecate, use map_coeff
     pub fn to_finite_field<UField: FiniteFieldWorkspace>(
         &self,
         field: FiniteField<UField>,
@@ -1593,7 +1622,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
     /// Synthetic division for univariate polynomials
     // TODO: create UnivariatePolynomial?
-    pub fn synthetic_division(
+    fn synthetic_division(
         &self,
         div: &MultivariatePolynomial<F, E, LexOrder>,
     ) -> (
@@ -2355,6 +2384,10 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         MultivariatePolynomial<F, E, LexOrder>,
         MultivariatePolynomial<F, E, LexOrder>,
     ) {
+        if self.is_zero() {
+            return (self.clone(), self.clone());
+        }
+
         if div.nterms == 1 {
             // calculate inverse once
             let inv = self.field.inv(&div.coefficients[0]);
@@ -2433,6 +2466,27 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         (x * &y).quot_rem_univariate(m).1
+    }
+
+    /// Compute `(g, s, t)` where `self * s + other * t = g`
+    /// by means of the extended Euclidean algorithm.
+    pub fn eea_univariate(&self, other: &Self) -> (Self, Self, Self) {
+        let mut r0 = self.clone().make_monic();
+        let mut r1 = other.clone().make_monic();
+        let mut s0 = self.new_from_constant(self.field.inv(&self.lcoeff()));
+        let mut s1 = self.new_from(None);
+        let mut t0 = self.new_from(None);
+        let mut t1 = self.new_from_constant(self.field.inv(&other.lcoeff()));
+
+        while !r1.is_zero() {
+            let (q, r) = r0.quot_rem_univariate(&mut r1);
+            let a = self.field.inv(&r.lcoeff());
+            (r1, r0) = (r.mul_coeff(a.clone()), r1);
+            (s1, s0) = ((s0 - &q * &s1).mul_coeff(a.clone()), s1);
+            (t1, t0) = ((t0 - q * &t1).mul_coeff(a), t1);
+        }
+
+        (r0, s0, t0)
     }
 }
 

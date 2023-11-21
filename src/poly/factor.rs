@@ -2,11 +2,15 @@ use ahash::HashMap;
 use rand::{thread_rng, Rng};
 use tracing::debug;
 
-use crate::rings::{
-    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace},
-    integer::{Integer, IntegerRing},
-    rational::RationalField,
-    EuclideanDomain, Field, Ring,
+use crate::{
+    combinatorics::CombinationIterator,
+    poly::gcd::LARGE_U32_PRIMES,
+    rings::{
+        finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
+        integer::{Integer, IntegerRing},
+        rational::RationalField,
+        EuclideanDomain, Field, Ring,
+    },
 };
 
 use super::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent, LexOrder};
@@ -16,6 +20,8 @@ pub trait Factorize: Sized {
     /// The output is `a_1^e1*...*a_n^e_n`
     /// where each `a_i` is relative prime.
     fn square_free_factorization(&self) -> Vec<(Self, usize)>;
+    /// Factor a univariate polynomial over its coefficient ring.
+    fn factor_univariate(&self) -> Vec<(Self, usize)>;
 }
 
 impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
@@ -45,7 +51,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         factors
     }
 
-    /// Perform a a square free factorization using Yun's algorithm.
+    /// Perform a square free factorization using Yun's algorithm.
     ///
     /// The characteristic of the ring must be 0 and all variables
     /// must occur in every factor.
@@ -132,47 +138,71 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
 
         factors
     }
+
+    fn factor_univariate(&self) -> Vec<(Self, usize)> {
+        let sf = self.square_free_factorization();
+
+        let mut factors = vec![];
+        for (f, p) in sf {
+            debug!("SFF {} {}", f, p);
+            factors.extend(f.factor_reconstruct().into_iter().map(|ff| (ff, p)));
+        }
+
+        factors
+    }
 }
 
 impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrder> {
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
         let c = self.content();
 
-        let mut stripped = MultivariatePolynomial::<_, E>::new(
-            self.nvars,
+        let stripped = self.map_coeff(
+            |coeff| {
+                let coeff = self.field.div(coeff, &c);
+                debug_assert!(coeff.is_integer());
+                coeff.numerator()
+            },
             IntegerRing::new(),
-            Some(self.nterms),
-            self.var_map.as_ref().map(|x| x.as_slice()),
         );
 
-        for t in self {
-            let coeff = self.field.div(t.coefficient, &c);
-            debug_assert!(coeff.is_integer());
-            stripped.append_monomial(coeff.numerator(), t.exponents);
-        }
+        let fs = stripped.square_free_factorization();
 
-        let mut factors = vec![];
+        let mut factors: Vec<_> = fs
+            .into_iter()
+            .map(|(f, e)| (f.map_coeff(|coeff| coeff.into(), RationalField::new()), e))
+            .collect();
 
         if !c.is_one() {
             factors.push((Self::new_from_constant(&self, c), 1));
         }
 
-        let fs = stripped.factor_separable();
+        factors
+    }
 
-        for f in fs {
-            let nf = f.square_free_factorization_0_char();
+    fn factor_univariate(&self) -> Vec<(Self, usize)> {
+        let c = self.content();
 
-            for (p, pow) in nf {
-                let mut p_rat = Self::new_from(&self, Some(p.nterms));
-                for t in p.into_iter() {
-                    p_rat.append_monomial(t.coefficient.into(), t.exponents);
-                }
-                factors.push((p_rat, pow));
-            }
+        let stripped = self.map_coeff(
+            |coeff| {
+                let coeff = self.field.div(coeff, &c);
+                debug_assert!(coeff.is_integer());
+                coeff.numerator()
+            },
+            IntegerRing::new(),
+        );
+
+        let fs = stripped.square_free_factorization();
+
+        let mut factors = vec![];
+        for (f, p) in fs {
+            factors.extend(
+                f.factor_reconstruct()
+                    .into_iter()
+                    .map(|ff| (ff.map_coeff(|coeff| coeff.into(), RationalField::new()), p)),
+            );
         }
-
-        if factors.is_empty() {
-            factors.push((Self::one(self.field), 1))
+        if !c.is_one() {
+            factors.push((Self::new_from_constant(&self, c), 1));
         }
 
         factors
@@ -198,6 +228,23 @@ where
 
         if factors.is_empty() || !self.field.is_one(&c) {
             factors.push((Self::new_from_constant(self, c), 1))
+        }
+
+        factors
+    }
+
+    fn factor_univariate(&self) -> Vec<(Self, usize)> {
+        let sf = self.square_free_factorization();
+
+        let mut factors = vec![];
+        for (f, p) in sf {
+            debug!("SFF {} {}", f, p);
+            for (d2, f2) in f.distinct_degree_factorization() {
+                debug!("DDF {} {}", f2, d2);
+                for f3 in f2.equal_degree_factorization(d2) {
+                    factors.push((f3, p));
+                }
+            }
         }
 
         factors
@@ -245,8 +292,12 @@ where
         let mut b = f.clone();
         for es in b.exponents.chunks_mut(self.nvars) {
             for e in es {
+                if e.is_zero() {
+                    continue;
+                }
+
                 if p < u32::MAX as usize {
-                    debug_assert_eq!(*e % E::from_u32(p as u32), E::zero());
+                    debug_assert_eq!(e.to_u32() as usize % p, 0);
                     *e = *e / E::from_u32(p as u32);
                 } else {
                     // at the moment exponents are limited to 32-bits
@@ -416,20 +467,288 @@ where
         factors
     }
 
-    pub fn factorize(&self) -> Vec<(Self, usize)> {
-        let sf = self.square_free_factorization();
-
+    /// Perform distinct and equal degree factorization on a square-free univariate polynomial.
+    fn factor_distinct_equal_degree(&self) -> Vec<Self> {
         let mut factors = vec![];
-        for (f, p) in sf {
-            debug!("SFF {} {}", f, p);
-            for (d2, f2) in f.distinct_degree_factorization() {
-                debug!("DDF {} {}", f2, d2);
-                for f3 in f2.equal_degree_factorization(d2) {
-                    factors.push((f3, p));
-                }
+        for (d2, f2) in self.distinct_degree_factorization() {
+            debug!("DDF {} {}", f2, d2);
+            for f3 in f2.equal_degree_factorization(d2) {
+                factors.push(f3);
+            }
+        }
+        factors
+    }
+}
+
+impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+    /// Hensel lift a solution of `self = u * w mod p` to `self = u * w mod max_p`
+    /// where `max_p` is a power of `p`.
+    ///
+    /// If the lifting is successful, i.e. the error is 0 at some stage,
+    /// it will return `Ok((u,w))` where `u` and `w` are the true factors over
+    /// the integers. If a true factorization is not possible, it returns
+    /// `Err((u,w))` where `u` and `w` are monic.
+    pub fn hensel_lift<UField: FiniteFieldWorkspace>(
+        &self,
+        mut u: MultivariatePolynomial<FiniteField<UField>, E, LexOrder>,
+        mut w: MultivariatePolynomial<FiniteField<UField>, E, LexOrder>,
+        gamma: Option<Integer>,
+        max_p: &Integer,
+    ) -> Result<(Self, Self), (Self, Self)>
+    where
+        FiniteField<UField>: Field + PolynomialGCD<E> + FiniteFieldCore<UField>,
+        Integer: ToFiniteField<UField>,
+    {
+        let lcoeff = self.lcoeff(); // lcoeff % p != 0
+        let mut gamma = gamma.unwrap_or(lcoeff.clone());
+        let lcoeff_p = lcoeff.to_finite_field(&u.field);
+        let gamma_p = gamma.to_finite_field(&u.field);
+        let field = u.field;
+        let p = Integer::from(field.get_prime().to_u64());
+
+        let a = self.clone().mul_coeff(gamma.clone());
+
+        u = u.make_monic().mul_coeff(gamma_p.clone());
+        w = w.make_monic().mul_coeff(lcoeff_p.clone());
+
+        let (_, s, t) = u.eea_univariate(&w);
+
+        debug_assert!((&s * &u + &t * &w).is_one());
+
+        let sym_map = |e: &<FiniteField<UField> as Ring>::Element| {
+            let i = field.from_element(e.clone()).to_u64().into();
+
+            if &i * &2u64.into() > p {
+                &i - &p
+            } else {
+                i
+            }
+        };
+
+        let mut u_i = u.map_coeff(sym_map, IntegerRing::new());
+        let mut w_i = w.map_coeff(sym_map, IntegerRing::new());
+
+        // only replace the leading coefficient
+        *u_i.coefficients.last_mut().unwrap() = gamma.clone();
+        *w_i.coefficients.last_mut().unwrap() = lcoeff;
+
+        let mut e = &a - &(&u_i * &w_i);
+
+        let mut m = p.clone();
+
+        while !e.is_zero() && &m <= max_p {
+            let e_p = e.map_coeff(|c| (c / &m).to_finite_field(&field), field);
+            let (q, r) = (&e_p * &s).quot_rem_univariate(&mut w);
+            let tau = &e_p * &t + q * &u;
+
+            u_i = u_i
+                + tau
+                    .map_coeff(sym_map, IntegerRing::new())
+                    .mul_coeff(m.clone());
+            w_i = w_i
+                + r.map_coeff(sym_map, IntegerRing::new())
+                    .mul_coeff(m.clone());
+            e = &a - &(&u_i * &w_i);
+
+            m = &m * &p;
+        }
+
+        if e.is_zero() {
+            let content = u_i.content();
+            if !content.is_one() {
+                u_i = u_i.div_coeff(&content);
+                gamma = &gamma / &content;
+            }
+
+            if !gamma.is_one() {
+                w_i = w_i.div_coeff(&gamma); // true division is possible in this case
+            }
+
+            Ok((u_i, w_i))
+        } else {
+            if !u_i.lcoeff().is_one() {
+                let inv = u_i.lcoeff().mod_inverse(&m);
+                u_i = u_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), IntegerRing::new());
+            }
+
+            if !w_i.lcoeff().is_one() {
+                let inv = w_i.lcoeff().mod_inverse(&m);
+                w_i = w_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), IntegerRing::new());
+            }
+
+            Err((u_i, w_i))
+        }
+    }
+
+    /// Lift multiple factors by creating a binary tree and lifting each product.
+    fn multi_factor_hensel_lift(
+        &self,
+        hs: &[MultivariatePolynomial<FiniteField<u32>, E, LexOrder>],
+        bound: &Integer,
+        max_p: &Integer,
+    ) -> Vec<Self> {
+        let field = hs[0].field;
+
+        if hs.len() == 1 {
+            if self.lcoeff().is_one() {
+                return vec![self.clone()];
+            } else {
+                let inv = self.lcoeff().mod_inverse(&max_p);
+                let r = self.map_coeff(|c| (c * &inv).symmetric_mod(&max_p), IntegerRing::new());
+                return vec![r];
             }
         }
 
+        let (gs, hs) = hs.split_at(hs.len() / 2);
+
+        let mut g = MultivariatePolynomial::new_from_constant(&gs[0], field.one());
+        for x in gs {
+            g = g * x;
+        }
+
+        let mut h = MultivariatePolynomial::new_from_constant(&hs[0], field.one());
+        for x in hs {
+            h = h * x;
+        }
+
+        // TODO: simplify the polynomial when a true factor is found
+        let (g_i, h_i) = self.hensel_lift(g, h, None, max_p).unwrap_or_else(|e| e);
+        debug!("g_i={}", g_i);
+        debug!("h_i={}", h_i);
+
+        let mut factors = g_i.multi_factor_hensel_lift(gs, bound, max_p);
+        factors.extend(h_i.multi_factor_hensel_lift(hs, bound, max_p));
         factors
+    }
+
+    /// Factor a square-free univariate polynomial over the integers by Hensel lifting factors computed over the
+    /// a finite field image of the polynomial .
+    fn factor_reconstruct(&self) -> Vec<Self> {
+        let Some(var) = self.last_exponents().iter().position(|x| *x > E::zero()) else {
+            return vec![self.clone()]; // constant polynomial
+        };
+        let d = self.degree(var).to_u32();
+
+        if d == 1 {
+            return vec![self.clone()];
+        }
+
+        let max_norm = self.coefficients.iter().map(|x| x.abs()).max().unwrap();
+        let bound: Integer =
+            &Integer::from(((d + 1) as f64 * 2f64.powi(d as i32 + 1).sqrt()) as u64)
+                * &(&Integer::from(2u64).pow(d as u64) * &(&max_norm * &self.lcoeff())); // NOTE: precision may be off
+
+        // select a suitable prime
+        let mut field;
+        let mut f_p;
+        let mut i = 0;
+        loop {
+            i += 1;
+            if i == LARGE_U32_PRIMES.len() {
+                panic!("Ran out of primes during factorization");
+            }
+
+            let p = LARGE_U32_PRIMES[i];
+
+            if (&self.lcoeff() % &Integer::Natural(p as i64)).is_zero() {
+                continue;
+            }
+
+            field = FiniteField::<u32>::new(p);
+            f_p = self.map_coeff(|f| f.to_finite_field(&field), field);
+            let df_p = f_p.derivative(var);
+
+            // check is f_p remains square-free
+            if MultivariatePolynomial::gcd(&f_p, &df_p).is_one() {
+                break;
+            }
+        }
+
+        let hs: Vec<_> = f_p.factor_distinct_equal_degree();
+
+        if hs.len() == 1 {
+            // the polynomial is irreducible
+            return vec![self.clone()];
+        }
+
+        let p: Integer = (field.get_prime().to_u32() as i64).into();
+        let mut max_p = p.clone();
+        while max_p < bound {
+            max_p = &max_p * &p;
+        }
+
+        let mut factors = self.multi_factor_hensel_lift(&hs, &bound, &max_p);
+
+        #[cfg(debug_assertions)]
+        for (h, h_p) in factors.iter().zip(&hs) {
+            let hh_p = h.to_finite_field(field);
+            if &hh_p != h_p {
+                panic!("Mismatch of lifted factor: {} vs {} in {}", hh_p, h_p, self);
+            }
+        }
+
+        let mut rec_factors = vec![];
+        // factor recombination
+        let mut s = 1;
+
+        let mut rest = self.clone();
+        'len: while 2 * s <= factors.len() {
+            let mut fs = CombinationIterator::new(factors.len(), s);
+            while let Some(cs) = fs.next() {
+                // check if the constant term matches
+                if rest.exponents[..rest.nvars].iter().all(|e| *e == E::zero()) {
+                    let mut g1 = rest.lcoeff();
+                    let mut h1 = rest.lcoeff();
+                    for i in 0..factors.len() {
+                        if factors[i].exponents[..rest.nvars]
+                            .iter()
+                            .all(|x| *x == E::zero())
+                        {
+                            if cs.contains(&i) {
+                                g1 = (&g1 * &factors[i].coefficients[0]).symmetric_mod(&max_p);
+                            } else {
+                                h1 = (&h1 * &factors[i].coefficients[0]).symmetric_mod(&max_p);
+                            }
+                        }
+                    }
+
+                    if &g1 * &h1 != &rest.lcoeff() * &rest.coefficients[0] {
+                        continue;
+                    }
+                }
+
+                let mut g = MultivariatePolynomial::new_from_constant(&rest, rest.lcoeff());
+                for i in 0..factors.len() {
+                    if cs.contains(&i) {
+                        g = &g * &factors[i];
+                        g = g.map_coeff(|i| i.symmetric_mod(&max_p), IntegerRing::new());
+                    }
+                }
+
+                let c = g.content();
+                g = g.div_coeff(&c);
+
+                let (h, r) = rest.quot_rem(&g, true);
+
+                if r.is_zero() {
+                    // should always happen happen when |g1|_1 * |h1|_1 <= bound
+                    rec_factors.push(g);
+
+                    for i in cs.iter().rev() {
+                        factors.remove(*i);
+                    }
+
+                    let c = h.content();
+                    rest = h.div_coeff(&c);
+
+                    continue 'len;
+                }
+            }
+
+            s += 1;
+        }
+
+        rec_factors.push(rest);
+        rec_factors
     }
 }

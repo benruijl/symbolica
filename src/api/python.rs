@@ -2160,6 +2160,8 @@ impl PythonExpression {
     /// Replace all atoms matching the pattern `pattern` by the right-hand side `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
+    /// The entire operation can be repeated until there are no more matches using `repeat=True`.
+    ///
     /// Examples
     /// --------
     ///
@@ -2173,24 +2175,38 @@ impl PythonExpression {
         pattern: ConvertibleToPattern,
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
+        repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
         let rhs = &rhs.to_pattern()?.expr;
         let mut out = Atom::new();
 
+        let guard = get_state!()?;
+        let state = guard.borrow();
+
         WORKSPACE.with(|workspace| {
-            Ok::<_, PyErr>(
-                pattern.replace_all(
-                    self.expr.as_view(),
-                    rhs,
-                    &&get_state!()?,
+            let mut out2 = Atom::new();
+            let mut expr_ref = self.expr.as_view();
+
+            while pattern.replace_all(
+                expr_ref,
+                rhs,
+                state,
                     workspace,
                     cond.as_ref()
                         .map(|r| r.restrictions.as_ref())
                         .unwrap_or(&HashMap::default()),
                     &mut out,
-                ),
-            )
+            ) {
+                if !repeat.unwrap_or(false) {
+                    break;
+                }
+
+                std::mem::swap(&mut out, &mut out2);
+                expr_ref = out2.as_view();
+            }
+
+            Ok::<_, PyErr>(())
         })?;
 
         Ok(PythonExpression {

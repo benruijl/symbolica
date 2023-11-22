@@ -369,6 +369,26 @@ class Expression:
         Compare two expressions.
         """
 
+    def __lt__(self, other: Expression | int) -> bool:
+        """
+        Compare two expressions. Both expressions must be a number.
+        """
+
+    def __le__(self, other: Expression | int) -> bool:
+        """
+        Compare two expressions. Both expressions must be a number.
+        """
+
+    def __gt__(self, other: Expression | int) -> bool:
+        """
+        Compare two expressions. Both expressions must be a number.
+        """
+
+    def __ge__(self, other: Expression | int) -> bool:
+        """
+        Compare two expressions. Both expressions must be a number.
+        """
+
     def __iter__(self) -> Iterator[Expression]:
         """
         Create an iterator over all atoms in the expression.
@@ -556,10 +576,13 @@ class Expression:
         pattern: Transformer | Expression | int,
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
+        repeat: Optional[bool] = False,
     ) -> Expression:
         """
         Replace all atoms matching the pattern `pattern` by the right-hand side `rhs`.
         Restrictions on pattern can be supplied through `cond`.
+
+        The entire operation can be repeated until there are no more matches using `repeat=True`.
 
         Examples
         --------

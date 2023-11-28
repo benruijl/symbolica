@@ -222,7 +222,7 @@ pub trait ListSlice<'a>: Clone {
     fn len(&self) -> usize;
     fn get(&self, index: usize) -> AtomView<'a, Self::P>;
     fn get_subslice(&self, range: Range<usize>) -> Self;
-    fn eq(&self, other: &Self) -> bool;
+    fn eq(&self, other: &<Self::P as AtomSet>::S<'_>) -> bool;
 }
 
 pub enum AtomView<'a, P: AtomSet = Linear> {

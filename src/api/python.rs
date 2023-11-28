@@ -513,6 +513,76 @@ impl PythonPattern {
         })
     }
 
+    /// Create a transformer that repeatedly executes the arguments in order
+    /// until there are no more changes.
+    /// The output from one transformer is inserted into the next.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = Expression.parse("f(5)")
+    /// >>> e = e.transform().repeat(
+    /// >>>     Transformer().expand(),
+    /// >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+    /// >>> ).execute()
+    #[pyo3(signature = (*transformers))]
+    pub fn repeat(&self, transformers: &PyTuple) -> PyResult<PythonPattern> {
+        let mut ts = vec![];
+        for r in transformers {
+            let p = r.extract::<PythonPattern>()?;
+
+            let Pattern::Transformer(t) = p.expr.borrow() else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Argument must be a transformer",
+                ));
+            };
+
+            ts.push((**t).clone());
+        }
+
+        Ok(PythonPattern {
+            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Repeat(
+                (*self.expr).clone(),
+                ts,
+            )))),
+        })
+    }
+
+    /// Execute the transformer.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.var('x')
+    /// >>> e = (x+1)**5
+    /// >>> e = e.transform().expand().execute()
+    /// >>> print(e)
+    pub fn execute(&self) -> PyResult<PythonExpression> {
+        let Pattern::Transformer(t) = self.expr.borrow() else {
+            return Err(exceptions::PyValueError::new_err(
+                "Can only execute a transformer",
+            ));
+        };
+
+        let state = get_state!()?;
+
+        let mut out = Atom::new();
+        WORKSPACE.with(|workspace| {
+            t.execute(
+                &state.borrow(),
+                workspace,
+                &MatchStack::new(&HashMap::default()),
+                &mut out,
+            )
+        });
+
+        Ok(PythonExpression {
+            expr: Arc::new(out),
+        })
+    }
+
     /// Create a transformer that derives `self` w.r.t the variable `x`.
     pub fn derivative(&self, x: ConvertibleToPattern) -> PyResult<PythonPattern> {
         let id = match &*x.to_pattern()?.expr {
@@ -831,6 +901,50 @@ impl<'a> FromPyObject<'a> for Complex<f64> {
             ))
         }
     }
+}
+
+macro_rules! req_num_cmp {
+    ($self:ident,$num:ident,$c:ident) => {{
+        let num = $num.to_expression();
+
+        if !matches!(num.expr.as_view(), AtomView::Num(_)) {
+            return Err(exceptions::PyTypeError::new_err(
+                "Can only compare to number",
+            ));
+        };
+
+        match $self.expr.as_view() {
+            AtomView::Var(v) => {
+                let name = v.get_name();
+                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                    return Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    ));
+                }
+
+                let mut h = HashMap::default();
+                h.insert(
+                    name,
+                    vec![PatternRestriction::Filter(Box::new(move |v: &Match<_>| {
+                        let k = num.expr.as_view();
+                        if let Match::Single(m) = v {
+                            if let AtomView::Num(_) = m {
+                                return m.cmp(&k).$c();
+                            }
+                        }
+                        false
+                    }))],
+                );
+
+                Ok(PythonPatternRestriction {
+                    restrictions: Arc::new(h),
+                })
+            }
+            _ => Err(exceptions::PyTypeError::new_err(
+                "Only wildcards can be restricted.",
+            )),
+        }
+    }};
 }
 
 #[pymethods]
@@ -1461,6 +1575,62 @@ impl PythonExpression {
         }
     }
 
+    /// Create a pattern restriction that passes when the wildcard is smaller than a number `num`.
+    /// If the matched wildcard is not a number, the pattern fails.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun("f")
+    /// >>> e = f(1)*f(2)*f(3)
+    /// >>> e = e.replace_all(f(x_), 1, x_.req_lt(2))
+    pub fn req_lt(&self, num: ConvertibleToExpression) -> PyResult<PythonPatternRestriction> {
+        return req_num_cmp!(self, num, is_lt);
+    }
+
+    /// Create a pattern restriction that passes when the wildcard is greater than a number `num`.
+    /// If the matched wildcard is not a number, the pattern fails.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun("f")
+    /// >>> e = f(1)*f(2)*f(3)
+    /// >>> e = e.replace_all(f(x_), 1, x_.req_gt(2))
+    pub fn req_gt(&self, num: ConvertibleToExpression) -> PyResult<PythonPatternRestriction> {
+        return req_num_cmp!(self, num, is_gt);
+    }
+
+    /// Create a pattern restriction that passes when the wildcard is smaller than or equal to a number `num`.
+    /// If the matched wildcard is not a number, the pattern fails.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun("f")
+    /// >>> e = f(1)*f(2)*f(3)
+    /// >>> e = e.replace_all(f(x_), 1, x_.req_le(2))
+    pub fn req_le(&self, num: ConvertibleToExpression) -> PyResult<PythonPatternRestriction> {
+        return req_num_cmp!(self, num, is_le);
+    }
+
+    /// Create a pattern restriction that passes when the wildcard is greater than or equal to a number `num`.
+    /// If the matched wildcard is not a number, the pattern fails.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun("f")
+    /// >>> e = f(1)*f(2)*f(3)
+    /// >>> e = e.replace_all(f(x_), 1, x_.req_ge(2))
+    pub fn req_ge(&self, num: ConvertibleToExpression) -> PyResult<PythonPatternRestriction> {
+        return req_num_cmp!(self, num, is_ge);
+    }
+
     /// Create a new pattern restriction that calls the function `filter_fn` with the matched
     /// atom that should return a boolean. If true, the pattern matches.
     ///
@@ -1983,6 +2153,39 @@ impl PythonExpression {
             })
     }
 
+    /// Convert the expression to a polynomial, rewriting all non-polynomial elements.
+    pub fn to_polynomial_with_map(&self) -> (PythonPolynomial, HashMap<PythonExpression, usize>) {
+        let mut map = HashMap::default();
+
+        let poly = PythonPolynomial {
+            poly: Arc::new(
+                self.expr
+                    .as_view()
+                    .to_polynomial_with_map(RationalField::new(), &mut map),
+            ),
+        };
+
+        let map = map
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    PythonExpression {
+                        expr: Arc::new(Atom::new_from_view(&k)),
+                    },
+                    poly.poly
+                        .var_map
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .position(|v1| *v1 == v)
+                        .unwrap(),
+                )
+            })
+            .collect();
+
+        (poly, map)
+    }
+
     /// Convert the expression to a rational polynomial, optionally, with the variables and the ordering specified in `vars`.
     /// The latter is useful if it is known in advance that more variables may be added in the future to the
     /// rational polynomial through composition with other rational polynomials.
@@ -2192,11 +2395,11 @@ impl PythonExpression {
                 expr_ref,
                 rhs,
                 state,
-                    workspace,
-                    cond.as_ref()
-                        .map(|r| r.restrictions.as_ref())
-                        .unwrap_or(&HashMap::default()),
-                    &mut out,
+                workspace,
+                cond.as_ref()
+                    .map(|r| r.restrictions.as_ref())
+                    .unwrap_or(&HashMap::default()),
+                &mut out,
             ) {
                 if !repeat.unwrap_or(false) {
                     break;

@@ -678,6 +678,7 @@ impl<P: AtomSet> Pattern<P> {
                 }
 
                 mul.set_dirty(submatch | m.is_dirty());
+                mul.set_has_coefficient(m.has_coefficient());
                 submatch
             }
             AtomView::Add(a) => {

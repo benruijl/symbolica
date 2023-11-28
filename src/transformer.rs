@@ -3,7 +3,7 @@ use dyn_clone::DynClone;
 
 use crate::{
     combinatorics::{partitions, unique_permutations},
-    id::{MatchStack, Pattern, PatternRestriction},
+    id::{Match, MatchStack, Pattern, PatternRestriction},
     representations::{
         Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedFun, OwnedMul,
     },
@@ -43,6 +43,7 @@ pub enum Transformer<P: AtomSet + 'static> {
     Sort(Pattern<P>),
     Deduplicate(Pattern<P>),
     Permutations(Pattern<P>, Identifier),
+    Repeat(Pattern<P>, Vec<Transformer<P>>),
 }
 
 impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
@@ -80,6 +81,7 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
                 .field(point)
                 .field(d)
                 .finish(),
+            Transformer::Repeat(_, _) => todo!(),
         }
     }
 }
@@ -389,6 +391,32 @@ impl<P: AtomSet> Transformer<P> {
                         sum.set_dirty(true);
                         sum_h.as_view().normalize(workspace, state, out);
                         return;
+                    }
+                }
+
+                out.set_from_view(&h.as_view());
+            }
+            Transformer::Repeat(e, ts) => {
+                let mut h = workspace.new_atom();
+                e.substitute_wildcards(state, workspace, &mut h, match_stack);
+
+                let mut h1 = workspace.new_atom();
+                let empty_restrictions = HashMap::default();
+                loop {
+                    for t in ts {
+                        {
+                            // TODO: prevent recreation
+                            let mut match_stack = MatchStack::new(&empty_restrictions);
+                            match_stack.insert(INPUT_ID, Match::Single(h.as_view()));
+
+                            t.execute(state, workspace, &match_stack, &mut h1);
+                        }
+
+                        std::mem::swap(&mut h, &mut h1);
+                    }
+
+                    if h == h1 {
+                        break;
                     }
                 }
 

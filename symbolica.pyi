@@ -359,6 +359,58 @@ class Expression:
         >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
         """
 
+    def req_lt(self, num: Expression | int) -> PatternRestriction:
+        """Create a pattern restriction that passes when the wildcard is smaller than a number `num`.
+        If the matched wildcard is not a number, the pattern fails.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1)*f(2)*f(3)
+        >>> e = e.replace_all(f(x_), 1, x_.req_lt(2))
+        """
+
+    def req_gt(self, num: Expression | int) -> PatternRestriction:
+        """Create a pattern restriction that passes when the wildcard is greater than a number `num`.
+        If the matched wildcard is not a number, the pattern fails.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1)*f(2)*f(3)
+        >>> e = e.replace_all(f(x_), 1, x_.req_gt(2))
+        """
+
+    def req_le(self, num: Expression | int) -> PatternRestriction:
+        """Create a pattern restriction that passes when the wildcard is smaller than or equal to a number `num`.
+        If the matched wildcard is not a number, the pattern fails.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1)*f(2)*f(3)
+        >>> e = e.replace_all(f(x_), 1, x_.req_le(2))
+        """
+
+    def req_ge(self, num: Expression | int) -> PatternRestriction:
+        """Create a pattern restriction that passes when the wildcard is greater than or equal to a number `num`.
+        If the matched wildcard is not a number, the pattern fails.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1)*f(2)*f(3)
+        >>> e = e.replace_all(f(x_), 1, x_.req_ge(2))
+        """
+
     def __eq__(self, other: Expression | int) -> bool:
         """
         Compare two expressions.
@@ -834,6 +886,34 @@ class Transformer:
         >>> x_ = Expression.var('x_')
         >>> f = Expression.fun('f')
         >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
+        >>> print(e)
+        """
+
+    def repeat(self, *transformers: Transformer) -> Transformer:
+        """Create a transformer that repeatedly executes the arguments in order
+        until there are no more changes.
+        The output from one transformer is inserted into the next.
+                Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun('f')
+        >>> e = Expression.parse("f(5)")
+        >>> e = e.transform().repeat(
+        >>>     Transformer().expand(),
+        >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+        >>> ).execute()
+        """
+
+    def execute(self) -> Expression:
+        """Execute the transformer.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> e = (x+1)**5
+        >>> e = e.transform().expand().execute()
         >>> print(e)
         """
 

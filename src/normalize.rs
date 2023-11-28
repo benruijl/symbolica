@@ -434,11 +434,32 @@ impl<P: AtomSet> Atom<P> {
                         num.add(&BorrowedNumber::Natural(1, 1), state)
                     };
 
+                    let len = slice.len();
+
                     // help the borrow checker by dropping all references
                     drop(non_coeff1);
-                    drop(non_coeff2);
-                    drop(slice2);
                     drop(slice);
+
+                    if new_coeff == Number::Natural(1, 1) {
+                        assert!(has_coeff);
+
+                        if len == 2 {
+                            // downgrade
+                            self.set_from_view(&slice2.get(0));
+                        } else {
+                            // remove coefficient
+                            let m = self.to_mul();
+                            for a in non_coeff2.iter() {
+                                m.extend(a);
+                            }
+                            m.set_has_coefficient(false);
+                        }
+
+                        return true;
+                    }
+
+                    drop(slice2);
+                    drop(non_coeff2);
 
                     if new_coeff.is_zero() {
                         let num = self.to_num();
@@ -474,6 +495,7 @@ impl<P: AtomSet> Atom<P> {
                 drop(slice);
                 drop(non_coeff1);
 
+                assert!(new_coeff != Number::Natural(1, 1));
                 if new_coeff.is_zero() {
                     let num = self.to_num();
                     num.set_from_number(new_coeff);
@@ -511,6 +533,7 @@ impl<P: AtomSet> Atom<P> {
                 // help the borrow checker by dropping all references
                 drop(slice);
 
+                assert!(new_coeff != Number::Natural(1, 1));
                 if new_coeff.is_zero() {
                     let num = self.to_num();
                     num.set_from_number(new_coeff);
@@ -539,6 +562,7 @@ impl<P: AtomSet> Atom<P> {
 
             mul.extend(self.as_view());
             mul.extend(other.as_view());
+            mul.set_has_coefficient(true);
 
             std::mem::swap(self, helper);
             return true;
@@ -665,6 +689,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             }
                         } else {
                             out_mul.extend(v);
+                            out_mul.set_has_coefficient(false);
                         }
                     }
                 } else {

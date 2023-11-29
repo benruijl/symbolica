@@ -1028,7 +1028,7 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
 
     /// Get the range of an identifier based on previous matches and based
     /// on restrictions.
-    pub fn get_range(&self, identifier: Identifier) -> (usize, Option<usize>) {
+    pub fn get_range(&self, identifier: Identifier, state: &State) -> (usize, Option<usize>) {
         for (rk, rv) in self.stack.iter() {
             if rk == &identifier {
                 return match rv {
@@ -1073,8 +1073,11 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
             }
         }
 
-        // defaulft the minimum to 1
-        (minimal.unwrap_or(1), maximal)
+        match state.wildcard_level(identifier) {
+            1 => (minimal.unwrap_or(1), Some(maximal.unwrap_or(1))), // x_
+            2 => (minimal.unwrap_or(1), maximal),                    // x__
+            _ => (minimal.unwrap_or(0), maximal),                    // x___
+        }
     }
 }
 
@@ -1180,7 +1183,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
         let min_length: usize = pat_list
             .iter()
             .map(|x| match x {
-                Pattern::Wildcard(id) => match_stack.get_range(*id).0,
+                Pattern::Wildcard(id) => match_stack.get_range(*id, state).0,
                 _ => 1,
             })
             .sum();
@@ -1218,7 +1221,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
         let min_length: usize = pattern
             .iter()
             .map(|x| match x {
-                Pattern::Wildcard(id) => match_stack.get_range(*id).0,
+                Pattern::Wildcard(id) => match_stack.get_range(*id, state).0,
                 _ => 1,
             })
             .sum();
@@ -1230,7 +1233,9 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
         let max_length: usize = pattern
             .iter()
             .map(|x| match x {
-                Pattern::Wildcard(id) => match_stack.get_range(*id).1.unwrap_or(target.len()),
+                Pattern::Wildcard(id) => {
+                    match_stack.get_range(*id, state).1.unwrap_or(target.len())
+                }
                 _ => 1,
             })
             .sum();
@@ -1288,7 +1293,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                 // add new iterator
                 let it = match &self.pattern[self.iterators.len()] {
                     Pattern::Wildcard(name) => {
-                        let range = match_stack.get_range(*name);
+                        let range = match_stack.get_range(*name, self.state);
 
                         PatternIter::Wildcard(WildcardIter {
                             initialized: false,

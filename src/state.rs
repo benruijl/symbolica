@@ -147,6 +147,18 @@ impl State {
         self.get_name(id).map(|n| n.ends_with('_'))
     }
 
+    pub fn wildcard_level(&self, id: Identifier) -> usize {
+        let mut level = 0;
+        for x in self.get_name(id).unwrap().chars().rev() {
+            if x != '_' {
+                break;
+            }
+            level += 1;
+        }
+
+        level
+    }
+
     pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteField<u64> {
         &self.finite_fields[fi.0]
     }

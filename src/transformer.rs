@@ -81,7 +81,7 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
                 .field(point)
                 .field(d)
                 .finish(),
-            Transformer::Repeat(_, _) => todo!(),
+            Transformer::Repeat(p, t) => f.debug_tuple("Repeat").field(p).field(t).finish(),
         }
     }
 }
@@ -402,7 +402,10 @@ impl<P: AtomSet> Transformer<P> {
 
                 let mut h1 = workspace.new_atom();
                 let empty_restrictions = HashMap::default();
-                loop {
+
+                let mut changed = true;
+                while changed {
+                    changed = false;
                     for t in ts {
                         {
                             // TODO: prevent recreation
@@ -412,11 +415,11 @@ impl<P: AtomSet> Transformer<P> {
                             t.execute(state, workspace, &match_stack, &mut h1);
                         }
 
-                        std::mem::swap(&mut h, &mut h1);
-                    }
+                        if !changed {
+                            changed = h != h1;
+                        }
 
-                    if h == h1 {
-                        break;
+                        std::mem::swap(&mut h, &mut h1);
                     }
                 }
 

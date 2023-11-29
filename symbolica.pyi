@@ -411,6 +411,58 @@ class Expression:
         >>> e = e.replace_all(f(x_), 1, x_.req_ge(2))
         """
 
+    def req_cmp_lt(self, num: Expression) -> PatternRestriction:
+        """Create a pattern restriction that passes when the wildcard is smaller than another wildcard.
+        If the matched wildcards are not a numbers, the pattern fails.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_, y_ = Expression.var('x_', 'y_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1,2)
+        >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_lt(y_))
+        """
+
+    def req_cmp_gt(self, num: Expression) -> PatternRestriction:
+        """Create a pattern restriction that passes when the wildcard is greater than another wildcard.
+        If the matched wildcards are not a numbers, the pattern fails.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_, y_ = Expression.var('x_', 'y_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1,2)
+        >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_gt(y_))
+        """
+
+    def req_cmp_le(self, num: Expression) -> PatternRestriction:
+        """Create a pattern restriction that passes when the wildcard is smaller than or equal to another wildcard.
+        If the matched wildcards are not a numbers, the pattern fails.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_, y_ = Expression.var('x_', 'y_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1,2)
+        >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_le(y_))
+        """
+
+    def req_cmp_ge(self, num: Expression) -> PatternRestriction:
+        """Create a pattern restriction that passes when the wildcard is greater than or equal to another wildcard.
+        If the matched wildcards are not a numbers, the pattern fails.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_, y_ = Expression.var('x_', 'y_')
+        >>> f = Expression.fun("f")
+        >>> e = f(1,2)
+        >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_ge(y_))
+        """
+
     def __eq__(self, other: Expression | int) -> bool:
         """
         Compare two expressions.

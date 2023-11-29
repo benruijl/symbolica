@@ -947,6 +947,68 @@ macro_rules! req_num_cmp {
     }};
 }
 
+macro_rules! req_cmp_num_cmp {
+    ($self:ident,$other:ident,$c:ident) => {{
+        let id = match $self.expr.as_view() {
+            AtomView::Var(v) => {
+                let name = v.get_name();
+                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                    return Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    ));
+                }
+                name
+            }
+            _ => {
+                return Err(exceptions::PyTypeError::new_err(
+                    "Only wildcards can be restricted.",
+                ));
+            }
+        };
+
+        let other_id = match $other.expr.as_view() {
+            AtomView::Var(v) => {
+                let name = v.get_name();
+                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                    return Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    ));
+                }
+                name
+            }
+            _ => {
+                return Err(exceptions::PyTypeError::new_err(
+                    "Only wildcards can be restricted.",
+                ));
+            }
+        };
+
+        let mut h = HashMap::default();
+        h.insert(
+            id,
+            vec![PatternRestriction::Cmp(
+                other_id,
+                Box::new(|m1: &Match<_>, m2: &Match<_>| {
+                    if let Match::Single(a1) = m1 {
+                        if let Match::Single(a2) = m2 {
+                            if let AtomView::Num(_) = a1 {
+                                if let AtomView::Num(_) = a2 {
+                                    return a1.cmp(a2).$c();
+                                }
+                            }
+                        }
+                    }
+                    false
+                }),
+            )],
+        );
+
+        Ok(PythonPatternRestriction {
+            restrictions: Arc::new(h),
+        })
+    }};
+}
+
 #[pymethods]
 impl PythonExpression {
     /// Create a Symbolica expression that is a single variable.
@@ -1684,6 +1746,62 @@ impl PythonExpression {
         Ok(PythonPatternRestriction {
             restrictions: Arc::new(h),
         })
+    }
+
+    /// Create a pattern restriction that passes when the wildcard is smaller than another wildcard.
+    /// If the matched wildcards are not a numbers, the pattern fails.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_, y_ = Expression.var('x_', 'y_')
+    /// >>> f = Expression.fun("f")
+    /// >>> e = f(1,2)
+    /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_lt(y_))
+    pub fn req_cmp_lt(&self, other: PythonExpression) -> PyResult<PythonPatternRestriction> {
+        return req_cmp_num_cmp!(self, other, is_lt);
+    }
+
+    /// Create a pattern restriction that passes when the wildcard is greater than another wildcard.
+    /// If the matched wildcards are not a numbers, the pattern fails.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_, y_ = Expression.var('x_', 'y_')
+    /// >>> f = Expression.fun("f")
+    /// >>> e = f(2,1)
+    /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_gt(y_))
+    pub fn req_cmp_gt(&self, other: PythonExpression) -> PyResult<PythonPatternRestriction> {
+        return req_cmp_num_cmp!(self, other, is_gt);
+    }
+
+    /// Create a pattern restriction that passes when the wildcard is less than or equal to another wildcard.
+    /// If the matched wildcards are not a numbers, the pattern fails.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_, y_ = Expression.var('x_', 'y_')
+    /// >>> f = Expression.fun("f")
+    /// >>> e = f(1,2)
+    /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_le(y_))
+    pub fn req_cmp_le(&self, other: PythonExpression) -> PyResult<PythonPatternRestriction> {
+        return req_cmp_num_cmp!(self, other, is_le);
+    }
+
+    /// Create a pattern restriction that passes when the wildcard is greater than or equal to another wildcard.
+    /// If the matched wildcards are not a numbers, the pattern fails.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_, y_ = Expression.var('x_', 'y_')
+    /// >>> f = Expression.fun("f")
+    /// >>> e = f(2,1)
+    /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_ge(y_))
+    pub fn req_cmp_ge(&self, other: PythonExpression) -> PyResult<PythonPatternRestriction> {
+        return req_cmp_num_cmp!(self, other, is_ge);
     }
 
     /// Create a new pattern restriction that calls the function `cmp_fn` with another the matched

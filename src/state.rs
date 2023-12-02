@@ -20,8 +20,6 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FiniteFieldIndex(pub(crate) usize);
 
-pub(crate) const INPUT_ID: Identifier = Identifier::init(u32::MAX);
-
 #[derive(Clone, Copy, PartialEq)]
 pub enum FunctionAttribute {
     Symmetric,

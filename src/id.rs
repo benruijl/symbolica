@@ -19,7 +19,7 @@ pub enum Pattern<P: AtomSet = Linear> {
     Pow(Box<[Pattern<P>; 2]>),
     Mul(Vec<Pattern<P>>),
     Add(Vec<Pattern<P>>),
-    Transformer(Box<Transformer<P>>),
+    Transformer(Box<(Option<Pattern<P>>, Vec<Transformer<P>>)>),
 }
 
 impl<P: AtomSet> Atom<P> {
@@ -510,9 +510,16 @@ impl<P: AtomSet> Pattern<P> {
             Pattern::Literal(oa) => {
                 out.set_from_view(&oa.as_view());
             }
-            Pattern::Transformer(t) => {
-                // execute the transformer with the match stack as input
-                t.execute(state, workspace, match_stack, out);
+            Pattern::Transformer(p) => {
+                let (pat, ts) = &**p;
+                let pat = pat
+                    .as_ref()
+                    .expect("Transformer is missing an expression to act on.");
+
+                let mut handle = workspace.new_atom();
+                pat.substitute_wildcards(state, workspace, &mut handle, match_stack);
+
+                Transformer::execute(handle.as_view(), &ts, state, workspace, out);
             }
         }
     }

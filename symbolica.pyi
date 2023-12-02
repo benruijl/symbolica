@@ -930,7 +930,7 @@ class Transformer:
         """
 
     def map(self, f: Callable[[Expression | int], Expression]) -> Transformer:
-        """Create a transformer that expands products and powers.
+        """Create a transformer that applies a Python function.
 
         Examples
         --------
@@ -945,7 +945,8 @@ class Transformer:
         """Create a transformer that repeatedly executes the arguments in order
         until there are no more changes.
         The output from one transformer is inserted into the next.
-                Examples
+
+        Examples
         --------
         >>> from symbolica import Expression
         >>> x_ = Expression.var('x_')
@@ -954,6 +955,22 @@ class Transformer:
         >>> e = e.transform().repeat(
         >>>     Transformer().expand(),
         >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+        >>> ).execute()
+        """
+
+    def chain(self, *transformers: Transformer) -> Transformer:
+        """Chain several transformers. `chain(A,B,C)` is the same as `A.B.C`,
+        where `A`, `B`, `C` are transformers.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun('f')
+        >>> e = Expression.parse("f(5)")
+        >>> e = e.transform().chain(
+        >>>     Transformer().expand(),
+        >>>     Transformer().replace_all(f(x_), f(5))
         >>> ).execute()
         """
 

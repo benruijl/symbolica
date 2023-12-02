@@ -51,7 +51,7 @@ use crate::{
         rational::RationalField,
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
     },
-    state::{FunctionAttribute, ResettableBuffer, State, Workspace, INPUT_ID},
+    state::{FunctionAttribute, ResettableBuffer, State, Workspace},
     streaming::TermStreamer,
     transformer::Transformer,
     LicenseManager,
@@ -262,13 +262,29 @@ pub struct PythonPattern {
     pub expr: Arc<Pattern>,
 }
 
+macro_rules! append_transformer {
+    ($self:ident,$t:expr) => {
+        if let Pattern::Transformer(b) = $self.expr.borrow() {
+            let mut t = b.clone();
+            t.1.push($t);
+            Ok(PythonPattern {
+                expr: Arc::new(Pattern::Transformer(t)),
+            })
+        } else {
+            return Err(exceptions::PyValueError::new_err(
+                "Pattern must be a transformer",
+            ));
+        }
+    };
+}
+
 #[pymethods]
 impl PythonPattern {
     /// Create a new transformer for a term provided by `Expression.map`.
     #[new]
     pub fn new() -> PythonPattern {
         PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Input))),
+            expr: Arc::new(Pattern::Transformer(Box::new((None, vec![])))),
         }
     }
 
@@ -282,11 +298,7 @@ impl PythonPattern {
     /// >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
     /// >>> print(e)
     pub fn expand(&self) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Expand(
-                (*self.expr).clone(),
-            )))),
-        })
+        return append_transformer!(self, Transformer::Expand);
     }
 
     /// Create a transformer that computes the product of a list of arguments.
@@ -299,11 +311,7 @@ impl PythonPattern {
     /// >>> e = f(2,3).replace_all(f(x_), x_.transform().prod())
     /// >>> print(e)
     pub fn prod(&self) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Product(
-                (*self.expr).clone(),
-            )))),
-        })
+        return append_transformer!(self, Transformer::Product);
     }
 
     /// Create a transformer that computes the sum of a list of arguments.
@@ -316,11 +324,7 @@ impl PythonPattern {
     /// >>> e = f(2,3).replace_all(f(x_), x_.transform().sum())
     /// >>> print(e)
     pub fn sum(&self) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Sum(
-                (*self.expr).clone(),
-            )))),
-        })
+        return append_transformer!(self, Transformer::Sum);
     }
 
     /// Create a transformer that sorts a list of arguments.
@@ -333,11 +337,7 @@ impl PythonPattern {
     /// >>> e = f(3,2,1).replace_all(f(x_), x_.transform().sort())
     /// >>> print(e)
     pub fn sort(&self) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Sort(
-                (*self.expr).clone(),
-            )))),
-        })
+        return append_transformer!(self, Transformer::Sort);
     }
 
     /// Create a transformer that removes elements from a list if they occur
@@ -353,11 +353,7 @@ impl PythonPattern {
     ///
     /// Yields `f(1,2)`.
     pub fn deduplicate(&self) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Deduplicate(
-                (*self.expr).clone(),
-            )))),
-        })
+        return append_transformer!(self, Transformer::Deduplicate);
     }
 
     /// Create a transformer that split a sum or product into a list of arguments.
@@ -370,11 +366,7 @@ impl PythonPattern {
     /// >>> e = (x + 1).replace_all(x_, f(x_.transform().split()))
     /// >>> print(e)
     pub fn split(&self) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Split(
-                (*self.expr).clone(),
-            )))),
-        })
+        return append_transformer!(self, Transformer::Split);
     }
 
     /// Create a transformer that partitions a list of arguments into named bins of a given length,
@@ -431,14 +423,7 @@ impl PythonPattern {
             conv_bins.push((id, len));
         }
 
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Partition(
-                (*self.expr).clone(),
-                conv_bins,
-                fill_last,
-                repeat,
-            )))),
-        })
+        return append_transformer!(self, Transformer::Partition(conv_bins, fill_last, repeat));
     }
 
     /// Create a transformer that generates all permutations of a list of arguments.
@@ -474,12 +459,7 @@ impl PythonPattern {
             }
         };
 
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Permutations(
-                (*self.expr).clone(),
-                id,
-            )))),
-        })
+        return append_transformer!(self, Transformer::Permutations(id));
     }
 
     /// Create a transformer that apply a function `f`.
@@ -492,30 +472,25 @@ impl PythonPattern {
     /// >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
     /// >>> print(e)
     pub fn map(&self, f: PyObject) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Map(
-                (*self.expr).clone(),
-                Box::new(move |expr, out| {
-                    let expr = PythonExpression {
-                        expr: Arc::new(expr.into()),
-                    };
+        let transformer = Transformer::Map(Box::new(move |expr, out| {
+            let expr = PythonExpression {
+                expr: Arc::new(expr.into()),
+            };
 
-                    let res = Python::with_gil(|py| {
-                        f.call(py, (expr,), None)
-                            .expect("Bad callback function")
-                            .extract::<ConvertibleToExpression>(py)
-                            .expect("Function does not return a pattern")
-                    });
+            let res = Python::with_gil(|py| {
+                f.call(py, (expr,), None)
+                    .expect("Bad callback function")
+                    .extract::<ConvertibleToExpression>(py)
+                    .expect("Function does not return a pattern")
+            });
 
-                    out.set_from_view(&res.to_expression().expr.as_view());
-                }),
-            )))),
-        })
+            out.set_from_view(&res.to_expression().expr.as_view());
+        }));
+
+        return append_transformer!(self, transformer);
     }
 
-    /// Create a transformer that repeatedly executes the arguments in order
-    /// until there are no more changes.
-    /// The output from one transformer is inserted into the next.
+    /// Create a transformer that keeps executing the transformer chain until the input equals the output.
     ///
     /// Examples
     /// --------
@@ -529,7 +504,8 @@ impl PythonPattern {
     /// >>> ).execute()
     #[pyo3(signature = (*transformers))]
     pub fn repeat(&self, transformers: &PyTuple) -> PyResult<PythonPattern> {
-        let mut ts = vec![];
+        let mut rep_chain = vec![];
+        // fuse all sub-transformers into one chain
         for r in transformers {
             let p = r.extract::<PythonPattern>()?;
 
@@ -539,15 +515,62 @@ impl PythonPattern {
                 ));
             };
 
-            ts.push((**t).clone());
+            if t.0.is_some() {
+                return Err(exceptions::PyValueError::new_err(
+                    "Transformers in a repeat must be unbound. Use Transformer() to create it.",
+                ));
+            }
+
+            rep_chain.extend_from_slice(&t.1);
         }
 
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Repeat(
-                (*self.expr).clone(),
-                ts,
-            )))),
-        })
+        return append_transformer!(self, Transformer::Repeat(rep_chain));
+    }
+
+    /// Chain several transformers. `chain(A,B,C)` is the same as `A.B.C`,
+    /// where `A`, `B`, `C` are transformers.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = Expression.parse("f(5)")
+    /// >>> e = e.transform().repeat(
+    /// >>>     Transformer().expand(),
+    /// >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
+    /// >>> ).execute()
+    #[pyo3(signature = (*transformers))]
+    pub fn chain(&self, transformers: &PyTuple) -> PyResult<PythonPattern> {
+        if let Pattern::Transformer(b) = self.expr.borrow() {
+            let mut ts = b.clone();
+
+            for r in transformers {
+                let p = r.extract::<PythonPattern>()?;
+
+                let Pattern::Transformer(t) = p.expr.borrow() else {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Argument must be a transformer",
+                    ));
+                };
+
+                if t.0.is_some() {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Transformers in a repeat must be unbound. Use Transformer() to create it.",
+                    ));
+                }
+
+                ts.1.extend_from_slice(&t.1);
+            }
+
+            Ok(PythonPattern {
+                expr: Arc::new(Pattern::Transformer(ts)),
+            })
+        } else {
+            Err(exceptions::PyValueError::new_err(
+                "Pattern must be a transformer",
+            ))
+        }
     }
 
     /// Execute the transformer.
@@ -560,22 +583,15 @@ impl PythonPattern {
     /// >>> e = e.transform().expand().execute()
     /// >>> print(e)
     pub fn execute(&self) -> PyResult<PythonExpression> {
-        let Pattern::Transformer(t) = self.expr.borrow() else {
-            return Err(exceptions::PyValueError::new_err(
-                "Can only execute a transformer",
-            ));
-        };
-
-        let state = get_state!()?;
-
         let mut out = Atom::new();
+        let state = get_state!()?;
         WORKSPACE.with(|workspace| {
-            t.execute(
+            self.expr.substitute_wildcards(
                 &state.borrow(),
                 workspace,
-                &MatchStack::new(&HashMap::default()),
                 &mut out,
-            )
+                &MatchStack::new(&HashMap::default()),
+            );
         });
 
         Ok(PythonExpression {
@@ -603,12 +619,7 @@ impl PythonPattern {
             }
         };
 
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::Derivative(
-                (*self.expr).clone(),
-                id,
-            )))),
-        })
+        return append_transformer!(self, Transformer::Derivative(id));
     }
 
     /// Create a transformer that Taylor expands in `x` around `expansion_point` to depth `depth`.
@@ -626,14 +637,10 @@ impl PythonPattern {
             ));
         };
 
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::TaylorSeries(
-                (*self.expr).clone(),
-                id,
-                (*expansion_point.to_expression().expr).clone(),
-                depth,
-            )))),
-        })
+        return append_transformer!(
+            self,
+            Transformer::TaylorSeries(id, (*expansion_point.to_expression().expr).clone(), depth,)
+        );
     }
 
     /// Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
@@ -653,15 +660,15 @@ impl PythonPattern {
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
     ) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new(Transformer::ReplaceAll(
+        return append_transformer!(
+            self,
+            Transformer::ReplaceAll(
                 (*lhs.to_pattern()?.expr).clone(),
-                (*self.expr).clone(),
                 (*rhs.to_pattern()?.expr).clone(),
                 cond.map(|r| HashMap::clone(&r.restrictions))
                     .unwrap_or(HashMap::default()),
-            )))),
-        })
+            )
+        );
     }
 
     /// Add this transformer to `other`, returning the result.
@@ -1494,7 +1501,10 @@ impl PythonExpression {
     /// Convert the input to a transformer, on which subsequent transformations can be applied.
     pub fn transform(&self) -> PyResult<PythonPattern> {
         Ok(PythonPattern {
-            expr: Arc::new(self.expr.into_pattern(&&get_state!()?)),
+            expr: Arc::new(Pattern::Transformer(Box::new((
+                Some(self.expr.into_pattern(&&get_state!()?)),
+                vec![],
+            )))),
         })
     }
 
@@ -1921,7 +1931,15 @@ impl PythonExpression {
     /// >>> print(r)
     pub fn map(&self, op: PythonPattern, py: Python) -> PyResult<PythonExpression> {
         let t = match op.expr.as_ref() {
-            Pattern::Transformer(t) => t,
+            Pattern::Transformer(t) => {
+                if t.0.is_some() {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Transformer is bound to expression. Use Transformer() instead."
+                            .to_string(),
+                    ));
+                }
+                &t.1
+            }
             _ => {
                 return Err(exceptions::PyValueError::new_err(
                     "Operation must of a transformer".to_string(),
@@ -1937,12 +1955,7 @@ impl PythonExpression {
             let state = get_state!()?;
             let m = stream.map(|workspace, x| {
                 let mut out = Atom::new();
-                let restrictions = HashMap::default();
-                let mut match_stack = MatchStack::new(&restrictions);
-                match_stack.insert(INPUT_ID, Match::Single(x.as_view()));
-
-                t.execute(&state.borrow(), workspace, &match_stack, &mut out);
-
+                Transformer::execute(x.as_view(), &t, &state.borrow(), workspace, &mut out);
                 out
             });
             Ok::<_, PyErr>(m)

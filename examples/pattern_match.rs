@@ -30,7 +30,7 @@ fn main() {
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\t Match at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {
-            print!("\t\t{} = ", state.get_name(*id).unwrap());
+            print!("\t\t{} = ", state.get_name(*id));
             match v {
                 Match::Single(s) => {
                     print!("{}", s.printer(&state))
@@ -43,7 +43,7 @@ fn main() {
                     }
                 }
                 Match::FunctionName(f) => {
-                    print!("Fn {}", state.get_name(*f).unwrap())
+                    print!("Fn {}", state.get_name(*f))
                 }
             }
             println!();

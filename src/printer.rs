@@ -205,7 +205,7 @@ impl<'a, A: Var<'a>> FormattedPrintVar for A {
             }
         }
 
-        let name = state.get_name(self.get_name()).unwrap();
+        let name = state.get_name(self.get_name());
         if name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))
         } else {
@@ -465,7 +465,7 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
         }
 
         let id = self.get_name();
-        let name = state.get_name(id).unwrap();
+        let name = state.get_name(id);
         if name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))?;
         } else {

@@ -200,12 +200,12 @@ impl<'a, P: AtomSet> From<AtomView<'a, P>> for PyResult<PythonAtomTree> {
             },
             AtomView::Var(v) => PythonAtomTree {
                 atom_type: PythonAtomType::Var,
-                head: get_state!()?.get_name(v.get_name()).map(|x| x.to_string()),
+                head: Some(get_state!()?.get_name(v.get_name()).to_string()),
                 tail: vec![],
             },
             AtomView::Fun(f) => PythonAtomTree {
                 atom_type: PythonAtomType::Fn,
-                head: get_state!()?.get_name(f.get_name()).map(|x| x.to_string()),
+                head: Some(get_state!()?.get_name(f.get_name()).to_string()),
                 tail: f.iter().map(|x| x.into()).collect::<Result<Vec<_>, _>>()?,
             },
             AtomView::Add(a) => PythonAtomTree {
@@ -923,7 +923,7 @@ macro_rules! req_num_cmp {
         match $self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
-                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                if get_state!()?.get_wildcard_level(name) == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -959,7 +959,7 @@ macro_rules! req_cmp_num_cmp {
         let id = match $self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
-                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                if get_state!()?.get_wildcard_level(name) == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -976,7 +976,7 @@ macro_rules! req_cmp_num_cmp {
         let other_id = match $other.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
-                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                if get_state!()?.get_wildcard_level(name) == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1258,12 +1258,16 @@ impl PythonExpression {
     /// is a variable or function.
     pub fn get_name(&self) -> PyResult<Option<String>> {
         match self.expr.as_ref() {
-            Atom::Var(v) => Ok(get_state!()?
-                .get_name(v.to_var_view().get_name())
-                .map(|x| x.to_string())),
-            Atom::Fun(f) => Ok(get_state!()?
-                .get_name(f.to_fun_view().get_name())
-                .map(|x| x.to_string())),
+            Atom::Var(v) => Ok(Some(
+                get_state!()?
+                    .get_name(v.to_var_view().get_name())
+                    .to_string(),
+            )),
+            Atom::Fun(f) => Ok(Some(
+                get_state!()?
+                    .get_name(f.to_fun_view().get_name())
+                    .to_string(),
+            )),
             _ => Ok(None),
         }
     }
@@ -1276,19 +1280,19 @@ impl PythonExpression {
         let state = guard.borrow_mut();
         let mut var_name = match self.expr.as_view() {
             AtomView::Var(v) => {
-                if let Some(true) = state.is_wildcard(v.get_name()) {
+                if state.get_wildcard_level(v.get_name()) > 0 {
                     return Ok(self.clone());
                 } else {
                     // create name with underscore
-                    state.get_name(v.get_name()).unwrap().to_string()
+                    state.get_name(v.get_name()).to_string()
                 }
             }
             AtomView::Fun(f) => {
-                if let Some(true) = state.is_wildcard(f.get_name()) {
+                if state.get_wildcard_level(f.get_name()) > 0 {
                     return Ok(self.clone());
                 } else {
                     // create name with underscore
-                    state.get_name(f.get_name()).unwrap().to_string()
+                    state.get_name(f.get_name()).to_string()
                 }
             }
             x => {
@@ -1517,7 +1521,7 @@ impl PythonExpression {
         match self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
-                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                if get_state!()?.get_wildcard_level(name) == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1555,7 +1559,7 @@ impl PythonExpression {
         match self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
-                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                if get_state!()?.get_wildcard_level(name) == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1590,7 +1594,7 @@ impl PythonExpression {
         match self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
-                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                if get_state!()?.get_wildcard_level(name) == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1717,7 +1721,7 @@ impl PythonExpression {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
-                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                if get_state!()?.get_wildcard_level(name) == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1832,7 +1836,7 @@ impl PythonExpression {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
-                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                if get_state!()?.get_wildcard_level(name) == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1849,7 +1853,7 @@ impl PythonExpression {
         let other_id = match other.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
-                if !get_state!()?.is_wildcard(name).unwrap_or(false) {
+                if get_state!()?.get_wildcard_level(name) == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -2779,7 +2783,7 @@ impl PythonFunction {
         } else {
             let p = Pattern::Fn(
                 self.id,
-                get_state!()?.is_wildcard(self.id).unwrap(),
+                get_state!()?.get_wildcard_level(self.id) > 0,
                 fn_args,
             );
             Ok(PythonPattern { expr: Arc::new(p) }.into_py(py))

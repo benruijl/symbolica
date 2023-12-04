@@ -22,7 +22,7 @@ fn solve() {
 
     let atoms: Vec<_> = eqs
         .iter()
-        .map(|e| Atom::parse(*e, &mut state, &workspace).unwrap())
+        .map(|e| Atom::parse(e, &mut state, &workspace).unwrap())
         .collect();
     let system: Vec<_> = atoms.iter().map(|x| x.as_view()).collect();
 

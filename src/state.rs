@@ -40,7 +40,7 @@ pub struct State {
     // get variable maps from here
     str_to_var_id: HashMap<String, Identifier>,
     function_attributes: HashMap<Identifier, Vec<FunctionAttribute>>,
-    var_to_str_map: Vec<String>,
+    var_info: Vec<(String, usize)>,
     finite_fields: Vec<FiniteField<u64>>,
 }
 
@@ -51,7 +51,7 @@ impl State {
         let mut state = State {
             str_to_var_id: HashMap::new(),
             function_attributes: HashMap::new(),
-            var_to_str_map: vec![],
+            var_info: vec![],
             finite_fields: vec![],
         };
 
@@ -64,7 +64,7 @@ impl State {
 
     /// Iterate over all defined symbols.
     pub fn symbol_iter(&self) -> impl Iterator<Item = &str> {
-        self.var_to_str_map.iter().map(|s| s.as_str())
+        self.var_info.iter().map(|(s, _)| s.as_str())
     }
 
     /// Returns `true` iff this identifier is defined by Symbolica.
@@ -79,13 +79,21 @@ impl State {
         match self.str_to_var_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
-                if self.var_to_str_map.len() == u32::MAX as usize - 1 {
+                if self.var_info.len() == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
 
-                let new_id = Identifier::from(self.var_to_str_map.len() as u32);
+                let mut wildcard_level = 0;
+                for x in name.as_ref().chars().rev() {
+                    if x != '_' {
+                        break;
+                    }
+                    wildcard_level += 1;
+                }
+
+                let new_id = Identifier::from(self.var_info.len() as u32);
                 v.insert(new_id);
-                self.var_to_str_map.push(name.as_ref().into());
+                self.var_info.push((name.as_ref().into(), wildcard_level));
                 new_id
             }
         }
@@ -113,13 +121,21 @@ impl State {
                 }
             }
             Entry::Vacant(v) => {
-                if self.var_to_str_map.len() == u32::MAX as usize - 1 {
+                if self.var_info.len() == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
 
-                let new_id = Identifier::from(self.var_to_str_map.len() as u32);
+                let mut wildcard_level = 0;
+                for x in name.as_ref().chars().rev() {
+                    if x != '_' {
+                        break;
+                    }
+                    wildcard_level += 1;
+                }
+
+                let new_id = Identifier::from(self.var_info.len() as u32);
                 v.insert(new_id);
-                self.var_to_str_map.push(name.as_ref().into());
+                self.var_info.push((name.as_ref().into(), wildcard_level));
 
                 self.function_attributes
                     .insert(new_id, attributes.unwrap_or(vec![]));
@@ -137,24 +153,12 @@ impl State {
     }
 
     /// Get the name for a given id.
-    pub fn get_name(&self, id: Identifier) -> Option<&String> {
-        self.var_to_str_map.get(id.to_u32() as usize)
+    pub fn get_name(&self, id: Identifier) -> &String {
+        &self.var_info[id.to_u32() as usize].0
     }
 
-    pub fn is_wildcard(&self, id: Identifier) -> Option<bool> {
-        self.get_name(id).map(|n| n.ends_with('_'))
-    }
-
-    pub fn wildcard_level(&self, id: Identifier) -> usize {
-        let mut level = 0;
-        for x in self.get_name(id).unwrap().chars().rev() {
-            if x != '_' {
-                break;
-            }
-            level += 1;
-        }
-
-        level
+    pub fn get_wildcard_level(&self, id: Identifier) -> usize {
+        self.var_info[id.to_u32() as usize].1
     }
 
     pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteField<u64> {

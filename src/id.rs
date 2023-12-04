@@ -233,9 +233,9 @@ impl<P: AtomSet> Pattern<P> {
     fn has_wildcard(atom: AtomView<'_, P>, state: &State) -> bool {
         match atom {
             AtomView::Num(_) => false,
-            AtomView::Var(v) => state.is_wildcard(v.get_name()).unwrap(),
+            AtomView::Var(v) => state.get_wildcard_level(v.get_name()) > 0,
             AtomView::Fun(f) => {
-                if state.is_wildcard(f.get_name()).unwrap() {
+                if state.get_wildcard_level(f.get_name()) > 0 {
                     return true;
                 }
 
@@ -283,7 +283,7 @@ impl<P: AtomSet> Pattern<P> {
                         args.push(Self::from_view(arg, state));
                     }
 
-                    Pattern::Fn(name, state.is_wildcard(name).unwrap(), args)
+                    Pattern::Fn(name, state.get_wildcard_level(name) > 0, args)
                 }
                 AtomView::Pow(p) => {
                     let (base, exp) = p.get_base_exp();
@@ -1036,6 +1036,10 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
     /// Get the range of an identifier based on previous matches and based
     /// on restrictions.
     pub fn get_range(&self, identifier: Identifier, state: &State) -> (usize, Option<usize>) {
+        if state.get_wildcard_level(identifier) == 0 {
+            return (1, Some(1));
+        }
+
         for (rk, rv) in self.stack.iter() {
             if rk == &identifier {
                 return match rv {
@@ -1080,7 +1084,7 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
             }
         }
 
-        match state.wildcard_level(identifier) {
+        match state.get_wildcard_level(identifier) {
             1 => (minimal.unwrap_or(1), Some(maximal.unwrap_or(1))), // x_
             2 => (minimal.unwrap_or(1), maximal),                    // x__
             _ => (minimal.unwrap_or(0), maximal),                    // x___
@@ -1133,10 +1137,10 @@ enum PatternIter<'a, 'b, P: AtomSet> {
 pub struct SubSliceIterator<'a, 'b, P: AtomSet> {
     pattern: &'b [Pattern<P>], // input term
     target: P::S<'a>,
-    iterators: SmallVec<[PatternIter<'a, 'b, P>; 10]>,
-    used_flag: SmallVec<[bool; 10]>,
+    iterators: Vec<PatternIter<'a, 'b, P>>,
+    used_flag: Vec<bool>,
     initialized: bool,
-    matches: SmallVec<[usize; 10]>, // track match stack length
+    matches: Vec<usize>, // track match stack length
     state: &'a State,
     complete: bool,        // match needs to consume entire target
     ordered_gapless: bool, // pattern should appear ordered and have no gaps
@@ -1201,9 +1205,9 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
 
         SubSliceIterator {
             pattern: pat_list,
-            iterators: SmallVec::new(),
-            matches: SmallVec::new(),
-            used_flag: smallvec![false; target_list.len()],
+            iterators: Vec::with_capacity(pat_list.len()),
+            matches: Vec::with_capacity(pat_list.len()),
+            used_flag: vec![false; target_list.len()],
             target: target_list,
             state,
             initialized: shortcut_done,
@@ -1253,9 +1257,9 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
 
         SubSliceIterator {
             pattern,
-            iterators: SmallVec::new(),
-            matches: SmallVec::new(),
-            used_flag: smallvec![false; target.len()],
+            iterators: Vec::with_capacity(pattern.len()),
+            matches: Vec::with_capacity(pattern.len()),
+            used_flag: vec![false; target.len()],
             target,
             state,
             initialized: shortcut_done,
@@ -1288,7 +1292,6 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                         && self.used_flag.iter().map(|x| *x as usize).sum::<usize>() == 1
                 {
                     // not done as the entire target is not used
-                    // TODO: optimize bounds on iterators to make this case rare
                     forward_pass = false;
                 } else {
                     // yield the current match
@@ -1300,14 +1303,53 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                 // add new iterator
                 let it = match &self.pattern[self.iterators.len()] {
                     Pattern::Wildcard(name) => {
+                        let size_left = self.used_flag.iter().filter(|x| !*x).count();
                         let range = match_stack.get_range(*name, self.state);
+                        let mut range = (
+                            range.0,
+                            range.1.map(|m| m.min(size_left)).unwrap_or(size_left),
+                        );
+
+                        // bound the wildcard length based on the bounds of upcoming patterns
+                        if self.complete {
+                            let mut new_min = size_left;
+                            for p in &self.pattern[self.iterators.len() + 1..] {
+                                let range2 = if let Pattern::Wildcard(name) = p {
+                                    match_stack.get_range(*name, self.state)
+                                } else {
+                                    (1, Some(1))
+                                };
+
+                                if range.1 < range2.0 {
+                                    forward_pass = false;
+                                    continue 'next_match;
+                                }
+
+                                range.1 -= range2.0;
+
+                                if new_min > 0 {
+                                    if let Some(m) = range2.1 {
+                                        new_min -= m.min(new_min);
+                                    } else {
+                                        new_min = 0;
+                                    }
+                                }
+                            }
+
+                            if new_min > range.1 {
+                                forward_pass = false;
+                                continue;
+                            }
+
+                            range.0 = range.0.max(new_min);
+                        }
 
                         PatternIter::Wildcard(WildcardIter {
                             initialized: false,
                             name: *name,
                             indices: SmallVec::new(),
                             size_target: range.0 as u32,
-                            max_size: range.1.unwrap_or(self.target.len()) as u32,
+                            max_size: range.1 as u32,
                         })
                     }
                     Pattern::Fn(name, is_wildcard, args) => {

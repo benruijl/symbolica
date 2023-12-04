@@ -359,14 +359,14 @@ impl Variable {
 
     pub fn fmt(&self, state: &State, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Variable::Identifier(v) => f.write_str(state.get_name(*v).unwrap()),
+            Variable::Identifier(v) => f.write_str(state.get_name(*v)),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
         }
     }
 
     pub fn to_string(&self, state: &State) -> String {
         match self {
-            Variable::Identifier(v) => format!("{}", state.get_name(*v).unwrap()),
+            Variable::Identifier(v) => format!("{}", state.get_name(*v)),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
         }
     }

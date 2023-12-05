@@ -3311,8 +3311,6 @@ macro_rules! generate_methods {
 
             /// Factorize the polynomial.
             ///
-            /// The polynomial must be univariate.
-            ///
             /// Examples
             /// --------
             ///
@@ -3335,12 +3333,14 @@ macro_rules! generate_methods {
                     }
                 }
 
-                Ok(self
-                    .poly
-                    .factor_univariate()
-                    .into_iter()
-                    .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
-                    .collect())
+                self.poly
+                    .factor()
+                    .map(|f| {
+                        f.into_iter()
+                            .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
+                            .collect()
+                    })
+                    .map_err(|e| exceptions::PyValueError::new_err(e))
             }
         }
     };

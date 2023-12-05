@@ -494,14 +494,6 @@ where
         a.numerator.is_one() && a.denominator.is_one()
     }
 
-    fn get_unit(&self, a: &Self::Element) -> Self::Element {
-        a.clone()
-    }
-
-    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
-        self.inv(a)
-    }
-
     fn one_is_gcd_unit() -> bool {
         false
     }

@@ -240,16 +240,6 @@ impl Ring for FiniteField<u32> {
         a == &self.one
     }
 
-    #[inline]
-    fn get_unit(&self, a: &Self::Element) -> Self::Element {
-        *a
-    }
-
-    #[inline]
-    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
-        self.inv(a)
-    }
-
     fn one_is_gcd_unit() -> bool {
         true
     }
@@ -527,16 +517,6 @@ impl Ring for FiniteField<u64> {
         a == &self.one
     }
 
-    #[inline]
-    fn get_unit(&self, a: &Self::Element) -> Self::Element {
-        *a
-    }
-
-    #[inline]
-    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
-        self.inv(a)
-    }
-
     fn one_is_gcd_unit() -> bool {
         true
     }
@@ -793,16 +773,6 @@ impl Ring for FiniteField<Mersenne64> {
     #[inline]
     fn is_one(&self, a: &Self::Element) -> bool {
         *a == 1
-    }
-
-    #[inline]
-    fn get_unit(&self, a: &Self::Element) -> Self::Element {
-        *a
-    }
-
-    #[inline]
-    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
-        self.inv(a)
     }
 
     fn one_is_gcd_unit() -> bool {

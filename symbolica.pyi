@@ -1206,8 +1206,6 @@ class Polynomial:
     def factor(self) -> list[Tuple[Polynomial, int]]:
         """Factorize the polynomial.
 
-        The polynomial must be univariate.
-
         Examples
         --------
 

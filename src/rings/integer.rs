@@ -637,18 +637,6 @@ impl Ring for IntegerRing {
         }
     }
 
-    fn get_unit(&self, a: &Self::Element) -> Self::Element {
-        match a.cmp(&Integer::zero()) {
-            Ordering::Less => Integer::Natural(-1),
-            Ordering::Equal => Integer::zero(),
-            Ordering::Greater => Integer::one(),
-        }
-    }
-
-    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element {
-        self.get_unit(a)
-    }
-
     fn one_is_gcd_unit() -> bool {
         true
     }

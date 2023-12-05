@@ -1727,8 +1727,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 }
             }
 
-            g.normalize();
-            g
+            PolynomialGCD::normalize(g)
         }
 
         if let Some(gcd) = PolynomialGCD::heuristic_gcd(&a, &b) {
@@ -1817,7 +1816,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
                 let p1_prim = p1.as_ref() / &cont;
 
-                if !cont.is_one() {
+                if !cont.is_one() || !R::one_is_gcd_unit() {
                     let cont_p2 = p2.univariate_content(var);
                     cont = MultivariatePolynomial::gcd(&cont, &cont_p2);
                 }
@@ -2504,6 +2503,7 @@ pub trait PolynomialGCD<E: Exponent>: Ring {
         vars: &[usize],
         loose_bounds: &[E],
     ) -> SmallVec<[E; INLINED_EXPONENTS]>;
+    fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E>;
 }
 
 impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
@@ -2608,6 +2608,10 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         }
         tight_bounds
     }
+
+    fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
+        a
+    }
 }
 
 impl<E: Exponent> PolynomialGCD<E> for RationalField {
@@ -2709,6 +2713,10 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         }
         tight_bounds
     }
+
+    fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
+        a
+    }
 }
 
 impl<UField: FiniteFieldWorkspace, E: Exponent> PolynomialGCD<E> for FiniteField<UField>
@@ -2755,5 +2763,9 @@ where
 
     fn gcd_multiple(f: Vec<MultivariatePolynomial<Self, E>>) -> MultivariatePolynomial<Self, E> {
         MultivariatePolynomial::repeated_gcd(f)
+    }
+
+    fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
+        a.make_monic()
     }
 }

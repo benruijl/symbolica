@@ -16,6 +16,7 @@ use crate::rings::rational::RationalField;
 use crate::rings::{EuclideanDomain, Field, Ring, RingPrinter};
 use crate::state::State;
 
+use super::gcd::PolynomialGCD;
 use super::{Exponent, LexOrder, MonomialOrder, Variable, INLINED_EXPONENTS};
 use smallvec::{smallvec, SmallVec};
 
@@ -765,20 +766,6 @@ impl<'a, F: EuclideanDomain, E: Exponent> Div<&'a MultivariatePolynomial<F, E, L
 }
 
 impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
-    /// Normalize the polynomial by writing the leading coefficient in
-    /// its normal form.
-    pub fn normalize(&mut self) -> F::Element {
-        let lcu = self.field.get_inv_unit(&self.lcoeff());
-
-        if !self.field.is_one(&lcu) {
-            for c in &mut self.coefficients {
-                self.field.mul_assign(c, &lcu);
-            }
-        }
-
-        lcu
-    }
-
     /// Change the monomial order of the polynomial from `O` to `ON`.
     pub fn reorder<ON: MonomialOrder>(&self) -> MultivariatePolynomial<F, E, ON> {
         let mut sorted_index: Vec<_> = (0..self.nterms).collect();
@@ -2434,12 +2421,13 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let mut res = self.synthetic_division(div);
 
             for c in &mut res.0.coefficients {
-                self.field.mul_assign(c, &o);
+                self.field.mul_assign(c, &inv);
             }
 
             for c in &mut div.coefficients {
                 self.field.mul_assign(c, &o);
             }
+
             return res;
         }
 
@@ -2487,6 +2475,64 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         (r0, s0, t0)
+    }
+
+    /// Compute `(g, s1,...,n2)` where `A0 * s0 + ... + An * sn = g`
+    /// where `Ai = prod(polys[j], j != i)`
+    /// by means of the extended Euclidean algorithm.
+    ///
+    /// The `polys` must be pairwise co-prime.
+    pub fn diophantine_univariate(polys: &mut [Self], b: &Self) -> Vec<Self> {
+        let mut cur = polys.last().unwrap().clone();
+        let mut a = vec![cur.clone()];
+        for x in polys[1..].iter().rev().skip(1) {
+            cur = cur * x;
+            a.push(cur.clone());
+        }
+        a.reverse();
+
+        let mut ss = vec![];
+        let mut cur_s = b.clone();
+        for (p, aa) in polys.iter_mut().zip(&mut a) {
+            let (_, s, t) = p.eea_univariate(aa);
+            let new_s = (t * &cur_s).quot_rem_univariate(p).1;
+            ss.push(new_s);
+            cur_s = (s * &cur_s).quot_rem_univariate(aa).1;
+        }
+
+        ss.push(cur_s);
+        ss
+    }
+
+    /// Find a rational fraction `n(x)/d(x)`, the Pade approximant,
+    ///  such that `d(x)*self-n(x)=0 mod x^(deg_n+deg_d+1)` and
+    /// `deg(d(x)) <= deg_d` and `deg(n(x) <= deg_n` using the extended Euclidean algorithm.
+    pub fn rational_approximant_univariate(&self, deg_n: u32, deg_d: u32) -> Option<(Self, Self)>
+    where
+        F: PolynomialGCD<E>,
+    {
+        let Some(var) = self.last_exponents().iter().position(|x| *x > E::zero()) else {
+            return Some((self.clone(), self.new_from_constant(self.field.one())));
+        };
+
+        let mut exp = self.last_exponents().to_vec();
+        exp[var] = E::from_u32(deg_n) + E::from_u32(deg_d) + E::one();
+        let mut v0 = self.new_from_monomial(self.field.one(), exp);
+        let mut v1 = self.new_from(None);
+
+        let mut w0 = self.clone();
+        let mut w1 = self.new_from_constant(self.field.one());
+
+        while w0.degree(var).to_u32() > deg_n {
+            let (q, r) = v0.quot_rem_univariate(&mut w0);
+            (w1, v1) = (v1 - q * &w1, w1);
+            (v0, w0) = (w0, r);
+        }
+
+        // TODO: normalize denominator?
+        let r = MultivariatePolynomial::gcd(&w0, &w1);
+
+        Some((w0 / &r, w1 / &r))
     }
 }
 

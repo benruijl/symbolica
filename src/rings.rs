@@ -28,8 +28,6 @@ pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element;
     fn is_zero(a: &Self::Element) -> bool;
     fn is_one(&self, a: &Self::Element) -> bool;
-    fn get_unit(&self, a: &Self::Element) -> Self::Element;
-    fn get_inv_unit(&self, a: &Self::Element) -> Self::Element;
     /// Should return `true` iff `gcd(1,x)` returns `1` for any `x`.
     fn one_is_gcd_unit() -> bool;
 

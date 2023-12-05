@@ -1,5 +1,5 @@
 use symbolica::{
-    poly::{factor::Factorize, polynomial::MultivariatePolynomial},
+    poly::{factor::Factorize, polynomial::MultivariatePolynomial, Variable},
     representations::Atom,
     rings::{
         finite_field::{FiniteField, FiniteFieldCore},
@@ -24,6 +24,32 @@ fn factor_ff_univariate() {
 
     println!("Factorization of {}:", poly.printer(&state));
     for (f, pow) in factors {
+        println!("\t({})^{}", f.printer(&state), pow);
+    }
+}
+
+fn factor_ff_bivariate() {
+    let mut state = State::new();
+    let workspace: Workspace = Workspace::new();
+    let order = vec![
+        Variable::Identifier(state.get_or_insert_var("x")),
+        Variable::Identifier(state.get_or_insert_var("y")),
+    ];
+
+    let input = "((y+1)*x^2+x*y+1)*((y^2+2)*x^2+y+1)";
+
+    let mut exp = Atom::new();
+    Atom::parse(input, &mut state, &workspace)
+        .unwrap()
+        .as_view()
+        .expand(&workspace, &state, &mut exp);
+
+    let field = FiniteField::<u32>::new(17);
+    let poly: MultivariatePolynomial<FiniteField<u32>, u8> =
+        exp.as_view().to_polynomial(field, Some(&order)).unwrap();
+
+    println!("Factorization of {}:", poly.printer(&state));
+    for (f, pow) in poly.factor().unwrap() {
         println!("\t({})^{}", f.printer(&state), pow);
     }
 }
@@ -88,7 +114,7 @@ fn factor_univariate_1() {
         .to_polynomial(IntegerRing::new(), None)
         .unwrap();
 
-    let fs = poly.factor_univariate();
+    let fs = poly.factor().unwrap();
 
     println!("Factorization of {}:", poly.printer(&state));
     for (f, _p) in fs {
@@ -114,7 +140,7 @@ fn factor_univariate_2() {
         .to_polynomial(IntegerRing::new(), None)
         .unwrap();
 
-    let fs = poly.factor_univariate();
+    let fs = poly.factor().unwrap();
 
     println!("Factorization of {}:", poly.printer(&state));
     for (f, p) in fs {
@@ -126,6 +152,7 @@ fn main() {
     factor_square_free();
     factor_ff_square_free();
     factor_ff_univariate();
+    factor_ff_bivariate();
     factor_univariate_1();
     factor_univariate_2();
 }

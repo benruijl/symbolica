@@ -1,6 +1,5 @@
 use ahash::HashMap;
 use symbolica::{
-    id::Pattern,
     representations::Atom,
     state::{ResettableBuffer, State, Workspace},
 };
@@ -13,9 +12,9 @@ fn main() {
     let pat_expr = Atom::parse("f(x_)", &mut state, &workspace).unwrap();
 
     let rhs_expr = Atom::parse("g(x_)", &mut state, &workspace).unwrap();
-    let rhs = Pattern::from_view(rhs_expr.as_view(), &state);
+    let rhs = rhs_expr.as_view().into_pattern(&state);
 
-    let pattern = Pattern::from_view(pat_expr.as_view(), &state);
+    let pattern = pat_expr.as_view().into_pattern(&state);
     let restrictions = HashMap::default();
 
     println!(

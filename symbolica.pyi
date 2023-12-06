@@ -318,6 +318,22 @@ class Expression:
         Yields `f(x)*f(1)`.
         """
 
+    def req_ntype(self, atom_type: AtomType) -> PatternRestriction:
+        """
+        Create a pattern restriction that tests if the type of the atom does not match `atom_type`.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, AtomType
+        >>> x, x_ = Expression.vars('x', 'x_')
+        >>> f = Expression.fun("f")
+        >>> e = f(x)*f(2)*f(f(3))
+        >>> e = e.replace_all(f(x_), 1, x_.req_ntype(AtomType.Var))
+        >>> print(e)
+
+        Yields `f(x)*f(1)`.
+        """
+
     def req_lit(self) -> PatternRestriction:
         """
         Create a pattern restriction that treats the wildcard as a literal variable,

@@ -1,6 +1,6 @@
 use ahash::HashMap;
 use symbolica::{
-    id::{Match, Pattern, PatternRestriction},
+    id::{Match, PatternRestriction},
     representations::Atom,
     state::{State, Workspace},
 };
@@ -13,7 +13,7 @@ fn main() {
 
     let pat_expr = Atom::parse("z*x_*y_*g_(z_,x_,w_)", &mut state, &workspace).unwrap();
 
-    let pattern = Pattern::from_view(pat_expr.as_view(), &state);
+    let pattern = pat_expr.as_view().into_pattern(&state);
     let mut restrictions = HashMap::default();
     restrictions.insert(
         state.get_or_insert_var("x_"),

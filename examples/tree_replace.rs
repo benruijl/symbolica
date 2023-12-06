@@ -1,6 +1,6 @@
 use ahash::HashMap;
 use symbolica::{
-    id::{Match, Pattern, PatternAtomTreeIterator},
+    id::{Match, PatternAtomTreeIterator},
     representations::Atom,
     state::{State, Workspace},
 };
@@ -12,7 +12,7 @@ fn main() {
     let expr = Atom::parse("f(z)*f(f(x))*f(y)", &mut state, &workspace).unwrap();
     let pat_expr = Atom::parse("f(x_)", &mut state, &workspace).unwrap();
 
-    let pattern = Pattern::from_view(pat_expr.as_view(), &state);
+    let pattern = pat_expr.as_view().into_pattern(&state);
     let restrictions = HashMap::default();
 
     println!(

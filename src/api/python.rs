@@ -245,10 +245,12 @@ impl ConvertibleToPattern {
     pub fn to_pattern(self) -> PyResult<PythonPattern> {
         match self {
             Self::Literal(l) => Ok(PythonPattern {
-                expr: Arc::new(Pattern::from_view(
-                    l.to_expression().expr.as_view(),
-                    &&get_state!()?,
-                )),
+                expr: Arc::new(
+                    l.to_expression()
+                        .expr
+                        .as_view()
+                        .into_pattern(&&get_state!()?),
+                ),
             }),
             Self::Pattern(e) => Ok(e),
         }
@@ -1569,6 +1571,52 @@ impl PythonExpression {
                 h.insert(
                     name,
                     vec![PatternRestriction::IsAtomType(match atom_type {
+                        PythonAtomType::Num => AtomType::Num,
+                        PythonAtomType::Var => AtomType::Var,
+                        PythonAtomType::Add => AtomType::Add,
+                        PythonAtomType::Mul => AtomType::Mul,
+                        PythonAtomType::Pow => AtomType::Pow,
+                        PythonAtomType::Fn => AtomType::Fun,
+                    })],
+                );
+
+                Ok(PythonPatternRestriction {
+                    restrictions: Arc::new(h),
+                })
+            }
+            _ => Err(exceptions::PyTypeError::new_err(
+                "Only wildcards can be restricted.",
+            )),
+        }
+    }
+
+    /// Create a pattern restriction that tests if the type of the atom
+    /// does not match `atom_type`.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, AtomType
+    /// >>> x, x_ = Expression.vars('x', 'x_')
+    /// >>> f = Expression.fun("f")
+    /// >>> e = f(x)*f(2)*f(f(3))
+    /// >>> e = e.replace_all(f(x_), 1, x_.req_ntype(AtomType.Var))
+    /// >>> print(e)
+    ///
+    /// Yields `f(x)*f(1)`.
+    pub fn req_ntype(&self, atom_type: PythonAtomType) -> PyResult<PythonPatternRestriction> {
+        match self.expr.as_view() {
+            AtomView::Var(v) => {
+                let name = v.get_name();
+                if get_state!()?.get_wildcard_level(name) == 0 {
+                    return Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    ));
+                }
+
+                let mut h = HashMap::default();
+                h.insert(
+                    name,
+                    vec![PatternRestriction::IsNotAtomType(match atom_type {
                         PythonAtomType::Num => AtomType::Num,
                         PythonAtomType::Var => AtomType::Var,
                         PythonAtomType::Add => AtomType::Add,

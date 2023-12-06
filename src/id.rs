@@ -24,13 +24,13 @@ pub enum Pattern<P: AtomSet = Linear> {
 
 impl<P: AtomSet> Atom<P> {
     pub fn into_pattern(&self, state: &State) -> Pattern<P> {
-        Pattern::from_view(self.as_view(), state)
+        Pattern::from_view(self.as_view(), state, true)
     }
 }
 
 impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn into_pattern(self, state: &State) -> Pattern<P> {
-        Pattern::from_view(self, state)
+        Pattern::from_view(self, state, true)
     }
 }
 
@@ -271,8 +271,11 @@ impl<P: AtomSet> Pattern<P> {
     }
 
     /// Create a pattern from an atom view.
-    pub fn from_view(atom: AtomView<'_, P>, state: &State) -> Pattern<P> {
-        if Self::has_wildcard(atom, state) {
+    fn from_view(atom: AtomView<'_, P>, state: &State, is_top_layer: bool) -> Pattern<P> {
+        // split up Add and Mul for literal patterns as well so that x+y can match to x+y+z
+        if Self::has_wildcard(atom, state)
+            || is_top_layer && matches!(atom, AtomView::Mul(_) | AtomView::Add(_))
+        {
             match atom {
                 AtomView::Var(v) => Pattern::Wildcard(v.get_name()),
                 AtomView::Fun(f) => {
@@ -280,7 +283,7 @@ impl<P: AtomSet> Pattern<P> {
 
                     let mut args = Vec::with_capacity(f.get_nargs());
                     for arg in f.iter() {
-                        args.push(Self::from_view(arg, state));
+                        args.push(Self::from_view(arg, state, false));
                     }
 
                     Pattern::Fn(name, state.get_wildcard_level(name) > 0, args)
@@ -289,15 +292,15 @@ impl<P: AtomSet> Pattern<P> {
                     let (base, exp) = p.get_base_exp();
 
                     Pattern::Pow(Box::new([
-                        Self::from_view(base, state),
-                        Self::from_view(exp, state),
+                        Self::from_view(base, state, false),
+                        Self::from_view(exp, state, false),
                     ]))
                 }
                 AtomView::Mul(m) => {
                     let mut args = Vec::with_capacity(m.get_nargs());
 
                     for child in m.iter() {
-                        args.push(Self::from_view(child, state));
+                        args.push(Self::from_view(child, state, false));
                     }
 
                     Pattern::Mul(args)
@@ -305,7 +308,7 @@ impl<P: AtomSet> Pattern<P> {
                 AtomView::Add(a) => {
                     let mut args = Vec::with_capacity(a.get_nargs());
                     for child in a.iter() {
-                        args.push(Self::from_view(child, state));
+                        args.push(Self::from_view(child, state, false));
                     }
 
                     Pattern::Add(args)
@@ -571,7 +574,8 @@ impl<P: AtomSet> Pattern<P> {
         let mut match_stack = MatchStack::new(restrictions);
 
         if self.could_match(target) {
-            let mut it = SubSliceIterator::new(self, target, state, &match_stack, true);
+            let mut it = AtomMatchIterator::new(self, target, state);
+            //let mut it = SubSliceIterator::new(self, target, state, &match_stack, true);
             if let Some((_, used_flags)) = it.next(&mut match_stack) {
                 let mut handle = workspace.new_atom();
                 let rhs_subs = handle.get_mut();
@@ -788,6 +792,7 @@ where
 {
     Length(usize, Option<usize>), // min-max range
     IsAtomType(AtomType),
+    IsNotAtomType(AtomType),
     IsLiteralWildcard(Identifier),
     Filter(Box<dyn FilterFn<P>>),
     Cmp(Identifier, Box<dyn CmpFn<P>>),
@@ -798,6 +803,7 @@ impl<P: AtomSet + 'static> Clone for PatternRestriction<P> {
         match self {
             Self::Length(min, max) => Self::Length(*min, *max),
             Self::IsAtomType(t) => Self::IsAtomType(*t),
+            Self::IsNotAtomType(t) => Self::IsNotAtomType(*t),
             Self::IsLiteralWildcard(w) => Self::IsLiteralWildcard(*w),
             Self::Filter(f) => Self::Filter(dyn_clone::clone_box(f)),
             Self::Cmp(i, f) => Self::Cmp(*i, dyn_clone::clone_box(f)),
@@ -810,6 +816,7 @@ impl<P: AtomSet + 'static> std::fmt::Debug for PatternRestriction<P> {
         match self {
             Self::Length(arg0, arg1) => f.debug_tuple("Length").field(arg0).field(arg1).finish(),
             Self::IsAtomType(t) => write!(f, "Is{:?}", t),
+            Self::IsNotAtomType(t) => write!(f, "IsNot{:?}", t),
             Self::IsLiteralWildcard(arg0) => {
                 f.debug_tuple("IsLiteralWildcard").field(arg0).finish()
             }
@@ -911,7 +918,7 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
         }
     }
 
-    /// Add a new map of identifier `key` to value `value` to the stack and return the size the stack had inserting this new entry.
+    /// Add a new map of identifier `key` to value `value` to the stack and return the size the stack had before inserting this new entry.
     /// If the entry `(key, value)` already exists, it is not inserted again and therefore the returned size is the actual size.
     /// If the `key` exists in the map, but the `value` is different, the insertion is ignored and `None` is returned.
     pub fn insert(&mut self, key: Identifier, value: Match<'a, P>) -> Option<usize> {
@@ -929,8 +936,8 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
         if let Some(res) = self.restrictions.get(&key) {
             for r in res {
                 match r {
-                    PatternRestriction::IsAtomType(t) => {
-                        if match t {
+                    PatternRestriction::IsAtomType(t) | PatternRestriction::IsNotAtomType(t) => {
+                        let is_type = match t {
                             AtomType::Num => matches!(value, Match::Single(AtomView::Num(_))),
                             AtomType::Var => matches!(value, Match::Single(AtomView::Var(_))),
                             AtomType::Add => matches!(
@@ -949,7 +956,9 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
                                     | Match::Multiple(SliceType::Pow, _)
                             ),
                             AtomType::Fun => matches!(value, Match::Single(AtomView::Fun(_))),
-                        } {
+                        };
+
+                        if is_type == matches!(r, PatternRestriction::IsAtomType(_)) {
                             continue;
                         }
                     }
@@ -1127,6 +1136,82 @@ enum PatternIter<'a, 'b, P: AtomSet> {
     ),
 }
 
+/// An iterator that tries to match an entire atom or
+/// a subslice to a pattern.
+pub struct AtomMatchIterator<'a, 'b, P: AtomSet> {
+    try_match_atom: bool,
+    sl_it: Option<SubSliceIterator<'a, 'b, P>>,
+    pattern: &'b Pattern<P>,
+    target: AtomView<'a, P>,
+    state: &'a State,
+    old_match_stack_len: Option<usize>,
+}
+
+impl<'a, 'b, P: AtomSet> AtomMatchIterator<'a, 'b, P> {
+    pub fn new(
+        pattern: &'b Pattern<P>,
+        target: AtomView<'a, P>,
+        state: &'a State,
+    ) -> AtomMatchIterator<'a, 'b, P> {
+        let try_match_atom = matches!(pattern, Pattern::Wildcard(_) | Pattern::Literal(_));
+
+        AtomMatchIterator {
+            try_match_atom,
+            sl_it: None,
+            pattern,
+            target,
+            state,
+            old_match_stack_len: None,
+        }
+    }
+
+    pub fn next(&mut self, match_stack: &mut MatchStack<'a, 'b, P>) -> Option<(usize, &[bool])> {
+        if self.try_match_atom {
+            self.try_match_atom = false;
+
+            if let Pattern::Wildcard(w) = self.pattern {
+                let range = match_stack.get_range(*w, self.state);
+                if range.0 <= 1 && range.1.map(|w| w >= 1).unwrap_or(true) {
+                    // TODO: any problems with matching Single vs a list?
+                    if let Some(new_stack_len) = match_stack.insert(*w, Match::Single(self.target))
+                    {
+                        self.old_match_stack_len = Some(new_stack_len);
+                        return Some((new_stack_len, &[]));
+                    }
+                }
+            } else if let Pattern::Literal(w) = self.pattern {
+                if w.as_view() == self.target {
+                    return Some((match_stack.len(), &[]));
+                }
+            }
+            // TODO: also do type matches, Fn Fn, etc?
+        }
+
+        if let Some(oml) = self.old_match_stack_len {
+            match_stack.truncate(oml);
+            self.old_match_stack_len = None;
+        }
+
+        if matches!(self.pattern, Pattern::Literal(_)) {
+            // TODO: also catch Pattern:Add(_) and Pattern:Mul(_) without any sub-wildcards
+            return None;
+        }
+
+        if self.sl_it.is_none() {
+            self.sl_it = Some(SubSliceIterator::new(
+                self.pattern,
+                self.target,
+                self.state,
+                &match_stack,
+                true,
+                matches!(self.pattern, Pattern::Wildcard(_) | Pattern::Literal(_)),
+            ));
+        }
+
+        self.sl_it.as_mut().unwrap().next(match_stack)
+    }
+}
+
 /// An iterator that matches a slice of patterns to a slice of atoms.
 /// Use the [`SubSliceIterator::next`] to get the next match, if any.
 ///  
@@ -1145,6 +1230,7 @@ pub struct SubSliceIterator<'a, 'b, P: AtomSet> {
     complete: bool,        // match needs to consume entire target
     ordered_gapless: bool, // pattern should appear ordered and have no gaps
     do_not_match_to_single_atom_in_list: bool,
+    do_not_match_entire_slice: bool,
 }
 
 impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
@@ -1155,6 +1241,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
         state: &'a State,
         match_stack: &MatchStack<'a, 'b, P>,
         do_not_match_to_single_atom_in_list: bool,
+        do_not_match_entire_slice: bool,
     ) -> SubSliceIterator<'a, 'b, P> {
         let mut shortcut_done = false;
 
@@ -1199,21 +1286,39 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
             })
             .sum();
 
-        if min_length > target_list.len() {
+        let mut target_len = target_list.len();
+        if do_not_match_entire_slice {
+            target_len -= 1;
+        }
+
+        if min_length > target_len {
             shortcut_done = true;
         };
 
         SubSliceIterator {
             pattern: pat_list,
-            iterators: Vec::with_capacity(pat_list.len()),
-            matches: Vec::with_capacity(pat_list.len()),
-            used_flag: vec![false; target_list.len()],
+            iterators: if shortcut_done {
+                Vec::new()
+            } else {
+                Vec::with_capacity(pat_list.len())
+            },
+            matches: if shortcut_done {
+                Vec::new()
+            } else {
+                Vec::with_capacity(pat_list.len())
+            },
+            used_flag: if shortcut_done {
+                vec![]
+            } else {
+                vec![false; target_list.len()]
+            },
             target: target_list,
             state,
             initialized: shortcut_done,
             complete: false,
             ordered_gapless: false,
             do_not_match_to_single_atom_in_list,
+            do_not_match_entire_slice,
         }
     }
 
@@ -1266,6 +1371,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
             complete,
             ordered_gapless: ordered,
             do_not_match_to_single_atom_in_list: false,
+            do_not_match_entire_slice: false,
         }
     }
 
@@ -1276,10 +1382,9 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
     /// `None` if called again.
     pub fn next(&mut self, match_stack: &mut MatchStack<'a, 'b, P>) -> Option<(usize, &[bool])> {
         let mut forward_pass = !self.initialized;
+        self.initialized = true;
 
         'next_match: loop {
-            self.initialized = true;
-
             if !forward_pass && self.iterators.is_empty() {
                 return None; // done as all options have been exhausted
             }
@@ -1303,8 +1408,18 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                 // add new iterator
                 let it = match &self.pattern[self.iterators.len()] {
                     Pattern::Wildcard(name) => {
-                        let size_left = self.used_flag.iter().filter(|x| !*x).count();
+                        let mut size_left = self.used_flag.iter().filter(|x| !*x).count();
                         let range = match_stack.get_range(*name, self.state);
+
+                        if self.do_not_match_entire_slice {
+                            size_left -= 1;
+
+                            if size_left < range.0 {
+                                forward_pass = false;
+                                continue 'next_match;
+                            }
+                        }
+
                         let mut range = (
                             range.0,
                             range.1.map(|m| m.min(size_left)).unwrap_or(size_left),
@@ -1313,35 +1428,37 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                         // bound the wildcard length based on the bounds of upcoming patterns
                         if self.complete {
                             let mut new_min = size_left;
+                            let mut new_max = size_left;
                             for p in &self.pattern[self.iterators.len() + 1..] {
-                                let range2 = if let Pattern::Wildcard(name) = p {
+                                let p_range = if let Pattern::Wildcard(name) = p {
                                     match_stack.get_range(*name, self.state)
                                 } else {
                                     (1, Some(1))
                                 };
 
-                                if range.1 < range2.0 {
-                                    forward_pass = false;
-                                    continue 'next_match;
-                                }
-
-                                range.1 -= range2.0;
-
                                 if new_min > 0 {
-                                    if let Some(m) = range2.1 {
+                                    if let Some(m) = p_range.1 {
                                         new_min -= m.min(new_min);
                                     } else {
                                         new_min = 0;
                                     }
                                 }
-                            }
 
-                            if new_min > range.1 {
-                                forward_pass = false;
-                                continue;
+                                if new_max < p_range.0 {
+                                    forward_pass = false;
+                                    continue 'next_match;
+                                }
+
+                                new_max -= p_range.0;
                             }
 
                             range.0 = range.0.max(new_min);
+                            range.1 = range.1.min(new_max);
+
+                            if range.0 > range.1 {
+                                forward_pass = false;
+                                continue 'next_match;
+                            }
                         }
 
                         PatternIter::Wildcard(WildcardIter {
@@ -1756,7 +1873,7 @@ pub struct PatternAtomTreeIterator<'a, 'b, P: AtomSet> {
     pattern: &'b Pattern<P>,
     atom_tree_iterator: AtomTreeIterator<'a, P>,
     current_target: Option<AtomView<'a, P>>,
-    pattern_iter: Option<SubSliceIterator<'a, 'b, P>>,
+    pattern_iter: Option<AtomMatchIterator<'a, 'b, P>>,
     state: &'a State,
     match_stack: MatchStack<'a, 'b, P>,
     tree_pos: SmallVec<[usize; 10]>,
@@ -1805,15 +1922,9 @@ impl<'a: 'b, 'b, P: AtomSet> PatternAtomTreeIterator<'a, 'b, P> {
                         continue;
                     }
                 } else {
-                    // prevent duplicate matches  by not matching to single atoms in a list as they will
-                    // be tested at a later stage in the atom tree iterator
-                    self.pattern_iter = Some(SubSliceIterator::new(
-                        self.pattern,
-                        ct,
-                        self.state,
-                        &self.match_stack,
-                        true,
-                    ));
+                    // prevent duplicate matches by not matching to single atoms in a list as they will
+                    // be tested at a later stage in the atom tree iterator, as we want to store the position
+                    self.pattern_iter = Some(AtomMatchIterator::new(self.pattern, ct, self.state));
                 }
             } else {
                 let res = self.atom_tree_iterator.next();

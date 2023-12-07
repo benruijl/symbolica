@@ -1,14 +1,16 @@
-use ahash::HashMap;
-use dyn_clone::DynClone;
+use std::time::Instant;
 
 use crate::{
     combinatorics::{partitions, unique_permutations},
     id::{Pattern, PatternRestriction},
+    printer::{AtomPrinter, PrintOptions},
     representations::{
         Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedFun, OwnedMul,
     },
     state::{State, Workspace, ARG},
 };
+use ahash::HashMap;
+use dyn_clone::DynClone;
 
 pub trait Map<P: AtomSet>: Fn(AtomView<P>, &mut Atom<P>) + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(<P: AtomSet> Map<P>);
@@ -42,6 +44,8 @@ pub enum Transformer<P: AtomSet + 'static> {
     Deduplicate,
     Permutations(Identifier),
     Repeat(Vec<Transformer<P>>),
+    Print(PrintOptions),
+    Duration(String, Vec<Transformer<P>>),
 }
 
 impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
@@ -72,6 +76,8 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
                 .field(d)
                 .finish(),
             Transformer::Repeat(r) => f.debug_tuple("Repeat").field(r).finish(),
+            Transformer::Print(p) => f.debug_tuple("Print").field(p).finish(),
+            Transformer::Duration(name, r) => f.debug_tuple("Timing").field(name).field(r).finish(),
         }
     }
 }
@@ -354,6 +360,19 @@ impl<P: AtomSet> Transformer<P> {
 
                     std::mem::swap(out, &mut tmp);
                 },
+                Transformer::Print(o) => {
+                    println!("{}", AtomPrinter::new_with_options(input, *o, state));
+                    out.set_from_view(&input);
+                }
+                Transformer::Duration(tag, r) => {
+                    let t = Instant::now();
+                    Self::execute(input, r, state, workspace, out);
+                    println!(
+                        "Duration of {}: {:#?}",
+                        tag,
+                        Instant::now().duration_since(t)
+                    );
+                }
             }
         }
     }

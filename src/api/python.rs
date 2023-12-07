@@ -673,6 +673,72 @@ impl PythonPattern {
         );
     }
 
+    /// Create a transformer that prints the expression.
+    ///
+    /// Examples
+    /// --------
+    /// >>> Expression.parse('f(10)').transform().print(terms_on_new_line = True).execute()
+    #[pyo3(signature =
+        (terms_on_new_line = false,
+            color_top_level_sum = true,
+            color_builtin_functions = true,
+            print_finite_field = true,
+            explicit_rational_polynomial = false,
+            number_thousands_separator = None,
+            multiplication_operator = '*',
+            square_brackets_for_function = false,
+            num_exp_as_superscript = true,
+            latex = false)
+        )]
+    pub fn print(
+        &self,
+        terms_on_new_line: bool,
+        color_top_level_sum: bool,
+        color_builtin_functions: bool,
+        print_finite_field: bool,
+        explicit_rational_polynomial: bool,
+        number_thousands_separator: Option<char>,
+        multiplication_operator: char,
+        square_brackets_for_function: bool,
+        num_exp_as_superscript: bool,
+        latex: bool,
+    ) -> PyResult<PythonPattern> {
+        return append_transformer!(
+            self,
+            Transformer::Print(PrintOptions {
+                terms_on_new_line,
+                color_top_level_sum,
+                color_builtin_functions,
+                print_finite_field,
+                explicit_rational_polynomial,
+                number_thousands_separator,
+                multiplication_operator,
+                square_brackets_for_function,
+                num_exp_as_superscript,
+                latex
+            },)
+        );
+    }
+
+    /// Print the duration of a transformer, tagging it with `tag`.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = Expression.parse("f(5)")
+    /// >>> e = e.transform().duration('replace', Transformer().replace_all(f(x_), 1)).execute()
+    pub fn duration(&self, tag: String, transformer: PythonPattern) -> PyResult<PythonPattern> {
+        let Pattern::Transformer(t) = transformer.expr.borrow() else {
+            return Err(exceptions::PyValueError::new_err(
+                "Argument must be a transformer",
+            ));
+        };
+
+        return append_transformer!(self, Transformer::Duration(tag, t.1.clone()));
+    }
+
     /// Add this transformer to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
         let res = WORKSPACE.with(|workspace| {

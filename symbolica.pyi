@@ -1064,6 +1064,40 @@ class Transformer:
         >>> print(r)
         """
 
+    def print(
+        self,
+        terms_on_new_line: bool = False,
+        color_top_level_sum: bool = True,
+        color_builtin_functions: bool = True,
+        print_finite_field: bool = True,
+        explicit_rational_polynomial: bool = False,
+        number_thousands_separator: Optional[str] = None,
+        multiplication_operator: str = "*",
+        square_brackets_for_function: bool = False,
+        num_exp_as_superscript: bool = True,
+        latex: bool = False,
+    ) -> Transformer:
+        """
+        Create a transformer that prints the expression.
+
+        Examples
+        --------
+        >>> Expression.parse('f(10)').transform().print(terms_on_new_line = True).execute()
+        """
+
+    def duration(self, tag: str, transformer: Transformer) -> Transformer:
+        """
+        Print the duration of a transformer, tagging it with `tag`.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun('f')
+        >>> e = Expression.parse("f(5)")
+        >>> e = e.transform().duration('replace', Transformer().replace_all(f(x_), 1)).execute()
+        """
+
     def __add__(self, other: Transformer | Expression | int) -> Transformer:
         """
         Add this transformer to `other`, returning the result.

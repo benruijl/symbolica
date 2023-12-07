@@ -1636,6 +1636,42 @@ impl PythonExpression {
         }
     }
 
+    /// Create a pattern restriction that sets the wildcard to
+    /// be as short as possible.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x__, y__ = Expression.vars('x__', 'y__')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(1,2,3)
+    /// >>> e = e.replace_all(f(x__,y__), f(x__)*f(y__), x__.req_ngreedy())
+    /// >>> print(e)
+    ///
+    /// Yields `f(1)*f(2,3)`.
+    pub fn req_ngreedy(&self) -> PyResult<PythonPatternRestriction> {
+        match self.expr.as_view() {
+            AtomView::Var(v) => {
+                let name = v.get_name();
+                if get_state!()?.get_wildcard_level(name) < 2 {
+                    return Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards with variable range set non-greedy.",
+                    ));
+                }
+
+                let mut h = HashMap::default();
+                h.insert(name, vec![PatternRestriction::NotGreedy]);
+
+                Ok(PythonPatternRestriction {
+                    restrictions: Arc::new(h),
+                })
+            }
+            _ => Err(exceptions::PyTypeError::new_err(
+                "Only wildcards can be restricted.",
+            )),
+        }
+    }
+
     /// Create a pattern restriction that treats the wildcard as a literal variable,
     /// so that it only matches to itself.
     pub fn req_lit(&self) -> PyResult<PythonPatternRestriction> {

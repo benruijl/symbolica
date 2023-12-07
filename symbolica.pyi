@@ -375,6 +375,23 @@ class Expression:
         >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
         """
 
+    def req_ngreedy(self) -> PatternRestriction:
+        """
+        Create a pattern restriction that sets the wildcard to
+        be as short as possible.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x__, y__ = Expression.vars('x__', 'y__')
+        >>> f = Expression.fun('f')
+        >>> e = f(1,2,3)
+        >>> e = e.replace_all(f(x__,y__), f(x__)*f(y__), x__.req_ngreedy())
+        >>> print(e)
+
+        Yields `f(1)*f(2,3)`.
+        """
+
     def req_lt(self, num: Expression | int) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is smaller than a number `num`.
         If the matched wildcard is not a number, the pattern fails.

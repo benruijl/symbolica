@@ -771,7 +771,7 @@ impl<P: AtomSet, T: Clone + Send + Sync + for<'a, 'b> Fn(&Match<'_, P>, &Match<'
 {
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AtomType {
     Num,
     Var,
@@ -796,6 +796,7 @@ where
     IsLiteralWildcard(Identifier),
     Filter(Box<dyn FilterFn<P>>),
     Cmp(Identifier, Box<dyn CmpFn<P>>),
+    NotGreedy,
 }
 
 impl<P: AtomSet + 'static> Clone for PatternRestriction<P> {
@@ -807,6 +808,7 @@ impl<P: AtomSet + 'static> Clone for PatternRestriction<P> {
             Self::IsLiteralWildcard(w) => Self::IsLiteralWildcard(*w),
             Self::Filter(f) => Self::Filter(dyn_clone::clone_box(f)),
             Self::Cmp(i, f) => Self::Cmp(*i, dyn_clone::clone_box(f)),
+            Self::NotGreedy => Self::NotGreedy,
         }
     }
 }
@@ -822,6 +824,7 @@ impl<P: AtomSet + 'static> std::fmt::Debug for PatternRestriction<P> {
             }
             Self::Filter(_) => f.debug_tuple("Filter").finish(),
             Self::Cmp(arg0, _) => f.debug_tuple("Cmp").field(arg0).finish(),
+            Self::NotGreedy => write!(f, "NotGreedy"),
         }
     }
 }
@@ -996,6 +999,9 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
                             continue;
                         }
                     }
+                    PatternRestriction::NotGreedy => {
+                        continue;
+                    }
                 }
 
                 return None;
@@ -1115,7 +1121,9 @@ struct WildcardIter {
     name: Identifier,
     indices: SmallVec<[u32; 10]>,
     size_target: u32,
+    min_size: u32,
     max_size: u32,
+    greedy: bool,
 }
 
 enum PatternIter<'a, 'b, P: AtomSet> {
@@ -1461,12 +1469,27 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                             }
                         }
 
+                        let greedy = match_stack
+                            .restrictions
+                            .get(name)
+                            .map(|c| {
+                                !c.iter()
+                                    .any(|cc| matches!(cc, PatternRestriction::NotGreedy))
+                            })
+                            .unwrap_or(true);
+
                         PatternIter::Wildcard(WildcardIter {
                             initialized: false,
                             name: *name,
                             indices: SmallVec::new(),
-                            size_target: range.0 as u32,
+                            size_target: if greedy {
+                                range.1 as u32
+                            } else {
+                                range.0 as u32
+                            },
+                            min_size: range.0 as u32,
                             max_size: range.1 as u32,
+                            greedy,
                         })
                     }
                     Pattern::Fn(name, is_wildcard, args) => {
@@ -1500,14 +1523,12 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
 
             match self.iterators.last_mut().unwrap() {
                 PatternIter::Wildcard(w) => {
-                    // using empty list as toggle for initialized state of iterator
                     let mut wildcard_forward_pass = !w.initialized;
+                    w.initialized = true;
 
-                    'next_wildcard_match: while !wildcard_forward_pass
-                        || w.indices.len() <= w.max_size as usize
-                    {
-                        w.initialized = true;
+                    'next_wildcard_match: loop {
                         // a wildcard collects indices in increasing order
+                        // find the starting point where the last index can be moved to
                         let start_index = w.indices.last().map(|x| *x as usize + 1).unwrap_or(0);
 
                         if !wildcard_forward_pass {
@@ -1517,21 +1538,22 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                             }
 
                             if last_iterator_empty {
-                                // the current iterator is exhausted
-                                // increase the size of the wildcard range if possible, otherwise we are done
-                                let max_space = self.used_flag.iter().filter(|x| !*x).count();
-
-                                if w.size_target < w.max_size.min(max_space as u32) {
-                                    w.size_target += 1;
-
-                                    wildcard_forward_pass = true;
-                                    continue 'next_wildcard_match;
+                                // the wildcard iterator is exhausted for this target size
+                                if w.greedy {
+                                    if w.size_target > w.min_size {
+                                        w.size_target -= 1;
+                                    } else {
+                                        break;
+                                    }
                                 } else {
-                                    break; // done
+                                    if w.size_target < w.max_size {
+                                        w.size_target += 1;
+                                    } else {
+                                        break;
+                                    }
                                 }
                             } else if self.ordered_gapless {
-                                // after the first match, fall back to an empty iterator
-                                // then a size increase will be performed
+                                // drain the entire constructed range and start from scratch
                                 continue 'next_wildcard_match;
                             }
                         }
@@ -1559,11 +1581,12 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                                 continue;
                             }
 
-                            tried_first_option = true;
                             self.used_flag[k] = true;
                             w.indices.push(k as u32);
 
                             if w.indices.len() == w.size_target as usize {
+                                tried_first_option = true;
+
                                 // simplify case of 1 argument, this is important for matching to work, since mul(x) = add(x) = arg(x) for any x
                                 let matched = if w.indices.len() == 1 {
                                     match self.target.get(w.indices[0] as usize) {
@@ -1598,19 +1621,14 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                                     self.matches.push(new_stack_len);
                                     continue 'next_match;
                                 } else {
-                                    // no match,
+                                    // no match
                                     w.indices.pop();
                                     self.used_flag[k] = false;
                                 }
-                            } else {
-                                // go to next iteration?
-                                wildcard_forward_pass = true;
-                                continue 'next_wildcard_match;
                             }
                         }
 
-                        // no match found and last element popped,
-                        // try to increase the index of the current last element
+                        // no match found, try to increase the index of the current last element
                         wildcard_forward_pass = false;
                     }
                 }

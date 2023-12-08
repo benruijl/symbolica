@@ -10,11 +10,41 @@ use crate::{
     state::{State, Workspace, ARG},
 };
 use ahash::HashMap;
+use colored::Colorize;
 use dyn_clone::DynClone;
 
 pub trait Map<P: AtomSet>: Fn(AtomView<P>, &mut Atom<P>) + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(<P: AtomSet> Map<P>);
 impl<P: AtomSet, T: Clone + Send + Sync + Fn(AtomView<'_, P>, &mut Atom<P>)> Map<P> for T {}
+
+#[derive(Clone, Debug)]
+pub struct StatsOptions {
+    pub tag: String,
+    pub color_medium_change_threshold: Option<f64>,
+    pub color_large_change_threshold: Option<f64>,
+}
+
+impl StatsOptions {
+    pub fn format_size(&self, size: usize) -> String {
+        let mut s = size as f64;
+        let kb = 1024.;
+        let tag = [" ", "K", "M", "G", "T"];
+
+        for t in tag {
+            if s < kb {
+                return format!("{:.2}{}B", s, t);
+            }
+
+            s /= kb;
+        }
+
+        format!("{:.2}EB", s)
+    }
+
+    pub fn format_count(&self, count: usize) -> String {
+        format!("{}", count)
+    }
+}
 
 /// Operations that take a pattern as the input and produce an expression
 #[derive(Clone)]
@@ -45,7 +75,7 @@ pub enum Transformer<P: AtomSet + 'static> {
     Permutations(Identifier),
     Repeat(Vec<Transformer<P>>),
     Print(PrintOptions),
-    Duration(String, Vec<Transformer<P>>),
+    Stats(StatsOptions, Vec<Transformer<P>>),
 }
 
 impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
@@ -77,7 +107,7 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
                 .finish(),
             Transformer::Repeat(r) => f.debug_tuple("Repeat").field(r).finish(),
             Transformer::Print(p) => f.debug_tuple("Print").field(p).finish(),
-            Transformer::Duration(name, r) => f.debug_tuple("Timing").field(name).field(r).finish(),
+            Transformer::Stats(o, r) => f.debug_tuple("Timing").field(o).field(r).finish(),
         }
     }
 }
@@ -364,13 +394,50 @@ impl<P: AtomSet> Transformer<P> {
                     println!("{}", AtomPrinter::new_with_options(input, *o, state));
                     out.set_from_view(&input);
                 }
-                Transformer::Duration(tag, r) => {
+                Transformer::Stats(o, r) => {
+                    let in_nterms = if let AtomView::Add(a) = input {
+                        a.get_nargs()
+                    } else {
+                        1
+                    };
+                    let in_size = input.get_byte_size();
+
                     let t = Instant::now();
                     Self::execute(input, r, state, workspace, out);
+
+                    let out_nterms = if let AtomView::Add(a) = out.as_view() {
+                        a.get_nargs()
+                    } else {
+                        1
+                    };
+                    let out_size = out.as_view().get_byte_size();
+
+                    let in_nterms_s = o.format_count(in_nterms);
+                    let out_nterms_s = o.format_count(out_nterms);
+
                     println!(
-                        "Duration of {}: {:#?}",
-                        tag,
-                        Instant::now().duration_since(t)
+                        "Stats for {}:
+\tIn  │ {:>width$} │ {:>8} │
+\tOut │ {:>width$} │ {:>8} │ ⧗ {:#.2?}",
+                        o.tag.bold(),
+                        in_nterms_s,
+                        o.format_size(in_size),
+                        if out_nterms as f64 / in_nterms as f64
+                            > o.color_medium_change_threshold.unwrap_or(f64::INFINITY)
+                        {
+                            if out_nterms as f64 / in_nterms as f64
+                                > o.color_large_change_threshold.unwrap_or(f64::INFINITY)
+                            {
+                                out_nterms_s.red()
+                            } else {
+                                out_nterms_s.bright_magenta()
+                            }
+                        } else {
+                            out_nterms_s.as_str().into()
+                        },
+                        o.format_size(out_size),
+                        Instant::now().duration_since(t),
+                        width = in_nterms_s.len().max(out_nterms_s.len()).min(6),
                     );
                 }
             }

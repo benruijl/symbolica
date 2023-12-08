@@ -53,7 +53,7 @@ use crate::{
     },
     state::{FunctionAttribute, ResettableBuffer, State, Workspace},
     streaming::TermStreamer,
-    transformer::Transformer,
+    transformer::{StatsOptions, Transformer},
     LicenseManager,
 };
 
@@ -720,7 +720,7 @@ impl PythonPattern {
         );
     }
 
-    /// Print the duration of a transformer, tagging it with `tag`.
+    /// Print statistics of a transformer, tagging it with `tag`.
     ///
     /// Examples
     /// --------
@@ -728,15 +728,44 @@ impl PythonPattern {
     /// >>> x_ = Expression.var('x_')
     /// >>> f = Expression.fun('f')
     /// >>> e = Expression.parse("f(5)")
-    /// >>> e = e.transform().duration('replace', Transformer().replace_all(f(x_), 1)).execute()
-    pub fn duration(&self, tag: String, transformer: PythonPattern) -> PyResult<PythonPattern> {
+    /// >>> e = e.transform().stats('replace', Transformer().replace_all(f(x_), 1)).execute()
+    ///
+    /// yields
+    /// ```log
+    /// Stats for replace:
+    ///     In  │ 1 │  10.00 B │
+    ///     Out │ 1 │   3.00 B │ ⧗ 40.15µs
+    /// ```
+    #[pyo3(signature =
+        (tag,
+            transformer,
+            color_medium_change_threshold = 10.,
+            color_large_change_threshold = 100.)
+        )]
+    pub fn stats(
+        &self,
+        tag: String,
+        transformer: PythonPattern,
+        color_medium_change_threshold: Option<f64>,
+        color_large_change_threshold: Option<f64>,
+    ) -> PyResult<PythonPattern> {
         let Pattern::Transformer(t) = transformer.expr.borrow() else {
             return Err(exceptions::PyValueError::new_err(
                 "Argument must be a transformer",
             ));
         };
 
-        return append_transformer!(self, Transformer::Duration(tag, t.1.clone()));
+        return append_transformer!(
+            self,
+            Transformer::Stats(
+                StatsOptions {
+                    tag,
+                    color_medium_change_threshold,
+                    color_large_change_threshold,
+                },
+                t.1.clone()
+            )
+        );
     }
 
     /// Add this transformer to `other`, returning the result.
@@ -1224,6 +1253,11 @@ impl PythonExpression {
             "{}",
             AtomPrinter::new(self.expr.as_view(), &&get_state!()?)
         ))
+    }
+
+    /// Get the number of bytes that this expression takes up in memory.
+    pub fn get_byte_size(&self) -> usize {
+        self.expr.as_view().get_byte_size()
     }
 
     /// Convert the expression into a human-readable string, with tunable settings.

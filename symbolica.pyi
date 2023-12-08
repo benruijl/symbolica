@@ -163,6 +163,9 @@ class Expression:
         Convert the expression into a human-readable string.
         """
 
+    def get_byte_size(self) -> int:
+        """ Get the number of bytes that this expression takes up in memory."""
+
     def pretty_str(
         self,
         terms_on_new_line: bool = False,
@@ -1085,9 +1088,15 @@ class Transformer:
         >>> Expression.parse('f(10)').transform().print(terms_on_new_line = True).execute()
         """
 
-    def duration(self, tag: str, transformer: Transformer) -> Transformer:
+    def stats(
+        self,
+        tag: str,
+        transformer: Transformer,
+        color_medium_change_threshold: Optional[float] = 10.,
+        color_large_change_threshold: Optional[float] = 100.,
+    ) -> Transformer:
         """
-        Print the duration of a transformer, tagging it with `tag`.
+        Print statistics of a transformer, tagging it with `tag`.
 
         Examples
         --------
@@ -1095,7 +1104,14 @@ class Transformer:
         >>> x_ = Expression.var('x_')
         >>> f = Expression.fun('f')
         >>> e = Expression.parse("f(5)")
-        >>> e = e.transform().duration('replace', Transformer().replace_all(f(x_), 1)).execute()
+        >>> e = e.transform().stats('replace', Transformer().replace_all(f(x_), 1)).execute()
+
+        yields
+        ```log
+        Stats for replace:
+            In  │ 1 │  10.00 B │
+            Out │ 1 │   3.00 B │ ⧗ 40.15µs
+        ```
         """
 
     def __add__(self, other: Transformer | Expression | int) -> Transformer:

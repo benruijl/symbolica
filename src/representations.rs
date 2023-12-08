@@ -139,6 +139,7 @@ pub trait Num<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>:
     fn is_dirty(&self) -> bool;
     fn get_number_view(&self) -> BorrowedNumber<'_>;
     fn as_view(&self) -> AtomView<'a, Self::P>;
+    fn get_byte_size(&self) -> usize;
 }
 
 pub trait Var<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>::V<'b>> {
@@ -146,6 +147,7 @@ pub trait Var<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>:
 
     fn get_name(&self) -> Identifier;
     fn as_view(&self) -> AtomView<'a, Self::P>;
+    fn get_byte_size(&self) -> usize;
 }
 
 pub trait Fun<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>::F<'b>> {
@@ -158,6 +160,7 @@ pub trait Fun<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>:
     fn iter(&self) -> Self::I;
     fn as_view(&self) -> AtomView<'a, Self::P>;
     fn to_slice(&self) -> <Self::P as AtomSet>::S<'a>;
+    fn get_byte_size(&self) -> usize;
 
     /// Perform a fast comparison between two functions. This function may use
     /// conditions that rely on the underlying data format and is not suitable for human interpretation.
@@ -172,6 +175,7 @@ pub trait Pow<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>:
     fn is_dirty(&self) -> bool;
     fn get_base_exp(&self) -> (AtomView<'a, Self::P>, AtomView<'a, Self::P>);
     fn as_view(&self) -> AtomView<'a, Self::P>;
+    fn get_byte_size(&self) -> usize;
 
     /// Interpret `x^y` as slice `[x,y]`.
     fn to_slice(&self) -> <Self::P as AtomSet>::S<'a>;
@@ -186,6 +190,7 @@ pub trait Mul<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>:
     fn iter(&self) -> Self::I;
     fn as_view(&self) -> AtomView<'a, Self::P>;
     fn to_slice(&self) -> <Self::P as AtomSet>::S<'a>;
+    fn get_byte_size(&self) -> usize;
 
     /// Return true if the multiplication has a coefficient that is not 1
     fn has_coefficient(&self) -> bool;
@@ -200,6 +205,7 @@ pub trait Add<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>:
     fn iter(&self) -> Self::I;
     fn as_view(&self) -> AtomView<'a, Self::P>;
     fn to_slice(&self) -> <Self::P as AtomSet>::S<'a>;
+    fn get_byte_size(&self) -> usize;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -530,6 +536,17 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         self.neg_no_norm(workspace)
             .as_view()
             .normalize(workspace, state, out);
+    }
+
+    pub fn get_byte_size(&self) -> usize {
+        match self {
+            AtomView::Num(n) => n.get_byte_size(),
+            AtomView::Var(v) => v.get_byte_size(),
+            AtomView::Fun(f) => f.get_byte_size(),
+            AtomView::Pow(p) => p.get_byte_size(),
+            AtomView::Mul(m) => m.get_byte_size(),
+            AtomView::Add(a) => a.get_byte_size(),
+        }
     }
 }
 

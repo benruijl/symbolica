@@ -771,6 +771,10 @@ impl<'a> Var<'a> for VarViewD<'a> {
     fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Var(*self)
     }
+
+    fn get_byte_size(&self) -> usize {
+        self.data.len()
+    }
 }
 
 impl Atom<Linear> {
@@ -867,6 +871,10 @@ impl<'a> Fun<'a> for FnViewD<'a> {
         }
     }
 
+    fn get_byte_size(&self) -> usize {
+        self.data.len()
+    }
+
     fn fast_cmp(&self, other: <Self::P as AtomSet>::F<'_>) -> Ordering {
         self.data.cmp(other.data)
     }
@@ -909,6 +917,10 @@ impl<'a> Num<'a> for NumViewD<'a> {
 
     fn as_view(&self) -> AtomView<'a, Self::P> {
         AtomView::Num(*self)
+    }
+
+    fn get_byte_size(&self) -> usize {
+        self.data.len()
     }
 }
 
@@ -964,6 +976,10 @@ impl<'a> Pow<'a> for PowViewD<'a> {
             length: 2,
             slice_type: SliceType::Pow,
         }
+    }
+
+    fn get_byte_size(&self) -> usize {
+        self.data.len()
     }
 }
 
@@ -1030,6 +1046,10 @@ impl<'a> Mul<'a> for MulViewD<'a> {
     fn has_coefficient(&self) -> bool {
         (self.data[0] & HAS_COEFF_FLAG) != 0
     }
+
+    fn get_byte_size(&self) -> usize {
+        self.data.len()
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, Hash)]
@@ -1091,6 +1111,10 @@ impl<'a> Add<'a> for AddViewD<'a> {
             length: n_args as usize,
             slice_type: SliceType::Add,
         }
+    }
+
+    fn get_byte_size(&self) -> usize {
+        self.data.len()
     }
 }
 

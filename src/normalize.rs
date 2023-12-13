@@ -686,6 +686,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             out_mul.set_has_coefficient(!n.is_one());
                             if !n.is_one() {
                                 out_mul.extend(v);
+                            } else if cur_len == 1 {
+                                // downgrade
+                                last_buf.set_from_view(&out_mul.to_mul_view().to_slice().get(0));
+                                out.set_from_view(&last_buf.as_view());
                             }
                         } else {
                             out_mul.extend(v);
@@ -908,9 +912,20 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
 
                     if cur_len == 0 {
-                        out.set_from_view(&last_buf.get().as_view());
+                        out.set_from_view(&last_buf.as_view());
                     } else {
-                        out_add.extend(last_buf.get().as_view());
+                        let v = last_buf.as_view();
+                        if let AtomView::Num(n) = v {
+                            if !n.is_zero() {
+                                out_add.extend(v);
+                            } else if cur_len == 1 {
+                                // downgrade
+                                last_buf.set_from_view(&out_add.to_add_view().to_slice().get(0));
+                                out.set_from_view(&last_buf.as_view());
+                            }
+                        } else {
+                            out_add.extend(v);
+                        }
                     }
                 } else {
                     let on = out.to_num();

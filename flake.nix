@@ -1,48 +1,61 @@
 {
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
-    systems.url = "github:nix-systems/default";
-    devenv.url = "github:cachix/devenv";
-  };
+  description = "A Nix-flake-based gammaloop development environment";
 
-  nixConfig = {
-    extra-trusted-public-keys = "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw=";
-    extra-substituters = "https://devenv.cachix.org";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
   outputs = {
     self,
     nixpkgs,
-    devenv,
-    systems,
-    ...
-  } @ inputs: let
-    forEachSystem = nixpkgs.lib.genAttrs (import systems);
+    rust-overlay,
+  }: let
+    overlays = [
+      rust-overlay.overlays.default
+      (final: prev: {
+        rustToolchain = let
+          rust = prev.rust-bin;
+        in
+          if builtins.pathExists ./rust-toolchain.toml
+          then rust.fromRustupToolchainFile ./rust-toolchain.toml
+          else if builtins.pathExists ./rust-toolchain
+          then rust.fromRustupToolchainFile ./rust-toolchain
+          else rust.stable.latest.default;
+      })
+    ];
+    supportedSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
+    forEachSupportedSystem = f:
+      nixpkgs.lib.genAttrs supportedSystems (system:
+        f {
+          pkgs = import nixpkgs {inherit overlays system;};
+        });
   in {
-    devShells =
-      forEachSystem
-      (system: let
-        pkgs = nixpkgs.legacyPackages.${system};
-      in {
-        default = devenv.lib.mkShell {
-          inherit inputs pkgs;
-          modules = [
-            {
-              # https://devenv.sh/reference/options/
-              packages = [
-                pkgs.gnum4
-                pkgs.gmp
-                pkgs.mpfr
-                pkgs.gnumake
-                pkgs.diffutils
-                pkgs.glibc
-              ];
+    devShells = forEachSupportedSystem ({pkgs}: {
+      default = pkgs.mkShell {
+        #devshell definition :
+        # LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib";
+        RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
 
-              languages.rust.enable = true;
-              languages.cplusplus.enable = true;
-            }
-          ];
-        };
-      });
+        packages = with pkgs; [
+          rustToolchain
+          openssl
+          gnum4
+          gmp.dev
+          mpfr.dev
+          gcc_debug.out
+          stdenv.cc.cc.lib
+          pkg-config
+          cargo-deny
+          cargo-edit
+          cargo-watch
+          python311
+          texlive.combined.scheme-medium
+          poetry
+          rust-analyzer
+          maturin
+        ];
+      };
+    });
   };
 }

@@ -862,8 +862,8 @@ impl<'a, P: AtomSet> FunctionBuilder<'a, P> {
 /// # }
 /// ```
 pub struct AtomBuilder<'a, A: DerefMut<Target = Atom<P>>, P: AtomSet = Linear> {
-    state: &'a State,
-    workspace: &'a Workspace<P>,
+    pub state: &'a State,
+    pub workspace: &'a Workspace<P>,
     out: A,
 }
 

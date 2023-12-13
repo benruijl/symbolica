@@ -14,11 +14,13 @@ fn main() {
         .add_arg(&ws.new_num(1))
         .finish();
 
+    let fatom = Atom::new_from_view(&f.as_atom_view());
+
     // the cumbersome passing of the state and workspace can be avoided by using an
     // AtomBuilder, which accumulates the result
     let mut xb = x.builder(&state, &ws);
 
-    xb = (-(xb + &y + &x) * &y * &ws.new_num(6)).pow(&ws.new_num(5)) / &y * &f;
+    xb = (-(xb + &y + &x) * &y * &ws.new_num(6)).pow(&ws.new_num(5)) / &y * &fatom;
 
     println!("{}", xb.as_atom_view().printer(&state));
 }

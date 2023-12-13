@@ -866,6 +866,12 @@ impl<'a, P: AtomSet> Match<'a, P> {
                     for arg in wargs {
                         mul.extend(*arg);
                     }
+
+                    // set the dirty flag since the has_coefficient has to be set
+                    // during normalization
+                    if !wargs.is_empty() {
+                        mul.set_dirty(true);
+                    }
                 }
                 SliceType::Arg => {
                     let fun = out.to_fun();

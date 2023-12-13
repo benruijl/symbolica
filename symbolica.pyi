@@ -634,7 +634,7 @@ class Expression:
     def taylor_series(
         self,
         x: Expression,
-        expansion_point: Expression,
+        expansion_point: Expression | int,
         depth: int,
     ) -> Expression:
         """Taylor expand in `x` around `expansion_point` to depth `depth`."""

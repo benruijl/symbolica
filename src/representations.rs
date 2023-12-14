@@ -257,11 +257,12 @@ pub trait AsAtomView<'a, P: AtomSet>: Sized {
 
     /// Create a builder of an atom. Can be used for easy
     /// construction of terms.
-    fn builder(
+
+    fn builder<'b>(
         self,
-        state: &'a State,
-        workspace: &'a Workspace<P>,
-    ) -> AtomBuilder<'a, BufferHandle<'a, Atom<P>>, P> {
+        state: &'b State,
+        workspace: &'b Workspace<P>,
+    ) -> AtomBuilder<'b, BufferHandle<'b, Atom<P>>, P> {
         AtomBuilder::new(self, state, workspace, workspace.new_atom())
     }
 
@@ -867,6 +868,7 @@ pub struct AtomBuilder<'a, A: DerefMut<Target = Atom<P>>, P: AtomSet = Linear> {
     out: A,
 }
 
+
 impl<'a, P: AtomSet, A: DerefMut<Target = Atom<P>>> AtomBuilder<'a, A, P> {
     /// Create a new `AtomBuilder`.
     pub fn new<'c, T: AsAtomView<'c, P>>(
@@ -917,6 +919,31 @@ impl<'a, P: AtomSet, A: DerefMut<Target = Atom<P>>> AtomBuilder<'a, A, P> {
             workspace: self.workspace,
             out: h,
         }
+    }
+
+    
+}
+
+impl<'a, P: AtomSet, A: DerefMut<Target = Atom<P>>> From<&AtomBuilder<'a, A, P>>
+    for AtomBuilder<'a, BufferHandle<'a, Atom<P>>, P>
+{
+    fn from(value: &AtomBuilder<'a, A, P>) -> Self {
+        let mut h = value.workspace.new_atom();
+        h.set_from_view(&value.as_atom_view());
+        AtomBuilder {
+            state: value.state,
+            workspace: value.workspace,
+            out: h,
+        }
+    }
+}
+
+pub type Expr<'a> = AtomBuilder<'a, BufferHandle<'a, Atom>>;
+
+
+impl<'a> Clone for Expr<'a> {
+    fn clone(&self) -> Self {
+        self.into()
     }
 }
 

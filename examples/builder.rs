@@ -1,7 +1,14 @@
 use symbolica::{
-    representations::{AsAtomView, Atom, FunctionBuilder},
+    representations::{AsAtomView, Atom, FunctionBuilder, },
     state::{FunctionAttribute, State, Workspace},
 };
+
+// fn zeros<'a>(ws:&'a Workspace,state:&'a State) -> Vec<Expr<'a>>{
+
+//     let zeroatom = ws.new_num(0).to_owned();
+//     let zero = zeroatom.builder(&state, ws).to_owned();
+//     vec![zero;3]
+// } 
 
 fn main() {
     let mut state = State::new();
@@ -23,4 +30,7 @@ fn main() {
     xb = (-(xb + &y + &x) * &y * &ws.new_num(6)).pow(&ws.new_num(5)) / &y * &fatom;
 
     println!("{}", xb.as_atom_view().printer(&state));
+
+
+    
 }

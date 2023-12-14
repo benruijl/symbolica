@@ -906,6 +906,18 @@ impl<'a, P: AtomSet, A: DerefMut<Target = Atom<P>>> AtomBuilder<'a, A, P> {
             .normalize(self.workspace, self.state, &mut self.out);
         self
     }
+
+    /// Clone the content of the atom builder to a new one, that uses a
+    /// buffer handle.
+    pub fn clone(&self) -> AtomBuilder<'a, BufferHandle<'a, Atom<P>>, P> {
+        let mut h = self.workspace.new_atom();
+        h.set_from_view(&self.as_atom_view());
+        AtomBuilder {
+            state: self.state,
+            workspace: self.workspace,
+            out: h,
+        }
+    }
 }
 
 impl<'a, 'b, 'c, P: AtomSet, T: AsAtomView<'c, P>, A: DerefMut<Target = Atom<P>>> std::ops::Add<T>

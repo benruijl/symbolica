@@ -45,7 +45,7 @@ features = ["integer", "rational"]
 version = "1.18"
 
 [dependencies]
-gmp-mpfr-sys = {version = "~1.4", features = ["c-no-tests"]}
+gmp-mpfr-sys = {version = "~1.6", features = ["c-no-tests"]}
 ahash = "0.8"
 byteorder = "1.4"
 bytes = "1.3"

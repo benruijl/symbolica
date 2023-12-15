@@ -2978,11 +2978,15 @@ impl PythonFunction {
                 .into_py(py))
             })
         } else {
-            let p = Pattern::Fn(
-                self.id,
-                get_state!()?.get_wildcard_level(self.id) > 0,
-                fn_args,
-            );
+            // convert all wildcards back from literals
+            let state = &&get_state!()?;
+            for arg in &mut fn_args {
+                if let Pattern::Literal(a) = arg {
+                    *arg = a.as_view().into_pattern(state);
+                }
+            }
+
+            let p = Pattern::Fn(self.id, state.get_wildcard_level(self.id) > 0, fn_args);
             Ok(PythonPattern { expr: Arc::new(p) }.into_py(py))
         }
     }

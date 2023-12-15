@@ -822,7 +822,7 @@ class Function:
         """
 
     @overload
-    def __call__(self, *args: Transformer) -> Transformer:
+    def __call__(self, *args: Transformer | Expression | int) -> Transformer:
         """
         Create a Symbolica expression or transformer by calling the function with appropriate arguments.
 

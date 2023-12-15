@@ -5,7 +5,8 @@ use crate::{
     id::{Pattern, PatternRestriction},
     printer::{AtomPrinter, PrintOptions},
     representations::{
-        Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedFun, OwnedMul,
+        number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedFun,
+        OwnedMul, OwnedNum,
     },
     state::{State, Workspace, ARG},
 };
@@ -65,6 +66,8 @@ pub enum Transformer<P: AtomSet + 'static> {
     Product,
     /// Take the sum of a list of arguments in the rhs.
     Sum,
+    /// Return the number of arguments.
+    ArgCount,
     /// Map the rhs with a user-specified function.
     Map(Box<dyn Map<P>>),
     /// Split a `Mul` or `Add` into a list of arguments.
@@ -88,6 +91,7 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
             }
             Transformer::Product => f.debug_tuple("Product").finish(),
             Transformer::Sum => f.debug_tuple("Sum").finish(),
+            Transformer::ArgCount => f.debug_tuple("ArgCount").finish(),
             Transformer::Map(_) => f.debug_tuple("Map").finish(),
             Transformer::Split => f.debug_tuple("Split").finish(),
             Transformer::Partition(g, b1, b2) => f
@@ -205,6 +209,16 @@ impl<P: AtomSet> Transformer<P> {
                     }
 
                     out.set_from_view(&input);
+                }
+                Transformer::ArgCount => {
+                    if let AtomView::Fun(f) = input {
+                        let n_args = f.get_nargs();
+                        out.to_num()
+                            .set_from_number(Number::Natural(n_args as i64, 1));
+                        continue;
+                    } else {
+                        out.to_num().set_from_number(Number::Natural(0, 1));
+                    }
                 }
                 Transformer::Split => match input {
                     AtomView::Mul(m) => {

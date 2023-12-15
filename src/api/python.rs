@@ -308,9 +308,9 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_ = Expression.var('x_')
+    /// >>> x__ = Expression.var('x__')
     /// >>> f = Expression.fun('f')
-    /// >>> e = f(2,3).replace_all(f(x_), x_.transform().prod())
+    /// >>> e = f(2,3).replace_all(f(x__), x__.transform().prod())
     /// >>> print(e)
     pub fn prod(&self) -> PyResult<PythonPattern> {
         return append_transformer!(self, Transformer::Product);
@@ -321,12 +321,25 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_ = Expression.var('x_')
+    /// >>> x__ = Expression.var('x__')
     /// >>> f = Expression.fun('f')
-    /// >>> e = f(2,3).replace_all(f(x_), x_.transform().sum())
+    /// >>> e = f(2,3).replace_all(f(x__), x__.transform().sum())
     /// >>> print(e)
     pub fn sum(&self) -> PyResult<PythonPattern> {
         return append_transformer!(self, Transformer::Sum);
+    }
+
+    /// Create a transformer that returns the number of arguments.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x__ = Expression.var('x__')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = f(2,3,4).replace_all(f(x_), x_.transform().nargs())
+    /// >>> print(e)
+    pub fn nargs(&self) -> PyResult<PythonPattern> {
+        return append_transformer!(self, Transformer::ArgCount);
     }
 
     /// Create a transformer that sorts a list of arguments.
@@ -348,9 +361,9 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_ = Expression.var('x_')
+    /// >>> x__ = Expression.var('x__')
     /// >>> f = Expression.fun('f')
-    /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().deduplicate())
+    /// >>> e = f(1,2,1,2).replace_all(f(x__), x__.transform().deduplicate())
     /// >>> print(e)
     ///
     /// Yields `f(1,2)`.
@@ -363,9 +376,9 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x, x_ = Expression.vars('x', 'x_')
+    /// >>> x, x__ = Expression.vars('x', 'x__')
     /// >>> f = Expression.fun('f')
-    /// >>> e = (x + 1).replace_all(x_, f(x_.transform().split()))
+    /// >>> e = (x + 1).replace_all(x__, f(x__.transform().split()))
     /// >>> print(e)
     pub fn split(&self) -> PyResult<PythonPattern> {
         return append_transformer!(self, Transformer::Split);

@@ -860,9 +860,9 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_ = Expression.var('x_')
+        >>> x__ = Expression.var('x__')
         >>> f = Expression.fun('f')
-        >>> e = f(2,3).replace_all(f(x_), x_.transform().prod())
+        >>> e = f(2,3).replace_all(f(x__), x__.transform().prod())
         >>> print(e)
         """
 
@@ -872,9 +872,21 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_ = Expression.var('x_')
+        >>> x__ = Expression.var('x__')
         >>> f = Expression.fun('f')
-        >>> e = f(2,3).replace_all(f(x_), x_.transform().sum())
+        >>> e = f(2,3).replace_all(f(x__), x__.transform().sum())
+        >>> print(e)
+        """
+
+    def nargs(self) -> Transformer:
+        """Create a transformer that returns the number of arguments.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, Transformer
+        >>> x__ = Expression.var('x__')
+        >>> f = Expression.fun('f')
+        >>> e = f(2,3,4).replace_all(f(x__), x__.transform().nargs())
         >>> print(e)
         """
 
@@ -884,9 +896,9 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_ = Expression.var('x_')
+        >>> x__ = Expression.var('x__')
         >>> f = Expression.fun('f')
-        >>> e = f(3,2,1).replace_all(f(x_), x_.transform().sort())
+        >>> e = f(3,2,1).replace_all(f(x__), x__.transform().sort())
         >>> print(e)
         """
 
@@ -897,9 +909,9 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_ = Expression.var('x_')
+        >>> x__ = Expression.var('x__')
         >>> f = Expression.fun('f')
-        >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().deduplicate())
+        >>> e = f(1,2,1,2).replace_all(f(x__), x__.transform().deduplicate())
         >>> print(e)
 
         Yields `f(1,2)`.
@@ -911,9 +923,9 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x, x_ = Expression.vars('x', 'x_')
+        >>> x, x__ = Expression.vars('x', 'x__')
         >>> f = Expression.fun('f')
-        >>> e = (x + 1).replace_all(x_, f(x_.transform().split()))
+        >>> e = (x + 1).replace_all(x__, f(x_.transform().split()))
         >>> print(e)
         """
 

@@ -1005,6 +1005,22 @@ impl<'a, 'b, P: AtomSet, A: DerefMut<Target = Atom<P>>> std::ops::Neg for AtomBu
     }
 }
 
+
+
+
+impl<'a,'b> std::ops::AddAssign<&'b Expr<'a>> for Expr<'a> {
+    fn add_assign(&mut self, rhs: &Self) {
+        *self = self.clone() + rhs;
+    }
+}
+
+impl<'a,'b> std::ops::SubAssign<&'b Expr<'a>> for Expr<'a>{
+    fn sub_assign(&mut self, rhs: &Self) {
+        *self = self.clone() + &(-rhs.clone());
+    }
+}
+
+
 impl<'a, 'b, P: AtomSet, A: DerefMut<Target = Atom<P>>> AsAtomView<'b, P>
     for &'b AtomBuilder<'a, A, P>
 {

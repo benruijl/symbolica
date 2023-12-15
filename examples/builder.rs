@@ -1,6 +1,6 @@
 use symbolica::{
-    representations::{AsAtomView, Atom, FunctionBuilder, },
-    state::{FunctionAttribute, State, Workspace},
+    representations::{AsAtomView, Atom, FunctionBuilder,  },
+    state::{FunctionAttribute, State, Workspace}, rings::{rational::Rational, },
 };
 
 // fn zeros<'a>(ws:&'a Workspace,state:&'a State) -> Vec<Expr<'a>>{
@@ -27,10 +27,14 @@ fn main() {
     // AtomBuilder, which accumulates the result
     let mut xb = x.builder(&state, &ws);
 
+    // let rugrat=rug::Rational::from_f64(0.49).unwrap();
+    // let natrat = Rational::from_large(rugrat);
+    // ws.new_num(Number::from(natrat));
+
+    // let syrn= symbolica::rings::rational::Rational::from_large(aruN);
+
+
     xb = (-(xb + &y + &x) * &y * &ws.new_num(6)).pow(&ws.new_num(5)) / &y * &fatom;
 
     println!("{}", xb.as_atom_view().printer(&state));
-
-
-    
 }

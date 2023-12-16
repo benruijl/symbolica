@@ -34,7 +34,7 @@ use crate::{
         },
         factor::Factorize,
         polynomial::MultivariatePolynomial,
-        Exponent, Variable, INLINED_EXPONENTS,
+        Variable, INLINED_EXPONENTS,
     },
     printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::{
@@ -3521,19 +3521,6 @@ macro_rules! generate_methods {
             /// >>> for f, exp in p.factor():
             /// >>>     print('\t({})^{}'.format(f, exp))
             pub fn factor(&self) -> PyResult<Vec<(Self, usize)>> {
-                let mut found = false;
-                for v in 0..self.poly.nvars {
-                    if self.poly.degree(v) > <$exp_type as Exponent>::zero() {
-                        if !found {
-                            found = true;
-                        } else {
-                            return Err(exceptions::PyValueError::new_err(format!(
-                                "Polynomial is not univariate.",
-                            )));
-                        }
-                    }
-                }
-
                 self.poly
                     .factor()
                     .map(|f| {

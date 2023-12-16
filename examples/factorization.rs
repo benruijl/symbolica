@@ -18,7 +18,7 @@ fn factor_ff_univariate() {
         .expand(&workspace, &mut state, &mut exp);
 
     let field = FiniteField::<u32>::new(17);
-    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(field, None).unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
 
     let factors = poly.square_free_factorization();
 
@@ -46,7 +46,7 @@ fn factor_ff_bivariate() {
 
     let field = FiniteField::<u32>::new(17);
     let poly: MultivariatePolynomial<FiniteField<u32>, u8> =
-        exp.as_view().to_polynomial(field, Some(&order)).unwrap();
+        exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
 
     println!("Factorization of {}:", poly.printer(&state));
     for (f, pow) in poly.factor().unwrap() {
@@ -64,7 +64,7 @@ fn factor_ff_square_free() {
         .expand(&workspace, &mut state, &mut exp);
 
     let field = FiniteField::<u32>::new(3);
-    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(field, None).unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
 
     let factors = poly.square_free_factorization();
 
@@ -85,7 +85,7 @@ fn factor_square_free() {
 
     let poly: MultivariatePolynomial<_, u8> = exp
         .as_view()
-        .to_polynomial(IntegerRing::new(), None)
+        .to_polynomial(&IntegerRing::new(), None)
         .unwrap();
 
     let factors = poly.square_free_factorization();
@@ -111,7 +111,7 @@ fn factor_univariate_1() {
 
     let poly: MultivariatePolynomial<_, u8> = exp
         .as_view()
-        .to_polynomial(IntegerRing::new(), None)
+        .to_polynomial(&IntegerRing::new(), None)
         .unwrap();
 
     let fs = poly.factor().unwrap();
@@ -137,7 +137,7 @@ fn factor_univariate_2() {
 
     let poly: MultivariatePolynomial<_, u8> = exp
         .as_view()
-        .to_polynomial(IntegerRing::new(), None)
+        .to_polynomial(&IntegerRing::new(), None)
         .unwrap();
 
     let fs = poly.factor().unwrap();
@@ -148,6 +148,32 @@ fn factor_univariate_2() {
     }
 }
 
+fn factor_bivariate() {
+    let mut state = State::new();
+    let workspace: Workspace = Workspace::new();
+    let order = vec![
+        Variable::Identifier(state.get_or_insert_var("x")),
+        Variable::Identifier(state.get_or_insert_var("y")),
+    ];
+
+    let input = "(x^2+y+x+1)(3*x+y^2+4)*(6*x*(y+1)+y+5)*(7*x*y+4)";
+
+    let mut exp = Atom::new();
+    Atom::parse(input, &mut state, &workspace)
+        .unwrap()
+        .as_view()
+        .expand(&workspace, &state, &mut exp);
+
+    let field = IntegerRing::new();
+    let poly: MultivariatePolynomial<_, u8> =
+        exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
+
+    println!("Factorization of {}:", poly.printer(&state));
+    for (f, pow) in poly.factor().unwrap() {
+        println!("\t({})^{}", f.printer(&state), pow);
+    }
+}
+
 fn main() {
     factor_square_free();
     factor_ff_square_free();
@@ -155,4 +181,5 @@ fn main() {
     factor_ff_bivariate();
     factor_univariate_1();
     factor_univariate_2();
+    factor_bivariate();
 }

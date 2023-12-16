@@ -379,7 +379,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// calling `to_rational_polynomial` instead.
     pub fn to_polynomial<R: Ring + ConvertToRing, E: Exponent>(
         &self,
-        field: R,
+        field: &R,
         var_map: Option<&[Variable]>,
     ) -> Result<MultivariatePolynomial<R, E>, &'static str> {
         fn check_factor<P: AtomSet>(
@@ -494,7 +494,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             vars: &[Variable],
             coefficient: &mut R::Element,
             exponents: &mut SmallVec<[E; INLINED_EXPONENTS]>,
-            field: R,
+            field: &R,
         ) {
             match factor {
                 AtomView::Num(n) => {
@@ -540,7 +540,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             term: &AtomView<'_, P>,
             vars: &[Variable],
             poly: &mut MultivariatePolynomial<R, E>,
-            field: R,
+            field: &R,
         ) {
             let mut coefficient = poly.field.one();
             let mut exponents = smallvec![E::zero(); vars.len()];
@@ -557,8 +557,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             poly.append_monomial(coefficient, &exponents);
         }
 
-        let mut poly =
-            MultivariatePolynomial::<R, E>::new(vars.len(), field, Some(n_terms), Some(&vars));
+        let mut poly = MultivariatePolynomial::<R, E>::new(
+            vars.len(),
+            field,
+            Some(n_terms),
+            Some(&vars),
+        );
 
         match self {
             AtomView::Add(a) => {
@@ -581,8 +585,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         &self,
         workspace: &Workspace<P>,
         state: &State,
-        field: R,
-        out_field: RO,
+        field: &R,
+        out_field: &RO,
         var_map: Option<&[Variable]>,
     ) -> Result<RationalPolynomial<RO, E>, Cow<'static, str>>
     where
@@ -674,7 +678,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// all non-polynomial subexpressions. These are stored in `map`.
     pub fn to_polynomial_with_map<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
-        field: R,
+        field: &R,
         map: &mut HashMap<AtomView<'a, P>, Variable>,
     ) -> MultivariatePolynomial<R, E> {
         // see if the current term can be cast into a polynomial using a fast routine
@@ -709,7 +713,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             };
 
                             // generate id^pow
-                            let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
+                            let mut r =
+                                MultivariatePolynomial::new(1, field, None, Some(&[id]));
                             r.append_monomial(field.one(), &[E::from_u32(nn as u32)]);
                             return r;
                         }
@@ -775,8 +780,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         &self,
         workspace: &'b Workspace<P>,
         state: &State,
-        field: R,
-        out_field: RO,
+        field: &R,
+        out_field: &RO,
         map: &mut HashMap<BufferHandle<'b, Atom<P>>, Variable>,
     ) -> RationalPolynomial<RO, E>
     where
@@ -816,7 +821,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 new_id
                             };
 
-                            let mut p = MultivariatePolynomial::new(1, field, None, Some(&[id]));
+                            let mut p =
+                                MultivariatePolynomial::new(1, field, None, Some(&[id]));
                             p.append_monomial(field.one(), &[E::from_u32(nn.abs() as u32)]);
                             let den = p.new_from_constant(field.one());
                             let r = RationalPolynomial::from_num_den(p, den, out_field, false);
@@ -867,7 +873,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             new_id
                         };
 
-                        let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
+                        let mut r =
+                            MultivariatePolynomial::new(1, field, None, Some(&[id]));
                         r.append_monomial(field.one(), &[E::one()]);
                         let den = r.new_from_constant(field.one());
                         RationalPolynomial::from_num_den(r, den, out_field, false)
@@ -1043,7 +1050,7 @@ impl<P: AtomSet> Atom<P> {
 impl Token {
     pub fn to_polynomial<R: Ring + ConvertToRing, E: Exponent>(
         &self,
-        field: R,
+        field: &R,
         var_map: &[Variable],
         var_name_map: &[SmartString<LazyCompact>],
     ) -> Result<MultivariatePolynomial<R, E>, Cow<'static, str>> {
@@ -1052,7 +1059,7 @@ impl Token {
             var_name_map: &[SmartString<LazyCompact>],
             coefficient: &mut R::Element,
             exponents: &mut SmallVec<[E; INLINED_EXPONENTS]>,
-            field: R,
+            field: &R,
         ) -> Result<(), Cow<'static, str>> {
             match factor {
                 Token::Number(n) => {
@@ -1127,7 +1134,7 @@ impl Token {
             term: &Token,
             var_name_map: &[SmartString<LazyCompact>],
             poly: &mut MultivariatePolynomial<R, E>,
-            field: R,
+            field: &R,
         ) -> Result<(), Cow<'static, str>> {
             let mut coefficient = poly.field.one();
             let mut exponents = smallvec![E::zero(); var_name_map.len()];
@@ -1219,8 +1226,8 @@ impl Token {
         &self,
         workspace: &Workspace<P>,
         state: &mut State,
-        field: R,
-        out_field: RO,
+        field: &R,
+        out_field: &RO,
         var_map: &[Variable],
         var_name_map: &[SmartString<LazyCompact>],
     ) -> Result<RationalPolynomial<RO, E>, Cow<'static, str>>

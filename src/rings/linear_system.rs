@@ -182,7 +182,7 @@ impl<F: Field> Matrix<F> {
         }
 
         // Create the augmented matrix.
-        let mut m = Matrix::new(neqs, nvars + 1, self.field);
+        let mut m = Matrix::new(neqs, nvars + 1, self.field.clone());
         for r in 0..neqs {
             for c in 0..nvars {
                 m[(r, c)] = self[(r, c)].clone();

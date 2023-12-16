@@ -21,8 +21,8 @@ fn main() {
         .to_rational_polynomial(
             &workspace,
             &state,
-            RationalField::new(),
-            IntegerRing::new(),
+            &RationalField::new(),
+            &IntegerRing::new(),
             None,
         )
         .unwrap();

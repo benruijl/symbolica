@@ -18,7 +18,7 @@ fn main() {
     let poly: MultivariatePolynomial<_, u8> = Atom::parse(SIGMA, &mut state, &workspace)
         .unwrap()
         .as_view()
-        .to_polynomial(RationalField::new(), None)
+        .to_polynomial(&RationalField::new(), None)
         .unwrap();
 
     let (h, _ops, scheme) = poly.optimize_horner_scheme(4000);

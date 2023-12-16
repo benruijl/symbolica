@@ -39,7 +39,7 @@ pub trait FromNumeratorAndDenominator<R: Ring, OR: Ring, E: Exponent> {
     fn from_num_den(
         num: MultivariatePolynomial<R, E>,
         den: MultivariatePolynomial<R, E>,
-        field: OR,
+        field: &OR,
         do_gcd: bool,
     ) -> RationalPolynomial<OR, E>;
 }
@@ -51,7 +51,7 @@ pub struct RationalPolynomial<R: Ring, E: Exponent> {
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
-    pub fn new(field: R, var_map: Option<&[Variable]>) -> RationalPolynomial<R, E> {
+    pub fn new(field: &R, var_map: Option<&[Variable]>) -> RationalPolynomial<R, E> {
         let num = MultivariatePolynomial::new(
             var_map.map(|x| x.len()).unwrap_or(0),
             field,
@@ -86,7 +86,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     /// Convert the coefficient from the current field to a finite field.
     pub fn to_finite_field<UField: FiniteFieldWorkspace>(
         &self,
-        field: FiniteField<UField>,
+        field: &FiniteField<UField>,
     ) -> RationalPolynomial<FiniteField<UField>, E>
     where
         R::Element: ToFiniteField<UField>,
@@ -109,14 +109,14 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
     fn from_num_den(
         num: MultivariatePolynomial<RationalField, E>,
         den: MultivariatePolynomial<RationalField, E>,
-        field: IntegerRing,
+        field: &IntegerRing,
         do_gcd: bool,
     ) -> RationalPolynomial<IntegerRing, E> {
         let content = num.field.gcd(&num.content(), &den.content());
 
         let mut num_int = MultivariatePolynomial::new(
             num.nvars,
-            IntegerRing::new(),
+            &IntegerRing::new(),
             None,
             num.var_map.as_ref().map(|x| x.as_slice()),
         );
@@ -125,7 +125,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
 
         let mut den_int = MultivariatePolynomial::new(
             den.nvars,
-            IntegerRing::new(),
+            &IntegerRing::new(),
             Some(den.nterms),
             den.var_map.as_ref().map(|x| x.as_slice()),
         );
@@ -170,7 +170,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
     fn from_num_den(
         mut num: MultivariatePolynomial<IntegerRing, E>,
         mut den: MultivariatePolynomial<IntegerRing, E>,
-        _field: IntegerRing,
+        _field: &IntegerRing,
         do_gcd: bool,
     ) -> Self {
         num.unify_var_map(&mut den);
@@ -214,7 +214,7 @@ where
     fn from_num_den(
         mut num: MultivariatePolynomial<FiniteField<UField>, E>,
         mut den: MultivariatePolynomial<FiniteField<UField>, E>,
-        field: FiniteField<UField>,
+        field: &FiniteField<UField>,
         do_gcd: bool,
     ) -> Self {
         num.unify_var_map(&mut den);
@@ -259,8 +259,8 @@ where
             panic!("Cannot invert 0");
         }
 
-        let field = self.numerator.field;
-        Self::from_num_den(self.denominator, self.numerator, field, false)
+        let field = self.numerator.field.clone();
+        Self::from_num_den(self.denominator, self.numerator, &field, false)
     }
 
     pub fn pow(&self, e: u64) -> Self {
@@ -342,7 +342,7 @@ where
                 r.numerator
                     .append_monomial(e.coefficient.clone(), &e_list_coeff);
             } else {
-                let mut r = RationalPolynomial::new(self.numerator.field, Some(var_map));
+                let mut r = RationalPolynomial::new(&self.numerator.field.clone(), Some(var_map));
                 r.numerator
                     .append_monomial(e.coefficient.clone(), &e_list_coeff);
                 hm.insert(e_list.clone(), r);
@@ -351,7 +351,7 @@ where
 
         let mut poly = MultivariatePolynomial::new(
             variables.len(),
-            RationalPolynomialField::new(self.numerator.field),
+            &RationalPolynomialField::new(self.numerator.field.clone()),
             Some(hm.len()),
             Some(variables),
         );
@@ -363,7 +363,7 @@ where
                     self.denominator.field.one(),
                 ),
                 self.denominator.clone(),
-                self.denominator.field,
+                &self.denominator.field,
                 false,
             );
 
@@ -447,22 +447,22 @@ where
 
     fn zero(&self) -> Self::Element {
         RationalPolynomial {
-            numerator: MultivariatePolynomial::new(0, self.ring, None, None),
-            denominator: MultivariatePolynomial::one(self.ring),
+            numerator: MultivariatePolynomial::new(0, &self.ring, None, None),
+            denominator: MultivariatePolynomial::one(&self.ring),
         }
     }
 
     fn one(&self) -> Self::Element {
         RationalPolynomial {
-            numerator: MultivariatePolynomial::one(self.ring),
-            denominator: MultivariatePolynomial::one(self.ring),
+            numerator: MultivariatePolynomial::one(&self.ring),
+            denominator: MultivariatePolynomial::one(&self.ring),
         }
     }
 
     fn nth(&self, n: u64) -> Self::Element {
         RationalPolynomial {
-            numerator: MultivariatePolynomial::one(self.ring).mul_coeff(self.ring.nth(n)),
-            denominator: MultivariatePolynomial::one(self.ring),
+            numerator: MultivariatePolynomial::one(&self.ring).mul_coeff(self.ring.nth(n)),
+            denominator: MultivariatePolynomial::one(&self.ring),
         }
     }
 

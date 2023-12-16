@@ -27,22 +27,22 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         let mut map = HashMap::default();
 
         let mut mat = Vec::with_capacity(system.len() * vars.len());
-        let mut row = vec![RationalPolynomial::<_, E>::new(IntegerRing::new(), None); vars.len()];
-        let mut rhs = vec![RationalPolynomial::<_, E>::new(IntegerRing::new(), None); vars.len()];
+        let mut row = vec![RationalPolynomial::<_, E>::new(&IntegerRing::new(), None); vars.len()];
+        let mut rhs = vec![RationalPolynomial::<_, E>::new(&IntegerRing::new(), None); vars.len()];
 
         for (si, a) in system.iter().enumerate() {
             let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial_with_map(
                 &workspace,
                 &state,
-                RationalField::new(),
-                IntegerRing::new(),
+                &RationalField::new(),
+                &IntegerRing::new(),
                 &mut map,
             );
 
             let poly = rat.to_polynomial(&vars, true).unwrap();
 
             for e in &mut row {
-                *e = RationalPolynomial::<_, E>::new(IntegerRing::new(), None);
+                *e = RationalPolynomial::<_, E>::new(&IntegerRing::new(), None);
             }
 
             // get linear coefficients

@@ -1,5 +1,6 @@
 use ahash::HashMap;
 use rand::{thread_rng, Rng};
+
 use tracing::debug;
 
 use crate::{
@@ -8,6 +9,7 @@ use crate::{
     rings::{
         finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
         integer::{Integer, IntegerRing},
+        integer_mod::IntegerMod,
         rational::RationalField,
         EuclideanDomain, Field, Ring,
     },
@@ -56,8 +58,6 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
     /// The characteristic of the ring must be 0 and all variables
     /// must occur in every factor.
     fn square_free_factorization_0_char(&self) -> Vec<(Self, usize)> {
-        // TODO: assert characteristic
-
         if self.is_constant() {
             if self.is_one() {
                 return vec![];
@@ -133,7 +133,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
         }
 
         if factors.is_empty() {
-            factors.push((Self::one(self.field), 1))
+            factors.push((Self::one(&self.field), 1))
         }
 
         factors
@@ -155,10 +155,20 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
                 }
             }
 
-            if var_count == 0 || var_count == 1 {
-                factors.extend(f.factor_reconstruct().into_iter().map(|ff| (ff, p)));
-            } else {
-                return Err("Cannot factor multivariate polynomial yet");
+            match var_count {
+                0 | 1 => factors.extend(f.factor_reconstruct().into_iter().map(|ff| (ff, p))),
+                2 => {
+                    let mut d_it = degrees.iter().enumerate().filter(|(_, d)| **d > 0);
+                    let main_var = d_it.next().unwrap().0;
+                    let interpolation_var = d_it.next().unwrap().0;
+
+                    factors.extend(
+                        f.bivariate_factor_reconstruct(main_var, interpolation_var)
+                            .into_iter()
+                            .map(|ff| (ff, p)),
+                    )
+                }
+                _ => return Err("Cannot factor multivariate polynomial yet"),
             }
         }
 
@@ -220,14 +230,26 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
                 }
             }
 
-            if var_count == 0 || var_count == 1 {
-                factors.extend(
+            match var_count {
+                0 | 1 => factors.extend(
                     f.factor_reconstruct()
                         .into_iter()
                         .map(|ff| (ff.map_coeff(|coeff| coeff.into(), RationalField::new()), p)),
-                );
-            } else {
-                return Err("Cannot factor multivariate polynomial yet");
+                ),
+                2 => {
+                    let mut d_it = degrees.iter().enumerate().filter(|(_, d)| **d > 0);
+                    let main_var = d_it.next().unwrap().0;
+                    let interpolation_var = d_it.next().unwrap().0;
+
+                    factors.extend(
+                        f.bivariate_factor_reconstruct(main_var, interpolation_var)
+                            .into_iter()
+                            .map(|ff| {
+                                (ff.map_coeff(|coeff| coeff.into(), RationalField::new()), p)
+                            }),
+                    )
+                }
+                _ => return Err("Cannot factor multivariate polynomial yet"),
             }
         }
         if !c.is_one() {
@@ -278,7 +300,7 @@ where
                 }
             }
 
-            if var_count == 1 {
+            if var_count == 0 || var_count == 1 {
                 for (d2, f2) in f.distinct_degree_factorization() {
                     debug!("DDF {} {}", f2, d2);
                     for f3 in f2.equal_degree_factorization(d2) {
@@ -286,11 +308,9 @@ where
                     }
                 }
             } else if var_count == 2 {
-                // TODO: choose the best variable
                 let mut d_it = degrees.iter().enumerate().filter(|(_, d)| **d > 0);
                 let main_var = d_it.next().unwrap().0;
                 let interpolation_var = d_it.next().unwrap().0;
-                println!("{} {} {}", f, main_var, interpolation_var);
                 for f in f.bivariate_factorization(main_var, interpolation_var) {
                     factors.push((f, p));
                 }
@@ -339,7 +359,6 @@ where
         // take the pth root
         // the coefficients remain unchanged, since x^1/p = x
         // since the derivative in every var is 0, all powers are divisible by p
-        // TODO: take p^l th root with max l
         let p = self.field.get_prime().to_u64() as usize;
         let mut b = f.clone();
         for es in b.exponents.chunks_mut(self.nvars) {
@@ -481,7 +500,6 @@ where
             // generate a random non-constant polynomial
             random_poly.clear();
             for i in 0..n {
-                // TODO: generate sparse polynomial?
                 let r = self
                     .field
                     .nth(rng.gen_range(0..self.field.get_prime().to_u64()));
@@ -534,6 +552,8 @@ where
     /// Bernardin's algorithm based on
     /// "A new bivariate Hensel lifting algorithm for n factors"
     /// by Garrett Paluck. The formulation of the algorithm in other sources contain serious errors.
+    // TODO: merge with an almost similar method for the integer case. A modification that needs
+    // to be made here is to make the lcoeff_y=0 monic
     fn bivariate_hensel_lift_bernardin(
         &self,
         interpolation_var: usize,
@@ -653,25 +673,24 @@ where
 
         let mut sample_point = self.field.zero();
         let mut uni_f = self.replace(interpolation_var, &sample_point);
-        let mut rng = thread_rng();
 
+        let mut i = 0;
         loop {
-            // TODO: this loop could last forever if the prime field is too small to have suitable
-            // candidates
             if self.degree(main_var) == uni_f.degree(main_var)
                 && MultivariatePolynomial::gcd(&uni_f, &uni_f.derivative(main_var)).is_constant()
             {
                 break;
             }
 
-            sample_point = self.field.sample(&mut rng, (0, i64::MAX));
+            sample_point = self.field.nth(i);
             uni_f = self.replace(interpolation_var, &sample_point);
+            i += 1;
         }
 
         let mut d = self.degree(interpolation_var).to_u32();
 
         let shifted_poly = if !FiniteField::<UField>::is_zero(&sample_point) {
-            self.shift_var(interpolation_var, &sample_point)
+            self.shift_var_cached(interpolation_var, &sample_point)
         } else {
             self.clone()
         };
@@ -681,18 +700,11 @@ where
         let mut lcoeff = shifted_poly.lcoeff_last_varorder(&[main_var, interpolation_var]);
         let mut lc_d = lcoeff.degree(interpolation_var).to_u32();
 
-        let mut factors = shifted_poly.bivariate_hensel_lift_bernardin(
-            interpolation_var,
-            &lcoeff,
-            &fs,
-            (d + lc_d + 1) as usize,
-        );
+        let iter = (d + lc_d + 1) as usize;
+        let mut factors =
+            shifted_poly.bivariate_hensel_lift_bernardin(interpolation_var, &lcoeff, &fs, iter);
 
         factors.swap_remove(0); // remove the lcoeff
-
-        let mut exp = vec![E::zero(); self.nvars];
-        exp[interpolation_var] = E::from_u32(lc_d as u32) + E::from_u32(d) + E::one();
-        let mut y_mod = self.new_from_monomial(self.field.one(), exp);
 
         let mut rec_factors = vec![];
         // factor recombination
@@ -702,12 +714,14 @@ where
         'len: while 2 * s <= factors.len() {
             let mut fs = CombinationIterator::new(factors.len(), s);
             while let Some(cs) = fs.next() {
-                // TODO: compute the constant term first
+                // TODO: multiply in the leading coefficient here,
+                // then we can skip the Pade approximation and reduce the
+                // number of iterations in the Hensel lifting to d + 1, like in the integer case?
                 let mut g = MultivariatePolynomial::new_from_constant(&rest, rest.lcoeff());
                 for i in 0..factors.len() {
                     if cs.contains(&i) {
-                        g = &g * &factors[i];
-                        g = g.quot_rem_univariate(&mut y_mod).1;
+                        g = (&g * &factors[i])
+                            .mod_var(interpolation_var, E::from_u32(iter as u32 + 1));
                     }
                 }
 
@@ -718,8 +732,9 @@ where
                     .collect();
 
                 let mut g_lcoeff = Self::lcoeff_reconstruct(&y_polys, d as u32, lc_d as u32);
-                g = &g * &g_lcoeff;
-                g = g.quot_rem_univariate(&mut y_mod).1.make_monic();
+                g = (&g * &g_lcoeff)
+                    .mod_var(interpolation_var, E::from_u32(d as u32 + 1))
+                    .make_monic();
 
                 let (h, r) = rest.quot_rem(&g, true);
 
@@ -747,7 +762,7 @@ where
         if !FiniteField::<UField>::is_zero(&sample_point) {
             for x in &mut rec_factors {
                 // shift the polynomial to y - sample
-                *x = x.shift_var(interpolation_var, &self.field.neg(&sample_point));
+                *x = x.shift_var_cached(interpolation_var, &self.field.neg(&sample_point));
             }
         }
 
@@ -766,53 +781,6 @@ where
             }
         }
         lcoeff
-    }
-
-    /// Shift a variable `var` to `var+shift`.
-    fn shift_var(&self, var: usize, shift: &<FiniteField<UField> as Ring>::Element) -> Self {
-        let d = self.degree(var).to_u32() as usize;
-        assert!(self.field.get_prime().to_u64() as usize > d); // TODO: add fallback
-
-        let y_poly = self.to_univariate_polynomial_list(var);
-        let mut sample_powers = Vec::with_capacity(d + 1);
-        let mut accum = self.field.one();
-
-        sample_powers.push(self.field.one());
-        let d = d as usize;
-        for _ in 0..d {
-            self.field.mul_assign(&mut accum, shift);
-            sample_powers.push(accum.clone());
-        }
-        let mut v = vec![self.new_from(None); d + 1];
-        for (x_poly, p) in y_poly {
-            let i = p.to_u32() as usize;
-            v[i] = x_poly.mul_coeff(sample_powers[i].clone());
-        }
-
-        for k in 0..d {
-            for j in (k..d).rev() {
-                v[j] = &v[j] + &v[j + 1];
-            }
-        }
-
-        let mut poly = self.new_from(None);
-        let mut accum_inv = self.field.one();
-        let sample_point_inv = self.field.inv(&shift);
-        for (i, mut v) in v.into_iter().enumerate() {
-            v = v.mul_coeff(accum_inv.clone());
-
-            for x in v.exponents.chunks_mut(self.nvars) {
-                x[var] = E::from_u32(i as u32);
-            }
-
-            for m in &v {
-                poly.append_monomial(m.coefficient.clone(), m.exponents);
-            }
-
-            self.field.mul_assign(&mut accum_inv, &sample_point_inv);
-        }
-
-        poly
     }
 }
 
@@ -947,7 +915,6 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             h = h * x;
         }
 
-        // TODO: simplify the polynomial when a true factor is found
         let (g_i, h_i) = self.hensel_lift(g, h, None, max_p).unwrap_or_else(|e| e);
         debug!("g_i={}", g_i);
         debug!("h_i={}", h_i);
@@ -957,8 +924,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         factors
     }
 
-    /// Factor a square-free univariate polynomial over the integers by Hensel lifting factors computed over the
-    /// a finite field image of the polynomial .
+    /// Factor a square-free univariate polynomial over the integers by Hensel lifting factors computed over
+    /// a finite field image of the polynomial.
     fn factor_reconstruct(&self) -> Vec<Self> {
         let Some(var) = self.last_exponents().iter().position(|x| *x > E::zero()) else {
             return vec![self.clone()]; // constant polynomial
@@ -1017,7 +984,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         #[cfg(debug_assertions)]
         for (h, h_p) in factors.iter().zip(&hs) {
-            let hh_p = h.to_finite_field(field);
+            let hh_p = h.to_finite_field(&field).make_monic();
             if &hh_p != h_p {
                 panic!("Mismatch of lifted factor: {} vs {} in {}", hh_p, h_p, self);
             }
@@ -1086,5 +1053,380 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         rec_factors.push(rest);
         rec_factors
+    }
+
+    /// Lift a solution of `poly ≡ lcoeff * univariate_factors mod y mod p^k`
+    /// to `mod y^iterations mod p^k`.
+    ///
+    /// Univariate factors must be monic and `lcoeff_y=0` should be as well.
+    fn bivariate_hensel_lift_bernardin(
+        poly: &MultivariatePolynomial<IntegerMod, E, LexOrder>,
+        interpolation_var: usize,
+        lcoeff: &MultivariatePolynomial<IntegerMod, E, LexOrder>,
+        univariate_factors: &[MultivariatePolynomial<IntegerMod, E, LexOrder>],
+        iterations: usize,
+        p: u32,
+        k: usize,
+    ) -> Vec<MultivariatePolynomial<IntegerMod, E, LexOrder>> {
+        let finite_field = FiniteField::<u32>::new(p);
+
+        // add the leading coefficient as a first factor
+        let mut factors = vec![lcoeff.replace(interpolation_var, &poly.field.zero())];
+
+        for f in univariate_factors {
+            factors.push(f.clone());
+        }
+
+        let delta = Self::lift_diophantine_univariate(
+            &mut factors,
+            &poly.new_from_constant(poly.field.one()),
+            finite_field.get_prime(),
+            k,
+        );
+
+        let y_poly = poly.to_univariate_polynomial_list(interpolation_var);
+
+        // extract coefficients in y
+        let mut u: Vec<_> = factors
+            .iter()
+            .map(|f| {
+                let mut dense = vec![poly.new_from(None); iterations + 1];
+                dense[0] = f.clone();
+                dense
+            })
+            .collect();
+
+        // update the first polynomial as it may contain y, since it's lcoeff
+        let y_lcoeff = lcoeff.to_univariate_polynomial_list(interpolation_var);
+        for (p, e) in y_lcoeff {
+            u[0][e.to_u32() as usize] = p;
+        }
+
+        let mut p = u.clone();
+        let mut cur_p = p[0][0].clone();
+        for x in &mut p.iter_mut().skip(1) {
+            cur_p = cur_p * &x[0];
+            x[0] = cur_p.clone();
+        }
+
+        for k in 1..iterations {
+            // extract the coefficient required to compute the error in y^k
+            // computed using a convolution
+            p[0][k] = u[0][k].clone();
+            for i in 1..factors.len() {
+                for j in 0..k {
+                    p[i][k] = &p[i][k] + &(&p[i - 1][k - j] * &u[i][j]);
+                }
+            }
+
+            // find the kth power of y in f
+            // since we compute the error per power of y, we cannot stop on a 0 error
+            let e = if let Some((v, _)) = y_poly.iter().find(|e| e.1.to_u32() as usize == k) {
+                v - &p.last().unwrap()[k]
+            } else {
+                -p.last().unwrap()[k].clone()
+            };
+
+            if e.is_zero() {
+                continue;
+            }
+
+            for ((dp, f), d) in u.iter_mut().zip(factors.iter()).zip(&delta) {
+                dp[k] = &dp[k] + &(d * &e).quot_rem_univariate_monic(f).1;
+            }
+
+            for fs in u.iter() {
+                let mut poly = fs[0].clone();
+                for (p, ff) in fs[1..].iter().enumerate() {
+                    let mut a = ff.clone();
+                    for e in a.exponents.chunks_mut(poly.nvars) {
+                        e[interpolation_var] = E::from_u32((p + 1) as u32);
+                    }
+                    poly = &poly + &a;
+                }
+            }
+
+            // update the coefficients with the new y^k contributions
+            // note that the lcoeff[k] contribution is not new
+            let mut t = poly.new_from(None);
+            for i in 1..factors.len() {
+                t = &u[i][0] * &t + &u[i][k] * &p[i - 1][0];
+                p[i][k] = &p[i][k] + &t;
+            }
+        }
+
+        // convert dense polynomials to multivariate polynomials
+        u.into_iter()
+            .map(|ts| {
+                let mut new_poly = poly.new_from(Some(ts.len()));
+                for (i, mut f) in ts.into_iter().enumerate() {
+                    for x in f.exponents.chunks_mut(f.nvars) {
+                        x[interpolation_var] = E::from_u32(i as u32);
+                    }
+                    new_poly = new_poly + f;
+                }
+
+                new_poly
+            })
+            .collect()
+    }
+
+    /// Factor a square-free bivariate polynomial over the integers.
+    fn bivariate_factor_reconstruct(&self, main_var: usize, interpolation_var: usize) -> Vec<Self> {
+        let d1 = self.degree(main_var).to_u32();
+        let d2 = self.degree(interpolation_var).to_u32();
+
+        // select a suitable evaluation point, as small as possible as to not change the coefficient bound
+        let mut sample_point;
+        let mut uni_f;
+        let mut i = 0u64;
+        loop {
+            sample_point = i.into();
+            uni_f = self.replace(interpolation_var, &sample_point);
+
+            if self.degree(main_var) == uni_f.degree(main_var)
+                && MultivariatePolynomial::gcd(&uni_f, &uni_f.derivative(main_var)).is_constant()
+            {
+                break;
+            }
+
+            i += 1;
+        }
+
+        // factor the univariate polynomial
+        let mut uni_fs: Vec<_> = uni_f
+            .factor()
+            .unwrap()
+            .into_iter()
+            .map(|(f, p)| {
+                debug_assert_eq!(p, 1);
+                f
+            })
+            .collect();
+
+        // strip potential content
+        uni_fs.retain_mut(|f| !f.is_constant());
+
+        // select a suitable prime
+        let mut field;
+        let mut i = 0;
+        'new_prime: loop {
+            i += 1;
+            if i == LARGE_U32_PRIMES.len() {
+                panic!("Ran out of primes during factorization");
+            }
+
+            let p = LARGE_U32_PRIMES[i];
+
+            if (&uni_f.lcoeff() % &Integer::Natural(p as i64)).is_zero() {
+                continue;
+            }
+
+            field = FiniteField::<u32>::new(p);
+
+            // make sure the factors stay coprime
+            let fs_p: Vec<_> = uni_fs.iter().map(|f| f.to_finite_field(&field)).collect();
+
+            for (j, f) in fs_p.iter().enumerate() {
+                for g in &fs_p[j + 1..] {
+                    if !MultivariatePolynomial::gcd(f, g).is_one() {
+                        continue 'new_prime;
+                    }
+                }
+            }
+
+            break;
+        }
+
+        let shifted_poly = if !sample_point.is_zero() {
+            self.shift_var(interpolation_var, &sample_point)
+        } else {
+            self.clone()
+        };
+
+        let max_norm = shifted_poly
+            .coefficients
+            .iter()
+            .map(|x| x.abs())
+            .max()
+            .unwrap();
+
+        let bound: Integer = &Integer::from_f64(
+            ((d1 + 1) as f64 * (d2 + 1) as f64 * 2f64.powi(2 * (d1 as i32 + d2 as i32 - 1))).sqrt(),
+        ) * &(&max_norm * &self.lcoeff()); // NOTE: precision may be off
+
+        let p = Integer::from(field.get_prime().to_u64());
+        let mut max_p = p.clone();
+        let mut k = 1;
+        while &max_p * 2 < bound {
+            max_p = &max_p * &p;
+            k += 1;
+        }
+
+        let mod_field = IntegerMod::new(max_p.clone());
+
+        // make all factors monic, this is possible since the lcoeff is invertible mod p^k
+        let uni_fs_mod: Vec<_> = uni_fs
+            .iter()
+            .map(|f| {
+                let f1 = f.map_coeff(|c| mod_field.to_element(c), mod_field.clone());
+                let inv_coeff = mod_field.inv(f1.lcoeff().clone());
+                f1.mul_coeff(inv_coeff)
+            })
+            .collect();
+
+        let mut f_mod = shifted_poly.map_coeff(|c| c.symmetric_mod(&max_p), mod_field.clone());
+
+        // make sure the lcoeff is monic at y=0
+        let inv_coeff = mod_field.inv(uni_f.lcoeff().clone());
+        let f_mod_monic = f_mod.clone().mul_coeff(inv_coeff);
+        let lcoeff_monic = f_mod_monic.lcoeff_last_varorder(&[main_var, interpolation_var]);
+
+        let mut factors = Self::bivariate_hensel_lift_bernardin(
+            &f_mod_monic,
+            interpolation_var,
+            &lcoeff_monic,
+            &uni_fs_mod,
+            (d2 + 1) as usize,
+            field.get_prime(),
+            k,
+        );
+
+        factors.swap_remove(0); // remove the lcoeff
+
+        let mut rec_factors = vec![];
+        // factor recombination
+        let mut s = 1;
+
+        let mut lcoeff = f_mod.lcoeff_last_varorder(&[main_var, interpolation_var]);
+        let mut rest = shifted_poly;
+        'len: while 2 * s <= factors.len() {
+            let mut fs = CombinationIterator::new(factors.len(), s);
+            while let Some(cs) = fs.next() {
+                let mut g = lcoeff.clone();
+                for i in 0..factors.len() {
+                    if cs.contains(&i) {
+                        g = (&g * &factors[i]).mod_var(interpolation_var, E::from_u32(d2 + 1));
+                    }
+                }
+
+                // convert to integer
+                let mut g_int = g.map_coeff(|c| c.clone(), IntegerRing::new());
+
+                let content = g_int.univariate_content(main_var);
+                g_int = &g_int / &content;
+
+                let (h, r) = rest.quot_rem(&g_int, true);
+
+                if r.is_zero() {
+                    rec_factors.push(g_int);
+
+                    for i in cs.iter().rev() {
+                        factors.remove(*i);
+                    }
+
+                    rest = h;
+                    f_mod = rest.map_coeff(|c| c.symmetric_mod(&max_p), mod_field.clone());
+                    lcoeff = f_mod.lcoeff_last_varorder(&[main_var, interpolation_var]);
+
+                    continue 'len;
+                }
+            }
+
+            s += 1;
+        }
+
+        rec_factors.push(rest);
+
+        if !sample_point.is_zero() {
+            for x in &mut rec_factors {
+                // shift the polynomial to y - sample
+                *x = x.shift_var(interpolation_var, &self.field.neg(&sample_point));
+            }
+        }
+
+        rec_factors
+    }
+
+    /// Solve a Diophantine equation over the ring `Z_p^k` using Newton iteration.
+    /// All factors must be monic.
+    fn lift_diophantine_univariate(
+        factors: &mut [MultivariatePolynomial<IntegerMod, E, LexOrder>],
+        rhs: &MultivariatePolynomial<IntegerMod, E, LexOrder>,
+        p: u32,
+        k: usize,
+    ) -> Vec<MultivariatePolynomial<IntegerMod, E, LexOrder>> {
+        let field = FiniteField::<u32>::new(p);
+        let prime: Integer = (p as u64).into();
+
+        let mut f_p: Vec<_> = factors
+            .iter()
+            .map(|f| f.map_coeff(|c| c.to_finite_field(&field), field))
+            .collect();
+        let rhs_p = rhs.map_coeff(|c| c.to_finite_field(&field), field);
+
+        // TODO: recycle from finite field computation that must have happened earlier
+        let mut delta =
+            MultivariatePolynomial::<FiniteField<u32>, E, LexOrder>::diophantine_univariate(
+                &mut f_p, &rhs_p,
+            );
+
+        let sym_map_p = |e: &<FiniteField<u32> as Ring>::Element| {
+            let i = field.from_element(e.clone()).to_u64().into();
+
+            if &i * &2u64.into() > prime {
+                &i - &prime
+            } else {
+                i
+            }
+        };
+
+        let mut deltas: Vec<_> = delta
+            .iter()
+            .map(|s| {
+                s.map_coeff(sym_map_p, IntegerRing::new())
+                    .map_coeff(|c| rhs.field.to_element(c), rhs.field.clone())
+            })
+            .collect();
+
+        if k == 1 {
+            return deltas;
+        }
+
+        let mut tot = rhs.new_from_constant(rhs.field.one());
+        for f in factors.iter() {
+            tot = &tot * f;
+        }
+
+        let pi = factors
+            .iter()
+            .map(|f| tot.quot_rem_univariate_monic(f).0)
+            .collect::<Vec<_>>();
+
+        let mut m = prime.clone();
+
+        for _ in 1..k {
+            // TODO: is breaking on e=0 safe?
+            let mut e = rhs.clone();
+            for (dd, pp) in deltas.iter_mut().zip(&pi) {
+                e = &e - &(&*dd * pp);
+            }
+
+            let e_m = e.map_coeff(|c| (c / &m).to_finite_field(&field), field);
+
+            for ((p, d_m), d) in f_p.iter_mut().zip(&mut delta).zip(deltas.iter_mut()) {
+                let new_delta = (&e_m * &*d_m).quot_rem_univariate(p).1;
+
+                *d = &*d
+                    + &new_delta
+                        .map_coeff(sym_map_p, IntegerRing::new())
+                        .mul_coeff(m.clone())
+                        .map_coeff(|c| rhs.field.to_element(c), rhs.field.clone());
+            }
+
+            m = &m * &prime;
+        }
+
+        deltas
     }
 }

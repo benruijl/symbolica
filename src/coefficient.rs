@@ -92,7 +92,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     // change variable into coefficient
                     let mut poly = MultivariatePolynomial::new(
                         vars.len(),
-                        IntegerRing::new(),
+                        &IntegerRing::new(),
                         None,
                         Some(vars),
                     );

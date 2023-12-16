@@ -1,6 +1,7 @@
 pub mod finite_field;
 pub mod float;
 pub mod integer;
+pub mod integer_mod;
 pub mod linear_system;
 pub mod rational;
 pub mod rational_polynomial;
@@ -9,7 +10,7 @@ use std::fmt::{Debug, Display, Error, Formatter};
 
 use crate::state::State;
 
-pub trait Ring: Clone + Copy + PartialEq + Debug + Display {
+pub trait Ring: Clone + PartialEq + Debug + Display {
     type Element: Clone + PartialEq + Debug;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;

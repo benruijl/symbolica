@@ -28,7 +28,7 @@ fn main() {
             let mut res = workspace.new_atom();
             a.as_view().expand(&workspace, &state, &mut res);
             res.as_view()
-                .to_polynomial(FiniteField::<u32>::new(13), None)
+                .to_polynomial(&FiniteField::<u32>::new(13), None)
                 .unwrap()
         })
         .collect();

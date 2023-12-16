@@ -16,7 +16,7 @@ fn main() {
     let poly: MultivariatePolynomial<_, u8> = Atom::parse(SIGMA, &mut state, &workspace)
         .unwrap()
         .as_view()
-        .to_polynomial(RationalField::new(), None)
+        .to_polynomial(&RationalField::new(), None)
         .unwrap();
 
     // optimize SIGMA and SIGMA + 5 at the same time

@@ -66,8 +66,8 @@ fn main() {
             .to_rational_polynomial(
                 &workspace,
                 &mut state,
-                RationalField::new(),
-                IntegerRing::new(),
+                &RationalField::new(),
+                &IntegerRing::new(),
                 &vars,
                 &var_names,
             )

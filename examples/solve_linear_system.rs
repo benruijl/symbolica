@@ -59,8 +59,8 @@ fn solve_from_matrix() {
                 .to_rational_polynomial(
                     &workspace,
                     &state,
-                    RationalField::new(),
-                    IntegerRing::new(),
+                    &RationalField::new(),
+                    &IntegerRing::new(),
                     Some(&var_map),
                 )
                 .unwrap()
@@ -78,8 +78,8 @@ fn solve_from_matrix() {
                 .to_rational_polynomial(
                     &workspace,
                     &state,
-                    RationalField::new(),
-                    IntegerRing::new(),
+                    &RationalField::new(),
+                    &IntegerRing::new(),
                     Some(&var_map),
                 )
                 .unwrap()

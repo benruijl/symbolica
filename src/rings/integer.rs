@@ -175,6 +175,10 @@ impl Integer {
         }
     }
 
+    pub fn from_f64(f: f64) -> Integer {
+        Self::from_large(ArbitraryPrecisionInteger::from_f64(f).unwrap())
+    }
+
     pub fn to_rational(&self) -> Rational {
         match self {
             Integer::Natural(n) => Rational::Natural(*n, 1),

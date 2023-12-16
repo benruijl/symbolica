@@ -2469,7 +2469,7 @@ impl PythonExpression {
         self.expr
             .as_view()
             .to_polynomial(
-                RationalField::new(),
+                &RationalField::new(),
                 if var_map.is_empty() {
                     None
                 } else {
@@ -2493,7 +2493,7 @@ impl PythonExpression {
             poly: Arc::new(
                 self.expr
                     .as_view()
-                    .to_polynomial_with_map(RationalField::new(), &mut map),
+                    .to_polynomial_with_map(&RationalField::new(), &mut map),
             ),
         };
 
@@ -2552,8 +2552,8 @@ impl PythonExpression {
                 .to_rational_polynomial(
                     workspace,
                     &&get_state!()?,
-                    RationalField::new(),
-                    IntegerRing::new(),
+                    &RationalField::new(),
+                    &IntegerRing::new(),
                     if var_map.is_empty() {
                         None
                     } else {
@@ -2597,8 +2597,8 @@ impl PythonExpression {
                 .to_rational_polynomial(
                     workspace,
                     &&get_state!()?,
-                    RationalField::new(),
-                    IntegerRing::new(),
+                    &RationalField::new(),
+                    &IntegerRing::new(),
                     if var_map.is_empty() {
                         None
                     } else {
@@ -3163,7 +3163,7 @@ impl PythonPolynomial {
 
         let e = Token::parse(arg)
             .map_err(exceptions::PyValueError::new_err)?
-            .to_polynomial(RationalField::new(), &var_map, &var_name_map)
+            .to_polynomial(&RationalField::new(), &var_map, &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
         Ok(Self { poly: Arc::new(e) })
@@ -3173,7 +3173,7 @@ impl PythonPolynomial {
     pub fn to_integer_polynomial(&self) -> PyResult<PythonIntegerPolynomial> {
         let mut poly_int = MultivariatePolynomial::new(
             self.poly.nvars,
-            IntegerRing::new(),
+            &IntegerRing::new(),
             Some(self.poly.nterms),
             self.poly.var_map.as_ref().map(|x| x.as_slice()),
         );
@@ -3210,7 +3210,7 @@ impl PythonPolynomial {
     /// Convert the coefficients of the polynomial to a finite field with prime `prime`.
     pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldPolynomial {
         PythonFiniteFieldPolynomial {
-            poly: Arc::new(self.poly.to_finite_field(FiniteField::<u32>::new(prime))),
+            poly: Arc::new(self.poly.to_finite_field(&FiniteField::<u32>::new(prime))),
         }
     }
 
@@ -3316,7 +3316,7 @@ impl PythonIntegerPolynomial {
 
         let e = Token::parse(arg)
             .map_err(exceptions::PyValueError::new_err)?
-            .to_polynomial(IntegerRing::new(), &var_map, &var_name_map)
+            .to_polynomial(&IntegerRing::new(), &var_map, &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
         Ok(Self { poly: Arc::new(e) })
@@ -3567,7 +3567,7 @@ impl PythonRationalPolynomial {
             poly: Arc::new(RationalPolynomial::from_num_den(
                 (*num.poly).clone(),
                 (*den.poly).clone(),
-                IntegerRing::new(),
+                &IntegerRing::new(),
                 true,
             )),
         }
@@ -3576,7 +3576,7 @@ impl PythonRationalPolynomial {
     /// Convert the coefficients to finite fields with prime `prime`.
     pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldRationalPolynomial {
         PythonFiniteFieldRationalPolynomial {
-            poly: Arc::new(self.poly.to_finite_field(FiniteField::<u32>::new(prime))),
+            poly: Arc::new(self.poly.to_finite_field(&FiniteField::<u32>::new(prime))),
         }
     }
 
@@ -3639,8 +3639,8 @@ macro_rules! generate_rat_parse {
                         .to_rational_polynomial(
                             workspace,
                             &mut state,
-                            RationalField::new(),
-                            IntegerRing::new(),
+                            &RationalField::new(),
+                            &IntegerRing::new(),
                             &var_map,
                             &var_name_map,
                         )
@@ -3699,8 +3699,8 @@ impl PythonFiniteFieldRationalPolynomial {
                 .to_rational_polynomial(
                     workspace,
                     &mut state,
-                    field,
-                    field,
+                    &field,
+                    &field,
                     &var_map,
                     &var_name_map,
                 )

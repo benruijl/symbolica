@@ -745,7 +745,7 @@ impl Token {
         mut input: &'a [u8],
         var_map: &[Variable],
         var_name_map: &[SmartString<LazyCompact>],
-        field: R,
+        field: &R,
     ) -> (&'a [u8], MultivariatePolynomial<R, E>) {
         let mut exponents = vec![E::zero(); var_name_map.len()];
         let mut poly = MultivariatePolynomial::new(var_name_map.len(), field, None, Some(var_map));

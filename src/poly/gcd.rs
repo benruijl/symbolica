@@ -247,7 +247,7 @@ where
     FiniteField<UField>: FiniteFieldCore<UField>,
     <FiniteField<UField> as Ring>::Element: Copy,
 {
-    let mut gp = MultivariatePolynomial::new(a.nvars, a.field, None, None);
+    let mut gp = MultivariatePolynomial::new(a.nvars, &a.field, None, None);
 
     // solve the transposed Vandermonde system
     for (((c, ex), sample), rhs) in shape.iter().zip(&row_sample_values).zip(&samples) {
@@ -451,13 +451,13 @@ where
 
         let mut a_poly = MultivariatePolynomial::new(
             a.nvars,
-            a.field,
+            &a.field,
             Some(a.degree(main_var).to_u32() as usize + 1),
             None,
         );
         let mut b_poly = MultivariatePolynomial::new(
             b.nvars,
-            b.field,
+            &b.field,
             Some(b.degree(main_var).to_u32() as usize + 1),
             None,
         );
@@ -705,13 +705,13 @@ where
 
         let mut a_poly = MultivariatePolynomial::new(
             a.nvars,
-            a.field,
+            &a.field,
             Some(a.degree(main_var).to_u32() as usize + 1),
             None,
         );
         let mut b_poly = MultivariatePolynomial::new(
             b.nvars,
-            b.field,
+            &b.field,
             Some(b.degree(main_var).to_u32() as usize + 1),
             None,
         );
@@ -1067,7 +1067,7 @@ where
                 .or_insert(c);
         }
 
-        let mut res = MultivariatePolynomial::new(self.nvars, self.field, None, None);
+        let mut res = MultivariatePolynomial::new(self.nvars, &self.field, None, None);
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm.drain() {
             if !FiniteField::<UField>::is_zero(&c) {
@@ -1112,7 +1112,7 @@ where
         }
 
         // TODO: add bounds estimate
-        let mut res = MultivariatePolynomial::new(self.nvars, self.field, None, None);
+        let mut res = MultivariatePolynomial::new(self.nvars, &self.field, None, None);
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm.iter_mut().enumerate() {
             if !FiniteField::<UField>::is_zero(c) {
@@ -1758,7 +1758,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 a.into_owned(),
                 &shared_degree,
                 &base_degree,
-                &MultivariatePolynomial::one(b.field),
+                &MultivariatePolynomial::one(&b.field),
             );
         }
 
@@ -1787,7 +1787,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 PolynomialGCD::gcd_multiple(f),
                 &shared_degree,
                 &base_degree,
-                &MultivariatePolynomial::one(a.field),
+                &MultivariatePolynomial::one(&a.field),
             );
         }
 
@@ -1797,7 +1797,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 b.into_owned(),
                 &shared_degree,
                 &base_degree,
-                &MultivariatePolynomial::one(a.field),
+                &MultivariatePolynomial::one(&a.field),
             );
         }
         if a.nterms <= b.nterms && b.divides(&a).is_some() {
@@ -1805,7 +1805,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 a.into_owned(),
                 &shared_degree,
                 &base_degree,
-                &MultivariatePolynomial::one(b.field),
+                &MultivariatePolynomial::one(&b.field),
             );
         }
 
@@ -2265,8 +2265,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 continue 'newfirstprime;
             }
 
-            let ap = a.to_finite_field(finite_field);
-            let bp = b.to_finite_field(finite_field);
+            let ap = a.to_finite_field(&finite_field);
+            let bp = b.to_finite_field(&finite_field);
 
             debug!("New first image: gcd({},{}) mod {}", ap, bp, p);
 
@@ -2377,8 +2377,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                     }
                 }
 
-                let ap = a.to_finite_field(finite_field);
-                let bp = b.to_finite_field(finite_field);
+                let ap = a.to_finite_field(&finite_field);
+                let bp = b.to_finite_field(&finite_field);
                 debug!("New image: gcd({},{})", ap, bp);
 
                 // for the univariate case, we don't need to construct an image
@@ -2587,8 +2587,8 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
         let mut i = 0;
         loop {
-            let ap = a.to_finite_field(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
-            let bp = b.to_finite_field(FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
+            let ap = a.to_finite_field(&FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
+            let bp = b.to_finite_field(&FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
             if ap.nterms > 0
                 && bp.nterms > 0
                 && ap.last_exponents() == a.last_exponents()
@@ -2643,7 +2643,7 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
 
         let mut a_int = MultivariatePolynomial::new(
             a.nvars,
-            IntegerRing::new(),
+            &IntegerRing::new(),
             Some(a.nterms),
             a.var_map.as_ref().map(|x| x.as_slice()),
         );
@@ -2656,7 +2656,7 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
 
         let mut b_int = MultivariatePolynomial::new(
             b.nvars,
-            IntegerRing::new(),
+            &IntegerRing::new(),
             Some(b.nterms),
             b.var_map.as_ref().map(|x| x.as_slice()),
         );
@@ -2692,8 +2692,8 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         let mut i = 0;
         loop {
             let f = FiniteField::<u32>::new(LARGE_U32_PRIMES[i]);
-            let ap = a.to_finite_field(f);
-            let bp = b.to_finite_field(f);
+            let ap = a.to_finite_field(&f);
+            let bp = b.to_finite_field(&f);
             if ap.nterms > 0
                 && bp.nterms > 0
                 && ap.last_exponents() == a.last_exponents()

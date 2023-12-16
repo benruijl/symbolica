@@ -161,8 +161,8 @@ unsafe extern "C" fn simplify(
                     .to_rational_polynomial(
                         &symbolica.workspace,
                         &mut symbolica.state,
-                        <$in_field>::new(),
-                        IntegerRing::new(),
+                        &<$in_field>::new(),
+                        &IntegerRing::new(),
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
                     )
@@ -186,8 +186,8 @@ unsafe extern "C" fn simplify(
                     .to_rational_polynomial(
                         &symbolica.workspace,
                         &mut symbolica.state,
-                        field,
-                        field,
+                        &field,
+                        &field,
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
                     )
@@ -211,8 +211,8 @@ unsafe extern "C" fn simplify(
                     .to_rational_polynomial(
                         &symbolica.workspace,
                         &mut symbolica.state,
-                        field,
-                        field,
+                        &field,
+                        &field,
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
                     )
@@ -236,8 +236,8 @@ unsafe extern "C" fn simplify(
                     .to_rational_polynomial(
                         &symbolica.workspace,
                         &mut symbolica.state,
-                        field,
-                        field,
+                        &field,
+                        &field,
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
                     )

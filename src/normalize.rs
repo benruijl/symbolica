@@ -8,7 +8,7 @@ use crate::{
         Add, Atom, AtomSet, AtomView, Fun, ListSlice, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
         OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
-    state::{BufferHandle, FunctionAttribute::Symmetric, State, Workspace, ARG},
+    state::{BufferHandle, FunctionAttribute::Symmetric, State, Workspace},
 };
 
 impl<'a, P: AtomSet> AtomView<'a, P> {
@@ -628,7 +628,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             atom_test_buf.push(handle);
                         }
                     } else {
-                        if let AtomView::Num(n) = handle.get().as_view() {
+                        if let AtomView::Num(n) = handle.as_view() {
                             if n.is_one() {
                                 continue;
                             }
@@ -644,7 +644,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
 
-                atom_test_buf.sort_by(|a, b| a.get().as_view().cmp_factors(&b.get().as_view()));
+                atom_test_buf.sort_by(|a, b| a.as_view().cmp_factors(&b.as_view()));
 
                 if !atom_test_buf.is_empty() {
                     let out_mul = out.to_mul();
@@ -719,7 +719,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 #[inline(always)]
                 fn add_arg<P: AtomSet>(f: &mut P::OF, a: AtomView<P>) {
                     if let AtomView::Fun(fa) = a {
-                        if fa.get_name() == ARG {
+                        if fa.get_name() == State::ARG {
                             // flatten f(arg(...)) = f(...)
                             for aa in fa.iter() {
                                 f.add_arg(aa);
@@ -751,7 +751,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         arg_buf.push(handle);
                     }
 
-                    arg_buf.sort_by(|a, b| a.get().as_view().cmp(&b.get().as_view()));
+                    arg_buf.sort_by(|a, b| a.as_view().cmp(&b.as_view()));
 
                     let out_f = out.to_fun();
                     out_f.set_from_name(name);
@@ -767,21 +767,21 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let mut exp_handle = workspace.new_atom();
 
                 if base.is_dirty() {
-                    base.normalize(workspace, state, base_handle.get_mut());
+                    base.normalize(workspace, state, &mut base_handle);
                 } else {
                     // TODO: prevent copy
                     base_handle.get_mut().set_from_view(&base);
                 };
 
                 if exp.is_dirty() {
-                    exp.normalize(workspace, state, exp_handle.get_mut());
+                    exp.normalize(workspace, state, &mut exp_handle);
                 } else {
                     // TODO: prevent copy
                     exp_handle.get_mut().set_from_view(&exp);
                 };
 
                 'pow_simplify: {
-                    if let AtomView::Num(e) = exp_handle.get().as_view() {
+                    if let AtomView::Num(e) = exp_handle.as_view() {
                         if let BorrowedNumber::Natural(0, 1) = &e.get_number_view() {
                             // x^0 = 1
                             let n = out.to_num();
@@ -789,9 +789,9 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             break 'pow_simplify;
                         } else if let BorrowedNumber::Natural(1, 1) = &e.get_number_view() {
                             // remove power of 1
-                            out.set_from_view(&base_handle.get().as_view());
+                            out.set_from_view(&base_handle.as_view());
                             break 'pow_simplify;
-                        } else if let AtomView::Num(n) = base_handle.get().as_view() {
+                        } else if let AtomView::Num(n) = base_handle.as_view() {
                             // simplify a number to a numerical power
                             let (new_base_num, new_exp_num) =
                                 n.get_number_view().pow(&e.get_number_view(), state);
@@ -807,7 +807,48 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                             let ne = exp_handle.get_mut().to_num();
                             ne.set_from_number(new_exp_num);
-                        } else if let AtomView::Pow(p_base) = base_handle.get().as_view() {
+                        } else if let AtomView::Var(v) = base_handle.as_view() {
+                            if v.get_name() == State::I {
+                                if let BorrowedNumber::Natural(n, d) = &e.get_number_view() {
+                                    let mut new_base = workspace.new_atom();
+
+                                    // the case n < 0 is handled automagically
+                                    if *n % 2 == 0 {
+                                        if *n % 4 == 0 {
+                                            let n = new_base.to_num();
+                                            n.set_from_number(Number::Natural(1, 1));
+                                        } else {
+                                            let n = new_base.to_num();
+                                            n.set_from_number(Number::Natural(-1, 1));
+                                        }
+                                    } else if (*n - 1) % 4 == 0 {
+                                        new_base.set_from_view(&base_handle.as_view());
+                                    } else {
+                                        let n = new_base.to_mul();
+                                        n.extend(base_handle.as_view());
+                                        let mut helper = workspace.new_atom();
+                                        helper.to_num().set_from_number(Number::Natural(-1, 1));
+                                        n.extend(helper.as_view());
+                                        n.set_dirty(true);
+                                        new_base.as_view().normalize(workspace, state, &mut helper);
+                                        std::mem::swap(&mut new_base, &mut helper);
+                                    }
+
+                                    if *d == 1 {
+                                        out.set_from_view(&new_base.as_view());
+                                    } else {
+                                        let mut new_exp = workspace.new_atom();
+                                        new_exp.to_num().set_from_number(Number::Natural(1, *d));
+                                        out.to_pow().set_from_base_and_exp(
+                                            new_base.as_view(),
+                                            new_exp.as_view(),
+                                        );
+                                    }
+
+                                    break 'pow_simplify;
+                                }
+                            }
+                        } else if let AtomView::Pow(p_base) = base_handle.as_view() {
                             // simplify x^2^3
                             let (p_base_base, p_base_exp) = p_base.get_base_exp();
                             if let AtomView::Num(n) = p_base_exp {
@@ -822,21 +863,18 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 ne.set_from_number(new_exp);
 
                                 let out = out.to_pow();
-                                out.set_from_base_and_exp(p_base_base, exp_handle.get().as_view());
+                                out.set_from_base_and_exp(p_base_base, exp_handle.as_view());
 
                                 break 'pow_simplify;
                             }
-                        } else if let AtomView::Mul(_) = base_handle.get().as_view() {
+                        } else if let AtomView::Mul(_) = base_handle.as_view() {
                             // TODO: turn (x*y)^2 into x^2*y^2?
                             // for now, expand() needs to be used
                         }
                     }
 
                     let out = out.to_pow();
-                    out.set_from_base_and_exp(
-                        base_handle.get().as_view(),
-                        exp_handle.get().as_view(),
-                    );
+                    out.set_from_base_and_exp(base_handle.as_view(), exp_handle.as_view());
                 }
             }
             AtomView::Add(a) => {
@@ -869,7 +907,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             atom_test_buf.push(handle);
                         }
                     } else {
-                        if let AtomView::Num(n) = handle.get().as_view() {
+                        if let AtomView::Num(n) = handle.as_view() {
                             if n.is_zero() {
                                 continue;
                             }
@@ -878,7 +916,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
 
-                atom_test_buf.sort_by(|a, b| a.get().as_view().cmp_terms(&b.get().as_view()));
+                atom_test_buf.sort_by(|a, b| a.as_view().cmp_terms(&b.as_view()));
 
                 if !atom_test_buf.is_empty() {
                     let out_add = out.to_add();
@@ -896,14 +934,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         {
                             // we are done merging
                             {
-                                let v = last_buf.get().as_view();
+                                let v = last_buf.as_view();
                                 if let AtomView::Num(n) = v {
                                     if !n.is_zero() {
-                                        out_add.extend(last_buf.get().as_view());
+                                        out_add.extend(last_buf.as_view());
                                         cur_len += 1;
                                     }
                                 } else {
-                                    out_add.extend(last_buf.get().as_view());
+                                    out_add.extend(last_buf.as_view());
                                     cur_len += 1;
                                 }
                             }

@@ -25,15 +25,6 @@ pub enum FunctionAttribute {
     Symmetric,
 }
 
-pub const ARG: Identifier = Identifier::init(0);
-pub const EXP: Identifier = Identifier::init(1);
-pub const LOG: Identifier = Identifier::init(2);
-pub const SIN: Identifier = Identifier::init(3);
-pub const COS: Identifier = Identifier::init(4);
-pub const SQRT: Identifier = Identifier::init(5);
-pub const DERIVATIVE: Identifier = Identifier::init(6);
-pub(crate) const BUILTIN_VAR_LIST: [&str; 7] = ["arg", "exp", "log", "sin", "cos", "sqrt", "der"];
-
 /// A global state, that stores mappings from variable and function names to ids.
 #[derive(Clone)]
 pub struct State {
@@ -45,6 +36,21 @@ pub struct State {
 }
 
 impl State {
+    pub const ARG: Identifier = Identifier::init(0);
+    pub const EXP: Identifier = Identifier::init(1);
+    pub const LOG: Identifier = Identifier::init(2);
+    pub const SIN: Identifier = Identifier::init(3);
+    pub const COS: Identifier = Identifier::init(4);
+    pub const SQRT: Identifier = Identifier::init(5);
+    pub const DERIVATIVE: Identifier = Identifier::init(6);
+    pub const E: Identifier = Identifier::init(7);
+    pub const I: Identifier = Identifier::init(8);
+    pub const PI: Identifier = Identifier::init(9);
+
+    pub(crate) const BUILTIN_VAR_LIST: [&str; 10] = [
+        "arg", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
+    ];
+
     pub fn new() -> State {
         LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
@@ -55,7 +61,7 @@ impl State {
             finite_fields: vec![],
         };
 
-        for x in BUILTIN_VAR_LIST {
+        for x in Self::BUILTIN_VAR_LIST {
             state.get_or_insert_var(x);
         }
 
@@ -69,7 +75,7 @@ impl State {
 
     /// Returns `true` iff this identifier is defined by Symbolica.
     pub fn is_builtin(id: Identifier) -> bool {
-        id.to_u32() < BUILTIN_VAR_LIST.len() as u32
+        id.to_u32() < Self::BUILTIN_VAR_LIST.len() as u32
     }
 
     // note: could be made immutable by using frozen collections

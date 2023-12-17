@@ -1216,6 +1216,34 @@ impl PythonExpression {
         }
     }
 
+    /// Euler's number `e`.
+    #[classattr]
+    #[pyo3(name = "E")]
+    pub fn e() -> PythonExpression {
+        PythonExpression {
+            expr: Arc::new(Atom::new_var(State::E)),
+        }
+    }
+
+    /// The mathematical constant `π`.
+    #[classattr]
+    #[pyo3(name = "PI")]
+    pub fn pi() -> PythonExpression {
+        PythonExpression {
+            expr: Arc::new(Atom::new_var(State::PI)),
+        }
+    }
+
+    /// The mathematical constant `i`, where
+    /// `i^2 = -1`.
+    #[classattr]
+    #[pyo3(name = "I")]
+    pub fn i() -> PythonExpression {
+        PythonExpression {
+            expr: Arc::new(Atom::new_var(State::I)),
+        }
+    }
+
     /// Return all defined symbol names (function names and variables).
     #[classmethod]
     pub fn get_all_symbol_names(_cls: &PyType) -> PyResult<Vec<String>> {
@@ -2913,6 +2941,34 @@ impl PythonFunction {
             .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
         Ok(PythonFunction { id })
+    }
+
+    /// The built-in cosine function.
+    #[classattr]
+    #[pyo3(name = "COS")]
+    pub fn cos() -> PythonFunction {
+        PythonFunction { id: State::COS }
+    }
+
+    /// The built-in sine function.
+    #[classattr]
+    #[pyo3(name = "SIN")]
+    pub fn sin() -> PythonFunction {
+        PythonFunction { id: State::SIN }
+    }
+
+    /// The built-in exponential function.
+    #[classattr]
+    #[pyo3(name = "EXP")]
+    pub fn exp() -> PythonFunction {
+        PythonFunction { id: State::EXP }
+    }
+
+    /// The built-in logarithm function.
+    #[classattr]
+    #[pyo3(name = "LOG")]
+    pub fn log() -> PythonFunction {
+        PythonFunction { id: State::LOG }
     }
 
     #[getter]

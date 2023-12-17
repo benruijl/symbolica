@@ -8,7 +8,7 @@ use crate::{
         number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedFun,
         OwnedMul, OwnedNum,
     },
-    state::{State, Workspace, ARG},
+    state::{State, Workspace},
 };
 use ahash::HashMap;
 use colored::Colorize;
@@ -176,7 +176,7 @@ impl<P: AtomSet> Transformer<P> {
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == ARG {
+                        if f.get_name() == State::ARG {
                             let mut mul_h = workspace.new_atom();
                             let mul = mul_h.to_mul();
 
@@ -194,7 +194,7 @@ impl<P: AtomSet> Transformer<P> {
                 }
                 Transformer::Sum => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == ARG {
+                        if f.get_name() == State::ARG {
                             let mut add_h = workspace.new_atom();
                             let add = add_h.to_add();
 
@@ -224,7 +224,7 @@ impl<P: AtomSet> Transformer<P> {
                     AtomView::Mul(m) => {
                         let mut arg_h = workspace.new_atom();
                         let arg = arg_h.to_fun();
-                        arg.set_from_name(ARG);
+                        arg.set_from_name(State::ARG);
 
                         for factor in m.iter() {
                             arg.add_arg(factor);
@@ -237,7 +237,7 @@ impl<P: AtomSet> Transformer<P> {
                     AtomView::Add(a) => {
                         let mut arg_h = workspace.new_atom();
                         let arg = arg_h.to_fun();
-                        arg.set_from_name(ARG);
+                        arg.set_from_name(State::ARG);
 
                         for summand in a.iter() {
                             arg.add_arg(summand);
@@ -253,7 +253,7 @@ impl<P: AtomSet> Transformer<P> {
                 },
                 Transformer::Partition(bins, fill_last, repeat) => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == ARG {
+                        if f.get_name() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
 
                             let mut sum_h = workspace.new_atom();
@@ -300,13 +300,13 @@ impl<P: AtomSet> Transformer<P> {
                 }
                 Transformer::Sort => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == ARG {
+                        if f.get_name() == State::ARG {
                             let mut args: Vec<_> = f.iter().collect();
                             args.sort();
 
                             let mut fun_h = workspace.new_atom();
                             let fun = fun_h.to_fun();
-                            fun.set_from_name(ARG);
+                            fun.set_from_name(State::ARG);
 
                             for arg in args {
                                 fun.add_arg(arg);
@@ -322,7 +322,7 @@ impl<P: AtomSet> Transformer<P> {
                 }
                 Transformer::Deduplicate => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == ARG {
+                        if f.get_name() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
                             let mut args_dedup: Vec<_> = Vec::with_capacity(args.len());
 
@@ -337,7 +337,7 @@ impl<P: AtomSet> Transformer<P> {
 
                             let mut fun_h = workspace.new_atom();
                             let fun = fun_h.to_fun();
-                            fun.set_from_name(ARG);
+                            fun.set_from_name(State::ARG);
 
                             for arg in args_dedup {
                                 fun.add_arg(arg);
@@ -353,7 +353,7 @@ impl<P: AtomSet> Transformer<P> {
                 }
                 Transformer::Permutations(f_name) => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == ARG {
+                        if f.get_name() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
 
                             let mut sum_h = workspace.new_atom();

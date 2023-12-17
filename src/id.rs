@@ -7,7 +7,7 @@ use crate::{
         default::Linear, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice,
         Mul, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, SliceType, Var,
     },
-    state::{FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace, ARG},
+    state::{FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace},
     transformer::Transformer,
 };
 
@@ -875,7 +875,7 @@ impl<'a, P: AtomSet> Match<'a, P> {
                 }
                 SliceType::Arg => {
                     let fun = out.to_fun();
-                    fun.set_from_name(ARG);
+                    fun.set_from_name(State::ARG);
                     for arg in wargs {
                         fun.add_arg(*arg);
                     }
@@ -889,7 +889,7 @@ impl<'a, P: AtomSet> Match<'a, P> {
                 }
                 SliceType::Empty => {
                     let fun = out.to_fun();
-                    fun.set_from_name(ARG);
+                    fun.set_from_name(State::ARG);
                 }
             },
             Self::FunctionName(n) => {

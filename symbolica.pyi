@@ -79,6 +79,15 @@ class Expression:
     >>> print(e)
     """
 
+    E: Expression
+    """Euler's number `e`."""
+
+    PI: Expression
+    """The mathematical constant `π`."""
+
+    I: Expression
+    """The mathematical constant `i`, where `i^2 = -1`."""
+
     @classmethod
     def var(_cls, name: str) -> Expression:
         """
@@ -795,6 +804,18 @@ class CompareOp:
 
 class Function:
     """A Symbolica function. Will turn into an expression or a transformer when called with arguments."""
+
+    COS: Function
+    """The built-in cosine function."""
+
+    SIN: Function
+    """The built-in sine function."""
+
+    EXP: Function
+    """The built-in exponential function."""
+
+    LOG: Function
+    """The built-in logarithm function."""
 
     def __new__(_cls, name: str, is_symmetric: Optional[bool]) -> Function:
         """

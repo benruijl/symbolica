@@ -7,7 +7,7 @@ use crate::{
         OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
     },
     rings::{integer::Integer, rational::Rational},
-    state::{State, Workspace, COS, DERIVATIVE, EXP, LOG, SIN},
+    state::{State, Workspace},
 };
 
 impl<'a, P: AtomSet> AtomView<'a, P> {
@@ -42,7 +42,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 // detect if the function to derive is the derivative function itself
                 // if so, derive the last argument of the derivative function and set
                 // a flag to later accumulate previous derivatives
-                let (to_derive, f, is_der) = if f_orig.get_name() == DERIVATIVE {
+                let (to_derive, f, is_der) = if f_orig.get_name() == State::DERIVATIVE {
                     let to_derive = f_orig.iter().last().unwrap();
                     (
                         to_derive,
@@ -72,13 +72,15 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 }
 
                 // derive special functions
-                if f.get_nargs() == 1 && [EXP, LOG, SIN, COS].contains(&f.get_name()) {
+                if f.get_nargs() == 1
+                    && [State::EXP, State::LOG, State::SIN, State::COS].contains(&f.get_name())
+                {
                     let mut fn_der = workspace.new_atom();
                     match f.get_name() {
-                        EXP => {
+                        State::EXP => {
                             fn_der.set_from_view(self);
                         }
-                        LOG => {
+                        State::LOG => {
                             let mut n = workspace.new_atom();
                             n.to_num().set_from_number(Number::Natural(-1, 1));
 
@@ -86,19 +88,19 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             p.set_from_base_and_exp(f.iter().next().unwrap(), n.as_view());
                             p.set_dirty(true);
                         }
-                        SIN => {
+                        State::SIN => {
                             let p = fn_der.to_fun();
-                            p.set_from_name(COS);
+                            p.set_from_name(State::COS);
                             p.add_arg(f.iter().next().unwrap());
                             p.set_dirty(true);
                         }
-                        COS => {
+                        State::COS => {
                             let mut n = workspace.new_atom();
                             n.to_num().set_from_number(Number::Natural(-1, 1));
 
                             let mut sin = workspace.new_atom();
                             let sin_fun = sin.to_fun();
-                            sin_fun.set_from_name(SIN);
+                            sin_fun.set_from_name(State::SIN);
                             sin_fun.add_arg(f.iter().next().unwrap());
 
                             let m = fn_der.to_mul();
@@ -134,7 +136,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let mut mul = workspace.new_atom();
                 for (index, arg_der) in args_der {
                     let p = fn_der.to_fun();
-                    p.set_from_name(DERIVATIVE);
+                    p.set_from_name(State::DERIVATIVE);
 
                     if is_der {
                         for (i, x_orig) in f_orig.iter().take(f.get_nargs()).enumerate() {
@@ -196,7 +198,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     // create log(base)
                     let mut log_base = workspace.new_atom();
                     let lb = log_base.to_fun();
-                    lb.set_from_name(LOG);
+                    lb.set_from_name(State::LOG);
                     lb.add_arg(base);
 
                     if let Atom::Mul(m) = exp_der.get_mut() {

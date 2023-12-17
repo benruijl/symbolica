@@ -4,7 +4,7 @@ use crate::{
     poly::Variable,
     representations::{number::BorrowedNumber, Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
     rings::{float::Real, rational::Rational},
-    state::{COS, EXP, LOG, SIN, SQRT},
+    state::State,
 };
 
 type EvalFnType<T, P> = Box<
@@ -53,17 +53,17 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             AtomView::Var(v) => var_map.get(&v.get_name().into()).unwrap().clone(),
             AtomView::Fun(f) => {
                 let name = f.get_name();
-                if [EXP, LOG, SIN, COS, SQRT].contains(&name) {
+                if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
                     let arg_eval = arg.evaluate(var_map, function_map, cache);
 
                     return match f.get_name() {
-                        EXP => arg_eval.exp(),
-                        LOG => arg_eval.log(),
-                        SIN => arg_eval.sin(),
-                        COS => arg_eval.cos(),
-                        SQRT => arg_eval.sqrt(),
+                        State::EXP => arg_eval.exp(),
+                        State::LOG => arg_eval.log(),
+                        State::SIN => arg_eval.sin(),
+                        State::COS => arg_eval.cos(),
+                        State::SQRT => arg_eval.sqrt(),
                         _ => unreachable!(),
                     };
                 }

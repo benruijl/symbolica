@@ -330,16 +330,22 @@ impl PythonPattern {
     }
 
     /// Create a transformer that returns the number of arguments.
+    /// If the argument is not a function, return 0.
+    ///
+    /// If `only_for_arg_fun` is `True`, only count the number of arguments
+    /// in the `arg()` function and return 1 if the input is not `arg`.
+    /// This is useful for obtaining the length of a range during pattern matching.
     ///
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
     /// >>> x__ = Expression.var('x__')
     /// >>> f = Expression.fun('f')
-    /// >>> e = f(2,3,4).replace_all(f(x_), x_.transform().nargs())
+    /// >>> e = f(2,3,4).replace_all(f(x__), x__.transform().nargs())
     /// >>> print(e)
-    pub fn nargs(&self) -> PyResult<PythonPattern> {
-        return append_transformer!(self, Transformer::ArgCount);
+    #[pyo3(signature = (only_for_arg_fun = false))]
+    pub fn nargs(&self, only_for_arg_fun: bool) -> PyResult<PythonPattern> {
+        return append_transformer!(self, Transformer::ArgCount(only_for_arg_fun));
     }
 
     /// Create a transformer that sorts a list of arguments.

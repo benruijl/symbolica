@@ -899,8 +899,13 @@ class Transformer:
         >>> print(e)
         """
 
-    def nargs(self) -> Transformer:
+    def nargs(self, only_for_arg_fun: bool = False) -> Transformer:
         """Create a transformer that returns the number of arguments.
+        If the argument is not a function, return 0.
+
+        If `only_for_arg_fun` is `True`, only count the number of arguments
+        in the `arg()` function and return 1 if the input is not `arg`.
+        This is useful for obtaining the length of a range during pattern matching.
 
         Examples
         --------

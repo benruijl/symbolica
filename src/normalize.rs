@@ -367,6 +367,13 @@ impl<P: AtomSet> Atom<P> {
 
         // x * x => x^2
         if self.as_view() == other.as_view() {
+            if let AtomView::Var(v) = self.as_view() {
+                if v.get_name() == State::I {
+                    self.to_num().set_from_number(Number::Natural(-1, 1));
+                    return true;
+                }
+            }
+
             // add powers
             let exp = other.to_num();
             exp.set_from_number(Number::Natural(2, 1));

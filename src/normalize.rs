@@ -280,45 +280,51 @@ impl<P: AtomSet> Atom<P> {
     /// Merge two factors if possible. If this function returns `true`, `self`
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
-    fn merge_factors(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
+    fn merge_factors(
+        &mut self,
+        other: &mut Self,
+        helper: &mut Self,
+        state: &State,
+        workspace: &Workspace<P>,
+    ) -> bool {
         // x^a * x^b = x^(a + b)
         if let Atom::Pow(p1) = self {
             if let Atom::Pow(p2) = other {
-                let new_exp = helper.to_num();
-
                 let (base2, exp2) = p2.to_pow_view().get_base_exp();
 
-                // help the borrow checker out by encapsulating base1 and exp1
-                {
-                    let (base1, exp1) = p1.to_pow_view().get_base_exp();
+                let (base1, exp1) = p1.to_pow_view().get_base_exp();
 
-                    if base1 != base2 {
-                        return false;
-                    }
+                if base1 != base2 {
+                    return false;
+                }
 
-                    if let AtomView::Num(n) = &exp1 {
+                if let AtomView::Num(n) = &exp1 {
+                    if let AtomView::Num(n2) = &exp2 {
+                        let new_exp = helper.to_num();
                         new_exp.set_from_view(n);
-                    } else {
-                        unimplemented!("No support for non-numerical powers yet");
+                        new_exp.add(n2, state);
+
+                        if new_exp.to_num_view().is_zero() {
+                            let num = self.to_num();
+                            num.set_from_number(Number::Natural(1, 1));
+                        } else if new_exp.to_num_view().is_one() {
+                            self.set_from_view(&base2);
+                        } else {
+                            p1.set_from_base_and_exp(base2, helper.as_view());
+                        }
+
+                        return true;
                     }
                 }
 
-                if let AtomView::Num(n2) = &exp2 {
-                    new_exp.add(n2, state);
-
-                    if new_exp.to_num_view().is_zero() {
-                        let num = self.to_num();
-                        num.set_from_number(Number::Natural(1, 1));
-                    } else if new_exp.to_num_view().is_one() {
-                        self.set_from_view(&base2);
-                    } else {
-                        p1.set_from_base_and_exp(base2, AtomView::Num(new_exp.to_num_view()));
-                    }
-
-                    return true;
-                } else {
-                    unimplemented!("No support for non-numerical powers yet");
-                }
+                let new_exp = helper.to_add();
+                new_exp.extend(exp1);
+                new_exp.extend(exp2);
+                new_exp.set_dirty(true);
+                let mut helper2 = workspace.new_atom();
+                helper.as_view().normalize(workspace, state, &mut helper2);
+                p1.set_from_base_and_exp(base2, helper2.as_view());
+                return true;
             }
         }
 
@@ -342,14 +348,22 @@ impl<P: AtomSet> Atom<P> {
                         self.set_from_view(&base);
                     } else {
                         num.set_from_number(new_exp);
-                        let op = self.to_pow();
-                        op.set_from_base_and_exp(base, AtomView::Num(num.to_num_view()));
+                        self.to_pow()
+                            .set_from_base_and_exp(base, AtomView::Num(num.to_num_view()));
                     }
-
-                    return true;
                 } else {
-                    unimplemented!("No support for non-numerical powers yet");
-                };
+                    self.to_num().set_from_number(Number::Natural(1, 1));
+
+                    let new_exp = helper.to_add();
+                    new_exp.extend(self.as_view());
+                    new_exp.extend(exp);
+                    new_exp.set_dirty(true);
+                    let mut helper2 = workspace.new_atom();
+                    helper.as_view().normalize(workspace, state, &mut helper2);
+                    self.to_pow().set_from_base_and_exp(base, helper2.as_view());
+                }
+
+                return true;
             } else {
                 return false;
             }
@@ -663,10 +677,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     let mut cur_len = 0;
 
                     for mut cur_buf in atom_test_buf.drain(..) {
-                        if !last_buf
-                            .get_mut()
-                            .merge_factors(cur_buf.get_mut(), helper, state)
-                        {
+                        if !last_buf.get_mut().merge_factors(
+                            cur_buf.get_mut(),
+                            helper,
+                            state,
+                            workspace,
+                        ) {
                             // we are done merging
                             {
                                 let v = last_buf.as_view();

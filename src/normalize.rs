@@ -676,7 +676,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     let helper = handle.get_mut();
                     let mut cur_len = 0;
 
-                    for mut cur_buf in atom_test_buf.drain(..) {
+                    atom_test_buf.reverse();
+                    while let Some(mut cur_buf) = atom_test_buf.pop() {
                         if !last_buf.get_mut().merge_factors(
                             cur_buf.get_mut(),
                             helper,
@@ -687,9 +688,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             {
                                 let v = last_buf.as_view();
                                 if let AtomView::Num(n) = v {
-                                    out_mul.set_has_coefficient(!n.is_one());
                                     if !n.is_one() {
-                                        out_mul.extend(v);
+                                        // the number is not in the final position, which only happens when i*i merges to -1
+                                        // add it to the first position in the reversed buffer
+                                        atom_test_buf.insert(0, last_buf);
                                         cur_len += 1;
                                     }
                                 } else {
@@ -706,9 +708,9 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     } else {
                         let v = last_buf.as_view();
                         if let AtomView::Num(n) = v {
-                            out_mul.set_has_coefficient(!n.is_one());
                             if !n.is_one() {
                                 out_mul.extend(v);
+                                out_mul.set_has_coefficient(true);
                             } else if cur_len == 1 {
                                 // downgrade
                                 last_buf.set_from_view(&out_mul.to_mul_view().to_slice().get(0));
@@ -716,7 +718,6 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             }
                         } else {
                             out_mul.extend(v);
-                            out_mul.set_has_coefficient(false);
                         }
                     }
                 } else {

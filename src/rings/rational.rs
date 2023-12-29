@@ -71,10 +71,8 @@ impl Into<Rational> for &Integer {
 }
 
 impl Rational {
-    pub fn new(mut num: i64, mut den: i64) -> Rational {
-        if den == 0 {
-            panic!("Division by zero");
-        }
+    pub fn new(mut num: i64, mut den: i64) -> Self {
+        assert!(den != 0, "Division by zero");
 
         let gcd = utils::gcd_signed(num, den);
         if gcd != 1 {
@@ -90,84 +88,84 @@ impl Rational {
 
         if den < 0 {
             if let Some(neg) = den.checked_neg() {
-                Rational::Natural(num, neg).neg()
+                Self::Natural(num, neg).neg()
             } else {
-                Rational::Large(ArbitraryPrecisionRational::from((num, den)))
+                Self::Large(ArbitraryPrecisionRational::from((num, den)))
             }
         } else {
-            Rational::Natural(num, den)
+            Self::Natural(num, den)
         }
     }
 
-    pub fn from_num_den(num: Integer, den: Integer) -> Rational {
+    pub fn from_num_den(num: Integer, den: Integer) -> Self {
         match (num, den) {
-            (Integer::Natural(n), Integer::Natural(d)) => Rational::new(n, d),
+            (Integer::Natural(n), Integer::Natural(d)) => Self::new(n, d),
             (Integer::Natural(n), Integer::Large(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Self::from_large(ArbitraryPrecisionRational::from((n, d)))
             }
             (Integer::Large(n), Integer::Natural(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Self::from_large(ArbitraryPrecisionRational::from((n, d)))
             }
             (Integer::Large(n), Integer::Large(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Self::from_large(ArbitraryPrecisionRational::from((n, d)))
             }
         }
     }
 
-    pub fn from_large(r: ArbitraryPrecisionRational) -> Rational {
+    pub fn from_large(r: ArbitraryPrecisionRational) -> Self {
         if let Some(d) = r.denom().to_i64() {
             if let Some(n) = r.numer().to_i64() {
-                return Rational::Natural(n, d);
+                return Self::Natural(n, d);
             }
         }
 
-        Rational::Large(r)
+        Self::Large(r)
     }
 
     pub fn from_finite_field_u32(
         field: FiniteField<u32>,
         element: &<FiniteField<u32> as Ring>::Element,
-    ) -> Rational {
-        Rational::Natural(field.from_element(*element) as i64, 1)
+    ) -> Self {
+        Self::Natural(field.from_element(*element) as i64, 1)
     }
 
     pub fn is_negative(&self) -> bool {
         match self {
-            Rational::Natural(n, _) => *n < 0,
-            Rational::Large(r) => ArbitraryPrecisionInteger::from(r.numer().signum_ref()) == -1,
+            Self::Natural(n, _) => *n < 0,
+            Self::Large(r) => ArbitraryPrecisionInteger::from(r.numer().signum_ref()) == -1,
         }
     }
 
     pub fn is_integer(&self) -> bool {
         match self {
-            Rational::Natural(_, d) => *d == 1,
-            Rational::Large(r) => r.is_integer(),
+            Self::Natural(_, d) => *d == 1,
+            Self::Large(r) => r.is_integer(),
         }
     }
 
     pub fn numerator(&self) -> Integer {
         match self {
-            Rational::Natural(n, _) => Integer::Natural(*n),
-            Rational::Large(r) => Integer::Large(r.numer().clone()),
+            Self::Natural(n, _) => Integer::Natural(*n),
+            Self::Large(r) => Integer::Large(r.numer().clone()),
         }
     }
 
     pub fn denominator(&self) -> Integer {
         match self {
-            Rational::Natural(_, d) => Integer::Natural(*d),
-            Rational::Large(r) => Integer::Large(r.denom().clone()),
+            Self::Natural(_, d) => Integer::Natural(*d),
+            Self::Large(r) => Integer::Large(r.denom().clone()),
         }
     }
 
-    pub fn zero() -> Rational {
-        Rational::Natural(0, 1)
+    pub fn zero() -> Self {
+        Self::Natural(0, 1)
     }
 
-    pub fn one() -> Rational {
-        Rational::Natural(1, 1)
+    pub fn one() -> Self {
+        Self::Natural(1, 1)
     }
 
-    pub fn abs(&self) -> Rational {
+    pub fn abs(&self) -> Self {
         if self.is_negative() {
             self.clone().neg()
         } else {
@@ -176,60 +174,60 @@ impl Rational {
     }
 
     pub fn is_zero(&self) -> bool {
-        self == &Rational::Natural(0, 1)
+        self == &Self::Natural(0, 1)
     }
 
     pub fn is_one(&self) -> bool {
-        self == &Rational::Natural(1, 1)
+        self == &Self::Natural(1, 1)
     }
 
-    pub fn pow(&self, e: u64) -> Rational {
+    pub fn pow(&self, e: u64) -> Self {
         if e > u32::MAX as u64 {
             panic!("Power of exponentation is larger than 2^32: {}", e);
         }
         let e = e as u32;
 
         match self {
-            Rational::Natural(n1, d1) => {
+            Self::Natural(n1, d1) => {
                 if let Some(pn) = n1.checked_pow(e) {
                     if let Some(pd) = d1.checked_pow(e) {
-                        return Rational::Natural(pn, pd);
+                        return Self::Natural(pn, pd);
                     }
                 }
 
-                Rational::Large(ArbitraryPrecisionRational::from((*n1, *d1)).pow(e))
+                Self::Large(ArbitraryPrecisionRational::from((*n1, *d1)).pow(e))
             }
-            Rational::Large(r) => Rational::Large(r.pow(e).into()),
+            Self::Large(r) => Self::Large(r.pow(e).into()),
         }
     }
 
-    pub fn inv(&self) -> Rational {
+    pub fn inv(&self) -> Self {
         match self {
-            Rational::Natural(n, d) => {
+            Self::Natural(n, d) => {
                 if *n < 0 {
                     if let Some(neg) = n.checked_neg() {
-                        Rational::Natural(-d, neg)
+                        Self::Natural(-d, neg)
                     } else {
-                        Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).recip())
+                        Self::Large(ArbitraryPrecisionRational::from((*n, *d)).recip())
                     }
                 } else {
-                    Rational::Natural(*d, *n)
+                    Self::Natural(*d, *n)
                 }
             }
-            Rational::Large(r) => Rational::from_large(r.clone().recip()),
+            Self::Large(r) => Self::from_large(r.clone().recip()),
         }
     }
 
-    pub fn neg(&self) -> Rational {
+    pub fn neg(&self) -> Self {
         match self {
-            Rational::Natural(n, d) => {
+            Self::Natural(n, d) => {
                 if let Some(neg) = n.checked_neg() {
-                    Rational::Natural(neg, *d)
+                    Self::Natural(neg, *d)
                 } else {
-                    Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).neg())
+                    Self::Large(ArbitraryPrecisionRational::from((*n, *d)).neg())
                 }
             }
-            Rational::Large(r) => Rational::from_large(r.neg().into()),
+            Self::Large(r) => Self::from_large(r.neg().into()),
         }
     }
 
@@ -242,7 +240,7 @@ impl Rational {
         v: &Integer,
         p: &Integer,
         acceptance_scale: Option<Integer>,
-    ) -> Result<Rational, &'static str> {
+    ) -> Result<Self, &'static str> {
         let mut acceptance_scale = match acceptance_scale {
             Some(t) => t.clone(),
             None => {
@@ -267,7 +265,7 @@ impl Rational {
 
         if v.is_zero() {
             return if p > &acceptance_scale {
-                Ok(Rational::zero())
+                Ok(Self::zero())
             } else {
                 Err("Could not reconstruct: u=0 and t <= m")
             };
@@ -297,7 +295,7 @@ impl Rational {
             d = d.neg();
         }
 
-        Ok(Rational::from_num_den(n, d))
+        Ok(Self::from_num_den(n, d))
     }
 
     /// Return the rational number that corresponds to `f` evaluated at sample point `sample`,
@@ -315,7 +313,7 @@ impl Rational {
         f: F,
         sample: &[R::Element],
         prime_start: Option<usize>,
-    ) -> Result<Rational, &'static str>
+    ) -> Result<Self, &'static str>
     where
         FiniteField<u32>: FiniteFieldCore<u32>,
         R::Element: ToFiniteField<u32>,
@@ -325,7 +323,7 @@ impl Rational {
         let mut prime_sample_point = vec![];
         let mut prime_start = prime_start.unwrap_or(0);
 
-        let mut last_guess = Rational::zero();
+        let mut last_guess = Self::zero();
         for i in 0..sample.len() {
             if prime_start + i >= LARGE_U32_PRIMES.len() {
                 return Err("Ran out of primes for rational reconstruction");
@@ -367,9 +365,7 @@ impl Rational {
                 cur_result += &prime_accum;
             }
 
-            if let Ok(q) =
-                Rational::maximal_quotient_reconstruction(&cur_result, &prime_accum, None)
-            {
+            if let Ok(q) = Self::maximal_quotient_reconstruction(&cur_result, &prime_accum, None) {
                 if q == last_guess {
                     return Ok(q);
                 } else {
@@ -385,7 +381,7 @@ impl Rational {
 impl Display for Rational {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Rational::Natural(n, d) => {
+            Self::Natural(n, d) => {
                 if *d == 1 {
                     n.fmt(f)
                 } else {
@@ -394,7 +390,7 @@ impl Display for Rational {
                     write!(f, "{}", d)
                 }
             }
-            Rational::Large(r) => r.fmt(f),
+            Self::Large(r) => r.fmt(f),
         }
     }
 }

@@ -274,7 +274,7 @@ impl BorrowedNumber<'_> {
 
     pub fn add(&self, other: &BorrowedNumber<'_>, state: &State) -> Number {
         match (self, other) {
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Natural(n2, d2)) => {
                 let r = &Rational::Natural(*n1, *d1) + &Rational::Natural(*n2, *d2);
                 match r {
                     Rational::Natural(n, d) => Number::Natural(n, d),
@@ -282,15 +282,15 @@ impl BorrowedNumber<'_> {
                 }
             }
             // TODO: check downcast
-            (BorrowedNumber::Natural(n1, d1), BorrowedNumber::Large(r2))
-            | (BorrowedNumber::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
+            (Self::Natural(n1, d1), BorrowedNumber::Large(r2))
+            | (Self::Large(r2), BorrowedNumber::Natural(n1, d1)) => {
                 let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
                 Number::Large(r1 + r2.to_rat())
             }
-            (BorrowedNumber::Large(r1), BorrowedNumber::Large(r2)) => {
+            (Self::Large(r1), BorrowedNumber::Large(r2)) => {
                 Number::Large(r1.to_rat() + r2.to_rat())
             }
-            (BorrowedNumber::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
+            (Self::FiniteField(n1, i1), BorrowedNumber::FiniteField(n2, i2)) => {
                 if i1 != i2 {
                     panic!(
                         "Cannot add numbers from different finite fields: p1={}, p2={}",
@@ -301,14 +301,14 @@ impl BorrowedNumber<'_> {
                 let f = state.get_finite_field(*i1);
                 Number::FiniteField(f.add(n1, n2), *i1)
             }
-            (BorrowedNumber::FiniteField(_, _), _) => {
+            (Self::FiniteField(_, _), _) => {
                 panic!("Cannot add finite field to non-finite number. Convert other number first?");
             }
             (_, BorrowedNumber::FiniteField(_, _)) => {
                 panic!("Cannot add finite field to non-finite number. Convert other number first?");
             }
-            (BorrowedNumber::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
+            (Self::Natural(n, d), BorrowedNumber::RationalPolynomial(p))
+            | (Self::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
                 let r = (*p).clone();
                 let r2 = RationalPolynomial {
                     numerator: MultivariatePolynomial::new_from_constant(
@@ -323,7 +323,7 @@ impl BorrowedNumber<'_> {
                 Number::RationalPolynomial(&r + &r2)
             }
             (BorrowedNumber::Large(l), BorrowedNumber::RationalPolynomial(p))
-            | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
+            | (Self::RationalPolynomial(p), BorrowedNumber::Large(l)) => {
                 let r = (*p).clone();
                 let (n, d) = l.to_rat().into_numer_denom();
                 let r2 = RationalPolynomial {

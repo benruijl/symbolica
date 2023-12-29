@@ -722,20 +722,20 @@ impl<P: AtomSet> Atom<P> {
         let mut om = std::mem::replace(self, Self::Empty);
 
         *self = match om {
-            Atom::Mul(_) => {
+            Self::Mul(_) => {
                 om.reset();
                 om
             }
-            Atom::Num(n) => Atom::Mul(n.to_owned_mul()),
-            Atom::Pow(p) => Atom::Mul(p.to_owned_mul()),
-            Atom::Var(v) => Atom::Mul(v.to_owned_mul()),
-            Atom::Fun(f) => Atom::Mul(f.to_owned_mul()),
-            Atom::Add(a) => Atom::Mul(a.to_owned_mul()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => Self::Mul(n.to_owned_mul()),
+            Self::Pow(p) => Self::Mul(p.to_owned_mul()),
+            Self::Var(v) => Self::Mul(v.to_owned_mul()),
+            Self::Fun(f) => Self::Mul(f.to_owned_mul()),
+            Self::Add(a) => Self::Mul(a.to_owned_mul()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Mul(m) => m,
+            Self::Mul(m) => m,
             _ => unreachable!(),
         }
     }
@@ -746,27 +746,27 @@ impl<P: AtomSet> Atom<P> {
         let mut oa = std::mem::replace(self, Self::Empty);
 
         *self = match oa {
-            Atom::Add(_) => {
+            Self::Add(_) => {
                 oa.reset();
                 oa
             }
-            Atom::Num(n) => Atom::Add(n.to_owned_add()),
-            Atom::Pow(p) => Atom::Add(p.to_owned_add()),
-            Atom::Var(v) => Atom::Add(v.to_owned_add()),
-            Atom::Fun(f) => Atom::Add(f.to_owned_add()),
-            Atom::Mul(m) => Atom::Add(m.to_owned_add()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => Self::Add(n.to_owned_add()),
+            Self::Pow(p) => Self::Add(p.to_owned_add()),
+            Self::Var(v) => Self::Add(v.to_owned_add()),
+            Self::Fun(f) => Self::Add(f.to_owned_add()),
+            Self::Mul(m) => Self::Add(m.to_owned_add()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Add(a) => a,
+            Self::Add(a) => a,
             _ => unreachable!(),
         }
     }
 
     /// This function allocates a new OwnedAtom with the same content as `view`.
     pub fn new_from_view(view: &AtomView<P>) -> Self {
-        let mut owned = Atom::new();
+        let mut owned = Self::new();
         owned.set_from_view(view);
         owned
     }

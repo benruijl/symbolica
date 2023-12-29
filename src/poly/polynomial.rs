@@ -881,13 +881,13 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     /// Get the degree of the variable `x`.
     /// This operation is O(n).
     pub fn degree(&self, x: usize) -> E {
-        let mut max = E::zero();
-        for e in self.exponents.iter().skip(x).step_by(self.nvars) {
-            if max < *e {
-                max = *e;
-            }
-        }
-        max
+        self.exponents
+            .iter()
+            .skip(x)
+            .step_by(self.nvars)
+            .max()
+            .cloned()
+            .unwrap_or(E::zero())
     }
 
     // Get the highest degree of a variable in the leading monomial.

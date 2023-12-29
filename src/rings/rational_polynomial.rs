@@ -270,7 +270,7 @@ where
         let e = e as u32;
 
         // TODO: do binary exponentation
-        let mut poly = RationalPolynomial {
+        let mut poly = Self {
             numerator: MultivariatePolynomial::new_from(&self.numerator, None),
             denominator: MultivariatePolynomial::new_from(&self.denominator, None),
         };
@@ -318,7 +318,7 @@ where
             }
         }
 
-        let mut hm: HashMap<Vec<E>, RationalPolynomial<R, E>> = HashMap::default();
+        let mut hm: HashMap<Vec<E>, Self> = HashMap::default();
 
         let mut e_list = vec![E::zero(); variables.len()];
 

@@ -249,7 +249,7 @@ impl<P: AtomSet> Pattern<P> {
     }
 
     /// Create a pattern from an atom view.
-    fn from_view(atom: AtomView<'_, P>, state: &State, is_top_layer: bool) -> Pattern<P> {
+    fn from_view(atom: AtomView<'_, P>, state: &State, is_top_layer: bool) -> Self {
         // split up Add and Mul for literal patterns as well so that x+y can match to x+y+z
         if Self::has_wildcard(atom, state)
             || is_top_layer && matches!(atom, AtomView::Mul(_) | AtomView::Add(_))

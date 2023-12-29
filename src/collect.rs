@@ -133,7 +133,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         x: Identifier,
         workspace: &Workspace<P>,
         state: &State,
-        h: &mut HashMap<AtomView<'a, P>, Atom<P>>,
+        h: &mut HashMap<Self, Atom<P>>,
         rest: &mut Atom<P>,
     ) {
         match self {

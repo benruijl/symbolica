@@ -675,7 +675,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn to_polynomial_with_map<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
-        map: &mut HashMap<AtomView<'a, P>, Variable>,
+        map: &mut HashMap<Self, Variable>,
     ) -> MultivariatePolynomial<R, E> {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, None) {

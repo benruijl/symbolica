@@ -38,7 +38,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         &self,
         var_map: &HashMap<Variable, T>,
         function_map: &HashMap<Variable, EvaluationFn<T, P>>,
-        cache: &mut HashMap<AtomView<'a, P>, T>,
+        cache: &mut HashMap<Self, T>,
     ) -> T {
         match self {
             Self::Num(n) => match n.get_number_view() {

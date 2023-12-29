@@ -580,13 +580,13 @@ impl<P: AtomSet> Eq for Atom<P> {}
 impl<P: AtomSet> Hash for Atom<P> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            Atom::Num(a) => a.hash(state),
-            Atom::Var(a) => a.hash(state),
-            Atom::Fun(a) => a.hash(state),
-            Atom::Pow(a) => a.hash(state),
-            Atom::Mul(a) => a.hash(state),
-            Atom::Add(a) => a.hash(state),
-            Atom::Empty => 1.hash(state),
+            Self::Num(a) => a.hash(state),
+            Self::Var(a) => a.hash(state),
+            Self::Fun(a) => a.hash(state),
+            Self::Pow(a) => a.hash(state),
+            Self::Mul(a) => a.hash(state),
+            Self::Add(a) => a.hash(state),
+            Self::Empty => 1.hash(state),
         }
     }
 }
@@ -623,23 +623,23 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Num(n)`, returning a reference to `n`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_num(&mut self) -> &mut P::ON {
-        let mut ov = std::mem::replace(self, Atom::Empty);
+        let mut ov = std::mem::replace(self, Self::Empty);
 
         *self = match ov {
-            Atom::Num(_) => {
+            Self::Num(_) => {
                 ov.reset();
                 ov
             }
-            Atom::Var(v) => Atom::Num(v.to_owned_num()),
-            Atom::Fun(f) => Atom::Num(f.to_owned_num()),
-            Atom::Pow(p) => Atom::Num(p.to_owned_num()),
-            Atom::Mul(m) => Atom::Num(m.to_owned_num()),
-            Atom::Add(a) => Atom::Num(a.to_owned_num()),
-            Atom::Empty => unreachable!(),
+            Self::Var(v) => Self::Num(v.to_owned_num()),
+            Self::Fun(f) => Self::Num(f.to_owned_num()),
+            Self::Pow(p) => Self::Num(p.to_owned_num()),
+            Self::Mul(m) => Self::Num(m.to_owned_num()),
+            Self::Add(a) => Self::Num(a.to_owned_num()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Num(n) => n,
+            Self::Num(n) => n,
             _ => unreachable!(),
         }
     }
@@ -647,23 +647,23 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Pow(p)`, returning a reference to `p`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_pow(&mut self) -> &mut P::OP {
-        let mut ov = std::mem::replace(self, Atom::Empty);
+        let mut ov = std::mem::replace(self, Self::Empty);
 
         *self = match ov {
-            Atom::Pow(_) => {
+            Self::Pow(_) => {
                 ov.reset();
                 ov
             }
-            Atom::Num(n) => Atom::Pow(n.to_owned_pow()),
-            Atom::Var(v) => Atom::Pow(v.to_owned_pow()),
-            Atom::Fun(f) => Atom::Pow(f.to_owned_pow()),
-            Atom::Mul(m) => Atom::Pow(m.to_owned_pow()),
-            Atom::Add(a) => Atom::Pow(a.to_owned_pow()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => Self::Pow(n.to_owned_pow()),
+            Self::Var(v) => Self::Pow(v.to_owned_pow()),
+            Self::Fun(f) => Self::Pow(f.to_owned_pow()),
+            Self::Mul(m) => Self::Pow(m.to_owned_pow()),
+            Self::Add(a) => Self::Pow(a.to_owned_pow()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Pow(p) => p,
+            Self::Pow(p) => p,
             _ => unreachable!(),
         }
     }
@@ -671,23 +671,23 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Var(v)`, returning a reference to `v`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_var(&mut self) -> &mut P::OV {
-        let mut ov = std::mem::replace(self, Atom::Empty);
+        let mut ov = std::mem::replace(self, Self::Empty);
 
         *self = match ov {
-            Atom::Var(_) => {
+            Self::Var(_) => {
                 ov.reset();
                 ov
             }
-            Atom::Num(n) => Atom::Var(n.to_owned_var()),
-            Atom::Pow(p) => Atom::Var(p.to_owned_var()),
-            Atom::Fun(f) => Atom::Var(f.to_owned_var()),
-            Atom::Mul(m) => Atom::Var(m.to_owned_var()),
-            Atom::Add(a) => Atom::Var(a.to_owned_var()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => Self::Var(n.to_owned_var()),
+            Self::Pow(p) => Self::Var(p.to_owned_var()),
+            Self::Fun(f) => Self::Var(f.to_owned_var()),
+            Self::Mul(m) => Self::Var(m.to_owned_var()),
+            Self::Add(a) => Self::Var(a.to_owned_var()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Var(v) => v,
+            Self::Var(v) => v,
             _ => unreachable!(),
         }
     }
@@ -695,18 +695,18 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Fun(f)`, returning a reference to `f`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_fun(&mut self) -> &mut P::OF {
-        let mut of = std::mem::replace(self, Atom::Empty);
+        let mut of = std::mem::replace(self, Self::Empty);
 
         *self = match of {
             Atom::Fun(_) => {
                 of.reset();
                 of
             }
-            Atom::Num(n) => Atom::Fun(n.to_owned_fun()),
-            Atom::Pow(p) => Atom::Fun(p.to_owned_fun()),
-            Atom::Var(v) => Atom::Fun(v.to_owned_fun()),
-            Atom::Mul(m) => Atom::Fun(m.to_owned_fun()),
-            Atom::Add(a) => Atom::Fun(a.to_owned_fun()),
+            Self::Num(n) => Self::Fun(n.to_owned_fun()),
+            Self::Pow(p) => Self::Fun(p.to_owned_fun()),
+            Self::Var(v) => Self::Fun(v.to_owned_fun()),
+            Self::Mul(m) => Self::Fun(m.to_owned_fun()),
+            Self::Add(a) => Self::Fun(a.to_owned_fun()),
             Atom::Empty => unreachable!(),
         };
 
@@ -719,7 +719,7 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Mul(m)`, returning a reference to `m`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_mul(&mut self) -> &mut P::OM {
-        let mut om = std::mem::replace(self, Atom::Empty);
+        let mut om = std::mem::replace(self, Self::Empty);
 
         *self = match om {
             Atom::Mul(_) => {
@@ -743,7 +743,7 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Add(a)`, returning a reference to `a`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_add(&mut self) -> &mut P::OA {
-        let mut oa = std::mem::replace(self, Atom::Empty);
+        let mut oa = std::mem::replace(self, Self::Empty);
 
         *self = match oa {
             Atom::Add(_) => {

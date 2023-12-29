@@ -186,29 +186,28 @@ impl Token {
     /// Add `other` to the left side of `self`, where `self` is a binary operation.
     #[inline]
     fn add_left(&mut self, other: Token) -> Result<(), String> {
-        if let Self::Op(ml, _, o1, args) = self {
-            debug_assert!(*ml);
-            *ml = false;
-
-            if let Self::Op(ml, mr, o2, mut args2) = other {
-                debug_assert!(!ml && !mr);
-                if *o1 == o2 {
-                    // add from the left by swapping and then extending from the right
-                    std::mem::swap(args, &mut args2);
-                    args.append(&mut args2);
-                } else {
-                    args.insert(0, Self::Op(false, false, o2, args2));
-                }
-            } else {
-                args.insert(0, other);
-            }
-            Ok(())
-        } else {
-            Err(format!(
+        let Self::Op(ml, _, o1, args) = self else {
+            return Err(format!(
                 "operator expected, but found '{}'. Are parentheses unbalanced?",
                 self
-            ))
+            ));
+        };
+        debug_assert!(*ml);
+        *ml = false;
+
+        if let Self::Op(ml, mr, o2, mut args2) = other {
+            debug_assert!(!ml && !mr);
+            if *o1 == o2 {
+                // add from the left by swapping and then extending from the right
+                std::mem::swap(args, &mut args2);
+                args.append(&mut args2);
+            } else {
+                args.insert(0, Self::Op(false, false, o2, args2));
+            }
+        } else {
+            args.insert(0, other);
         }
+        Ok(())
     }
 
     fn distribute_neg(&mut self) {

@@ -609,25 +609,24 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
             ));
         }
 
-        if let Sample::Discrete(weight, index, sub_sample) = sample {
-            self.accumulator.add_sample(eval * weight, Some(sample));
+        let Sample::Discrete(weight, index, sub_sample) = sample else {
+            return Err(format!("Discrete sample expected: {:?}", sample));
+        };
+        self.accumulator.add_sample(eval * weight, Some(sample));
 
-            // undo the weight of the bin, which is 1 / pdf
-            let bin_weight = *weight * self.bins[*index].pdf;
-            self.bins[*index]
-                .accumulator
-                .add_sample(bin_weight * eval, Some(sample));
+        // undo the weight of the bin, which is 1 / pdf
+        let bin_weight = *weight * self.bins[*index].pdf;
+        self.bins[*index]
+            .accumulator
+            .add_sample(bin_weight * eval, Some(sample));
 
-            if let Some(sg) = &mut self.bins[*index].sub_grid {
-                if let Some(sub_sample) = sub_sample {
-                    sg.add_training_sample(sub_sample, eval)?;
-                }
+        if let Some(sg) = &mut self.bins[*index].sub_grid {
+            if let Some(sub_sample) = sub_sample {
+                sg.add_training_sample(sub_sample, eval)?;
             }
-
-            Ok(())
-        } else {
-            Err(format!("Discrete sample expected: {:?}", sample))
         }
+
+        Ok(())
     }
 
     /// Returns `Ok` when this grid can be merged with another grid,

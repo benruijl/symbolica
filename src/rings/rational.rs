@@ -43,7 +43,7 @@ pub enum Rational {
 impl ToFiniteField<u32> for Rational {
     fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
         match self {
-            &Rational::Natural(n, d) => {
+            &Self::Natural(n, d) => {
                 let mut ff = field.to_element(n.rem_euclid(field.get_prime() as i64) as u32);
 
                 if d != 1 {
@@ -53,7 +53,7 @@ impl ToFiniteField<u32> for Rational {
 
                 ff
             }
-            Rational::Large(r) => field.div(
+            Self::Large(r) => field.div(
                 &field.to_element(r.numer().mod_u(field.get_prime())),
                 &field.to_element(r.denom().mod_u(field.get_prime())),
             ),
@@ -182,9 +182,11 @@ impl Rational {
     }
 
     pub fn pow(&self, e: u64) -> Self {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
+        assert!(
+            e <= u32::MAX as u64,
+            "Power of exponentation is larger than 2^32: {}",
+            e
+        );
         let e = e as u32;
 
         match self {

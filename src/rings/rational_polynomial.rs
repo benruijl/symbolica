@@ -255,18 +255,18 @@ where
 {
     #[inline]
     pub fn inv(self) -> Self {
-        if self.numerator.is_zero() {
-            panic!("Cannot invert 0");
-        }
+        assert!(!self.numerator.is_zero(), "Cannot invert 0");
 
         let field = self.numerator.field.clone();
         Self::from_num_den(self.denominator, self.numerator, &field, false)
     }
 
     pub fn pow(&self, e: u64) -> Self {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
+        assert!(
+            e <= u32::MAX as u64,
+            "Power of exponentation is larger than 2^32: {}",
+            e
+        );
         let e = e as u32;
 
         // TODO: do binary exponentation
@@ -467,9 +467,12 @@ where
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
+        assert!(
+            e <= u32::MAX as u64,
+            "Power of exponentation is larger than 2^32: {}",
+            e
+        );
+
         let e = e as u32;
 
         // TODO: do binary exponentation

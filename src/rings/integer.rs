@@ -313,9 +313,11 @@ impl Integer {
     }
 
     pub fn pow(&self, e: u64) -> Self {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
+        assert!(
+            e <= u32::MAX as u64,
+            "Power of exponentation is larger than 2^32: {}",
+            e
+        );
         let e = e as u32;
 
         if e == 0 {

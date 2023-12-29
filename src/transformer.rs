@@ -87,34 +87,34 @@ pub enum Transformer<P: AtomSet + 'static> {
 impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Transformer::Expand => f.debug_tuple("Expand").finish(),
-            Transformer::Derivative(x) => f.debug_tuple("Derivative").field(x).finish(),
-            Transformer::ReplaceAll(pat, rhs, ..) => {
+            Self::Expand => f.debug_tuple("Expand").finish(),
+            Self::Derivative(x) => f.debug_tuple("Derivative").field(x).finish(),
+            Self::ReplaceAll(pat, rhs, ..) => {
                 f.debug_tuple("ReplaceAll").field(pat).field(rhs).finish()
             }
-            Transformer::Product => f.debug_tuple("Product").finish(),
-            Transformer::Sum => f.debug_tuple("Sum").finish(),
-            Transformer::ArgCount(p) => f.debug_tuple("ArgCount").field(p).finish(),
-            Transformer::Map(_) => f.debug_tuple("Map").finish(),
-            Transformer::Split => f.debug_tuple("Split").finish(),
-            Transformer::Partition(g, b1, b2) => f
+            Self::Product => f.debug_tuple("Product").finish(),
+            Self::Sum => f.debug_tuple("Sum").finish(),
+            Self::ArgCount(p) => f.debug_tuple("ArgCount").field(p).finish(),
+            Self::Map(_) => f.debug_tuple("Map").finish(),
+            Self::Split => f.debug_tuple("Split").finish(),
+            Self::Partition(g, b1, b2) => f
                 .debug_tuple("Partition")
                 .field(g)
                 .field(b1)
                 .field(b2)
                 .finish(),
-            Transformer::Sort => f.debug_tuple("Sort").finish(),
-            Transformer::Deduplicate => f.debug_tuple("Deduplicate").finish(),
-            Transformer::Permutations(i) => f.debug_tuple("Permutations").field(i).finish(),
-            Transformer::TaylorSeries(x, point, d) => f
+            Self::Sort => f.debug_tuple("Sort").finish(),
+            Self::Deduplicate => f.debug_tuple("Deduplicate").finish(),
+            Self::Permutations(i) => f.debug_tuple("Permutations").field(i).finish(),
+            Self::TaylorSeries(x, point, d) => f
                 .debug_tuple("TaylorSeries")
                 .field(x)
                 .field(point)
                 .field(d)
                 .finish(),
-            Transformer::Repeat(r) => f.debug_tuple("Repeat").field(r).finish(),
-            Transformer::Print(p) => f.debug_tuple("Print").field(p).finish(),
-            Transformer::Stats(o, r) => f.debug_tuple("Timing").field(o).field(r).finish(),
+            Self::Repeat(r) => f.debug_tuple("Repeat").field(r).finish(),
+            Self::Print(p) => f.debug_tuple("Print").field(p).finish(),
+            Self::Stats(o, r) => f.debug_tuple("Timing").field(o).field(r).finish(),
         }
     }
 }

@@ -159,10 +159,7 @@ where
 
     /// Map every term in the stream using the function `f`. The resulting terms
     /// are a stream as well, which is returned by this function.
-    pub fn map(
-        mut self,
-        f: impl Fn(&Workspace<P>, Atom<P>) -> Atom<P> + Send + Sync,
-    ) -> TermStreamer<P> {
+    pub fn map(mut self, f: impl Fn(&Workspace<P>, Atom<P>) -> Atom<P> + Send + Sync) -> Self {
         self.move_out_to_in();
 
         let out_wrap = Mutex::new(self.exp_out);
@@ -173,7 +170,7 @@ where
             })
         });
 
-        TermStreamer {
+        Self {
             exp_in: TermInputStream { mem_buf: vec![] },
             exp_out: out_wrap.into_inner().unwrap(),
         }

@@ -235,11 +235,8 @@ impl<P: AtomSet> Pattern<P> {
             AtomView::Num(_) => false,
             AtomView::Var(v) => state.get_wildcard_level(v.get_name()) > 0,
             AtomView::Fun(f) => {
-                if state.get_wildcard_level(f.get_name()) > 0 {
-                    return true;
-                }
-
-                f.iter().any(|arg| Self::has_wildcard(arg, state))
+                state.get_wildcard_level(f.get_name()) > 0
+                    || f.iter().any(|arg| Self::has_wildcard(arg, state))
             }
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();

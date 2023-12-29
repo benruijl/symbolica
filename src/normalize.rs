@@ -368,12 +368,12 @@ impl<P: AtomSet> Atom<P> {
 
         // simplify num1 * num2
         if let Self::Num(n1) = self {
-            if let Self::Num(n2) = other {
+            return if let Self::Num(n2) = other {
                 n1.mul(&n2.to_num_view(), state);
-                return true;
+                true
             } else {
-                return false;
-            }
+                false
+            };
         }
 
         // x * x => x^2

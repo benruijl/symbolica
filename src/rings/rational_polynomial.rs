@@ -27,8 +27,8 @@ pub struct RationalPolynomialField<R: Ring, E: Exponent> {
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomialField<R, E> {
-    pub fn new(coeff_ring: R) -> RationalPolynomialField<R, E> {
-        RationalPolynomialField {
+    pub fn new(coeff_ring: R) -> Self {
+        Self {
             ring: coeff_ring,
             _phantom_exp: PhantomData,
         }
@@ -51,7 +51,7 @@ pub struct RationalPolynomial<R: Ring, E: Exponent> {
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
-    pub fn new(field: &R, var_map: Option<&[Variable]>) -> RationalPolynomial<R, E> {
+    pub fn new(field: &R, var_map: Option<&[Variable]>) -> Self {
         let num = MultivariatePolynomial::new(
             var_map.map(|x| x.len()).unwrap_or(0),
             field,
@@ -60,7 +60,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         );
         let den = num.new_from_constant(field.one());
 
-        RationalPolynomial {
+        Self {
             numerator: num,
             denominator: den,
         }
@@ -111,7 +111,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
         den: MultivariatePolynomial<RationalField, E>,
         field: &IntegerRing,
         do_gcd: bool,
-    ) -> RationalPolynomial<IntegerRing, E> {
+    ) -> Self {
         let content = num.field.gcd(&num.content(), &den.content());
 
         let mut num_int = MultivariatePolynomial::new(

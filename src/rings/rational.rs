@@ -21,8 +21,8 @@ use super::{
 pub struct RationalField;
 
 impl RationalField {
-    pub fn new() -> RationalField {
-        RationalField
+    pub fn new() -> Self {
+        Self
     }
 }
 

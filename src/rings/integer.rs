@@ -163,74 +163,74 @@ impl FromFiniteField<Mersenne64> for Integer {
 }
 
 impl Integer {
-    pub fn new(num: i64) -> Integer {
-        Integer::Natural(num)
+    pub fn new(num: i64) -> Self {
+        Self::Natural(num)
     }
 
-    pub fn from_large(n: ArbitraryPrecisionInteger) -> Integer {
+    pub fn from_large(n: ArbitraryPrecisionInteger) -> Self {
         if let Some(n) = n.to_i64() {
-            Integer::Natural(n)
+            Self::Natural(n)
         } else {
-            Integer::Large(n)
+            Self::Large(n)
         }
     }
 
-    pub fn from_f64(f: f64) -> Integer {
+    pub fn from_f64(f: f64) -> Self {
         Self::from_large(ArbitraryPrecisionInteger::from_f64(f).unwrap())
     }
 
     pub fn to_rational(&self) -> Rational {
         match self {
-            Integer::Natural(n) => Rational::Natural(*n, 1),
-            Integer::Large(r) => Rational::Large(r.into()),
+            Self::Natural(n) => Rational::Natural(*n, 1),
+            Self::Large(r) => Rational::Large(r.into()),
         }
     }
 
     pub fn is_zero(&self) -> bool {
         match self {
-            Integer::Natural(n) => *n == 0,
-            Integer::Large(_) => false,
+            Self::Natural(n) => *n == 0,
+            Self::Large(_) => false,
         }
     }
 
     pub fn is_one(&self) -> bool {
         match self {
-            Integer::Natural(n) => *n == 1,
-            Integer::Large(_) => false,
+            Self::Natural(n) => *n == 1,
+            Self::Large(_) => false,
         }
     }
 
     pub fn is_negative(&self) -> bool {
         match self {
-            Integer::Natural(n) => *n < 0,
-            Integer::Large(r) => ArbitraryPrecisionInteger::from(r.signum_ref()) == -1,
+            Self::Natural(n) => *n < 0,
+            Self::Large(r) => ArbitraryPrecisionInteger::from(r.signum_ref()) == -1,
         }
     }
 
-    pub fn zero() -> Integer {
-        Integer::Natural(0)
+    pub fn zero() -> Self {
+        Self::Natural(0)
     }
 
-    pub fn one() -> Integer {
-        Integer::Natural(1)
+    pub fn one() -> Self {
+        Self::Natural(1)
     }
 
-    pub fn abs(&self) -> Integer {
+    pub fn abs(&self) -> Self {
         match self {
-            Integer::Natural(n) => {
+            Self::Natural(n) => {
                 if *n == i64::MIN {
-                    Integer::Large(ArbitraryPrecisionInteger::from(*n).abs())
+                    Self::Large(ArbitraryPrecisionInteger::from(*n).abs())
                 } else {
-                    Integer::Natural(n.abs())
+                    Self::Natural(n.abs())
                 }
             }
-            Integer::Large(n) => Integer::Large(n.clone().abs()),
+            Self::Large(n) => Integer::Large(n.clone().abs()),
         }
     }
 
     pub fn abs_cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (Integer::Natural(n1), Integer::Natural(n2)) => {
+            (Self::Natural(n1), Self::Natural(n2)) => {
                 if n1 == n2 {
                     Ordering::Equal
                 } else if *n1 == i64::MIN {
@@ -239,7 +239,7 @@ impl Integer {
                     n1.abs().cmp(&n2.abs())
                 }
             }
-            (Integer::Natural(n1), Integer::Large(n2)) => {
+            (Self::Natural(n1), Self::Large(n2)) => {
                 if *n1 == i64::MIN {
                     ArbitraryPrecisionInteger::from(*n1).as_abs().cmp(n2)
                 } else {
@@ -249,7 +249,7 @@ impl Integer {
                         .reverse()
                 }
             }
-            (Integer::Large(n1), Integer::Natural(n2)) => {
+            (Self::Large(n1), Self::Natural(n2)) => {
                 if *n1 == i64::MIN {
                     n1.as_abs()
                         .cmp(&ArbitraryPrecisionInteger::from(*n2).as_abs())
@@ -259,34 +259,34 @@ impl Integer {
                         .unwrap_or(Ordering::Equal)
                 }
             }
-            (Integer::Large(n1), Integer::Large(n2)) => n1.as_abs().cmp(&n2.as_abs()),
+            (Self::Large(n1), Self::Large(n2)) => n1.as_abs().cmp(&n2.as_abs()),
         }
     }
 
     /// Compute `n` factorial (`n!`).
-    pub fn factorial(n: u32) -> Integer {
+    pub fn factorial(n: u32) -> Self {
         if n <= 20 {
             let mut f: i64 = 1;
             for x in 2..=n as i64 {
                 f *= x;
             }
-            Integer::Natural(f)
+            Self::Natural(f)
         } else {
-            Integer::Large(rug::Integer::factorial(n).complete())
+            Self::Large(rug::Integer::factorial(n).complete())
         }
     }
 
     /// Compute the binomial coefficient `(n k) = n!/(k!(n-k)!)`.
     ///
     /// The implementation does not to overflow.
-    pub fn binom(n: i64, mut k: i64) -> Integer {
+    pub fn binom(n: i64, mut k: i64) -> Self {
         if n < 0 || k < 0 || k > n {
-            return Integer::zero();
+            return Self::zero();
         }
         if k > n / 2 {
             k = n - k
         }
-        let mut res = Integer::one();
+        let mut res = Self::one();
         for i in 1..=k {
             res *= n - k + i;
             res /= i;
@@ -297,8 +297,8 @@ impl Integer {
     /// Compute the multinomial coefficient `(k_1+...+k_n)!/(k_1!*...*k_n!)`
     ///
     /// The implementation does not to overflow.
-    pub fn multinom(k: &[u32]) -> Integer {
-        let mut mcr = Integer::one();
+    pub fn multinom(k: &[u32]) -> Self {
+        let mut mcr = Self::one();
         let mut accum = 0i64;
         for v in k {
             if let Some(res) = accum.checked_add(*v as i64) {
@@ -312,62 +312,62 @@ impl Integer {
         mcr
     }
 
-    pub fn pow(&self, e: u64) -> Integer {
+    pub fn pow(&self, e: u64) -> Self {
         if e > u32::MAX as u64 {
             panic!("Power of exponentation is larger than 2^32: {}", e);
         }
         let e = e as u32;
 
         if e == 0 {
-            return Integer::one();
+            return Self::one();
         }
 
         match self {
-            Integer::Natural(n1) => {
+            Self::Natural(n1) => {
                 if let Some(pn) = n1.checked_pow(e) {
-                    Integer::Natural(pn)
+                    Self::Natural(pn)
                 } else {
-                    Integer::Large(ArbitraryPrecisionInteger::from(*n1).pow(e))
+                    Self::Large(ArbitraryPrecisionInteger::from(*n1).pow(e))
                 }
             }
-            Integer::Large(r) => Integer::Large(r.pow(e).into()),
+            Self::Large(r) => Self::Large(r.pow(e).into()),
         }
     }
 
     /// Use Garner's algorithm for the Chinese remainder theorem
     /// to reconstruct an `x` that satisfies `n1 = x % p1` and `n2 = x % p2`.
     /// The `x` will be in the range `[-p1*p2/2,p1*p2/2]`.
-    pub fn chinese_remainder(n1: Integer, n2: Integer, p1: Integer, p2: Integer) -> Integer {
+    pub fn chinese_remainder(n1: Self, n2: Self, p1: Self, p2: Self) -> Self {
         // make sure n1 < n2
         if match (&n1, &n2) {
-            (Integer::Natural(n1), Integer::Natural(n2)) => n1 > n2,
-            (Integer::Natural(_), Integer::Large(_)) => false,
-            (Integer::Large(_), Integer::Natural(_)) => true,
-            (Integer::Large(r1), Integer::Large(r2)) => r1 > r2,
+            (Self::Natural(n1), Self::Natural(n2)) => n1 > n2,
+            (Self::Natural(_), Self::Large(_)) => false,
+            (Self::Large(_), Self::Natural(_)) => true,
+            (Self::Large(r1), Self::Large(r2)) => r1 > r2,
         } {
             return Self::chinese_remainder(n2, n1, p2, p1);
         }
 
         let p1 =
             match p1 {
-                Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
-                Integer::Large(r) => r,
+                Self::Natural(n) => ArbitraryPrecisionInteger::from(n),
+                Self::Large(r) => r,
             };
         let p2 =
             match p2 {
-                Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
-                Integer::Large(r) => r,
+                Self::Natural(n) => ArbitraryPrecisionInteger::from(n),
+                Self::Large(r) => r,
             };
 
         let n1 =
             match n1 {
-                Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
-                Integer::Large(r) => r,
+                Self::Natural(n) => ArbitraryPrecisionInteger::from(n),
+                Self::Large(r) => r,
             };
         let n2 =
             match n2 {
-                Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
-                Integer::Large(r) => r,
+                Self::Natural(n) => ArbitraryPrecisionInteger::from(n),
+                Self::Large(r) => r,
             };
 
         // convert to mixed-radix notation
@@ -386,11 +386,11 @@ impl Integer {
             r
         };
 
-        Integer::from_large(res)
+        Self::from_large(res)
     }
 
     /// Perform the symmetric mod `p` on `self`.
-    pub fn symmetric_mod(&self, p: &Integer) -> Integer {
+    pub fn symmetric_mod(&self, p: &Self) -> Self {
         let c = self % p;
 
         if &c * &2u64.into() > *p {
@@ -402,9 +402,9 @@ impl Integer {
 
     /// Compute the modular inverse of `self` in the ring with size `n`.
     /// `self` and `n` must be coprime.
-    pub fn mod_inverse(&self, n: &Integer) -> Integer {
-        let mut t0 = Integer::zero();
-        let mut t1 = Integer::one();
+    pub fn mod_inverse(&self, n: &Self) -> Self {
+        let mut t0 = Self::zero();
+        let mut t1 = Self::one();
         let mut r0 = n.clone();
         let mut r1 = self.clone();
 
@@ -414,7 +414,7 @@ impl Integer {
             (r1, r0) = (r, r1);
         }
 
-        if r0 > Integer::one() {
+        if r0 > Self::one() {
             panic!("{} is not invertible in ring {}", self, n);
         }
         if t0.is_negative() {
@@ -428,8 +428,8 @@ impl Integer {
 impl Display for Integer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Integer::Natural(n) => n.fmt(f),
-            Integer::Large(r) => r.fmt(f),
+            Self::Natural(n) => n.fmt(f),
+            Self::Large(r) => r.fmt(f),
         }
     }
 }
@@ -443,10 +443,10 @@ impl Display for IntegerRing {
 impl PartialOrd for Integer {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match (self, other) {
-            (Integer::Natural(n1), Integer::Natural(n2)) => n1.partial_cmp(n2),
-            (Integer::Natural(n1), Integer::Large(n2)) => n1.partial_cmp(n2),
-            (Integer::Large(n1), Integer::Natural(n2)) => n1.partial_cmp(n2),
-            (Integer::Large(n1), Integer::Large(n2)) => n1.partial_cmp(n2),
+            (Self::Natural(n1), Self::Natural(n2)) => n1.partial_cmp(n2),
+            (Self::Natural(n1), Self::Large(n2)) => n1.partial_cmp(n2),
+            (Self::Large(n1), Self::Natural(n2)) => n1.partial_cmp(n2),
+            (Self::Large(n1), Self::Large(n2)) => n1.partial_cmp(n2),
         }
     }
 }

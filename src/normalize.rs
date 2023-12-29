@@ -595,12 +595,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     #[inline(always)]
     pub fn is_dirty(&self) -> bool {
         match self {
-            AtomView::Num(n) => n.is_dirty(),
-            AtomView::Var(_) => false,
-            AtomView::Fun(f) => f.is_dirty(),
-            AtomView::Pow(p) => p.is_dirty(),
-            AtomView::Mul(m) => m.is_dirty(),
-            AtomView::Add(a) => a.is_dirty(),
+            Self::Num(n) => n.is_dirty(),
+            Self::Var(_) => false,
+            Self::Fun(f) => f.is_dirty(),
+            Self::Pow(p) => p.is_dirty(),
+            Self::Mul(m) => m.is_dirty(),
+            Self::Add(a) => a.is_dirty(),
         }
     }
 
@@ -612,7 +612,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         }
 
         match self {
-            AtomView::Mul(t) => {
+            Self::Mul(t) => {
                 let mut atom_test_buf: SmallVec<[BufferHandle<Atom<P>>; 20]> = SmallVec::new();
 
                 for a in t.iter() {
@@ -723,16 +723,16 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     on.set_from_number(Number::Natural(1, 1));
                 }
             }
-            AtomView::Num(n) => {
+            Self::Num(n) => {
                 let normalized_num = n.get_number_view().normalize();
                 let nn = out.to_num();
                 nn.set_from_number(normalized_num);
             }
-            AtomView::Var(v) => {
+            Self::Var(v) => {
                 let vv = out.to_var();
                 vv.set_from_view(v);
             }
-            AtomView::Fun(f) => {
+            Self::Fun(f) => {
                 let name = f.get_name();
                 let out_f = out.to_fun();
                 out_f.set_from_name(name);
@@ -782,7 +782,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
             }
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 let mut base_handle = workspace.new_atom();

@@ -128,10 +128,10 @@ impl<P: AtomSet> Pattern<P> {
             match self {
                 Pattern::Mul(m) => {
                     let mut new_args = m.clone();
-                    new_args.push(Pattern::Literal(b));
-                    Pattern::Mul(new_args)
+                    new_args.push(Self::Literal(b));
+                    Self::Mul(new_args)
                 }
-                Pattern::Literal(l1) => {
+                Self::Literal(l1) => {
                     let mut m = workspace.new_atom();
                     let md = m.to_mul();
 
@@ -141,34 +141,34 @@ impl<P: AtomSet> Pattern<P> {
 
                     let mut b = Atom::<P>::new();
                     m.get().as_view().normalize(workspace, state, &mut b);
-                    Pattern::Literal(b)
+                    Self::Literal(b)
                 }
-                _ => Pattern::Mul(vec![self.clone(), Pattern::Literal(b)]),
+                _ => Self::Mul(vec![self.clone(), Self::Literal(b)]),
             }
         } else {
             let mut pow = Atom::<P>::new();
             let pow_num = pow.to_num();
             pow_num.set_from_number(Number::Natural(-1, 1));
 
-            let rhs = Pattern::Mul(vec![
+            let rhs = Self::Mul(vec![
                 self.clone(),
-                Pattern::Pow(Box::new([rhs.clone(), Pattern::Literal(pow)])),
+                Self::Pow(Box::new([rhs.clone(), Self::Literal(pow)])),
             ]);
 
             match self {
-                Pattern::Mul(m) => {
+                Self::Mul(m) => {
                     let mut new_args = m.clone();
                     new_args.push(rhs);
-                    Pattern::Mul(new_args)
+                    Self::Mul(new_args)
                 }
-                _ => Pattern::Mul(vec![self.clone(), rhs]),
+                _ => Self::Mul(vec![self.clone(), rhs]),
             }
         }
     }
 
     pub fn pow(&self, rhs: &Self, workspace: &Workspace<P>, state: &State) -> Self {
-        if let Pattern::Literal(l1) = self {
-            if let Pattern::Literal(l2) = rhs {
+        if let Self::Literal(l1) = self {
+            if let Self::Literal(l2) = rhs {
                 let mut e = workspace.new_atom();
                 let a = e.to_pow();
 
@@ -178,15 +178,15 @@ impl<P: AtomSet> Pattern<P> {
                 let mut b = Atom::new();
                 e.get().as_view().normalize(workspace, state, &mut b);
 
-                return Pattern::Literal(b);
+                return Self::Literal(b);
             }
         }
 
-        Pattern::Pow(Box::new([self.clone(), rhs.clone()]))
+        Self::Pow(Box::new([self.clone(), rhs.clone()]))
     }
 
     pub fn neg(&self, workspace: &Workspace<P>, state: &State) -> Self {
-        if let Pattern::Literal(l1) = self {
+        if let Self::Literal(l1) = self {
             let mut e = workspace.new_atom();
             let a = e.to_mul();
 
@@ -201,14 +201,14 @@ impl<P: AtomSet> Pattern<P> {
             let mut b = Atom::new();
             e.get().as_view().normalize(workspace, state, &mut b);
 
-            Pattern::Literal(b)
+            Self::Literal(b)
         } else {
             let mut pow = Atom::<P>::new();
             let pow_num = pow.to_num();
             pow_num.set_from_number(Number::Natural(-1, 1));
 
             // TODO: simplify if a literal is already present
-            Pattern::Mul(vec![self.clone(), Pattern::Literal(pow)])
+            Self::Mul(vec![self.clone(), Self::Literal(pow)])
         }
     }
 }
@@ -218,13 +218,13 @@ impl<P: AtomSet> Pattern<P> {
     #[inline]
     pub fn could_match(&self, target: AtomView<P>) -> bool {
         match (self, target) {
-            (Pattern::Fn(f1, wc, _), AtomView::Fun(f2)) => *wc || *f1 == f2.get_name(),
-            (Pattern::Mul(_), AtomView::Mul(_)) => true,
-            (Pattern::Add(_), AtomView::Add(_)) => true,
-            (Pattern::Wildcard(_), _) => true,
-            (Pattern::Pow(_), AtomView::Pow(_)) => true,
-            (Pattern::Literal(p), _) => p.as_view() == target,
-            (Pattern::Transformer(_), _) => unreachable!(),
+            (Self::Fn(f1, wc, _), AtomView::Fun(f2)) => *wc || *f1 == f2.get_name(),
+            (Self::Mul(_), AtomView::Mul(_)) => true,
+            (Self::Add(_), AtomView::Add(_)) => true,
+            (Self::Wildcard(_), _) => true,
+            (Self::Pow(_), AtomView::Pow(_)) => true,
+            (Self::Literal(p), _) => p.as_view() == target,
+            (Self::Transformer(_), _) => unreachable!(),
             (_, _) => false,
         }
     }
@@ -277,7 +277,7 @@ impl<P: AtomSet> Pattern<P> {
             || is_top_layer && matches!(atom, AtomView::Mul(_) | AtomView::Add(_))
         {
             match atom {
-                AtomView::Var(v) => Pattern::Wildcard(v.get_name()),
+                AtomView::Var(v) => Self::Wildcard(v.get_name()),
                 AtomView::Fun(f) => {
                     let name = f.get_name();
 
@@ -286,12 +286,12 @@ impl<P: AtomSet> Pattern<P> {
                         args.push(Self::from_view(arg, state, false));
                     }
 
-                    Pattern::Fn(name, state.get_wildcard_level(name) > 0, args)
+                    Self::Fn(name, state.get_wildcard_level(name) > 0, args)
                 }
                 AtomView::Pow(p) => {
                     let (base, exp) = p.get_base_exp();
 
-                    Pattern::Pow(Box::new([
+                    Self::Pow(Box::new([
                         Self::from_view(base, state, false),
                         Self::from_view(exp, state, false),
                     ]))
@@ -303,7 +303,7 @@ impl<P: AtomSet> Pattern<P> {
                         args.push(Self::from_view(child, state, false));
                     }
 
-                    Pattern::Mul(args)
+                    Self::Mul(args)
                 }
                 AtomView::Add(a) => {
                     let mut args = Vec::with_capacity(a.get_nargs());
@@ -311,14 +311,14 @@ impl<P: AtomSet> Pattern<P> {
                         args.push(Self::from_view(child, state, false));
                     }
 
-                    Pattern::Add(args)
+                    Self::Add(args)
                 }
                 AtomView::Num(_) => unreachable!("Number cannot have wildcard"),
             }
         } else {
             let mut oa = Atom::new();
             oa.set_from_view(&atom);
-            Pattern::Literal(oa)
+            Self::Literal(oa)
         }
     }
 
@@ -331,14 +331,14 @@ impl<P: AtomSet> Pattern<P> {
         match_stack: &MatchStack<P>,
     ) {
         match self {
-            Pattern::Wildcard(name) => {
+            Self::Wildcard(name) => {
                 if let Some(w) = match_stack.get(*name) {
                     w.to_atom(out);
                 } else {
                     panic!("Unsubstituted wildcard {}", name.to_u32());
                 }
             }
-            Pattern::Fn(mut name, is_wildcard, args) => {
+            Self::Fn(mut name, is_wildcard, args) => {
                 if *is_wildcard {
                     if let Some(w) = match_stack.get(name) {
                         if let Match::FunctionName(fname) = w {
@@ -357,7 +357,7 @@ impl<P: AtomSet> Pattern<P> {
                 func.set_dirty(true);
 
                 for arg in args {
-                    if let Pattern::Wildcard(w) = arg {
+                    if let Self::Wildcard(w) = arg {
                         if let Some(w) = match_stack.get(*w) {
                             match w {
                                 Match::Single(s) => func.add_arg(*s),
@@ -392,13 +392,13 @@ impl<P: AtomSet> Pattern<P> {
 
                 func_h.as_view().normalize(workspace, state, out);
             }
-            Pattern::Pow(base_and_exp) => {
+            Self::Pow(base_and_exp) => {
                 let mut base = workspace.new_atom();
                 let mut exp = workspace.new_atom();
                 let mut oas = [base.get_mut(), exp.get_mut()];
 
                 for (out, arg) in oas.iter_mut().zip(base_and_exp.iter()) {
-                    if let Pattern::Wildcard(w) = arg {
+                    if let Self::Wildcard(w) = arg {
                         if let Some(w) = match_stack.get(*w) {
                             match w {
                                 Match::Single(s) => out.set_from_view(s),
@@ -430,12 +430,12 @@ impl<P: AtomSet> Pattern<P> {
                 pow.set_dirty(true);
                 pow_h.as_view().normalize(workspace, state, out);
             }
-            Pattern::Mul(args) => {
+            Self::Mul(args) => {
                 let mut mul_h = workspace.new_atom();
                 let mul = mul_h.to_mul();
 
                 for arg in args {
-                    if let Pattern::Wildcard(w) = arg {
+                    if let Self::Wildcard(w) = arg {
                         if let Some(w) = match_stack.get(*w) {
                             match w {
                                 Match::Single(s) => mul.extend(*s),
@@ -469,12 +469,12 @@ impl<P: AtomSet> Pattern<P> {
                 mul.set_dirty(true);
                 mul_h.as_view().normalize(workspace, state, out);
             }
-            Pattern::Add(args) => {
+            Self::Add(args) => {
                 let mut add_h = workspace.new_atom();
                 let add = add_h.to_add();
 
                 for arg in args {
-                    if let Pattern::Wildcard(w) = arg {
+                    if let Self::Wildcard(w) = arg {
                         if let Some(w) = match_stack.get(*w) {
                             match w {
                                 Match::Single(s) => add.extend(*s),
@@ -510,10 +510,10 @@ impl<P: AtomSet> Pattern<P> {
                 add.set_dirty(true);
                 add_h.as_view().normalize(workspace, state, out);
             }
-            Pattern::Literal(oa) => {
+            Self::Literal(oa) => {
                 out.set_from_view(&oa.as_view());
             }
-            Pattern::Transformer(p) => {
+            Self::Transformer(p) => {
                 let (pat, ts) = &**p;
                 let pat = pat
                     .as_ref()

@@ -177,7 +177,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     /// Compare terms in an expression. `x` and `x*2` are placed next to each other.
     pub(crate) fn cmp_terms(&self, other: &AtomView<'_, P>) -> Ordering {
-        debug_assert!(!matches!(self, AtomView::Add(_)));
+        debug_assert!(!matches!(self, Self::Add(_)));
         debug_assert!(!matches!(other, AtomView::Add(_)));
         match (self, other) {
             (Self::Num(_), AtomView::Num(_)) => Ordering::Equal,
@@ -241,8 +241,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 a1.cmp(&it2.get(0))
             }
             (Self::Var(_), _) => Ordering::Less,
-            (_, AtomView::Var(_)) => Ordering::Greater,
-            (_, AtomView::Pow(_)) => Ordering::Greater,
+            (_, AtomView::Var(_)) | (_, AtomView::Pow(_)) => Ordering::Greater,
             (Self::Pow(_), _) => Ordering::Less,
 
             (Self::Fun(f1), AtomView::Fun(f2)) => {
@@ -409,12 +408,12 @@ impl<P: AtomSet> Atom<P> {
     /// If the function return `false`, no merge was possible and no modifications were made.
     pub fn merge_terms(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
         if let Self::Num(n1) = self {
-            if let Self::Num(n2) = other {
+            return if let Self::Num(n2) = other {
                 n1.add(&n2.to_num_view(), state);
-                return true;
+                true
             } else {
-                return false;
-            }
+                false
+            };
         }
 
         // compare the non-coefficient part of terms and add the coefficients if they are the same
@@ -899,7 +898,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     out.set_from_base_and_exp(base_handle.as_view(), exp_handle.as_view());
                 }
             }
-            AtomView::Add(a) => {
+            Self::Add(a) => {
                 let mut atom_test_buf: SmallVec<[BufferHandle<Atom<P>>; 20]> = SmallVec::new();
 
                 for a in a.iter() {

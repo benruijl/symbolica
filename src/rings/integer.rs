@@ -31,8 +31,8 @@ pub const SMALL_PRIMES: [i64; 100] = [
 pub struct IntegerRing;
 
 impl IntegerRing {
-    pub fn new() -> IntegerRing {
-        IntegerRing
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -45,7 +45,7 @@ pub enum Integer {
 impl From<i64> for Integer {
     #[inline]
     fn from(value: i64) -> Self {
-        Integer::Natural(value)
+        Self::Natural(value)
     }
 }
 
@@ -53,9 +53,9 @@ impl From<u64> for Integer {
     #[inline]
     fn from(value: u64) -> Self {
         if value <= i64::MAX as u64 {
-            Integer::Natural(value as i64)
+            Self::Natural(value as i64)
         } else {
-            Integer::Large(value.into())
+            Self::Large(value.into())
         }
     }
 }
@@ -72,8 +72,8 @@ impl std::fmt::Debug for Integer {
 impl ToFiniteField<u32> for Integer {
     fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
         match self {
-            &Integer::Natural(n) => field.to_element(n.rem_euclid(field.get_prime() as i64) as u32),
-            Integer::Large(r) => field.to_element(r.mod_u(field.get_prime())),
+            &Self::Natural(n) => field.to_element(n.rem_euclid(field.get_prime() as i64) as u32),
+            Self::Large(r) => field.to_element(r.mod_u(field.get_prime())),
         }
     }
 }
@@ -81,14 +81,14 @@ impl ToFiniteField<u32> for Integer {
 impl ToFiniteField<u64> for Integer {
     fn to_finite_field(&self, field: &FiniteField<u64>) -> <FiniteField<u64> as Ring>::Element {
         match self {
-            &Integer::Natural(n) => {
+            &Self::Natural(n) => {
                 if field.get_prime() > i64::MAX as u64 {
                     field.to_element((n as i128).rem_euclid(field.get_prime() as i128) as u64)
                 } else {
                     field.to_element(n.rem_euclid(field.get_prime() as i64) as u64)
                 }
             }
-            Integer::Large(r) => field.to_element(r.mod_u64(field.get_prime())),
+            Self::Large(r) => field.to_element(r.mod_u64(field.get_prime())),
         }
     }
 }
@@ -99,8 +99,8 @@ impl ToFiniteField<Mersenne64> for Integer {
         _field: &FiniteField<Mersenne64>,
     ) -> <FiniteField<Mersenne64> as Ring>::Element {
         match self {
-            &Integer::Natural(n) => n.rem_euclid(Mersenne64::PRIME as i64) as u64,
-            Integer::Large(r) => r.mod_u64(Mersenne64::PRIME),
+            &Self::Natural(n) => n.rem_euclid(Mersenne64::PRIME as i64) as u64,
+            Self::Large(r) => r.mod_u64(Mersenne64::PRIME),
         }
     }
 }
@@ -121,11 +121,11 @@ impl FromFiniteField<u32> for Integer {
         field: &FiniteField<u32>,
         element: <FiniteField<u32> as Ring>::Element,
     ) -> Self {
-        Integer::Natural(field.from_element(element) as i64)
+        Self::Natural(field.from_element(element) as i64)
     }
 
     fn from_prime(field: &FiniteField<u32>) -> Self {
-        Integer::Natural(field.get_prime() as i64)
+        Self::Natural(field.get_prime() as i64)
     }
 }
 
@@ -136,29 +136,29 @@ impl FromFiniteField<u64> for Integer {
     ) -> Self {
         let r = field.from_element(element);
         if r <= i64::MAX as u64 {
-            Integer::Natural(r as i64)
+            Self::Natural(r as i64)
         } else {
-            Integer::Large(ArbitraryPrecisionInteger::from(r))
+            Self::Large(ArbitraryPrecisionInteger::from(r))
         }
     }
 
     fn from_prime(field: &FiniteField<u64>) -> Self {
         let r = field.get_prime();
         if r <= i64::MAX as u64 {
-            Integer::Natural(r as i64)
+            Self::Natural(r as i64)
         } else {
-            Integer::Large(ArbitraryPrecisionInteger::from(r))
+            Self::Large(ArbitraryPrecisionInteger::from(r))
         }
     }
 }
 
 impl FromFiniteField<Mersenne64> for Integer {
     fn from_finite_field(_field: &FiniteField<Mersenne64>, element: u64) -> Self {
-        Integer::Natural(element as i64)
+        Self::Natural(element as i64)
     }
 
     fn from_prime(_field: &FiniteField<Mersenne64>) -> Self {
-        Integer::Natural(Mersenne64::PRIME as i64)
+        Self::Natural(Mersenne64::PRIME as i64)
     }
 }
 

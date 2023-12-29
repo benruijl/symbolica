@@ -286,8 +286,8 @@ impl<P: AtomSet> Atom<P> {
         workspace: &Workspace<P>,
     ) -> bool {
         // x^a * x^b = x^(a + b)
-        if let Atom::Pow(p1) = self {
-            if let Atom::Pow(p2) = other {
+        if let Self::Pow(p1) = self {
+            if let Self::Pow(p2) = other {
                 let (base2, exp2) = p2.to_pow_view().get_base_exp();
 
                 let (base1, exp1) = p1.to_pow_view().get_base_exp();
@@ -327,7 +327,7 @@ impl<P: AtomSet> Atom<P> {
         }
 
         // x * x^n = x^(n+1)
-        if let Atom::Pow(p) = other {
+        if let Self::Pow(p) = other {
             let pv = p.to_pow_view();
             let (base, exp) = pv.get_base_exp();
 
@@ -368,8 +368,8 @@ impl<P: AtomSet> Atom<P> {
         }
 
         // simplify num1 * num2
-        if let Atom::Num(n1) = self {
-            if let Atom::Num(n2) = other {
+        if let Self::Num(n1) = self {
+            if let Self::Num(n2) = other {
                 n1.mul(&n2.to_num_view(), state);
                 return true;
             } else {
@@ -408,8 +408,8 @@ impl<P: AtomSet> Atom<P> {
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
     pub fn merge_terms(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
-        if let Atom::Num(n1) = self {
-            if let Atom::Num(n2) = other {
+        if let Self::Num(n1) = self {
+            if let Self::Num(n2) = other {
                 n1.add(&n2.to_num_view(), state);
                 return true;
             } else {
@@ -418,7 +418,7 @@ impl<P: AtomSet> Atom<P> {
         }
 
         // compare the non-coefficient part of terms and add the coefficients if they are the same
-        if let Atom::Mul(m) = self {
+        if let Self::Mul(m) = self {
             let slice = m.to_mul_view().to_slice();
 
             let last_elem = slice.get(slice.len() - 1);
@@ -429,7 +429,7 @@ impl<P: AtomSet> Atom<P> {
                 (m.to_mul_view().to_slice(), false)
             };
 
-            if let Atom::Mul(m2) = other {
+            if let Self::Mul(m2) = other {
                 let slice2 = m2.to_mul_view().to_slice();
                 let last_elem2 = slice2.get(slice2.len() - 1);
 
@@ -529,7 +529,7 @@ impl<P: AtomSet> Atom<P> {
 
                 return true;
             }
-        } else if let Atom::Mul(m) = other {
+        } else if let Self::Mul(m) = other {
             let slice = m.to_mul_view().to_slice();
 
             if slice.len() != 2 {

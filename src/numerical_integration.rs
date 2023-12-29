@@ -42,8 +42,8 @@ pub struct StatisticsAccumulator<T: Real + NumericalFloatComparison> {
 
 impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
     /// Create a new [StatisticsAccumulator].
-    pub fn new() -> StatisticsAccumulator<T> {
-        StatisticsAccumulator {
+    pub fn new() -> Self {
+        Self {
             sum: T::zero(),
             sum_sq: T::zero(),
             weight_sum: T::zero(),
@@ -70,8 +70,8 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
     /// that evaluated to the maximum point.
     ///
     /// This function does not allocate.
-    pub fn shallow_copy(&self) -> StatisticsAccumulator<T> {
-        StatisticsAccumulator {
+    pub fn shallow_copy(&self) -> Self {
+        Self {
             sum: self.sum,
             sum_sq: self.sum_sq,
             weight_sum: self.weight_sum,
@@ -118,7 +118,7 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
 
     /// Add the non-processed samples of `other` to non-processed samples of this
     /// accumulator. The non-processed samples are removed from `other`.
-    pub fn merge_samples(&mut self, other: &mut StatisticsAccumulator<T>) {
+    pub fn merge_samples(&mut self, other: &mut Self) {
         self.merge_samples_no_reset(other);
 
         // reset the other
@@ -130,7 +130,7 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
 
     /// Add the non-processed samples of `other` to non-processed samples of this
     /// accumulator without removing the samples from `other`.
-    pub fn merge_samples_no_reset(&mut self, other: &StatisticsAccumulator<T>) {
+    pub fn merge_samples_no_reset(&mut self, other: &Self) {
         self.sum += &other.sum;
         self.sum_sq += &other.sum_sq;
         self.new_samples += other.new_samples;

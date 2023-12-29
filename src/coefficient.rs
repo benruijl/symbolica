@@ -23,7 +23,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         out: &mut Atom<P>,
     ) -> bool {
         match self {
-            AtomView::Num(n) => {
+            Self::Num(n) => {
                 if let BorrowedNumber::RationalPolynomial(r) = n.get_number_view() {
                     let old_var_map = r.get_var_map().unwrap();
                     if old_var_map != vars {
@@ -86,7 +86,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     false
                 }
             }
-            AtomView::Var(v) => {
+            Self::Var(v) => {
                 let id = v.get_name();
                 if vars.contains(&id.into()) {
                     // change variable into coefficient
@@ -112,7 +112,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     false
                 }
             }
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 let mut nb = workspace.new_atom();
@@ -129,7 +129,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     false
                 }
             }
-            AtomView::Mul(m) => {
+            Self::Mul(m) => {
                 let mut o = workspace.new_atom();
                 let mul = o.to_mul();
 
@@ -153,7 +153,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     true
                 }
             }
-            AtomView::Add(a) => {
+            Self::Add(a) => {
                 let mut o = workspace.new_atom();
                 let mul = o.to_add();
 
@@ -177,7 +177,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     true
                 }
             }
-            AtomView::Fun(_) => {
+            Self::Fun(_) => {
                 // do not propagate into functions
                 out.set_from_view(self);
                 false

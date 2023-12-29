@@ -113,17 +113,17 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Check if a factor contains `x` at the ground level.
     fn has_key(&self, x: Identifier) -> bool {
         match self {
-            AtomView::Var(v) => v.get_name() == x,
-            AtomView::Fun(f) => f.get_name() == x,
-            AtomView::Pow(p) => {
+            Self::Var(v) => v.get_name() == x,
+            Self::Fun(f) => f.get_name() == x,
+            Self::Pow(p) => {
                 let (base, _) = p.get_base_exp();
                 match base {
-                    AtomView::Var(v) => v.get_name() == x,
-                    AtomView::Fun(f) => f.get_name() == x,
+                    Self::Var(v) => v.get_name() == x,
+                    Self::Fun(f) => f.get_name() == x,
                     _ => false,
                 }
             }
-            AtomView::Mul(_) => unreachable!("Mul is not a factor"),
+            Self::Mul(_) => unreachable!("Mul is not a factor"),
             _ => false,
         }
     }
@@ -137,8 +137,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         rest: &mut Atom<P>,
     ) {
         match self {
-            AtomView::Add(_) => {}
-            AtomView::Mul(m) => {
+            Self::Add(_) => {}
+            Self::Mul(m) => {
                 if m.iter().any(|a| a.has_key(x)) {
                     let mut collected = workspace.new_atom();
                     let mul = collected.to_mul();

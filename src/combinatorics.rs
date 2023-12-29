@@ -12,8 +12,8 @@ pub struct CombinationIterator {
 }
 
 impl CombinationIterator {
-    pub fn new(n: usize, k: usize) -> CombinationIterator {
-        CombinationIterator {
+    pub fn new(n: usize, k: usize) -> Self {
+        Self {
             indices: (0..k).collect(),
             n,
             init: false,
@@ -72,8 +72,8 @@ pub struct CombinationWithReplacementIterator {
 }
 
 impl CombinationWithReplacementIterator {
-    pub fn new(n: usize, k: u32) -> CombinationWithReplacementIterator {
-        CombinationWithReplacementIterator {
+    pub fn new(n: usize, k: u32) -> Self {
+        Self {
             indices: (0..n).map(|_| 0).collect(),
             k,
             init: false,

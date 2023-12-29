@@ -20,8 +20,8 @@ type EvalFnType<T, P> =
 pub struct EvaluationFn<T, P: AtomSet>(EvalFnType<T, P>);
 
 impl<T, P: AtomSet> EvaluationFn<T, P> {
-    pub fn new(f: EvalFnType<T, P>) -> EvaluationFn<T, P> {
-        EvaluationFn(f)
+    pub fn new(f: EvalFnType<T, P>) -> Self {
+        Self(f)
     }
 
     /// Get a reference to the function that can be called to evaluate it.

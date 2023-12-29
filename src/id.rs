@@ -920,10 +920,8 @@ impl<'a, 'b, P: AtomSet> std::fmt::Debug for MatchStack<'a, 'b, P> {
 
 impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
     /// Create a new match stack.
-    pub fn new(
-        restrictions: &'b HashMap<Identifier, Vec<PatternRestriction<P>>>,
-    ) -> MatchStack<'a, 'b, P> {
-        MatchStack {
+    pub fn new(restrictions: &'b HashMap<Identifier, Vec<PatternRestriction<P>>>) -> Self {
+        Self {
             stack: SmallVec::new(),
             restrictions,
         }
@@ -1167,14 +1165,10 @@ pub struct AtomMatchIterator<'a, 'b, P: AtomSet> {
 }
 
 impl<'a, 'b, P: AtomSet> AtomMatchIterator<'a, 'b, P> {
-    pub fn new(
-        pattern: &'b Pattern<P>,
-        target: AtomView<'a, P>,
-        state: &'a State,
-    ) -> AtomMatchIterator<'a, 'b, P> {
+    pub fn new(pattern: &'b Pattern<P>, target: AtomView<'a, P>, state: &'a State) -> Self {
         let try_match_atom = matches!(pattern, Pattern::Wildcard(_) | Pattern::Literal(_));
 
-        AtomMatchIterator {
+        Self {
             try_match_atom,
             sl_it: None,
             pattern,
@@ -1261,7 +1255,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
         match_stack: &MatchStack<'a, 'b, P>,
         do_not_match_to_single_atom_in_list: bool,
         do_not_match_entire_slice: bool,
-    ) -> SubSliceIterator<'a, 'b, P> {
+    ) -> Self {
         let mut shortcut_done = false;
 
         // a pattern and target can either be a single atom or a list
@@ -1314,7 +1308,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
             shortcut_done = true;
         };
 
-        SubSliceIterator {
+        Self {
             pattern: pat_list,
             iterators: if shortcut_done {
                 Vec::new()
@@ -1853,8 +1847,8 @@ pub struct AtomTreeIterator<'a, P: AtomSet> {
 }
 
 impl<'a, P: AtomSet> AtomTreeIterator<'a, P> {
-    pub fn new(target: AtomView<'a, P>) -> AtomTreeIterator<'a, P> {
-        AtomTreeIterator {
+    pub fn new(target: AtomView<'a, P>) -> Self {
+        Self {
             stack: smallvec![(None, target)],
         }
     }
@@ -1917,8 +1911,8 @@ impl<'a: 'b, 'b, P: AtomSet> PatternAtomTreeIterator<'a, 'b, P> {
         target: AtomView<'a, P>,
         state: &'a State,
         restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
-    ) -> PatternAtomTreeIterator<'a, 'b, P> {
-        PatternAtomTreeIterator {
+    ) -> Self {
+        Self {
             pattern,
             atom_tree_iterator: AtomTreeIterator::new(target),
             current_target: None,
@@ -1986,8 +1980,8 @@ impl<'a: 'b, 'b, P: AtomSet + 'a + 'b> ReplaceIterator<'a, 'b, P> {
         rhs: &'b Pattern<P>,
         state: &'a State,
         restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
-    ) -> ReplaceIterator<'a, 'b, P> {
-        ReplaceIterator {
+    ) -> Self {
+        Self {
             pattern_tree_iterator: PatternAtomTreeIterator::new(
                 pattern,
                 target,

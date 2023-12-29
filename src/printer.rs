@@ -427,11 +427,13 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
 
         print_state.level += 1;
         print_state.explicit_sign = false;
-        for x in self.iter().take(if skip_num {
-            self.get_nargs() - 1
-        } else {
-            self.get_nargs()
-        }) {
+        for x in
+            self.iter().take(if skip_num {
+                self.get_nargs() - 1
+            } else {
+                self.get_nargs()
+            })
+        {
             if !first {
                 if opts.latex {
                     f.write_char(' ')?;

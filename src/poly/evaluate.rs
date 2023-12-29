@@ -574,13 +574,14 @@ impl HornerScheme<RationalField> {
             indices.clear();
             indices.extend(0..x.nterms);
 
-            let h = x.to_horner_scheme_impl(
-                &scheme,
-                &mut indices,
-                0,
-                &mut power_sub,
-                &mut horner_boxes,
-            );
+            let h =
+                x.to_horner_scheme_impl(
+                    &scheme,
+                    &mut indices,
+                    0,
+                    &mut power_sub,
+                    &mut horner_boxes,
+                );
             best_score += BorrowedHornerScheme::from(&h).op_count_cse();
             best.push(h);
         }
@@ -859,16 +860,18 @@ impl Variable<Rational> {
     ) -> String {
         match self {
             Variable::Var(v) => var_map[*v].to_string(state),
-            Variable::Constant(c) => match mode {
-                InstructionSetMode::Plain => format!("{}", c),
-                InstructionSetMode::CPP(_) => {
-                    if c.is_integer() {
-                        format!("T({})", c.numerator())
-                    } else {
-                        format!("T({})/T({})", c.numerator(), c.denominator())
+            Variable::Constant(c) => {
+                match mode {
+                    InstructionSetMode::Plain => format!("{}", c),
+                    InstructionSetMode::CPP(_) => {
+                        if c.is_integer() {
+                            format!("T({})", c.numerator())
+                        } else {
+                            format!("T({})/T({})", c.numerator(), c.denominator())
+                        }
                     }
                 }
-            },
+            }
         }
     }
 }

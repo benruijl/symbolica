@@ -198,11 +198,13 @@ impl<'a, P: AtomSet> From<AtomView<'a, P>> for PyResult<PythonAtomTree> {
                 head: Some(format!("{}", AtomPrinter::new(atom, &&get_state!()?))),
                 tail: vec![],
             },
-            AtomView::Var(v) => PythonAtomTree {
-                atom_type: PythonAtomType::Var,
-                head: Some(get_state!()?.get_name(v.get_name()).to_string()),
-                tail: vec![],
-            },
+            AtomView::Var(v) => {
+                PythonAtomTree {
+                    atom_type: PythonAtomType::Var,
+                    head: Some(get_state!()?.get_name(v.get_name()).to_string()),
+                    tail: vec![],
+                }
+            }
             AtomView::Fun(f) => PythonAtomTree {
                 atom_type: PythonAtomType::Fn,
                 head: Some(get_state!()?.get_name(f.get_name()).to_string()),
@@ -244,14 +246,16 @@ pub enum ConvertibleToPattern {
 impl ConvertibleToPattern {
     pub fn to_pattern(self) -> PyResult<PythonPattern> {
         match self {
-            Self::Literal(l) => Ok(PythonPattern {
-                expr: Arc::new(
-                    l.to_expression()
-                        .expr
-                        .as_view()
-                        .into_pattern(&&get_state!()?),
-                ),
-            }),
+            Self::Literal(l) => {
+                Ok(PythonPattern {
+                    expr: Arc::new(
+                        l.to_expression()
+                            .expr
+                            .as_view()
+                            .into_pattern(&&get_state!()?),
+                    ),
+                })
+            }
             Self::Pattern(e) => Ok(e),
         }
     }
@@ -273,9 +277,7 @@ macro_rules! append_transformer {
                 expr: Arc::new(Pattern::Transformer(t)),
             })
         } else {
-            return Err(exceptions::PyValueError::new_err(
-                "Pattern must be a transformer",
-            ));
+            return Err(exceptions::PyValueError::new_err("Pattern must be a transformer"));
         }
     };
 }
@@ -474,9 +476,9 @@ impl PythonPattern {
             }
             Pattern::Wildcard(x) => *x,
             _ => {
-                return Err(exceptions::PyValueError::new_err(
-                    "Derivative must be taken wrt a variable",
-                ))
+                return Err(
+                    exceptions::PyValueError::new_err("Derivative must be taken wrt a variable")
+                )
             }
         };
 
@@ -531,9 +533,7 @@ impl PythonPattern {
             let p = r.extract::<PythonPattern>()?;
 
             let Pattern::Transformer(t) = p.expr.borrow() else {
-                return Err(exceptions::PyValueError::new_err(
-                    "Argument must be a transformer",
-                ));
+                return Err(exceptions::PyValueError::new_err("Argument must be a transformer"));
             };
 
             if t.0.is_some() {
@@ -570,9 +570,7 @@ impl PythonPattern {
                 let p = r.extract::<PythonPattern>()?;
 
                 let Pattern::Transformer(t) = p.expr.borrow() else {
-                    return Err(exceptions::PyValueError::new_err(
-                        "Argument must be a transformer",
-                    ));
+                    return Err(exceptions::PyValueError::new_err("Argument must be a transformer"));
                 };
 
                 if t.0.is_some() {
@@ -588,9 +586,7 @@ impl PythonPattern {
                 expr: Arc::new(Pattern::Transformer(ts)),
             })
         } else {
-            Err(exceptions::PyValueError::new_err(
-                "Pattern must be a transformer",
-            ))
+            Err(exceptions::PyValueError::new_err("Pattern must be a transformer"))
         }
     }
 
@@ -634,9 +630,9 @@ impl PythonPattern {
             }
             Pattern::Wildcard(x) => *x,
             _ => {
-                return Err(exceptions::PyValueError::new_err(
-                    "Derivative must be taken wrt a variable",
-                ))
+                return Err(
+                    exceptions::PyValueError::new_err("Derivative must be taken wrt a variable")
+                )
             }
         };
 
@@ -650,13 +646,14 @@ impl PythonPattern {
         expansion_point: ConvertibleToExpression,
         depth: u32,
     ) -> PyResult<PythonPattern> {
-        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
-        } else {
-            return Err(exceptions::PyValueError::new_err(
-                "Derivative must be taken wrt a variable",
-            ));
-        };
+        let id =
+            if let AtomView::Var(x) = x.to_expression().expr.as_view() {
+                x.get_name()
+            } else {
+                return Err(
+                    exceptions::PyValueError::new_err("Derivative must be taken wrt a variable")
+                );
+            };
 
         return append_transformer!(
             self,
@@ -769,9 +766,7 @@ impl PythonPattern {
         color_large_change_threshold: Option<f64>,
     ) -> PyResult<PythonPattern> {
         let Pattern::Transformer(t) = transformer.expr.borrow() else {
-            return Err(exceptions::PyValueError::new_err(
-                "Argument must be a transformer",
-            ));
+            return Err(exceptions::PyValueError::new_err("Argument must be a transformer"));
         };
 
         return append_transformer!(
@@ -866,9 +861,7 @@ impl PythonPattern {
         number: Option<i64>,
     ) -> PyResult<PythonPattern> {
         if number.is_some() {
-            return Err(exceptions::PyValueError::new_err(
-                "Optional number argument not supported",
-            ));
+            return Err(exceptions::PyValueError::new_err("Optional number argument not supported"));
         }
 
         let res = WORKSPACE.with(|workspace| {
@@ -973,9 +966,7 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
                 expr: Arc::new(Atom::new_num(i)),
             }))
         } else {
-            Err(exceptions::PyValueError::new_err(
-                "Cannot convert to expression",
-            ))
+            Err(exceptions::PyValueError::new_err("Cannot convert to expression"))
         }
     }
 }
@@ -1019,9 +1010,7 @@ impl<'a> FromPyObject<'a> for Complex<f64> {
         } else if let Ok(a) = ob.extract::<&PyComplex>() {
             Ok(Complex::new(a.real(), a.imag()))
         } else {
-            Err(exceptions::PyValueError::new_err(
-                "Not a valid complex number",
-            ))
+            Err(exceptions::PyValueError::new_err("Not a valid complex number"))
         }
     }
 }
@@ -1031,18 +1020,16 @@ macro_rules! req_num_cmp {
         let num = $num.to_expression();
 
         if !matches!(num.expr.as_view(), AtomView::Num(_)) {
-            return Err(exceptions::PyTypeError::new_err(
-                "Can only compare to number",
-            ));
+            return Err(exceptions::PyTypeError::new_err("Can only compare to number"));
         };
 
         match $self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
 
                 let mut h = HashMap::default();
@@ -1063,9 +1050,7 @@ macro_rules! req_num_cmp {
                     restrictions: Arc::new(h),
                 })
             }
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Only wildcards can be restricted.",
-            )),
+            _ => Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted.")),
         }
     }};
 }
@@ -1076,16 +1061,14 @@ macro_rules! req_cmp_num_cmp {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
                 name
             }
             _ => {
-                return Err(exceptions::PyTypeError::new_err(
-                    "Only wildcards can be restricted.",
-                ));
+                return Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted."));
             }
         };
 
@@ -1093,16 +1076,14 @@ macro_rules! req_cmp_num_cmp {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
                 name
             }
             _ => {
-                return Err(exceptions::PyTypeError::new_err(
-                    "Only wildcards can be restricted.",
-                ));
+                return Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted."));
             }
         };
 
@@ -1296,10 +1277,7 @@ impl PythonExpression {
 
     /// Convert the expression into a human-readable string.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            AtomPrinter::new(self.expr.as_view(), &&get_state!()?)
-        ))
+        Ok(format!("{}", AtomPrinter::new(self.expr.as_view(), &&get_state!()?)))
     }
 
     /// Get the number of bytes that this expression takes up in memory.
@@ -1467,20 +1445,21 @@ impl PythonExpression {
     /// Add this expression to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut e = workspace.new_atom();
-            let a = e.to_add();
+        let b =
+            WORKSPACE.with(|workspace| {
+                let mut e = workspace.new_atom();
+                let a = e.to_add();
 
-            a.extend(self.expr.as_view());
-            a.extend(rhs.to_expression().expr.as_view());
-            a.set_dirty(true);
+                a.extend(self.expr.as_view());
+                a.extend(rhs.to_expression().expr.as_view());
+                a.set_dirty(true);
 
-            let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
-            b
-        });
+                let mut b = Atom::new();
+                e.get()
+                    .as_view()
+                    .normalize(workspace, state.borrow(), &mut b);
+                b
+            });
 
         Ok(PythonExpression { expr: Arc::new(b) })
     }
@@ -1504,20 +1483,21 @@ impl PythonExpression {
     /// Add this expression to `other`, returning the result.
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut e = workspace.new_atom();
-            let a = e.to_mul();
+        let b =
+            WORKSPACE.with(|workspace| {
+                let mut e = workspace.new_atom();
+                let a = e.to_mul();
 
-            a.extend(self.expr.as_view());
-            a.extend(rhs.to_expression().expr.as_view());
-            a.set_dirty(true);
+                a.extend(self.expr.as_view());
+                a.extend(rhs.to_expression().expr.as_view());
+                a.set_dirty(true);
 
-            let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
-            b
-        });
+                let mut b = Atom::new();
+                e.get()
+                    .as_view()
+                    .normalize(workspace, state.borrow(), &mut b);
+                b
+            });
 
         Ok(PythonExpression { expr: Arc::new(b) })
     }
@@ -1570,9 +1550,7 @@ impl PythonExpression {
         number: Option<i64>,
     ) -> PyResult<PythonExpression> {
         if number.is_some() {
-            return Err(exceptions::PyValueError::new_err(
-                "Optional number argument not supported",
-            ));
+            return Err(exceptions::PyValueError::new_err("Optional number argument not supported"));
         }
 
         let state = get_state!()?;
@@ -1671,9 +1649,9 @@ impl PythonExpression {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
 
                 let mut h = HashMap::default();
@@ -1686,9 +1664,7 @@ impl PythonExpression {
                     restrictions: Arc::new(h),
                 })
             }
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Only wildcards can be restricted.",
-            )),
+            _ => Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted.")),
         }
     }
 
@@ -1709,9 +1685,9 @@ impl PythonExpression {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
 
                 let mut h = HashMap::default();
@@ -1731,9 +1707,7 @@ impl PythonExpression {
                     restrictions: Arc::new(h),
                 })
             }
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Only wildcards can be restricted.",
-            )),
+            _ => Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted.")),
         }
     }
 
@@ -1755,9 +1729,9 @@ impl PythonExpression {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
 
                 let mut h = HashMap::default();
@@ -1777,9 +1751,7 @@ impl PythonExpression {
                     restrictions: Arc::new(h),
                 })
             }
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Only wildcards can be restricted.",
-            )),
+            _ => Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted.")),
         }
     }
 
@@ -1813,9 +1785,7 @@ impl PythonExpression {
                     restrictions: Arc::new(h),
                 })
             }
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Only wildcards can be restricted.",
-            )),
+            _ => Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted.")),
         }
     }
 
@@ -1826,9 +1796,9 @@ impl PythonExpression {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
 
                 let mut h = HashMap::default();
@@ -1838,9 +1808,7 @@ impl PythonExpression {
                     restrictions: Arc::new(h),
                 })
             }
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Only wildcards can be restricted.",
-            )),
+            _ => Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted.")),
         }
     }
 
@@ -1953,16 +1921,14 @@ impl PythonExpression {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
                 name
             }
             _ => {
-                return Err(exceptions::PyTypeError::new_err(
-                    "Only wildcards can be restricted.",
-                ));
+                return Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted."));
             }
         };
 
@@ -2068,16 +2034,14 @@ impl PythonExpression {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
                 name
             }
             _ => {
-                return Err(exceptions::PyTypeError::new_err(
-                    "Only wildcards can be restricted.",
-                ));
+                return Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted."));
             }
         };
 
@@ -2085,16 +2049,14 @@ impl PythonExpression {
             AtomView::Var(v) => {
                 let name = v.get_name();
                 if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
+                    return Err(
+                        exceptions::PyTypeError::new_err("Only wildcards can be restricted.")
+                    );
                 }
                 name
             }
             _ => {
-                return Err(exceptions::PyTypeError::new_err(
-                    "Only wildcards can be restricted.",
-                ));
+                return Err(exceptions::PyTypeError::new_err("Only wildcards can be restricted."));
             }
         };
 
@@ -2141,10 +2103,9 @@ impl PythonExpression {
         match self.expr.as_view() {
             AtomView::Add(_) | AtomView::Mul(_) | AtomView::Fun(_) => {}
             x => {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "Non-iterable type: {:?}",
-                    x
-                )));
+                return Err(
+                    exceptions::PyValueError::new_err(format!("Non-iterable type: {:?}", x))
+                );
             }
         };
 
@@ -2184,17 +2145,18 @@ impl PythonExpression {
 
         // release the GIL as Python functions may be called from
         // within the term mapper
-        let mut stream = py.allow_threads(move || {
-            // map every term in the expression
-            let stream = TermStreamer::new_from((*self.expr).clone());
-            let state = get_state!()?;
-            let m = stream.map(|workspace, x| {
-                let mut out = Atom::new();
-                Transformer::execute(x.as_view(), &t, &state.borrow(), workspace, &mut out);
-                out
-            });
-            Ok::<_, PyErr>(m)
-        })?;
+        let mut stream =
+            py.allow_threads(move || {
+                // map every term in the expression
+                let stream = TermStreamer::new_from((*self.expr).clone());
+                let state = get_state!()?;
+                let m = stream.map(|workspace, x| {
+                    let mut out = Atom::new();
+                    Transformer::execute(x.as_view(), &t, &state.borrow(), workspace, &mut out);
+                    out
+                });
+                Ok::<_, PyErr>(m)
+            })?;
 
         let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| stream.to_expression(workspace, state.borrow()));
@@ -2417,13 +2379,14 @@ impl PythonExpression {
 
     /// Derive the expression w.r.t the variable `x`.
     pub fn derivative(&self, x: ConvertibleToExpression) -> PyResult<PythonExpression> {
-        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
-        } else {
-            return Err(exceptions::PyValueError::new_err(
-                "Derivative must be taken wrt a variable",
-            ));
-        };
+        let id =
+            if let AtomView::Var(x) = x.to_expression().expr.as_view() {
+                x.get_name()
+            } else {
+                return Err(
+                    exceptions::PyValueError::new_err("Derivative must be taken wrt a variable")
+                );
+            };
 
         let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
@@ -2457,13 +2420,14 @@ impl PythonExpression {
         expansion_point: ConvertibleToExpression,
         depth: u32,
     ) -> PyResult<PythonExpression> {
-        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
-        } else {
-            return Err(exceptions::PyValueError::new_err(
-                "Derivative must be taken wrt a variable",
-            ));
-        };
+        let id =
+            if let AtomView::Var(x) = x.to_expression().expr.as_view() {
+                x.get_name()
+            } else {
+                return Err(
+                    exceptions::PyValueError::new_err("Derivative must be taken wrt a variable")
+                );
+            };
 
         let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
@@ -2531,23 +2495,23 @@ impl PythonExpression {
             ),
         };
 
-        let map = map
-            .into_iter()
-            .map(|(k, v)| {
-                (
-                    PythonExpression {
-                        expr: Arc::new(Atom::new_from_view(&k)),
-                    },
-                    poly.poly
-                        .var_map
-                        .as_ref()
-                        .unwrap()
-                        .iter()
-                        .position(|v1| *v1 == v)
-                        .unwrap(),
-                )
-            })
-            .collect();
+        let map =
+            map.into_iter()
+                .map(|(k, v)| {
+                    (
+                        PythonExpression {
+                            expr: Arc::new(Atom::new_from_view(&k)),
+                        },
+                        poly.poly
+                            .var_map
+                            .as_ref()
+                            .unwrap()
+                            .iter()
+                            .position(|v1| *v1 == v)
+                            .unwrap(),
+                    )
+                })
+                .collect();
 
         (poly, map)
     }
@@ -2822,9 +2786,9 @@ impl PythonExpression {
             .with(|workspace| {
                 AtomView::solve_linear_system::<u16>(&system_b, &vars, workspace, state)
             })
-            .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not solve system: {:?}", e))
-            })?;
+            .map_err(
+                |e| exceptions::PyValueError::new_err(format!("Could not solve system: {:?}", e))
+            )?;
 
         Ok(res
             .into_iter()
@@ -3253,10 +3217,7 @@ impl PythonPolynomial {
             new_exponent.clear();
             for e in t.exponents {
                 if *e > u8::MAX as u16 {
-                    Err(exceptions::PyValueError::new_err(format!(
-                        "Exponent {} is too large",
-                        e
-                    )))?;
+                    Err(exceptions::PyValueError::new_err(format!("Exponent {} is too large", e)))?;
                 }
                 new_exponent.push(*e as u8);
             }
@@ -3433,9 +3394,7 @@ macro_rules! generate_methods {
                     .poly
                     .var_map
                     .as_ref()
-                    .ok_or(exceptions::PyValueError::new_err(format!(
-                        "Variable map missing",
-                    )))?;
+                    .ok_or(exceptions::PyValueError::new_err(format!("Variable map missing",)))?;
 
                 for x in vars {
                     match x {
@@ -3445,9 +3404,9 @@ macro_rules! generate_methods {
                             });
                         }
                         _ => {
-                            Err(exceptions::PyValueError::new_err(format!(
-                                "Temporary variable in polynomial",
-                            )))?;
+                            Err(exceptions::PyValueError::new_err(
+                                format!("Temporary variable in polynomial",)
+                            ))?;
                         }
                     }
                 }
@@ -3507,10 +3466,9 @@ macro_rules! generate_methods {
                 if r.is_zero() {
                     Ok(Self { poly: Arc::new(q) })
                 } else {
-                    Err(exceptions::PyValueError::new_err(format!(
-                        "The division has a remainder: {}",
-                        r
-                    )))
+                    Err(exceptions::PyValueError::new_err(
+                        format!("The division has a remainder: {}", r)
+                    ))
                 }
             }
 
@@ -3776,9 +3734,12 @@ macro_rules! generate_rat_methods {
             pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
                 let mut var_list = vec![];
 
-                let vars = self.poly.numerator.var_map.as_ref().ok_or(
-                    exceptions::PyValueError::new_err(format!("Variable map missing",)),
-                )?;
+                let vars = self
+                    .poly
+                    .numerator
+                    .var_map
+                    .as_ref()
+                    .ok_or(exceptions::PyValueError::new_err(format!("Variable map missing",)))?;
 
                 for x in vars {
                     match x {
@@ -3788,9 +3749,9 @@ macro_rules! generate_rat_methods {
                             });
                         }
                         _ => {
-                            Err(exceptions::PyValueError::new_err(format!(
-                                "Temporary variable in polynomial",
-                            )))?;
+                            Err(exceptions::PyValueError::new_err(
+                                format!("Temporary variable in polynomial",)
+                            ))?;
                         }
                     }
                 }
@@ -3956,11 +3917,8 @@ impl PythonSample {
         };
 
         for dd in self.d.iter().rev() {
-            sample = Some(Sample::Discrete(
-                self.weights[weight_index],
-                *dd,
-                sample.map(Box::new),
-            ));
+            sample =
+                Some(Sample::Discrete(self.weights[weight_index], *dd, sample.map(Box::new)));
             weight_index -= 1;
         }
 

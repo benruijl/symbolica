@@ -47,25 +47,26 @@ fn solve_from_matrix() {
 
     let var_map = vec![Variable::Identifier(state.get_or_insert_var("c"))];
 
-    let system_rat: Vec<RationalPolynomial<IntegerRing, u8>> = system
-        .iter()
-        .flatten()
-        .map(|s| {
-            Token::parse(s)
-                .unwrap()
-                .to_atom(&mut state, &workspace)
-                .unwrap()
-                .as_view()
-                .to_rational_polynomial(
-                    &workspace,
-                    &state,
-                    &RationalField::new(),
-                    &IntegerRing::new(),
-                    Some(&var_map),
-                )
-                .unwrap()
-        })
-        .collect();
+    let system_rat: Vec<RationalPolynomial<IntegerRing, u8>> =
+        system
+            .iter()
+            .flatten()
+            .map(|s| {
+                Token::parse(s)
+                    .unwrap()
+                    .to_atom(&mut state, &workspace)
+                    .unwrap()
+                    .as_view()
+                    .to_rational_polynomial(
+                        &workspace,
+                        &state,
+                        &RationalField::new(),
+                        &IntegerRing::new(),
+                        Some(&var_map),
+                    )
+                    .unwrap()
+            })
+            .collect();
 
     let rhs_rat: Vec<RationalPolynomial<IntegerRing, u8>> = rhs
         .iter()

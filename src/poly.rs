@@ -557,12 +557,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             poly.append_monomial(coefficient, &exponents);
         }
 
-        let mut poly = MultivariatePolynomial::<R, E>::new(
-            vars.len(),
-            field,
-            Some(n_terms),
-            Some(&vars),
-        );
+        let mut poly =
+            MultivariatePolynomial::<R, E>::new(vars.len(), field, Some(n_terms), Some(&vars));
 
         match self {
             AtomView::Add(a) => {
@@ -713,21 +709,21 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             };
 
                             // generate id^pow
-                            let mut r =
-                                MultivariatePolynomial::new(1, field, None, Some(&[id]));
+                            let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
                             r.append_monomial(field.one(), &[E::from_u32(nn as u32)]);
                             return r;
                         }
                     }
                 }
 
-                let id = if let Some(x) = map.get(self) {
-                    *x
-                } else {
-                    let new_id = Variable::Temporary(map.len());
-                    map.insert(*self, new_id);
-                    new_id
-                };
+                let id =
+                    if let Some(x) = map.get(self) {
+                        *x
+                    } else {
+                        let new_id = Variable::Temporary(map.len());
+                        map.insert(*self, new_id);
+                        new_id
+                    };
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
                 r.append_monomial(field.one(), &[E::one()]);
@@ -735,13 +731,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             }
             AtomView::Fun(_) => {
                 // TODO: make sure that this coefficient does not depend on any of the variables in var_map
-                let id = if let Some(x) = map.get(self) {
-                    *x
-                } else {
-                    let new_id = Variable::Temporary(map.len());
-                    map.insert(*self, new_id);
-                    new_id
-                };
+                let id =
+                    if let Some(x) = map.get(self) {
+                        *x
+                    } else {
+                        let new_id = Variable::Temporary(map.len());
+                        map.insert(*self, new_id);
+                        new_id
+                    };
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
                 r.append_monomial(field.one(), &[E::one()]);
@@ -821,8 +818,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 new_id
                             };
 
-                            let mut p =
-                                MultivariatePolynomial::new(1, field, None, Some(&[id]));
+                            let mut p = MultivariatePolynomial::new(1, field, None, Some(&[id]));
                             p.append_monomial(field.one(), &[E::from_u32(nn.abs() as u32)]);
                             let den = p.new_from_constant(field.one());
                             let r = RationalPolynomial::from_num_den(p, den, out_field, false);
@@ -873,8 +869,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             new_id
                         };
 
-                        let mut r =
-                            MultivariatePolynomial::new(1, field, None, Some(&[id]));
+                        let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
                         r.append_monomial(field.one(), &[E::one()]);
                         let den = r.new_from_constant(field.one());
                         RationalPolynomial::from_num_den(r, den, out_field, false)
@@ -883,13 +878,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     // non-number exponent, convert to new variable
                     let mut a = workspace.new_atom();
                     a.set_from_view(self);
-                    let id = if let Some(x) = map.get(&a) {
-                        *x
-                    } else {
-                        let new_id = Variable::Temporary(map.len());
-                        map.insert(a, new_id);
-                        new_id
-                    };
+                    let id =
+                        if let Some(x) = map.get(&a) {
+                            *x
+                        } else {
+                            let new_id = Variable::Temporary(map.len());
+                            map.insert(a, new_id);
+                            new_id
+                        };
 
                     let mut r = MultivariatePolynomial::new(1, field, None, Some(&[id]));
                     r.append_monomial(field.one(), &[E::one()]);
@@ -1188,12 +1184,13 @@ impl Token {
 
         match self {
             Token::Op(_, _, Operator::Add, args) => {
-                let mut poly = MultivariatePolynomial::<R, E>::new(
-                    var_map.len(),
-                    field,
-                    Some(args.len()),
-                    Some(var_map),
-                );
+                let mut poly =
+                    MultivariatePolynomial::<R, E>::new(
+                        var_map.len(),
+                        field,
+                        Some(args.len()),
+                        Some(var_map),
+                    );
 
                 for term in args {
                     parse_term(term, var_name_map, &mut poly, field)?;
@@ -1307,14 +1304,15 @@ impl Token {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map));
                 r.numerator = r.numerator.add_monomial(out_field.one());
                 for arg in args {
-                    let mut arg_r = arg.to_rational_polynomial(
-                        workspace,
-                        state,
-                        field,
-                        out_field,
-                        var_map,
-                        var_name_map,
-                    )?;
+                    let mut arg_r =
+                        arg.to_rational_polynomial(
+                            workspace,
+                            state,
+                            field,
+                            out_field,
+                            var_map,
+                            var_name_map,
+                        )?;
                     r.unify_var_map(&mut arg_r);
                     r = &r * &arg_r;
                 }
@@ -1323,14 +1321,15 @@ impl Token {
             Token::Op(_, _, Operator::Add, args) => {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map));
                 for arg in args {
-                    let mut arg_r = arg.to_rational_polynomial(
-                        workspace,
-                        state,
-                        field,
-                        out_field,
-                        var_map,
-                        var_name_map,
-                    )?;
+                    let mut arg_r =
+                        arg.to_rational_polynomial(
+                            workspace,
+                            state,
+                            field,
+                            out_field,
+                            var_map,
+                            var_name_map,
+                        )?;
                     r.unify_var_map(&mut arg_r);
                     r = &r + &arg_r;
                 }

@@ -742,30 +742,31 @@ impl PackedRationalNumberReader for [u8] {
         let mut source = self;
         let disc = source.get_u8();
         let num;
-        (num, source) = match disc & NUM_MASK {
-            U8_NUM => {
-                let v = source.get_u8();
-                (v as i64, source)
-            }
-            U16_NUM => {
-                let v = source.get_u16_le();
-                (v as i64, source)
-            }
-            U32_NUM => {
-                let v = source.get_u32_le();
-                (v as i64, source)
-            }
-            U64_NUM => {
-                let v = source.get_u64_le();
-                (v as i64, source)
-            }
-            ARB_NUM => {
-                panic!("Overflow")
-            }
-            x => {
-                unreachable!("Unsupported numerator type {}", x)
-            }
-        };
+        (num, source) =
+            match disc & NUM_MASK {
+                U8_NUM => {
+                    let v = source.get_u8();
+                    (v as i64, source)
+                }
+                U16_NUM => {
+                    let v = source.get_u16_le();
+                    (v as i64, source)
+                }
+                U32_NUM => {
+                    let v = source.get_u32_le();
+                    (v as i64, source)
+                }
+                U64_NUM => {
+                    let v = source.get_u64_le();
+                    (v as i64, source)
+                }
+                ARB_NUM => {
+                    panic!("Overflow")
+                }
+                x => {
+                    unreachable!("Unsupported numerator type {}", x)
+                }
+            };
 
         let den;
         (den, source) = match disc & DEN_MASK {

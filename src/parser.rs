@@ -725,9 +725,9 @@ impl Token {
                     "Unexpected end of input: missing right-hand side for operator '{}'",
                     op
                 )),
-                Some(Token::OpenParenthesis) => Err(format!(
-                    "Unexpected end of input: open parenthesis is not closed"
-                )),
+                Some(Token::OpenParenthesis) => {
+                    Err(format!("Unexpected end of input: open parenthesis is not closed"))
+                }
 
                 Some(Token::Fn(true, args)) => Err(format!(
                     "Unexpected end of input: Missing closing parenthesis for function '{}'",

@@ -54,12 +54,13 @@ impl State {
     pub fn new() -> State {
         LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
-        let mut state = State {
-            str_to_var_id: HashMap::new(),
-            function_attributes: HashMap::new(),
-            var_info: vec![],
-            finite_fields: vec![],
-        };
+        let mut state =
+            State {
+                str_to_var_id: HashMap::new(),
+                function_attributes: HashMap::new(),
+                var_info: vec![],
+                finite_fields: vec![],
+            };
 
         for x in Self::BUILTIN_VAR_LIST {
             state.get_or_insert_var(x);

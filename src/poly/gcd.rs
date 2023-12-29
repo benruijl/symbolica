@@ -1338,13 +1338,14 @@ where
                 }
 
                 let v = loop {
-                    let v = a.field.sample(
-                        &mut rng,
-                        (
-                            1,
-                            a.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
-                        ),
-                    );
+                    let v =
+                        a.field.sample(
+                            &mut rng,
+                            (
+                                1,
+                                a.field.get_prime().to_u64().min(MAX_RNG_PREFACTOR as u64) as i64,
+                            ),
+                        );
                     if !gamma.replace(lastvar, &v).is_zero() {
                         // we need unique sampling points
                         if !vseq.contains(&v) {

@@ -341,10 +341,12 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         for t in 1..self.nterms {
             match O::cmp(self.exponents(t), self.exponents(t - 1)) {
                 Ordering::Equal => panic!("Inconsistent polynomial (equal monomials): {}", self),
-                Ordering::Less => panic!(
-                    "Inconsistent polynomial (wrong monomial ordering): {}",
-                    self
-                ),
+                Ordering::Less => {
+                    panic!(
+                        "Inconsistent polynomial (wrong monomial ordering): {}",
+                        self
+                    )
+                }
                 Ordering::Greater => {}
             }
         }
@@ -1653,11 +1655,12 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             if !F::is_zero(&coeff) {
                 // can the division be performed? if not, add to rest
                 // TODO: refactor
-                let (quot, div) = if pow >= m {
-                    (coeff, true)
-                } else {
-                    (coeff, false)
-                };
+                let (quot, div) =
+                    if pow >= m {
+                        (coeff, true)
+                    } else {
+                        (coeff, false)
+                    };
 
                 if div {
                     q.coefficients.push(quot);
@@ -2138,17 +2141,18 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 .map(|c| E::pack_u16(c))
                 .collect()
         };
-        let pack_div: Vec<_> = if pack_u8 {
-            div.exponents
-                .chunks(div.nvars)
-                .map(|c| E::pack(c))
-                .collect()
-        } else {
-            div.exponents
-                .chunks(div.nvars)
-                .map(|c| E::pack_u16(c))
-                .collect()
-        };
+        let pack_div: Vec<_> =
+            if pack_u8 {
+                div.exponents
+                    .chunks(div.nvars)
+                    .map(|c| E::pack(c))
+                    .collect()
+            } else {
+                div.exponents
+                    .chunks(div.nvars)
+                    .map(|c| E::pack_u16(c))
+                    .collect()
+            };
 
         let mut div_monomial_in_heap = vec![false; div.nterms];
         let mut merged_index_of_div_monomial_in_quotient = vec![0; div.nterms];

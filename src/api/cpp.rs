@@ -182,16 +182,17 @@ unsafe extern "C" fn simplify(
                 .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
                 let field = FiniteField::<u32>::new(prime as u32);
-                let rf: RationalPolynomial<FiniteField<u32>, $exp_size> = token
-                    .to_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
-                        &field,
-                        &field,
-                        &symbolica.local_state.var_map,
-                        &symbolica.local_state.var_name_map,
-                    )
-                    .unwrap();
+                let rf: RationalPolynomial<FiniteField<u32>, $exp_size> =
+                    token
+                        .to_rational_polynomial(
+                            &symbolica.workspace,
+                            &mut symbolica.state,
+                            &field,
+                            &field,
+                            &symbolica.local_state.var_map,
+                            &symbolica.local_state.var_name_map,
+                        )
+                        .unwrap();
 
                 symbolica.local_state.buffer.clear();
                 write!(
@@ -207,16 +208,17 @@ unsafe extern "C" fn simplify(
                 .unwrap();
             } else if prime == Mersenne64::PRIME {
                 let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
-                let rf: RationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
-                    .to_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
-                        &field,
-                        &field,
-                        &symbolica.local_state.var_map,
-                        &symbolica.local_state.var_name_map,
-                    )
-                    .unwrap();
+                let rf: RationalPolynomial<FiniteField<Mersenne64>, $exp_size> =
+                    token
+                        .to_rational_polynomial(
+                            &symbolica.workspace,
+                            &mut symbolica.state,
+                            &field,
+                            &field,
+                            &symbolica.local_state.var_map,
+                            &symbolica.local_state.var_name_map,
+                        )
+                        .unwrap();
 
                 symbolica.local_state.buffer.clear();
                 write!(
@@ -232,16 +234,17 @@ unsafe extern "C" fn simplify(
                 .unwrap();
             } else {
                 let field = FiniteField::<u64>::new(prime as u64);
-                let rf: RationalPolynomial<FiniteField<u64>, $exp_size> = token
-                    .to_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
-                        &field,
-                        &field,
-                        &symbolica.local_state.var_map,
-                        &symbolica.local_state.var_name_map,
-                    )
-                    .unwrap();
+                let rf: RationalPolynomial<FiniteField<u64>, $exp_size> =
+                    token
+                        .to_rational_polynomial(
+                            &symbolica.workspace,
+                            &mut symbolica.state,
+                            &field,
+                            &field,
+                            &symbolica.local_state.var_map,
+                            &symbolica.local_state.var_name_map,
+                        )
+                        .unwrap();
 
                 symbolica.local_state.buffer.clear();
                 write!(

@@ -25,14 +25,16 @@ fn main() {
             PatternRestriction::Cmp(
                 state.get_or_insert_var("x_"),
                 Box::new(|y, x| {
-                    let len_x = match x {
-                        Match::Multiple(_, s) => s.len(),
-                        _ => 1,
-                    };
-                    let len_y = match y {
-                        Match::Multiple(_, s) => s.len(),
-                        _ => 1,
-                    };
+                    let len_x =
+                        match x {
+                            Match::Multiple(_, s) => s.len(),
+                            _ => 1,
+                        };
+                    let len_y =
+                        match y {
+                            Match::Multiple(_, s) => s.len(),
+                            _ => 1,
+                        };
                     len_x >= len_y
                 }),
             ),

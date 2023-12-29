@@ -399,14 +399,15 @@ mod tests {
     #[test]
     fn test_solve_underdetermined2() {
         let field = FiniteField::<u32>::new(17);
-        let a = Matrix {
-            shape: (4, 4),
-            data: [1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 2]
-                .into_iter()
-                .map(|n| field.to_element(n))
-                .collect(),
-            field,
-        };
+        let a =
+            Matrix {
+                shape: (4, 4),
+                data: [1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 2]
+                    .into_iter()
+                    .map(|n| field.to_element(n))
+                    .collect(),
+                field,
+            };
         let b = Matrix {
             shape: (4, 1),
             data: [1, 15, 1, 2]
@@ -459,14 +460,15 @@ mod tests {
     #[test]
     fn test_solve_overdetermined() {
         let field = FiniteField::<u32>::new(17);
-        let a = Matrix {
-            shape: (5, 3),
-            data: [1, 1, 2, 3, 4, 3, 9, 0, 11, 1, 1, 7, 2, 3, 8]
-                .into_iter()
-                .map(|n| field.to_element(n))
-                .collect(),
-            field,
-        };
+        let a =
+            Matrix {
+                shape: (5, 3),
+                data: [1, 1, 2, 3, 4, 3, 9, 0, 11, 1, 1, 7, 2, 3, 8]
+                    .into_iter()
+                    .map(|n| field.to_element(n))
+                    .collect(),
+                field,
+            };
         let b = Matrix {
             shape: (5, 1),
             data: [3, 15, 7, 6, 6]

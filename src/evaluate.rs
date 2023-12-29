@@ -7,14 +7,15 @@ use crate::{
     state::State,
 };
 
-type EvalFnType<T, P> = Box<
-    dyn Fn(
-        &[T],
-        &HashMap<Variable, T>,
-        &HashMap<Variable, EvaluationFn<T, P>>,
-        &mut HashMap<AtomView<'_, P>, T>,
-    ) -> T,
->;
+type EvalFnType<T, P> =
+    Box<
+        dyn Fn(
+            &[T],
+            &HashMap<Variable, T>,
+            &HashMap<Variable, EvaluationFn<T, P>>,
+            &mut HashMap<AtomView<'_, P>, T>,
+        ) -> T,
+    >;
 
 pub struct EvaluationFn<T, P: AtomSet>(EvalFnType<T, P>);
 

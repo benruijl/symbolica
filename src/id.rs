@@ -854,44 +854,46 @@ impl<'a, P: AtomSet> Match<'a, P> {
             Self::Single(v) => {
                 out.set_from_view(v);
             }
-            Self::Multiple(t, wargs) => match t {
-                SliceType::Add => {
-                    let add = out.to_add();
-                    for arg in wargs {
-                        add.extend(*arg);
+            Self::Multiple(t, wargs) => {
+                match t {
+                    SliceType::Add => {
+                        let add = out.to_add();
+                        for arg in wargs {
+                            add.extend(*arg);
+                        }
                     }
-                }
-                SliceType::Mul => {
-                    let mul = out.to_mul();
-                    for arg in wargs {
-                        mul.extend(*arg);
-                    }
+                    SliceType::Mul => {
+                        let mul = out.to_mul();
+                        for arg in wargs {
+                            mul.extend(*arg);
+                        }
 
-                    // set the dirty flag since the has_coefficient has to be set
-                    // during normalization
-                    if !wargs.is_empty() {
-                        mul.set_dirty(true);
+                        // set the dirty flag since the has_coefficient has to be set
+                        // during normalization
+                        if !wargs.is_empty() {
+                            mul.set_dirty(true);
+                        }
+                    }
+                    SliceType::Arg => {
+                        let fun = out.to_fun();
+                        fun.set_from_name(State::ARG);
+                        for arg in wargs {
+                            fun.add_arg(*arg);
+                        }
+                    }
+                    SliceType::Pow => {
+                        let pow = out.to_pow();
+                        pow.set_from_base_and_exp(wargs[0], wargs[1]);
+                    }
+                    SliceType::One => {
+                        out.set_from_view(&wargs[0]);
+                    }
+                    SliceType::Empty => {
+                        let fun = out.to_fun();
+                        fun.set_from_name(State::ARG);
                     }
                 }
-                SliceType::Arg => {
-                    let fun = out.to_fun();
-                    fun.set_from_name(State::ARG);
-                    for arg in wargs {
-                        fun.add_arg(*arg);
-                    }
-                }
-                SliceType::Pow => {
-                    let pow = out.to_pow();
-                    pow.set_from_base_and_exp(wargs[0], wargs[1]);
-                }
-                SliceType::One => {
-                    out.set_from_view(&wargs[0]);
-                }
-                SliceType::Empty => {
-                    let fun = out.to_fun();
-                    fun.set_from_name(State::ARG);
-                }
-            },
+            }
             Self::FunctionName(n) => {
                 let fun = out.to_fun();
                 fun.set_from_name(*n);
@@ -978,19 +980,22 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
                             }
                         }
                     }
-                    PatternRestriction::Length(min, max) => match &value {
-                        Match::Single(_) | Match::FunctionName(_) => {
-                            if *min <= 1 && max.map(|m| m >= 1).unwrap_or(true) {
-                                continue;
+                    PatternRestriction::Length(min, max) => {
+                        match &value {
+                            Match::Single(_) | Match::FunctionName(_) => {
+                                if *min <= 1 && max.map(|m| m >= 1).unwrap_or(true) {
+                                    continue;
+                                }
+                            }
+                            Match::Multiple(_, slice) => {
+                                if *min <= slice.len()
+                                    && max.map(|m| m >= slice.len()).unwrap_or(true)
+                                {
+                                    continue;
+                                }
                             }
                         }
-                        Match::Multiple(_, slice) => {
-                            if *min <= slice.len() && max.map(|m| m >= slice.len()).unwrap_or(true)
-                            {
-                                continue;
-                            }
-                        }
-                    },
+                    }
                     PatternRestriction::Filter(f) => {
                         if f(&value) {
                             continue;
@@ -1766,20 +1771,22 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                     let mut tried_first_option = false;
 
                     // query an existing iterator
-                    let mut ii = match index {
-                        Some(jj) => {
-                            // get the next iteration of the function
-                            if let Some((x, _)) = s.as_mut().as_mut().unwrap().next(match_stack) {
-                                self.matches.push(x);
-                                continue 'next_match;
-                            } else {
-                                self.used_flag[*jj] = false;
-                                tried_first_option = true;
-                                *jj + 1
+                    let mut ii =
+                        match index {
+                            Some(jj) => {
+                                // get the next iteration of the function
+                                if let Some((x, _)) = s.as_mut().as_mut().unwrap().next(match_stack)
+                                {
+                                    self.matches.push(x);
+                                    continue 'next_match;
+                                } else {
+                                    self.used_flag[*jj] = false;
+                                    tried_first_option = true;
+                                    *jj + 1
+                                }
                             }
-                        }
-                        None => 0,
-                    };
+                            None => 0,
+                        };
 
                     // find a new match and create a new iterator
                     while ii < self.target.len() {

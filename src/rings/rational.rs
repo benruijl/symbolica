@@ -601,12 +601,12 @@ impl EuclideanDomain for RationalField {
                     r1.denom().clone().lcm(r2.denom()),
                 )))
             }
-            (Rational::Large(r1), Rational::Large(r2)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((
+            (Rational::Large(r1), Rational::Large(r2)) => Rational::from_large(
+                ArbitraryPrecisionRational::from((
                     r1.numer().clone().gcd(r2.numer()),
                     r1.denom().clone().lcm(r2.denom()),
-                )))
-            }
+                )),
+            ),
         }
     }
 }

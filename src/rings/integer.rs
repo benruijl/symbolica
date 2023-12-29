@@ -348,23 +348,27 @@ impl Integer {
             return Self::chinese_remainder(n2, n1, p2, p1);
         }
 
-        let p1 = match p1 {
-            Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
-            Integer::Large(r) => r,
-        };
-        let p2 = match p2 {
-            Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
-            Integer::Large(r) => r,
-        };
+        let p1 =
+            match p1 {
+                Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
+                Integer::Large(r) => r,
+            };
+        let p2 =
+            match p2 {
+                Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
+                Integer::Large(r) => r,
+            };
 
-        let n1 = match n1 {
-            Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
-            Integer::Large(r) => r,
-        };
-        let n2 = match n2 {
-            Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
-            Integer::Large(r) => r,
-        };
+        let n1 =
+            match n1 {
+                Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
+                Integer::Large(r) => r,
+            };
+        let n2 =
+            match n2 {
+                Integer::Natural(n) => ArbitraryPrecisionInteger::from(n),
+                Integer::Large(r) => r,
+            };
 
         // convert to mixed-radix notation
         let gamma1 = (p1.clone() % p2.clone())

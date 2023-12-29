@@ -176,7 +176,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
         num.unify_var_map(&mut den);
 
         if den.is_one() {
-            RationalPolynomial {
+            Self {
                 numerator: num,
                 denominator: den,
             }
@@ -196,7 +196,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
                 den = -den;
             }
 
-            RationalPolynomial {
+            Self {
                 numerator: num,
                 denominator: den,
             }
@@ -220,7 +220,7 @@ where
         num.unify_var_map(&mut den);
 
         if den.is_one() {
-            RationalPolynomial {
+            Self {
                 numerator: num,
                 denominator: den,
             }
@@ -241,7 +241,7 @@ where
                 den = den.div_coeff(&c);
             }
 
-            RationalPolynomial {
+            Self {
                 numerator: num,
                 denominator: den,
             }
@@ -287,7 +287,7 @@ where
         let gcd_num = MultivariatePolynomial::gcd(&self.numerator, &other.numerator);
         let gcd_den = MultivariatePolynomial::gcd(&self.denominator, &other.denominator);
 
-        RationalPolynomial {
+        Self {
             numerator: gcd_num,
             denominator: (&other.denominator / &gcd_den) * &self.denominator,
         }
@@ -537,7 +537,7 @@ where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
     fn rem(&self, a: &Self::Element, _: &Self::Element) -> Self::Element {
-        RationalPolynomial {
+        Self::Element {
             numerator: MultivariatePolynomial::new_from(&a.numerator, None),
             denominator: MultivariatePolynomial::new_from_constant(
                 &a.numerator,

@@ -475,13 +475,9 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
     /// that prevents one bin from getting oversampled.
     ///
     /// If you want to train on the average instead of the error, set `train_on_avg` to `true` (not recommended).
-    pub fn new(
-        bins: Vec<Option<Grid<T>>>,
-        max_prob_ratio: T,
-        train_on_avg: bool,
-    ) -> DiscreteGrid<T> {
+    pub fn new(bins: Vec<Option<Grid<T>>>, max_prob_ratio: T, train_on_avg: bool) -> Self {
         let pdf = T::from_usize(1) / T::from_usize(bins.len());
-        DiscreteGrid {
+        Self {
             bins: bins
                 .into_iter()
                 .map(|s| Bin {
@@ -699,8 +695,8 @@ impl<T: Real + NumericalFloatComparison> ContinuousGrid<T> {
         min_samples_for_update: usize,
         bin_number_evolution: Option<Vec<usize>>,
         train_on_avg: bool,
-    ) -> ContinuousGrid<T> {
-        ContinuousGrid {
+    ) -> Self {
+        Self {
             continuous_dimensions: vec![
                 ContinuousDimension::new(
                     n_bins,
@@ -831,8 +827,8 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
         min_samples_for_update: usize,
         bin_number_evolution: Option<Vec<usize>>,
         train_on_avg: bool,
-    ) -> ContinuousDimension<T> {
-        ContinuousDimension {
+    ) -> Self {
+        Self {
             partitioning: (0..=n_bins)
                 .map(|i| T::from_usize(i) / T::from_usize(n_bins))
                 .collect(),
@@ -1010,7 +1006,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
 
     /// Returns `Ok` when this grid can be merged with another grid,
     /// and `Err` when the grids have a different shape.
-    fn is_mergeable(&self, other: &ContinuousDimension<T>) -> Result<(), String> {
+    fn is_mergeable(&self, other: &Self) -> Result<(), String> {
         if self.partitioning != other.partitioning {
             Err("Partitions do not match".to_owned())
         } else {
@@ -1019,7 +1015,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
     }
 
     /// Merge a grid without checks. For internal use only.
-    fn merge(&mut self, other: &ContinuousDimension<T>) {
+    fn merge(&mut self, other: &Self) {
         for (bi, obi) in self.bin_accumulator.iter_mut().zip(&other.bin_accumulator) {
             bi.merge_samples_no_reset(obi);
         }

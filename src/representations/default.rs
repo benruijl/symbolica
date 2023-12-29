@@ -1202,27 +1202,15 @@ impl<'a> Iterator for ListIteratorD<'a> {
         let len = unsafe { self.data.as_ptr().offset_from(start.as_ptr()) } as usize;
 
         let data = unsafe { start.get_unchecked(..len) };
-        match start_id {
-            VAR_ID => {
-                return Some(AtomView::Var(VarViewD { data }));
-            }
-            NUM_ID => {
-                return Some(AtomView::Num(NumViewD { data }));
-            }
-            FUN_ID => {
-                return Some(AtomView::Fun(FnViewD { data }));
-            }
-            POW_ID => {
-                return Some(AtomView::Pow(PowViewD { data }));
-            }
-            MUL_ID => {
-                return Some(AtomView::Mul(MulViewD { data }));
-            }
-            ADD_ID => {
-                return Some(AtomView::Add(AddViewD { data }));
-            }
+        Some(match start_id {
+            VAR_ID => AtomView::Var(VarViewD { data }),
+            NUM_ID => AtomView::Num(NumViewD { data }),
+            FUN_ID => AtomView::Fun(FnViewD { data }),
+            POW_ID => AtomView::Pow(PowViewD { data }),
+            MUL_ID => AtomView::Mul(MulViewD { data }),
+            ADD_ID => AtomView::Add(AddViewD { data }),
             x => unreachable!("Bad id {}", x),
-        }
+        })
     }
 }
 
@@ -1273,7 +1261,7 @@ impl<'a> ListSliceD<'a> {
             pos = Self::skip_one(pos);
         }
 
-        ListSliceD {
+        Self {
             data: pos,
             length: self.length - index,
             slice_type: self.slice_type,
@@ -1324,7 +1312,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
         }
 
         let len = unsafe { s.as_ptr().offset_from(start.data.as_ptr()) } as usize;
-        ListSliceD {
+        Self {
             data: &start.data[..len],
             length: range.len(),
             slice_type: self.slice_type,
@@ -1343,7 +1331,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
 
     #[inline]
     fn from_one(view: AtomView<'a, Self::P>) -> Self {
-        ListSliceD {
+        Self {
             data: view.get_data(),
             length: 1,
             slice_type: SliceType::One,

@@ -309,37 +309,37 @@ pub enum Sample<T: Real + NumericalFloatComparison> {
 
 impl<T: Real + NumericalFloatComparison> Sample<T> {
     /// Construct a new empty sample that can be handed over to [`Grid::sample()`].
-    pub fn new() -> Sample<T> {
-        Sample::Continuous(T::zero(), vec![])
+    pub fn new() -> Self {
+        Self::Continuous(T::zero(), vec![])
     }
 
     /// Get the weight of the sample.
     pub fn get_weight(&self) -> T {
         match self {
-            Sample::Continuous(w, _) | Sample::Discrete(w, _, _) => *w,
+            Self::Continuous(w, _) | Self::Discrete(w, _, _) => *w,
         }
     }
 
     /// Transform the sample to a discrete grid, used for recycling memory.
-    fn into_discrete_grid(&mut self) -> (&mut T, &mut usize, &mut Option<Box<Sample<T>>>) {
-        if let Sample::Continuous(..) = self {
-            *self = Sample::Discrete(T::zero(), 0, None);
+    fn into_discrete_grid(&mut self) -> (&mut T, &mut usize, &mut Option<Box<Self>>) {
+        if let Self::Continuous(..) = self {
+            *self = Self::Discrete(T::zero(), 0, None);
         }
 
         match self {
-            Sample::Discrete(weight, index, sub_sample) => (weight, index, sub_sample),
+            Self::Discrete(weight, index, sub_sample) => (weight, index, sub_sample),
             _ => unreachable!(),
         }
     }
 
     /// Transform the sample to a continuous, used for recycling memory.
     fn into_continuous_grid(&mut self) -> (&mut T, &mut Vec<T>) {
-        if let Sample::Continuous(..) = self {
-            *self = Sample::Continuous(T::zero(), vec![])
+        if let Self::Continuous(..) = self {
+            *self = Self::Continuous(T::zero(), vec![])
         }
 
         match self {
-            Sample::Continuous(weight, sub_samples) => (weight, sub_samples),
+            Self::Continuous(weight, sub_samples) => (weight, sub_samples),
             _ => unreachable!(),
         }
     }
@@ -359,8 +359,8 @@ impl<T: Real + NumericalFloatComparison> Grid<T> {
     /// where the function the grid is based on is changing rapidly.
     pub fn sample<R: Rng + ?Sized>(&mut self, rng: &mut R, sample: &mut Sample<T>) {
         match self {
-            Grid::Continuous(g) => g.sample(rng, sample),
-            Grid::Discrete(g) => g.sample(rng, sample),
+            Self::Continuous(g) => g.sample(rng, sample),
+            Self::Discrete(g) => g.sample(rng, sample),
         }
     }
 
@@ -369,23 +369,23 @@ impl<T: Real + NumericalFloatComparison> Grid<T> {
     /// the function that is being evaluated.
     pub fn add_training_sample(&mut self, sample: &Sample<T>, eval: T) -> Result<(), String> {
         match self {
-            Grid::Continuous(g) => g.add_training_sample(sample, eval),
-            Grid::Discrete(g) => g.add_training_sample(sample, eval),
+            Self::Continuous(g) => g.add_training_sample(sample, eval),
+            Self::Discrete(g) => g.add_training_sample(sample, eval),
         }
     }
 
     /// Returns `Ok` when this grid can be merged with another grid,
     /// and `Err` when the grids have a different shape.
-    pub fn is_mergeable(&self, grid: &Grid<T>) -> Result<(), String> {
+    pub fn is_mergeable(&self, grid: &Self) -> Result<(), String> {
         match (self, grid) {
-            (Grid::Continuous(c1), Grid::Continuous(c2)) => c1.is_mergeable(c2),
-            (Grid::Discrete(d1), Grid::Discrete(d2)) => d1.is_mergeable(d2),
+            (Self::Continuous(c1), Self::Continuous(c2)) => c1.is_mergeable(c2),
+            (Self::Discrete(d1), Self::Discrete(d2)) => d1.is_mergeable(d2),
             _ => Err("Cannot merge a discrete and continuous grid".to_owned()),
         }
     }
 
     /// Merge a grid with exactly the same structure.
-    pub fn merge(&mut self, grid: &Grid<T>) -> Result<(), String> {
+    pub fn merge(&mut self, grid: &Self) -> Result<(), String> {
         // first do a complete check to see if the grids are mergeable
         self.is_mergeable(grid)?;
         self.merge_unchecked(grid);
@@ -394,10 +394,10 @@ impl<T: Real + NumericalFloatComparison> Grid<T> {
     }
 
     /// Merge a grid without checks. For internal use only.
-    fn merge_unchecked(&mut self, grid: &Grid<T>) {
+    fn merge_unchecked(&mut self, grid: &Self) {
         match (self, grid) {
-            (Grid::Continuous(c1), Grid::Continuous(c2)) => c1.merge_unchecked(c2),
-            (Grid::Discrete(d1), Grid::Discrete(d2)) => d1.merge_unchecked(d2),
+            (Self::Continuous(c1), Self::Continuous(c2)) => c1.merge_unchecked(c2),
+            (Self::Discrete(d1), Self::Discrete(d2)) => d1.merge_unchecked(d2),
             _ => panic!("Cannot merge grids that have a different shape."),
         }
     }
@@ -405,16 +405,16 @@ impl<T: Real + NumericalFloatComparison> Grid<T> {
     /// Update the grid based on the samples added through [`Grid::add_training_sample`].
     pub fn update(&mut self, learning_rate: T) {
         match self {
-            Grid::Continuous(g) => g.update(learning_rate),
-            Grid::Discrete(g) => g.update(learning_rate),
+            Self::Continuous(g) => g.update(learning_rate),
+            Self::Discrete(g) => g.update(learning_rate),
         }
     }
 
     /// Get the statistics of this grid.
     pub fn get_statistics(&mut self) -> &StatisticsAccumulator<T> {
         match self {
-            Grid::Continuous(g) => &g.accumulator,
-            Grid::Discrete(g) => &g.accumulator,
+            Self::Continuous(g) => &g.accumulator,
+            Self::Discrete(g) => &g.accumulator,
         }
     }
 }

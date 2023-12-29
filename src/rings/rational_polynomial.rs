@@ -636,7 +636,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub<&'a Rationa
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg for RationalPolynomial<R, E> {
     type Output = Self;
     fn neg(self) -> Self::Output {
-        RationalPolynomial {
+        Self {
             numerator: self.numerator.neg(),
             denominator: self.denominator,
         }

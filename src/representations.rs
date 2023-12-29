@@ -599,21 +599,17 @@ impl<P: AtomSet> std::fmt::Debug for Atom<P> {
 
 impl<P: AtomSet> Atom<P> {
     /// Parse and atom from a string.
-    pub fn parse(
-        input: &str,
-        state: &mut State,
-        workspace: &Workspace<P>,
-    ) -> Result<Atom<P>, String> {
+    pub fn parse(input: &str, state: &mut State, workspace: &Workspace<P>) -> Result<Self, String> {
         Token::parse(input)?.to_atom(state, workspace)
     }
 
-    pub fn new_var(id: Identifier) -> Atom<P> {
+    pub fn new_var(id: Identifier) -> Self {
         let mut owned = Self::new();
         owned.to_var().set_from_id(id);
         owned
     }
 
-    pub fn new_num<T: Into<Number>>(num: T) -> Atom<P> {
+    pub fn new_num<T: Into<Number>>(num: T) -> Self {
         let mut owned = Self::new();
         owned.to_num().set_from_number(num.into());
         owned
@@ -769,7 +765,7 @@ impl<P: AtomSet> Atom<P> {
     }
 
     /// This function allocates a new OwnedAtom with the same content as `view`.
-    pub fn new_from_view(view: &AtomView<P>) -> Atom<P> {
+    pub fn new_from_view(view: &AtomView<P>) -> Self {
         let mut owned = Atom::new();
         owned.set_from_view(view);
         owned
@@ -866,16 +862,12 @@ pub struct FunctionBuilder<'a, P: AtomSet = Linear> {
 
 impl<'a, P: AtomSet> FunctionBuilder<'a, P> {
     /// Create a new `FunctionBuilder`.
-    pub fn new(
-        name: Identifier,
-        state: &'a State,
-        workspace: &'a Workspace<P>,
-    ) -> FunctionBuilder<'a, P> {
+    pub fn new(name: Identifier, state: &'a State, workspace: &'a Workspace<P>) -> Self {
         let mut a = workspace.new_atom();
         let f = a.to_fun();
         f.set_from_name(name);
         f.set_dirty(true);
-        FunctionBuilder {
+        Self {
             state,
             workspace,
             handle: a,
@@ -883,7 +875,7 @@ impl<'a, P: AtomSet> FunctionBuilder<'a, P> {
     }
 
     /// Add an argument to the function.
-    pub fn add_arg<'b, T: AsAtomView<'b, P>>(mut self, arg: T) -> FunctionBuilder<'a, P> {
+    pub fn add_arg<'b, T: AsAtomView<'b, P>>(mut self, arg: T) -> Self {
         if let Atom::Fun(f) = self.handle.get_mut() {
             f.add_arg(arg.as_atom_view());
         }
@@ -942,9 +934,9 @@ impl<'a, P: AtomSet, A: DerefMut<Target = Atom<P>>> AtomBuilder<'a, A, P> {
         state: &'a State,
         workspace: &'a Workspace<P>,
         mut out: A,
-    ) -> AtomBuilder<'a, A, P> {
+    ) -> Self {
         out.set_from_view(&atom.as_atom_view());
-        AtomBuilder {
+        Self {
             state,
             workspace,
             out,

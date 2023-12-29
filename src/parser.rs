@@ -71,12 +71,8 @@ impl Operator {
     #[inline]
     pub fn right_associative(&self) -> bool {
         match self {
-            Operator::Mul => true,
-            Operator::Add => true,
             Operator::Pow => false,
-            Operator::Argument => true,
-            Operator::Neg => true,
-            Operator::Inv => true,
+            _ => false,
         }
     }
 }

@@ -780,13 +780,13 @@ impl<'a> Var<'a> for VarViewD<'a> {
 impl Atom<Linear> {
     pub fn get_data(&self) -> &[u8] {
         match self {
-            Atom::Num(n) => &n.data,
-            Atom::Var(v) => &v.data,
-            Atom::Fun(f) => &f.data,
-            Atom::Pow(p) => &p.data,
-            Atom::Mul(m) => &m.data,
-            Atom::Add(a) => &a.data,
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => &n.data,
+            Self::Var(v) => &v.data,
+            Self::Fun(f) => &f.data,
+            Self::Pow(p) => &p.data,
+            Self::Mul(m) => &m.data,
+            Self::Add(a) => &a.data,
+            Self::Empty => unreachable!(),
         }
     }
 
@@ -1119,26 +1119,26 @@ impl<'a> Add<'a> for AddViewD<'a> {
 }
 
 impl<'a> AtomView<'a, Linear> {
-    pub fn from(source: &'a [u8]) -> AtomView<'a, Linear> {
+    pub fn from(source: &'a [u8]) -> Self {
         match source[0] {
-            VAR_ID => AtomView::Var(VarViewD { data: source }),
-            FUN_ID => AtomView::Fun(FnViewD { data: source }),
-            NUM_ID => AtomView::Num(NumViewD { data: source }),
-            POW_ID => AtomView::Pow(PowViewD { data: source }),
-            MUL_ID => AtomView::Mul(MulViewD { data: source }),
-            ADD_ID => AtomView::Add(AddViewD { data: source }),
+            VAR_ID => Self::Var(VarViewD { data: source }),
+            FUN_ID => Self::Fun(FnViewD { data: source }),
+            NUM_ID => Self::Num(NumViewD { data: source }),
+            POW_ID => Self::Pow(PowViewD { data: source }),
+            MUL_ID => Self::Mul(MulViewD { data: source }),
+            ADD_ID => Self::Add(AddViewD { data: source }),
             x => unreachable!("Bad id: {}", x),
         }
     }
 
     pub fn get_data(&self) -> &'a [u8] {
         match self {
-            AtomView::Num(n) => n.data,
-            AtomView::Var(v) => v.data,
-            AtomView::Fun(f) => f.data,
-            AtomView::Pow(p) => p.data,
-            AtomView::Mul(t) => t.data,
-            AtomView::Add(e) => e.data,
+            Self::Num(n) => n.data,
+            Self::Var(v) => v.data,
+            Self::Fun(f) => f.data,
+            Self::Pow(p) => p.data,
+            Self::Mul(t) => t.data,
+            Self::Add(e) => e.data,
         }
     }
 }

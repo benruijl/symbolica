@@ -219,10 +219,10 @@ impl<P: AtomSet> Pattern<P> {
     pub fn could_match(&self, target: AtomView<P>) -> bool {
         match (self, target) {
             (Self::Fn(f1, wc, _), AtomView::Fun(f2)) => *wc || *f1 == f2.get_name(),
-            (Self::Mul(_), AtomView::Mul(_)) => true,
-            (Self::Add(_), AtomView::Add(_)) => true,
-            (Self::Wildcard(_), _) => true,
-            (Self::Pow(_), AtomView::Pow(_)) => true,
+            (Self::Mul(_), AtomView::Mul(_))
+            | (Self::Add(_), AtomView::Add(_))
+            | (Self::Wildcard(_), _)
+            | (Self::Pow(_), AtomView::Pow(_)) => true,
             (Self::Literal(p), _) => p.as_view() == target,
             (Self::Transformer(_), _) => unreachable!(),
             (_, _) => false,
@@ -1926,12 +1926,11 @@ impl<'a: 'b, 'b, P: AtomSet> PatternAtomTreeIterator<'a, 'b, P> {
             } else {
                 let res = self.atom_tree_iterator.next();
 
-                if let Some((tree_pos, cur_target)) = res {
-                    self.tree_pos = tree_pos;
-                    self.current_target = Some(cur_target);
-                } else {
+                let Some((tree_pos, cur_target)) = res else {
                     return None;
-                }
+                };
+                self.tree_pos = tree_pos;
+                self.current_target = Some(cur_target);
             }
         }
     }

@@ -251,12 +251,12 @@ impl<'a, P: AtomSet> Copy for AtomView<'a, P> {}
 impl<'a, 'b, P: AtomSet> PartialEq<AtomView<'b, P>> for AtomView<'a, P> {
     fn eq(&self, other: &AtomView<P>) -> bool {
         match (self, other) {
-            (AtomView::Num(n1), AtomView::Num(n2)) => n1 == n2,
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1 == v2,
-            (AtomView::Fun(f1), AtomView::Fun(f2)) => f1 == f2,
-            (AtomView::Pow(p1), AtomView::Pow(p2)) => p1 == p2,
-            (AtomView::Mul(m1), AtomView::Mul(m2)) => m1 == m2,
-            (AtomView::Add(a1), AtomView::Add(a2)) => a1 == a2,
+            (Self::Num(n1), AtomView::Num(n2)) => n1 == n2,
+            (Self::Var(v1), AtomView::Var(v2)) => v1 == v2,
+            (Self::Fun(f1), AtomView::Fun(f2)) => f1 == f2,
+            (Self::Pow(p1), AtomView::Pow(p2)) => p1 == p2,
+            (Self::Mul(m1), AtomView::Mul(m2)) => m1 == m2,
+            (Self::Add(a1), AtomView::Add(a2)) => a1 == a2,
             _ => false,
         }
     }
@@ -280,12 +280,12 @@ impl<'a, P: AtomSet> Hash for AtomView<'a, P> {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            AtomView::Num(a) => a.hash(state),
-            AtomView::Var(a) => a.hash(state),
-            AtomView::Fun(a) => a.hash(state),
-            AtomView::Pow(a) => a.hash(state),
-            AtomView::Mul(a) => a.hash(state),
-            AtomView::Add(a) => a.hash(state),
+            Self::Num(a) => a.hash(state),
+            Self::Var(a) => a.hash(state),
+            Self::Fun(a) => a.hash(state),
+            Self::Pow(a) => a.hash(state),
+            Self::Mul(a) => a.hash(state),
+            Self::Add(a) => a.hash(state),
         }
     }
 }
@@ -390,7 +390,7 @@ impl<'a, P: AtomSet> AsAtomView<'a, P> for &'a Atom<P> {
 impl<'a, P: AtomSet> From<AtomView<'a, P>> for Atom<P> {
     /// Convert an `AtomView` into an `Atom` by allocating.
     fn from(val: AtomView<'a, P>) -> Self {
-        Atom::new_from_view(&val)
+        Self::new_from_view(&val)
     }
 }
 
@@ -540,12 +540,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     pub fn get_byte_size(&self) -> usize {
         match self {
-            AtomView::Num(n) => n.get_byte_size(),
-            AtomView::Var(v) => v.get_byte_size(),
-            AtomView::Fun(f) => f.get_byte_size(),
-            AtomView::Pow(p) => p.get_byte_size(),
-            AtomView::Mul(m) => m.get_byte_size(),
-            AtomView::Add(a) => a.get_byte_size(),
+            Self::Num(n) => n.get_byte_size(),
+            Self::Var(v) => v.get_byte_size(),
+            Self::Fun(f) => f.get_byte_size(),
+            Self::Pow(p) => p.get_byte_size(),
+            Self::Mul(m) => m.get_byte_size(),
+            Self::Add(a) => a.get_byte_size(),
         }
     }
 }
@@ -959,7 +959,7 @@ impl<'a, P: AtomSet, A: DerefMut<Target = Atom<P>>> AtomBuilder<'a, A, P> {
     }
 
     /// Take base` to the power `self`.
-    pub fn rpow<'c, T: AsAtomView<'c, P>>(mut self, base: T) -> AtomBuilder<'a, A, P> {
+    pub fn rpow<'c, T: AsAtomView<'c, P>>(mut self, base: T) -> Self {
         base.as_atom_view()
             .pow_no_norm(self.workspace, self.out.as_view())
             .as_view()

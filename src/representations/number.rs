@@ -253,22 +253,22 @@ where
 impl BorrowedNumber<'_> {
     pub fn normalize(&self) -> Number {
         match self {
-            BorrowedNumber::Natural(num, den) => match Rational::new(*num, *den) {
+            Self::Natural(num, den) => match Rational::new(*num, *den) {
                 Rational::Natural(n, d) => Number::Natural(n, d),
                 Rational::Large(l) => Number::Large(l),
             },
-            BorrowedNumber::Large(_)
-            | BorrowedNumber::FiniteField(_, _)
-            | BorrowedNumber::RationalPolynomial(_) => self.to_owned(),
+            Self::Large(_) | Self::FiniteField(_, _) | Self::RationalPolynomial(_) => {
+                self.to_owned()
+            }
         }
     }
 
     pub fn to_owned(&self) -> Number {
         match self {
-            BorrowedNumber::Natural(num, den) => Number::Natural(*num, *den),
-            BorrowedNumber::Large(r) => Number::Large(r.to_rat()),
-            BorrowedNumber::FiniteField(num, field) => Number::FiniteField(*num, *field),
-            BorrowedNumber::RationalPolynomial(p) => Number::RationalPolynomial((*p).clone()),
+            Self::Natural(num, den) => Number::Natural(*num, *den),
+            Self::Large(r) => Number::Large(r.to_rat()),
+            Self::FiniteField(num, field) => Number::FiniteField(*num, *field),
+            Self::RationalPolynomial(p) => Number::RationalPolynomial((*p).clone()),
         }
     }
 

@@ -22,12 +22,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         out: &mut Atom<P>,
     ) -> bool {
         match self {
-            AtomView::Num(_) => {
+            Self::Num(_) => {
                 let n = out.to_num();
                 n.set_from_number(Number::Natural(0, 1));
                 false
             }
-            AtomView::Var(v) => {
+            Self::Var(v) => {
                 if v.get_name() == x {
                     let n = out.to_num();
                     n.set_from_number(Number::Natural(1, 1));
@@ -38,7 +38,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     false
                 }
             }
-            AtomView::Fun(f_orig) => {
+            Self::Fun(f_orig) => {
                 // detect if the function to derive is the derivative function itself
                 // if so, derive the last argument of the derivative function and set
                 // a flag to later accumulate previous derivatives
@@ -47,7 +47,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     (
                         to_derive,
                         match to_derive {
-                            AtomView::Fun(f) => f,
+                            Self::Fun(f) => f,
                             _ => panic!("Last argument of der function must be a function"),
                         },
                         true,
@@ -140,7 +140,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                     if is_der {
                         for (i, x_orig) in f_orig.iter().take(f.get_nargs()).enumerate() {
-                            if let AtomView::Num(nn) = x_orig {
+                            if let Self::Num(nn) = x_orig {
                                 let num = nn.get_number_view().add(
                                     &BorrowedNumber::Natural(if i == index { 1 } else { 0 }, 1),
                                     state,
@@ -177,7 +177,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 add.as_view().normalize(workspace, state, out);
                 true
             }
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 let mut exp_der = workspace.new_atom();
@@ -230,7 +230,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 mul.extend(base_der.as_view());
 
                 let mut new_exp = workspace.new_atom();
-                if let AtomView::Num(n) = exp {
+                if let Self::Num(n) = exp {
                     mul.extend(exp);
 
                     let pow_min_one = new_exp.to_num();
@@ -274,7 +274,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 true
             }
-            AtomView::Mul(args) => {
+            Self::Mul(args) => {
                 let mut add_h = workspace.new_atom();
                 let add = add_h.to_add();
                 let mut mul_h = workspace.new_atom();
@@ -318,7 +318,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     false
                 }
             }
-            AtomView::Add(args) => {
+            Self::Add(args) => {
                 let mut add_h = workspace.new_atom();
                 let add = add_h.to_add();
                 let mut arg_der = workspace.new_atom();

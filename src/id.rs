@@ -1343,7 +1343,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
         match_stack: &MatchStack<'a, 'b, P>,
         complete: bool,
         ordered: bool,
-    ) -> SubSliceIterator<'a, 'b, P> {
+    ) -> Self {
         let mut shortcut_done = false;
 
         // shortcut if the number of arguments is wrong
@@ -1373,7 +1373,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
             shortcut_done = true;
         };
 
-        SubSliceIterator {
+        Self {
             pattern,
             iterators: Vec::with_capacity(pattern.len()),
             matches: Vec::with_capacity(pattern.len()),
@@ -1699,7 +1699,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                                 .contains(&Symmetric);
 
                             if name_match {
-                                let mut it = SubSliceIterator::from_list(
+                                let mut it = Self::from_list(
                                     args,
                                     f.to_slice(),
                                     self.state,
@@ -1811,14 +1811,8 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                             _ => unreachable!(),
                         };
 
-                        let mut it = SubSliceIterator::from_list(
-                            pattern,
-                            slice,
-                            self.state,
-                            match_stack,
-                            true,
-                            ordered,
-                        );
+                        let mut it =
+                            Self::from_list(pattern, slice, self.state, match_stack, true, ordered);
 
                         if let Some((x, _)) = it.next(match_stack) {
                             *index = Some(ii);

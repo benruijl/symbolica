@@ -698,7 +698,7 @@ impl<P: AtomSet> Atom<P> {
         let mut of = std::mem::replace(self, Self::Empty);
 
         *self = match of {
-            Atom::Fun(_) => {
+            Self::Fun(_) => {
                 of.reset();
                 of
             }
@@ -707,11 +707,11 @@ impl<P: AtomSet> Atom<P> {
             Self::Var(v) => Self::Fun(v.to_owned_fun()),
             Self::Mul(m) => Self::Fun(m.to_owned_fun()),
             Self::Add(a) => Self::Fun(a.to_owned_fun()),
-            Atom::Empty => unreachable!(),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Fun(f) => f,
+            Self::Fun(f) => f,
             _ => unreachable!(),
         }
     }
@@ -802,13 +802,13 @@ impl<P: AtomSet> Atom<P> {
 
     pub fn as_view(&self) -> AtomView<'_, P> {
         match self {
-            Atom::Num(n) => AtomView::Num(n.to_num_view()),
-            Atom::Var(v) => AtomView::Var(v.to_var_view()),
-            Atom::Fun(f) => AtomView::Fun(f.to_fun_view()),
-            Atom::Pow(p) => AtomView::Pow(p.to_pow_view()),
-            Atom::Mul(m) => AtomView::Mul(m.to_mul_view()),
-            Atom::Add(a) => AtomView::Add(a.to_add_view()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => AtomView::Num(n.to_num_view()),
+            Self::Var(v) => AtomView::Var(v.to_var_view()),
+            Self::Fun(f) => AtomView::Fun(f.to_fun_view()),
+            Self::Pow(p) => AtomView::Pow(p.to_pow_view()),
+            Self::Mul(m) => AtomView::Mul(m.to_mul_view()),
+            Self::Add(a) => AtomView::Add(a.to_add_view()),
+            Self::Empty => unreachable!(),
         }
     }
 }
@@ -820,13 +820,13 @@ impl<P: AtomSet> ResettableBuffer for Atom<P> {
 
     fn reset(&mut self) {
         match self {
-            Atom::Num(n) => n.reset(),
-            Atom::Var(v) => v.reset(),
-            Atom::Fun(f) => f.reset(),
-            Atom::Pow(p) => p.reset(),
-            Atom::Mul(m) => m.reset(),
-            Atom::Add(a) => a.reset(),
-            Atom::Empty => {}
+            Self::Num(n) => n.reset(),
+            Self::Var(v) => v.reset(),
+            Self::Fun(f) => f.reset(),
+            Self::Pow(p) => p.reset(),
+            Self::Mul(m) => m.reset(),
+            Self::Add(a) => a.reset(),
+            Self::Empty => {}
         }
     }
 }

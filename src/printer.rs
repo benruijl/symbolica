@@ -27,7 +27,7 @@ pub struct PrintOptions {
 
 impl PrintOptions {
     /// Print the output in a Mathematica-readable format.
-    pub fn mathematica() -> PrintOptions {
+    pub fn mathematica() -> Self {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: false,
@@ -43,7 +43,7 @@ impl PrintOptions {
     }
 
     /// Print the output in a Latex input format.
-    pub fn latex() -> PrintOptions {
+    pub fn latex() -> Self {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: false,
@@ -676,11 +676,8 @@ pub struct RationalPolynomialPrinter<'a, 'b, R: Ring, E: Exponent> {
 }
 
 impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
-    pub fn new(
-        poly: &'a RationalPolynomial<R, E>,
-        state: &'b State,
-    ) -> RationalPolynomialPrinter<'a, 'b, R, E> {
-        RationalPolynomialPrinter {
+    pub fn new(poly: &'a RationalPolynomial<R, E>, state: &'b State) -> Self {
+        Self {
             poly,
             state,
             opts: PrintOptions::default(),
@@ -692,8 +689,8 @@ impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
         poly: &'a RationalPolynomial<R, E>,
         state: &'b State,
         opts: PrintOptions,
-    ) -> RationalPolynomialPrinter<'a, 'b, R, E> {
-        RationalPolynomialPrinter {
+    ) -> Self {
+        Self {
             poly,
             state,
             opts,
@@ -840,11 +837,8 @@ pub struct PolynomialPrinter<'a, 'b, F: Ring + Display, E: Exponent, O: Monomial
 }
 
 impl<'a, 'b, R: Ring + Display, E: Exponent, O: MonomialOrder> PolynomialPrinter<'a, 'b, R, E, O> {
-    pub fn new(
-        poly: &'a MultivariatePolynomial<R, E, O>,
-        state: &'b State,
-    ) -> PolynomialPrinter<'a, 'b, R, E, O> {
-        PolynomialPrinter {
+    pub fn new(poly: &'a MultivariatePolynomial<R, E, O>, state: &'b State) -> Self {
+        Self {
             poly,
             state,
             opts: PrintOptions::default(),
@@ -855,8 +849,8 @@ impl<'a, 'b, R: Ring + Display, E: Exponent, O: MonomialOrder> PolynomialPrinter
         poly: &'a MultivariatePolynomial<R, E, O>,
         state: &'b State,
         opts: PrintOptions,
-    ) -> PolynomialPrinter<'a, 'b, R, E, O> {
-        PolynomialPrinter { poly, state, opts }
+    ) -> Self {
+        Self { poly, state, opts }
     }
 }
 

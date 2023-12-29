@@ -51,11 +51,11 @@ impl State {
         "arg", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 
-    pub fn new() -> State {
+    pub fn new() -> Self {
         LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
         let mut state =
-            State {
+            Self {
                 str_to_var_id: HashMap::new(),
                 function_attributes: HashMap::new(),
                 var_info: vec![],
@@ -193,7 +193,7 @@ impl<P: AtomSet> Workspace<P> {
     pub fn new() -> Self {
         LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
-        Workspace {
+        Self {
             atom_stack: Stack::new(),
         }
     }

@@ -1552,6 +1552,40 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         gcd
     }
 
+    /// Compute a standard GCD-free basis. The input should not
+    /// contain 0 or units.
+    pub fn gcd_free_basis(mut polys: Vec<Self>) -> Vec<Self> {
+        let mut i = 0;
+        while i + 1 < polys.len() {
+            if polys[i].is_one() {
+                i += 1;
+                continue;
+            }
+
+            let mut j = i + 1;
+            while j < polys.len() {
+                if polys[j].is_one() {
+                    j += 1;
+                    continue;
+                }
+
+                let g = MultivariatePolynomial::gcd(&polys[i], &polys[j]);
+                if !g.is_one() {
+                    polys[i] = &polys[i] / &g;
+                    polys[j] = &polys[j] / &g;
+                    polys.push(g);
+                }
+
+                j += 1;
+            }
+
+            i += 1;
+        }
+
+        polys.retain(|p| !p.is_one());
+        polys
+    }
+
     /// Compute the GCD for simple cases.
     #[inline(always)]
     fn simple_gcd(

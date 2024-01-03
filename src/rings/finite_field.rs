@@ -27,7 +27,7 @@ where
 }
 
 /// A number in a finite field.
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, PartialOrd, Eq)]
 pub struct FiniteFieldElement<UField>(pub(crate) UField);
 
 pub trait FiniteFieldWorkspace: Clone + Copy + Display + Eq + Hash {

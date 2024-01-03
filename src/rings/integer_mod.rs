@@ -6,13 +6,16 @@ use std::{
 
 use super::{
     integer::{Integer, IntegerRing},
-    Ring,
+    Field, Ring,
 };
 
 /// The modular ring `Z / mZ`, where `m` can be any integer.
 /// Use this class only if `m` is not a prime number or
 /// if it is larger than 2^64. In all other cases, use
 /// [`FiniteField`](crate::rings::finite_field::FiniteField<UField>) instead.
+///
+/// This ring also implements `Field`. The user *must* make sure
+/// to only use field features such as inverses when the input is coprime.
 #[derive(Clone, PartialEq, Debug)]
 pub struct IntegerMod(Integer);
 
@@ -23,35 +26,6 @@ impl IntegerMod {
 
     pub fn to_element(&self, a: &Integer) -> Integer {
         a.symmetric_mod(&self.0)
-    }
-
-    /// Compute the inverse when `a` and the modulus are coprime,
-    /// otherwise panic.
-    pub fn inv(&self, a: Integer) -> Integer {
-        assert!(!a.is_zero(), "0 is not invertible");
-
-        let mut u1 = Integer::one();
-        let mut u3 = a.clone();
-        let mut v1 = Integer::zero();
-        let mut v3 = self.0.clone();
-        let mut even_iter: bool = true;
-
-        while !v3.is_zero() {
-            let (q, t3) = IntegerRing::new().quot_rem(&u3, &v3);
-            let t1 = &u1 + &(&q * &v1);
-            u1 = v1;
-            v1 = t1;
-            u3 = v3;
-            v3 = t3;
-            even_iter = !even_iter;
-        }
-
-        assert!(u3.is_one(), "{} is not invertible mod {}", a, self.0);
-        if even_iter {
-            u1
-        } else {
-            &self.0 - &u1
-        }
     }
 }
 
@@ -143,5 +117,60 @@ impl Ring for IntegerMod {
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
         element.fmt(f)
+    }
+}
+
+impl EuclideanDomain for IntegerMod {
+    fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        Integer::zero()
+    }
+
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        (self.mul(a, &self.inv(b)), Integer::zero())
+    }
+
+    fn gcd(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        Integer::one()
+    }
+}
+
+impl Field for IntegerMod {
+    #[inline]
+    fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        self.mul(a, &self.inv(b))
+    }
+
+    #[inline]
+    fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, &self.inv(b));
+    }
+
+    /// Compute the inverse when `a` and the modulus are coprime,
+    /// otherwise panic.
+    fn inv(&self, a: &Self::Element) -> Self::Element {
+        assert!(!a.is_zero(), "0 is not invertible");
+
+        let mut u1 = Integer::one();
+        let mut u3 = a.clone();
+        let mut v1 = Integer::zero();
+        let mut v3 = self.0.clone();
+        let mut even_iter: bool = true;
+
+        while !v3.is_zero() {
+            let (q, t3) = IntegerRing::new().quot_rem(&u3, &v3);
+            let t1 = &u1 + &(&q * &v1);
+            u1 = v1;
+            v1 = t1;
+            u3 = v3;
+            v3 = t3;
+            even_iter = !even_iter;
+        }
+
+        assert!(u3.is_one(), "{} is not invertible mod {}", a, self.0);
+        if even_iter {
+            u1
+        } else {
+            &self.0 - &u1
+        }
     }
 }

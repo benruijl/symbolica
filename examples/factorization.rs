@@ -49,7 +49,7 @@ fn factor_ff_bivariate() {
         exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
 
     println!("Factorization of {}:", poly.printer(&state));
-    for (f, pow) in poly.factor().unwrap() {
+    for (f, pow) in poly.factor() {
         println!("\t({})^{}", f.printer(&state), pow);
     }
 }
@@ -114,7 +114,7 @@ fn factor_univariate_1() {
         .to_polynomial(&IntegerRing::new(), None)
         .unwrap();
 
-    let fs = poly.factor().unwrap();
+    let fs = poly.factor();
 
     println!("Factorization of {}:", poly.printer(&state));
     for (f, _p) in fs {
@@ -140,7 +140,7 @@ fn factor_univariate_2() {
         .to_polynomial(&IntegerRing::new(), None)
         .unwrap();
 
-    let fs = poly.factor().unwrap();
+    let fs = poly.factor();
 
     println!("Factorization of {}:", poly.printer(&state));
     for (f, p) in fs {
@@ -169,8 +169,36 @@ fn factor_bivariate() {
         exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
 
     println!("Factorization of {}:", poly.printer(&state));
-    for (f, pow) in poly.factor().unwrap() {
+    for (f, pow) in poly.factor() {
         println!("\t({})^{}", f.printer(&state), pow);
+    }
+}
+
+fn factor_multivariate() {
+    let mut state = State::new();
+    let workspace: Workspace = Workspace::new();
+    let order = vec![
+        Variable::Identifier(state.get_or_insert_var("x")),
+        Variable::Identifier(state.get_or_insert_var("y")),
+        Variable::Identifier(state.get_or_insert_var("z")),
+        Variable::Identifier(state.get_or_insert_var("w")),
+    ];
+
+    let input = "(x*(2+2*y+2*z)+1)*(x*(4+z^2)+y+3)*(x*(w+w^2+4+y)+w+5)";
+
+    let mut exp = Atom::new();
+    Atom::parse(input, &mut state, &workspace)
+        .unwrap()
+        .as_view()
+        .expand(&workspace, &state, &mut exp);
+
+    let field = IntegerRing::new();
+    let poly: MultivariatePolynomial<_, u8> =
+        exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
+
+    println!("Factorization of {}:", poly.printer(&state));
+    for (f, p) in poly.factor() {
+        println!("\t({})^{}", f.printer(&state), p);
     }
 }
 
@@ -182,4 +210,5 @@ fn main() {
     factor_univariate_1();
     factor_univariate_2();
     factor_bivariate();
+    factor_multivariate();
 }

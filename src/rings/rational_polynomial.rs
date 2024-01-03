@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    cmp::Ordering,
     fmt::{Display, Error, Formatter, Write},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
@@ -48,6 +49,30 @@ pub trait FromNumeratorAndDenominator<R: Ring, OR: Ring, E: Exponent> {
 pub struct RationalPolynomial<R: Ring, E: Exponent> {
     pub numerator: MultivariatePolynomial<R, E>,
     pub denominator: MultivariatePolynomial<R, E>,
+}
+
+impl<R: Ring, E: Exponent> PartialOrd for RationalPolynomial<R, E> {
+    /// An ordering of rational polynomials that has no intuitive meaning.
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(
+            self.numerator
+                .exponents
+                .cmp(&other.numerator.exponents)
+                .then_with(|| self.denominator.exponents.cmp(&other.denominator.exponents))
+                .then_with(|| {
+                    self.numerator
+                        .coefficients
+                        .partial_cmp(&other.numerator.coefficients)
+                        .unwrap_or(Ordering::Equal)
+                })
+                .then_with(|| {
+                    self.denominator
+                        .coefficients
+                        .partial_cmp(&other.denominator.coefficients)
+                        .unwrap_or(Ordering::Equal)
+                }),
+        )
+    }
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {

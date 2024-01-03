@@ -3582,15 +3582,12 @@ macro_rules! generate_methods {
             /// >>> print('Factorization of {}:'.format(p))
             /// >>> for f, exp in p.factor():
             /// >>>     print('\t({})^{}'.format(f, exp))
-            pub fn factor(&self) -> PyResult<Vec<(Self, usize)>> {
+            pub fn factor(&self) -> Vec<(Self, usize)> {
                 self.poly
                     .factor()
-                    .map(|f| {
-                        f.into_iter()
+                    .into_iter()
                             .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
                             .collect()
-                    })
-                    .map_err(|e| exceptions::PyValueError::new_err(e))
             }
         }
     };

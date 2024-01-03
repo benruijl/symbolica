@@ -991,6 +991,32 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         highestc.clone()
     }
 
+    /// Get the leading coefficient of a multivariate polynomial viewed as a
+    /// univariate polynomial in `x`.
+    pub fn univariate_lcoeff(&self, x: usize) -> MultivariatePolynomial<F, E, LexOrder> {
+        let d = self.degree(x);
+        let mut lcoeff = self.new_from(None);
+
+        if self.coefficients.is_empty() {
+            return lcoeff;
+        }
+
+        if d == E::zero() {
+            return self.clone();
+        }
+
+        let mut e = vec![E::zero(); self.nvars];
+        for t in self {
+            if t.exponents[x] == d {
+                e.copy_from_slice(t.exponents);
+                e[x] = E::zero();
+                lcoeff.append_monomial(t.coefficient.clone(), &e);
+            }
+        }
+
+        lcoeff
+    }
+
     /// Get the leading coefficient viewed as a polynomial
     /// in all variables except the last variable `n`.
     pub fn lcoeff_last(&self, n: usize) -> MultivariatePolynomial<F, E, LexOrder> {
@@ -1152,15 +1178,17 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         let mut e: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); self.nvars];
 
         for t in self {
+            if t.exponents[n] == E::zero() {
+                res.append_monomial(t.coefficient.clone(), t.exponents);
+                continue;
+            }
+
             let c = self.field.mul(
                 t.coefficient,
                 &self.field.pow(v, t.exponents[n].to_u32() as u64),
             );
 
-            for (e, ee) in e.iter_mut().zip(t.exponents) {
-                *e = *ee;
-            }
-
+            e.copy_from_slice(t.exponents);
             e[n] = E::zero();
             res.append_monomial(c, &e);
         }
@@ -1211,7 +1239,8 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         res
     }
 
-    /// Create a univariate polynomial out of a multivariate one.
+    /// Create a univariate polynomial coefficient list out of a multivariate polynomial.
+    /// The output is sorted in the degree.
     // TODO: allow a MultivariatePolynomial as a coefficient
     pub fn to_univariate_polynomial_list(
         &self,
@@ -1752,6 +1781,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         self
     }
 
+    /// Make the polynomial primitive by removing the content.
+    pub fn make_primitive(self) -> Self {
+        let c = self.content();
+        self.div_coeff(&c)
+    }
+
     pub fn divides(
         &self,
         div: &MultivariatePolynomial<F, E, LexOrder>,
@@ -1774,6 +1809,11 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         } else {
             None
         }
+    }
+
+    /// Compute the remainder `self % div`.
+    pub fn rem(&self, div: &MultivariatePolynomial<F, E, LexOrder>) -> Self {
+        self.quot_rem(div, false).1
     }
 
     /// Divide two multivariate polynomials and return the quotient and remainder.

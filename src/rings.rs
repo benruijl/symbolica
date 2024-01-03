@@ -11,7 +11,7 @@ use std::fmt::{Debug, Display, Error, Formatter};
 use crate::state::State;
 
 pub trait Ring: Clone + PartialEq + Debug + Display {
-    type Element: Clone + PartialEq + Debug;
+    type Element: Clone + PartialEq + PartialOrd + Debug;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;

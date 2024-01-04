@@ -841,6 +841,11 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     /// Add `exponents` to every exponent.
     pub fn mul_exp(mut self, exponents: &[E]) -> Self {
         debug_assert_eq!(self.nvars, exponents.len());
+
+        if self.nvars == 0 {
+            return self;
+        }
+
         for e in self.exponents.chunks_mut(self.nvars) {
             for (e1, e2) in e.iter_mut().zip(exponents) {
                 *e1 = e1.checked_add(e2).expect("overflow in adding exponents");
@@ -1234,6 +1239,21 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             e[v] = k;
             res.append_monomial(c, &e);
             e[v] = E::zero();
+        }
+
+        res
+    }
+
+    /// Compute `self^pow`.
+    pub fn pow(&self, pow: usize) -> Self {
+        if pow == 0 {
+            return MultivariatePolynomial::one(&self.field);
+        }
+
+        // TODO: do binary exponentiation
+        let mut res = self.clone();
+        for _ in 1..pow {
+            res = res.mul(&self);
         }
 
         res
@@ -1859,6 +1879,18 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                     .all(|(t1, t2)| &self.field.mul(t2.coefficient, &q) == t1.coefficient)
             {
                 return (self.new_from_constant(q), self.new_from(None));
+            }
+        }
+
+        if div.is_constant() {
+            let c = self.content();
+            if c == div.lcoeff() {
+                return (
+                    self.clone().div_coeff(&c),
+                    self.new_from_constant(self.field.zero()),
+                );
+            } else {
+                return (MultivariatePolynomial::new_from(self, None), self.clone());
             }
         }
 

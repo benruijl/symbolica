@@ -1882,28 +1882,18 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             }
         }
 
-        if div.is_constant() {
-            let c = self.content();
-            if c == div.lcoeff() {
-                return (
-                    self.clone().div_coeff(&c),
-                    self.new_from_constant(self.field.zero()),
-                );
-            } else {
-                return (MultivariatePolynomial::new_from(self, None), self.clone());
-            }
-        }
-
         if div.nterms == 1 {
             let mut q = self.clone();
             let dive = div.to_monomial_view(0);
 
-            for ee in q.exponents.chunks_mut(q.nvars) {
-                for (e1, e2) in ee.iter_mut().zip(dive.exponents) {
-                    if *e1 >= *e2 {
-                        *e1 = *e1 - *e2;
-                    } else {
-                        return (MultivariatePolynomial::new_from(self, None), self.clone());
+            if q.nvars > 0 {
+                for ee in q.exponents.chunks_mut(q.nvars) {
+                    for (e1, e2) in ee.iter_mut().zip(dive.exponents) {
+                        if *e1 >= *e2 {
+                            *e1 = *e1 - *e2;
+                        } else {
+                            return (MultivariatePolynomial::new_from(self, None), self.clone());
+                        }
                     }
                 }
             }

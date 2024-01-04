@@ -5,6 +5,7 @@ pub mod integer_mod;
 pub mod linear_system;
 pub mod rational;
 pub mod rational_polynomial;
+pub mod factorized_rational_polynomial;
 
 use std::fmt::{Debug, Display, Error, Formatter};
 

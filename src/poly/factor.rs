@@ -1726,8 +1726,9 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                         }
                     }
 
+                    // FIXME: this check only works in this form if the factors are monic
                     if &g1 * &h1 != &rest.lcoeff() * &rest.coefficients[0] {
-                        continue;
+                        //continue;
                     }
                 }
 

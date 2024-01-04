@@ -11,8 +11,9 @@ use crate::rings::integer::IntegerRing;
 use crate::rings::rational::RationalField;
 use crate::LicenseManager;
 use crate::{
-    printer::{PrintOptions, RationalPolynomialPrinter},
+    printer::{FactorizedRationalPolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::default::Linear,
+    rings::factorized_rational_polynomial::FactorizedRationalPolynomial,
     rings::rational_polynomial::RationalPolynomial,
     state::{State, Workspace},
 };
@@ -248,6 +249,153 @@ unsafe extern "C" fn simplify(
                     &mut symbolica.local_state.buffer,
                     "{}\0", // add the NUL character
                     RationalPolynomialPrinter {
+                        poly: &rf,
+                        state: &symbolica.state,
+                        opts,
+                        add_parentheses: false,
+                    }
+                )
+                .unwrap();
+            }
+        };
+    }
+
+    match (
+        symbolica.local_state.input_has_rational_numbers,
+        symbolica.local_state.exp_fits_in_u8,
+    ) {
+        (false, true) => to_rational!(IntegerRing, u8),
+        (true, true) => to_rational!(RationalField, u8),
+        (false, false) => to_rational!(IntegerRing, u16),
+        (true, false) => to_rational!(RationalField, u16),
+    }
+
+    unsafe { CStr::from_bytes_with_nul_unchecked(symbolica.local_state.buffer.as_bytes()) }.as_ptr()
+}
+
+/// Simplify a rational polynomial, factorizing the denominator. The return value is only valid until the next call to
+/// `simplify`.
+#[no_mangle]
+unsafe extern "C" fn simplify_factorized(
+    symbolica: *mut Symbolica,
+    input: *const c_char,
+    prime: c_ulonglong,
+    explicit_rational_polynomial: bool,
+) -> *const c_char {
+    let c = unsafe { CStr::from_ptr(input) };
+    let cstr = c.to_str().unwrap();
+
+    let symbolica = unsafe { &mut *symbolica };
+
+    let token = Token::parse(cstr).unwrap();
+
+    let opts = PrintOptions {
+        terms_on_new_line: false,
+        color_top_level_sum: false,
+        color_builtin_functions: false,
+        print_finite_field: false,
+        explicit_rational_polynomial,
+        number_thousands_separator: None,
+        multiplication_operator: '*',
+        square_brackets_for_function: false,
+        num_exp_as_superscript: false,
+        latex: false,
+    };
+
+    macro_rules! to_rational {
+        ($in_field: ty, $exp_size: ty) => {
+            if prime == 0 {
+                let r: FactorizedRationalPolynomial<IntegerRing, $exp_size> = token
+                    .to_factorized_rational_polynomial(
+                        &symbolica.workspace,
+                        &mut symbolica.state,
+                        &<$in_field>::new(),
+                        &IntegerRing::new(),
+                        &symbolica.local_state.var_map,
+                        &symbolica.local_state.var_name_map,
+                    )
+                    .unwrap();
+
+                symbolica.local_state.buffer.clear();
+                write!(
+                    &mut symbolica.local_state.buffer,
+                    "{}\0", // add the NUL character
+                    FactorizedRationalPolynomialPrinter {
+                        poly: &r,
+                        state: &symbolica.state,
+                        opts,
+                        add_parentheses: false,
+                    }
+                )
+                .unwrap();
+            } else if prime <= u32::MAX as c_ulonglong {
+                let field = FiniteField::<u32>::new(prime as u32);
+                let rf: FactorizedRationalPolynomial<FiniteField<u32>, $exp_size> = token
+                    .to_factorized_rational_polynomial(
+                        &symbolica.workspace,
+                        &mut symbolica.state,
+                        &field,
+                        &field,
+                        &symbolica.local_state.var_map,
+                        &symbolica.local_state.var_name_map,
+                    )
+                    .unwrap();
+
+                symbolica.local_state.buffer.clear();
+                write!(
+                    &mut symbolica.local_state.buffer,
+                    "{}\0", // add the NUL character
+                    FactorizedRationalPolynomialPrinter {
+                        poly: &rf,
+                        state: &symbolica.state,
+                        opts,
+                        add_parentheses: false,
+                    }
+                )
+                .unwrap();
+            } else if prime == Mersenne64::PRIME {
+                let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
+                let rf: FactorizedRationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
+                    .to_factorized_rational_polynomial(
+                        &symbolica.workspace,
+                        &mut symbolica.state,
+                        &field,
+                        &field,
+                        &symbolica.local_state.var_map,
+                        &symbolica.local_state.var_name_map,
+                    )
+                    .unwrap();
+
+                symbolica.local_state.buffer.clear();
+                write!(
+                    &mut symbolica.local_state.buffer,
+                    "{}\0", // add the NUL character
+                    FactorizedRationalPolynomialPrinter {
+                        poly: &rf,
+                        state: &symbolica.state,
+                        opts,
+                        add_parentheses: false,
+                    }
+                )
+                .unwrap();
+            } else {
+                let field = FiniteField::<u64>::new(prime as u64);
+                let rf: FactorizedRationalPolynomial<FiniteField<u64>, $exp_size> = token
+                    .to_factorized_rational_polynomial(
+                        &symbolica.workspace,
+                        &mut symbolica.state,
+                        &field,
+                        &field,
+                        &symbolica.local_state.var_map,
+                        &symbolica.local_state.var_name_map,
+                    )
+                    .unwrap();
+
+                symbolica.local_state.buffer.clear();
+                write!(
+                    &mut symbolica.local_state.buffer,
+                    "{}\0", // add the NUL character
+                    FactorizedRationalPolynomialPrinter {
                         poly: &rf,
                         state: &symbolica.state,
                         opts,

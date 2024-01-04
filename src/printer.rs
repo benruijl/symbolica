@@ -6,6 +6,7 @@ use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder},
     representations::{number::BorrowedNumber, Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
     rings::{
+        factorized_rational_polynomial::FactorizedRationalPolynomial,
         finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
     },
     state::State,
@@ -663,6 +664,211 @@ impl<'a, A: Add<'a>> FormattedPrintAdd for A {
             x.fmt_debug(f)?;
         }
         Ok(())
+    }
+}
+
+pub struct FactorizedRationalPolynomialPrinter<'a, 'b, R: Ring, E: Exponent> {
+    pub poly: &'a FactorizedRationalPolynomial<R, E>,
+    pub state: &'b State,
+    pub opts: PrintOptions,
+    pub add_parentheses: bool,
+}
+
+impl<'a, 'b, R: Ring, E: Exponent> FactorizedRationalPolynomialPrinter<'a, 'b, R, E> {
+    pub fn new(
+        poly: &'a FactorizedRationalPolynomial<R, E>,
+        state: &'b State,
+    ) -> FactorizedRationalPolynomialPrinter<'a, 'b, R, E> {
+        FactorizedRationalPolynomialPrinter {
+            poly,
+            state,
+            opts: PrintOptions::default(),
+            add_parentheses: false,
+        }
+    }
+
+    pub fn new_with_options(
+        poly: &'a FactorizedRationalPolynomial<R, E>,
+        state: &'b State,
+        opts: PrintOptions,
+    ) -> FactorizedRationalPolynomialPrinter<'a, 'b, R, E> {
+        FactorizedRationalPolynomialPrinter {
+            poly,
+            state,
+            opts,
+            add_parentheses: false,
+        }
+    }
+}
+
+impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'a, 'b, R, E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.opts.explicit_rational_polynomial {
+            if self.poly.denominators.len() == 1 && self.poly.denominators[0].0.is_one() {
+                if self.poly.numerator.is_zero() {
+                    f.write_char('0')?;
+                } else {
+                    f.write_fmt(format_args!(
+                        "[{}]",
+                        PolynomialPrinter {
+                            poly: &self.poly.numerator,
+                            state: self.state,
+                            opts: self.opts,
+                        }
+                    ))?;
+                }
+            } else {
+                f.write_fmt(format_args!(
+                    "[{}",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        opts: self.opts,
+                    },
+                ))?;
+
+                for (d, p) in &self.poly.denominators {
+                    f.write_fmt(format_args!(
+                        ",{}",
+                        PolynomialPrinter {
+                            poly: d,
+                            state: self.state,
+                            opts: self.opts,
+                        }
+                    ))?;
+                    f.write_fmt(format_args!(",{}", p))?;
+                }
+
+                f.write_char(']')?;
+            }
+
+            return Ok(());
+        }
+
+        if self.poly.denominators.len() == 1 && self.poly.denominators[0].0.is_one() {
+            if !self.add_parentheses || self.poly.numerator.nterms < 2 {
+                f.write_fmt(format_args!(
+                    "{}",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        opts: self.opts,
+                    }
+                ))
+            } else {
+                f.write_fmt(format_args!(
+                    "({})",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        opts: self.opts,
+                    }
+                ))
+            }
+        } else {
+            if self.opts.latex {
+                f.write_fmt(format_args!(
+                    "\\frac{{{}}}{{",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        opts: self.opts,
+                    },
+                ))?;
+
+                for (d, p) in &self.poly.denominators {
+                    if *p == 1 {
+                        f.write_fmt(format_args!(
+                            "({})",
+                            PolynomialPrinter {
+                                poly: d,
+                                state: self.state,
+                                opts: self.opts,
+                            }
+                        ))?;
+                    } else {
+                        f.write_fmt(format_args!(
+                            "({})^{}",
+                            PolynomialPrinter {
+                                poly: d,
+                                state: self.state,
+                                opts: self.opts,
+                            },
+                            p
+                        ))?;
+                    }
+                }
+
+                return f.write_str("}}");
+            }
+
+            if self.poly.numerator.nterms < 2 {
+                f.write_fmt(format_args!(
+                    "{}",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        opts: self.opts,
+                    }
+                ))?;
+            } else {
+                f.write_fmt(format_args!(
+                    "({})",
+                    PolynomialPrinter {
+                        poly: &self.poly.numerator,
+                        state: self.state,
+                        opts: self.opts,
+                    }
+                ))?;
+            }
+
+            f.write_char('/')?;
+
+            if self.poly.denominators.len() == 1
+                && self.poly.denominators[0].0.nterms == 1
+                && self.poly.denominators[0].1 == 1
+            {
+                let (d, _) = &self.poly.denominators[0];
+                let var_count = d.exponents.iter().filter(|x| !x.is_zero()).count();
+
+                if var_count == 0 || d.field.is_one(&d.coefficients[0]) && var_count == 1 {
+                    return f.write_fmt(format_args!(
+                        "{}",
+                        PolynomialPrinter {
+                            poly: d,
+                            state: self.state,
+                            opts: self.opts,
+                        }
+                    ));
+                }
+            }
+
+            f.write_char('(')?; // TODO: add special cases for 1 argument
+            for (d, p) in &self.poly.denominators {
+                if *p == 1 {
+                    f.write_fmt(format_args!(
+                        "({})",
+                        PolynomialPrinter {
+                            poly: d,
+                            state: self.state,
+                            opts: self.opts,
+                        }
+                    ))?;
+                } else {
+                    f.write_fmt(format_args!(
+                        "({})^{}",
+                        PolynomialPrinter {
+                            poly: d,
+                            state: self.state,
+                            opts: self.opts,
+                        },
+                        p
+                    ))?;
+                }
+            }
+
+            f.write_char(')')
+        }
     }
 }
 

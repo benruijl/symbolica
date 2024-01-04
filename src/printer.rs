@@ -719,7 +719,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                 }
             } else {
                 f.write_fmt(format_args!(
-                    "[{},",
+                    "[{}",
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,

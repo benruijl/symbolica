@@ -185,7 +185,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
                     let order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
 
                     factors.extend(
-                        f.multivariate_factorization(&order, 0)
+                        f.multivariate_factorization(&order, 0, None)
                             .into_iter()
                             .map(|ff| (ff, p)),
                     )
@@ -295,6 +295,7 @@ where
                     for (d2, f2) in f.distinct_degree_factorization() {
                         debug!("DDF {} {}", f2, d2);
                         for f3 in f2.equal_degree_factorization(d2) {
+                            debug!("EDF {} {}", f3, p);
                             factors.push((f3, p));
                         }
                     }
@@ -326,7 +327,7 @@ where
                     let order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
 
                     factors.extend(
-                        f.multivariate_factorization(&order, 0)
+                        f.multivariate_factorization(&order, 0, None)
                             .into_iter()
                             .map(|ff| (ff, p)),
                     )
@@ -558,6 +559,7 @@ where
         for (d2, f2) in self.distinct_degree_factorization() {
             debug!("DDF {} {}", f2, d2);
             for f3 in f2.equal_degree_factorization(d2) {
+                debug!("EDF {}", f3);
                 factors.push(f3);
             }
         }
@@ -1051,20 +1053,36 @@ where
         &self,
         order: &[usize],
         mut coefficient_upper_bound: u64,
+        max_bivariate_factors: Option<usize>,
     ) -> Vec<Self> {
+        if let Some(m) = max_bivariate_factors {
+            if m == 1 {
+                return vec![self.clone()];
+            }
+        }
+
         // check for problems arising from canceling terms in the derivative
         let der = self.derivative(order[0]);
         if der.is_zero() {
             let mut new_order = order.to_vec();
             let v = new_order.remove(0);
             new_order.push(v);
-            return self.multivariate_factorization(&new_order, coefficient_upper_bound);
+            return self.multivariate_factorization(
+                &new_order,
+                coefficient_upper_bound,
+                max_bivariate_factors,
+            );
         }
 
         let g = MultivariatePolynomial::gcd(&self, &der);
         if !g.is_constant() {
-            let mut factors = g.multivariate_factorization(order, coefficient_upper_bound);
-            factors.extend((self / &g).multivariate_factorization(order, coefficient_upper_bound));
+            let mut factors =
+                g.multivariate_factorization(order, coefficient_upper_bound, max_bivariate_factors);
+            factors.extend((self / &g).multivariate_factorization(
+                order,
+                coefficient_upper_bound,
+                max_bivariate_factors,
+            ));
             return factors;
         }
 
@@ -1117,12 +1135,28 @@ where
             return vec![self.clone()];
         }
 
-        let Ok((mut sorted_biv_factors, true_lcoeffs)) =
-            self.lcoeff_precomputation(&bivariate_factors, &sample_points, &order)
-        else {
+        if let Some(max) = max_bivariate_factors {
+            if bivariate_factors.len() > max {
+                return self.multivariate_factorization(
+                    order,
+                    coefficient_upper_bound,
+                    max_bivariate_factors,
+                );
+            }
+        }
+
+        let (mut sorted_biv_factors, true_lcoeffs) =
+            match self.lcoeff_precomputation(&bivariate_factors, &sample_points, &order) {
+                Ok((sorted_biv_factors, true_lcoeffs)) => (sorted_biv_factors, true_lcoeffs),
+                Err(max_biv) => {
             // the leading coefficient computation failed because the bivaraite factorization was wrong
-            // try again with other sample points
-            return self.multivariate_factorization(order, coefficient_upper_bound + 1);
+                    // try again with other sample points and a better bound
+                    return self.multivariate_factorization(
+                        order,
+                        coefficient_upper_bound + 1,
+                        Some(max_biv),
+                    );
+                }
         };
 
         for (b, l) in sorted_biv_factors.iter().zip(&true_lcoeffs) {
@@ -1161,7 +1195,11 @@ where
             );
 
             // the bivariate factorization has too many factors, try again with other sample points
-            self.multivariate_factorization(order, coefficient_upper_bound + 1)
+            self.multivariate_factorization(
+                order,
+                coefficient_upper_bound + 1,
+                Some(max_bivariate_factors.unwrap_or(bivariate_factors.len()) - 1),
+            )
         }
     }
 }
@@ -1224,8 +1262,12 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 debug!("delta {} p {}", d, p);
                 e = &e - &(d * p);
 
-                for r in order[..order.len() - 1].iter().zip(degrees) {
+                // TODO: improve computation of mod (x_i-shift_i)^(j+1)
+                for r in order[1..order.len() - 1].iter().zip(&degrees[1..]) {
+                    let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
+                    e = e.shift_var(*r.0, shift);
                     e = e.mod_var(*r.0, E::from_u32(*r.1 as u32 + 1));
+                    e = e.shift_var(*r.0, &error.field.neg(&shift));
                 }
 
                 // TODO: mod with (x-shift)^(j+1)?
@@ -1270,8 +1312,11 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 let nd = &*nd * &cur_exponent;
                 *d = &*d + &nd;
 
-                for r in order[..order.len() - 1].iter().zip(degrees) {
+                for r in order[1..order.len() - 1].iter().zip(&degrees[1..]) {
+                    let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
+                    *d = d.shift_var(*r.0, shift);
                     *d = d.mod_var(*r.0, E::from_u32(*r.1 as u32 + 1));
+                    *d = d.shift_var(*r.0, &error.field.neg(&shift));
                 }
             }
         }
@@ -1647,11 +1692,6 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             return vec![self.clone()];
         }
 
-        let max_norm = self.coefficients.iter().map(|x| x.abs()).max().unwrap();
-        let bound: Integer =
-            &Integer::from(((d + 1) as f64 * 2f64.powi(d as i32 + 1).sqrt()) as u64)
-                * &(&Integer::from(2u64).pow(d as u64) * &(&max_norm * &self.lcoeff())); // NOTE: precision may be off
-
         // select a suitable prime
         let mut field;
         let mut f_p;
@@ -1685,6 +1725,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             return vec![self.clone()];
         }
 
+        let bound = self.coefficient_bound();
         let p: Integer = (field.get_prime().to_u32() as i64).into();
         let mut max_p = p.clone();
         while max_p < bound {
@@ -2445,7 +2486,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         &self,
         order: &[usize],
         mut coefficient_upper_bound: i64,
+        max_bivariate_factors: Option<usize>,
     ) -> Vec<Self> {
+        if let Some(m) = max_bivariate_factors {
+            if m == 1 {
+                return vec![self.clone()];
+            }
+        }
+
         // select a suitable evaluation point, as small as possible as to not change the coefficient bound
         let mut sample_points: Vec<_> = order[1..].iter().map(|i| (*i, Integer::zero())).collect();
         let mut uni_f;
@@ -2492,6 +2540,16 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         if bivariate_factors.len() == 1 {
             // the polynomial is irreducible
             return vec![self.clone()];
+        }
+
+        if let Some(max) = max_bivariate_factors {
+            if bivariate_factors.len() > max {
+                return self.multivariate_factorization(
+                    order,
+                    coefficient_upper_bound,
+                    max_bivariate_factors,
+                );
+            }
         }
 
         // select a suitable prime
@@ -2542,12 +2600,24 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         let field_mod = IntegerMod::new(max_p.clone());
 
-        let Ok((sorted_biv_factors, true_lcoeffs)) =
-            self.lcoeff_precomputation(&bivariate_factors, &sample_points, &order, max_p, p, k)
-        else {
+        let (sorted_biv_factors, true_lcoeffs) = match self.lcoeff_precomputation(
+            &bivariate_factors,
+            &sample_points,
+            &order,
+            max_p,
+            p,
+            k,
+        ) {
+            Ok((sorted_biv_factors, true_lcoeffs)) => (sorted_biv_factors, true_lcoeffs),
+            Err(max_biv) => {
             // the leading coefficient computation failed because the bivaraite factorization was wrong
-            // try again with other sample points
-            return self.multivariate_factorization(order, coefficient_upper_bound + 1);
+                // try again with other sample points and a better bound
+                return self.multivariate_factorization(
+                    order,
+                    coefficient_upper_bound + 1,
+                    Some(max_biv),
+                );
+            }
         };
 
         for (b, l) in sorted_biv_factors.iter().zip(&true_lcoeffs) {
@@ -2598,13 +2668,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         if &test == self {
             factorization
         } else {
+            let new_bound = max_bivariate_factors.unwrap_or(bivariate_factors.len()) - 1;
             debug!(
-                "No immediate factorization of {} for sample points {:?}",
-                self, sample_points
+                "No immediate factorization of {} for sample points {:?}, new bound of bivariate factors: {}",
+                self, sample_points, new_bound
             );
 
             // the bivariate factorization has too many factors, try again with other sample points
-            self.multivariate_factorization(order, coefficient_upper_bound + 1)
+            self.multivariate_factorization(order, coefficient_upper_bound + 1, Some(new_bound))
         }
     }
 }

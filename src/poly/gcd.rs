@@ -2644,7 +2644,11 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
     }
 
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
-        a
+        if a.lcoeff().is_negative() {
+            -a
+        } else {
+            a
+        }
     }
 }
 
@@ -2749,7 +2753,11 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
     }
 
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
-        a
+        if a.lcoeff().is_negative() {
+            -a
+        } else {
+            a
+        }
     }
 }
 

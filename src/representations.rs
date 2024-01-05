@@ -251,12 +251,12 @@ impl<'a, P: AtomSet> Copy for AtomView<'a, P> {}
 impl<'a, 'b, P: AtomSet> PartialEq<AtomView<'b, P>> for AtomView<'a, P> {
     fn eq(&self, other: &AtomView<P>) -> bool {
         match (self, other) {
-            (AtomView::Num(n1), AtomView::Num(n2)) => n1 == n2,
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1 == v2,
-            (AtomView::Fun(f1), AtomView::Fun(f2)) => f1 == f2,
-            (AtomView::Pow(p1), AtomView::Pow(p2)) => p1 == p2,
-            (AtomView::Mul(m1), AtomView::Mul(m2)) => m1 == m2,
-            (AtomView::Add(a1), AtomView::Add(a2)) => a1 == a2,
+            (Self::Num(n1), AtomView::Num(n2)) => n1 == n2,
+            (Self::Var(v1), AtomView::Var(v2)) => v1 == v2,
+            (Self::Fun(f1), AtomView::Fun(f2)) => f1 == f2,
+            (Self::Pow(p1), AtomView::Pow(p2)) => p1 == p2,
+            (Self::Mul(m1), AtomView::Mul(m2)) => m1 == m2,
+            (Self::Add(a1), AtomView::Add(a2)) => a1 == a2,
             _ => false,
         }
     }
@@ -280,12 +280,12 @@ impl<'a, P: AtomSet> Hash for AtomView<'a, P> {
     #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            AtomView::Num(a) => a.hash(state),
-            AtomView::Var(a) => a.hash(state),
-            AtomView::Fun(a) => a.hash(state),
-            AtomView::Pow(a) => a.hash(state),
-            AtomView::Mul(a) => a.hash(state),
-            AtomView::Add(a) => a.hash(state),
+            Self::Num(a) => a.hash(state),
+            Self::Var(a) => a.hash(state),
+            Self::Fun(a) => a.hash(state),
+            Self::Pow(a) => a.hash(state),
+            Self::Mul(a) => a.hash(state),
+            Self::Add(a) => a.hash(state),
         }
     }
 }
@@ -390,7 +390,7 @@ impl<'a, P: AtomSet> AsAtomView<'a, P> for &'a Atom<P> {
 impl<'a, P: AtomSet> From<AtomView<'a, P>> for Atom<P> {
     /// Convert an `AtomView` into an `Atom` by allocating.
     fn from(val: AtomView<'a, P>) -> Self {
-        Atom::new_from_view(&val)
+        Self::new_from_view(&val)
     }
 }
 
@@ -540,12 +540,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     pub fn get_byte_size(&self) -> usize {
         match self {
-            AtomView::Num(n) => n.get_byte_size(),
-            AtomView::Var(v) => v.get_byte_size(),
-            AtomView::Fun(f) => f.get_byte_size(),
-            AtomView::Pow(p) => p.get_byte_size(),
-            AtomView::Mul(m) => m.get_byte_size(),
-            AtomView::Add(a) => a.get_byte_size(),
+            Self::Num(n) => n.get_byte_size(),
+            Self::Var(v) => v.get_byte_size(),
+            Self::Fun(f) => f.get_byte_size(),
+            Self::Pow(p) => p.get_byte_size(),
+            Self::Mul(m) => m.get_byte_size(),
+            Self::Add(a) => a.get_byte_size(),
         }
     }
 }
@@ -580,13 +580,13 @@ impl<P: AtomSet> Eq for Atom<P> {}
 impl<P: AtomSet> Hash for Atom<P> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            Atom::Num(a) => a.hash(state),
-            Atom::Var(a) => a.hash(state),
-            Atom::Fun(a) => a.hash(state),
-            Atom::Pow(a) => a.hash(state),
-            Atom::Mul(a) => a.hash(state),
-            Atom::Add(a) => a.hash(state),
-            Atom::Empty => 1.hash(state),
+            Self::Num(a) => a.hash(state),
+            Self::Var(a) => a.hash(state),
+            Self::Fun(a) => a.hash(state),
+            Self::Pow(a) => a.hash(state),
+            Self::Mul(a) => a.hash(state),
+            Self::Add(a) => a.hash(state),
+            Self::Empty => 1.hash(state),
         }
     }
 }
@@ -599,21 +599,17 @@ impl<P: AtomSet> std::fmt::Debug for Atom<P> {
 
 impl<P: AtomSet> Atom<P> {
     /// Parse and atom from a string.
-    pub fn parse(
-        input: &str,
-        state: &mut State,
-        workspace: &Workspace<P>,
-    ) -> Result<Atom<P>, String> {
+    pub fn parse(input: &str, state: &mut State, workspace: &Workspace<P>) -> Result<Self, String> {
         Token::parse(input)?.to_atom(state, workspace)
     }
 
-    pub fn new_var(id: Identifier) -> Atom<P> {
+    pub fn new_var(id: Identifier) -> Self {
         let mut owned = Self::new();
         owned.to_var().set_from_id(id);
         owned
     }
 
-    pub fn new_num<T: Into<Number>>(num: T) -> Atom<P> {
+    pub fn new_num<T: Into<Number>>(num: T) -> Self {
         let mut owned = Self::new();
         owned.to_num().set_from_number(num.into());
         owned
@@ -627,23 +623,23 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Num(n)`, returning a reference to `n`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_num(&mut self) -> &mut P::ON {
-        let mut ov = std::mem::replace(self, Atom::Empty);
+        let mut ov = std::mem::replace(self, Self::Empty);
 
         *self = match ov {
-            Atom::Num(_) => {
+            Self::Num(_) => {
                 ov.reset();
                 ov
             }
-            Atom::Var(v) => Atom::Num(v.to_owned_num()),
-            Atom::Fun(f) => Atom::Num(f.to_owned_num()),
-            Atom::Pow(p) => Atom::Num(p.to_owned_num()),
-            Atom::Mul(m) => Atom::Num(m.to_owned_num()),
-            Atom::Add(a) => Atom::Num(a.to_owned_num()),
-            Atom::Empty => unreachable!(),
+            Self::Var(v) => Self::Num(v.to_owned_num()),
+            Self::Fun(f) => Self::Num(f.to_owned_num()),
+            Self::Pow(p) => Self::Num(p.to_owned_num()),
+            Self::Mul(m) => Self::Num(m.to_owned_num()),
+            Self::Add(a) => Self::Num(a.to_owned_num()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Num(n) => n,
+            Self::Num(n) => n,
             _ => unreachable!(),
         }
     }
@@ -651,23 +647,23 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Pow(p)`, returning a reference to `p`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_pow(&mut self) -> &mut P::OP {
-        let mut ov = std::mem::replace(self, Atom::Empty);
+        let mut ov = std::mem::replace(self, Self::Empty);
 
         *self = match ov {
-            Atom::Pow(_) => {
+            Self::Pow(_) => {
                 ov.reset();
                 ov
             }
-            Atom::Num(n) => Atom::Pow(n.to_owned_pow()),
-            Atom::Var(v) => Atom::Pow(v.to_owned_pow()),
-            Atom::Fun(f) => Atom::Pow(f.to_owned_pow()),
-            Atom::Mul(m) => Atom::Pow(m.to_owned_pow()),
-            Atom::Add(a) => Atom::Pow(a.to_owned_pow()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => Self::Pow(n.to_owned_pow()),
+            Self::Var(v) => Self::Pow(v.to_owned_pow()),
+            Self::Fun(f) => Self::Pow(f.to_owned_pow()),
+            Self::Mul(m) => Self::Pow(m.to_owned_pow()),
+            Self::Add(a) => Self::Pow(a.to_owned_pow()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Pow(p) => p,
+            Self::Pow(p) => p,
             _ => unreachable!(),
         }
     }
@@ -675,23 +671,23 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Var(v)`, returning a reference to `v`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_var(&mut self) -> &mut P::OV {
-        let mut ov = std::mem::replace(self, Atom::Empty);
+        let mut ov = std::mem::replace(self, Self::Empty);
 
         *self = match ov {
-            Atom::Var(_) => {
+            Self::Var(_) => {
                 ov.reset();
                 ov
             }
-            Atom::Num(n) => Atom::Var(n.to_owned_var()),
-            Atom::Pow(p) => Atom::Var(p.to_owned_var()),
-            Atom::Fun(f) => Atom::Var(f.to_owned_var()),
-            Atom::Mul(m) => Atom::Var(m.to_owned_var()),
-            Atom::Add(a) => Atom::Var(a.to_owned_var()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => Self::Var(n.to_owned_var()),
+            Self::Pow(p) => Self::Var(p.to_owned_var()),
+            Self::Fun(f) => Self::Var(f.to_owned_var()),
+            Self::Mul(m) => Self::Var(m.to_owned_var()),
+            Self::Add(a) => Self::Var(a.to_owned_var()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Var(v) => v,
+            Self::Var(v) => v,
             _ => unreachable!(),
         }
     }
@@ -699,23 +695,23 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Fun(f)`, returning a reference to `f`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_fun(&mut self) -> &mut P::OF {
-        let mut of = std::mem::replace(self, Atom::Empty);
+        let mut of = std::mem::replace(self, Self::Empty);
 
         *self = match of {
-            Atom::Fun(_) => {
+            Self::Fun(_) => {
                 of.reset();
                 of
             }
-            Atom::Num(n) => Atom::Fun(n.to_owned_fun()),
-            Atom::Pow(p) => Atom::Fun(p.to_owned_fun()),
-            Atom::Var(v) => Atom::Fun(v.to_owned_fun()),
-            Atom::Mul(m) => Atom::Fun(m.to_owned_fun()),
-            Atom::Add(a) => Atom::Fun(a.to_owned_fun()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => Self::Fun(n.to_owned_fun()),
+            Self::Pow(p) => Self::Fun(p.to_owned_fun()),
+            Self::Var(v) => Self::Fun(v.to_owned_fun()),
+            Self::Mul(m) => Self::Fun(m.to_owned_fun()),
+            Self::Add(a) => Self::Fun(a.to_owned_fun()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Fun(f) => f,
+            Self::Fun(f) => f,
             _ => unreachable!(),
         }
     }
@@ -723,23 +719,23 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Mul(m)`, returning a reference to `m`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_mul(&mut self) -> &mut P::OM {
-        let mut om = std::mem::replace(self, Atom::Empty);
+        let mut om = std::mem::replace(self, Self::Empty);
 
         *self = match om {
-            Atom::Mul(_) => {
+            Self::Mul(_) => {
                 om.reset();
                 om
             }
-            Atom::Num(n) => Atom::Mul(n.to_owned_mul()),
-            Atom::Pow(p) => Atom::Mul(p.to_owned_mul()),
-            Atom::Var(v) => Atom::Mul(v.to_owned_mul()),
-            Atom::Fun(f) => Atom::Mul(f.to_owned_mul()),
-            Atom::Add(a) => Atom::Mul(a.to_owned_mul()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => Self::Mul(n.to_owned_mul()),
+            Self::Pow(p) => Self::Mul(p.to_owned_mul()),
+            Self::Var(v) => Self::Mul(v.to_owned_mul()),
+            Self::Fun(f) => Self::Mul(f.to_owned_mul()),
+            Self::Add(a) => Self::Mul(a.to_owned_mul()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Mul(m) => m,
+            Self::Mul(m) => m,
             _ => unreachable!(),
         }
     }
@@ -747,30 +743,30 @@ impl<P: AtomSet> Atom<P> {
     /// Convert the owned atom to a `OwnedAtom::Add(a)`, returning a reference to `a`.
     /// This destroys any previous content of the owned atom, but reuses the memory.
     pub fn to_add(&mut self) -> &mut P::OA {
-        let mut oa = std::mem::replace(self, Atom::Empty);
+        let mut oa = std::mem::replace(self, Self::Empty);
 
         *self = match oa {
-            Atom::Add(_) => {
+            Self::Add(_) => {
                 oa.reset();
                 oa
             }
-            Atom::Num(n) => Atom::Add(n.to_owned_add()),
-            Atom::Pow(p) => Atom::Add(p.to_owned_add()),
-            Atom::Var(v) => Atom::Add(v.to_owned_add()),
-            Atom::Fun(f) => Atom::Add(f.to_owned_add()),
-            Atom::Mul(m) => Atom::Add(m.to_owned_add()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => Self::Add(n.to_owned_add()),
+            Self::Pow(p) => Self::Add(p.to_owned_add()),
+            Self::Var(v) => Self::Add(v.to_owned_add()),
+            Self::Fun(f) => Self::Add(f.to_owned_add()),
+            Self::Mul(m) => Self::Add(m.to_owned_add()),
+            Self::Empty => unreachable!(),
         };
 
         match self {
-            Atom::Add(a) => a,
+            Self::Add(a) => a,
             _ => unreachable!(),
         }
     }
 
     /// This function allocates a new OwnedAtom with the same content as `view`.
-    pub fn new_from_view(view: &AtomView<P>) -> Atom<P> {
-        let mut owned = Atom::new();
+    pub fn new_from_view(view: &AtomView<P>) -> Self {
+        let mut owned = Self::new();
         owned.set_from_view(view);
         owned
     }
@@ -806,13 +802,13 @@ impl<P: AtomSet> Atom<P> {
 
     pub fn as_view(&self) -> AtomView<'_, P> {
         match self {
-            Atom::Num(n) => AtomView::Num(n.to_num_view()),
-            Atom::Var(v) => AtomView::Var(v.to_var_view()),
-            Atom::Fun(f) => AtomView::Fun(f.to_fun_view()),
-            Atom::Pow(p) => AtomView::Pow(p.to_pow_view()),
-            Atom::Mul(m) => AtomView::Mul(m.to_mul_view()),
-            Atom::Add(a) => AtomView::Add(a.to_add_view()),
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => AtomView::Num(n.to_num_view()),
+            Self::Var(v) => AtomView::Var(v.to_var_view()),
+            Self::Fun(f) => AtomView::Fun(f.to_fun_view()),
+            Self::Pow(p) => AtomView::Pow(p.to_pow_view()),
+            Self::Mul(m) => AtomView::Mul(m.to_mul_view()),
+            Self::Add(a) => AtomView::Add(a.to_add_view()),
+            Self::Empty => unreachable!(),
         }
     }
 }
@@ -824,13 +820,13 @@ impl<P: AtomSet> ResettableBuffer for Atom<P> {
 
     fn reset(&mut self) {
         match self {
-            Atom::Num(n) => n.reset(),
-            Atom::Var(v) => v.reset(),
-            Atom::Fun(f) => f.reset(),
-            Atom::Pow(p) => p.reset(),
-            Atom::Mul(m) => m.reset(),
-            Atom::Add(a) => a.reset(),
-            Atom::Empty => {}
+            Self::Num(n) => n.reset(),
+            Self::Var(v) => v.reset(),
+            Self::Fun(f) => f.reset(),
+            Self::Pow(p) => p.reset(),
+            Self::Mul(m) => m.reset(),
+            Self::Add(a) => a.reset(),
+            Self::Empty => {}
         }
     }
 }
@@ -866,16 +862,12 @@ pub struct FunctionBuilder<'a, P: AtomSet = Linear> {
 
 impl<'a, P: AtomSet> FunctionBuilder<'a, P> {
     /// Create a new `FunctionBuilder`.
-    pub fn new(
-        name: Identifier,
-        state: &'a State,
-        workspace: &'a Workspace<P>,
-    ) -> FunctionBuilder<'a, P> {
+    pub fn new(name: Identifier, state: &'a State, workspace: &'a Workspace<P>) -> Self {
         let mut a = workspace.new_atom();
         let f = a.to_fun();
         f.set_from_name(name);
         f.set_dirty(true);
-        FunctionBuilder {
+        Self {
             state,
             workspace,
             handle: a,
@@ -883,7 +875,7 @@ impl<'a, P: AtomSet> FunctionBuilder<'a, P> {
     }
 
     /// Add an argument to the function.
-    pub fn add_arg<'b, T: AsAtomView<'b, P>>(mut self, arg: T) -> FunctionBuilder<'a, P> {
+    pub fn add_arg<'b, T: AsAtomView<'b, P>>(mut self, arg: T) -> Self {
         if let Atom::Fun(f) = self.handle.get_mut() {
             f.add_arg(arg.as_atom_view());
         }
@@ -942,9 +934,9 @@ impl<'a, P: AtomSet, A: DerefMut<Target = Atom<P>>> AtomBuilder<'a, A, P> {
         state: &'a State,
         workspace: &'a Workspace<P>,
         mut out: A,
-    ) -> AtomBuilder<'a, A, P> {
+    ) -> Self {
         out.set_from_view(&atom.as_atom_view());
-        AtomBuilder {
+        Self {
             state,
             workspace,
             out,
@@ -967,7 +959,7 @@ impl<'a, P: AtomSet, A: DerefMut<Target = Atom<P>>> AtomBuilder<'a, A, P> {
     }
 
     /// Take base` to the power `self`.
-    pub fn rpow<'c, T: AsAtomView<'c, P>>(mut self, base: T) -> AtomBuilder<'a, A, P> {
+    pub fn rpow<'c, T: AsAtomView<'c, P>>(mut self, base: T) -> Self {
         base.as_atom_view()
             .pow_no_norm(self.workspace, self.out.as_view())
             .as_view()

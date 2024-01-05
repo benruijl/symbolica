@@ -780,13 +780,13 @@ impl<'a> Var<'a> for VarViewD<'a> {
 impl Atom<Linear> {
     pub fn get_data(&self) -> &[u8] {
         match self {
-            Atom::Num(n) => &n.data,
-            Atom::Var(v) => &v.data,
-            Atom::Fun(f) => &f.data,
-            Atom::Pow(p) => &p.data,
-            Atom::Mul(m) => &m.data,
-            Atom::Add(a) => &a.data,
-            Atom::Empty => unreachable!(),
+            Self::Num(n) => &n.data,
+            Self::Var(v) => &v.data,
+            Self::Fun(f) => &f.data,
+            Self::Pow(p) => &p.data,
+            Self::Mul(m) => &m.data,
+            Self::Add(a) => &a.data,
+            Self::Empty => unreachable!(),
         }
     }
 
@@ -1119,26 +1119,26 @@ impl<'a> Add<'a> for AddViewD<'a> {
 }
 
 impl<'a> AtomView<'a, Linear> {
-    pub fn from(source: &'a [u8]) -> AtomView<'a, Linear> {
+    pub fn from(source: &'a [u8]) -> Self {
         match source[0] {
-            VAR_ID => AtomView::Var(VarViewD { data: source }),
-            FUN_ID => AtomView::Fun(FnViewD { data: source }),
-            NUM_ID => AtomView::Num(NumViewD { data: source }),
-            POW_ID => AtomView::Pow(PowViewD { data: source }),
-            MUL_ID => AtomView::Mul(MulViewD { data: source }),
-            ADD_ID => AtomView::Add(AddViewD { data: source }),
+            VAR_ID => Self::Var(VarViewD { data: source }),
+            FUN_ID => Self::Fun(FnViewD { data: source }),
+            NUM_ID => Self::Num(NumViewD { data: source }),
+            POW_ID => Self::Pow(PowViewD { data: source }),
+            MUL_ID => Self::Mul(MulViewD { data: source }),
+            ADD_ID => Self::Add(AddViewD { data: source }),
             x => unreachable!("Bad id: {}", x),
         }
     }
 
     pub fn get_data(&self) -> &'a [u8] {
         match self {
-            AtomView::Num(n) => n.data,
-            AtomView::Var(v) => v.data,
-            AtomView::Fun(f) => f.data,
-            AtomView::Pow(p) => p.data,
-            AtomView::Mul(t) => t.data,
-            AtomView::Add(e) => e.data,
+            Self::Num(n) => n.data,
+            Self::Var(v) => v.data,
+            Self::Fun(f) => f.data,
+            Self::Pow(p) => p.data,
+            Self::Mul(t) => t.data,
+            Self::Add(e) => e.data,
         }
     }
 }
@@ -1202,27 +1202,15 @@ impl<'a> Iterator for ListIteratorD<'a> {
         let len = unsafe { self.data.as_ptr().offset_from(start.as_ptr()) } as usize;
 
         let data = unsafe { start.get_unchecked(..len) };
-        match start_id {
-            VAR_ID => {
-                return Some(AtomView::Var(VarViewD { data }));
-            }
-            NUM_ID => {
-                return Some(AtomView::Num(NumViewD { data }));
-            }
-            FUN_ID => {
-                return Some(AtomView::Fun(FnViewD { data }));
-            }
-            POW_ID => {
-                return Some(AtomView::Pow(PowViewD { data }));
-            }
-            MUL_ID => {
-                return Some(AtomView::Mul(MulViewD { data }));
-            }
-            ADD_ID => {
-                return Some(AtomView::Add(AddViewD { data }));
-            }
+        Some(match start_id {
+            VAR_ID => AtomView::Var(VarViewD { data }),
+            NUM_ID => AtomView::Num(NumViewD { data }),
+            FUN_ID => AtomView::Fun(FnViewD { data }),
+            POW_ID => AtomView::Pow(PowViewD { data }),
+            MUL_ID => AtomView::Mul(MulViewD { data }),
+            ADD_ID => AtomView::Add(AddViewD { data }),
             x => unreachable!("Bad id {}", x),
-        }
+        })
     }
 }
 
@@ -1273,7 +1261,7 @@ impl<'a> ListSliceD<'a> {
             pos = Self::skip_one(pos);
         }
 
-        ListSliceD {
+        Self {
             data: pos,
             length: self.length - index,
             slice_type: self.slice_type,
@@ -1324,7 +1312,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
         }
 
         let len = unsafe { s.as_ptr().offset_from(start.data.as_ptr()) } as usize;
-        ListSliceD {
+        Self {
             data: &start.data[..len],
             length: range.len(),
             slice_type: self.slice_type,
@@ -1343,7 +1331,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
 
     #[inline]
     fn from_one(view: AtomView<'a, Self::P>) -> Self {
-        ListSliceD {
+        Self {
             data: view.get_data(),
             length: 1,
             slice_type: SliceType::One,

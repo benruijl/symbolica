@@ -496,8 +496,8 @@ pub struct Complex<T: Real> {
 
 impl<T: Real> Complex<T> {
     #[inline]
-    pub fn new(re: T, im: T) -> Complex<T> {
-        Complex { re, im }
+    pub fn new(re: T, im: T) -> Self {
+        Self { re, im }
     }
 
     #[inline]
@@ -516,8 +516,8 @@ impl<T: Real> Complex<T> {
     }
 
     #[inline]
-    pub fn from_polar_coordinates(r: T, phi: T) -> Complex<T> {
-        Complex::new(r * phi.cos(), r * phi.sin())
+    pub fn from_polar_coordinates(r: T, phi: T) -> Self {
+        Self::new(r * phi.cos(), r * phi.sin())
     }
 }
 
@@ -525,8 +525,8 @@ impl<T: Real> Add<Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
-    fn add(self, rhs: Self) -> Self::Output {
-        Complex::new(self.re + rhs.re, self.im + rhs.im)
+    fn add(self, rhs: Self) -> Self {
+        Self::new(self.re + rhs.re, self.im + rhs.im)
     }
 }
 
@@ -534,8 +534,8 @@ impl<T: Real> Add<&Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
-    fn add(self, rhs: &Self) -> Self::Output {
-        Complex::new(self.re + rhs.re, self.im + rhs.im)
+    fn add(self, rhs: &Self) -> Self {
+        Self::new(self.re + rhs.re, self.im + rhs.im)
     }
 }
 
@@ -558,8 +558,8 @@ impl<T: Real> Sub for Complex<T> {
     type Output = Self;
 
     #[inline]
-    fn sub(self, rhs: Self) -> Self::Output {
-        Complex::new(self.re - rhs.re, self.im - rhs.im)
+    fn sub(self, rhs: Self) -> Self {
+        Self::new(self.re - rhs.re, self.im - rhs.im)
     }
 }
 
@@ -567,8 +567,8 @@ impl<T: Real> Sub<&Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
-    fn sub(self, rhs: &Self) -> Self::Output {
-        Complex::new(self.re - rhs.re, self.im - rhs.im)
+    fn sub(self, rhs: &Self) -> Self {
+        Self::new(self.re - rhs.re, self.im - rhs.im)
     }
 }
 
@@ -591,7 +591,7 @@ impl<T: Real> Mul for Complex<T> {
     type Output = Self;
 
     #[inline]
-    fn mul(self, rhs: Self) -> Self::Output {
+    fn mul(self, rhs: Self) -> Self {
         self.mul(&rhs)
     }
 }
@@ -600,8 +600,8 @@ impl<T: Real> Mul<&Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
-    fn mul(self, rhs: &Self) -> Self::Output {
-        Complex::new(
+    fn mul(self, rhs: &Self) -> Self {
+        Self::new(
             self.re * rhs.re - self.im * rhs.im,
             self.re * rhs.im + self.im * rhs.re,
         )
@@ -626,7 +626,7 @@ impl<T: Real> Div for Complex<T> {
     type Output = Self;
 
     #[inline]
-    fn div(self, rhs: Self) -> Self::Output {
+    fn div(self, rhs: Self) -> Self {
         self.div(&rhs)
     }
 }
@@ -635,11 +635,11 @@ impl<T: Real> Div<&Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
-    fn div(self, rhs: &Self) -> Self::Output {
+    fn div(self, rhs: &Self) -> Self {
         let n = rhs.norm_squared();
         let re = self.re * rhs.re + self.im * rhs.im;
         let im = self.im * rhs.re - self.re * rhs.im;
-        Complex::new(re / n, im / n)
+        Self::new(re / n, im / n)
     }
 }
 
@@ -658,7 +658,7 @@ impl<T: Real> DivAssign<&Complex<T>> for Complex<T> {
 impl<'a, T: Real> Sum<&'a Complex<T>> for Complex<T> {
     #[inline]
     fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
-        let mut res = Complex::zero();
+        let mut res = Self::zero();
         for x in iter {
             res += *x;
         }
@@ -667,11 +667,11 @@ impl<'a, T: Real> Sum<&'a Complex<T>> for Complex<T> {
 }
 
 impl<T: Real> Neg for Complex<T> {
-    type Output = Complex<T>;
+    type Output = Self;
 
     #[inline]
-    fn neg(self) -> Complex<T> {
-        Complex::new(-self.re, -self.im)
+    fn neg(self) -> Self {
+        Self::new(-self.re, -self.im)
     }
 }
 
@@ -695,7 +695,7 @@ impl<T: Real> NumericalFloatLike for Complex<T> {
 
     #[inline]
     fn neg(&self) -> Self {
-        Complex {
+        Self {
             re: -self.re,
             im: -self.im,
         }
@@ -703,19 +703,19 @@ impl<T: Real> NumericalFloatLike for Complex<T> {
 
     #[inline]
     fn norm(&self) -> Self {
-        Complex::new(self.norm_squared().sqrt(), T::zero())
+        Self::new(self.norm_squared().sqrt(), T::zero())
     }
 
     #[inline]
     fn zero() -> Self {
-        Complex {
+        Self {
             re: T::zero(),
             im: T::zero(),
         }
     }
 
     fn one() -> Self {
-        Complex {
+        Self {
             re: T::one(),
             im: T::zero(),
         }
@@ -723,7 +723,7 @@ impl<T: Real> NumericalFloatLike for Complex<T> {
 
     fn pow(&self, e: u64) -> Self {
         // FIXME: use binary exponentiation
-        let mut r = Complex::one();
+        let mut r = Self::one();
         for _ in 0..e {
             r *= self;
         }
@@ -732,25 +732,25 @@ impl<T: Real> NumericalFloatLike for Complex<T> {
 
     fn inv(&self) -> Self {
         let n = self.norm_squared();
-        Complex::new(self.re / n, -self.im / n)
+        Self::new(self.re / n, -self.im / n)
     }
 
     fn from_usize(a: usize) -> Self {
-        Complex {
+        Self {
             re: T::from_usize(a),
             im: T::zero(),
         }
     }
 
     fn from_i64(a: i64) -> Self {
-        Complex {
+        Self {
             re: T::from_i64(a),
             im: T::zero(),
         }
     }
 
     fn sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        Complex {
+        Self {
             re: T::sample_unit(rng),
             im: T::zero(),
         }
@@ -760,27 +760,27 @@ impl<T: Real> NumericalFloatLike for Complex<T> {
 impl<T: Real> Real for Complex<T> {
     fn sqrt(&self) -> Self {
         let (r, phi) = self.to_polar_coordinates();
-        Complex::from_polar_coordinates(r.sqrt(), phi / T::from_usize(2))
+        Self::from_polar_coordinates(r.sqrt(), phi / T::from_usize(2))
     }
 
     fn log(&self) -> Self {
-        Complex::new(self.norm().re.log(), self.arg())
+        Self::new(self.norm().re.log(), self.arg())
     }
 
     fn exp(&self) -> Self {
         let r = self.re.exp();
-        Complex::new(r * self.im.cos(), r * self.im.sin())
+        Self::new(r * self.im.cos(), r * self.im.sin())
     }
 
     fn sin(&self) -> Self {
-        Complex::new(
+        Self::new(
             self.re.sin() * self.im.cosh(),
             self.re.cos() * self.im.sinh(),
         )
     }
 
     fn cos(&self) -> Self {
-        Complex::new(
+        Self::new(
             self.re.cos() * self.im.cosh(),
             -self.re.sin() * self.im.sinh(),
         )
@@ -803,14 +803,14 @@ impl<T: Real> Real for Complex<T> {
     }
 
     fn sinh(&self) -> Self {
-        Complex::new(
+        Self::new(
             self.re.sinh() * self.im.cos(),
             self.re.cosh() * self.im.sin(),
         )
     }
 
     fn cosh(&self) -> Self {
-        Complex::new(
+        Self::new(
             self.re.cosh() * self.im.cos(),
             self.re.sinh() * self.im.sin(),
         )
@@ -839,6 +839,6 @@ impl<T: Real> Real for Complex<T> {
 
 impl<'a, T: Real + From<&'a Rational>> From<&'a Rational> for Complex<T> {
     fn from(value: &'a Rational) -> Self {
-        Complex::new(value.into(), T::zero())
+        Self::new(value.into(), T::zero())
     }
 }

@@ -29,7 +29,7 @@ impl<'a, R: Field, E: Exponent, O: MonomialOrder> CriticalPair<R, E, O> {
         f2: Rc<MultivariatePolynomial<R, E, O>>,
         index1: usize,
         index2: usize,
-    ) -> CriticalPair<R, E, O> {
+    ) -> Self {
         // determine the lcm of leading monomials
         let lcm: Vec<E> = f1
             .max_exp()
@@ -50,7 +50,7 @@ impl<'a, R: Field, E: Exponent, O: MonomialOrder> CriticalPair<R, E, O> {
             .map(|(e1, e2)| *e1 - *e2)
             .collect();
 
-        CriticalPair {
+        Self {
             disjoint: lcm_diff_first == f2.max_exp(),
             degree: lcm.iter().cloned().sum::<E>(),
             lcm_diff_first,
@@ -78,10 +78,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
     /// Construct a Groebner basis for a polynomial ideal.
     ///
     /// Progress can be monitored with `print_stats`.
-    pub fn new(
-        ideal: &[MultivariatePolynomial<R, E, O>],
-        print_stats: bool,
-    ) -> GroebnerBasis<R, E, O> {
+    pub fn new(ideal: &[MultivariatePolynomial<R, E, O>], print_stats: bool) -> Self {
         let mut ideal = ideal.to_vec();
         for _ in 0..2 {
             let (first, rest) = ideal.split_first_mut().unwrap();

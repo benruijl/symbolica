@@ -25,9 +25,7 @@ fn main() {
     // f(x, y) = x^2 + y
     fn_map.insert(
         f,
-        EvaluationFn::new(Box::new(|args: &[f64], _, _, _| {
-            args[0] * args[0] + args[1]
-        })),
+        EvaluationFn::new(Box::new(|args: &[f64], _, _, _| args[0] * args[0] + args[1])),
     );
 
     // g(x) = f(x, 3)

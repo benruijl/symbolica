@@ -27,7 +27,7 @@ pub struct PrintOptions {
 
 impl PrintOptions {
     /// Print the output in a Mathematica-readable format.
-    pub fn mathematica() -> PrintOptions {
+    pub fn mathematica() -> Self {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: false,
@@ -43,7 +43,7 @@ impl PrintOptions {
     }
 
     /// Print the output in a Latex input format.
-    pub fn latex() -> PrintOptions {
+    pub fn latex() -> Self {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: false,
@@ -120,8 +120,8 @@ pub struct AtomPrinter<'a, 'b, P: AtomSet> {
 
 impl<'a, 'b, P: AtomSet> AtomPrinter<'a, 'b, P> {
     /// Create a new atom printer with default printing options.
-    pub fn new(atom: AtomView<'a, P>, state: &'b State) -> AtomPrinter<'a, 'b, P> {
-        AtomPrinter {
+    pub fn new(atom: AtomView<'a, P>, state: &'b State) -> Self {
+        Self {
             atom,
             state,
             print_opts: PrintOptions::default(),
@@ -132,8 +132,8 @@ impl<'a, 'b, P: AtomSet> AtomPrinter<'a, 'b, P> {
         atom: AtomView<'a, P>,
         print_opts: PrintOptions,
         state: &'b State,
-    ) -> AtomPrinter<'a, 'b, P> {
-        AtomPrinter {
+    ) -> Self {
+        Self {
             atom,
             state,
             print_opts,
@@ -156,12 +156,12 @@ impl<'a, 'b, P: AtomSet> fmt::Display for AtomPrinter<'a, 'b, P> {
 impl<'a, P: AtomSet> AtomView<'a, P> {
     fn fmt_debug(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            AtomView::Num(n) => n.fmt_debug(fmt),
-            AtomView::Var(v) => v.fmt_debug(fmt),
-            AtomView::Fun(f) => f.fmt_debug(fmt),
-            AtomView::Pow(p) => p.fmt_debug(fmt),
-            AtomView::Mul(m) => m.fmt_debug(fmt),
-            AtomView::Add(a) => a.fmt_debug(fmt),
+            Self::Num(n) => n.fmt_debug(fmt),
+            Self::Var(v) => v.fmt_debug(fmt),
+            Self::Fun(f) => f.fmt_debug(fmt),
+            Self::Pow(p) => p.fmt_debug(fmt),
+            Self::Mul(m) => m.fmt_debug(fmt),
+            Self::Add(a) => a.fmt_debug(fmt),
         }
     }
 
@@ -173,12 +173,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         print_state: PrintState,
     ) -> fmt::Result {
         match self {
-            AtomView::Num(n) => n.fmt_output(fmt, opts, state, print_state),
-            AtomView::Var(v) => v.fmt_output(fmt, opts, state, print_state),
-            AtomView::Fun(f) => f.fmt_output(fmt, opts, state, print_state),
-            AtomView::Pow(p) => p.fmt_output(fmt, opts, state, print_state),
-            AtomView::Mul(t) => t.fmt_output(fmt, opts, state, print_state),
-            AtomView::Add(e) => e.fmt_output(fmt, opts, state, print_state),
+            Self::Num(n) => n.fmt_output(fmt, opts, state, print_state),
+            Self::Var(v) => v.fmt_output(fmt, opts, state, print_state),
+            Self::Fun(f) => f.fmt_output(fmt, opts, state, print_state),
+            Self::Pow(p) => p.fmt_output(fmt, opts, state, print_state),
+            Self::Mul(t) => t.fmt_output(fmt, opts, state, print_state),
+            Self::Add(e) => e.fmt_output(fmt, opts, state, print_state),
         }
     }
 }
@@ -427,11 +427,13 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
 
         print_state.level += 1;
         print_state.explicit_sign = false;
-        for x in self.iter().take(if skip_num {
-            self.get_nargs() - 1
-        } else {
-            self.get_nargs()
-        }) {
+        for x in
+            self.iter().take(if skip_num {
+                self.get_nargs() - 1
+            } else {
+                self.get_nargs()
+            })
+        {
             if !first {
                 if opts.latex {
                     f.write_char(' ')?;
@@ -674,11 +676,8 @@ pub struct RationalPolynomialPrinter<'a, 'b, R: Ring, E: Exponent> {
 }
 
 impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
-    pub fn new(
-        poly: &'a RationalPolynomial<R, E>,
-        state: &'b State,
-    ) -> RationalPolynomialPrinter<'a, 'b, R, E> {
-        RationalPolynomialPrinter {
+    pub fn new(poly: &'a RationalPolynomial<R, E>, state: &'b State) -> Self {
+        Self {
             poly,
             state,
             opts: PrintOptions::default(),
@@ -690,8 +689,8 @@ impl<'a, 'b, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, 'b, R, E> {
         poly: &'a RationalPolynomial<R, E>,
         state: &'b State,
         opts: PrintOptions,
-    ) -> RationalPolynomialPrinter<'a, 'b, R, E> {
-        RationalPolynomialPrinter {
+    ) -> Self {
+        Self {
             poly,
             state,
             opts,
@@ -838,11 +837,8 @@ pub struct PolynomialPrinter<'a, 'b, F: Ring + Display, E: Exponent, O: Monomial
 }
 
 impl<'a, 'b, R: Ring + Display, E: Exponent, O: MonomialOrder> PolynomialPrinter<'a, 'b, R, E, O> {
-    pub fn new(
-        poly: &'a MultivariatePolynomial<R, E, O>,
-        state: &'b State,
-    ) -> PolynomialPrinter<'a, 'b, R, E, O> {
-        PolynomialPrinter {
+    pub fn new(poly: &'a MultivariatePolynomial<R, E, O>, state: &'b State) -> Self {
+        Self {
             poly,
             state,
             opts: PrintOptions::default(),
@@ -853,8 +849,8 @@ impl<'a, 'b, R: Ring + Display, E: Exponent, O: MonomialOrder> PolynomialPrinter
         poly: &'a MultivariatePolynomial<R, E, O>,
         state: &'b State,
         opts: PrintOptions,
-    ) -> PolynomialPrinter<'a, 'b, R, E, O> {
-        PolynomialPrinter { poly, state, opts }
+    ) -> Self {
+        Self { poly, state, opts }
     }
 }
 

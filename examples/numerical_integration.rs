@@ -7,18 +7,15 @@ fn main() {
     // x*pi and x^2 will have their own Vegas grid
     let fs = [|x: f64| (x * PI).sin(), |x: f64| x * x];
 
-    let mut grid = DiscreteGrid::new(
-        vec![
-            Some(Grid::Continuous(ContinuousGrid::new(
-                1, 10, 1000, None, false,
-            ))),
-            Some(Grid::Continuous(ContinuousGrid::new(
-                1, 10, 1000, None, false,
-            ))),
-        ],
-        0.01,
-        false,
-    );
+    let mut grid =
+        DiscreteGrid::new(
+            vec![
+                Some(Grid::Continuous(ContinuousGrid::new(1, 10, 1000, None, false))),
+                Some(Grid::Continuous(ContinuousGrid::new(1, 10, 1000, None, false))),
+            ],
+            0.01,
+            false,
+        );
 
     let mut rng = rand::thread_rng();
 

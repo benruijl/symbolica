@@ -28,7 +28,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Expand an expression, but do not normalize the result.
     fn expand_no_norm(&self, workspace: &Workspace<P>, state: &State, out: &mut Atom<P>) -> bool {
         match self {
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 let mut new_base = workspace.new_atom();
@@ -185,7 +185,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     changed
                 }
             }
-            AtomView::Mul(m) => {
+            Self::Mul(m) => {
                 let mut changed = false;
 
                 let mut sum: SmallVec<[BufferHandle<Atom<P>>; 10]> = SmallVec::new();
@@ -265,7 +265,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 changed
             }
-            AtomView::Add(a) => {
+            Self::Add(a) => {
                 let mut changed = false;
 
                 let add = out.to_add();

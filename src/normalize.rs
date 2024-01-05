@@ -20,22 +20,20 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         }
 
         match (&self, other) {
-            (AtomView::Num(n1), AtomView::Num(n2)) => {
-                n1.get_number_view().cmp(&n2.get_number_view())
-            }
-            (AtomView::Num(_), _) => Ordering::Greater,
+            (Self::Num(n1), AtomView::Num(n2)) => n1.get_number_view().cmp(&n2.get_number_view()),
+            (Self::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
-            (AtomView::Var(_), _) => Ordering::Less,
+            (Self::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
+            (Self::Var(_), _) => Ordering::Less,
             (_, AtomView::Var(_)) => Ordering::Greater,
-            (AtomView::Pow(p1), AtomView::Pow(p2)) => {
+            (Self::Pow(p1), AtomView::Pow(p2)) => {
                 let (b1, e1) = p1.get_base_exp();
                 let (b2, e2) = p2.get_base_exp();
                 b1.cmp(&b2).then_with(|| e1.cmp(&e2))
             }
             (_, AtomView::Pow(_)) => Ordering::Greater,
-            (AtomView::Pow(_), _) => Ordering::Less,
-            (AtomView::Mul(m1), AtomView::Mul(m2)) => {
+            (Self::Pow(_), _) => Ordering::Less,
+            (Self::Mul(m1), AtomView::Mul(m2)) => {
                 let it1 = m1.to_slice();
                 let it2 = m2.to_slice();
 
@@ -53,9 +51,9 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 Ordering::Equal
             }
-            (AtomView::Mul(_), _) => Ordering::Less,
+            (Self::Mul(_), _) => Ordering::Less,
             (_, AtomView::Mul(_)) => Ordering::Greater,
-            (AtomView::Add(a1), AtomView::Add(a2)) => {
+            (Self::Add(a1), AtomView::Add(a2)) => {
                 let it1 = a1.to_slice();
                 let it2 = a2.to_slice();
 
@@ -73,10 +71,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 Ordering::Equal
             }
-            (AtomView::Add(_), _) => Ordering::Less,
+            (Self::Add(_), _) => Ordering::Less,
             (_, AtomView::Add(_)) => Ordering::Greater,
 
-            (AtomView::Fun(f1), AtomView::Fun(f2)) => {
+            (Self::Fun(f1), AtomView::Fun(f2)) => {
                 let name_comp = f1.get_name().cmp(&f2.get_name());
                 if name_comp != Ordering::Equal {
                     return name_comp;
@@ -106,12 +104,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// Compare factors in a term. `x` and `x^2` are placed next to each other by sorting a power based on the base only.
     pub(crate) fn cmp_factors(&self, other: &AtomView<'_, P>) -> Ordering {
         match (&self, other) {
-            (AtomView::Num(_), AtomView::Num(_)) => Ordering::Equal,
-            (AtomView::Num(_), _) => Ordering::Greater,
+            (Self::Num(_), AtomView::Num(_)) => Ordering::Equal,
+            (Self::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,
 
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
-            (AtomView::Pow(p1), AtomView::Pow(p2)) => {
+            (Self::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
+            (Self::Pow(p1), AtomView::Pow(p2)) => {
                 // TODO: inline partial_cmp call by creating an inlined version
                 p1.get_base().cmp(&p2.get_base())
             }
@@ -119,17 +117,17 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let base = p2.get_base();
                 self.cmp(&base).then(Ordering::Less) // sort x^2*x -> x*x^2
             }
-            (AtomView::Pow(p1), _) => {
+            (Self::Pow(p1), _) => {
                 let base = p1.get_base();
                 base.cmp(other).then(Ordering::Greater)
             }
-            (AtomView::Var(_), _) => Ordering::Less,
+            (Self::Var(_), _) => Ordering::Less,
             (_, AtomView::Var(_)) => Ordering::Greater,
 
-            (AtomView::Mul(_), _) | (_, AtomView::Mul(_)) => {
+            (Self::Mul(_), _) | (_, AtomView::Mul(_)) => {
                 unreachable!("Cannot have a submul in a factor");
             }
-            (AtomView::Add(a1), AtomView::Add(a2)) => {
+            (Self::Add(a1), AtomView::Add(a2)) => {
                 let it1 = a1.to_slice();
                 let it2 = a2.to_slice();
 
@@ -147,10 +145,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 Ordering::Equal
             }
-            (AtomView::Add(_), _) => Ordering::Less,
+            (Self::Add(_), _) => Ordering::Less,
             (_, AtomView::Add(_)) => Ordering::Greater,
 
-            (AtomView::Fun(f1), AtomView::Fun(f2)) => {
+            (Self::Fun(f1), AtomView::Fun(f2)) => {
                 let name_comp = f1.get_name().cmp(&f2.get_name());
                 if name_comp != Ordering::Equal {
                     return name_comp;
@@ -179,20 +177,20 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     /// Compare terms in an expression. `x` and `x*2` are placed next to each other.
     pub(crate) fn cmp_terms(&self, other: &AtomView<'_, P>) -> Ordering {
-        debug_assert!(!matches!(self, AtomView::Add(_)));
+        debug_assert!(!matches!(self, Self::Add(_)));
         debug_assert!(!matches!(other, AtomView::Add(_)));
         match (self, other) {
-            (AtomView::Num(_), AtomView::Num(_)) => Ordering::Equal,
-            (AtomView::Num(_), _) => Ordering::Greater,
+            (Self::Num(_), AtomView::Num(_)) => Ordering::Equal,
+            (Self::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,
 
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
-            (AtomView::Pow(p1), AtomView::Pow(p2)) => {
+            (Self::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
+            (Self::Pow(p1), AtomView::Pow(p2)) => {
                 let (b1, e1) = p1.get_base_exp();
                 let (b2, e2) = p2.get_base_exp();
                 b1.cmp(&b2).then_with(|| e1.cmp(&e2))
             }
-            (AtomView::Mul(m1), AtomView::Mul(m2)) => {
+            (Self::Mul(m1), AtomView::Mul(m2)) => {
                 let actual_len1 = if m1.has_coefficient() {
                     m1.get_nargs() - 1
                 } else {
@@ -226,7 +224,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 Ordering::Equal
             }
-            (AtomView::Mul(m1), a2) => {
+            (Self::Mul(m1), a2) => {
                 if !m1.has_coefficient() || m1.get_nargs() != 2 {
                     return Ordering::Greater;
                 }
@@ -242,12 +240,11 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let it2 = m2.to_slice();
                 a1.cmp(&it2.get(0))
             }
-            (AtomView::Var(_), _) => Ordering::Less,
-            (_, AtomView::Var(_)) => Ordering::Greater,
-            (_, AtomView::Pow(_)) => Ordering::Greater,
-            (AtomView::Pow(_), _) => Ordering::Less,
+            (Self::Var(_), _) => Ordering::Less,
+            (_, AtomView::Var(_)) | (_, AtomView::Pow(_)) => Ordering::Greater,
+            (Self::Pow(_), _) => Ordering::Less,
 
-            (AtomView::Fun(f1), AtomView::Fun(f2)) => {
+            (Self::Fun(f1), AtomView::Fun(f2)) => {
                 let name_comp = f1.get_name().cmp(&f2.get_name());
                 if name_comp != Ordering::Equal {
                     return name_comp;
@@ -271,7 +268,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     f1.fast_cmp(*f2)
                 }
             }
-            (AtomView::Add(_), _) | (_, AtomView::Add(_)) => unreachable!("Cannot have nested add"),
+            (Self::Add(_), _) | (_, AtomView::Add(_)) => unreachable!("Cannot have nested add"),
         }
     }
 }
@@ -288,8 +285,8 @@ impl<P: AtomSet> Atom<P> {
         workspace: &Workspace<P>,
     ) -> bool {
         // x^a * x^b = x^(a + b)
-        if let Atom::Pow(p1) = self {
-            if let Atom::Pow(p2) = other {
+        if let Self::Pow(p1) = self {
+            if let Self::Pow(p2) = other {
                 let (base2, exp2) = p2.to_pow_view().get_base_exp();
 
                 let (base1, exp1) = p1.to_pow_view().get_base_exp();
@@ -329,7 +326,7 @@ impl<P: AtomSet> Atom<P> {
         }
 
         // x * x^n = x^(n+1)
-        if let Atom::Pow(p) = other {
+        if let Self::Pow(p) = other {
             let pv = p.to_pow_view();
             let (base, exp) = pv.get_base_exp();
 
@@ -370,13 +367,13 @@ impl<P: AtomSet> Atom<P> {
         }
 
         // simplify num1 * num2
-        if let Atom::Num(n1) = self {
-            if let Atom::Num(n2) = other {
+        if let Self::Num(n1) = self {
+            return if let Self::Num(n2) = other {
                 n1.mul(&n2.to_num_view(), state);
-                return true;
+                true
             } else {
-                return false;
-            }
+                false
+            };
         }
 
         // x * x => x^2
@@ -410,17 +407,17 @@ impl<P: AtomSet> Atom<P> {
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
     pub fn merge_terms(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
-        if let Atom::Num(n1) = self {
-            if let Atom::Num(n2) = other {
+        if let Self::Num(n1) = self {
+            return if let Self::Num(n2) = other {
                 n1.add(&n2.to_num_view(), state);
-                return true;
+                true
             } else {
-                return false;
-            }
+                false
+            };
         }
 
         // compare the non-coefficient part of terms and add the coefficients if they are the same
-        if let Atom::Mul(m) = self {
+        if let Self::Mul(m) = self {
             let slice = m.to_mul_view().to_slice();
 
             let last_elem = slice.get(slice.len() - 1);
@@ -431,7 +428,7 @@ impl<P: AtomSet> Atom<P> {
                 (m.to_mul_view().to_slice(), false)
             };
 
-            if let Atom::Mul(m2) = other {
+            if let Self::Mul(m2) = other {
                 let slice2 = m2.to_mul_view().to_slice();
                 let last_elem2 = slice2.get(slice2.len() - 1);
 
@@ -531,7 +528,7 @@ impl<P: AtomSet> Atom<P> {
 
                 return true;
             }
-        } else if let Atom::Mul(m) = other {
+        } else if let Self::Mul(m) = other {
             let slice = m.to_mul_view().to_slice();
 
             if slice.len() != 2 {
@@ -597,12 +594,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     #[inline(always)]
     pub fn is_dirty(&self) -> bool {
         match self {
-            AtomView::Num(n) => n.is_dirty(),
-            AtomView::Var(_) => false,
-            AtomView::Fun(f) => f.is_dirty(),
-            AtomView::Pow(p) => p.is_dirty(),
-            AtomView::Mul(m) => m.is_dirty(),
-            AtomView::Add(a) => a.is_dirty(),
+            Self::Num(n) => n.is_dirty(),
+            Self::Var(_) => false,
+            Self::Fun(f) => f.is_dirty(),
+            Self::Pow(p) => p.is_dirty(),
+            Self::Mul(m) => m.is_dirty(),
+            Self::Add(a) => a.is_dirty(),
         }
     }
 
@@ -614,7 +611,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         }
 
         match self {
-            AtomView::Mul(t) => {
+            Self::Mul(t) => {
                 let mut atom_test_buf: SmallVec<[BufferHandle<Atom<P>>; 20]> = SmallVec::new();
 
                 for a in t.iter() {
@@ -725,16 +722,16 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     on.set_from_number(Number::Natural(1, 1));
                 }
             }
-            AtomView::Num(n) => {
+            Self::Num(n) => {
                 let normalized_num = n.get_number_view().normalize();
                 let nn = out.to_num();
                 nn.set_from_number(normalized_num);
             }
-            AtomView::Var(v) => {
+            Self::Var(v) => {
                 let vv = out.to_var();
                 vv.set_from_view(v);
             }
-            AtomView::Fun(f) => {
+            Self::Fun(f) => {
                 let name = f.get_name();
                 let out_f = out.to_fun();
                 out_f.set_from_name(name);
@@ -784,7 +781,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
             }
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 let mut base_handle = workspace.new_atom();
@@ -901,7 +898,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     out.set_from_base_and_exp(base_handle.as_view(), exp_handle.as_view());
                 }
             }
-            AtomView::Add(a) => {
+            Self::Add(a) => {
                 let mut atom_test_buf: SmallVec<[BufferHandle<Atom<P>>; 20]> = SmallVec::new();
 
                 for a in a.iter() {

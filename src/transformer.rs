@@ -87,42 +87,42 @@ pub enum Transformer<P: AtomSet + 'static> {
 impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Transformer::Expand => f.debug_tuple("Expand").finish(),
-            Transformer::Derivative(x) => f.debug_tuple("Derivative").field(x).finish(),
-            Transformer::ReplaceAll(pat, rhs, ..) => {
+            Self::Expand => f.debug_tuple("Expand").finish(),
+            Self::Derivative(x) => f.debug_tuple("Derivative").field(x).finish(),
+            Self::ReplaceAll(pat, rhs, ..) => {
                 f.debug_tuple("ReplaceAll").field(pat).field(rhs).finish()
             }
-            Transformer::Product => f.debug_tuple("Product").finish(),
-            Transformer::Sum => f.debug_tuple("Sum").finish(),
-            Transformer::ArgCount(p) => f.debug_tuple("ArgCount").field(p).finish(),
-            Transformer::Map(_) => f.debug_tuple("Map").finish(),
-            Transformer::Split => f.debug_tuple("Split").finish(),
-            Transformer::Partition(g, b1, b2) => f
+            Self::Product => f.debug_tuple("Product").finish(),
+            Self::Sum => f.debug_tuple("Sum").finish(),
+            Self::ArgCount(p) => f.debug_tuple("ArgCount").field(p).finish(),
+            Self::Map(_) => f.debug_tuple("Map").finish(),
+            Self::Split => f.debug_tuple("Split").finish(),
+            Self::Partition(g, b1, b2) => f
                 .debug_tuple("Partition")
                 .field(g)
                 .field(b1)
                 .field(b2)
                 .finish(),
-            Transformer::Sort => f.debug_tuple("Sort").finish(),
-            Transformer::Deduplicate => f.debug_tuple("Deduplicate").finish(),
-            Transformer::Permutations(i) => f.debug_tuple("Permutations").field(i).finish(),
-            Transformer::TaylorSeries(x, point, d) => f
+            Self::Sort => f.debug_tuple("Sort").finish(),
+            Self::Deduplicate => f.debug_tuple("Deduplicate").finish(),
+            Self::Permutations(i) => f.debug_tuple("Permutations").field(i).finish(),
+            Self::TaylorSeries(x, point, d) => f
                 .debug_tuple("TaylorSeries")
                 .field(x)
                 .field(point)
                 .field(d)
                 .finish(),
-            Transformer::Repeat(r) => f.debug_tuple("Repeat").field(r).finish(),
-            Transformer::Print(p) => f.debug_tuple("Print").field(p).finish(),
-            Transformer::Stats(o, r) => f.debug_tuple("Timing").field(o).field(r).finish(),
+            Self::Repeat(r) => f.debug_tuple("Repeat").field(r).finish(),
+            Self::Print(p) => f.debug_tuple("Print").field(p).finish(),
+            Self::Stats(o, r) => f.debug_tuple("Timing").field(o).field(r).finish(),
         }
     }
 }
 
 impl<P: AtomSet> Transformer<P> {
     /// Create a new partition transformer that must exactly fit the input.
-    pub fn new_partition_exact(partitions: Vec<(Identifier, usize)>) -> Transformer<P> {
-        Transformer::Partition(partitions, false, false)
+    pub fn new_partition_exact(partitions: Vec<(Identifier, usize)>) -> Self {
+        Self::Partition(partitions, false, false)
     }
 
     /// Create a new partition transformer that collects all left-over
@@ -130,20 +130,20 @@ impl<P: AtomSet> Transformer<P> {
     pub fn new_partition_collect_in_last(
         mut partitions: Vec<(Identifier, usize)>,
         rest: Identifier,
-    ) -> Transformer<P> {
+    ) -> Self {
         partitions.push((rest, 0));
-        Transformer::Partition(partitions, true, false)
+        Self::Partition(partitions, true, false)
     }
 
     /// Create a new partition transformer that repeats the partitions so that it can fit
     /// the input.
-    pub fn new_partition_repeat(partition: (Identifier, usize)) -> Transformer<P> {
-        Transformer::Partition(vec![partition], false, true)
+    pub fn new_partition_repeat(partition: (Identifier, usize)) -> Self {
+        Self::Partition(vec![partition], false, true)
     }
 
     pub fn execute(
         orig_input: AtomView<'_, P>,
-        chain: &[Transformer<P>],
+        chain: &[Self],
         state: &State,
         workspace: &Workspace<P>,
         out: &mut Atom<P>,
@@ -155,16 +155,16 @@ impl<P: AtomSet> Transformer<P> {
             let input = tmp.as_view();
 
             match t {
-                Transformer::Map(f) => {
+                Self::Map(f) => {
                     f(input, out);
                 }
-                Transformer::Expand => {
+                Self::Expand => {
                     input.expand(workspace, state, out);
                 }
-                Transformer::Derivative(x) => {
+                Self::Derivative(x) => {
                     input.derivative(*x, workspace, state, out);
                 }
-                Transformer::TaylorSeries(x, expansion_point, depth) => {
+                Self::TaylorSeries(x, expansion_point, depth) => {
                     input.taylor_series(
                         *x,
                         expansion_point.as_view(),
@@ -174,10 +174,10 @@ impl<P: AtomSet> Transformer<P> {
                         out,
                     );
                 }
-                Transformer::ReplaceAll(pat, rhs, cond) => {
+                Self::ReplaceAll(pat, rhs, cond) => {
                     pat.replace_all(input, &rhs, state, workspace, &cond, out);
                 }
-                Transformer::Product => {
+                Self::Product => {
                     if let AtomView::Fun(f) = input {
                         if f.get_name() == State::ARG {
                             let mut mul_h = workspace.new_atom();
@@ -195,7 +195,7 @@ impl<P: AtomSet> Transformer<P> {
 
                     out.set_from_view(&input);
                 }
-                Transformer::Sum => {
+                Self::Sum => {
                     if let AtomView::Fun(f) = input {
                         if f.get_name() == State::ARG {
                             let mut add_h = workspace.new_atom();
@@ -213,7 +213,7 @@ impl<P: AtomSet> Transformer<P> {
 
                     out.set_from_view(&input);
                 }
-                Transformer::ArgCount(only_for_arg_fun) => {
+                Self::ArgCount(only_for_arg_fun) => {
                     if let AtomView::Fun(f) = input {
                         if !*only_for_arg_fun || f.get_name() == State::ARG {
                             let n_args = f.get_nargs();
@@ -228,7 +228,7 @@ impl<P: AtomSet> Transformer<P> {
                         out.to_num().set_from_number(Number::Natural(0, 1));
                     }
                 }
-                Transformer::Split => match input {
+                Self::Split => match input {
                     AtomView::Mul(m) => {
                         let mut arg_h = workspace.new_atom();
                         let arg = arg_h.to_fun();
@@ -259,7 +259,7 @@ impl<P: AtomSet> Transformer<P> {
                         out.set_from_view(&input);
                     }
                 },
-                Transformer::Partition(bins, fill_last, repeat) => {
+                Self::Partition(bins, fill_last, repeat) => {
                     if let AtomView::Fun(f) = input {
                         if f.get_name() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
@@ -306,7 +306,7 @@ impl<P: AtomSet> Transformer<P> {
 
                     out.set_from_view(&input);
                 }
-                Transformer::Sort => {
+                Self::Sort => {
                     if let AtomView::Fun(f) = input {
                         if f.get_name() == State::ARG {
                             let mut args: Vec<_> = f.iter().collect();
@@ -328,7 +328,7 @@ impl<P: AtomSet> Transformer<P> {
 
                     out.set_from_view(&input);
                 }
-                Transformer::Deduplicate => {
+                Self::Deduplicate => {
                     if let AtomView::Fun(f) = input {
                         if f.get_name() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
@@ -359,7 +359,7 @@ impl<P: AtomSet> Transformer<P> {
 
                     out.set_from_view(&input);
                 }
-                Transformer::Permutations(f_name) => {
+                Self::Permutations(f_name) => {
                     if let AtomView::Fun(f) = input {
                         if f.get_name() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
@@ -403,7 +403,7 @@ impl<P: AtomSet> Transformer<P> {
 
                     out.set_from_view(&input);
                 }
-                Transformer::Repeat(r) => loop {
+                Self::Repeat(r) => loop {
                     Self::execute(tmp.as_view(), &r, state, workspace, out);
 
                     if tmp.as_view() == out.as_view() {
@@ -412,11 +412,11 @@ impl<P: AtomSet> Transformer<P> {
 
                     std::mem::swap(out, &mut tmp);
                 },
-                Transformer::Print(o) => {
+                Self::Print(o) => {
                     println!("{}", AtomPrinter::new_with_options(input, *o, state));
                     out.set_from_view(&input);
                 }
-                Transformer::Stats(o, r) => {
+                Self::Stats(o, r) => {
                     let in_nterms = if let AtomView::Add(a) = input {
                         a.get_nargs()
                     } else {

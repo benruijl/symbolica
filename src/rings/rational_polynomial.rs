@@ -28,8 +28,8 @@ pub struct RationalPolynomialField<R: Ring, E: Exponent> {
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomialField<R, E> {
-    pub fn new(coeff_ring: R) -> RationalPolynomialField<R, E> {
-        RationalPolynomialField {
+    pub fn new(coeff_ring: R) -> Self {
+        Self {
             ring: coeff_ring,
             _phantom_exp: PhantomData,
         }
@@ -76,7 +76,7 @@ impl<R: Ring, E: Exponent> PartialOrd for RationalPolynomial<R, E> {
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
-    pub fn new(field: &R, var_map: Option<&[Variable]>) -> RationalPolynomial<R, E> {
+    pub fn new(field: &R, var_map: Option<&[Variable]>) -> Self {
         let num = MultivariatePolynomial::new(
             var_map.map(|x| x.len()).unwrap_or(0),
             field,
@@ -85,7 +85,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         );
         let den = num.new_from_constant(field.one());
 
-        RationalPolynomial {
+        Self {
             numerator: num,
             denominator: den,
         }
@@ -136,7 +136,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
         den: MultivariatePolynomial<RationalField, E>,
         field: &IntegerRing,
         do_gcd: bool,
-    ) -> RationalPolynomial<IntegerRing, E> {
+    ) -> Self {
         let content = num.field.gcd(&num.content(), &den.content());
 
         let mut num_int = MultivariatePolynomial::new(
@@ -201,7 +201,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
         num.unify_var_map(&mut den);
 
         if den.is_one() {
-            RationalPolynomial {
+            Self {
                 numerator: num,
                 denominator: den,
             }
@@ -221,7 +221,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
                 den = -den;
             }
 
-            RationalPolynomial {
+            Self {
                 numerator: num,
                 denominator: den,
             }
@@ -245,7 +245,7 @@ where
         num.unify_var_map(&mut den);
 
         if den.is_one() {
-            RationalPolynomial {
+            Self {
                 numerator: num,
                 denominator: den,
             }
@@ -266,7 +266,7 @@ where
                 den = den.div_coeff(&c);
             }
 
-            RationalPolynomial {
+            Self {
                 numerator: num,
                 denominator: den,
             }
@@ -280,22 +280,22 @@ where
 {
     #[inline]
     pub fn inv(self) -> Self {
-        if self.numerator.is_zero() {
-            panic!("Cannot invert 0");
-        }
+        assert!(!self.numerator.is_zero(), "Cannot invert 0");
 
         let field = self.numerator.field.clone();
         Self::from_num_den(self.denominator, self.numerator, &field, false)
     }
 
     pub fn pow(&self, e: u64) -> Self {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
+        assert!(
+            e <= u32::MAX as u64,
+            "Power of exponentation is larger than 2^32: {}",
+            e
+        );
         let e = e as u32;
 
         // TODO: do binary exponentation
-        let mut poly = RationalPolynomial {
+        let mut poly = Self {
             numerator: MultivariatePolynomial::new_from(&self.numerator, None),
             denominator: MultivariatePolynomial::new_from(&self.denominator, None),
         };
@@ -312,7 +312,7 @@ where
         let gcd_num = MultivariatePolynomial::gcd(&self.numerator, &other.numerator);
         let gcd_den = MultivariatePolynomial::gcd(&self.denominator, &other.denominator);
 
-        RationalPolynomial {
+        Self {
             numerator: gcd_num,
             denominator: (&other.denominator / &gcd_den) * &self.denominator,
         }
@@ -343,7 +343,7 @@ where
             }
         }
 
-        let mut hm: HashMap<Vec<E>, RationalPolynomial<R, E>> = HashMap::default();
+        let mut hm: HashMap<Vec<E>, Self> = HashMap::default();
 
         let mut e_list = vec![E::zero(); variables.len()];
 
@@ -492,9 +492,12 @@ where
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
+        assert!(
+            e <= u32::MAX as u64,
+            "Power of exponentation is larger than 2^32: {}",
+            e
+        );
+
         let e = e as u32;
 
         // TODO: do binary exponentation
@@ -562,7 +565,7 @@ where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
     fn rem(&self, a: &Self::Element, _: &Self::Element) -> Self::Element {
-        RationalPolynomial {
+        Self::Element {
             numerator: MultivariatePolynomial::new_from(&a.numerator, None),
             denominator: MultivariatePolynomial::new_from_constant(
                 &a.numerator,
@@ -661,7 +664,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub<&'a Rationa
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg for RationalPolynomial<R, E> {
     type Output = Self;
     fn neg(self) -> Self::Output {
-        RationalPolynomial {
+        Self {
             numerator: self.numerator.neg(),
             denominator: self.denominator,
         }

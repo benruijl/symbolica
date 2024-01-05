@@ -201,14 +201,15 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
         let c = self.content();
 
-        let stripped = self.map_coeff(
-            |coeff| {
-                let coeff = self.field.div(coeff, &c);
-                debug_assert!(coeff.is_integer());
-                coeff.numerator()
-            },
-            IntegerRing::new(),
-        );
+        let stripped =
+            self.map_coeff(
+                |coeff| {
+                    let coeff = self.field.div(coeff, &c);
+                    debug_assert!(coeff.is_integer());
+                    coeff.numerator()
+                },
+                IntegerRing::new(),
+            );
 
         let fs = stripped.square_free_factorization();
 
@@ -227,14 +228,15 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
     fn factor(&self) -> Vec<(Self, usize)> {
         let c = self.content();
 
-        let stripped = self.map_coeff(
-            |coeff| {
-                let coeff = self.field.div(coeff, &c);
-                debug_assert!(coeff.is_integer());
-                coeff.numerator()
-            },
-            IntegerRing::new(),
-        );
+        let stripped =
+            self.map_coeff(
+                |coeff| {
+                    let coeff = self.field.div(coeff, &c);
+                    debug_assert!(coeff.is_integer());
+                    coeff.numerator()
+                },
+                IntegerRing::new(),
+            );
 
         let mut factors: Vec<_> = stripped
             .factor()
@@ -1530,15 +1532,16 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         debug_assert!((&s * &u + &t * &w).is_one());
 
-        let sym_map = |e: &<FiniteField<UField> as Ring>::Element| {
-            let i = field.from_element(e.clone()).to_u64().into();
+        let sym_map =
+            |e: &<FiniteField<UField> as Ring>::Element| {
+                let i = field.from_element(e.clone()).to_u64().into();
 
-            if &i * &2u64.into() > p {
-                &i - &p
-            } else {
-                i
-            }
-        };
+                if &i * &2u64.into() > p {
+                    &i - &p
+                } else {
+                    i
+                }
+            };
 
         let mut u_i = u.map_coeff(sym_map, IntegerRing::new());
         let mut w_i = w.map_coeff(sym_map, IntegerRing::new());
@@ -1788,12 +1791,13 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             factors.push(f.clone());
         }
 
-        let delta = Self::lift_diophantine_univariate(
-            &mut factors,
-            &poly.new_from_constant(poly.field.one()),
-            finite_field.get_prime(),
-            k,
-        );
+        let delta =
+            Self::lift_diophantine_univariate(
+                &mut factors,
+                &poly.new_from_constant(poly.field.one()),
+                finite_field.get_prime(),
+                k,
+            );
 
         let y_poly = poly.to_univariate_polynomial_list(interpolation_var);
 
@@ -1971,15 +1975,16 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let f_mod_monic = f_mod.clone().mul_coeff(inv_coeff);
         let lcoeff_monic = f_mod_monic.lcoeff_last_varorder(&[main_var, interpolation_var]);
 
-        let mut factors = Self::bivariate_hensel_lift_bernardin(
-            &f_mod_monic,
-            interpolation_var,
-            &lcoeff_monic,
-            &uni_fs_mod,
-            (d2 + 1) as usize,
-            field.get_prime(),
-            k,
-        );
+        let mut factors =
+            Self::bivariate_hensel_lift_bernardin(
+                &f_mod_monic,
+                interpolation_var,
+                &lcoeff_monic,
+                &uni_fs_mod,
+                (d2 + 1) as usize,
+                field.get_prime(),
+                k,
+            );
 
         factors.swap_remove(0); // remove the lcoeff
 
@@ -2060,15 +2065,16 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 &mut f_p, &rhs_p,
             );
 
-        let sym_map_p = |e: &<FiniteField<u32> as Ring>::Element| {
-            let i = field.from_element(e.clone()).to_u64().into();
+        let sym_map_p =
+            |e: &<FiniteField<u32> as Ring>::Element| {
+                let i = field.from_element(e.clone()).to_u64().into();
 
-            if &i * &2u64.into() > prime {
-                &i - &prime
-            } else {
-                i
-            }
-        };
+                if &i * &2u64.into() > prime {
+                    &i - &prime
+                } else {
+                    i
+                }
+            };
 
         let mut deltas: Vec<_> = delta
             .iter()

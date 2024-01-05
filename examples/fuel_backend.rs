@@ -61,17 +61,18 @@ fn main() {
             break;
         }
 
-        let r: RationalPolynomial<IntegerRing, u16> = Token::parse(&buffer)
-            .unwrap()
-            .to_rational_polynomial(
-                &workspace,
-                &mut state,
-                &RationalField::new(),
-                &IntegerRing::new(),
-                &vars,
-                &var_names,
-            )
-            .unwrap();
+        let r: RationalPolynomial<IntegerRing, u16> =
+            Token::parse(&buffer)
+                .unwrap()
+                .to_rational_polynomial(
+                    &workspace,
+                    &mut state,
+                    &RationalField::new(),
+                    &IntegerRing::new(),
+                    &vars,
+                    &var_names,
+                )
+                .unwrap();
 
         let out_str = format!(
             "{}",

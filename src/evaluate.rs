@@ -7,20 +7,21 @@ use crate::{
     state::State,
 };
 
-type EvalFnType<T, P> = Box<
-    dyn Fn(
-        &[T],
-        &HashMap<Variable, T>,
-        &HashMap<Variable, EvaluationFn<T, P>>,
-        &mut HashMap<AtomView<'_, P>, T>,
-    ) -> T,
->;
+type EvalFnType<T, P> =
+    Box<
+        dyn Fn(
+            &[T],
+            &HashMap<Variable, T>,
+            &HashMap<Variable, EvaluationFn<T, P>>,
+            &mut HashMap<AtomView<'_, P>, T>,
+        ) -> T,
+    >;
 
 pub struct EvaluationFn<T, P: AtomSet>(EvalFnType<T, P>);
 
 impl<T, P: AtomSet> EvaluationFn<T, P> {
-    pub fn new(f: EvalFnType<T, P>) -> EvaluationFn<T, P> {
-        EvaluationFn(f)
+    pub fn new(f: EvalFnType<T, P>) -> Self {
+        Self(f)
     }
 
     /// Get a reference to the function that can be called to evaluate it.
@@ -37,10 +38,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         &self,
         var_map: &HashMap<Variable, T>,
         function_map: &HashMap<Variable, EvaluationFn<T, P>>,
-        cache: &mut HashMap<AtomView<'a, P>, T>,
+        cache: &mut HashMap<Self, T>,
     ) -> T {
         match self {
-            AtomView::Num(n) => match n.get_number_view() {
+            Self::Num(n) => match n.get_number_view() {
                 BorrowedNumber::Natural(n, d) => (&Rational::Natural(n, d)).into(),
                 BorrowedNumber::Large(l) => (&Rational::Large(l.to_rat())).into(),
                 BorrowedNumber::FiniteField(_, _) => {
@@ -50,8 +51,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     "Rational polynomial coefficient not yet supported for evaluation"
                 ),
             },
-            AtomView::Var(v) => var_map.get(&v.get_name().into()).unwrap().clone(),
-            AtomView::Fun(f) => {
+            Self::Var(v) => var_map.get(&v.get_name().into()).unwrap().clone(),
+            Self::Fun(f) => {
                 let name = f.get_name();
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
@@ -85,11 +86,11 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 cache.insert(*self, eval);
                 eval
             }
-            AtomView::Pow(p) => {
+            Self::Pow(p) => {
                 let (b, e) = p.get_base_exp();
                 let b_eval = b.evaluate(var_map, function_map, cache);
 
-                if let AtomView::Num(n) = e {
+                if let Self::Num(n) = e {
                     if let BorrowedNumber::Natural(num, den) = n.get_number_view() {
                         if den == 1 {
                             if num >= 0 {
@@ -104,14 +105,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let e_eval = e.evaluate(var_map, function_map, cache);
                 b_eval.powf(e_eval)
             }
-            AtomView::Mul(m) => {
+            Self::Mul(m) => {
                 let mut r = T::one();
                 for arg in m.iter() {
                     r *= arg.evaluate(var_map, function_map, cache);
                 }
                 r
             }
-            AtomView::Add(a) => {
+            Self::Add(a) => {
                 let mut r = T::zero();
                 for arg in a.iter() {
                     r += arg.evaluate(var_map, function_map, cache);

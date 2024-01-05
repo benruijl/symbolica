@@ -55,13 +55,13 @@ const MULTIPLE_INSTANCE_WARNING: &str = "┌────────────
 ;
 
 impl LicenseManager {
-    pub fn new() -> LicenseManager {
+    pub fn new() -> Self {
         let pid = std::process::id();
         let thread_id = std::thread::current().id();
 
         match Self::check_license_key() {
             Ok(()) => {
-                return LicenseManager {
+                return Self {
                     lock: None,
                     core_limit: None,
                     pid,
@@ -127,7 +127,7 @@ impl LicenseManager {
                     }
                 });
 
-                LicenseManager {
+                Self {
                     lock: None,
                     core_limit: Some(1),
                     pid,

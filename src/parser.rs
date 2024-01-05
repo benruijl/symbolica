@@ -71,12 +71,8 @@ impl Operator {
     #[inline]
     pub fn right_associative(&self) -> bool {
         match self {
-            Operator::Mul => true,
-            Operator::Add => true,
             Operator::Pow => false,
-            Operator::Argument => true,
-            Operator::Neg => true,
-            Operator::Inv => true,
+            _ => false,
         }
     }
 }
@@ -102,14 +98,14 @@ pub enum Token {
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Token::Number(n) => f.write_str(n),
-            Token::ID(v) => f.write_str(v),
-            Token::RationalPolynomial(v) => {
+            Self::Number(n) => f.write_str(n),
+            Self::ID(v) => f.write_str(v),
+            Self::RationalPolynomial(v) => {
                 f.write_char('[')?;
                 f.write_str(v)?;
                 f.write_char(']')
             }
-            Token::Op(_, _, o, m) => {
+            Self::Op(_, _, o, m) => {
                 let mut first = true;
                 f.write_char('(')?;
 
@@ -134,11 +130,11 @@ impl std::fmt::Display for Token {
                 }
                 f.write_char(')')
             }
-            Token::Fn(_, args) => {
+            Self::Fn(_, args) => {
                 let mut first = true;
 
                 match &args[0] {
-                    Token::ID(s) => f.write_str(s)?,
+                    Self::ID(s) => f.write_str(s)?,
                     _ => unreachable!(),
                 };
 
@@ -153,10 +149,10 @@ impl std::fmt::Display for Token {
                 }
                 f.write_char(')')
             }
-            Token::Start => f.write_str("START"),
-            Token::OpenParenthesis => f.write_char('('),
-            Token::CloseParenthesis => f.write_char(')'),
-            Token::EOF => f.write_str("EOF"),
+            Self::Start => f.write_str("START"),
+            Self::OpenParenthesis => f.write_char('('),
+            Self::CloseParenthesis => f.write_char(')'),
+            Self::EOF => f.write_str("EOF"),
         }
     }
 }
@@ -165,11 +161,9 @@ impl Token {
     /// Return if the token does not require any further arguments.
     fn is_normal(&self) -> bool {
         match self {
-            Token::Number(_) => true,
-            Token::ID(_) => true,
-            Token::RationalPolynomial(_) => true,
-            Token::Op(more_left, more_right, _, _) => !more_left && !more_right,
-            Token::Fn(more_right, _) => !more_right,
+            Self::Number(_) | Self::ID(_) | Self::RationalPolynomial(_) => true,
+            Self::Op(more_left, more_right, _, _) => !more_left && !more_right,
+            Self::Fn(more_right, _) => !more_right,
             _ => false,
         }
     }
@@ -178,60 +172,57 @@ impl Token {
     #[inline]
     fn get_precedence(&self) -> u8 {
         match self {
-            Token::Number(_) => 11,
-            Token::ID(_) => 11,
-            Token::RationalPolynomial(_) => 11,
-            Token::Op(_, _, o, _) => o.get_precedence(),
-            Token::Fn(_, _) | Token::OpenParenthesis | Token::CloseParenthesis => 5,
-            Token::Start | Token::EOF => 4,
+            Self::Number(_) | Self::ID(_) | Self::RationalPolynomial(_) => 11,
+            Self::Op(_, _, o, _) => o.get_precedence(),
+            Self::Fn(_, _) | Self::OpenParenthesis | Self::CloseParenthesis => 5,
+            Self::Start | Self::EOF => 4,
         }
     }
 
     /// Add `other` to the left side of `self`, where `self` is a binary operation.
     #[inline]
     fn add_left(&mut self, other: Token) -> Result<(), String> {
-        if let Token::Op(ml, _, o1, args) = self {
-            debug_assert!(*ml);
-            *ml = false;
-
-            if let Token::Op(ml, mr, o2, mut args2) = other {
-                debug_assert!(!ml && !mr);
-                if *o1 == o2 {
-                    // add from the left by swapping and then extending from the right
-                    std::mem::swap(args, &mut args2);
-                    args.append(&mut args2);
-                } else {
-                    args.insert(0, Token::Op(false, false, o2, args2));
-                }
-            } else {
-                args.insert(0, other);
-            }
-            Ok(())
-        } else {
-            Err(format!(
+        let Self::Op(ml, _, o1, args) = self else {
+            return Err(format!(
                 "operator expected, but found '{}'. Are parentheses unbalanced?",
                 self
-            ))
+            ));
+        };
+        debug_assert!(*ml);
+        *ml = false;
+
+        if let Self::Op(ml, mr, o2, mut args2) = other {
+            debug_assert!(!ml && !mr);
+            if *o1 == o2 {
+                // add from the left by swapping and then extending from the right
+                std::mem::swap(args, &mut args2);
+                args.append(&mut args2);
+            } else {
+                args.insert(0, Self::Op(false, false, o2, args2));
+            }
+        } else {
+            args.insert(0, other);
         }
+        Ok(())
     }
 
     fn distribute_neg(&mut self) {
         match self {
-            Token::Op(_, _, Operator::Neg, args3) => {
+            Self::Op(_, _, Operator::Neg, args3) => {
                 debug_assert!(args3.len() == 1);
                 *self = args3.pop().unwrap();
             }
-            Token::Op(_, _, Operator::Mul, args2) => {
+            Self::Op(_, _, Operator::Mul, args2) => {
                 args2[0].distribute_neg();
             }
-            Token::Op(_, _, Operator::Add, args2) => {
+            Self::Op(_, _, Operator::Add, args2) => {
                 for a in args2 {
                     a.distribute_neg();
                 }
             }
             _ => {
-                let t = std::mem::replace(self, Token::EOF);
-                *self = Token::Op(false, false, Operator::Neg, vec![t]);
+                let t = std::mem::replace(self, Self::EOF);
+                *self = Self::Op(false, false, Operator::Neg, vec![t]);
             }
         }
     }
@@ -239,40 +230,39 @@ impl Token {
     /// Add `other` to right side of `self`, where `self` is a binary operation.
     #[inline]
     fn add_right(&mut self, mut other: Token) -> Result<(), String> {
-        if let Token::Op(_, mr, o1, args) = self {
-            debug_assert!(*mr);
-            *mr = false;
-
-            if *o1 == Operator::Neg {
-                other.distribute_neg();
-                *self = other;
-                return Ok(());
-            }
-
-            if let Token::Op(ml, mr, o2, mut args2) = other {
-                debug_assert!(!ml && !mr);
-                if *o1 == o2 && o2.right_associative() {
-                    if o2 == Operator::Neg || o2 == Operator::Inv {
-                        // twice unary minus or inv cancels out
-                        debug_assert!(args2.len() == 1);
-                        *self = args2.pop().unwrap();
-                    } else {
-                        args.append(&mut args2)
-                    }
-                } else {
-                    args.push(Token::Op(false, false, o2, args2));
-                }
-            } else {
-                args.push(other);
-            }
-
-            Ok(())
-        } else {
-            Err(format!(
+        let Self::Op(_, mr, o1, args) = self else {
+            return Err(format!(
                 "operator expected, but found '{}'. Are parentheses unbalanced?",
                 self
-            ))
+            ));
+        };
+        debug_assert!(*mr);
+        *mr = false;
+
+        if *o1 == Operator::Neg {
+            other.distribute_neg();
+            *self = other;
+            return Ok(());
         }
+
+        if let Self::Op(ml, mr, o2, mut args2) = other {
+            debug_assert!(!ml && !mr);
+            if *o1 == o2 && o2.right_associative() {
+                if matches!(o2, Operator::Neg | Operator::Inv) {
+                    // twice unary minus or inv cancels out
+                    debug_assert!(args2.len() == 1);
+                    *self = args2.pop().unwrap();
+                } else {
+                    args.append(&mut args2)
+                }
+            } else {
+                args.push(Self::Op(false, false, o2, args2));
+            }
+        } else {
+            args.push(other);
+        }
+
+        Ok(())
     }
 
     /// Parse the token into an atom.
@@ -294,7 +284,7 @@ impl Token {
         out: &mut Atom<P>,
     ) -> Result<(), String> {
         match self {
-            Token::Number(n) => {
+            Self::Number(n) => {
                 if let Ok(x) = n.parse::<i64>() {
                     out.to_num().set_from_number(Number::Natural(x, 1));
                 } else {
@@ -307,10 +297,10 @@ impl Token {
                     }
                 }
             }
-            Token::ID(x) => {
+            Self::ID(x) => {
                 out.to_var().set_from_id(state.get_or_insert_var(x));
             }
-            Token::Op(_, _, op, args) => match op {
+            Self::Op(_, _, op, args) => match op {
                 Operator::Mul => {
                     let mut mul_h = workspace.new_atom();
                     let mul = mul_h.to_mul();
@@ -381,9 +371,9 @@ impl Token {
                     pow_h.as_view().normalize(workspace, state, out);
                 }
             },
-            Token::Fn(_, args) => {
+            Self::Fn(_, args) => {
                 let name = match &args[0] {
-                    Token::ID(s) => s,
+                    Self::ID(s) => s,
                     _ => unreachable!(),
                 };
 
@@ -408,7 +398,7 @@ impl Token {
     /// Parse a Symbolica expression.
     pub fn parse(input: &str) -> Result<Token, String> {
         let mut stack: Vec<_> = Vec::with_capacity(20);
-        stack.push(Token::Start);
+        stack.push(Self::Start);
         let mut state = ParseState::Any;
 
         let ops = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
@@ -429,7 +419,7 @@ impl Token {
                 ParseState::Identifier => {
                     if ops.contains(&c) || whitespace.contains(&c) {
                         state = ParseState::Any;
-                        stack.push(Token::ID(id_buffer.as_str().into()));
+                        stack.push(Self::ID(id_buffer.as_str().into()));
                         id_buffer.clear();
                     } else if !forbidden.contains(&c) {
                         id_buffer.push(c);
@@ -445,14 +435,14 @@ impl Token {
                 ParseState::Number => {
                     if c != '_' && c != ' ' && !c.is_ascii_digit() {
                         // drag in the neg operator
-                        if let Some(Token::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
+                        if let Some(Self::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
                             stack.pop();
                             id_buffer.insert(0, '-');
                         }
 
                         state = ParseState::Any;
 
-                        stack.push(Token::Number(id_buffer.as_str().into()));
+                        stack.push(Self::Number(id_buffer.as_str().into()));
 
                         id_buffer.clear();
                     } else if c != '_' && c != ' ' {
@@ -461,7 +451,7 @@ impl Token {
                 }
                 ParseState::RationalPolynomial => {
                     if c == ']' {
-                        stack.push(Token::RationalPolynomial(id_buffer.as_str().into()));
+                        stack.push(Self::RationalPolynomial(id_buffer.as_str().into()));
                         id_buffer.clear();
 
                         state = ParseState::Any;
@@ -492,70 +482,70 @@ impl Token {
                     '+' => {
                         if matches!(
                             unsafe { stack.last().unwrap_unchecked() },
-                            Token::Start
-                                | Token::OpenParenthesis
-                                | Token::Fn(true, _)
-                                | Token::Op(_, true, _, _)
+                            Self::Start
+                                | Self::OpenParenthesis
+                                | Self::Fn(true, _)
+                                | Self::Op(_, true, _, _)
                         ) {
                             // unary + operator, can be ignored as plus is the default
                         } else {
-                            stack.push(Token::Op(true, true, Operator::Add, vec![]))
+                            stack.push(Self::Op(true, true, Operator::Add, vec![]))
                         }
                     }
-                    '^' => stack.push(Token::Op(true, true, Operator::Pow, vec![])),
-                    '*' => stack.push(Token::Op(true, true, Operator::Mul, vec![])),
+                    '^' => stack.push(Self::Op(true, true, Operator::Pow, vec![])),
+                    '*' => stack.push(Self::Op(true, true, Operator::Mul, vec![])),
                     '-' => {
                         if matches!(
                             unsafe { stack.last().unwrap_unchecked() },
-                            Token::Start
-                                | Token::OpenParenthesis
-                                | Token::Fn(true, _)
-                                | Token::Op(_, true, _, _)
+                            Self::Start
+                                | Self::OpenParenthesis
+                                | Self::Fn(true, _)
+                                | Self::Op(_, true, _, _)
                         ) {
                             // unary minus only requires an argument to the right
-                            stack.push(Token::Op(false, true, Operator::Neg, vec![]));
+                            stack.push(Self::Op(false, true, Operator::Neg, vec![]));
                         } else {
-                            stack.push(Token::Op(true, true, Operator::Add, vec![]));
+                            stack.push(Self::Op(true, true, Operator::Add, vec![]));
                             extra_ops.push('-'); // push a unary minus
                         }
                     }
                     '(' => {
                         // check if the opening bracket belongs to a function
-                        if let Some(Token::ID(_)) = stack.last() {
+                        if let Some(Self::ID(_)) = stack.last() {
                             let name = unsafe { stack.pop().unwrap_unchecked() };
-                            if let Token::ID(_) = name {
-                                stack.push(Token::Fn(true, vec![name])); // serves as open paren
+                            if let Self::ID(_) = name {
+                                stack.push(Self::Fn(true, vec![name])); // serves as open paren
                             }
                         } else if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
                             // insert multiplication: x(...) -> x*(...)
-                            stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                            stack.push(Self::Op(true, true, Operator::Mul, vec![]));
                             extra_ops.push(c);
                         } else {
-                            stack.push(Token::OpenParenthesis)
+                            stack.push(Self::OpenParenthesis)
                         }
                     }
-                    ')' => stack.push(Token::CloseParenthesis),
+                    ')' => stack.push(Self::CloseParenthesis),
                     '/' => {
                         if matches!(
                             stack.last().unwrap(),
-                            Token::Start
-                                | Token::OpenParenthesis
-                                | Token::Fn(true, _)
-                                | Token::Op(_, true, _, _)
+                            Self::Start
+                                | Self::OpenParenthesis
+                                | Self::Fn(true, _)
+                                | Self::Op(_, true, _, _)
                         ) {
                             // unary inv only requires an argument to the right
-                            stack.push(Token::Op(false, true, Operator::Inv, vec![]));
+                            stack.push(Self::Op(false, true, Operator::Inv, vec![]));
                         } else {
-                            stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                            stack.push(Self::Op(true, true, Operator::Mul, vec![]));
                             extra_ops.push('/'); // push a (unary) inverse
                         }
                     }
-                    ',' => stack.push(Token::Op(true, true, Operator::Argument, vec![])),
-                    '\0' => stack.push(Token::EOF),
+                    ',' => stack.push(Self::Op(true, true, Operator::Argument, vec![])),
+                    '\0' => stack.push(Self::EOF),
                     '[' => {
                         if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
                             // insert multiplication: x[3,4] -> x*[3,4]
-                            stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                            stack.push(Self::Op(true, true, Operator::Mul, vec![]));
                             extra_ops.push(c);
                         } else {
                             state = ParseState::RationalPolynomial;
@@ -564,7 +554,7 @@ impl Token {
                     _ => {
                         if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
                             // insert multiplication: x y -> x*y
-                            stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                            stack.push(Self::Op(true, true, Operator::Mul, vec![]));
                             extra_ops.push(c);
                         } else if c.is_ascii_digit() {
                             state = ParseState::Number;
@@ -589,17 +579,17 @@ impl Token {
 
                     // check if the left operator needs a right-hand side and the new operator still needs a left-hand side
                     match unsafe { stack.get_unchecked(stack.len() - 1) } {
-                        Token::Op(true, _, op, _) => {
+                        Self::Op(true, _, op, _) => {
                             Err(format!(
                             "Error at line {} and position {}: operator '{}' is missing left-hand side",
                             line_counter, column_counter, op,
                         ))?;
                         }
 
-                        Token::CloseParenthesis => {
+                        Self::CloseParenthesis => {
                             let pos = stack.len() - 2;
                             // check if we have an empty function
-                            if let Token::Fn(f, _) = unsafe { stack.get_unchecked_mut(pos) } {
+                            if let Self::Fn(f, _) = unsafe { stack.get_unchecked_mut(pos) } {
                                 *f = false;
                                 stack.pop();
                             } else {
@@ -643,26 +633,26 @@ impl Token {
                     std::cmp::Ordering::Equal => {
                         // same degree, special merges!
                         match (&mut first, middle, last) {
-                            (Token::Start, mid, Token::EOF) => {
+                            (Self::Start, mid, Self::EOF) => {
                                 *first = mid;
                             }
-                            (Token::Fn(mr, args), mid, Token::CloseParenthesis) => {
+                            (Self::Fn(mr, args), mid, Self::CloseParenthesis) => {
                                 debug_assert!(*mr);
                                 *mr = false;
 
-                                if let Token::Op(_, _, Operator::Argument, arg2) = mid {
+                                if let Self::Op(_, _, Operator::Argument, arg2) = mid {
                                     args.extend(arg2);
                                 } else {
                                     args.push(mid);
                                 }
                             }
-                            (Token::OpenParenthesis, mid, Token::CloseParenthesis) => {
+                            (Self::OpenParenthesis, mid, Self::CloseParenthesis) => {
                                 *first = mid;
                             }
                             (
-                                Token::Op(ml1, mr1, o1, m),
+                                Self::Op(ml1, mr1, o1, m),
                                 mid,
-                                Token::Op(ml2, mr2, mut o2, mut mm),
+                                Self::Op(ml2, mr2, mut o2, mut mm),
                             ) => {
                                 debug_assert!(!*ml1);
                                 debug_assert!(*mr1 && ml2);
@@ -670,11 +660,11 @@ impl Token {
 
                                 // flatten if middle identifier is also a binary operator of the same type that
                                 // is also right associative
-                                if let Token::Op(_, _, o_mid, mut m_mid) = mid {
+                                if let Self::Op(_, _, o_mid, mut m_mid) = mid {
                                     if o_mid == *o1 && o_mid.right_associative() {
                                         m.append(&mut m_mid);
                                     } else {
-                                        m.push(Token::Op(false, false, o_mid, m_mid));
+                                        m.push(Self::Op(false, false, o_mid, m_mid));
                                     }
                                 } else {
                                     m.push(mid)
@@ -689,7 +679,7 @@ impl Token {
                                     *mr1 = mr2;
                                     std::mem::swap(o1, &mut o2);
                                     std::mem::swap(m, &mut mm);
-                                    m.insert(0, Token::Op(false, false, o2, mm));
+                                    m.insert(0, Self::Op(false, false, o2, mm));
                                 }
                             }
                             _ => return Err("Cannot merge operator".to_string()),
@@ -721,19 +711,19 @@ impl Token {
             Ok(stack.pop().unwrap())
         } else {
             match stack.get(stack.len() - 2) {
-                Some(Token::Op(false, true, op, _)) => Err(format!(
+                Some(Self::Op(false, true, op, _)) => Err(format!(
                     "Unexpected end of input: missing right-hand side for operator '{}'",
                     op
                 )),
-                Some(Token::OpenParenthesis) => Err(format!(
-                    "Unexpected end of input: open parenthesis is not closed"
-                )),
+                Some(Self::OpenParenthesis) => {
+                    Err(format!("Unexpected end of input: open parenthesis is not closed"))
+                }
 
-                Some(Token::Fn(true, args)) => Err(format!(
+                Some(Self::Fn(true, args)) => Err(format!(
                     "Unexpected end of input: Missing closing parenthesis for function '{}'",
                     args[0]
                 )),
-                Some(Token::Start) => Err(format!("Expression is empty")),
+                Some(Self::Start) => Err(format!("Expression is empty")),
                 _ => Err(format!("Unknown parsing error: {:?}", stack)),
             }
         }

@@ -89,10 +89,10 @@ impl FiniteFieldWorkspace for u32 {
 
 impl FiniteFieldCore<u32> for FiniteField<u32> {
     /// Create a new finite field. `n` must be a prime larger than 2.
-    fn new(p: u32) -> FiniteField<u32> {
+    fn new(p: u32) -> Self {
         assert!(p % 2 != 0);
 
-        FiniteField {
+        Self {
             p,
             m: Self::inv_2_32(p),
             one: FiniteFieldElement(Self::get_one(p)),
@@ -364,10 +364,10 @@ impl FiniteField<u64> {
 
 impl FiniteFieldCore<u64> for FiniteField<u64> {
     /// Create a new finite field. `n` must be a prime larger than 2.
-    fn new(p: u64) -> FiniteField<u64> {
+    fn new(p: u64) -> Self {
         assert!(p % 2 != 0);
 
-        FiniteField {
+        Self {
             p,
             m: Self::inv_2_64(p),
             one: FiniteFieldElement(Self::get_one(p)),
@@ -615,11 +615,11 @@ pub struct Mersenne64(u64);
 
 impl Mersenne64 {
     pub fn new() -> Self {
-        Mersenne64(Self::PRIME)
+        Self(Self::PRIME)
     }
 
     const SHIFT: u8 = 61;
-    pub const PRIME: u64 = (1 << Mersenne64::SHIFT) - 1;
+    pub const PRIME: u64 = (1 << Self::SHIFT) - 1;
 }
 
 impl std::fmt::Debug for Mersenne64 {
@@ -642,7 +642,7 @@ impl FiniteFieldWorkspace for Mersenne64 {
 
 impl FiniteFieldCore<Mersenne64> for FiniteField<Mersenne64> {
     fn new(p: Mersenne64) -> Self {
-        FiniteField {
+        Self {
             p,
             m: p,
             one: FiniteFieldElement(Mersenne64(1)),
@@ -922,8 +922,8 @@ pub struct PrimeIteratorU64 {
 
 impl PrimeIteratorU64 {
     /// Create a new prime iterator that is larger than `start`.
-    pub fn new(start: u64) -> PrimeIteratorU64 {
-        PrimeIteratorU64 {
+    pub fn new(start: u64) -> Self {
+        Self {
             current_number: start.max(1),
         }
     }

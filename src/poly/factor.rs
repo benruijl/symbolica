@@ -2481,12 +2481,67 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             .collect()
     }
 
+    fn find_sample(
+        &self,
+        order: &[usize],
+        mut coefficient_upper_bound: i64,
+        max_factors_num: Option<usize>,
+    ) -> (Vec<Self>, Vec<(usize, Integer)>, i64, Self) {
+        // select a suitable evaluation point, as small as possible as to not change the coefficient bound
+        let mut cur_sample_points: Vec<_> =
+            order[1..].iter().map(|i| (*i, Integer::zero())).collect();
+        let mut cur_uni_f;
+        let mut cur_biv_f;
+        let mut rng = thread_rng();
+        let degree = self.degree(order[0]);
+        let mut bivariate_factors: Vec<_>;
+
+        'new_sample: loop {
+            for s in &mut cur_sample_points {
+                s.1 = Integer::Natural(rng.gen_range(0..=coefficient_upper_bound));
+            }
+
+            cur_biv_f = self.clone();
+            for ((v, s), rem_var) in cur_sample_points[1..].iter().zip(&order[1..]).rev() {
+                cur_biv_f = cur_biv_f.replace(*v, s);
+                if cur_biv_f.degree(*rem_var) != self.degree(*rem_var) {
+                    coefficient_upper_bound += 1;
+                    continue 'new_sample;
+                }
+            }
+
+            let biv_df = cur_biv_f.derivative(order[0]);
+
+            cur_uni_f = cur_biv_f.replace(cur_sample_points[0].0, &cur_sample_points[0].1);
+            let uni_df = cur_uni_f.derivative(order[0]);
+
+            if degree == cur_biv_f.degree(order[0])
+                && degree == cur_uni_f.degree(order[0])
+                && MultivariatePolynomial::gcd(&cur_biv_f, &biv_df).is_constant()
+                && MultivariatePolynomial::gcd(&cur_uni_f, &uni_df).is_constant()
+                && cur_biv_f.univariate_content(order[0]).is_one()
+            {
+                bivariate_factors = cur_biv_f.factor().into_iter().map(|f| f.0).collect();
+                if bivariate_factors.len() <= max_factors_num.unwrap_or(bivariate_factors.len()) {
+                break;
+            }
+            }
+        }
+
+        (
+            bivariate_factors,
+            cur_sample_points,
+            coefficient_upper_bound,
+            cur_uni_f,
+        )
+    }
+
     /// Perform multivariate factorization on a square-free polynomial.
     fn multivariate_factorization(
         &self,
         order: &[usize],
         mut coefficient_upper_bound: i64,
-        max_bivariate_factors: Option<usize>,
+        mut max_bivariate_factors: Option<usize>,
     ) -> Vec<Self> {
         if let Some(m) = max_bivariate_factors {
             if m == 1 {
@@ -2494,48 +2549,33 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             }
         }
 
-        // select a suitable evaluation point, as small as possible as to not change the coefficient bound
-        let mut sample_points: Vec<_> = order[1..].iter().map(|i| (*i, Integer::zero())).collect();
-        let mut uni_f;
-        let mut biv_f;
-        let mut rng = thread_rng();
-        let degree = self.degree(order[0]);
-        'new_sample: loop {
-            for s in &mut sample_points {
-                s.1 = Integer::Natural(rng.gen_range(0..=coefficient_upper_bound));
+        // try multiple times to find the correct number of bivariate factors
+        // accidentally finding a larger number of bivariate factors will cause
+        // a very slow Hensel lift, as very dense polynomials will be constructed
+        for _ in 0..3 {
+            // try large sample points to decrease the odds of superfluous samples
+            let (bivariate_factors, _, _, _) = self.find_sample(order, 1000, max_bivariate_factors);
+
+            if bivariate_factors.len() == 1 {
+                // the polynomial is irreducible
+                return vec![self.clone()];
             }
 
-            biv_f = self.clone();
-            for ((v, s), rem_var) in sample_points[1..].iter().zip(&order[1..]).rev() {
-                biv_f = biv_f.replace(*v, s);
-                if biv_f.degree(*rem_var) != self.degree(*rem_var) {
-                    coefficient_upper_bound += 1;
-                    continue 'new_sample;
+            if let Some(max) = max_bivariate_factors {
+                if bivariate_factors.len() < max {
+                    debug!("Updating bivariate bound to {}", bivariate_factors.len());
+                    max_bivariate_factors = Some(bivariate_factors.len());
                 }
+            } else {
+                debug!("Updating bivariate bound to {}", bivariate_factors.len());
+                max_bivariate_factors = Some(bivariate_factors.len());
             }
-
-            let biv_df = biv_f.derivative(order[0]);
-
-            uni_f = biv_f.replace(sample_points[0].0, &sample_points[0].1);
-            let uni_df = uni_f.derivative(order[0]);
-
-            if degree == biv_f.degree(order[0])
-                && degree == uni_f.degree(order[0])
-                && MultivariatePolynomial::gcd(&biv_f, &biv_df).is_constant()
-                && MultivariatePolynomial::gcd(&uni_f, &uni_df).is_constant()
-                && biv_f.univariate_content(order[0]).is_one()
-            {
-                break;
-            }
-
-            coefficient_upper_bound += 1;
         }
 
-        for (v, s) in &sample_points {
-            debug!("Sample point {}={}", v, s);
-        }
-
-        let bivariate_factors = biv_f.bivariate_factor_reconstruct(order[0], order[1]);
+        // find a sample point with a small shift
+        let (bivariate_factors, sample_points, coeff_b, uni_f) =
+            self.find_sample(order, coefficient_upper_bound, max_bivariate_factors);
+        coefficient_upper_bound = coeff_b;
 
         if bivariate_factors.len() == 1 {
             // the polynomial is irreducible

@@ -645,6 +645,15 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
 
         let mut num = num_1 + num_2;
 
+        if num.is_zero() {
+            den.clear();
+            den.push((num.new_from_constant(num.field.one()), 1));
+            return FactorizedRationalPolynomial {
+                numerator: num,
+                denominators: den,
+            };
+        }
+
         // TODO: are there some factors we can skip the division check for?
 
         for (d, p) in &mut den {

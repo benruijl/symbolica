@@ -14,6 +14,7 @@ use crate::{
         rational::RationalField,
         EuclideanDomain, Field, Ring,
     },
+    utils,
 };
 
 use super::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent, LexOrder};
@@ -108,6 +109,107 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         }
 
         factors
+    }
+
+    /// Use Newton's polygon method to test if a bivariate polynomial is irreducible.
+    /// If this method returns `false`, the test is inconclusive.
+    ///
+    /// The polynomial must have overall factors of single variables removed.
+    fn bivariate_irreducibility_test(&self) -> bool {
+        /// Compute the convex hull via the Monotone chain algorithm.
+        fn convex_hull(mut points: Vec<(isize, isize)>) -> Vec<(isize, isize)> {
+            points.sort();
+            if points.len() < 2 {
+                return points;
+            }
+
+            // Cross product of o-a and o-b vectors, positive means ccw turn, negative means cw turn and 0 means collinear.
+            fn cross(o: &(isize, isize), a: &(isize, isize), b: &(isize, isize)) -> isize {
+                (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+            }
+
+            let mut lower = vec![];
+            let mut upper = vec![];
+
+            for (t, rev) in [(&mut lower, false), (&mut upper, true)] {
+                for i in 0..points.len() {
+                    let p = if rev {
+                        points[points.len() - 1 - i]
+                    } else {
+                        points[i]
+                    };
+                    while t.len() >= 2 && cross(&t[t.len() - 2], &t[t.len() - 1], &p) <= 0 {
+                        t.pop();
+                    }
+                    t.push(p.clone());
+                }
+            }
+
+            lower.pop();
+            upper.pop();
+            lower.extend(upper);
+            lower
+        }
+
+        let degrees: Vec<_> = (0..self.nvars)
+            .filter_map(|v| {
+                let d = self.degree(v);
+                if d > E::zero() {
+                    Some(v)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if degrees.len() != 2 {
+            return false;
+        }
+
+        let points = self
+            .exponents
+            .chunks(self.nvars)
+            .map(|e| {
+                (
+                    e[degrees[0]].to_u32() as isize,
+                    e[degrees[1]].to_u32() as isize,
+                )
+            })
+            .collect();
+
+        let hull = convex_hull(points);
+
+        match hull.len() {
+            2 => {
+                let x_deg = hull[0].0.abs_diff(hull[1].0);
+                let y_deg = hull[0].1.abs_diff(hull[1].1);
+                utils::gcd_unsigned(x_deg as u64, y_deg as u64) == 1
+            }
+            3 => {
+                // the hull has the form (n, 0), (0, m), (u, v)
+                let (mut n, mut m, mut u, mut v) = (-1, -1, -1, -1);
+                for (x, y) in hull {
+                    if x != 0 && y == 0 {
+                        n = x;
+                    } else if y != 0 && x == 0 {
+                        m = y;
+                    } else {
+                        u = x;
+                        v = y;
+                    }
+                }
+
+                n != -1
+                    && m != -1
+                    && u != -1
+                    && v != -1
+                    && utils::gcd_unsigned(
+                        utils::gcd_unsigned(utils::gcd_unsigned(n as u64, m as u64), u as u64),
+                        v as u64,
+                    ) == 1
+            }
+            _ => false,
+        }
     }
 }
 
@@ -664,6 +766,10 @@ where
     fn bivariate_factorization(&self, main_var: usize, interpolation_var: usize) -> Vec<Self> {
         assert!(main_var != interpolation_var);
 
+        if self.bivariate_irreducibility_test() {
+            return vec![self.clone()];
+        }
+
         // check for problems arising from canceling terms in the derivative
         let der = self.derivative(main_var);
         if der.is_zero() {
@@ -1149,7 +1255,7 @@ where
             match self.lcoeff_precomputation(&bivariate_factors, &sample_points, &order) {
                 Ok((sorted_biv_factors, true_lcoeffs)) => (sorted_biv_factors, true_lcoeffs),
                 Err(max_biv) => {
-            // the leading coefficient computation failed because the bivaraite factorization was wrong
+                    // the leading coefficient computation failed because the bivaraite factorization was wrong
                     // try again with other sample points and a better bound
                     return self.multivariate_factorization(
                         order,
@@ -1157,7 +1263,7 @@ where
                         Some(max_biv),
                     );
                 }
-        };
+            };
 
         for (b, l) in sorted_biv_factors.iter().zip(&true_lcoeffs) {
             debug!("Bivariate factor {} with true lcoeff {}", b, l);
@@ -1915,6 +2021,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
     /// Factor a square-free bivariate polynomial over the integers.
     fn bivariate_factor_reconstruct(&self, main_var: usize, interpolation_var: usize) -> Vec<Self> {
+        if self.bivariate_irreducibility_test() {
+            return vec![self.clone()];
+        }
+
         let d2 = self.degree(interpolation_var).to_u32();
 
         // select a suitable evaluation point, as small as possible as to not change the coefficient bound
@@ -2523,8 +2633,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             {
                 bivariate_factors = cur_biv_f.factor().into_iter().map(|f| f.0).collect();
                 if bivariate_factors.len() <= max_factors_num.unwrap_or(bivariate_factors.len()) {
-                break;
-            }
+                    break;
+                }
             }
         }
 
@@ -2650,7 +2760,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         ) {
             Ok((sorted_biv_factors, true_lcoeffs)) => (sorted_biv_factors, true_lcoeffs),
             Err(max_biv) => {
-            // the leading coefficient computation failed because the bivaraite factorization was wrong
+                // the leading coefficient computation failed because the bivaraite factorization was wrong
                 // try again with other sample points and a better bound
                 return self.multivariate_factorization(
                     order,

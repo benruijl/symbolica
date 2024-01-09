@@ -614,21 +614,32 @@ where
         let mut random_poly = Self::new_from(self, Some(d));
         let mut exp = vec![E::zero(); self.nvars];
 
+        let mut try_counter = 0;
+
         let factor = loop {
             // generate a random non-constant polynomial
             random_poly.clear();
-            for i in 0..n {
-                let r = self
-                    .field
-                    .nth(rng.gen_range(0..self.field.get_prime().to_u64()));
-                if !FiniteField::<UField>::is_zero(&r) {
-                    exp[var] = E::from_u32(i as u32);
-                    random_poly.append_monomial(r, &exp);
-                }
-            }
 
-            if random_poly.degree(var) == E::zero() {
-                continue;
+            if d == 1 {
+                exp[var] = E::zero();
+                random_poly.append_monomial(self.field.nth(try_counter), &exp);
+                exp[var] = E::one();
+                random_poly.append_monomial(self.field.one(), &exp);
+                try_counter += 1;
+            } else {
+                for i in 0..n {
+                    let r = self
+                        .field
+                        .nth(rng.gen_range(0..self.field.get_prime().to_u64()));
+                    if !FiniteField::<UField>::is_zero(&r) {
+                        exp[var] = E::from_u32(i as u32);
+                        random_poly.append_monomial(r, &exp);
+                    }
+                }
+
+                if random_poly.degree(var) == E::zero() {
+                    continue;
+                }
             }
 
             let g = MultivariatePolynomial::gcd(&random_poly, &s);

@@ -1357,6 +1357,71 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         tm
     }
 
+    pub fn mul_univariate_dense(&self, rhs: &Self, max_pow: Option<usize>) -> Self {
+        if self.is_constant() {
+            if let Some(m) = max_pow {
+                if let Some(var) = rhs.last_exponents().iter().position(|e| *e != E::zero()) {
+                    if rhs.degree(var).to_u32() > m as u32 {
+                        return rhs
+                            .mod_var(var, E::from_u32(m as u32 + 1))
+                            .mul_coeff(self.lcoeff());
+                    }
+                }
+            }
+            return rhs.clone().mul_coeff(self.lcoeff());
+        }
+
+        if rhs.is_constant() {
+            if let Some(m) = max_pow {
+                if let Some(var) = self.last_exponents().iter().position(|e| *e != E::zero()) {
+                    if self.degree(var).to_u32() > m as u32 {
+                        return self
+                            .mod_var(var, E::from_u32(m as u32 + 1))
+                            .mul_coeff(rhs.lcoeff());
+                    }
+                }
+            }
+            return self.clone().mul_coeff(rhs.lcoeff());
+        }
+
+        let var = self
+            .last_exponents()
+            .iter()
+            .position(|e| *e != E::zero())
+            .unwrap();
+
+        let d1 = self.degree(var);
+        let d2 = rhs.degree(var);
+        let mut max = (d1.to_u32() + d2.to_u32()) as usize;
+        if let Some(m) = max_pow {
+            max = max.min(m);
+        }
+
+        let mut coeffs = vec![self.field.zero(); max + 1];
+
+        for x in self {
+            for y in rhs {
+                let pos = x.exponents[var].to_u32() + y.exponents[var].to_u32();
+                if pos as usize > max {
+                    continue;
+                }
+
+                self.field
+                    .add_mul_assign(&mut coeffs[pos as usize], x.coefficient, y.coefficient);
+            }
+        }
+
+        let mut exp = vec![E::zero(); self.nvars];
+        let mut res = self.new_from(Some(coeffs.len()));
+        for (p, c) in coeffs.into_iter().enumerate() {
+            if !F::is_zero(&c) {
+                exp[var] = E::from_u32(p as u32);
+                res.append_monomial(c, &exp);
+            }
+        }
+        res
+    }
+
     /// Multiplication for multivariate polynomials using a custom variation of the heap method
     /// described in "Sparse polynomial division using a heap" by Monagan, Pearce (2011) and using
     /// the sorting described in "Sparse Polynomial Powering Using Heaps".
@@ -1388,6 +1453,17 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 .mul_monomial(&other.coefficients[0], &other.exponents);
         }
 
+        // check if the multiplication is univariate with the same variable
+        let degree_sum: Vec<_> = (0..self.nvars)
+            .map(|i| self.degree(i).to_u32() as usize + other.degree(i).to_u32() as usize)
+            .collect();
+
+        if degree_sum.iter().filter(|x| **x > 0).count() == 1
+            && degree_sum.iter().sum::<usize>() < 5000
+        {
+            return self.mul_univariate_dense(&other, None);
+        }
+
         // place the smallest polynomial first, as this is faster
         // in the heap algorithm
         if self.nterms > other.nterms {
@@ -1397,11 +1473,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         // use a special routine if the exponents can be packed into a u64
         let mut pack_u8 = true;
         if self.nvars <= 8
-            && (0..self.nvars).all(|i| {
-                let deg = self
-                    .degree(i)
-                    .to_u32()
-                    .saturating_add(other.degree(i).to_u32());
+            && degree_sum.into_iter().all(|deg| {
                 if deg > 255 {
                     pack_u8 = false;
                 }

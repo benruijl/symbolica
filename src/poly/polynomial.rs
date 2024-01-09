@@ -1377,7 +1377,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                     if self.degree(var).to_u32() > m as u32 {
                         return self
                             .mod_var(var, E::from_u32(m as u32 + 1))
-                            .mul_coeff(self.lcoeff());
+                            .mul_coeff(rhs.lcoeff());
                     }
                 }
             }

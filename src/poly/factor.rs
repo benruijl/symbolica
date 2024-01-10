@@ -1889,7 +1889,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
                     // TODO: improve check
                     // for monic factors we can do &g1 * &h1 != &rest.lcoeff() * &rest.coefficients[0]
-                    if &g1 * &h1 > bound {
+                    if (&g1 * &h1).abs() > bound {
                         continue;
                     }
                 }
@@ -2314,7 +2314,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             Integer::Large(b) => Integer::from_large(b.sqrt()),
         } + &1i64.into();
 
-        &bound * &(&max_norm * &self.lcoeff())
+        &bound * &(&max_norm * &self.lcoeff().abs())
     }
 
     /// Sort the bivariate factors based on their univariate image so that they are

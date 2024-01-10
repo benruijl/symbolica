@@ -989,6 +989,19 @@ where
             let lcoeff_square_free_pp = &lcoeff_square_free / &c * &c_eval;
             debug!("Content-free lcsqf {}", lcoeff_square_free_pp);
 
+            // check if the evaluated leading coefficient remains square free
+            let mut poly_eval = lcoeff_square_free_pp.clone();
+            for (v, p) in sample_points {
+                if *v != var {
+                    poly_eval = poly_eval.replace(*v, p);
+                }
+            }
+            let sqf = poly_eval.square_free_factorization();
+            if sqf.len() != 1 || sqf[0].1 != 1 {
+                debug!("Polynomial is not square free: {}", poly_eval);
+                return Err(main_bivariate_factors.len());
+            }
+
             let bivariate_factors = if var == order[1] {
                 main_bivariate_factors.to_vec()
             } else {
@@ -2397,6 +2410,19 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             let lcoeff_square_free_pp = &lcoeff_square_free / &c;
             debug!("Content-free lcsqf {}", lcoeff_square_free_pp);
 
+            // check if the evaluated leading coefficient remains square free
+            let mut poly_eval = lcoeff_square_free_pp.clone();
+            for (v, p) in sample_points {
+                if *v != var {
+                    poly_eval = poly_eval.replace(*v, p);
+                }
+            }
+            let sqf = poly_eval.square_free_factorization();
+            if sqf.len() != 1 || sqf[0].1 != 1 {
+                debug!("Polynomial is not square free: {}", poly_eval);
+                return Err(main_bivariate_factors.len());
+            }
+
             let bivariate_factors = if var == order[1] {
                 main_bivariate_factors.to_vec()
             } else {
@@ -2414,6 +2440,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     // remove spurious content caused by particular evaluation point
                     .filter(|f| !f.is_constant())
                     .collect();
+
+                // TODO: do degree checks for new bivariate factors?
 
                 if bivariate_factors.len() != main_bivariate_factors.len() {
                     return Err(bivariate_factors.len().min(main_bivariate_factors.len()));
@@ -2682,23 +2710,26 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         // try multiple times to find the correct number of bivariate factors
         // accidentally finding a larger number of bivariate factors will cause
         // a very slow Hensel lift, as very dense polynomials will be constructed
-        for _ in 0..3 {
-            // try large sample points to decrease the odds of superfluous samples
-            let (bivariate_factors, _, _, _) = self.find_sample(order, 1000, max_bivariate_factors);
+        if max_bivariate_factors.is_none() {
+            for _ in 0..3 {
+                // try large sample points to decrease the odds of superfluous samples
+                let (bivariate_factors, _, _, _) =
+                    self.find_sample(order, 1000, max_bivariate_factors);
 
-            if bivariate_factors.len() == 1 {
-                // the polynomial is irreducible
-                return vec![self.clone()];
-            }
+                if bivariate_factors.len() == 1 {
+                    // the polynomial is irreducible
+                    return vec![self.clone()];
+                }
 
-            if let Some(max) = max_bivariate_factors {
-                if bivariate_factors.len() < max {
+                if let Some(max) = max_bivariate_factors {
+                    if bivariate_factors.len() < max {
+                        debug!("Updating bivariate bound to {}", bivariate_factors.len());
+                        max_bivariate_factors = Some(bivariate_factors.len());
+                    }
+                } else {
                     debug!("Updating bivariate bound to {}", bivariate_factors.len());
                     max_bivariate_factors = Some(bivariate_factors.len());
                 }
-            } else {
-                debug!("Updating bivariate bound to {}", bivariate_factors.len());
-                max_bivariate_factors = Some(bivariate_factors.len());
             }
         }
 
@@ -2720,6 +2751,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     max_bivariate_factors,
                 );
             }
+        }
+
+        for (v, s) in &sample_points {
+            debug!("Sample point x{} = {}", v, s);
         }
 
         // select a suitable prime
@@ -2780,7 +2815,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         ) {
             Ok((sorted_biv_factors, true_lcoeffs)) => (sorted_biv_factors, true_lcoeffs),
             Err(max_biv) => {
-                // the leading coefficient computation failed because the bivaraite factorization was wrong
+                // the leading coefficient computation failed because the bivariate factorization was wrong
                 // try again with other sample points and a better bound
                 return self.multivariate_factorization(
                     order,

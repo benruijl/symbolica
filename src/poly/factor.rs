@@ -8,7 +8,9 @@ use crate::{
     combinatorics::CombinationIterator,
     poly::gcd::LARGE_U32_PRIMES,
     rings::{
-        finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
+        finite_field::{
+            FiniteField, FiniteFieldCore, FiniteFieldWorkspace, PrimeIteratorU64, ToFiniteField,
+        },
         integer::{Integer, IntegerRing},
         integer_mod::IntegerMod,
         rational::RationalField,
@@ -627,7 +629,7 @@ where
                 random_poly.append_monomial(self.field.one(), &exp);
                 try_counter += 1;
             } else {
-                for i in 0..n {
+                for i in 0..2 * d {
                     let r = self
                         .field
                         .nth(rng.gen_range(0..self.field.get_prime().to_u64()));
@@ -1810,16 +1812,17 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         }
 
         // select a suitable prime
+        // we try small primes first as the distinct and equal degree algorithms
+        // scale as log(p)
         let mut field;
         let mut f_p;
-        let mut i = 0;
+        let mut pi = PrimeIteratorU64::new(101);
         loop {
-            i += 1;
-            if i == LARGE_U32_PRIMES.len() {
+            let p = pi.next().unwrap();
+            if p > u32::MAX as u64 {
                 panic!("Ran out of primes during factorization");
             }
-
-            let p = LARGE_U32_PRIMES[i];
+            let p = p as u32;
 
             if (&self.lcoeff() % &Integer::Natural(p as i64)).is_zero() {
                 continue;
@@ -1884,9 +1887,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                         }
                     }
 
-                    // FIXME: this check only works in this form if the factors are monic
-                    if &g1 * &h1 != &rest.lcoeff() * &rest.coefficients[0] {
-                        //continue;
+                    // TODO: improve check
+                    // for monic factors we can do &g1 * &h1 != &rest.lcoeff() * &rest.coefficients[0]
+                    if &g1 * &h1 > bound {
+                        continue;
                     }
                 }
 
@@ -2069,15 +2073,18 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         uni_fs.retain_mut(|f| !f.is_constant());
 
         // select a suitable prime
+        // we try small primes first as the distinct and equal degree algorithms
+        // scale as log(p)
+        let mut pi = PrimeIteratorU64::new(101);
         let mut field;
-        let mut i = 0;
         'new_prime: loop {
             i += 1;
-            if i == LARGE_U32_PRIMES.len() {
+
+            let p = pi.next().unwrap();
+            if p > u32::MAX as u64 {
                 panic!("Ran out of primes during factorization");
             }
-
-            let p = LARGE_U32_PRIMES[i];
+            let p = p as u32;
 
             if (&uni_f.lcoeff() % &Integer::Natural(p as i64)).is_zero() {
                 continue;
@@ -2647,6 +2654,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     break;
                 }
             }
+
+            coefficient_upper_bound += 1;
         }
 
         (

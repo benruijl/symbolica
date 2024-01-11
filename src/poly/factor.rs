@@ -1387,7 +1387,6 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         for j in 1..=*degrees.last().unwrap() {
             cur_exponent = next_exponent.clone();
             next_exponent = &next_exponent * &var_pow;
-            debug!("cur_exp {}", cur_exponent);
 
             let mut e = error.clone();
             for (d, p) in deltas.iter().zip(prods) {
@@ -1530,14 +1529,6 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let factor_products: Vec<_> =
                 factors_with_true_lcoeff.iter().map(|f| &tot / f).collect();
 
-            // spoof the sample point of the last var to 0
-            let mut sample_points = sample_points.to_vec();
-            for (vv, s) in &mut sample_points {
-                if *vv == order[v] {
-                    *s = self.field.zero();
-                }
-            }
-
             reconstructed_factors = f.multivariate_hensel_step(
                 &univariate_deltas,
                 univariate_factors,
@@ -1600,6 +1591,11 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             cur_p = x[0].clone();
         }
 
+        let prod_mod = prods
+            .iter()
+            .map(|f| f.replace(last_var, &self.field.zero()))
+            .collect::<Vec<_>>();
+
         debug!("in shift {}", self);
         debug!("deg {:?}", degrees);
 
@@ -1626,17 +1622,15 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 continue;
             }
 
-            degrees[order.len() - 1] = k - 1; // compute mod var^k (could also be set to 0)
             let new_delta = Self::multivariate_diophantine(
                 univariate_deltas,
                 univariate_factors,
-                prods,
+                &prod_mod,
                 &e,
-                &order,
+                &order[..order.len() - 1],
                 sample_points,
-                &degrees,
+                &degrees[..order.len() - 1],
             );
-            degrees[order.len() - 1] = last_degree;
 
             // update the coefficients with the new y^k contributions
             let mut t = self.new_from(None);
@@ -2514,35 +2508,33 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             );
         }
 
+        // rescale the leading coefficient factors to recover the missing content and sign
+        for (f, b) in true_lcoeffs.iter_mut().zip(&main_bivariate_factors) {
+            let mut b_eval = b.clone();
+            for (v, p) in sample_points {
+                b_eval = b_eval.replace(*v, p);
+            }
+
+            let b_lc = b_eval.lcoeff();
+
+            let mut f_eval = f.clone();
+            for (v, p) in sample_points {
+                f_eval = f_eval.replace(*v, p);
+            }
+            let f_lc = f_eval.lcoeff();
+
+            let (q, r) = IntegerRing::new().quot_rem(&b_lc, &f_lc);
+            assert!(r.is_zero());
+
+            lcoeff_left = lcoeff_left.div_coeff(&q);
+            *f = f.clone().mul_coeff(q);
+        }
+
         if !lcoeff_left.is_one() {
-            // rescale the leading coefficient factors to recover the missing content
-            for (f, b) in true_lcoeffs.iter_mut().zip(&main_bivariate_factors) {
-                let mut b_eval = b.clone();
-                for (v, p) in sample_points {
-                    b_eval = b_eval.replace(*v, p);
-                }
-
-                let b_lc = b_eval.lcoeff();
-
-                let mut f_eval = f.clone();
-                for (v, p) in sample_points {
-                    f_eval = f_eval.replace(*v, p);
-                }
-                let f_lc = f_eval.lcoeff();
-
-                let (q, r) = IntegerRing::new().quot_rem(&b_lc, &f_lc);
-                assert!(r.is_zero());
-
-                lcoeff_left = lcoeff_left.div_coeff(&q);
-                *f = f.clone().mul_coeff(q);
-            }
-
-            if !lcoeff_left.is_one() {
-                panic!(
-                    "Could not distribute content for {}. Rest = {}",
-                    self, lcoeff_left
-                );
-            }
+            panic!(
+                "Could not distribute content for {}. Rest = {}",
+                self, lcoeff_left
+            );
         }
 
         Ok((main_bivariate_factors, true_lcoeffs))

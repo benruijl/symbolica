@@ -286,10 +286,10 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
                         .collect();
                     order.sort_by_key(|o| Reverse(o.1));
 
-                    let order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
+                    let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
 
                     factors.extend(
-                        f.multivariate_factorization(&order, 0, None)
+                        f.multivariate_factorization(&mut order, 0, None)
                             .into_iter()
                             .map(|ff| (ff, p)),
                     )
@@ -428,10 +428,10 @@ where
                         .collect();
                     order.sort_by_key(|o| Reverse(o.1));
 
-                    let order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
+                    let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
 
                     factors.extend(
-                        f.multivariate_factorization(&order, 0, None)
+                        f.multivariate_factorization(&mut order, 0, None)
                             .into_iter()
                             .map(|ff| (ff, p)),
                     )
@@ -1183,7 +1183,7 @@ where
     /// Perform multivariate factorization on a square-free polynomial.
     fn multivariate_factorization(
         &self,
-        order: &[usize],
+        order: &mut [usize],
         mut coefficient_upper_bound: u64,
         max_bivariate_factors: Option<usize>,
     ) -> Vec<Self> {
@@ -1200,7 +1200,7 @@ where
             let v = new_order.remove(0);
             new_order.push(v);
             return self.multivariate_factorization(
-                &new_order,
+                &mut new_order,
                 coefficient_upper_bound,
                 max_bivariate_factors,
             );
@@ -1218,13 +1218,14 @@ where
             return factors;
         }
 
-        // select a suitable evaluation point, as small as possible as to not change the coefficient bound
+        // select a suitable evaluation point
         let mut sample_points: Vec<_> =
             order[1..].iter().map(|i| (*i, self.field.zero())).collect();
         let mut uni_f;
         let mut biv_f;
         let mut rng = thread_rng();
         let degree = self.degree(order[0]);
+        let mut content_fail_count = 0;
         'new_sample: loop {
             for s in &mut sample_points {
                 s.1 = self.field.nth(rng.gen_range(0..=coefficient_upper_bound));
@@ -1248,9 +1249,29 @@ where
                 && degree == uni_f.degree(order[0])
                 && MultivariatePolynomial::gcd(&biv_f, &biv_df).is_constant()
                 && MultivariatePolynomial::gcd(&uni_f, &uni_df).is_constant()
-                && biv_f.univariate_content(order[0]).is_one()
             {
-                break;
+                if !biv_f.univariate_content(order[0]).is_one() {
+                    content_fail_count += 1;
+
+                    debug!("Univariate content is not one");
+                    if content_fail_count == 4 {
+                        // it is likely that we will always find content for this variable ordering, so change the
+                        // second variable
+                        // TODO: is this guaranteed to work or should we also change the first variable?
+                        let sec_var = order[1];
+                        order.copy_within(2..order.len(), 1);
+                        order[order.len() - 1] = sec_var;
+
+                        for ((vs, _), v) in sample_points.iter_mut().zip(&order[1..]) {
+                            *vs = *v;
+                        }
+
+                        debug!("Changed the second variable to {}", order[1]);
+                        content_fail_count = 0;
+                    }
+                } else {
+                    break;
+                }
             }
 
             coefficient_upper_bound += 1;
@@ -2631,10 +2652,12 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
     fn find_sample(
         &self,
-        order: &[usize],
+        order: &mut [usize],
         mut coefficient_upper_bound: i64,
         max_factors_num: Option<usize>,
     ) -> (Vec<Self>, Vec<(usize, Integer)>, i64, Self) {
+        debug!("Find sample for {} with order {:?}", self, order);
+
         // select a suitable evaluation point, as small as possible as to not change the coefficient bound
         let mut cur_sample_points: Vec<_> =
             order[1..].iter().map(|i| (*i, Integer::zero())).collect();
@@ -2644,9 +2667,11 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let degree = self.degree(order[0]);
         let mut bivariate_factors: Vec<_>;
 
+        let mut content_fail_count = 0;
         'new_sample: loop {
             for s in &mut cur_sample_points {
                 s.1 = Integer::Natural(rng.gen_range(0..=coefficient_upper_bound));
+                debug!("Sample x{} {}", s.0, s.1);
             }
 
             cur_biv_f = self.clone();
@@ -2667,15 +2692,45 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 && degree == cur_uni_f.degree(order[0])
                 && MultivariatePolynomial::gcd(&cur_biv_f, &biv_df).is_constant()
                 && MultivariatePolynomial::gcd(&cur_uni_f, &uni_df).is_constant()
-                && cur_biv_f.univariate_content(order[0]).is_one()
             {
+                if !cur_biv_f.univariate_content(order[0]).is_one() {
+                    content_fail_count += 1;
+                    coefficient_upper_bound += 1;
+
+                    debug!("Univariate content is not one");
+                    if content_fail_count == 4 {
+                        // it is likely that we will always find content for this variable ordering, so change the
+                        // second variable
+                        // TODO: is this guaranteed to work or should we also change the first variable?
+                        let sec_var = order[1];
+                        order.copy_within(2..order.len(), 1);
+                        order[order.len() - 1] = sec_var;
+
+                        for ((vs, _), v) in cur_sample_points.iter_mut().zip(&order[1..]) {
+                            *vs = *v;
+                        }
+
+                        debug!("Changed the second variable to {}", order[1]);
+                        content_fail_count = 0;
+                    }
+
+                    continue;
+                }
+
                 bivariate_factors = cur_biv_f.factor().into_iter().map(|f| f.0).collect();
+
                 if bivariate_factors.len() <= max_factors_num.unwrap_or(bivariate_factors.len()) {
                     break;
                 }
+                debug!(
+                    "Number of factors is too large: {} vs {}",
+                    bivariate_factors.len(),
+                    max_factors_num.unwrap_or(bivariate_factors.len())
+                );
             }
 
             coefficient_upper_bound += 1;
+            debug!("Growing bound {}", coefficient_upper_bound);
         }
 
         (
@@ -2689,7 +2744,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
     /// Perform multivariate factorization on a square-free polynomial.
     fn multivariate_factorization(
         &self,
-        order: &[usize],
+        order: &mut [usize],
         mut coefficient_upper_bound: i64,
         mut max_bivariate_factors: Option<usize>,
     ) -> Vec<Self> {

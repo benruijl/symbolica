@@ -1248,7 +1248,7 @@ where
                 && degree == uni_f.degree(order[0])
                 && MultivariatePolynomial::gcd(&biv_f, &biv_df).is_constant()
                 && MultivariatePolynomial::gcd(&uni_f, &uni_df).is_constant()
-                && biv_f.univariate_content(order[0]).is_one()
+                && biv_f.univariate_content(order[0]).is_constant()
             {
                 break;
             }
@@ -2667,7 +2667,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 && degree == cur_uni_f.degree(order[0])
                 && MultivariatePolynomial::gcd(&cur_biv_f, &biv_df).is_constant()
                 && MultivariatePolynomial::gcd(&cur_uni_f, &uni_df).is_constant()
-                && cur_biv_f.univariate_content(order[0]).is_one()
+                && cur_biv_f.univariate_content(order[0]).is_constant()
             {
                 bivariate_factors = cur_biv_f.factor().into_iter().map(|f| f.0).collect();
                 if bivariate_factors.len() <= max_factors_num.unwrap_or(bivariate_factors.len()) {

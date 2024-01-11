@@ -543,6 +543,9 @@ class Expression:
         Create an iterator over all atoms in the expression.
         """
 
+    def __getitem__(self, idx: int) -> Expression:
+        """Get the `idx`th component of the expression."""
+
     def map(
         self,
         transformations: Transformer,

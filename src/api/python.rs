@@ -1661,6 +1661,33 @@ impl PythonExpression {
         })
     }
 
+
+    /// Get the `idx`th component of the expression.
+    fn __getitem__(&self, idx: isize) -> PyResult<PythonExpression> {
+        let slice = match self.expr.as_view() {
+            AtomView::Add(a) => a.to_slice(),
+            AtomView::Mul(m) => m.to_slice(),
+            AtomView::Fun(f) => f.to_slice(),
+            _ => Err(PyIndexError::new_err("Cannot access child of leaf node"))?,
+        };
+
+        if idx.unsigned_abs() < slice.len() {
+            Ok(PythonExpression {
+                expr: Arc::new(Atom::new_from_view(&if idx < 0 {
+                    slice.get(slice.len() - idx.abs() as usize)
+                } else {
+                    slice.get(idx as usize)
+                })),
+            })
+        } else {
+            Err(PyIndexError::new_err(format!(
+                "Index {} out of bounds: the atom only has {} children.",
+                idx,
+                slice.len(),
+            )))
+        }
+    }
+
     /// Create a pattern restriction based on the wildcard length before downcasting.
     pub fn req_len(
         &self,

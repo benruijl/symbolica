@@ -1507,11 +1507,13 @@ impl Token {
             };
 
             if let Some(p1) = iter.next() {
-                dens.push((
-                    den,
-                    p1.parse::<usize>()
-                        .map_err(|e| format!("Could not parse power: {}", e))?,
-                ));
+                if !den.is_one() {
+                    dens.push((
+                        den,
+                        p1.parse::<usize>()
+                            .map_err(|e| format!("Could not parse power: {}", e))?,
+                    ));
+                }
 
                 while let Some(p) = iter.next() {
                     let den = Token::parse_polynomial(p.as_bytes(), var_map, var_name_map, field).1;
@@ -1523,9 +1525,11 @@ impl Token {
 
                     dens.push((den, p));
                 }
+            } else if !den.is_one() {
+                dens.push((den, 1));
             }
 
-            // in the fast format [n,d1,p1,d2,p2,...], the gcd of a and b should always be 1
+            // in the fast format [n,d1,p1,d2,p2,...] every denominator is irreducible and unique
             return Ok(FactorizedRationalPolynomial::from_num_den(
                 num, dens, out_field, false,
             ));

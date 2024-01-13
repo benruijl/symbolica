@@ -704,7 +704,9 @@ impl<'a, 'b, R: Ring, E: Exponent> FactorizedRationalPolynomialPrinter<'a, 'b, R
 impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'a, 'b, R, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.opts.explicit_rational_polynomial {
-            if self.poly.denominators.len() == 1 && self.poly.denominators[0].0.is_one() {
+            if self.poly.denominators.is_empty()
+                && self.poly.numerator.field.is_one(&self.poly.denom_coeff)
+            {
                 if self.poly.numerator.is_zero() {
                     f.write_char('0')?;
                 } else {
@@ -727,6 +729,18 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                     },
                 ))?;
 
+                if !self.poly.numerator.field.is_one(&self.poly.denom_coeff) {
+                    f.write_fmt(format_args!(
+                        ",{},1",
+                        RingPrinter {
+                            ring: &self.poly.numerator.field,
+                            element: &self.poly.denom_coeff,
+                            state: Some(self.state),
+                            in_product: false
+                        },
+                    ))?;
+                }
+
                 for (d, p) in &self.poly.denominators {
                     f.write_fmt(format_args!(
                         ",{}",
@@ -745,7 +759,9 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
             return Ok(());
         }
 
-        if self.poly.denominators.len() == 1 && self.poly.denominators[0].0.is_one() {
+        if self.poly.denominators.is_empty()
+            && self.poly.numerator.field.is_one(&self.poly.denom_coeff)
+        {
             if !self.add_parentheses || self.poly.numerator.nterms < 2 {
                 f.write_fmt(format_args!(
                     "{}",
@@ -775,6 +791,18 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                         opts: self.opts,
                     },
                 ))?;
+
+                if !self.poly.numerator.field.is_one(&self.poly.denom_coeff) {
+                    f.write_fmt(format_args!(
+                        "{}",
+                        RingPrinter {
+                            ring: &self.poly.numerator.field,
+                            element: &self.poly.denom_coeff,
+                            state: Some(self.state),
+                            in_product: false
+                        }
+                    ))?;
+                }
 
                 for (d, p) in &self.poly.denominators {
                     if *p == 1 {
@@ -824,7 +852,20 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
 
             f.write_char('/')?;
 
-            if self.poly.denominators.len() == 1
+            if self.poly.denominators.is_empty() {
+                return f.write_fmt(format_args!(
+                    "{}",
+                    RingPrinter {
+                        ring: &self.poly.numerator.field,
+                        element: &self.poly.denom_coeff,
+                        state: Some(self.state),
+                        in_product: true
+                    }
+                ));
+            }
+
+            if self.poly.numerator.field.is_one(&self.poly.denom_coeff)
+                && self.poly.denominators.len() == 1
                 && self.poly.denominators[0].0.nterms == 1
                 && self.poly.denominators[0].1 == 1
             {
@@ -844,6 +885,19 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
             }
 
             f.write_char('(')?; // TODO: add special cases for 1 argument
+
+            if !self.poly.numerator.field.is_one(&self.poly.denom_coeff) {
+                f.write_fmt(format_args!(
+                    "{}",
+                    RingPrinter {
+                        ring: &self.poly.numerator.field,
+                        element: &self.poly.denom_coeff,
+                        state: Some(self.state),
+                        in_product: true
+                    }
+                ))?;
+            }
+
             for (d, p) in &self.poly.denominators {
                 if *p == 1 {
                     f.write_fmt(format_args!(

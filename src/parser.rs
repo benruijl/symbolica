@@ -1,4 +1,4 @@
-use std::{fmt::Write, string::String};
+use std::{fmt::Write, string::String, sync::Arc};
 
 use bytes::Buf;
 use rug::{Complete, Integer};
@@ -743,12 +743,13 @@ impl Token {
     /// where the coefficient comes first.
     pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
         mut input: &'a [u8],
-        var_map: &[Variable],
+        var_map: &Arc<Vec<Variable>>,
         var_name_map: &[SmartString<LazyCompact>],
         field: &R,
     ) -> (&'a [u8], MultivariatePolynomial<R, E>) {
         let mut exponents = vec![E::zero(); var_name_map.len()];
-        let mut poly = MultivariatePolynomial::new(var_name_map.len(), field, None, Some(var_map));
+        let mut poly =
+            MultivariatePolynomial::new(var_name_map.len(), field, None, Some(var_map.clone()));
 
         let mut last_pos = input;
         let mut c = input.get_u8();

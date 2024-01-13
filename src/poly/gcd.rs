@@ -178,7 +178,7 @@ where
     FiniteField<UField>: FiniteFieldCore<UField>,
     <FiniteField<UField> as Ring>::Element: Copy,
 {
-    let mut eval = vec![poly.field.one(); poly.nterms];
+    let mut eval = vec![poly.field.one(); poly.nterms()];
     for (c, t) in eval.iter_mut().zip(poly) {
         // evaluate each exponent
         for &(n, v) in r {
@@ -218,7 +218,6 @@ fn evaluate_using_exponents<UField: FiniteFieldWorkspace, E: Exponent>(
             if !FiniteField::is_zero(&c) {
                 out.coefficients.push(c);
                 out.exponents.extend_from_slice(&new_exp);
-                out.nterms += 1;
 
                 c = poly.field.zero();
             }
@@ -232,7 +231,6 @@ fn evaluate_using_exponents<UField: FiniteFieldWorkspace, E: Exponent>(
     if !FiniteField::is_zero(&c) {
         out.coefficients.push(c);
         out.exponents.extend_from_slice(&new_exp);
-        out.nterms += 1;
     }
 }
 
@@ -251,7 +249,7 @@ where
 
     // solve the transposed Vandermonde system
     for (((c, ex), sample), rhs) in shape.iter().zip(&row_sample_values).zip(&samples) {
-        if c.nterms == 1 {
+        if c.nterms() == 1 {
             let coeff = a.field.div(&rhs[0], &sample[0]);
             let mut ee: SmallVec<[E; INLINED_EXPONENTS]> = c.exponents(0).into();
             ee[main_var] = *ex;
@@ -263,7 +261,7 @@ where
         let mut master = vec![a.field.zero(); sample.len() + 1];
         master[0] = a.field.one();
 
-        for (i, x) in sample.iter().take(c.nterms).enumerate() {
+        for (i, x) in sample.iter().take(c.nterms()).enumerate() {
             let first = &mut master[0];
             let mut old_last = *first;
             a.field.mul_assign(first, &a.field.neg(x));
@@ -276,7 +274,7 @@ where
             master[i + 1] = a.field.one();
         }
 
-        for (i, s) in sample.iter().take(c.nterms).enumerate() {
+        for (i, s) in sample.iter().take(c.nterms()).enumerate() {
             let mut norm = a.field.one();
 
             // sample master/(1-s_i) by using the factorized form
@@ -407,8 +405,8 @@ where
         let mut row_sample_values = Vec::with_capacity(shape.len()); // coefficients for the linear system
         let mut samples_needed = 0;
         for (c, _) in shape.iter() {
-            samples_needed = samples_needed.max(c.nterms);
-            let mut row = Vec::with_capacity(c.nterms);
+            samples_needed = samples_needed.max(c.nterms());
+            let mut row = Vec::with_capacity(c.nterms());
             let mut seen = HashSet::new();
 
             for t in c {
@@ -557,12 +555,12 @@ where
             // construct the right-hand side
             'rhs: for (i, (rhs, (shape_part, exp))) in samples.iter_mut().zip(shape).enumerate() {
                 // we may not need all terms
-                if rhs.len() == shape_part.nterms {
+                if rhs.len() == shape_part.nterms() {
                     continue;
                 }
 
                 // find the associated term in the sample, trying the usual place first
-                if i < g.nterms && g.exponents(i)[main_var] == *exp {
+                if i < g.nterms() && g.exponents(i)[main_var] == *exp {
                     rhs.push(a.field.neg(&a.field.mul(&g.coefficients[i], &scale_factor)));
                 } else {
                     // find the matching term if it exists
@@ -628,11 +626,11 @@ where
 
     // sort the shape based on the number of terms in the coefficient
     let mut shape_map: Vec<_> = (0..shape.len()).collect();
-    shape_map.sort_unstable_by_key(|i| shape[*i].0.nterms);
+    shape_map.sort_unstable_by_key(|i| shape[*i].0.nterms());
 
     let mut scaling_var_relations: Vec<Vec<<FiniteField<UField> as Ring>::Element>> = vec![];
 
-    let max_terms = shape[*shape_map.last().unwrap()].0.nterms;
+    let max_terms = shape[*shape_map.last().unwrap()].0.nterms();
 
     // find a set of sample points that yield unique coefficients for every coefficient of a term in the shape
     let (row_sample_values, samples) = 'find_root_sample: loop {
@@ -662,7 +660,7 @@ where
 
         let max_samples_needed = 2 * max_terms - 1;
         for (c, _) in shape.iter() {
-            let mut row = Vec::with_capacity(c.nterms);
+            let mut row = Vec::with_capacity(c.nterms());
             let mut seen = HashSet::new();
 
             for t in c {
@@ -812,12 +810,12 @@ where
             // construct the right-hand side
             'rhs: for (i, (rhs, (shape_part, exp))) in samples.iter_mut().zip(shape).enumerate() {
                 // we may not need all terms
-                if solved_coeff.is_some() && rhs.len() == shape_part.nterms {
+                if solved_coeff.is_some() && rhs.len() == shape_part.nterms() {
                     continue;
                 }
 
                 // find the associated term in the sample, trying the usual place first
-                if i < g.nterms && g.exponents(i)[main_var] == *exp {
+                if i < g.nterms() && g.exponents(i)[main_var] == *exp {
                     rhs.push(g.coefficients[i]);
                 } else {
                     // find the matching term if it exists
@@ -835,8 +833,8 @@ where
             // see if we have collected enough samples to solve for the scaling factor
             while solved_coeff.is_none() {
                 // try to solve the system!
-                let vars_scale = shape[shape_map[0]].0.nterms - 1;
-                let vars_second = shape[shape_map[second_index]].0.nterms;
+                let vars_scale = shape[shape_map[0]].0.nterms() - 1;
+                let vars_second = shape[shape_map[second_index]].0.nterms();
                 let samples_needed = vars_scale + vars_second;
                 let rows = samples_needed + scaling_var_relations.len();
 
@@ -973,7 +971,7 @@ where
             }
 
             for ((c, _), rhs) in shape.iter().zip(&mut samples) {
-                rhs.truncate(c.nterms); // drop unneeded samples
+                rhs.truncate(c.nterms()); // drop unneeded samples
                 for (r, scale) in rhs.iter_mut().zip(&lcoeff_cache) {
                     a.field.mul_assign(r, scale);
                 }
@@ -1221,7 +1219,7 @@ where
             debug!("Content in last variable is not 1, but {}", c);
             // TODO: we assume that a content of -1 is also allowed
             // like in the special case gcd_(-x0*x1,-x0-x0*x1)
-            if c.nterms != 1 || c.coefficients[0] != a.field.neg(&a.field.one()) {
+            if c.nterms() != 1 || c.coefficients[0] != a.field.neg(&a.field.one()) {
                 return None;
             }
         }
@@ -1299,10 +1297,10 @@ where
             let mut single_scale = None;
             let mut nx = 0; // count the minimal number of samples needed
             for (i, (c, _e)) in gfu.iter().enumerate() {
-                if c.nterms > nx {
-                    nx = c.nterms;
+                if c.nterms() > nx {
+                    nx = c.nterms();
                 }
-                if c.nterms == 1 {
+                if c.nterms() == 1 {
                     single_scale = Some(i);
                 }
             }
@@ -1539,7 +1537,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             return MultivariatePolynomial::gcd(&f[0], &f[1]);
         }
 
-        f.sort_unstable_by_key(|p| p.nterms);
+        f.sort_unstable_by_key(|p| p.nterms());
 
         let mut gcd = f.pop().unwrap();
         for p in f {
@@ -1826,7 +1824,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         }
 
         // try if b divides a or vice versa, doing a heuristical length check first
-        if a.nterms >= b.nterms && a.divides(&b).is_some() {
+        if a.nterms() >= b.nterms() && a.divides(&b).is_some() {
             return rescale_gcd(
                 b.into_owned(),
                 &shared_degree,
@@ -1834,7 +1832,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 &MultivariatePolynomial::one(&a.field),
             );
         }
-        if a.nterms <= b.nterms && b.divides(&a).is_some() {
+        if a.nterms() <= b.nterms() && b.divides(&a).is_some() {
             return rescale_gcd(
                 a.into_owned(),
                 &shared_degree,
@@ -1988,7 +1986,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let xi_half = xi / &Integer::Natural(2);
             while !gamma.is_zero() {
                 // create xi-adic representation using the symmetric modulus
-                let mut g_i = MultivariatePolynomial::new_from(&gamma, Some(gamma.nterms));
+                let mut g_i = MultivariatePolynomial::new_from(&gamma, Some(gamma.nterms()));
                 for m in &gamma {
                     let mut c = IntegerRing::new().quot_rem(m.coefficient, xi).1;
 
@@ -2179,14 +2177,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let index_smallest = f
                 .iter()
                 .enumerate()
-                .min_by_key(|(_, v)| v.nterms)
+                .min_by_key(|(_, v)| v.nterms())
                 .unwrap()
                 .0;
 
             let a = f.swap_remove(index_smallest);
 
             // add all other polynomials
-            let term_bound = f.iter().map(|x| x.nterms).sum();
+            let term_bound = f.iter().map(|x| x.nterms()).sum();
             let mut b = a.new_from(Some(term_bound));
 
             // prevent sampling f[i] and f[i+prime_len] with the same
@@ -2331,10 +2329,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let mut single_scale = None;
             let mut nx = 0; // count the minimal number of samples needed
             for (i, (c, _e)) in gfu.iter().enumerate() {
-                if c.nterms > nx {
-                    nx = c.nterms;
+                if c.nterms() > nx {
+                    nx = c.nterms();
                 }
-                if c.nterms == 1 {
+                if c.nterms() == 1 {
                     single_scale = Some(i);
                 }
             }
@@ -2356,8 +2354,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let lcoeff_factor = gp.field.div(&gammap, &gpc);
 
             // construct the gcd suggestion in Z
-            let mut gm = a.new_from(Some(gp.nterms));
-            gm.nterms = gp.nterms;
+            let mut gm = a.new_from(Some(gp.nterms()));
             gm.exponents = gp.exponents.clone();
             gm.coefficients = gp
                 .coefficients
@@ -2482,7 +2479,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 // use chinese remainder theorem to merge coefficients and map back to Z
                 // terms could be missing in gp, but not in gm (TODO: check this?)
                 let mut gpi = 0;
-                for t in 0..gm.nterms {
+                for t in 0..gm.nterms() {
                     let gpc = if gm.exponents(t) == gp.exponents(gpi) {
                         gpi += 1;
                         gp.coefficients[gpi - 1]
@@ -2623,8 +2620,8 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         loop {
             let ap = a.to_finite_field(&FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
             let bp = b.to_finite_field(&FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
-            if ap.nterms > 0
-                && bp.nterms > 0
+            if ap.nterms() > 0
+                && bp.nterms() > 0
                 && ap.last_exponents() == a.last_exponents()
                 && bp.last_exponents() == b.last_exponents()
             {
@@ -2682,8 +2679,8 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         let mut a_int = MultivariatePolynomial::new(
             a.nvars,
             &IntegerRing::new(),
-            Some(a.nterms),
-            a.var_map.as_ref().map(|x| x.as_slice()),
+            Some(a.nterms()),
+            a.var_map.clone(),
         );
 
         for t in a {
@@ -2695,8 +2692,8 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         let mut b_int = MultivariatePolynomial::new(
             b.nvars,
             &IntegerRing::new(),
-            Some(b.nterms),
-            b.var_map.as_ref().map(|x| x.as_slice()),
+            Some(b.nterms()),
+            b.var_map.clone(),
         );
 
         for t in b {
@@ -2708,7 +2705,7 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         let res_int =
             MultivariatePolynomial::gcd_zippel::<u32>(&a_int, &b_int, vars, bounds, tight_bounds);
 
-        let mut res = a.new_from(Some(res_int.nterms));
+        let mut res = a.new_from(Some(res_int.nterms()));
 
         for t in &res_int {
             res.append_monomial(
@@ -2732,8 +2729,8 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
             let f = FiniteField::<u32>::new(LARGE_U32_PRIMES[i]);
             let ap = a.to_finite_field(&f);
             let bp = b.to_finite_field(&f);
-            if ap.nterms > 0
-                && bp.nterms > 0
+            if ap.nterms() > 0
+                && bp.nterms() > 0
                 && ap.last_exponents() == a.last_exponents()
                 && bp.last_exponents() == b.last_exponents()
             {

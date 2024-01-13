@@ -4,6 +4,7 @@ use std::{
     fmt::{Display, Error, Formatter, Write},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
+    sync::Arc,
 };
 
 use ahash::HashMap;
@@ -76,9 +77,9 @@ impl<R: Ring, E: Exponent> PartialOrd for RationalPolynomial<R, E> {
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
-    pub fn new(field: &R, var_map: Option<&[Variable]>) -> RationalPolynomial<R, E> {
+    pub fn new(field: &R, var_map: Option<Arc<Vec<Variable>>>) -> RationalPolynomial<R, E> {
         let num = MultivariatePolynomial::new(
-            var_map.map(|x| x.len()).unwrap_or(0),
+            var_map.as_ref().map(|x| x.len()).unwrap_or(0),
             field,
             None,
             var_map,
@@ -91,8 +92,8 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         }
     }
 
-    pub fn get_var_map(&self) -> Option<&[Variable]> {
-        self.numerator.var_map.as_ref().map(|x| x.as_slice())
+    pub fn get_var_map(&self) -> Option<&Arc<Vec<Variable>>> {
+        self.numerator.var_map.as_ref()
     }
 
     pub fn unify_var_map(&mut self, other: &mut Self) {
@@ -139,22 +140,16 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
     ) -> RationalPolynomial<IntegerRing, E> {
         let content = num.field.gcd(&num.content(), &den.content());
 
-        let mut num_int = MultivariatePolynomial::new(
-            num.nvars,
-            &IntegerRing::new(),
-            None,
-            num.var_map.as_ref().map(|x| x.as_slice()),
-        );
-        num_int.nterms = num.nterms;
+        let mut num_int =
+            MultivariatePolynomial::new(num.nvars, &IntegerRing::new(), None, num.var_map);
         num_int.exponents = num.exponents;
 
         let mut den_int = MultivariatePolynomial::new(
             den.nvars,
             &IntegerRing::new(),
-            Some(den.nterms),
-            den.var_map.as_ref().map(|x| x.as_slice()),
+            Some(den.nterms()),
+            den.var_map,
         );
-        den_int.nterms = den.nterms;
         den_int.exponents = den.exponents;
 
         if num.field.is_one(&content) {
@@ -367,7 +362,8 @@ where
                 r.numerator
                     .append_monomial(e.coefficient.clone(), &e_list_coeff);
             } else {
-                let mut r = RationalPolynomial::new(&self.numerator.field.clone(), Some(var_map));
+                let mut r =
+                    RationalPolynomial::new(&self.numerator.field.clone(), Some(var_map.clone()));
                 r.numerator
                     .append_monomial(e.coefficient.clone(), &e_list_coeff);
                 hm.insert(e_list.clone(), r);
@@ -378,7 +374,7 @@ where
             variables.len(),
             &RationalPolynomialField::new(self.numerator.field.clone()),
             Some(hm.len()),
-            Some(variables),
+            Some(Arc::new(variables.to_vec())),
         );
 
         if !ignore_denominator {
@@ -618,8 +614,8 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
         let mut num = num1 + num2;
 
         // prefer small * large over medium * medium sized polynomials
-        let mut den = if self.denominator.nterms > other.denominator.nterms
-            && self.denominator.nterms > a_denom_red.nterms
+        let mut den = if self.denominator.nterms() > other.denominator.nterms()
+            && self.denominator.nterms() > a_denom_red.nterms()
         {
             b_denom_red.as_ref() * &self.denominator
         } else {

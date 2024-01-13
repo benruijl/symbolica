@@ -1,6 +1,7 @@
 use std::ffi::{c_char, CStr};
 use std::fmt::Write;
 use std::os::raw::c_ulonglong;
+use std::sync::Arc;
 
 use smartstring::{LazyCompact, SmartString};
 
@@ -20,7 +21,7 @@ use crate::{
 
 struct LocalState {
     buffer: String,
-    var_map: Vec<Variable>,
+    var_map: Arc<Vec<Variable>>,
     var_name_map: Vec<SmartString<LazyCompact>>,
     input_has_rational_numbers: bool,
     exp_fits_in_u8: bool,
@@ -86,7 +87,7 @@ unsafe extern "C" fn init() -> *mut Symbolica {
         workspace: Workspace::new(),
         local_state: LocalState {
             buffer: String::with_capacity(2048),
-            var_map: vec![],
+            var_map: Arc::new(vec![]),
             var_name_map: vec![],
             input_has_rational_numbers: false,
             exp_fits_in_u8: true,
@@ -115,15 +116,17 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
 
     let symbolica = unsafe { &mut *symbolica };
 
-    symbolica.local_state.var_map.clear();
+    symbolica.local_state.var_name_map.clear();
+
+    let mut var_map = vec![];
 
     for var in cstr.split(',') {
-        symbolica
-            .local_state
-            .var_map
+        var_map
             .push(Variable::Identifier(symbolica.state.get_or_insert_var(var)));
         symbolica.local_state.var_name_map.push(var.into());
     }
+
+    symbolica.local_state.var_map = Arc::new(var_map);
 }
 
 /// Simplify a rational polynomial. The return value is only valid until the next call to

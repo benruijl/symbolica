@@ -2237,7 +2237,7 @@ impl PythonExpression {
     /// vars : List[Expression]
     ///         A list of variables
     pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonExpression> {
-        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_map = vec![];
         for v in vars {
             match v.expr.as_view() {
                 AtomView::Var(v) => var_map.push(v.get_name().into()),
@@ -2253,9 +2253,12 @@ impl PythonExpression {
         let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut b = Atom::new();
-            self.expr
-                .as_view()
-                .set_coefficient_ring(&var_map, state.borrow(), workspace, &mut b);
+            self.expr.as_view().set_coefficient_ring(
+                &Arc::new(var_map),
+                state.borrow(),
+                workspace,
+                &mut b,
+            );
             b
         });
 
@@ -2511,8 +2514,7 @@ impl PythonExpression {
 
     /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
     pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {
-        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
-
+        let mut var_map = vec![];
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
@@ -2527,16 +2529,15 @@ impl PythonExpression {
             }
         }
 
+        let var_map = if var_map.is_empty() {
+            None
+        } else {
+            Some(Arc::new(var_map))
+        };
+
         self.expr
             .as_view()
-            .to_polynomial(
-                &RationalField::new(),
-                if var_map.is_empty() {
-                    None
-                } else {
-                    Some(var_map.as_slice())
-                },
-            )
+            .to_polynomial(&RationalField::new(), var_map.as_ref())
             .map(|x| PythonPolynomial { poly: Arc::new(x) })
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!(
@@ -2591,8 +2592,7 @@ impl PythonExpression {
         &self,
         vars: Option<Vec<PythonExpression>>,
     ) -> PyResult<PythonRationalPolynomial> {
-        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
-
+        let mut var_map = vec![];
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
@@ -2607,6 +2607,12 @@ impl PythonExpression {
             }
         }
 
+        let var_map = if var_map.is_empty() {
+            None
+        } else {
+            Some(Arc::new(var_map))
+        };
+
         WORKSPACE.with(|workspace| {
             self.expr
                 .as_view()
@@ -2615,11 +2621,7 @@ impl PythonExpression {
                     &&get_state!()?,
                     &RationalField::new(),
                     &IntegerRing::new(),
-                    if var_map.is_empty() {
-                        None
-                    } else {
-                        Some(var_map.as_slice())
-                    },
+                    var_map.as_ref(),
                 )
                 .map(|x| PythonRationalPolynomial { poly: Arc::new(x) })
                 .map_err(|e| {
@@ -2636,8 +2638,7 @@ impl PythonExpression {
         &self,
         vars: Option<Vec<PythonExpression>>,
     ) -> PyResult<PythonRationalPolynomialSmallExponent> {
-        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
-
+        let mut var_map = vec![];
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
@@ -2652,6 +2653,12 @@ impl PythonExpression {
             }
         }
 
+        let var_map = if var_map.is_empty() {
+            None
+        } else {
+            Some(Arc::new(var_map))
+        };
+
         WORKSPACE.with(|workspace| {
             self.expr
                 .as_view()
@@ -2660,11 +2667,7 @@ impl PythonExpression {
                     &&get_state!()?,
                     &RationalField::new(),
                     &IntegerRing::new(),
-                    if var_map.is_empty() {
-                        None
-                    } else {
-                        Some(var_map.as_slice())
-                    },
+                    var_map.as_ref(),
                 )
                 .map(|x| PythonRationalPolynomialSmallExponent { poly: Arc::new(x) })
                 .map_err(|e| {
@@ -3237,7 +3240,7 @@ impl PythonPolynomial {
     ///     If the input is not a valid Symbolica polynomial.
     #[classmethod]
     pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
-        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
+        let mut var_map = vec![];
         let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
             SmallVec::new();
 
@@ -3252,7 +3255,7 @@ impl PythonPolynomial {
 
         let e = Token::parse(arg)
             .map_err(exceptions::PyValueError::new_err)?
-            .to_polynomial(&RationalField::new(), &var_map, &var_name_map)
+            .to_polynomial(&RationalField::new(), &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
         Ok(Self { poly: Arc::new(e) })
@@ -3263,8 +3266,8 @@ impl PythonPolynomial {
         let mut poly_int = MultivariatePolynomial::new(
             self.poly.nvars,
             &IntegerRing::new(),
-            Some(self.poly.nterms),
-            self.poly.var_map.as_ref().map(|x| x.as_slice()),
+            Some(self.poly.nterms()),
+            self.poly.var_map.clone(),
         );
 
         let mut new_exponent = SmallVec::<[u8; 5]>::new();
@@ -3390,9 +3393,8 @@ impl PythonIntegerPolynomial {
     ///     If the input is not a valid Symbolica polynomial.
     #[classmethod]
     pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
-        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
-        let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
-            SmallVec::new();
+        let mut var_map = vec![];
+        let mut var_name_map = vec![];
 
         {
             let mut state = get_state_mut!()?;
@@ -3405,7 +3407,7 @@ impl PythonIntegerPolynomial {
 
         let e = Token::parse(arg)
             .map_err(exceptions::PyValueError::new_err)?
-            .to_polynomial(&IntegerRing::new(), &var_map, &var_name_map)
+            .to_polynomial(&IntegerRing::new(), &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
         Ok(Self { poly: Arc::new(e) })
@@ -3464,7 +3466,7 @@ macro_rules! generate_methods {
                         "Variable map missing",
                     )))?;
 
-                for x in vars {
+                for x in vars.as_ref() {
                     match x {
                         Variable::Identifier(x) => {
                             var_list.push(PythonExpression {
@@ -3613,8 +3615,8 @@ macro_rules! generate_methods {
                 self.poly
                     .factor()
                     .into_iter()
-                            .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
-                            .collect()
+                    .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
+                    .collect()
             }
         }
     };
@@ -3695,9 +3697,8 @@ macro_rules! generate_rat_parse {
             ///     If the input is not a valid Symbolica rational polynomial.
             #[classmethod]
             pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
-                let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
-                let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
-                    SmallVec::new();
+                let mut var_map = vec![];
+                let mut var_name_map = vec![];
 
                 let mut state = get_state_mut!()?;
                 for v in vars {
@@ -3714,7 +3715,7 @@ macro_rules! generate_rat_parse {
                             &mut state,
                             &RationalField::new(),
                             &IntegerRing::new(),
-                            &var_map,
+                            &Arc::new(var_map),
                             &var_name_map,
                         )
                         .map_err(exceptions::PyValueError::new_err)
@@ -3754,9 +3755,8 @@ impl PythonFiniteFieldRationalPolynomial {
     ///     If the input is not a valid Symbolica rational polynomial.
     #[classmethod]
     pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>, prime: u32) -> PyResult<Self> {
-        let mut var_map: SmallVec<[Variable; INLINED_EXPONENTS]> = SmallVec::new();
-        let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
-            SmallVec::new();
+        let mut var_map = vec![];
+        let mut var_name_map = vec![];
 
         let mut state = get_state_mut!()?;
         for v in vars {
@@ -3774,7 +3774,7 @@ impl PythonFiniteFieldRationalPolynomial {
                     &mut state,
                     &field,
                     &field,
-                    &var_map,
+                    &Arc::new(var_map),
                     &var_name_map,
                 )
                 .map_err(exceptions::PyValueError::new_err)
@@ -3804,7 +3804,7 @@ macro_rules! generate_rat_methods {
                     exceptions::PyValueError::new_err(format!("Variable map missing",)),
                 )?;
 
-                for x in vars {
+                for x in vars.as_ref() {
                     match x {
                         Variable::Identifier(x) => {
                             var_list.push(PythonExpression {

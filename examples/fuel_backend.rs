@@ -1,4 +1,7 @@
-use std::io::{self, BufRead, Write};
+use std::{
+    io::{self, BufRead, Write},
+    sync::Arc,
+};
 
 use smartstring::{LazyCompact, SmartString};
 use symbolica::{
@@ -37,10 +40,12 @@ fn main() {
 
     let mut state = State::new();
     let workspace = Workspace::default();
-    let vars: Vec<_> = var_names
-        .iter()
-        .map(|v| state.get_or_insert_var(v).into())
-        .collect();
+    let vars: Arc<Vec<_>> = Arc::new(
+        var_names
+            .iter()
+            .map(|v| state.get_or_insert_var(v).into())
+            .collect(),
+    );
 
     let print_opt = PrintOptions {
         terms_on_new_line: false,

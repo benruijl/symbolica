@@ -238,7 +238,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
                     if let Some((index, g)) = basis
                         .iter()
                         .filter(|g| monom.iter().zip(g.1.max_exp()).all(|(pe, ge)| *pe >= *ge))
-                        .min_by_key(|g| g.1.nterms)
+                        .min_by_key(|g| g.1.nterms())
                     {
                         for ((e, pe), ge) in exp.iter_mut().zip(monom).zip(g.max_exp()) {
                             *e = *pe - *ge;
@@ -279,7 +279,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
                     "\tMatrix shape={}x{}, density={:.2}%",
                     selected_polys.len(),
                     sorted_monomial_indices.len(),
-                    selected_polys.iter().map(|i| i.nterms).sum::<usize>() as f64
+                    selected_polys.iter().map(|i| i.nterms()).sum::<usize>() as f64
                         / (sorted_monomial_indices.len() as f64 * selected_polys.len() as f64)
                         * 100.
                 );
@@ -435,7 +435,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         p: &MultivariatePolynomial<R, E, O>,
         gs: &[MultivariatePolynomial<R, E, O>],
     ) -> MultivariatePolynomial<R, E, O> {
-        let mut q = MultivariatePolynomial::new_from(p, Some(p.nterms));
+        let mut q = MultivariatePolynomial::new_from(p, Some(p.nterms()));
         let mut r = p.clone();
 
         let mut rest_coeff = vec![];
@@ -453,7 +453,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                         .zip(g.max_exp())
                         .all(|(h1, h2)| *h1 >= *h2)
                 })
-                .min_by_key(|g| g.nterms)
+                .min_by_key(|g| g.nterms())
             {
                 for ((e, e1), e2) in monom.iter_mut().zip(r.max_exp()).zip(g.max_exp()) {
                     *e = *e1 - *e2;
@@ -468,9 +468,8 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
             }
 
             // strip leading monomial that is not reducible
-            rest_exponents.extend_from_slice(r.exponents(r.nterms - 1));
+            rest_exponents.extend_from_slice(r.exponents(r.nterms() - 1));
             rest_coeff.push(r.coefficients.pop().unwrap());
-            r.nterms -= 1;
         }
 
         // append in sorted order

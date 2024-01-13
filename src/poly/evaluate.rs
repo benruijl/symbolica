@@ -317,7 +317,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
     /// Write the polynomial in a Horner scheme with the variable ordering
     /// defined in `order`.
     pub fn to_horner_scheme(&self, order: &[usize]) -> HornerScheme<RationalField> {
-        let mut indices: Vec<_> = (0..self.nterms).collect();
+        let mut indices: Vec<_> = (0..self.nterms()).collect();
         let mut power_sub = vec![E::zero(); self.nvars];
         let mut horner_boxes = vec![];
 
@@ -572,7 +572,7 @@ impl HornerScheme<RationalField> {
         let mut best_score = 0;
         for x in polys {
             indices.clear();
-            indices.extend(0..x.nterms);
+            indices.extend(0..x.nterms());
 
             let h = x.to_horner_scheme_impl(
                 &scheme,
@@ -602,7 +602,7 @@ impl HornerScheme<RationalField> {
             let mut hash_set = HashSet::with_capacity(best_score * 2);
             for x in polys {
                 indices.clear();
-                indices.extend(0..x.nterms);
+                indices.extend(0..x.nterms());
 
                 let h = x.to_horner_scheme_impl(
                     &scheme,

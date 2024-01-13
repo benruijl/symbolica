@@ -4,6 +4,7 @@ use std::{
     fmt::{Display, Error, Formatter, Write},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
+    sync::Arc,
 };
 
 use crate::{
@@ -63,9 +64,12 @@ impl<R: Ring, E: Exponent> PartialOrd for FactorizedRationalPolynomial<R, E> {
 }
 
 impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
-    pub fn new(field: &R, var_map: Option<&[Variable]>) -> FactorizedRationalPolynomial<R, E> {
+    pub fn new(
+        field: &R,
+        var_map: Option<Arc<Vec<Variable>>>,
+    ) -> FactorizedRationalPolynomial<R, E> {
         let num = MultivariatePolynomial::new(
-            var_map.map(|x| x.len()).unwrap_or(0),
+            var_map.as_ref().map(|x| x.len()).unwrap_or(0),
             field,
             None,
             var_map,

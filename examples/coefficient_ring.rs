@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use symbolica::{
     representations::Atom,
     state::{ResettableBuffer, State, Workspace},
@@ -12,10 +14,10 @@ fn main() {
 
     let mut expr_yz = Atom::new();
     expr.as_view().set_coefficient_ring(
-        &[
+        &Arc::new(vec![
             state.get_or_insert_var("y").into(),
             state.get_or_insert_var("z").into(),
-        ],
+        ]),
         &state,
         &workspace,
         &mut expr_yz,
@@ -25,7 +27,7 @@ fn main() {
     // the coefficient must downgrade from y,z to y
     let mut expr_y = Atom::new();
     expr_yz.as_view().set_coefficient_ring(
-        &[state.get_or_insert_var("y").into()],
+        &Arc::new(vec![state.get_or_insert_var("y").into()]),
         &state,
         &workspace,
         &mut expr_y,

@@ -762,7 +762,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
         if self.poly.denominators.is_empty()
             && self.poly.numerator.field.is_one(&self.poly.denom_coeff)
         {
-            if !self.add_parentheses || self.poly.numerator.nterms < 2 {
+            if !self.add_parentheses || self.poly.numerator.nterms() < 2 {
                 f.write_fmt(format_args!(
                     "{}",
                     PolynomialPrinter {
@@ -830,7 +830,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                 return f.write_str("}}");
             }
 
-            if self.poly.numerator.nterms < 2 {
+            if self.poly.numerator.nterms() < 2 {
                 f.write_fmt(format_args!(
                     "{}",
                     PolynomialPrinter {
@@ -866,7 +866,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
 
             if self.poly.numerator.field.is_one(&self.poly.denom_coeff)
                 && self.poly.denominators.len() == 1
-                && self.poly.denominators[0].0.nterms == 1
+                && self.poly.denominators[0].0.nterms() == 1
                 && self.poly.denominators[0].1 == 1
             {
                 let (d, _) = &self.poly.denominators[0];
@@ -996,7 +996,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
         }
 
         if self.poly.denominator.is_one() {
-            if !self.add_parentheses || self.poly.numerator.nterms < 2 {
+            if !self.add_parentheses || self.poly.numerator.nterms() < 2 {
                 f.write_fmt(format_args!(
                     "{}",
                     PolynomialPrinter {
@@ -1032,7 +1032,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                 ));
             }
 
-            if self.poly.numerator.nterms < 2 {
+            if self.poly.numerator.nterms() < 2 {
                 f.write_fmt(format_args!(
                     "{}",
                     PolynomialPrinter {
@@ -1052,7 +1052,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                 ))?;
             }
 
-            if self.poly.denominator.nterms == 1 {
+            if self.poly.denominator.nterms() == 1 {
                 let var_count = self
                     .poly
                     .denominator

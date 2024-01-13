@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use symbolica::{
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Variable},
     representations::Atom,
@@ -31,10 +33,10 @@ fn factor_ff_univariate() {
 fn factor_ff_bivariate() {
     let mut state = State::new();
     let workspace: Workspace = Workspace::new();
-    let order = vec![
+    let order = Arc::new(vec![
         Variable::Identifier(state.get_or_insert_var("x")),
         Variable::Identifier(state.get_or_insert_var("y")),
-    ];
+    ]);
 
     let input = "((y+1)*x^2+x*y+1)*((y^2+2)*x^2+y+1)";
 
@@ -151,10 +153,10 @@ fn factor_univariate_2() {
 fn factor_bivariate() {
     let mut state = State::new();
     let workspace: Workspace = Workspace::new();
-    let order = vec![
+    let order = Arc::new(vec![
         Variable::Identifier(state.get_or_insert_var("x")),
         Variable::Identifier(state.get_or_insert_var("y")),
-    ];
+    ]);
 
     let input = "(x^2+y+x+1)(3*x+y^2+4)*(6*x*(y+1)+y+5)*(7*x*y+4)";
 
@@ -177,12 +179,12 @@ fn factor_bivariate() {
 fn factor_multivariate() {
     let mut state = State::new();
     let workspace: Workspace = Workspace::new();
-    let order = vec![
+    let order = Arc::new(vec![
         Variable::Identifier(state.get_or_insert_var("x")),
         Variable::Identifier(state.get_or_insert_var("y")),
         Variable::Identifier(state.get_or_insert_var("z")),
         Variable::Identifier(state.get_or_insert_var("w")),
-    ];
+    ]);
 
     let input = "(x*(2+2*y+2*z)+1)*(x*(4+z^2)+y+3)*(x*(w+w^2+4+y)+w+5)";
 

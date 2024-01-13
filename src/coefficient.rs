@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ahash::HashMap;
 use smallvec::{smallvec, SmallVec};
 
@@ -17,7 +19,7 @@ use crate::{
 impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn set_coefficient_ring(
         &self,
-        vars: &[Variable],
+        vars: &Arc<Vec<Variable>>,
         state: &State,
         workspace: &Workspace<P>,
         out: &mut Atom<P>,
@@ -37,8 +39,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                             r.numerator = r.numerator.rearrange_with_growth(&order);
                             r.denominator = r.denominator.rearrange_with_growth(&order);
-                            r.numerator.var_map = Some(vars.into());
-                            r.denominator.var_map = Some(vars.into());
+                            r.numerator.var_map = Some(vars.clone());
+                            r.denominator.var_map = r.numerator.var_map.clone();
                             out.to_num().set_from_number(Number::RationalPolynomial(r));
                             true
                         } else {
@@ -94,7 +96,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         vars.len(),
                         &IntegerRing::new(),
                         None,
-                        Some(vars),
+                        Some(vars.clone()),
                     );
                     let mut e: SmallVec<[u16; INLINED_EXPONENTS]> = smallvec![0; vars.len()];
                     e[vars.iter().position(|x| *x == id.into()).unwrap()] = 1;

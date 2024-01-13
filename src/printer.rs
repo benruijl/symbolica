@@ -729,7 +729,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                     },
                 ))?;
 
-                if self.poly.numerator.field.is_one(&self.poly.denom_coeff) {
+                if !self.poly.numerator.field.is_one(&self.poly.denom_coeff) {
                     f.write_fmt(format_args!(
                         ",{},1",
                         RingPrinter {

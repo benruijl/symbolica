@@ -1245,18 +1245,24 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     }
 
     /// Compute `self^pow`.
-    pub fn pow(&self, pow: usize) -> Self {
+    pub fn pow(&self, mut pow: usize) -> Self {
         if pow == 0 {
-            return MultivariatePolynomial::one(&self.field);
+            return self.new_from_constant(self.field.one());
         }
 
-        // TODO: do binary exponentiation
-        let mut res = self.clone();
-        for _ in 1..pow {
-            res = res.mul(&self);
+        let mut x = self.clone();
+        let mut y = self.new_from_constant(self.field.one());
+        while pow != 1 {
+            if pow % 2 == 1 {
+                y = &y * &x;
+                pow -= 1;
+            }
+
+            x = &x * &x;
+            pow /= 2;
         }
 
-        res
+        x * &y
     }
 
     /// Create a univariate polynomial coefficient list out of a multivariate polynomial.

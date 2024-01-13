@@ -19,7 +19,7 @@ use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::IntegerRing,
     rational::RationalField,
-    EuclideanDomain, Field, Ring,
+    EuclideanDomain, Field, Ring, RingPrinter,
 };
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -38,6 +38,8 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomialField<R, E> {
 }
 
 pub trait FromNumeratorAndFactorizedDenominator<R: Ring, OR: Ring, E: Exponent> {
+    /// Construct a rational polynomial from a numerator and a factorized denominator.
+    /// An empty denominator means a denominator of 1.
     fn from_num_den(
         num: MultivariatePolynomial<R, E>,
         dens: Vec<(MultivariatePolynomial<R, E>, usize)>,
@@ -49,6 +51,7 @@ pub trait FromNumeratorAndFactorizedDenominator<R: Ring, OR: Ring, E: Exponent> 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct FactorizedRationalPolynomial<R: Ring, E: Exponent> {
     pub numerator: MultivariatePolynomial<R, E>,
+    pub denom_coeff: R::Element, // TODO: also add numer_coeff?
     pub denominators: Vec<(MultivariatePolynomial<R, E>, usize)>, // TODO: sort factors?
 }
 
@@ -67,11 +70,11 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
             None,
             var_map,
         );
-        let den = num.new_from_constant(field.one());
 
         FactorizedRationalPolynomial {
             numerator: num,
-            denominators: vec![(den, 1)],
+            denom_coeff: field.one(),
+            denominators: vec![],
         }
     }
 
@@ -105,9 +108,11 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
         FiniteField<UField>: FiniteFieldCore<UField>,
         <FiniteField<UField> as Ring>::Element: Copy,
     {
+        let constant = field.inv(&self.denom_coeff.to_finite_field(field));
+
         // check the gcd, since the rational polynomial may simplify
         FactorizedRationalPolynomial::from_num_den(
-            self.numerator.to_finite_field(field),
+            self.numerator.to_finite_field(field).mul_coeff(constant),
             self.denominators
                 .iter()
                 .map(|(f, p)| (f.to_finite_field(field), *p))
@@ -115,6 +120,16 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
             field,
             true,
         )
+    }
+
+    fn is_zero(&self) -> bool {
+        self.numerator.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.numerator.is_one()
+            && self.denominators.is_empty()
+            && self.numerator.field.is_one(&self.denom_coeff)
     }
 }
 
@@ -172,7 +187,7 @@ impl<E: Exponent> FromNumeratorAndFactorizedDenominator<IntegerRing, IntegerRing
 {
     fn from_num_den(
         mut num: MultivariatePolynomial<IntegerRing, E>,
-        mut dens: Vec<(MultivariatePolynomial<IntegerRing, E>, usize)>, // TODO: we are assuming that all dens are irreducible
+        mut dens: Vec<(MultivariatePolynomial<IntegerRing, E>, usize)>,
         _field: &IntegerRing,
         do_factor: bool,
     ) -> Self {
@@ -182,61 +197,66 @@ impl<E: Exponent> FromNumeratorAndFactorizedDenominator<IntegerRing, IntegerRing
             }
         }
 
-        // TODO: fuse constants
+        let mut constant = num.field.one();
 
-        if dens.len() == 1 && dens[0].0.is_one() {
-            FactorizedRationalPolynomial {
+        if dens.is_empty() {
+            return FactorizedRationalPolynomial {
                 numerator: num,
+                denom_coeff: constant,
                 denominators: dens,
-            }
-        } else {
-            if do_factor {
-                for (d, _) in &mut dens {
-                    let gcd = MultivariatePolynomial::gcd(&num, d);
+            };
+        }
 
-                    if !gcd.is_one() {
-                        num = num / &gcd;
-                        *d = &*d / &gcd;
-                    }
-                }
-
-                // factor all denominators, as they may be unfactored
-                // TODO: add extra flag for this?
-                let mut factored = vec![];
-                for (d, p) in dens {
-                    for (f, p2) in d.factor() {
-                        factored.push((f, p * p2));
-                    }
-                }
-                dens = factored;
-            }
-
-            // normalize denominator to have positive leading coefficient
+        if do_factor {
             for (d, _) in &mut dens {
-                if d.lcoeff().is_negative() {
-                    num = -num;
-                    *d = -d.clone(); // TODO: prevent
+                let gcd = MultivariatePolynomial::gcd(&num, d);
+
+                if !gcd.is_one() {
+                    num = num / &gcd;
+                    *d = &*d / &gcd;
                 }
             }
 
-            let mut constant = num.new_from_constant(num.field.one());
-            dens.retain(|f| {
-                if f.0.is_constant() {
-                    constant = &constant * &f.0.pow(f.1);
-                    false
-                } else {
-                    true
+            // factor all denominators, as they may be unfactored
+            // TODO: add extra flag for this?
+            let mut factored = vec![];
+            for (d, p) in dens {
+                for (f, p2) in d.factor() {
+                    factored.push((f, p * p2));
                 }
-            });
-
-            if dens.is_empty() || !constant.is_one() {
-                dens.push((constant, 1));
             }
 
-            FactorizedRationalPolynomial {
-                numerator: num,
-                denominators: dens,
+            // TODO: fuse factors that are the same
+
+            dens = factored;
+        }
+
+        dens.retain(|f| {
+            if f.0.is_constant() {
+                constant = &constant * &f.0.lcoeff().pow(f.1 as u64);
+                false
+            } else {
+                true
             }
+        });
+
+        if constant.is_negative() {
+            num = -num;
+            constant = constant.neg();
+        }
+
+        // normalize denominator to have positive leading coefficient
+        for (d, _) in &mut dens {
+            if d.lcoeff().is_negative() {
+                num = -num;
+                *d = -d.clone(); // TODO: prevent clone
+            }
+        }
+
+        FactorizedRationalPolynomial {
+            numerator: num,
+            denom_coeff: constant,
+            denominators: dens,
         }
     }
 }
@@ -260,60 +280,65 @@ where
             }
         }
 
-        if dens.len() == 1 && dens[0].0.is_one() {
-            FactorizedRationalPolynomial {
+        let mut constant = num.field.one();
+
+        if dens.is_empty() {
+            return FactorizedRationalPolynomial {
                 numerator: num,
+                denom_coeff: constant,
                 denominators: dens,
-            }
-        } else {
-            if do_factor {
-                for (d, _) in &mut dens {
-                    let gcd = MultivariatePolynomial::gcd(&num, d);
+            };
+        }
 
-                    if !gcd.is_one() {
-                        num = num / &gcd;
-                        *d = &*d / &gcd;
-                    }
-                }
-
-                // actor all denominators, as they may be unfactored
-                // TODO: add extra flag for this?
-                let mut factored = vec![];
-                for (d, p) in dens {
-                    for (f, p2) in d.factor() {
-                        factored.push((f, p * p2));
-                    }
-                }
-                dens = factored;
-            }
-
-            // normalize denominator to have leading coefficient of one
+        if do_factor {
             for (d, _) in &mut dens {
-                if !field.is_one(&d.lcoeff()) {
-                    let c = d.lcoeff();
-                    num = num.div_coeff(&c);
-                    *d = d.clone().div_coeff(&c); // FIXME
+                let gcd = MultivariatePolynomial::gcd(&num, d);
+
+                if !gcd.is_one() {
+                    num = num / &gcd;
+                    *d = &*d / &gcd;
                 }
             }
 
-            let mut constant = num.new_from_constant(num.field.one());
-            dens.retain(|f| {
-                if f.0.is_constant() {
-                    constant = &constant * &f.0.pow(f.1);
-                    false
-                } else {
-                    true
+            // factor all denominators, as they may be unfactored
+            // TODO: add extra flag for this?
+            let mut factored = vec![];
+            for (d, p) in dens {
+                for (f, p2) in d.factor() {
+                    factored.push((f, p * p2));
                 }
-            });
-
-            if dens.is_empty() || !constant.is_one() {
-                dens.push((constant, 1));
             }
 
-            FactorizedRationalPolynomial {
-                numerator: num,
-                denominators: dens,
+            // TODO: fuse factors that are the same
+
+            dens = factored;
+        }
+
+        dens.retain(|f| {
+            if f.0.is_constant() {
+                field.mul_assign(&mut constant, &field.pow(&f.0.coefficients[0], f.1 as u64));
+                false
+            } else {
+                true
             }
+        });
+
+        num = num.mul_coeff(field.inv(&constant));
+        constant = field.one();
+
+        // normalize denominator to have leading coefficient of one
+        for (d, _) in &mut dens {
+            if !field.is_one(&d.lcoeff()) {
+                let c = field.inv(&d.lcoeff());
+                num = num.mul_coeff(c);
+                *d = d.clone().mul_coeff(c); // TODO: prevent clone
+            }
+        }
+
+        FactorizedRationalPolynomial {
+            numerator: num,
+            denom_coeff: constant,
+            denominators: dens,
         }
     }
 }
@@ -331,7 +356,7 @@ where
             panic!("Cannot invert 0");
         }
 
-        let mut num = self.numerator.new_from_constant(self.numerator.field.one());
+        let mut num = self.numerator.new_from_constant(self.denom_coeff);
         for (d, p) in self.denominators {
             num = num * &d.pow(p);
         }
@@ -356,10 +381,8 @@ where
         // TODO: do binary exponentation
         let mut poly = FactorizedRationalPolynomial {
             numerator: self.numerator.new_from_constant(self.numerator.field.one()),
-            denominators: vec![(
-                self.numerator.new_from_constant(self.numerator.field.one()),
-                1,
-            )],
+            denom_coeff: self.numerator.field.one(),
+            denominators: vec![],
         };
 
         for _ in 0..e {
@@ -402,8 +425,18 @@ where
             }
         }
 
+        let field = &self.numerator.field;
         FactorizedRationalPolynomial {
             numerator: gcd_num,
+            denom_coeff: field.mul(
+                &field
+                    .quot_rem(
+                        &self.denom_coeff,
+                        &field.gcd(&self.denom_coeff, &other.denom_coeff),
+                    )
+                    .0,
+                &other.denom_coeff,
+            ),
             denominators: disjoint_factors,
         }
     }
@@ -411,7 +444,7 @@ where
 
 impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.denominators.len() == 1 && self.denominators[0].0.is_one() {
+        if self.denominators.is_empty() && self.numerator.field.is_one(&self.denom_coeff) {
             self.numerator.fmt(f)
         } else {
             if f.sign_plus() {
@@ -420,9 +453,21 @@ impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomial<R, E> {
 
             f.write_fmt(format_args!("({})/(", self.numerator))?;
 
+            if !self.numerator.field.is_one(&self.denom_coeff) {
+                f.write_fmt(format_args!(
+                    "({})",
+                    RingPrinter {
+                        ring: &self.numerator.field,
+                        element: &self.denom_coeff,
+                        state: None,
+                        in_product: false,
+                    }
+                ))?;
+            }
+
             for (d, p) in &self.denominators {
                 if *p == 1 {
-                    f.write_fmt(format_args!("{}", d))?;
+                    f.write_fmt(format_args!("({})", d))?;
                 } else {
                     f.write_fmt(format_args!("({})^{}", d, p))?;
                 }
@@ -487,21 +532,24 @@ where
     fn zero(&self) -> Self::Element {
         FactorizedRationalPolynomial {
             numerator: MultivariatePolynomial::new(0, &self.ring, None, None),
-            denominators: vec![(MultivariatePolynomial::one(&self.ring), 1)],
+            denom_coeff: self.ring.one(),
+            denominators: vec![],
         }
     }
 
     fn one(&self) -> Self::Element {
         FactorizedRationalPolynomial {
             numerator: MultivariatePolynomial::one(&self.ring),
-            denominators: vec![(MultivariatePolynomial::one(&self.ring), 1)],
+            denom_coeff: self.ring.one(),
+            denominators: vec![],
         }
     }
 
     fn nth(&self, n: u64) -> Self::Element {
         FactorizedRationalPolynomial {
             numerator: MultivariatePolynomial::one(&self.ring).mul_coeff(self.ring.nth(n)),
-            denominators: vec![(MultivariatePolynomial::one(&self.ring), 1)],
+            denom_coeff: self.ring.one(),
+            denominators: vec![],
         }
     }
 
@@ -514,7 +562,8 @@ where
         // TODO: do binary exponentation
         let mut poly = FactorizedRationalPolynomial {
             numerator: b.numerator.new_from_constant(self.ring.one()),
-            denominators: vec![(b.numerator.new_from_constant(self.ring.one()), 1)],
+            denom_coeff: self.ring.one(),
+            denominators: vec![],
         };
 
         for _ in 0..e {
@@ -528,7 +577,9 @@ where
     }
 
     fn is_one(&self, a: &Self::Element) -> bool {
-        a.numerator.is_one() && a.denominators.len() == 1 && a.denominators[0].0.is_one()
+        a.numerator.is_one()
+            && a.denominators.is_empty()
+            && a.numerator.field.is_one(&a.denom_coeff)
     }
 
     fn one_is_gcd_unit() -> bool {
@@ -577,7 +628,8 @@ where
     fn rem(&self, a: &Self::Element, _: &Self::Element) -> Self::Element {
         FactorizedRationalPolynomial {
             numerator: MultivariatePolynomial::new_from(&a.numerator, None),
-            denominators: vec![(a.numerator.new_from_constant(a.numerator.field.one()), 1)],
+            denom_coeff: a.numerator.field.one(),
+            denominators: vec![],
         }
     }
 
@@ -615,11 +667,14 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
     type Output = FactorizedRationalPolynomial<R, E>;
 
     fn add(self, other: &'a FactorizedRationalPolynomial<R, E>) -> Self::Output {
-        // (a/b + c/d) = (ad + bc)/bd
+        if self.is_zero() {
+            return other.clone();
+        } else if other.is_zero() {
+            return self.clone();
+        }
 
-        let mut den = vec![];
+        let mut den = Vec::with_capacity(self.denominators.len() + other.denominators.len());
         let mut num_1 = self.numerator.clone();
-
         let mut num_2 = other.numerator.clone();
 
         for (d, p) in &self.denominators {
@@ -643,57 +698,50 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
             den.push((d.clone(), *p));
         }
 
+        if self.denom_coeff != other.denom_coeff {
+            num_1 = num_1.mul_coeff(other.denom_coeff.clone());
+            num_2 = num_2.mul_coeff(self.denom_coeff.clone());
+        }
+
         let mut num = num_1 + num_2;
 
         if num.is_zero() {
-            den.clear();
-            den.push((num.new_from_constant(num.field.one()), 1));
             return FactorizedRationalPolynomial {
                 numerator: num,
-                denominators: den,
+                denom_coeff: self.numerator.field.one(),
+                denominators: vec![],
             };
         }
 
         // TODO: are there some factors we can skip the division check for?
-
         for (d, p) in &mut den {
             while *p > 0 {
-                let (q, r) = num.quot_rem(d, true);
-                if !r.is_zero() {
+                if let Some(q) = num.divides(d) {
+                    num = q;
+                    *p -= 1;
+                } else {
                     break;
                 }
-
-                num = q;
-                *p -= 1;
             }
         }
 
         den.retain(|(_, p)| *p > 0);
 
-        let mut constant = num.new_from_constant(num.field.one());
-        den.retain(|f| {
-            if f.0.is_constant() {
-                constant = &constant * &f.0.pow(f.1);
-                false
-            } else {
-                true
-            }
-        });
+        let mut constant = if self.denom_coeff != other.denom_coeff {
+            num.field.mul(&self.denom_coeff, &other.denom_coeff)
+        } else {
+            self.denom_coeff.clone()
+        };
 
-        if !constant.is_one() {
-            let g = num.field.gcd(&num.content(), &constant.coefficients[0]);
-            if !num.field.is_one(&g) {
-                num = num.div_coeff(&g);
-                constant = constant.div_coeff(&g);
-            }
-        }
-
-        if den.is_empty() || !constant.is_one() {
-            den.push((constant, 1));
+        let g = num.field.gcd(&num.content(), &constant);
+        if !num.field.is_one(&g) {
+            num = num.div_coeff(&g);
+            constant = num.field.quot_rem(&constant, &g).0;
         }
 
         FactorizedRationalPolynomial {
             numerator: num,
+            denom_coeff: constant,
             denominators: den,
         }
     }
@@ -726,6 +774,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg
     fn neg(self) -> Self::Output {
         FactorizedRationalPolynomial {
             numerator: self.numerator.neg(),
+            denom_coeff: self.denom_coeff,
             denominators: self.denominators,
         }
     }
@@ -737,10 +786,16 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
     type Output = FactorizedRationalPolynomial<R, E>;
 
     fn mul(self, other: &'a FactorizedRationalPolynomial<R, E>) -> Self::Output {
+        if self.is_one() {
+            return other.clone();
+        } else if other.is_one() {
+            return self.clone();
+        }
+
         let mut reduced_numerator_1 = Cow::Borrowed(&self.numerator);
         let mut reduced_numerator_2 = Cow::Borrowed(&other.numerator);
 
-        let mut den = vec![];
+        let mut den = Vec::with_capacity(self.denominators.len() + other.denominators.len());
 
         for (d, p) in &other.denominators {
             if let Some((_, p2)) = self.denominators.iter().find(|(d2, _)| d == d2) {
@@ -748,29 +803,14 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
                 continue;
             }
 
-            if d.is_constant() {
-                let g = reduced_numerator_1
-                    .field
-                    .gcd(&reduced_numerator_1.content(), &d.coefficients[0]);
-                if reduced_numerator_1.field.is_one(&g) {
-                    den.push((d.clone(), *p)); // p should be 1 here
-                } else {
-                    reduced_numerator_1 =
-                        Cow::Owned(reduced_numerator_1.into_owned().div_coeff(&g));
-                    den.push((d.clone().div_coeff(&g), *p));
-                }
-                continue;
-            }
-
             let mut p = *p;
             while p > 0 {
-                let (q, r) = reduced_numerator_1.quot_rem(d, true);
-                if !r.is_zero() {
+                if let Some(q) = reduced_numerator_1.divides(d) {
+                    reduced_numerator_1 = Cow::Owned(q);
+                    p -= 1;
+                } else {
                     break;
                 }
-
-                reduced_numerator_1 = Cow::Owned(q);
-                p -= 1;
             }
 
             if p > 0 {
@@ -783,29 +823,14 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
                 continue;
             }
 
-            if d.is_constant() {
-                let g = reduced_numerator_2
-                    .field
-                    .gcd(&reduced_numerator_2.content(), &d.coefficients[0]);
-                if reduced_numerator_2.field.is_one(&g) {
-                    den.push((d.clone(), *p)); // p should be 1 here
-                } else {
-                    reduced_numerator_2 =
-                        Cow::Owned(reduced_numerator_2.into_owned().div_coeff(&g));
-                    den.push((d.clone().div_coeff(&g), *p));
-                }
-                continue;
-            }
-
             let mut p = *p;
             while p > 0 {
-                let (q, r) = reduced_numerator_2.quot_rem(d, true);
-                if !r.is_zero() {
+                if let Some(q) = reduced_numerator_2.divides(d) {
+                    reduced_numerator_2 = Cow::Owned(q);
+                    p -= 1;
+                } else {
                     break;
                 }
-
-                reduced_numerator_2 = Cow::Owned(q);
-                p -= 1;
             }
 
             if p > 0 {
@@ -813,22 +838,24 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
             }
         }
 
-        let mut constant = reduced_numerator_1.new_from_constant(reduced_numerator_1.field.one());
-        den.retain(|f| {
-            if f.0.is_constant() {
-                constant = &constant * &f.0.pow(f.1);
-                false
-            } else {
-                true
-            }
-        });
+        let field = &self.numerator.field;
+        let mut constant = field.one();
 
-        if den.is_empty() || !constant.is_one() {
-            den.push((constant, 1));
+        if !field.is_one(&self.denom_coeff) {
+            let g = field.gcd(&reduced_numerator_2.content(), &self.denom_coeff);
+            reduced_numerator_2 = Cow::Owned(reduced_numerator_2.into_owned().div_coeff(&g));
+            constant = field.quot_rem(&self.denom_coeff, &g).0;
+        }
+
+        if !field.is_one(&other.denom_coeff) {
+            let g = field.gcd(&reduced_numerator_1.content(), &other.denom_coeff);
+            reduced_numerator_1 = Cow::Owned(reduced_numerator_1.into_owned().div_coeff(&g));
+            field.mul_assign(&mut constant, &field.quot_rem(&other.denom_coeff, &g).0);
         }
 
         FactorizedRationalPolynomial {
             numerator: reduced_numerator_1.as_ref() * reduced_numerator_2.as_ref(),
+            denom_coeff: constant,
             denominators: den,
         }
     }

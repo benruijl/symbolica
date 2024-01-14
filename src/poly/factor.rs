@@ -1233,6 +1233,9 @@ where
         let mut biv_f;
         let mut rng = thread_rng();
         let degree = self.degree(order[0]);
+
+        let uni_lcoeff = self.univariate_lcoeff(order[0]);
+
         let mut content_fail_count = 0;
         'new_sample: loop {
             for s in &mut sample_points {
@@ -1246,6 +1249,16 @@ where
                     coefficient_upper_bound += 1;
                     continue 'new_sample;
                 }
+            }
+
+            // requirement for leading coefficient precomputation
+            if biv_f.univariate_lcoeff(order[0]).degree(order[1]) != uni_lcoeff.degree(order[1]) {
+                debug!(
+                    "Degree of x{} in leading coefficient of bivariate image is wrong",
+                    order[1]
+                );
+                coefficient_upper_bound += 1;
+                continue 'new_sample;
             }
 
             let biv_df = biv_f.derivative(order[0]);
@@ -1405,7 +1418,20 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             &degrees[..order.len() - 1],
         );
 
+        // TODO: precompute
+        let mut mod_vars = Vec::with_capacity(order.len() - 2);
         let mut exp = vec![E::zero(); error.nvars];
+        for r in order[1..order.len() - 1].iter().zip(&degrees[1..]) {
+            let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
+            exp[*r.0] = E::one();
+            let var_pow = error
+                .new_from_monomial(error.field.one(), exp.clone())
+                .shift_var(*r.0, &error.field.neg(shift))
+                .pow(r.1 + 1);
+            exp[*r.0] = E::zero();
+            mod_vars.push(var_pow);
+        }
+
         exp[last_var] = E::one();
         let var_pow = error
             .new_from_monomial(error.field.one(), exp)
@@ -1422,12 +1448,9 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 debug!("delta {} p {}", d, p);
                 e = &e - &(d * p);
 
-                // TODO: improve computation of mod (x_i-shift_i)^(j+1)
-                for r in order[1..order.len() - 1].iter().zip(&degrees[1..]) {
-                    let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
-                    e = e.shift_var(*r.0, shift);
-                    e = e.mod_var(*r.0, E::from_u32(*r.1 as u32 + 1));
-                    e = e.shift_var(*r.0, &error.field.neg(&shift));
+                for m in &mod_vars {
+                    // TODO: faster implementation for univariate divisor possible?
+                    e = e.quot_rem(m, false).1;
                 }
 
                 // TODO: mod with (x-shift)^(j+1)?
@@ -1472,11 +1495,8 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 let nd = &*nd * &cur_exponent;
                 *d = &*d + &nd;
 
-                for r in order[1..order.len() - 1].iter().zip(&degrees[1..]) {
-                    let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
-                    *d = d.shift_var(*r.0, shift);
-                    *d = d.mod_var(*r.0, E::from_u32(*r.1 as u32 + 1));
-                    *d = d.shift_var(*r.0, &error.field.neg(&shift));
+                for m in &mod_vars {
+                    e = e.quot_rem(m, false).1;
                 }
             }
         }
@@ -2221,7 +2241,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     }
 
                     rest = h;
-                    f_mod = rest.map_coeff(|c| c.symmetric_mod(&max_p), mod_field.clone());
+                    f_mod = rest.map_coeff(|c| mod_field.to_element(c), mod_field.clone());
                     lcoeff = f_mod.lcoeff_last_varorder(&[main_var, interpolation_var]);
 
                     continue 'len;

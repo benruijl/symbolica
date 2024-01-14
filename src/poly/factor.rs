@@ -1012,6 +1012,14 @@ where
                     }
                 }
 
+                if poly_eval.degree(order[0]) != self.degree(order[0])
+                    || poly_eval.degree(var) != self.degree(var)
+                    || poly_eval.univariate_lcoeff(order[0]).degree(var) != lcoeff.degree(var)
+                {
+                    debug!("Bad sample for reconstructing lcoeff: degrees do not match");
+                    return Err(main_bivariate_factors.len());
+                }
+
                 let bivariate_factors: Vec<_> =
                     poly_eval.factor().into_iter().map(|(f, _)| f).collect();
 
@@ -2448,6 +2456,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     }
                 }
 
+                if poly_eval.degree(order[0]) != self.degree(order[0])
+                    || poly_eval.degree(var) != self.degree(var)
+                    || poly_eval.univariate_lcoeff(order[0]).degree(var) != lcoeff.degree(var)
+                {
+                    debug!("Bad sample for reconstructing lcoeff: degrees do not match");
+                    return Err(main_bivariate_factors.len());
+                }
+
                 let bivariate_factors: Vec<_> = poly_eval
                     .factor()
                     .into_iter()
@@ -2545,7 +2561,13 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             let f_lc = f_eval.lcoeff();
 
             let (q, r) = IntegerRing::new().quot_rem(&b_lc, &f_lc);
-            assert!(r.is_zero());
+            assert!(
+                r.is_zero(),
+                "Problem with bivariate factor scaling in factorization of {}: order={:?}, samples={:?}",
+                self,
+                order,
+                sample_points
+            );
 
             lcoeff_left = lcoeff_left.div_coeff(&q);
             *f = f.clone().mul_coeff(q);
@@ -2667,6 +2689,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let degree = self.degree(order[0]);
         let mut bivariate_factors: Vec<_>;
 
+        let uni_lcoeff = self.univariate_lcoeff(order[0]);
+
         let mut content_fail_count = 0;
         'new_sample: loop {
             for s in &mut cur_sample_points {
@@ -2681,6 +2705,16 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     coefficient_upper_bound += 1;
                     continue 'new_sample;
                 }
+            }
+            // requirement for leading coefficient precomputation
+            if cur_biv_f.univariate_lcoeff(order[0]).degree(order[1]) != uni_lcoeff.degree(order[1])
+            {
+                debug!(
+                    "Degree of x{} in leading coefficient of bivariate image is wrong",
+                    order[1]
+                );
+                coefficient_upper_bound += 1;
+                continue 'new_sample;
             }
 
             let biv_df = cur_biv_f.derivative(order[0]);

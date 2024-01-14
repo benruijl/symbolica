@@ -386,6 +386,7 @@ impl Integer {
     }
 
     /// Perform the symmetric mod `p` on `self`.
+    #[inline]
     pub fn symmetric_mod(&self, p: &Integer) -> Integer {
         let c = self % p;
 
@@ -1042,6 +1043,14 @@ impl<'a> Rem for &'a Integer {
     fn rem(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Integer::Natural(a), Integer::Natural(b)) => {
+                if a.unsigned_abs() < b.unsigned_abs() {
+                    return if *a >= 0 {
+                        Integer::Natural(*a)
+                    } else {
+                        Integer::Natural(*a + b)
+                    };
+                }
+
                 if let Some(r) = a.checked_rem_euclid(*b) {
                     Integer::Natural(r)
                 } else {
@@ -1052,7 +1061,12 @@ impl<'a> Rem for &'a Integer {
                 }
             }
             (Integer::Natural(a), Integer::Large(b)) => {
-                Integer::from_large(ArbitraryPrecisionInteger::from(*a).rem_euc(b))
+                // b must be larger than a, so division is never needed
+                if *a < 0 {
+                    Integer::from_large((b + *a).into())
+                } else {
+                    Integer::Natural(*a)
+                }
             }
             (Integer::Large(a), Integer::Natural(b)) => {
                 Integer::from_large(a.rem_euc(ArbitraryPrecisionInteger::from(*b)))

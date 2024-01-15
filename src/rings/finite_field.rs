@@ -1,7 +1,9 @@
 use rand::Rng;
 use std::fmt::{Display, Error, Formatter};
 use std::hash::Hash;
+use std::ops::Neg;
 
+use crate::rings::integer::{Integer, IntegerRing};
 use crate::state::State;
 
 use super::{EuclideanDomain, Field, Ring};
@@ -30,7 +32,7 @@ where
 #[derive(Debug, Copy, Clone, Hash, PartialEq, PartialOrd, Eq)]
 pub struct FiniteFieldElement<UField>(pub(crate) UField);
 
-pub trait FiniteFieldWorkspace: Clone + Copy + Display + Eq + Hash {
+pub trait FiniteFieldWorkspace: Clone + Display + Eq + Hash {
     /// Convert to u64.
     fn to_u64(&self) -> u64;
 }
@@ -38,18 +40,25 @@ pub trait FiniteFieldWorkspace: Clone + Copy + Display + Eq + Hash {
 pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
     fn new(p: UField) -> Self;
     fn get_prime(&self) -> UField;
-    /// Convert a number in a prime field a % n to Montgomory form.
+    /// Convert a number to a representative in a prime field.
     fn to_element(&self, a: UField) -> Self::Element;
-    /// Convert a number from Montgomory form to standard form.
-    fn from_element(&self, a: Self::Element) -> UField;
+    /// Convert a number from the finite field to standard form `[0,p)`.
+    fn from_element(&self, a: &Self::Element) -> UField;
+    /// Convert a number from the finite field to symmetric form `[-p/2,p/2]`.
+    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer;
 }
 
-/// A finite field over a prime that uses Montgomery modular arithmetic
+/// The modular ring `Z / mZ`, where `m` can be any positive integer. In most cases,
+/// `m` will be a prime, and the domain will be a field.
+///
+/// `FiniteField<u32>` and `FiniteField<u64>` use Montgomery modular arithmetic
 /// to increase the performance of the multiplication operator.
 ///
-/// The special field `Mersenne64` can be used to have even faster arithmetic
-/// for a field with Mersenne prime 2^61-1.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+/// For `m` larger than `2^64`, use `FiniteField<Integer>`.
+///
+/// The special field `FiniteField<Mersenne64>` can be used to have even faster arithmetic
+/// for a field with Mersenne prime `2^61-1`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FiniteField<UField> {
     p: UField,
     m: UField,
@@ -112,8 +121,20 @@ impl FiniteFieldCore<u32> for FiniteField<u32> {
 
     /// Convert a number from Montgomory form to standard form.
     #[inline(always)]
-    fn from_element(&self, a: FiniteFieldElement<u32>) -> u32 {
+    fn from_element(&self, a: &FiniteFieldElement<u32>) -> u32 {
         self.mul(&a, &FiniteFieldElement(1)).0
+    }
+
+    /// Convert a number from Montgomory form to symmetric form.
+    #[inline(always)]
+    fn to_symmetric_integer(&self, a: &FiniteFieldElement<u32>) -> Integer {
+        let i = self.from_element(a) as u64;
+
+        if i * 2 > self.get_prime() as u64 {
+            &Integer::from(i) - &Integer::from(self.get_prime() as u64)
+        } else {
+            i.into()
+        }
     }
 }
 
@@ -257,9 +278,9 @@ impl Ring for FiniteField<u32> {
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
         if f.sign_plus() {
-            write!(f, "+{}", self.from_element(*element))
+            write!(f, "+{}", self.from_element(element))
         } else {
-            write!(f, "{}", self.from_element(*element))
+            write!(f, "{}", self.from_element(element))
         }
     }
 }
@@ -387,8 +408,20 @@ impl FiniteFieldCore<u64> for FiniteField<u64> {
 
     /// Convert a number from Montgomory form to standard form.
     #[inline(always)]
-    fn from_element(&self, a: FiniteFieldElement<u64>) -> u64 {
+    fn from_element(&self, a: &FiniteFieldElement<u64>) -> u64 {
         self.mul(&a, &FiniteFieldElement(1)).0
+    }
+
+    /// Convert a number from Montgomory form to symmetric form.
+    #[inline(always)]
+    fn to_symmetric_integer(&self, a: &FiniteFieldElement<u64>) -> Integer {
+        let i = self.from_element(a);
+
+        if i > self.get_prime() as u64 / 2 {
+            &Integer::from(i) - &Integer::from(self.get_prime() as u64)
+        } else {
+            i.into()
+        }
     }
 }
 
@@ -534,9 +567,9 @@ impl Ring for FiniteField<u64> {
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
         if f.sign_plus() {
-            write!(f, "+{}", self.from_element(*element))
+            write!(f, "+{}", self.from_element(element))
         } else {
-            write!(f, "{}", self.from_element(*element))
+            write!(f, "{}", self.from_element(element))
         }
     }
 }
@@ -661,8 +694,16 @@ impl FiniteFieldCore<Mersenne64> for FiniteField<Mersenne64> {
         }
     }
 
-    fn from_element(&self, a: Self::Element) -> Mersenne64 {
-        Mersenne64(a)
+    fn from_element(&self, a: &Self::Element) -> Mersenne64 {
+        Mersenne64(*a)
+    }
+
+    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer {
+        if *a * 2 > Mersenne64::PRIME {
+            &Integer::from(*a) - &Integer::from(Mersenne64::PRIME)
+        } else {
+            (*a).into()
+        }
     }
 }
 
@@ -793,9 +834,9 @@ impl Ring for FiniteField<Mersenne64> {
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
         if f.sign_plus() {
-            write!(f, "+{}", self.from_element(*element))
+            write!(f, "+{}", self.from_element(element))
         } else {
-            write!(f, "{}", self.from_element(*element))
+            write!(f, "{}", self.from_element(element))
         }
     }
 }
@@ -855,6 +896,189 @@ impl Field for FiniteField<Mersenne64> {
             u1
         } else {
             Mersenne64::PRIME - u1
+        }
+    }
+}
+
+impl FiniteFieldWorkspace for Integer {
+    /// Panics when the modulus is larger than 2^64.
+    fn to_u64(&self) -> u64 {
+        if self <= &u64::MAX.into() {
+            match self {
+                Integer::Natural(x) => *x as u64,
+                Integer::Large(x) => x.to_u64().unwrap(),
+            }
+        } else {
+            panic!("Modulus {} is too large to be converted to u64", self)
+        }
+    }
+}
+
+/// A finite field with a large prime modulus.
+/// We use the symmetric representation, as this is the most efficient.
+impl FiniteFieldCore<Integer> for FiniteField<Integer> {
+    fn new(m: Integer) -> FiniteField<Integer> {
+        FiniteField {
+            p: m.clone(),
+            m: Integer::one(),
+            one: FiniteFieldElement(Integer::one()),
+        }
+    }
+
+    #[inline]
+    fn get_prime(&self) -> Integer {
+        self.p.clone()
+    }
+
+    fn to_element(&self, a: Integer) -> Integer {
+        a.symmetric_mod(&self.p)
+    }
+
+    fn from_element(&self, a: &Integer) -> Integer {
+        a.clone()
+    }
+
+    fn to_symmetric_integer(&self, a: &Integer) -> Integer {
+        a.clone()
+    }
+}
+
+impl Ring for FiniteField<Integer> {
+    type Element = Integer;
+
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        (a + b).symmetric_mod(&self.p)
+    }
+
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        (a - b).symmetric_mod(&self.p)
+    }
+
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        (a * b).symmetric_mod(&self.p)
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        // TODO: optimize
+        *a = self.add(a, b);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.sub(a, b);
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.add_assign(a, &(b * c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.sub_assign(a, &(b * c));
+    }
+
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        a.neg().symmetric_mod(&self.p)
+    }
+
+    fn zero(&self) -> Self::Element {
+        Integer::zero()
+    }
+
+    fn one(&self) -> Self::Element {
+        Integer::one()
+    }
+
+    #[inline]
+    fn nth(&self, n: u64) -> Self::Element {
+        Integer::from(n).symmetric_mod(&self.p)
+    }
+
+    fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
+        // FIXME: intermediate mods
+        b.pow(e).symmetric_mod(&self.p)
+    }
+
+    fn is_zero(a: &Self::Element) -> bool {
+        a.is_zero()
+    }
+
+    fn is_one(&self, a: &Self::Element) -> bool {
+        a.is_one()
+    }
+
+    fn one_is_gcd_unit() -> bool {
+        true
+    }
+
+    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
+        IntegerRing::new().sample(rng, range).symmetric_mod(&self.p)
+    }
+
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        _state: Option<&State>,
+        _in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
+        element.fmt(f)
+    }
+}
+
+impl EuclideanDomain for FiniteField<Integer> {
+    fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        Integer::zero()
+    }
+
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        (self.mul(a, &self.inv(b)), Integer::zero())
+    }
+
+    fn gcd(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        Integer::one()
+    }
+}
+
+impl Field for FiniteField<Integer> {
+    #[inline]
+    fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        self.mul(a, &self.inv(b))
+    }
+
+    #[inline]
+    fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, &self.inv(b));
+    }
+
+    /// Compute the inverse when `a` and the modulus are coprime,
+    /// otherwise panic.
+    fn inv(&self, a: &Self::Element) -> Self::Element {
+        assert!(!a.is_zero(), "0 is not invertible");
+
+        let mut u1 = Integer::one();
+        let mut u3 = a.clone();
+        let mut v1 = Integer::zero();
+        let mut v3 = self.get_prime();
+        let mut even_iter: bool = true;
+
+        while !v3.is_zero() {
+            let (q, t3) = IntegerRing::new().quot_rem(&u3, &v3);
+            let t1 = &u1 + &(&q * &v1);
+            u1 = v1;
+            v1 = t1;
+            u3 = v3;
+            v3 = t3;
+            even_iter = !even_iter;
+        }
+
+        assert!(u3.is_one(), "{} is not invertible mod {}", a, self.p);
+        if even_iter {
+            u1
+        } else {
+            &self.p - &u1
         }
     }
 }

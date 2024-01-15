@@ -129,7 +129,7 @@ fn newton_interpolation<UField: FiniteFieldWorkspace, E: Exponent>(
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
 {
-    let field = u[0].field;
+    let field = &u[0].field;
 
     // compute inverses
     let mut gammas = Vec::with_capacity(a.len());
@@ -429,7 +429,7 @@ where
                 row.push(c);
 
                 // check if each element is unique
-                if !seen.insert(a.field.from_element(c)) {
+                if !seen.insert(a.field.from_element(&c)) {
                     debug!("Duplicate element: restarting");
                     continue 'find_root_sample;
                 }
@@ -683,7 +683,7 @@ where
                 row.push(c);
 
                 // check if each element is unique
-                if !seen.insert(a.field.from_element(c)) {
+                if !seen.insert(a.field.from_element(&c)) {
                     debug!("Duplicate element: restarting");
                     continue 'find_root_sample;
                 }
@@ -889,12 +889,12 @@ where
                 let m = Matrix {
                     shape: (rows as u32, samples_needed as u32),
                     data: gfm,
-                    field: a.field,
+                    field: a.field.clone(),
                 };
                 let rhs = Matrix {
                     shape: (rows as u32, 1),
                     data: new_rhs,
-                    field: a.field,
+                    field: a.field.clone(),
                 };
 
                 match m.solve(&rhs) {
@@ -966,7 +966,7 @@ where
                 debug!(
                     "Scaling fac {}: {}",
                     sample_index,
-                    a.field.from_element(scaling_factor)
+                    a.field.from_element(&scaling_factor)
                 );
             }
 
@@ -1258,7 +1258,7 @@ where
                 }
             };
 
-            debug!("Chosen variable: {}", a.field.from_element(v));
+            debug!("Chosen variable: {}", a.field.from_element(&v));
             let av = a.replace(lastvar, &v);
             let bv = b.replace(lastvar, &v);
 
@@ -1285,7 +1285,7 @@ where
 
             debug!(
                 "GCD shape suggestion for sample point {} and gamma {}: {}",
-                a.field.from_element(v),
+                a.field.from_element(&v),
                 gamma,
                 gv
             );
@@ -2289,8 +2289,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 );
             }
 
-            let mut p = primes[pi];
-            let mut finite_field = FiniteField::<UField>::new(p);
+            let mut p = &primes[pi];
+            let mut finite_field = FiniteField::<UField>::new(p.clone());
             let mut gammap = gamma.to_finite_field(&finite_field);
 
             if FiniteField::<UField>::is_zero(&gammap) {
@@ -2398,8 +2398,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                         );
                     }
 
-                    p = primes[pi];
-                    finite_field = FiniteField::<UField>::new(p);
+                    p = &primes[pi];
+                    finite_field = FiniteField::<UField>::new(p.clone());
 
                     gammap = gamma.to_finite_field(&finite_field);
 

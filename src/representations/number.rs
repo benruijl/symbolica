@@ -125,7 +125,7 @@ impl<'a> SerializedRational<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BorrowedNumber<'a> {
     Natural(i64, i64),
     Large(SerializedRational<'a>),
@@ -267,7 +267,7 @@ impl BorrowedNumber<'_> {
         match self {
             BorrowedNumber::Natural(num, den) => Number::Natural(*num, *den),
             BorrowedNumber::Large(r) => Number::Large(r.to_rat()),
-            BorrowedNumber::FiniteField(num, field) => Number::FiniteField(*num, *field),
+            BorrowedNumber::FiniteField(num, field) => Number::FiniteField((*num).clone(), *field),
             BorrowedNumber::RationalPolynomial(p) => Number::RationalPolynomial((*p).clone()),
         }
     }

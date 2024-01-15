@@ -355,7 +355,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                 let ff = state.get_finite_field(fi);
                 f.write_fmt(format_args!(
                     "[{}%{}]",
-                    ff.from_element(num),
+                    ff.from_element(&num),
                     ff.get_prime()
                 ))
             }

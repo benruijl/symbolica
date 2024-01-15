@@ -93,6 +93,15 @@ impl ToFiniteField<u64> for Integer {
     }
 }
 
+impl ToFiniteField<Integer> for Integer {
+    fn to_finite_field(
+        &self,
+        field: &FiniteField<Integer>,
+    ) -> <FiniteField<Integer> as Ring>::Element {
+        field.to_element(self.clone())
+    }
+}
+
 impl ToFiniteField<Mersenne64> for Integer {
     fn to_finite_field(
         &self,
@@ -121,7 +130,7 @@ impl FromFiniteField<u32> for Integer {
         field: &FiniteField<u32>,
         element: <FiniteField<u32> as Ring>::Element,
     ) -> Self {
-        Integer::Natural(field.from_element(element) as i64)
+        Integer::Natural(field.from_element(&element) as i64)
     }
 
     fn from_prime(field: &FiniteField<u32>) -> Self {
@@ -134,7 +143,7 @@ impl FromFiniteField<u64> for Integer {
         field: &FiniteField<u64>,
         element: <FiniteField<u64> as Ring>::Element,
     ) -> Self {
-        let r = field.from_element(element);
+        let r = field.from_element(&element);
         if r <= i64::MAX as u64 {
             Integer::Natural(r as i64)
         } else {

@@ -633,7 +633,7 @@ impl Echelonize for FiniteField<u32> {
 
             for (coeff, exp) in p.coefficients.iter().zip(p.exponents.chunks(nvars)).rev() {
                 row.push((
-                    field.from_element(coeff.clone()) as i64,
+                    field.from_element(coeff) as i64,
                     all_monomials.get(exp).unwrap().column,
                 ));
             }

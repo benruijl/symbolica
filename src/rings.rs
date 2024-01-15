@@ -1,7 +1,6 @@
 pub mod finite_field;
 pub mod float;
 pub mod integer;
-pub mod integer_mod;
 pub mod linear_system;
 pub mod rational;
 pub mod rational_polynomial;

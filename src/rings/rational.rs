@@ -128,7 +128,7 @@ impl Rational {
         field: FiniteField<u32>,
         element: &<FiniteField<u32> as Ring>::Element,
     ) -> Rational {
-        Rational::Natural(field.from_element(*element) as i64, 1)
+        Rational::Natural(field.from_element(element) as i64, 1)
     }
 
     pub fn is_negative(&self) -> bool {
@@ -343,7 +343,7 @@ impl Rational {
             let eval = f(&field, &prime_sample_point);
 
             // NOTE: check bounds if upgraded to u64 primes!
-            let eval_conv = Integer::Natural(field.from_element(eval).to_u64() as i64);
+            let eval_conv = Integer::Natural(field.from_element(&eval).to_u64() as i64);
 
             if i == 0 {
                 cur_result = eval_conv;

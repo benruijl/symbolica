@@ -273,19 +273,19 @@ mod tests {
         let a = Matrix {
             shape: (1, 1),
             data: [12].into_iter().map(|n| field.to_element(n)).collect(),
-            field,
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (1, 1),
             data: [7].into_iter().map(|n| field.to_element(n)).collect(),
-            field,
+            field: field.clone(),
         };
         let r = a.solve(&b).unwrap();
 
         let res: Vec<_> = r
             .data
             .into_iter()
-            .map(|i| a.field.from_element(i))
+            .map(|i| a.field.from_element(&i))
             .collect();
         assert_eq!(&res, &[2]);
     }
@@ -299,12 +299,12 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (2, 1),
             data: [5, 6].into_iter().map(|n| field.to_element(n)).collect(),
-            field,
+            field: field.clone(),
         };
         println!("b={:?}", b.data);
         let r = a.solve(&b).unwrap();
@@ -312,7 +312,7 @@ mod tests {
         let res: Vec<_> = r
             .data
             .into_iter()
-            .map(|i| a.field.from_element(i))
+            .map(|i| a.field.from_element(&i))
             .collect();
         assert_eq!(&res, &[5, 6]);
     }
@@ -326,7 +326,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (3, 1),
@@ -334,14 +334,14 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let r = a.solve(&b).unwrap();
 
         let res: Vec<_> = r
             .data
             .into_iter()
-            .map(|i| a.field.from_element(i))
+            .map(|i| a.field.from_element(&i))
             .collect();
         assert_eq!(&res, &[2, 3, 16]);
     }
@@ -356,7 +356,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (4, 1),
@@ -364,7 +364,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let _r = a.solve(&b).unwrap();
     }
@@ -378,12 +378,12 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (2, 1),
             data: [3, 15].into_iter().map(|n| field.to_element(n)).collect(),
-            field,
+            field: field.clone(),
         };
         let r = a.solve(&b);
         assert!(matches!(
@@ -405,7 +405,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (4, 1),
@@ -413,7 +413,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let r = a.solve(&b);
         assert!(matches!(
@@ -435,7 +435,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (3, 1),
@@ -443,7 +443,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let r = a.solve(&b);
         assert!(matches!(
@@ -465,7 +465,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (5, 1),
@@ -473,14 +473,14 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let r = a.solve(&b).unwrap();
 
         let res: Vec<_> = r
             .data
             .into_iter()
-            .map(|i| a.field.from_element(i))
+            .map(|i| a.field.from_element(&i))
             .collect();
         assert_eq!(&res, &[11, 1, 4]);
     }
@@ -494,7 +494,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (4, 1),
@@ -502,7 +502,7 @@ mod tests {
                 .into_iter()
                 .map(|n| field.to_element(n))
                 .collect(),
-            field,
+            field: field.clone(),
         };
         let r = a.solve(&b);
         assert!(matches!(r, Err(LinearSolverError::Inconsistent)));

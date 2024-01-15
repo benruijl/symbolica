@@ -929,13 +929,21 @@ where
 
                         second_index += 1;
                         if second_index == shape.len() {
-                            panic!(
-                                "Could not solve for the scaling coefficients: a={}, b={}, mat={}, rhs={}",
-                                a,
-                                b,
-                                mat,
-                                rhs,
-                            );
+                            eprintln!("Could not find scaling. Please report this problem with the attached output.\n\na={}\nb={}\na_ldegree={}\nb_ldegree={}\nbounds={:?}\nvars={:?}\nmain_var={},\nmat={}\nrhs={}",
+                            a,
+                            b,
+                            a_ldegree,
+                            b_ldegree,
+                            bounds,
+                            vars,
+                            main_var,
+                            mat,
+                            rhs);
+                            for s in shape {
+                                eprintln!("({}, {})", s.0, s.1);
+                            }
+
+                            return Err(GCDError::BadOriginalImage);
                         }
                     }
                     Err(LinearSolverError::Inconsistent) => {

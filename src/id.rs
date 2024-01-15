@@ -533,7 +533,7 @@ impl<P: AtomSet> Pattern<P> {
         target: AtomView<'a, P>,
         rhs: &'a Pattern<P>,
         state: &'a State,
-        restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
+        restrictions: &'a Condition<WildcardAndRestriction<P>>,
     ) -> ReplaceIterator<'a, 'a, P> {
         ReplaceIterator::new(self, target, rhs, state, restrictions)
     }
@@ -546,7 +546,7 @@ impl<P: AtomSet> Pattern<P> {
         rhs: &Pattern<P>,
         state: &'a State,
         workspace: &Workspace<P>,
-        restrictions: &HashMap<Identifier, Vec<PatternRestriction<P>>>,
+        restrictions: &Condition<WildcardAndRestriction<P>>,
         out: &mut Atom<P>,
     ) -> bool {
         let matched = self.replace_all_no_norm(target, rhs, state, workspace, restrictions, out);
@@ -568,7 +568,7 @@ impl<P: AtomSet> Pattern<P> {
         rhs: &Pattern<P>,
         state: &'a State,
         workspace: &Workspace<P>,
-        restrictions: &HashMap<Identifier, Vec<PatternRestriction<P>>>,
+        restrictions: &Condition<WildcardAndRestriction<P>>,
         out: &mut Atom<P>,
     ) -> bool {
         let mut match_stack = MatchStack::new(restrictions);
@@ -726,7 +726,7 @@ impl<P: AtomSet> Pattern<P> {
         &'a self,
         target: AtomView<'a, P>,
         state: &'a State,
-        restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
+        restrictions: &'a Condition<WildcardAndRestriction<P>>,
     ) -> PatternAtomTreeIterator<'a, 'a, P> {
         PatternAtomTreeIterator::new(self, target, state, restrictions)
     }
@@ -797,6 +797,158 @@ where
     Filter(Box<dyn FilterFn<P>>),
     Cmp(Identifier, Box<dyn CmpFn<P>>),
     NotGreedy,
+}
+
+type WildcardAndRestriction<P> = (Identifier, PatternRestriction<P>);
+
+pub enum Condition<T> {
+    And(Box<(Condition<T>, Condition<T>)>),
+    Or(Box<(Condition<T>, Condition<T>)>),
+    Not(Box<Condition<T>>),
+    Yield(T),
+    True,
+    False,
+}
+
+impl<T> Default for Condition<T> {
+    fn default() -> Self {
+        Condition::True
+    }
+}
+
+impl<P: AtomSet> Condition<WildcardAndRestriction<P>> {
+    /// Check if the conditions on `var` are met
+    fn check_possible(&self, var: Identifier, value: &Match<P>, stack: &MatchStack<P>) -> bool {
+        match self {
+            Condition::And(a) => {
+                a.0.check_possible(var, value, stack) && a.1.check_possible(var, value, stack)
+            }
+            Condition::Or(o) => {
+                o.0.check_possible(var, value, stack) || o.1.check_possible(var, value, stack)
+            }
+            Condition::Not(n) => !n.check_possible(var, value, stack),
+            Condition::True => true,
+            Condition::False => false,
+            Condition::Yield((v, r)) => {
+                if *v != var {
+                    return true;
+                }
+
+                match r {
+                    PatternRestriction::IsAtomType(t) | PatternRestriction::IsNotAtomType(t) => {
+                        let is_type = match t {
+                            AtomType::Num => matches!(value, Match::Single(AtomView::Num(_))),
+                            AtomType::Var => matches!(value, Match::Single(AtomView::Var(_))),
+                            AtomType::Add => matches!(
+                                value,
+                                Match::Single(AtomView::Add(_))
+                                    | Match::Multiple(SliceType::Add, _)
+                            ),
+                            AtomType::Mul => matches!(
+                                value,
+                                Match::Single(AtomView::Mul(_))
+                                    | Match::Multiple(SliceType::Mul, _)
+                            ),
+                            AtomType::Pow => matches!(
+                                value,
+                                Match::Single(AtomView::Pow(_))
+                                    | Match::Multiple(SliceType::Pow, _)
+                            ),
+                            AtomType::Fun => matches!(value, Match::Single(AtomView::Fun(_))),
+                        };
+
+                        is_type == matches!(r, PatternRestriction::IsAtomType(_))
+                    }
+                    PatternRestriction::IsLiteralWildcard(wc) => {
+                        if let Match::Single(AtomView::Var(v)) = value {
+                            wc == &v.get_name()
+                        } else {
+                            false
+                        }
+                    }
+                    PatternRestriction::Length(min, max) => match &value {
+                        Match::Single(_) | Match::FunctionName(_) => {
+                            *min <= 1 && max.map(|m| m >= 1).unwrap_or(true)
+                        }
+                        Match::Multiple(_, slice) => {
+                            *min <= slice.len() && max.map(|m| m >= slice.len()).unwrap_or(true)
+                        }
+                    },
+                    PatternRestriction::Filter(f) => f(&value),
+                    PatternRestriction::Cmp(other_id, f) => {
+                        if let Some((_, value2)) = stack.stack.iter().find(|(k, _)| k == other_id) {
+                            f(&value, value2)
+                        } else {
+                            true // FIXME
+                        }
+                    }
+                    PatternRestriction::NotGreedy => true,
+                }
+            }
+        }
+    }
+
+    fn get_range_hint(&self, var: Identifier) -> (Option<usize>, Option<usize>) {
+        match self {
+            Condition::And(a) => {
+                let (min1, max1) = a.0.get_range_hint(var);
+                let (min2, max2) = a.1.get_range_hint(var);
+
+                (
+                    match (min1, min2) {
+                        (None, None) => None,
+                        (None, Some(m)) => Some(m),
+                        (Some(m), None) => Some(m),
+                        (Some(m1), Some(m2)) => Some(m1.max(m2)),
+                    },
+                    match (max1, max2) {
+                        (None, None) => None,
+                        (None, Some(m)) => Some(m),
+                        (Some(m), None) => Some(m),
+                        (Some(m1), Some(m2)) => Some(m1.min(m2)),
+                    },
+                )
+            }
+            Condition::Or(o) => {
+                // take the extremes of the min and max
+                let (min1, max1) = o.0.get_range(var);
+                let (min2, max2) = o.1.get_range(var);
+
+                (
+                    if let (Some(m1), Some(m2)) = (min1, min2) {
+                        m1.min(m2)
+                    } else {
+                        None
+                    },
+                    if let (Some(m1), Some(m2)) = (max1, max2) {
+                        m1.max(m2)
+                    } else {
+                        None
+                    },
+                )
+            }
+            Condition::Not(_) => {
+                // the range is disconnected and therefore cannot be described
+                // using our range conditions
+                (None, None)
+            }
+            Condition::True | Condition::False => (None, None),
+            Condition::Yield((v, r)) => {
+                if *v != var {
+                    return (None, None);
+                }
+
+                match r {
+                    PatternRestriction::Length(min, max) => (Some(*min), max.clone()),
+                    PatternRestriction::IsAtomType(
+                        AtomType::Var | AtomType::Num | AtomType::Fun,
+                    )
+                    | PatternRestriction::IsLiteralWildcard(_) => (Some(1), Some(1)),
+                    _ => (None, None),
+                }
+            }
+        }
+    }
 }
 
 impl<P: AtomSet + 'static> Clone for PatternRestriction<P> {
@@ -901,11 +1053,11 @@ impl<'a, P: AtomSet> Match<'a, P> {
 }
 
 /// An insertion-ordered map of wildcard identifiers to a subexpressions.
-/// It keeps track of all restrictions on wilcards and will check them
+/// It keeps track of all restrictions on wildcards and will check them
 /// before inserting.
 pub struct MatchStack<'a, 'b, P: AtomSet> {
     stack: SmallVec<[(Identifier, Match<'a, P>); 10]>,
-    restrictions: &'b HashMap<Identifier, Vec<PatternRestriction<P>>>,
+    restrictions: &'b Condition<WildcardAndRestriction<P>>,
 }
 
 impl<'a, 'b, P: AtomSet> std::fmt::Debug for MatchStack<'a, 'b, P> {
@@ -918,9 +1070,7 @@ impl<'a, 'b, P: AtomSet> std::fmt::Debug for MatchStack<'a, 'b, P> {
 
 impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
     /// Create a new match stack.
-    pub fn new(
-        restrictions: &'b HashMap<Identifier, Vec<PatternRestriction<P>>>,
-    ) -> MatchStack<'a, 'b, P> {
+    pub fn new(restrictions: &'b Condition<WildcardAndRestriction<P>>) -> MatchStack<'a, 'b, P> {
         MatchStack {
             stack: SmallVec::new(),
             restrictions,
@@ -942,81 +1092,15 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
         }
 
         // test whether the current value passes all restrictions
-        if let Some(res) = self.restrictions.get(&key) {
-            for r in res {
-                match r {
-                    PatternRestriction::IsAtomType(t) | PatternRestriction::IsNotAtomType(t) => {
-                        let is_type = match t {
-                            AtomType::Num => matches!(value, Match::Single(AtomView::Num(_))),
-                            AtomType::Var => matches!(value, Match::Single(AtomView::Var(_))),
-                            AtomType::Add => matches!(
-                                value,
-                                Match::Single(AtomView::Add(_))
-                                    | Match::Multiple(SliceType::Add, _)
-                            ),
-                            AtomType::Mul => matches!(
-                                value,
-                                Match::Single(AtomView::Mul(_))
-                                    | Match::Multiple(SliceType::Mul, _)
-                            ),
-                            AtomType::Pow => matches!(
-                                value,
-                                Match::Single(AtomView::Pow(_))
-                                    | Match::Multiple(SliceType::Pow, _)
-                            ),
-                            AtomType::Fun => matches!(value, Match::Single(AtomView::Fun(_))),
-                        };
-
-                        if is_type == matches!(r, PatternRestriction::IsAtomType(_)) {
-                            continue;
-                        }
-                    }
-                    PatternRestriction::IsLiteralWildcard(wc) => {
-                        if let Match::Single(AtomView::Var(v)) = value {
-                            if wc == &v.get_name() {
-                                continue;
-                            }
-                        }
-                    }
-                    PatternRestriction::Length(min, max) => match &value {
-                        Match::Single(_) | Match::FunctionName(_) => {
-                            if *min <= 1 && max.map(|m| m >= 1).unwrap_or(true) {
-                                continue;
-                            }
-                        }
-                        Match::Multiple(_, slice) => {
-                            if *min <= slice.len() && max.map(|m| m >= slice.len()).unwrap_or(true)
-                            {
-                                continue;
-                            }
-                        }
-                    },
-                    PatternRestriction::Filter(f) => {
-                        if f(&value) {
-                            continue;
-                        }
-                    }
-                    PatternRestriction::Cmp(other_id, f) => {
-                        if let Some((_, value2)) = self.stack.iter().find(|(k, _)| k == other_id) {
-                            if f(&value, value2) {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        }
-                    }
-                    PatternRestriction::NotGreedy => {
-                        continue;
-                    }
-                }
-
-                return None;
-            }
+        // how to do this on a tree?
+        if !self.restrictions.check_possible(key, &value, self) {
+            return None;
         }
 
+        // FIXME: disabled now!
         // check if the new key appears in any of the other restrictions
         // TODO: improve performance
-        for (other_id, rs) in self.restrictions {
+        /*for (other_id, rs) in self.restrictions {
             if let Some((_, other_value)) = self.stack.iter().find(|(k, _)| k == other_id) {
                 for r in rs {
                     if let PatternRestriction::Cmp(key2, f) = r {
@@ -1026,7 +1110,7 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
                     }
                 }
             }
-        }
+        }*/
 
         self.stack.push((key, value));
         Some(self.stack.len() - 1)
@@ -1083,27 +1167,7 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
             }
         }
 
-        let mut minimal = None;
-        let mut maximal = None;
-
-        if let Some(res) = self.restrictions.get(&identifier) {
-            for r in res {
-                match r {
-                    PatternRestriction::Length(min, max) => {
-                        minimal = Some(minimal.map_or(*min, |v: usize| v.max(*min)));
-                        maximal = max.map_or(maximal, |v| Some(maximal.map_or(v, |v1| v.min(v1))));
-                    }
-                    PatternRestriction::IsAtomType(
-                        AtomType::Var | AtomType::Num | AtomType::Fun,
-                    )
-                    | PatternRestriction::IsLiteralWildcard(_) => {
-                        minimal = Some(1);
-                        maximal = Some(1);
-                    }
-                    _ => {}
-                }
-            }
-        }
+        let (minimal, maximal) = self.restrictions.get_range_hint(identifier);
 
         match state.get_wildcard_level(identifier) {
             1 => (minimal.unwrap_or(1), Some(maximal.unwrap_or(1))), // x_
@@ -1475,14 +1539,16 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                             }
                         }
 
-                        let greedy = match_stack
-                            .restrictions
-                            .get(name)
-                            .map(|c| {
-                                !c.iter()
-                                    .any(|cc| matches!(cc, PatternRestriction::NotGreedy))
-                            })
-                            .unwrap_or(true);
+                        // FIXME: this should be a setting and not a restriction
+                        let greedy = false;
+                        /*let greedy = match_stack
+                        .restrictions
+                        .get(name)
+                        .map(|c| {
+                            !c.iter()
+                                .any(|cc| matches!(cc, PatternRestriction::NotGreedy))
+                        })
+                        .unwrap_or(true);*/
 
                         PatternIter::Wildcard(WildcardIter {
                             initialized: false,
@@ -1907,7 +1973,7 @@ impl<'a: 'b, 'b, P: AtomSet> PatternAtomTreeIterator<'a, 'b, P> {
         pattern: &'b Pattern<P>,
         target: AtomView<'a, P>,
         state: &'a State,
-        restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
+        restrictions: &'a Condition<WildcardAndRestriction<P>>,
     ) -> PatternAtomTreeIterator<'a, 'b, P> {
         PatternAtomTreeIterator {
             pattern,
@@ -1976,7 +2042,7 @@ impl<'a: 'b, 'b, P: AtomSet + 'a + 'b> ReplaceIterator<'a, 'b, P> {
         target: AtomView<'a, P>,
         rhs: &'b Pattern<P>,
         state: &'a State,
-        restrictions: &'a HashMap<Identifier, Vec<PatternRestriction<P>>>,
+        restrictions: &'a Condition<WildcardAndRestriction<P>>,
     ) -> ReplaceIterator<'a, 'b, P> {
         ReplaceIterator {
             pattern_tree_iterator: PatternAtomTreeIterator::new(

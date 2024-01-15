@@ -34,8 +34,8 @@ use crate::{
     },
     evaluate::EvaluationFn,
     id::{
-        AtomType, Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction,
-        ReplaceIterator,
+        AtomType, Condition, Match, MatchStack, Pattern, PatternAtomTreeIterator,
+        PatternRestriction, ReplaceIterator, WildcardAndRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, Sample},
     parser::Token,
@@ -639,7 +639,7 @@ impl PythonPattern {
                 &state.borrow(),
                 workspace,
                 &mut out,
-                &MatchStack::new(&HashMap::default()),
+                &MatchStack::new(&Condition::default()),
             );
         });
 
@@ -714,8 +714,7 @@ impl PythonPattern {
             Transformer::ReplaceAll(
                 (*lhs.to_pattern()?.expr).clone(),
                 (*rhs.to_pattern()?.expr).clone(),
-                cond.map(|r| HashMap::clone(&r.restrictions))
-                    .unwrap_or(HashMap::default()),
+                cond.map(|r| r.condition.as_ref().clone())
             )
         );
     }
@@ -970,21 +969,29 @@ pub struct PythonExpression {
 #[pyclass(name = "PatternRestriction")]
 #[derive(Clone)]
 pub struct PythonPatternRestriction {
-    pub restrictions: Arc<HashMap<Identifier, Vec<PatternRestriction>>>,
+    pub condition: Arc<Condition<WildcardAndRestriction>>,
 }
 
 #[pymethods]
 impl PythonPatternRestriction {
-    /// Create a new pattern restriction that is the logical and operation between two restrictions (i.e., both should hold).
+    /// Create a new pattern restriction that is the logical 'and' operation between two restrictions (i.e., both should hold).
     pub fn __and__(&self, other: Self) -> PythonPatternRestriction {
-        let mut res = self.restrictions.as_ref().clone();
-
-        for (id, val) in other.restrictions.as_ref() {
-            res.entry(*id).or_insert(vec![]).extend_from_slice(val);
-        }
-
         PythonPatternRestriction {
-            restrictions: Arc::new(res),
+            condition: Arc::new(self.condition.as_ref().clone() & other.condition.as_ref().clone()),
+        }
+    }
+
+    /// Create a new pattern restriction that is the logical 'or' operation between two restrictions (i.e., one of the two should hold).
+    pub fn __or__(&self, other: Self) -> PythonPatternRestriction {
+        PythonPatternRestriction {
+            condition: Arc::new(self.condition.as_ref().clone() | other.condition.as_ref().clone()),
+        }
+    }
+
+    /// Create a new pattern restriction that takes the logical 'not' of the current restriction.
+    pub fn __invert__(&self) -> PythonPatternRestriction {
+        PythonPatternRestriction {
+            condition: Arc::new(!self.condition.as_ref().clone()),
         }
     }
 }
@@ -1076,28 +1083,28 @@ macro_rules! req_cmp {
                     ));
                 }
 
-                let mut h = HashMap::default();
-                h.insert(
-                    name,
-                    vec![PatternRestriction::Filter(Box::new(move |v: &Match<_>| {
-                        let k = num.expr.as_view();
-
-                        if let Match::Single(m) = v {
-                            if !$cmp_any_atom {
-                                if let AtomView::Num(_) = m {
-                                    return m.cmp(&k).$c();
-                                }
-                            } else {
-                                return m.cmp(&k).$c();
-                            }
-                        }
-
-                        false
-                    }))],
-                );
-
                 Ok(PythonPatternRestriction {
-                    restrictions: Arc::new(h),
+                    condition: Arc::new(
+                        (
+                            name,
+                            PatternRestriction::Filter(Box::new(move |v: &Match<_>| {
+                                let k = num.expr.as_view();
+
+                                if let Match::Single(m) = v {
+                                    if !$cmp_any_atom {
+                                        if let AtomView::Num(_) = m {
+                                            return m.cmp(&k).$c();
+                                        }
+                                    } else {
+                                        return m.cmp(&k).$c();
+                                    }
+                                }
+
+                                false
+                            })),
+                        )
+                            .into(),
+                    ),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1143,32 +1150,32 @@ macro_rules! req_wc_cmp {
             }
         };
 
-        let mut h = HashMap::default();
-        h.insert(
-            id,
-            vec![PatternRestriction::Cmp(
-                other_id,
-                Box::new(move |m1: &Match<_>, m2: &Match<_>| {
-                    if let Match::Single(a1) = m1 {
-                        if let Match::Single(a2) = m2 {
-                            if !$cmp_any_atom {
-                                if let AtomView::Num(_) = a1 {
-                                    if let AtomView::Num(_) = a2 {
+        Ok(PythonPatternRestriction {
+            condition: Arc::new(
+                (
+                    id,
+                    PatternRestriction::Cmp(
+                        other_id,
+                        Box::new(move |m1: &Match<_>, m2: &Match<_>| {
+                            if let Match::Single(a1) = m1 {
+                                if let Match::Single(a2) = m2 {
+                                    if !$cmp_any_atom {
+                                        if let AtomView::Num(_) = a1 {
+                                            if let AtomView::Num(_) = a2 {
+                                                return a1.cmp(a2).$c();
+                                            }
+                                        }
+                                    } else {
                                         return a1.cmp(a2).$c();
                                     }
                                 }
-                            } else {
-                                return a1.cmp(a2).$c();
                             }
-                        }
-                    }
-                    false
-                }),
-            )],
-        );
-
-        Ok(PythonPatternRestriction {
-            restrictions: Arc::new(h),
+                            false
+                        }),
+                    ),
+                )
+                    .into(),
+            ),
         })
     }};
 }
@@ -1232,7 +1239,7 @@ impl PythonExpression {
     /// >>> e = f(2,1)
     /// >>> print(e)
     /// f(1,2)
-    /// 
+    ///
     /// Define a linear and symmetric function:
     /// >>> p1, p2, p3, p4 = Expression.vars('p1', 'p2', 'p3', 'p4')
     /// >>> dot = Expression.fun('dot', is_symmetric=True, is_linear=True)
@@ -1764,14 +1771,10 @@ impl PythonExpression {
                     ));
                 }
 
-                let mut h = HashMap::default();
-                h.insert(
-                    name,
-                    vec![PatternRestriction::Length(min_length, max_length)],
-                );
-
                 Ok(PythonPatternRestriction {
-                    restrictions: Arc::new(h),
+                    condition: Arc::new(
+                        (name, PatternRestriction::Length(min_length, max_length)).into(),
+                    ),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1802,67 +1805,21 @@ impl PythonExpression {
                     ));
                 }
 
-                let mut h = HashMap::default();
-                h.insert(
-                    name,
-                    vec![PatternRestriction::IsAtomType(match atom_type {
-                        PythonAtomType::Num => AtomType::Num,
-                        PythonAtomType::Var => AtomType::Var,
-                        PythonAtomType::Add => AtomType::Add,
-                        PythonAtomType::Mul => AtomType::Mul,
-                        PythonAtomType::Pow => AtomType::Pow,
-                        PythonAtomType::Fn => AtomType::Fun,
-                    })],
-                );
-
                 Ok(PythonPatternRestriction {
-                    restrictions: Arc::new(h),
-                })
-            }
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Only wildcards can be restricted.",
-            )),
-        }
-    }
-
-    /// Create a pattern restriction that tests if the type of the atom
-    /// does not match `atom_type`.
-    ///
-    /// Examples
-    /// --------
-    /// >>> from symbolica import Expression, AtomType
-    /// >>> x, x_ = Expression.vars('x', 'x_')
-    /// >>> f = Expression.fun("f")
-    /// >>> e = f(x)*f(2)*f(f(3))
-    /// >>> e = e.replace_all(f(x_), 1, x_.req_ntype(AtomType.Var))
-    /// >>> print(e)
-    ///
-    /// Yields `f(x)*f(1)`.
-    pub fn req_ntype(&self, atom_type: PythonAtomType) -> PyResult<PythonPatternRestriction> {
-        match self.expr.as_view() {
-            AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards can be restricted.",
-                    ));
-                }
-
-                let mut h = HashMap::default();
-                h.insert(
-                    name,
-                    vec![PatternRestriction::IsNotAtomType(match atom_type {
-                        PythonAtomType::Num => AtomType::Num,
-                        PythonAtomType::Var => AtomType::Var,
-                        PythonAtomType::Add => AtomType::Add,
-                        PythonAtomType::Mul => AtomType::Mul,
-                        PythonAtomType::Pow => AtomType::Pow,
-                        PythonAtomType::Fn => AtomType::Fun,
-                    })],
-                );
-
-                Ok(PythonPatternRestriction {
-                    restrictions: Arc::new(h),
+                    condition: Arc::new(
+                        (
+                            name,
+                            PatternRestriction::IsAtomType(match atom_type {
+                                PythonAtomType::Num => AtomType::Num,
+                                PythonAtomType::Var => AtomType::Var,
+                                PythonAtomType::Add => AtomType::Add,
+                                PythonAtomType::Mul => AtomType::Mul,
+                                PythonAtomType::Pow => AtomType::Pow,
+                                PythonAtomType::Fn => AtomType::Fun,
+                            }),
+                        )
+                            .into(),
+                    ),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1894,11 +1851,8 @@ impl PythonExpression {
                     ));
                 }
 
-                let mut h = HashMap::default();
-                h.insert(name, vec![PatternRestriction::NotGreedy]);
-
                 Ok(PythonPatternRestriction {
-                    restrictions: Arc::new(h),
+                    condition: Arc::new((name, PatternRestriction::NotGreedy).into()),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1919,11 +1873,8 @@ impl PythonExpression {
                     ));
                 }
 
-                let mut h = HashMap::default();
-                h.insert(name, vec![PatternRestriction::IsLiteralWildcard(name)]);
-
                 Ok(PythonPatternRestriction {
-                    restrictions: Arc::new(h),
+                    condition: Arc::new((name, PatternRestriction::IsLiteralWildcard(name)).into()),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -2090,30 +2041,30 @@ impl PythonExpression {
             }
         };
 
-        let mut h = HashMap::default();
-        h.insert(
-            id,
-            vec![PatternRestriction::Filter(Box::new(move |m| {
-                let data = PythonExpression {
-                    expr: Arc::new({
-                        let mut a = Atom::new();
-                        m.to_atom(&mut a);
-                        a
-                    }),
-                };
-
-                Python::with_gil(|py| {
-                    filter_fn
-                        .call(py, (data,), None)
-                        .expect("Bad callback function")
-                        .extract::<bool>(py)
-                        .expect("Pattern filter does not return a boolean")
-                })
-            }))],
-        );
-
         Ok(PythonPatternRestriction {
-            restrictions: Arc::new(h),
+            condition: Arc::new(
+                (
+                    id,
+                    PatternRestriction::Filter(Box::new(move |m| {
+                        let data = PythonExpression {
+                            expr: Arc::new({
+                                let mut a = Atom::new();
+                                m.to_atom(&mut a);
+                                a
+                            }),
+                        };
+
+                        Python::with_gil(|py| {
+                            filter_fn
+                                .call(py, (data,), None)
+                                .expect("Bad callback function")
+                                .extract::<bool>(py)
+                                .expect("Pattern filter does not return a boolean")
+                        })
+                    })),
+                )
+                    .into(),
+            ),
         })
     }
 
@@ -2258,41 +2209,41 @@ impl PythonExpression {
             }
         };
 
-        let mut h = HashMap::default();
-        h.insert(
-            id,
-            vec![PatternRestriction::Cmp(
-                other_id,
-                Box::new(move |m1, m2| {
-                    let data1 = PythonExpression {
-                        expr: Arc::new({
-                            let mut a = Atom::new();
-                            m1.to_atom(&mut a);
-                            a
-                        }),
-                    };
-
-                    let data2 = PythonExpression {
-                        expr: Arc::new({
-                            let mut a = Atom::new();
-                            m2.to_atom(&mut a);
-                            a
-                        }),
-                    };
-
-                    Python::with_gil(|py| {
-                        cmp_fn
-                            .call(py, (data1, data2), None)
-                            .expect("Bad callback function")
-                            .extract::<bool>(py)
-                            .expect("Pattern comparison does not return a boolean")
-                    })
-                }),
-            )],
-        );
-
         Ok(PythonPatternRestriction {
-            restrictions: Arc::new(h),
+            condition: Arc::new(
+                (
+                    id,
+                    PatternRestriction::Cmp(
+                        other_id,
+                        Box::new(move |m1, m2| {
+                            let data1 = PythonExpression {
+                                expr: Arc::new({
+                                    let mut a = Atom::new();
+                                    m1.to_atom(&mut a);
+                                    a
+                                }),
+                            };
+
+                            let data2 = PythonExpression {
+                                expr: Arc::new({
+                                    let mut a = Atom::new();
+                                    m2.to_atom(&mut a);
+                                    a
+                                }),
+                            };
+
+                            Python::with_gil(|py| {
+                                cmp_fn
+                                    .call(py, (data1, data2), None)
+                                    .expect("Bad callback function")
+                                    .extract::<bool>(py)
+                                    .expect("Pattern comparison does not return a boolean")
+                            })
+                        }),
+                    ),
+                )
+                    .into(),
+            ),
         })
     }
 
@@ -2831,8 +2782,8 @@ impl PythonExpression {
         cond: Option<PythonPatternRestriction>,
     ) -> PyResult<PythonMatchIterator> {
         let restrictions = cond
-            .map(|r| r.restrictions.clone())
-            .unwrap_or(Arc::new(HashMap::default()));
+            .map(|r| r.condition.clone())
+            .unwrap_or(Arc::new(Condition::default()));
         Ok(PythonMatchIterator::new(
             (
                 lhs.to_pattern()?.expr,
@@ -2872,8 +2823,8 @@ impl PythonExpression {
         cond: Option<PythonPatternRestriction>,
     ) -> PyResult<PythonReplaceIterator> {
         let restrictions = cond
-            .map(|r| r.restrictions.clone())
-            .unwrap_or(Arc::new(HashMap::default()));
+            .map(|r| r.condition.clone())
+            .unwrap_or(Arc::new(Condition::default()));
 
         Ok(PythonReplaceIterator::new(
             (
@@ -2925,9 +2876,7 @@ impl PythonExpression {
                 rhs,
                 state,
                 workspace,
-                cond.as_ref()
-                    .map(|r| r.restrictions.as_ref())
-                    .unwrap_or(&HashMap::default()),
+                cond.as_ref().map(|r| r.condition.as_ref()),
                 &mut out,
             ) {
                 if !repeat.unwrap_or(false) {
@@ -3289,7 +3238,7 @@ impl PythonAtomIterator {
 type OwnedMatch = (
     Arc<Pattern>,
     Arc<Atom>,
-    Arc<HashMap<Identifier, Vec<PatternRestriction>>>,
+    Arc<Condition<WildcardAndRestriction>>,
     State,
 );
 type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a, crate::representations::default::Linear>;
@@ -3341,7 +3290,7 @@ type OwnedReplace = (
     Arc<Pattern>,
     Arc<Atom>,
     Arc<Pattern>,
-    Arc<HashMap<Identifier, Vec<PatternRestriction>>>,
+    Arc<Condition<WildcardAndRestriction>>,
     State,
 );
 type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a, crate::representations::default::Linear>;

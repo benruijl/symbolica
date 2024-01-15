@@ -14,11 +14,11 @@ fn main() {
     let pat_expr = Atom::parse("z*x_*y_*g_(z_,x_,w_)", &mut state, &workspace).unwrap();
 
     let pattern = pat_expr.as_view().into_pattern(&state);
-    let mut restrictions = HashMap::default();
-    restrictions.insert(
+    let restrictions = (
         state.get_or_insert_var("x_"),
-        vec![PatternRestriction::Length(1, Some(100))],
-    );
+        PatternRestriction::Length(1, Some(100)),
+    )
+        .into();
 
     println!(
         "> Matching pattern {} to {}:",

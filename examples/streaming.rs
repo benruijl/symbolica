@@ -1,5 +1,3 @@
-use ahash::HashMap;
-
 use symbolica::{
     id::Pattern,
     representations::Atom,
@@ -20,14 +18,7 @@ fn main() {
     // map every term in the expression
     stream = stream.map(|workspace, x| {
         let mut out1 = workspace.new_atom();
-        pattern.replace_all(
-            x.as_view(),
-            &rhs,
-            &state,
-            workspace,
-            &HashMap::default(),
-            &mut out1,
-        );
+        pattern.replace_all(x.as_view(), &rhs, &state, workspace, None, &mut out1);
 
         let mut out2 = workspace.new_atom();
         out1.as_view().normalize(workspace, &state, &mut out2);

@@ -1,4 +1,3 @@
-use ahash::HashMap;
 use symbolica::{
     id::Pattern,
     representations::Atom,
@@ -14,13 +13,6 @@ fn main() {
     let rhs = Pattern::parse("f(1,2,y_+1)", &mut state, &workspace).unwrap();
 
     let mut out = Atom::new();
-    pat.replace_all(
-        expr.as_view(),
-        &rhs,
-        &state,
-        &workspace,
-        &HashMap::default(),
-        &mut out,
-    );
+    pat.replace_all(expr.as_view(), &rhs, &state, &workspace, None, &mut out);
     println!("{}", out.printer(&state));
 }

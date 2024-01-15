@@ -1,4 +1,3 @@
-use ahash::HashMap;
 use symbolica::{
     id::Pattern,
     representations::Atom,
@@ -29,7 +28,7 @@ fn main() {
             ))),
             &state,
             &workspace,
-            &HashMap::default(),
+            None,
             &mut o,
         );
 

@@ -1,6 +1,6 @@
 use symbolica::{
     representations::Atom,
-    rings::{
+    domains::{
         integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
     },
     state::{State, Workspace},

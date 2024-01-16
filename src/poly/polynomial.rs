@@ -8,13 +8,13 @@ use std::mem;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::Arc;
 
-use crate::printer::PolynomialPrinter;
-use crate::rings::finite_field::{
+use crate::domains::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
 };
-use crate::rings::integer::{Integer, IntegerRing};
-use crate::rings::rational::RationalField;
-use crate::rings::{EuclideanDomain, Field, Ring, RingPrinter};
+use crate::domains::integer::{Integer, IntegerRing};
+use crate::domains::rational::RationalField;
+use crate::domains::{EuclideanDomain, Field, Ring, RingPrinter};
+use crate::printer::PolynomialPrinter;
 use crate::state::State;
 
 use super::gcd::PolynomialGCD;
@@ -1918,16 +1918,44 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         &self,
         div: &MultivariatePolynomial<F, E, LexOrder>,
     ) -> Option<MultivariatePolynomial<F, E, LexOrder>> {
-        if self.is_zero() {
-            return Some(self.clone());
-        }
-
         if div.is_zero() {
             panic!("Cannot divide by 0 polynomial");
         }
 
+        if self.is_zero() {
+            return Some(self.clone());
+        }
+
         if (0..self.nvars).any(|v| self.degree(v) < div.degree(v)) {
             return None;
+        }
+
+        if self.field.is_characteristic_zero() {
+            // test division of constant term (evaluation at x_i = 0)
+            let c = div.get_constant();
+            if !F::is_zero(&c)
+                && !self.field.is_one(&c)
+                && !F::is_zero(&self.field.quot_rem(&self.get_constant(), &c).1)
+            {
+                return None;
+            }
+
+            // test division at x_i = 1
+            let mut num = self.field.zero();
+            for c in &self.coefficients {
+                self.field.add_assign(&mut num, c);
+            }
+            let mut den = self.field.zero();
+            for c in &div.coefficients {
+                self.field.add_assign(&mut den, c);
+            }
+
+            if !F::is_zero(&den)
+                && !self.field.is_one(&den)
+                && !F::is_zero(&self.field.quot_rem(&num, &den).1)
+            {
+                return None;
+            }
         }
 
         let (a, b) = self.quot_rem(div, true);

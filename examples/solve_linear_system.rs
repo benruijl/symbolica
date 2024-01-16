@@ -4,7 +4,7 @@ use symbolica::{
     parser::Token,
     poly::Variable,
     representations::{Atom, AtomView},
-    rings::{
+    domains::{
         integer::IntegerRing,
         linear_system::Matrix,
         rational::RationalField,

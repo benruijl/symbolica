@@ -12,7 +12,7 @@ use crate::{
         number::{ConvertToRing, Number},
         Atom, AtomSet, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar,
     },
-    rings::Ring,
+    domains::Ring,
     state::{ResettableBuffer, State, Workspace},
 };
 

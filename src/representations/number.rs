@@ -8,7 +8,7 @@ use rug::{
 };
 
 use crate::{
-    rings::{
+    domains::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
         },

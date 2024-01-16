@@ -3,7 +3,7 @@ use std::sync::Arc;
 use symbolica::{
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Variable},
     representations::Atom,
-    rings::{
+    domains::{
         finite_field::{FiniteField, FiniteFieldCore},
         integer::IntegerRing,
     },

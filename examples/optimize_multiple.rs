@@ -1,7 +1,7 @@
 use symbolica::{
     poly::evaluate::{HornerScheme, InstructionSetPrinter},
     representations::Atom,
-    rings::rational::{Rational, RationalField},
+    domains::rational::{Rational, RationalField},
     state::{State, Workspace},
 };
 

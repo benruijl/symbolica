@@ -3,7 +3,7 @@ use ahash::HashMap;
 use crate::{
     poly::Variable,
     representations::{number::BorrowedNumber, Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
-    rings::{float::Real, rational::Rational},
+    domains::{float::Real, rational::Rational},
     state::State,
 };
 

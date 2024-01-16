@@ -590,6 +590,10 @@ where
         false
     }
 
+    fn is_characteristic_zero(&self) -> bool {
+        self.ring.is_characteristic_zero()
+    }
+
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
         todo!("Sampling a polynomial is not possible yet")
     }

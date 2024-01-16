@@ -2,7 +2,7 @@ use std::{cmp::Ordering, rc::Rc};
 
 use ahash::HashMap;
 
-use crate::rings::{
+use crate::domains::{
     finite_field::{FiniteField, FiniteFieldCore, Mersenne64},
     rational::RationalField,
     Field, Ring,

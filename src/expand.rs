@@ -7,7 +7,7 @@ use crate::{
         number::{BorrowedNumber, Number},
         Add, Atom, AtomSet, AtomView, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow, Pow,
     },
-    rings::integer::Integer,
+    domains::integer::Integer,
     state::{BufferHandle, State, Workspace},
 };
 

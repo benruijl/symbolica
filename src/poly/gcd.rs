@@ -8,13 +8,13 @@ use std::ops::Add;
 use tracing::{debug, instrument};
 
 use crate::poly::INLINED_EXPONENTS;
-use crate::rings::finite_field::{
+use crate::domains::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
 };
-use crate::rings::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIMES};
-use crate::rings::linear_system::{LinearSolverError, Matrix};
-use crate::rings::rational::RationalField;
-use crate::rings::{EuclideanDomain, Field, Ring};
+use crate::domains::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIMES};
+use crate::domains::linear_system::{LinearSolverError, Matrix};
+use crate::domains::rational::RationalField;
+use crate::domains::{EuclideanDomain, Field, Ring};
 
 use super::polynomial::MultivariatePolynomial;
 use super::Exponent;

@@ -6,12 +6,12 @@ use std::{
 use ahash::{AHasher, HashMap, HashSet, HashSetExt};
 use rand::{thread_rng, Rng};
 
-use crate::rings::{
+use crate::domains::{
     float::NumericalFloatLike,
     rational::{Rational, RationalField},
     EuclideanDomain,
 };
-use crate::{rings::Ring, state::State};
+use crate::{domains::Ring, state::State};
 
 use super::{polynomial::MultivariatePolynomial, Exponent};
 

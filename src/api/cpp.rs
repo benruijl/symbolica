@@ -7,15 +7,15 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::parser::Token;
 use crate::poly::Variable;
-use crate::rings::finite_field::{FiniteField, FiniteFieldCore, Mersenne64};
-use crate::rings::integer::IntegerRing;
-use crate::rings::rational::RationalField;
+use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64};
+use crate::domains::integer::IntegerRing;
+use crate::domains::rational::RationalField;
 use crate::LicenseManager;
 use crate::{
     printer::{FactorizedRationalPolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::default::Linear,
-    rings::factorized_rational_polynomial::FactorizedRationalPolynomial,
-    rings::rational_polynomial::RationalPolynomial,
+    domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
+    domains::rational_polynomial::RationalPolynomial,
     state::{State, Workspace},
 };
 

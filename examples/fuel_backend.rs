@@ -7,7 +7,7 @@ use smartstring::{LazyCompact, SmartString};
 use symbolica::{
     parser::Token,
     printer::{PrintOptions, RationalPolynomialPrinter},
-    rings::{
+    domains::{
         integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
     },
     state::{State, Workspace},

@@ -9,7 +9,7 @@ use crate::{
         number::{BorrowedNumber, Number},
         Add, Atom, AtomSet, AtomView, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
     },
-    rings::{
+    domains::{
         integer::{Integer, IntegerRing},
         rational_polynomial::RationalPolynomial,
     },

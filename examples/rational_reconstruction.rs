@@ -1,4 +1,4 @@
-use symbolica::rings::{
+use symbolica::domains::{
     finite_field::{FiniteField, FiniteFieldCore},
     rational::{Rational, RationalField},
     Field, Ring,

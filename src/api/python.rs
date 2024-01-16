@@ -21,6 +21,16 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    domains::{
+        finite_field::{FiniteField, FiniteFieldCore},
+        float::Complex,
+        integer::IntegerRing,
+    },
+    domains::{
+        integer::Integer,
+        rational::RationalField,
+        rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
+    },
     evaluate::EvaluationFn,
     id::{
         AtomType, Match, MatchStack, Pattern, PatternAtomTreeIterator, PatternRestriction,
@@ -41,16 +51,6 @@ use crate::{
     representations::{
         default::ListIteratorD, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier,
         ListSlice, Mul, Num, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
-    },
-    rings::{
-        finite_field::{FiniteField, FiniteFieldCore},
-        float::Complex,
-        integer::IntegerRing,
-    },
-    rings::{
-        integer::Integer,
-        rational::RationalField,
-        rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
     },
     state::{FunctionAttribute, ResettableBuffer, State, Workspace},
     streaming::TermStreamer,

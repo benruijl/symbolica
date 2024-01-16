@@ -26,7 +26,7 @@ pub mod parser;
 pub mod poly;
 pub mod printer;
 pub mod representations;
-pub mod rings;
+pub mod domains;
 pub mod solve;
 pub mod state;
 pub mod streaming;

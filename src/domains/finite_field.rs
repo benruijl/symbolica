@@ -3,7 +3,7 @@ use std::fmt::{Display, Error, Formatter};
 use std::hash::Hash;
 use std::ops::Neg;
 
-use crate::rings::integer::{Integer, IntegerRing};
+use crate::domains::integer::{Integer, IntegerRing};
 use crate::state::State;
 
 use super::{EuclideanDomain, Field, Ring};
@@ -265,6 +265,10 @@ impl Ring for FiniteField<u32> {
         true
     }
 
+    fn is_characteristic_zero(&self) -> bool {
+        false
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0.max(0)..range.1.min(self.p as i64));
         FiniteFieldElement(r as u32)
@@ -433,7 +437,6 @@ impl<UField: Display> Display for FiniteField<UField> {
 
 impl Ring for FiniteField<u64> {
     type Element = FiniteFieldElement<u64>;
-
     /// Add two numbers in Montgomory form.
     #[inline(always)]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -445,7 +448,6 @@ impl Ring for FiniteField<u64> {
             FiniteFieldElement(r)
         }
     }
-
     /// Subtract `b` from `a`, where `a` and `b` are in Montgomory form.
     #[inline(always)]
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -552,6 +554,10 @@ impl Ring for FiniteField<u64> {
 
     fn one_is_gcd_unit() -> bool {
         true
+    }
+
+    fn is_characteristic_zero(&self) -> bool {
+        false
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -820,6 +826,10 @@ impl Ring for FiniteField<Mersenne64> {
         true
     }
 
+    fn is_characteristic_zero(&self) -> bool {
+        false
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng
             .gen_range(range.0.max(0)..range.1.min(Mersenne64::PRIME.min(i64::MAX as u64) as i64));
@@ -1011,6 +1021,10 @@ impl Ring for FiniteField<Integer> {
 
     fn one_is_gcd_unit() -> bool {
         true
+    }
+
+    fn is_characteristic_zero(&self) -> bool {
+        false
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {

@@ -2,7 +2,7 @@ use ahash::HashMap;
 use symbolica::{
     id::{Match, PatternRestriction},
     representations::{number::BorrowedNumber, Atom, AtomView, Num},
-    rings::finite_field,
+    domains::finite_field,
     state::{State, Workspace},
 };
 fn main() {

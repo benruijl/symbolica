@@ -1,10 +1,10 @@
+pub mod factorized_rational_polynomial;
 pub mod finite_field;
 pub mod float;
 pub mod integer;
 pub mod linear_system;
 pub mod rational;
 pub mod rational_polynomial;
-pub mod factorized_rational_polynomial;
 
 use std::fmt::{Debug, Display, Error, Formatter};
 
@@ -31,6 +31,7 @@ pub trait Ring: Clone + PartialEq + Debug + Display {
     fn is_one(&self, a: &Self::Element) -> bool;
     /// Should return `true` iff `gcd(1,x)` returns `1` for any `x`.
     fn one_is_gcd_unit() -> bool;
+    fn is_characteristic_zero(&self) -> bool;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
     fn fmt_display(

@@ -1,6 +1,6 @@
 use symbolica::{
     poly::polynomial::MultivariatePolynomial,
-    rings::{
+    domains::{
         finite_field::{FiniteField, FiniteFieldCore},
         rational::{Rational, RationalField},
     },

@@ -5,7 +5,7 @@ use ahash::HashMap;
 use crate::{
     poly::{Exponent, Variable},
     representations::{Atom, AtomSet, AtomView, Identifier},
-    rings::{
+    domains::{
         integer::IntegerRing,
         linear_system::Matrix,
         rational::RationalField,

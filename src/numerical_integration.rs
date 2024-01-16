@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::rings::float::{NumericalFloatComparison, Real};
+use crate::domains::float::{NumericalFloatComparison, Real};
 
 /// Keep track of statistical quantities, such as the average,
 /// the error and the chi-squared of samples added over multiple

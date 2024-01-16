@@ -264,8 +264,8 @@ impl<F: Field> Matrix<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rings::finite_field::{FiniteField, FiniteFieldCore};
-    use crate::rings::rational::{Rational, RationalField};
+    use crate::domains::finite_field::{FiniteField, FiniteFieldCore};
+    use crate::domains::rational::{Rational, RationalField};
 
     #[test]
     fn test_solve_trivial() {

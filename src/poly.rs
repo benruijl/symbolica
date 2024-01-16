@@ -23,12 +23,12 @@ use crate::representations::{
     Add, Atom, AtomSet, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow,
     OwnedVar, Pow, Var,
 };
-use crate::rings::factorized_rational_polynomial::{
+use crate::domains::factorized_rational_polynomial::{
     FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
 };
-use crate::rings::integer::{Integer, IntegerRing};
-use crate::rings::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
-use crate::rings::{EuclideanDomain, Ring};
+use crate::domains::integer::{Integer, IntegerRing};
+use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
+use crate::domains::{EuclideanDomain, Ring};
 use crate::state::{BufferHandle, State, Workspace};
 use crate::utils;
 

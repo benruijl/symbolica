@@ -2,7 +2,7 @@ use ahash::HashMap;
 use smallvec::SmallVec;
 use std::{cmp::Ordering, hash::Hash};
 
-use crate::rings::integer::Integer;
+use crate::domains::integer::Integer;
 
 /// An iterator for combinations without replacement.
 pub struct CombinationIterator {

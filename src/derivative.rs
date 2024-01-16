@@ -6,7 +6,7 @@ use crate::{
         Add, AsAtomView, Atom, AtomBuilder, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd,
         OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
     },
-    rings::{integer::Integer, rational::Rational},
+    domains::{integer::Integer, rational::Rational},
     state::{State, Workspace},
 };
 

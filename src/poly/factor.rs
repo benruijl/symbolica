@@ -7,7 +7,7 @@ use tracing::debug;
 use crate::{
     combinatorics::CombinationIterator,
     poly::gcd::LARGE_U32_PRIMES,
-    rings::{
+    domains::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldWorkspace, PrimeIteratorU64, ToFiniteField,
         },

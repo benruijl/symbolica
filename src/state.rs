@@ -13,7 +13,7 @@ use crate::{
         default::Linear, number::Number, AsAtomView, Atom, AtomSet, AtomView, Identifier, OwnedNum,
         OwnedVar,
     },
-    rings::finite_field::{FiniteField, FiniteFieldCore},
+    domains::finite_field::{FiniteField, FiniteFieldCore},
     LicenseManager, LICENSE_MANAGER,
 };
 

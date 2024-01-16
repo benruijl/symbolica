@@ -157,12 +157,11 @@ where
     // convert to standard form
     let mut e = vec![E::zero(); u[0].nvars];
     e[x] = E::one();
-    let xp = MultivariatePolynomial::new_from_monomial(&u[0], field.one(), e);
+    let xp = u[0].monomial(field.one(), e);
     let mut u = v[v.len() - 1].clone();
     for k in (0..v.len() - 1).rev() {
         // TODO: prevent cloning
-        u = u * &(xp.clone() - MultivariatePolynomial::new_from_constant(&v[0], a[k].clone()))
-            + v[k].clone();
+        u = u * &(xp.clone() - v[0].constant(a[k].clone())) + v[k].clone();
     }
     u
 }
@@ -1625,7 +1624,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     break;
                 }
             }
-            return Some(MultivariatePolynomial::new_from_constant(a, gcd));
+            return Some(a.constant(gcd));
         }
 
         if b.is_constant() {
@@ -1636,7 +1635,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     break;
                 }
             }
-            return Some(MultivariatePolynomial::new_from_constant(a, gcd));
+            return Some(a.constant(gcd));
         }
 
         None
@@ -1690,12 +1689,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         let mut base_degree: SmallVec<[Option<E>; INLINED_EXPONENTS]> = smallvec![None; a.nvars];
 
         if let Some(g) = MultivariatePolynomial::simple_gcd(&a, &b) {
-            return rescale_gcd(
-                g,
-                &shared_degree,
-                &base_degree,
-                &a.new_from_constant(a.field.one()),
-            );
+            return rescale_gcd(g, &shared_degree, &base_degree, &a.constant(a.field.one()));
         }
 
         // check if the polynomial are functions of x^n, n > 1
@@ -1776,7 +1770,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 gcd.0,
                 &shared_degree,
                 &base_degree,
-                &a.new_from_constant(a.field.one()),
+                &a.constant(a.field.one()),
             );
         }
 
@@ -1794,12 +1788,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         if a == b {
             debug!("Equal {} ", a);
-            return rescale_gcd(
-                a.into_owned(),
-                &shared_degree,
-                &base_degree,
-                &MultivariatePolynomial::one(&b.field),
-            );
+            return rescale_gcd(a.into_owned(), &shared_degree, &base_degree, &b.one());
         }
 
         // compute the gcd efficiently if some variables do not occur in both
@@ -1827,26 +1816,16 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 PolynomialGCD::gcd_multiple(f),
                 &shared_degree,
                 &base_degree,
-                &MultivariatePolynomial::one(&a.field),
+                &a.one(),
             );
         }
 
         // try if b divides a or vice versa, doing a heuristical length check first
         if a.nterms() >= b.nterms() && a.divides(&b).is_some() {
-            return rescale_gcd(
-                b.into_owned(),
-                &shared_degree,
-                &base_degree,
-                &MultivariatePolynomial::one(&a.field),
-            );
+            return rescale_gcd(b.into_owned(), &shared_degree, &base_degree, &a.one());
         }
         if a.nterms() <= b.nterms() && b.divides(&a).is_some() {
-            return rescale_gcd(
-                a.into_owned(),
-                &shared_degree,
-                &base_degree,
-                &MultivariatePolynomial::one(&b.field),
-            );
+            return rescale_gcd(a.into_owned(), &shared_degree, &base_degree, &b.one());
         }
 
         // check if the polynomial is linear in a variable and compute the gcd using the univariate content
@@ -1868,7 +1847,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                         cont,
                         &shared_degree,
                         &base_degree,
-                        &p1.new_from_constant(p1.field.one()),
+                        &p1.constant(p1.field.one()),
                     );
                 }
             }
@@ -1921,7 +1900,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             let uca = a.content();
             let ucb = b.content();
             let content = a.field.gcd(&a.content(), &b.content());
-            let p = MultivariatePolynomial::new_from(&a, Some(1));
+            let p = a.zero_with_capacity(1);
 
             if !a.field.is_one(&uca) {
                 a = Cow::Owned(a.into_owned().div_coeff(&uca));
@@ -1989,12 +1968,12 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             var: usize,
             xi: &Integer,
         ) -> MultivariatePolynomial<IntegerRing, E> {
-            let mut g = MultivariatePolynomial::new_from(&gamma, None);
+            let mut g = gamma.zero();
             let mut i = 0;
             let xi_half = xi / &Integer::Natural(2);
             while !gamma.is_zero() {
                 // create xi-adic representation using the symmetric modulus
-                let mut g_i = MultivariatePolynomial::new_from(&gamma, Some(gamma.nterms()));
+                let mut g_i = gamma.zero_with_capacity(gamma.nterms());
                 for m in &gamma {
                     let mut c = IntegerRing::new().quot_rem(m.coefficient, xi).1;
 
@@ -2141,11 +2120,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
             Err(HeuristicGCDError::BadReconstruction)
         } else {
-            Ok((
-                MultivariatePolynomial::new_from_constant(self, content_gcd),
-                a.into_owned(),
-                b.into_owned(),
-            ))
+            Ok((self.constant(content_gcd), a.into_owned(), b.into_owned()))
         }
     }
 
@@ -2178,7 +2153,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                     gcd = x.field.gcd(&gcd, &x.content());
                 }
-                return MultivariatePolynomial::new_from_constant(n, gcd);
+                return n.constant(gcd);
             }
 
             // take the smallest element
@@ -2193,7 +2168,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
             // add all other polynomials
             let term_bound = f.iter().map(|x| x.nterms()).sum();
-            let mut b = a.new_from(Some(term_bound));
+            let mut b = a.zero_with_capacity(term_bound);
 
             // prevent sampling f[i] and f[i+prime_len] with the same
             // prefactor every iteration
@@ -2362,7 +2337,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let lcoeff_factor = gp.field.div(&gammap, &gpc);
 
             // construct the gcd suggestion in Z
-            let mut gm = a.new_from(Some(gp.nterms()));
+            let mut gm = a.zero_with_capacity(gp.nterms());
             gm.exponents = gp.exponents.clone();
             gm.coefficients = gp
                 .coefficients
@@ -2374,7 +2349,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
             debug!("GCD suggestion with gamma: {} mod {} ", gm, p);
 
-            let mut old_gm = a.new_from(None);
+            let mut old_gm = a.zero();
 
             // add new primes until we can reconstruct the full gcd
             'newprime: loop {
@@ -2713,7 +2688,7 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         let res_int =
             MultivariatePolynomial::gcd_zippel::<u32>(&a_int, &b_int, vars, bounds, tight_bounds);
 
-        let mut res = a.new_from(Some(res_int.nterms()));
+        let mut res = a.zero_with_capacity(res_int.nterms());
 
         for t in &res_int {
             res.append_monomial(

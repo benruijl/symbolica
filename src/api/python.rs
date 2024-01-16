@@ -8,7 +8,8 @@ use std::{
 use ahash::HashMap;
 use once_cell::sync::Lazy;
 use pyo3::{
-    exceptions, pyclass,
+    exceptions::{self, PyIndexError},
+    pyclass,
     pyclass::CompareOp,
     pyfunction, pymethods, pymodule,
     types::{PyComplex, PyLong, PyModule, PyTuple, PyType},
@@ -38,8 +39,8 @@ use crate::{
     },
     printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::{
-        default::ListIteratorD, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul,
-        Num, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+        default::ListIteratorD, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier,
+        ListSlice, Mul, Num, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
     rings::{
         finite_field::{FiniteField, FiniteFieldCore},
@@ -1660,7 +1661,6 @@ impl PythonExpression {
             )))),
         })
     }
-
 
     /// Get the `idx`th component of the expression.
     fn __getitem__(&self, idx: isize) -> PyResult<PythonExpression> {

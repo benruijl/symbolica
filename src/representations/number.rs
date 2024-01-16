@@ -8,7 +8,6 @@ use rug::{
 };
 
 use crate::{
-    poly::polynomial::MultivariatePolynomial,
     rings::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
@@ -311,14 +310,8 @@ impl BorrowedNumber<'_> {
             | (BorrowedNumber::RationalPolynomial(p), BorrowedNumber::Natural(n, d)) => {
                 let r = (*p).clone();
                 let r2 = RationalPolynomial {
-                    numerator: MultivariatePolynomial::new_from_constant(
-                        &p.numerator,
-                        Integer::Natural(*n),
-                    ),
-                    denominator: MultivariatePolynomial::new_from_constant(
-                        &p.denominator,
-                        Integer::Natural(*d),
-                    ),
+                    numerator: p.numerator.constant(Integer::Natural(*n)),
+                    denominator: p.denominator.constant(Integer::Natural(*d)),
                 };
                 Number::RationalPolynomial(&r + &r2)
             }
@@ -327,14 +320,8 @@ impl BorrowedNumber<'_> {
                 let r = (*p).clone();
                 let (n, d) = l.to_rat().into_numer_denom();
                 let r2 = RationalPolynomial {
-                    numerator: MultivariatePolynomial::new_from_constant(
-                        &p.numerator,
-                        Integer::Large(n),
-                    ),
-                    denominator: MultivariatePolynomial::new_from_constant(
-                        &p.denominator,
-                        Integer::Large(d),
-                    ),
+                    numerator: p.numerator.constant(Integer::Large(n)),
+                    denominator: p.denominator.constant(Integer::Large(d)),
                 };
                 Number::RationalPolynomial(&r + &r2)
             }

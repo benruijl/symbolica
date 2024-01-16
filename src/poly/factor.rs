@@ -226,7 +226,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
         let mut factors = vec![];
 
         if !c.is_one() {
-            factors.push((self.new_from_constant(c), 1));
+            factors.push((self.constant(c), 1));
         }
 
         let fs = stripped.factor_separable();
@@ -237,7 +237,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
         }
 
         if factors.is_empty() {
-            factors.push((self.new_from_constant(self.field.one()), 1))
+            factors.push((self.one(), 1))
         }
 
         factors
@@ -321,7 +321,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
             .collect();
 
         if !c.is_one() {
-            factors.push((Self::new_from_constant(&self, c), 1));
+            factors.push((self.constant(c), 1));
         }
 
         factors
@@ -346,7 +346,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
             .collect();
 
         if !c.is_one() {
-            factors.push((Self::new_from_constant(&self, c), 1));
+            factors.push((self.constant(c), 1));
         }
 
         factors
@@ -371,7 +371,7 @@ where
         }
 
         if factors.is_empty() || !self.field.is_one(&c) {
-            factors.push((Self::new_from_constant(self, c), 1))
+            factors.push((self.constant(c), 1))
         }
 
         factors
@@ -561,7 +561,7 @@ where
 
         let mut e = self.last_exponents().to_vec();
         e[var] = E::one();
-        let x = Self::new_from_monomial(&self, self.field.one(), e);
+        let x = self.monomial(self.field.one(), e);
 
         let mut factors = vec![];
         let mut h = x.clone();
@@ -612,7 +612,7 @@ where
         }
 
         let mut rng = thread_rng();
-        let mut random_poly = Self::new_from(self, Some(d));
+        let mut random_poly = self.zero_with_capacity(d);
         let mut exp = vec![E::zero(); self.nvars];
 
         let mut try_counter = 0;
@@ -653,7 +653,7 @@ where
             let p: Integer = self.field.get_prime().to_u64().into();
             let b = random_poly
                 .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
-                - Self::new_from_constant(&self, self.field.one());
+                - self.one();
 
             let g = MultivariatePolynomial::gcd(&b, &s);
 
@@ -702,7 +702,7 @@ where
         let mut u: Vec<_> = factors
             .iter()
             .map(|f| {
-                let mut dense = vec![self.new_from(None); iterations + 1];
+                let mut dense = vec![self.zero(); iterations + 1];
                 dense[0] = f.clone();
                 dense
             })
@@ -721,8 +721,7 @@ where
             x[0] = cur_p.clone();
         }
 
-        let delta =
-            Self::diophantine_univariate(&mut factors, &self.new_from_constant(self.field.one()));
+        let delta = Self::diophantine_univariate(&mut factors, &self.one());
 
         for k in 1..iterations {
             // extract the coefficient required to compute the error in y^k
@@ -752,7 +751,7 @@ where
 
             // update the coefficients with the new y^k contributions
             // note that the lcoeff[k] contribution is not new
-            let mut t = self.new_from(None);
+            let mut t = self.zero();
             for i in 1..factors.len() {
                 t = &u[i][0] * &t + &u[i][k] * &p[i - 1][0];
                 p[i][k] = &p[i][k] + &t;
@@ -762,7 +761,7 @@ where
         // convert dense polynomials to multivariate polynomials
         u.into_iter()
             .map(|ts| {
-                let mut new_poly = self.new_from(Some(ts.len()));
+                let mut new_poly = self.zero_with_capacity(ts.len());
                 for (i, mut f) in ts.into_iter().enumerate() {
                     for x in f.exponents.chunks_mut(f.nvars) {
                         x[interpolation_var] = E::from_u32(i as u32);
@@ -841,7 +840,7 @@ where
                 // TODO: multiply in the leading coefficient here,
                 // then we can skip the Pade approximation and reduce the
                 // number of iterations in the Hensel lifting to d + 1, like in the integer case?
-                let mut g = MultivariatePolynomial::new_from_constant(&rest, rest.lcoeff());
+                let mut g = rest.constant(rest.lcoeff());
                 for i in 0..factors.len() {
                     if cs.contains(&i) {
                         g = (&g * &factors[i])
@@ -896,7 +895,7 @@ where
     /// Reconstruct the leading coefficient using a Pade approximation with numerator degree `deg_n` and
     /// denominator degree `deg_d`. The resulting denominator should be a factor of the leading coefficient.
     fn lcoeff_reconstruct(coeffs: &[Self], deg_n: u32, deg_d: u32) -> Self {
-        let mut lcoeff = coeffs[0].new_from_constant(coeffs[0].field.one());
+        let mut lcoeff = coeffs[0].constant(coeffs[0].field.one());
         for x in coeffs {
             let d = x.rational_approximant_univariate(deg_n, deg_d).unwrap().1;
             if !d.is_one() {
@@ -947,7 +946,7 @@ where
         let lcoeff = self.univariate_lcoeff(order[0]);
         let sqf = lcoeff.square_free_factorization();
 
-        let mut lcoeff_square_free = self.new_from_constant(self.field.one());
+        let mut lcoeff_square_free = self.one();
         for (f, _) in &sqf {
             lcoeff_square_free = &lcoeff_square_free * &f;
         }
@@ -956,7 +955,7 @@ where
 
         let mut true_lcoeffs: Vec<_> = sorted_main_factors
             .iter()
-            .map(|(_, u, _)| self.new_from_constant(u.clone()))
+            .map(|(_, u, _)| self.constant(u.clone()))
             .collect();
 
         let main_bivariate_factors: Vec<_> =
@@ -1065,7 +1064,7 @@ where
             };
 
             for (l, fac) in true_lcoeffs.iter_mut().zip(&square_free_lc_biv_factors) {
-                let mut contrib = self.new_from_constant(self.field.one());
+                let mut contrib = self.one();
                 for (full, b) in lifted.iter().zip(&basis) {
                     if let Some((_, m)) = fac.iter().find(|(f, _)| f == b) {
                         for _ in 0..*m {
@@ -1181,7 +1180,7 @@ where
 
         let univariate_deltas = Self::diophantine_univariate(
             &mut univariate_factors,
-            &factors[0].new_from_constant(factors[0].field.one()),
+            &factors[0].constant(factors[0].field.one()),
         );
 
         (univariate_factors, univariate_deltas)
@@ -1353,7 +1352,7 @@ where
         );
 
         // test the factorization
-        let mut test = self.new_from_constant(self.field.one());
+        let mut test = self.one();
         for f in &factorization {
             debug!("Factor = {}", f);
             test = &test * f;
@@ -1424,7 +1423,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
             exp[*r.0] = E::one();
             let var_pow = error
-                .new_from_monomial(error.field.one(), exp.clone())
+                .monomial(error.field.one(), exp.clone())
                 .shift_var(*r.0, &error.field.neg(shift))
                 .pow(r.1 + 1);
             exp[*r.0] = E::zero();
@@ -1433,7 +1432,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         exp[last_var] = E::one();
         let var_pow = error
-            .new_from_monomial(error.field.one(), exp)
+            .monomial(error.field.one(), exp)
             .shift_var(last_var, &error.field.neg(shift));
         let mut cur_exponent;
         let mut next_exponent = var_pow.clone();
@@ -1539,7 +1538,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                     let mut bs = b.to_univariate_polynomial_list(order[0]);
                     bs.last_mut().unwrap().0 = lcoeff;
 
-                    let mut fixed_fac = Self::new_from_constant(&self, self.field.zero());
+                    let mut fixed_fac = self.zero();
                     let mut exp = vec![E::zero(); self.nvars];
                     for (p, e) in bs {
                         exp[order[0]] = e;
@@ -1570,7 +1569,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 *f = f.shift_var(order[v], &shift);
             }
 
-            let mut tot = self.new_from_constant(self.field.one());
+            let mut tot = self.one();
             for b in &factors_with_true_lcoeff {
                 tot = tot * &b;
             }
@@ -1617,7 +1616,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         let mut u: Vec<_> = factors
             .iter()
             .map(|f| {
-                let mut dense = vec![self.new_from(None); last_degree + 1];
+                let mut dense = vec![self.zero(); last_degree + 1];
 
                 for (p, e) in f.to_univariate_polynomial_list(last_var) {
                     dense[e.to_u32() as usize] = p;
@@ -1681,7 +1680,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             );
 
             // update the coefficients with the new y^k contributions
-            let mut t = self.new_from(None);
+            let mut t = self.zero();
 
             for (i, (du, d)) in u.iter_mut().zip(&new_delta).enumerate() {
                 debug!("hensel d[x{}^{}] = {}", last_var, k, d);
@@ -1700,7 +1699,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         // convert dense polynomials to multivariate polynomials
         u.into_iter()
             .map(|ts| {
-                let mut new_poly = self.new_from(Some(ts.len()));
+                let mut new_poly = self.zero_with_capacity(ts.len());
                 for (i, mut f) in ts.into_iter().enumerate() {
                     for x in f.exponents.chunks_mut(f.nvars) {
                         debug_assert_eq!(x[last_var], E::zero());
@@ -1811,8 +1810,6 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         bound: &Integer,
         max_p: &Integer,
     ) -> Vec<Self> {
-        let field = &hs[0].field;
-
         if hs.len() == 1 {
             if self.lcoeff().is_one() {
                 return vec![self.clone()];
@@ -1825,12 +1822,12 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         let (gs, hs) = hs.split_at(hs.len() / 2);
 
-        let mut g = MultivariatePolynomial::new_from_constant(&gs[0], field.one());
+        let mut g = gs[0].one();
         for x in gs {
             g = g * x;
         }
 
-        let mut h = MultivariatePolynomial::new_from_constant(&hs[0], field.one());
+        let mut h = hs[0].one();
         for x in hs {
             h = h * x;
         }
@@ -1937,7 +1934,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     }
                 }
 
-                let mut g = MultivariatePolynomial::new_from_constant(&rest, rest.lcoeff());
+                let mut g = rest.constant(rest.lcoeff());
                 for i in 0..factors.len() {
                     if cs.contains(&i) {
                         g = &g * &factors[i];
@@ -1995,7 +1992,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         let delta = Self::lift_diophantine_univariate(
             &mut factors,
-            &poly.new_from_constant(poly.field.one()),
+            &poly.constant(poly.field.one()),
             finite_field.get_prime(),
             k,
         );
@@ -2006,7 +2003,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let mut u: Vec<_> = factors
             .iter()
             .map(|f| {
-                let mut dense = vec![poly.new_from(None); iterations + 1];
+                let mut dense = vec![poly.zero(); iterations + 1];
                 dense[0] = f.clone();
                 dense
             })
@@ -2053,7 +2050,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             // update the coefficients with the new y^k contributions
             // note that the lcoeff[k] contribution is not new
-            let mut t = poly.new_from(None);
+            let mut t = poly.zero();
             for i in 1..factors.len() {
                 t = &u[i][0] * &t + &u[i][k] * &p[i - 1][0];
                 p[i][k] = &p[i][k] + &t;
@@ -2063,7 +2060,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         // convert dense polynomials to multivariate polynomials
         u.into_iter()
             .map(|ts| {
-                let mut new_poly = poly.new_from(Some(ts.len()));
+                let mut new_poly = poly.zero_with_capacity(ts.len());
                 for (i, mut f) in ts.into_iter().enumerate() {
                     for x in f.exponents.chunks_mut(f.nvars) {
                         x[interpolation_var] = E::from_u32(i as u32);
@@ -2287,7 +2284,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             return deltas;
         }
 
-        let mut tot = rhs.new_from_constant(rhs.field.one());
+        let mut tot = rhs.constant(rhs.field.one());
         for f in factors.iter() {
             tot = &tot * f;
         }
@@ -2400,17 +2397,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let lcoeff = self.univariate_lcoeff(order[0]);
         let sqf = lcoeff.square_free_factorization();
 
-        let mut lcoeff_square_free = self.new_from_constant(self.field.one());
+        let mut lcoeff_square_free = self.one();
         for (f, _) in &sqf {
             lcoeff_square_free = &lcoeff_square_free * &f;
         }
 
         let sorted_main_factors = Self::canonical_sort(bivariate_factors, order[1], sample_points);
 
-        let mut true_lcoeffs: Vec<_> = bivariate_factors
-            .iter()
-            .map(|_| self.new_from_constant(self.field.one()))
-            .collect();
+        let mut true_lcoeffs: Vec<_> = bivariate_factors.iter().map(|_| self.one()).collect();
 
         let mut lcoeff_left = lcoeff.clone();
 
@@ -2517,7 +2511,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             };
 
             for (l, fac) in true_lcoeffs.iter_mut().zip(&square_free_lc_biv_factors) {
-                let mut contrib = self.new_from_constant(self.field.one());
+                let mut contrib = self.one();
                 for (full, b) in lifted.iter().zip(&basis) {
                     if let Some((_, m)) = fac.iter().find(|(f, _)| f == b) {
                         for _ in 0..*m {
@@ -2907,14 +2901,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         }
 
         let field_mod = FiniteField::<Integer>::new(max_p.clone());
-        let mut sorted_biv_factors_ff: Vec<_> = sorted_biv_factors
+        let sorted_biv_factors_ff: Vec<_> = sorted_biv_factors
             .iter()
             .map(|f| f.map_coeff(|c| c.to_finite_field(&field_mod), field_mod.clone()))
             .collect();
 
         let (mut uni, delta) = MultivariatePolynomial::get_univariate_factors_and_deltas(
             &sorted_biv_factors_ff,
-            &order,
+            order,
             &sample_points,
             p,
             k,
@@ -3007,7 +3001,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 .collect();
 
             let factorization_ff = poly_ff.multivariate_hensel_lifting(
-                &mut sorted_biv_factors_ff,
+                &sorted_biv_factors_ff,
                 &mut uni,
                 &delta,
                 &sample_points,
@@ -3022,7 +3016,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         };
 
         // test the factorization
-        let mut test = self.new_from_constant(self.field.one());
+        let mut test = self.one();
         for f in &factorization {
             debug!("Factor = {}", f);
             test = &test * f;
@@ -3064,7 +3058,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<Integer>, E, LexOrder> {
 
         let univariate_deltas = MultivariatePolynomial::lift_diophantine_univariate(
             &mut univariate_factors,
-            &factors[0].new_from_constant(factors[0].field.one()),
+            &factors[0].constant(factors[0].field.one()),
             p,
             k,
         );

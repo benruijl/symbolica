@@ -84,7 +84,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
             None,
             var_map,
         );
-        let den = num.new_from_constant(field.one());
+        let den = num.one();
 
         RationalPolynomial {
             numerator: num,
@@ -291,11 +291,9 @@ where
 
         // TODO: do binary exponentation
         let mut poly = RationalPolynomial {
-            numerator: MultivariatePolynomial::new_from(&self.numerator, None),
-            denominator: MultivariatePolynomial::new_from(&self.denominator, None),
+            numerator: self.numerator.one(),
+            denominator: self.denominator.one(),
         };
-        poly.numerator = poly.numerator.add_monomial(self.numerator.field.one());
-        poly.denominator = poly.denominator.add_monomial(self.numerator.field.one());
 
         for _ in 0..e {
             poly = &poly * self;
@@ -379,10 +377,7 @@ where
 
         if !ignore_denominator {
             let denom = RationalPolynomial::from_num_den(
-                MultivariatePolynomial::new_from_constant(
-                    &self.denominator,
-                    self.denominator.field.one(),
-                ),
+                self.denominator.one(),
                 self.denominator.clone(),
                 &self.denominator.field,
                 false,
@@ -469,21 +464,21 @@ where
     fn zero(&self) -> Self::Element {
         RationalPolynomial {
             numerator: MultivariatePolynomial::new(0, &self.ring, None, None),
-            denominator: MultivariatePolynomial::one(&self.ring),
+            denominator: MultivariatePolynomial::one_no_vars(&self.ring),
         }
     }
 
     fn one(&self) -> Self::Element {
         RationalPolynomial {
-            numerator: MultivariatePolynomial::one(&self.ring),
-            denominator: MultivariatePolynomial::one(&self.ring),
+            numerator: MultivariatePolynomial::one_no_vars(&self.ring),
+            denominator: MultivariatePolynomial::one_no_vars(&self.ring),
         }
     }
 
     fn nth(&self, n: u64) -> Self::Element {
         RationalPolynomial {
-            numerator: MultivariatePolynomial::one(&self.ring).mul_coeff(self.ring.nth(n)),
-            denominator: MultivariatePolynomial::one(&self.ring),
+            numerator: MultivariatePolynomial::one_no_vars(&self.ring).mul_coeff(self.ring.nth(n)),
+            denominator: MultivariatePolynomial::one_no_vars(&self.ring),
         }
     }
 
@@ -495,8 +490,8 @@ where
 
         // TODO: do binary exponentation
         let mut poly = RationalPolynomial {
-            numerator: MultivariatePolynomial::new_from(&b.numerator, None),
-            denominator: MultivariatePolynomial::new_from(&b.denominator, None),
+            numerator: b.numerator.zero(),
+            denominator: b.denominator.zero(),
         };
         poly.numerator = poly.numerator.add_monomial(self.ring.one());
         poly.denominator = poly.denominator.add_monomial(self.ring.one());
@@ -559,11 +554,8 @@ where
 {
     fn rem(&self, a: &Self::Element, _: &Self::Element) -> Self::Element {
         RationalPolynomial {
-            numerator: MultivariatePolynomial::new_from(&a.numerator, None),
-            denominator: MultivariatePolynomial::new_from_constant(
-                &a.numerator,
-                a.numerator.field.one(),
-            ),
+            numerator: a.numerator.zero(),
+            denominator: a.numerator.one(),
         }
     }
 

@@ -101,7 +101,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     let mut e: SmallVec<[u16; INLINED_EXPONENTS]> = smallvec![0; vars.len()];
                     e[vars.iter().position(|x| *x == id.into()).unwrap()] = 1;
                     poly.append_monomial(Integer::one(), &e);
-                    let den = MultivariatePolynomial::new_from_constant(&poly, Integer::one());
+                    let den = poly.one();
 
                     out.to_num()
                         .set_from_number(Number::RationalPolynomial(RationalPolynomial {

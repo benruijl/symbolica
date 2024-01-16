@@ -318,7 +318,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
                 let lm = &current_monomials[lmi * nvars..(lmi + 1) * nvars];
 
                 // create the new polynomial in the proper order
-                let mut poly = MultivariatePolynomial::new_from(&selected_polys[0], Some(m.len()));
+                let mut poly = selected_polys[0].zero_with_capacity(m.len());
                 for (coeff, col) in m.iter().rev() {
                     let index = sorted_monomial_indices[*col];
                     let exp = &current_monomials[index * nvars..(index + 1) * nvars];
@@ -435,7 +435,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         p: &MultivariatePolynomial<R, E, O>,
         gs: &[MultivariatePolynomial<R, E, O>],
     ) -> MultivariatePolynomial<R, E, O> {
-        let mut q = MultivariatePolynomial::new_from(p, Some(p.nterms()));
+        let mut q = p.zero_with_capacity(p.nterms());
         let mut r = p.clone();
 
         let mut rest_coeff = vec![];

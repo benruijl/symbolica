@@ -599,14 +599,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map) {
-            let den = num.new_from_constant(field.one());
+            let den = num.one();
             return Ok(RationalPolynomial::from_num_den(num, den, out_field, false));
         }
 
         match self {
             AtomView::Num(_) | AtomView::Var(_) => {
                 let num = self.to_polynomial(field, var_map)?;
-                let den = num.new_from_constant(field.one());
+                let den = num.one();
                 Ok(RationalPolynomial::from_num_den(num, den, out_field, false))
             }
             AtomView::Pow(p) => {
@@ -698,7 +698,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map) {
-            let den = vec![(num.new_from_constant(field.one()), 1)];
+            let den = vec![(num.one(), 1)];
             return Ok(FactorizedRationalPolynomial::from_num_den(
                 num, den, out_field, false,
             ));
@@ -707,7 +707,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         match self {
             AtomView::Num(_) | AtomView::Var(_) => {
                 let num = self.to_polynomial(field, var_map)?;
-                let den = vec![(num.new_from_constant(field.one()), 1)];
+                let den = vec![(num.one(), 1)];
                 Ok(FactorizedRationalPolynomial::from_num_den(
                     num, den, out_field, false,
                 ))
@@ -905,7 +905,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, None) {
-            let den = num.new_from_constant(field.one());
+            let den = num.one();
             return RationalPolynomial::from_num_den(num, den, out_field, false);
         }
 
@@ -943,7 +943,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 Some(Arc::new(vec![id])),
                             );
                             p.append_monomial(field.one(), &[E::from_u32(nn.abs() as u32)]);
-                            let den = p.new_from_constant(field.one());
+                            let den = p.one();
                             let r = RationalPolynomial::from_num_den(p, den, out_field, false);
 
                             if nn < 0 {
@@ -995,7 +995,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         let mut r =
                             MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                         r.append_monomial(field.one(), &[E::one()]);
-                        let den = r.new_from_constant(field.one());
+                        let den = r.one();
                         RationalPolynomial::from_num_den(r, den, out_field, false)
                     }
                 } else {
@@ -1013,7 +1013,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     let mut r =
                         MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                     r.append_monomial(field.one(), &[E::one()]);
-                    let den = r.new_from_constant(field.one());
+                    let den = r.one();
                     RationalPolynomial::from_num_den(r, den, out_field, false)
                 }
             }
@@ -1031,7 +1031,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                 r.append_monomial(field.one(), &[E::one()]);
-                let den = r.new_from_constant(field.one());
+                let den = r.one();
                 RationalPolynomial::from_num_den(r, den, out_field, false)
             }
             AtomView::Mul(m) => {
@@ -1366,7 +1366,7 @@ impl Token {
             let den = if let Some(den) = iter.next() {
                 Token::parse_polynomial(den.as_bytes(), var_map, var_name_map, field).1
             } else {
-                num.new_from_constant(field.one())
+                num.one()
             };
 
             // in the fast format [a,b], the gcd of a and b should always be 1
@@ -1375,14 +1375,14 @@ impl Token {
 
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map, var_name_map) {
-            let den = num.new_from_constant(field.one());
+            let den = num.one();
             return Ok(RationalPolynomial::from_num_den(num, den, out_field, false));
         }
 
         match self {
             Token::Number(_) | Token::ID(_) => {
                 let num = self.to_polynomial(field, var_map, var_name_map)?;
-                let den = num.new_from_constant(field.one());
+                let den = num.one();
                 Ok(RationalPolynomial::from_num_den(num, den, out_field, false))
             }
             Token::Op(_, _, Operator::Inv, args) => {
@@ -1519,7 +1519,7 @@ impl Token {
             let den = if let Some(den) = iter.next() {
                 Token::parse_polynomial(den.as_bytes(), var_map, var_name_map, field).1
             } else {
-                num.new_from_constant(field.one())
+                num.one()
             };
 
             if let Some(p1) = iter.next() {
@@ -1554,7 +1554,7 @@ impl Token {
 
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, var_map, var_name_map) {
-            let den = vec![(num.new_from_constant(field.one()), 1)];
+            let den = vec![(num.one(), 1)];
             return Ok(FactorizedRationalPolynomial::from_num_den(
                 num, den, out_field, false,
             ));
@@ -1563,7 +1563,7 @@ impl Token {
         match self {
             Token::Number(_) | Token::ID(_) => {
                 let num = self.to_polynomial(field, var_map, var_name_map)?;
-                let den = vec![(num.new_from_constant(field.one()), 1)];
+                let den = vec![(num.one(), 1)];
                 Ok(FactorizedRationalPolynomial::from_num_den(
                     num, den, out_field, false,
                 ))

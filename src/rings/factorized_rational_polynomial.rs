@@ -360,7 +360,7 @@ where
             panic!("Cannot invert 0");
         }
 
-        let mut num = self.numerator.new_from_constant(self.denom_coeff);
+        let mut num = self.numerator.constant(self.denom_coeff);
         for (d, p) in self.denominators {
             num = num * &d.pow(p);
         }
@@ -384,7 +384,7 @@ where
 
         // TODO: do binary exponentation
         let mut poly = FactorizedRationalPolynomial {
-            numerator: self.numerator.new_from_constant(self.numerator.field.one()),
+            numerator: self.numerator.constant(self.numerator.field.one()),
             denom_coeff: self.numerator.field.one(),
             denominators: vec![],
         };
@@ -543,7 +543,7 @@ where
 
     fn one(&self) -> Self::Element {
         FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::one(&self.ring),
+            numerator: MultivariatePolynomial::one_no_vars(&self.ring),
             denom_coeff: self.ring.one(),
             denominators: vec![],
         }
@@ -551,7 +551,7 @@ where
 
     fn nth(&self, n: u64) -> Self::Element {
         FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::one(&self.ring).mul_coeff(self.ring.nth(n)),
+            numerator: MultivariatePolynomial::one_no_vars(&self.ring).mul_coeff(self.ring.nth(n)),
             denom_coeff: self.ring.one(),
             denominators: vec![],
         }
@@ -565,7 +565,7 @@ where
 
         // TODO: do binary exponentation
         let mut poly = FactorizedRationalPolynomial {
-            numerator: b.numerator.new_from_constant(self.ring.one()),
+            numerator: b.numerator.constant(self.ring.one()),
             denom_coeff: self.ring.one(),
             denominators: vec![],
         };
@@ -631,7 +631,7 @@ where
 {
     fn rem(&self, a: &Self::Element, _: &Self::Element) -> Self::Element {
         FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::new_from(&a.numerator, None),
+            numerator: a.numerator.zero(),
             denom_coeff: a.numerator.field.one(),
             denominators: vec![],
         }

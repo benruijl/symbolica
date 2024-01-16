@@ -161,14 +161,14 @@ impl<E: Exponent> FromNumeratorAndFactorizedDenominator<RationalField, IntegerRi
         } else {
             (
                 num.map_coeff(
-                    |c| num.field.div(&c, &content).numerator(),
+                    |c| num.field.div(c, &content).numerator(),
                     IntegerRing::new(),
                 ),
                 dens.iter()
                     .map(|(d, p)| {
                         (
                             d.map_coeff(
-                                |c| num.field.div(&c, &content).numerator(),
+                                |c| num.field.div(c, &content).numerator(),
                                 IntegerRing::new(),
                             ),
                             *p,
@@ -610,7 +610,7 @@ where
                 "{}",
                 FactorizedRationalPolynomialPrinter {
                     poly: element,
-                    state: state,
+                    state,
                     opts: PrintOptions::default(),
                     add_parentheses: in_product
                 },

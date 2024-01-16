@@ -122,7 +122,7 @@ impl FiniteFieldCore<u32> for FiniteField<u32> {
     /// Convert a number from Montgomory form to standard form.
     #[inline(always)]
     fn from_element(&self, a: &FiniteFieldElement<u32>) -> u32 {
-        self.mul(&a, &FiniteFieldElement(1)).0
+        self.mul(a, &FiniteFieldElement(1)).0
     }
 
     /// Convert a number from Montgomory form to symmetric form.
@@ -409,7 +409,7 @@ impl FiniteFieldCore<u64> for FiniteField<u64> {
     /// Convert a number from Montgomory form to standard form.
     #[inline(always)]
     fn from_element(&self, a: &FiniteFieldElement<u64>) -> u64 {
-        self.mul(&a, &FiniteFieldElement(1)).0
+        self.mul(a, &FiniteFieldElement(1)).0
     }
 
     /// Convert a number from Montgomory form to symmetric form.
@@ -417,8 +417,8 @@ impl FiniteFieldCore<u64> for FiniteField<u64> {
     fn to_symmetric_integer(&self, a: &FiniteFieldElement<u64>) -> Integer {
         let i = self.from_element(a);
 
-        if i > self.get_prime() as u64 / 2 {
-            &Integer::from(i) - &Integer::from(self.get_prime() as u64)
+        if i > self.get_prime() / 2 {
+            &Integer::from(i) - &Integer::from(self.get_prime())
         } else {
             i.into()
         }

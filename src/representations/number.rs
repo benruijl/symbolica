@@ -266,7 +266,7 @@ impl BorrowedNumber<'_> {
         match self {
             BorrowedNumber::Natural(num, den) => Number::Natural(*num, *den),
             BorrowedNumber::Large(r) => Number::Large(r.to_rat()),
-            BorrowedNumber::FiniteField(num, field) => Number::FiniteField((*num).clone(), *field),
+            BorrowedNumber::FiniteField(num, field) => Number::FiniteField(*num, *field),
             BorrowedNumber::RationalPolynomial(p) => Number::RationalPolynomial((*p).clone()),
         }
     }

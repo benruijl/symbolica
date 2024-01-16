@@ -175,7 +175,7 @@ impl<P: AtomSet> Transformer<P> {
                     );
                 }
                 Transformer::ReplaceAll(pat, rhs, cond) => {
-                    pat.replace_all(input, &rhs, state, workspace, &cond, out);
+                    pat.replace_all(input, rhs, state, workspace, cond, out);
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = input {
@@ -267,7 +267,7 @@ impl<P: AtomSet> Transformer<P> {
                             let mut sum_h = workspace.new_atom();
                             let sum = sum_h.to_add();
 
-                            let partitions = partitions(&args, &bins, *fill_last, *repeat);
+                            let partitions = partitions(&args, bins, *fill_last, *repeat);
 
                             if partitions.is_empty() {
                                 out.set_from_view(&workspace.new_num(0).as_view());
@@ -336,10 +336,8 @@ impl<P: AtomSet> Transformer<P> {
 
                             for a in args {
                                 // check last argument first, so that the sorted list case is fast
-                                if args_dedup.last() != Some(&a) {
-                                    if !args_dedup.contains(&a) {
-                                        args_dedup.push(a);
-                                    }
+                                if args_dedup.last() != Some(&a) && !args_dedup.contains(&a) {
+                                    args_dedup.push(a);
                                 }
                             }
 
@@ -404,7 +402,7 @@ impl<P: AtomSet> Transformer<P> {
                     out.set_from_view(&input);
                 }
                 Transformer::Repeat(r) => loop {
-                    Self::execute(tmp.as_view(), &r, state, workspace, out);
+                    Self::execute(tmp.as_view(), r, state, workspace, out);
 
                     if tmp.as_view() == out.as_view() {
                         break;

@@ -21,7 +21,7 @@ impl CombinationIterator {
     }
 
     pub fn next(&mut self) -> Option<&[usize]> {
-        if self.indices.is_empty() || self.indices.len() as usize > self.n {
+        if self.indices.is_empty() || self.indices.len() > self.n {
             return None;
         }
 
@@ -31,7 +31,7 @@ impl CombinationIterator {
             return Some(&self.indices);
         }
 
-        if self.indices.len() == 0 {
+        if self.indices.is_empty() {
             return None;
         }
 
@@ -281,7 +281,7 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
         accum: &mut Vec<(B, Vec<T>)>,
         result: &mut Vec<(Integer, Vec<(B, Vec<T>)>)>,
     ) {
-        if bins.len() == 0 {
+        if bins.is_empty() {
             if elems.iter().all(|x| x.1 == 0) {
                 result.push((Integer::one(), accum.clone()));
             }

@@ -52,7 +52,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             exponents: Vec::with_capacity(cap.unwrap_or(0) * nvars),
             nvars,
             field: field.clone(),
-            var_map: var_map,
+            var_map,
             _phantom: PhantomData,
         }
     }
@@ -288,7 +288,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             .var_map
             .as_ref()
             .map(|x| (**x).clone())
-            .unwrap_or(vec![]);
+            .unwrap_or_default();
         let mut new_var_pos_other = vec![0; other.nvars];
         for (pos, v) in new_var_pos_other.iter_mut().zip(
             other
@@ -813,8 +813,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             .collect();
         let exponents: Vec<_> = sorted_index
             .iter()
-            .map(|i| self.exponents(*i))
-            .flatten()
+            .flat_map(|i| self.exponents(*i))
             .cloned()
             .collect();
 
@@ -964,7 +963,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         let mut exponents = Vec::with_capacity(self.exponents.len());
 
         for m in self.into_iter() {
-            let nc = m.coefficient.to_finite_field(&field);
+            let nc = m.coefficient.to_finite_field(field);
             if !FiniteField::<UField>::is_zero(&nc) {
                 coefficients.push(nc);
                 exponents.extend(m.exponents);
@@ -1085,7 +1084,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     /// This operation is O(n) if the variables are out of order.
     pub fn lcoeff_last_varorder(&self, vars: &[usize]) -> MultivariatePolynomial<F, E, LexOrder> {
         if self.is_zero() {
-            return self.clone()
+            return self.clone();
         }
 
         if vars.windows(2).all(|s| s[0] < s[1]) {
@@ -1499,7 +1498,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         if degree_sum.iter().filter(|x| **x > 0).count() == 1
             && degree_sum.iter().sum::<usize>() < 5000
         {
-            return self.mul_univariate_dense(&other, None);
+            return self.mul_univariate_dense(other, None);
         }
 
         // place the smallest polynomial first, as this is faster
@@ -2021,7 +2020,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             .collect();
 
         if div.field.is_one(&div.lcoeff()) && degree_sum.iter().filter(|x| **x > 0).count() == 1 {
-            return self.quot_rem_univariate_monic(&div);
+            return self.quot_rem_univariate_monic(div);
         }
 
         let mut pack_u8 = true;
@@ -2751,7 +2750,6 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         let mut accum = self.field.one();
 
         sample_powers.push(self.field.one());
-        let d = d as usize;
         for _ in 0..d {
             self.field.mul_assign(&mut accum, shift);
             sample_powers.push(accum.clone());
@@ -2770,7 +2768,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         let mut poly = self.zero();
         let mut accum_inv = self.field.one();
-        let sample_point_inv = self.field.inv(&shift);
+        let sample_point_inv = self.field.inv(shift);
         for (i, mut v) in v.into_iter().enumerate() {
             v = v.mul_coeff(accum_inv.clone());
 

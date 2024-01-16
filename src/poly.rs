@@ -478,7 +478,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         }
 
         // get all variables and check structure
-        let mut vars = var_map.map(|v| (**v).clone()).unwrap_or(vec![]);
+        let mut vars = var_map.map(|v| (**v).clone()).unwrap_or_default();
         let mut n_terms = 0;
         match self {
             AtomView::Add(a) => {
@@ -942,7 +942,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 None,
                                 Some(Arc::new(vec![id])),
                             );
-                            p.append_monomial(field.one(), &[E::from_u32(nn.abs() as u32)]);
+                            p.append_monomial(field.one(), &[E::from_u32(nn.unsigned_abs() as u32)]);
                             let den = p.one();
                             let r = RationalPolynomial::from_num_den(p, den, out_field, false);
 

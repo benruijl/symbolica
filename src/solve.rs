@@ -32,8 +32,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
         for (si, a) in system.iter().enumerate() {
             let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial_with_map(
-                &workspace,
-                &state,
+                workspace,
+                state,
                 &RationalField::new(),
                 &IntegerRing::new(),
                 &mut map,
@@ -100,7 +100,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         let inv_map = map.iter().map(|(k, v)| (*v, k.as_view())).collect();
         for (s, v) in sol.data.iter().zip(&vars) {
             let mut a = Atom::new();
-            a.from_rational_polynomial(&workspace, &state, &s, &inv_map);
+            a.from_rational_polynomial(workspace, state, s, &inv_map);
             let Variable::Identifier(_) = *v else {
                 panic!("Temp var left");
             };

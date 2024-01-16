@@ -70,14 +70,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         if key_map.is_some() {
             let key = workspace.new_num(1);
             map_key_coeff(key.as_view(), rest, workspace, &key_map, &coeff_map, add);
+        } else if let Some(coeff_map) = coeff_map {
+            let mut handle = workspace.new_atom();
+            coeff_map(rest.as_view(), &mut handle);
+            add.extend(handle.as_view());
         } else {
-            if let Some(coeff_map) = coeff_map {
-                let mut handle = workspace.new_atom();
-                coeff_map(rest.as_view(), &mut handle);
-                add.extend(handle.as_view());
-            } else {
-                add.extend(rest.as_view());
-            }
+            add.extend(rest.as_view());
         }
 
         add.set_dirty(true);

@@ -522,7 +522,7 @@ impl<P: AtomSet> Pattern<P> {
                 let mut handle = workspace.new_atom();
                 pat.substitute_wildcards(state, workspace, &mut handle, match_stack);
 
-                Transformer::execute(handle.as_view(), &ts, state, workspace, out);
+                Transformer::execute(handle.as_view(), ts, state, workspace, out);
             }
         }
     }
@@ -1216,7 +1216,7 @@ impl<'a, 'b, P: AtomSet> AtomMatchIterator<'a, 'b, P> {
                 self.pattern,
                 self.target,
                 self.state,
-                &match_stack,
+                match_stack,
                 true,
                 matches!(self.pattern, Pattern::Wildcard(_) | Pattern::Literal(_)),
             ));
@@ -1551,12 +1551,10 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                                     } else {
                                         break;
                                     }
+                                } else if w.size_target < w.max_size {
+                                    w.size_target += 1;
                                 } else {
-                                    if w.size_target < w.max_size {
-                                        w.size_target += 1;
-                                    } else {
-                                        break;
-                                    }
+                                    break;
                                 }
                             } else if self.ordered_gapless {
                                 // drain the entire constructed range and start from scratch

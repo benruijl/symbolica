@@ -61,9 +61,9 @@ impl ToFiniteField<u32> for Rational {
     }
 }
 
-impl Into<Rational> for &Integer {
-    fn into(self) -> Rational {
-        match self {
+impl From<&Integer> for Rational {
+    fn from(val: &Integer) -> Self {
+        match val {
             Integer::Natural(n) => Rational::Natural(*n, 1),
             Integer::Large(l) => Rational::Large(l.into()),
         }

@@ -534,7 +534,7 @@ where
                 "{}",
                 RationalPolynomialPrinter {
                     poly: element,
-                    state: state,
+                    state,
                     opts: PrintOptions::default(),
                     add_parentheses: in_product
                 },

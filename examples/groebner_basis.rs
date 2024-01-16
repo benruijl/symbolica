@@ -9,7 +9,7 @@ fn main() {
     let mut state = State::new();
     let workspace: Workspace = Workspace::new();
 
-    for x in 'a'..'z' {
+    for x in 'a'..='z' {
         state.get_or_insert_var(x.to_string());
     }
 

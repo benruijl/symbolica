@@ -210,12 +210,10 @@ impl<'a, A: Var<'a>> FormattedPrintVar for A {
         let name = state.get_name(id);
         if name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))
+        } else if opts.color_builtin_functions && State::is_builtin(id) {
+            f.write_fmt(format_args!("{}", name.as_str().purple()))
         } else {
-            if opts.color_builtin_functions && State::is_builtin(id) {
-                f.write_fmt(format_args!("{}", name.as_str().purple()))
-            } else {
-                f.write_str(name)
-            }
+            f.write_str(name)
         }
     }
 

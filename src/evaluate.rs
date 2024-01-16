@@ -50,7 +50,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     "Rational polynomial coefficient not yet supported for evaluation"
                 ),
             },
-            AtomView::Var(v) => var_map.get(&v.get_name().into()).unwrap().clone(),
+            AtomView::Var(v) => *var_map.get(&v.get_name().into()).unwrap(),
             AtomView::Fun(f) => {
                 let name = f.get_name();
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {

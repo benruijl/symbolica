@@ -144,7 +144,7 @@ impl State {
                 self.var_info.push((name.as_ref().into(), wildcard_level));
 
                 self.function_attributes
-                    .insert(new_id, attributes.unwrap_or(vec![]));
+                    .insert(new_id, attributes.unwrap_or_default());
 
                 Ok(new_id)
             }

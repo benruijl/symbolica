@@ -725,15 +725,13 @@ impl Token {
                     "Unexpected end of input: missing right-hand side for operator '{}'",
                     op
                 )),
-                Some(Token::OpenParenthesis) => Err(format!(
-                    "Unexpected end of input: open parenthesis is not closed"
-                )),
+                Some(Token::OpenParenthesis) => Err("Unexpected end of input: open parenthesis is not closed".to_string()),
 
                 Some(Token::Fn(true, args)) => Err(format!(
                     "Unexpected end of input: Missing closing parenthesis for function '{}'",
                     args[0]
                 )),
-                Some(Token::Start) => Err(format!("Expression is empty")),
+                Some(Token::Start) => Err("Expression is empty".to_string()),
                 _ => Err(format!("Unknown parsing error: {:?}", stack)),
             }
         }

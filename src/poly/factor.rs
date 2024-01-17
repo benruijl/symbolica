@@ -2350,9 +2350,16 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     }
                 }
 
-                (f.clone(), u.lcoeff(), u.clone().make_primitive())
+                // make sure the representative is unique
+                let mut uni = u.clone().make_primitive();
+                if uni.lcoeff().is_negative() {
+                    uni = -uni;
+                }
+
+                (f.clone(), u.lcoeff(), uni)
             })
             .collect::<Vec<_>>();
+
         univariate_factors.sort_by(|(_, _, a), (_, _, b)| {
             a.exponents
                 .cmp(&b.exponents)

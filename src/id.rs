@@ -1,4 +1,3 @@
-use ahash::HashMap;
 use dyn_clone::DynClone;
 use smallvec::{smallvec, SmallVec};
 
@@ -546,10 +545,17 @@ impl<P: AtomSet> Pattern<P> {
         rhs: &Pattern<P>,
         state: &'a State,
         workspace: &Workspace<P>,
-        restrictions: &Condition<WildcardAndRestriction<P>>,
+        restrictions: Option<&Condition<WildcardAndRestriction<P>>>,
         out: &mut Atom<P>,
     ) -> bool {
-        let matched = self.replace_all_no_norm(target, rhs, state, workspace, restrictions, out);
+        let matched = self.replace_all_no_norm(
+            target,
+            rhs,
+            state,
+            workspace,
+            restrictions.unwrap_or(&Condition::default()),
+            out,
+        );
 
         if matched {
             let mut handle_norm = workspace.new_atom();
@@ -792,15 +798,16 @@ where
 {
     Length(usize, Option<usize>), // min-max range
     IsAtomType(AtomType),
-    IsNotAtomType(AtomType),
     IsLiteralWildcard(Identifier),
     Filter(Box<dyn FilterFn<P>>),
     Cmp(Identifier, Box<dyn CmpFn<P>>),
     NotGreedy,
 }
 
-type WildcardAndRestriction<P> = (Identifier, PatternRestriction<P>);
+pub type WildcardAndRestriction<P = Linear> = (Identifier, PatternRestriction<P>);
 
+/// A logical expression.
+#[derive(Clone, Debug)]
 pub enum Condition<T> {
     And(Box<(Condition<T>, Condition<T>)>),
     Or(Box<(Condition<T>, Condition<T>)>),
@@ -808,6 +815,36 @@ pub enum Condition<T> {
     Yield(T),
     True,
     False,
+}
+
+impl<T> From<T> for Condition<T> {
+    fn from(value: T) -> Self {
+        Condition::Yield(value)
+    }
+}
+
+impl<T, R: Into<Condition<T>>> std::ops::BitOr<R> for Condition<T> {
+    type Output = Condition<T>;
+
+    fn bitor(self, rhs: R) -> Self::Output {
+        Condition::Or(Box::new((self, rhs.into())))
+    }
+}
+
+impl<T, R: Into<Condition<T>>> std::ops::BitAnd<R> for Condition<T> {
+    type Output = Condition<T>;
+
+    fn bitand(self, rhs: R) -> Self::Output {
+        Condition::And(Box::new((self, rhs.into())))
+    }
+}
+
+impl<T> std::ops::Not for Condition<T> {
+    type Output = Condition<T>;
+
+    fn not(self) -> Self::Output {
+        Condition::Not(Box::new(self))
+    }
 }
 
 impl<T> Default for Condition<T> {
@@ -835,7 +872,7 @@ impl<P: AtomSet> Condition<WildcardAndRestriction<P>> {
                 }
 
                 match r {
-                    PatternRestriction::IsAtomType(t) | PatternRestriction::IsNotAtomType(t) => {
+                    PatternRestriction::IsAtomType(t) => {
                         let is_type = match t {
                             AtomType::Num => matches!(value, Match::Single(AtomView::Num(_))),
                             AtomType::Var => matches!(value, Match::Single(AtomView::Var(_))),
@@ -911,17 +948,17 @@ impl<P: AtomSet> Condition<WildcardAndRestriction<P>> {
             }
             Condition::Or(o) => {
                 // take the extremes of the min and max
-                let (min1, max1) = o.0.get_range(var);
-                let (min2, max2) = o.1.get_range(var);
+                let (min1, max1) = o.0.get_range_hint(var);
+                let (min2, max2) = o.1.get_range_hint(var);
 
                 (
                     if let (Some(m1), Some(m2)) = (min1, min2) {
-                        m1.min(m2)
+                        Some(m1.min(m2))
                     } else {
                         None
                     },
                     if let (Some(m1), Some(m2)) = (max1, max2) {
-                        m1.max(m2)
+                        Some(m1.max(m2))
                     } else {
                         None
                     },
@@ -956,7 +993,6 @@ impl<P: AtomSet + 'static> Clone for PatternRestriction<P> {
         match self {
             Self::Length(min, max) => Self::Length(*min, *max),
             Self::IsAtomType(t) => Self::IsAtomType(*t),
-            Self::IsNotAtomType(t) => Self::IsNotAtomType(*t),
             Self::IsLiteralWildcard(w) => Self::IsLiteralWildcard(*w),
             Self::Filter(f) => Self::Filter(dyn_clone::clone_box(f)),
             Self::Cmp(i, f) => Self::Cmp(*i, dyn_clone::clone_box(f)),
@@ -970,7 +1006,6 @@ impl<P: AtomSet + 'static> std::fmt::Debug for PatternRestriction<P> {
         match self {
             Self::Length(arg0, arg1) => f.debug_tuple("Length").field(arg0).field(arg1).finish(),
             Self::IsAtomType(t) => write!(f, "Is{:?}", t),
-            Self::IsNotAtomType(t) => write!(f, "IsNot{:?}", t),
             Self::IsLiteralWildcard(arg0) => {
                 f.debug_tuple("IsLiteralWildcard").field(arg0).finish()
             }

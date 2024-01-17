@@ -1,6 +1,5 @@
-use ahash::HashMap;
 use symbolica::{
-    id::{Match, PatternAtomTreeIterator},
+    id::{Condition, Match, PatternAtomTreeIterator},
     representations::Atom,
     state::{State, Workspace},
 };
@@ -13,7 +12,7 @@ fn main() {
     let pat_expr = Atom::parse("f(x_)", &mut state, &workspace).unwrap();
 
     let pattern = pat_expr.as_view().into_pattern(&state);
-    let restrictions = HashMap::default();
+    let restrictions = Condition::default();
 
     println!(
         "> Matching pattern {} to {}:",

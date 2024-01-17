@@ -1,6 +1,6 @@
 use ahash::HashMap;
 use symbolica::{
-    id::{Match, Pattern, PatternRestriction},
+    id::{Condition, Match, Pattern, PatternRestriction},
     representations::{Atom, AtomView, Num},
     state::{State, Workspace},
 };
@@ -17,14 +17,14 @@ fn main() {
     let rhs_one = Atom::new_num(1).into_pattern(&state);
 
     // prepare the pattern restriction `x_ > 1`
-    let mut restrictions = HashMap::default();
-    restrictions.insert(
+    let mut restrictions = (
         state.get_or_insert_var("x_"),
-        vec![PatternRestriction::Filter(Box::new(|v: &Match| match v {
+        PatternRestriction::Filter(Box::new(|v: &Match| match v {
             Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
             _ => false,
-        }))],
-    );
+        })),
+    )
+        .into();
 
     let input = Atom::parse("f(10)", &mut state, &workspace).unwrap();
     let mut target = workspace.new_atom();
@@ -42,30 +42,16 @@ fn main() {
             &rhs,
             &state,
             &workspace,
-            &restrictions,
+            Some(&restrictions),
             &mut out,
         );
 
         let mut out2 = workspace.new_atom();
         out.as_view().expand(&workspace, &state, &mut out2);
 
-        lhs_zero_pat.replace_all(
-            out2.as_view(),
-            &rhs_one,
-            &state,
-            &workspace,
-            &HashMap::default(),
-            &mut out,
-        );
+        lhs_zero_pat.replace_all(out2.as_view(), &rhs_one, &state, &workspace, None, &mut out);
 
-        lhs_one_pat.replace_all(
-            out.as_view(),
-            &rhs_one,
-            &state,
-            &workspace,
-            &HashMap::default(),
-            &mut out2,
-        );
+        lhs_one_pat.replace_all(out.as_view(), &rhs_one, &state, &workspace, None, &mut out2);
 
         println!("\t{}", out2.printer(&state),);
 

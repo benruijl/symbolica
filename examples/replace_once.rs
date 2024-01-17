@@ -1,5 +1,5 @@
-use ahash::HashMap;
 use symbolica::{
+    id::Condition,
     representations::Atom,
     state::{ResettableBuffer, State, Workspace},
 };
@@ -15,7 +15,7 @@ fn main() {
     let rhs = rhs_expr.as_view().into_pattern(&state);
 
     let pattern = pat_expr.as_view().into_pattern(&state);
-    let restrictions = HashMap::default();
+    let restrictions = Condition::default();
 
     println!(
         "> Replace once {}={} in {}:",

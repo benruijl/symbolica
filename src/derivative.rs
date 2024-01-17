@@ -1,12 +1,10 @@
-use ahash::HashMap;
-
 use crate::{
+    domains::{integer::Integer, rational::Rational},
     representations::{
         number::{BorrowedNumber, Number},
         Add, AsAtomView, Atom, AtomBuilder, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd,
         OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
     },
-    domains::{integer::Integer, rational::Rational},
     state::{State, Workspace},
 };
 
@@ -379,7 +377,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 &expansion_point_pat,
                 state,
                 workspace,
-                &HashMap::default(),
+                None,
                 &mut next_order,
             );
 

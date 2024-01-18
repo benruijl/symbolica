@@ -853,22 +853,82 @@ impl<T> Default for Condition<T> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConditionResult {
+    True,
+    False,
+    Inconclusive,
+}
+
+impl std::ops::BitOr<ConditionResult> for ConditionResult {
+    type Output = ConditionResult;
+
+    fn bitor(self, rhs: ConditionResult) -> Self::Output {
+        match (self, rhs) {
+            (ConditionResult::True, _) => ConditionResult::True,
+            (_, ConditionResult::True) => ConditionResult::True,
+            (ConditionResult::False, ConditionResult::False) => ConditionResult::False,
+            _ => ConditionResult::Inconclusive,
+        }
+    }
+}
+
+impl std::ops::BitAnd<ConditionResult> for ConditionResult {
+    type Output = ConditionResult;
+
+    fn bitand(self, rhs: ConditionResult) -> Self::Output {
+        match (self, rhs) {
+            (ConditionResult::False, _) => ConditionResult::False,
+            (_, ConditionResult::False) => ConditionResult::False,
+            (ConditionResult::True, ConditionResult::True) => ConditionResult::True,
+            _ => ConditionResult::Inconclusive,
+        }
+    }
+}
+
+impl std::ops::Not for ConditionResult {
+    type Output = ConditionResult;
+
+    fn not(self) -> Self::Output {
+        match self {
+            ConditionResult::True => ConditionResult::False,
+            ConditionResult::False => ConditionResult::True,
+            ConditionResult::Inconclusive => ConditionResult::Inconclusive,
+        }
+    }
+}
+
+impl From<bool> for ConditionResult {
+    fn from(value: bool) -> Self {
+        if value {
+            ConditionResult::True
+        } else {
+            ConditionResult::False
+        }
+    }
+}
+
 impl<P: AtomSet> Condition<WildcardAndRestriction<P>> {
     /// Check if the conditions on `var` are met
-    fn check_possible(&self, var: Identifier, value: &Match<P>, stack: &MatchStack<P>) -> bool {
+    fn check_possible(
+        &self,
+        var: Identifier,
+        value: &Match<P>,
+        stack: &MatchStack<P>,
+    ) -> ConditionResult {
         match self {
             Condition::And(a) => {
-                a.0.check_possible(var, value, stack) && a.1.check_possible(var, value, stack)
+                a.0.check_possible(var, value, stack) & a.1.check_possible(var, value, stack)
             }
             Condition::Or(o) => {
-                o.0.check_possible(var, value, stack) || o.1.check_possible(var, value, stack)
+                o.0.check_possible(var, value, stack) | o.1.check_possible(var, value, stack)
             }
             Condition::Not(n) => !n.check_possible(var, value, stack),
-            Condition::True => true,
-            Condition::False => false,
+            Condition::True => ConditionResult::True,
+            Condition::False => ConditionResult::False,
             Condition::Yield((v, r)) => {
                 if *v != var {
-                    return true;
+                    return ConditionResult::Inconclusive;
                 }
 
                 match r {
@@ -894,32 +954,32 @@ impl<P: AtomSet> Condition<WildcardAndRestriction<P>> {
                             AtomType::Fun => matches!(value, Match::Single(AtomView::Fun(_))),
                         };
 
-                        is_type == matches!(r, PatternRestriction::IsAtomType(_))
+                        (is_type == matches!(r, PatternRestriction::IsAtomType(_))).into()
                     }
                     PatternRestriction::IsLiteralWildcard(wc) => {
                         if let Match::Single(AtomView::Var(v)) = value {
-                            wc == &v.get_name()
+                            (wc == &v.get_name()).into()
                         } else {
-                            false
+                            false.into()
                         }
                     }
                     PatternRestriction::Length(min, max) => match &value {
                         Match::Single(_) | Match::FunctionName(_) => {
-                            *min <= 1 && max.map(|m| m >= 1).unwrap_or(true)
+                            (*min <= 1 && max.map(|m| m >= 1).unwrap_or(true)).into()
                         }
-                        Match::Multiple(_, slice) => {
-                            *min <= slice.len() && max.map(|m| m >= slice.len()).unwrap_or(true)
-                        }
+                        Match::Multiple(_, slice) => (*min <= slice.len()
+                            && max.map(|m| m >= slice.len()).unwrap_or(true))
+                        .into(),
                     },
-                    PatternRestriction::Filter(f) => f(&value),
+                    PatternRestriction::Filter(f) => f(&value).into(),
                     PatternRestriction::Cmp(other_id, f) => {
                         if let Some((_, value2)) = stack.stack.iter().find(|(k, _)| k == other_id) {
-                            f(&value, value2)
+                            f(&value, value2).into()
                         } else {
-                            true // FIXME
+                            ConditionResult::Inconclusive // TODO: check if ok
                         }
                     }
-                    PatternRestriction::NotGreedy => true,
+                    PatternRestriction::NotGreedy => true.into(),
                 }
             }
         }
@@ -1127,8 +1187,8 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
         }
 
         // test whether the current value passes all restrictions
-        // how to do this on a tree?
-        if !self.restrictions.check_possible(key, &value, self) {
+        // or returns an inconclusive result
+        if self.restrictions.check_possible(key, &value, self) == ConditionResult::False {
             return None;
         }
 

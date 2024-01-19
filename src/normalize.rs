@@ -801,7 +801,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         let mut swaps = 0;
                         for i in 0..order.len() {
                             let pos = order[i..].iter().position(|&x| x == i).unwrap();
-                            order.swap(i + pos, i);
+                            order.copy_within(i..i + pos, i + 1);
                             swaps += pos;
                         }
 

@@ -1199,9 +1199,20 @@ impl PythonExpression {
     /// >>> e = f(1,2)
     /// >>> print(e)
     /// f(1,2)
+    ///
+    /// Define a symmetric function:
+    /// >>> f = Expression.fun('f', is_symmetric=True)
+    /// >>> e = f(2,1)
+    /// >>> print(e)
+    /// f(1,2)
     #[classmethod]
-    pub fn fun(_cls: &PyType, name: &str, is_symmetric: Option<bool>) -> PyResult<PythonFunction> {
-        PythonFunction::__new__(name, is_symmetric)
+    pub fn fun(
+        _cls: &PyType,
+        name: &str,
+        is_symmetric: Option<bool>,
+        is_antisymmetric: Option<bool>,
+    ) -> PyResult<PythonFunction> {
+        PythonFunction::__new__(name, is_symmetric, is_antisymmetric)
     }
 
     /// Create a Symbolica function for every name in `*names`.
@@ -1211,7 +1222,7 @@ impl PythonExpression {
         let mut result = Vec::with_capacity(args.len());
         for a in args {
             let name = a.extract::<&str>()?;
-            result.push(PythonFunction::__new__(name, None)?);
+            result.push(PythonFunction::__new__(name, None, None)?);
         }
 
         Ok(result)
@@ -3048,15 +3059,23 @@ pub struct PythonFunction {
 #[pymethods]
 impl PythonFunction {
     /// Create a new function from a `name`. Can be turned into a symmetric function
-    /// using `is_symmetric=True`.
+    /// using `is_symmetric=True` or into an antisymmetric function using `is_antisymmetric=True`.
     ///
     /// Once attributes are defined on a function, they cannot be redefined later.
     #[new]
-    pub fn __new__(name: &str, is_symmetric: Option<bool>) -> PyResult<Self> {
-        let opts = match is_symmetric {
-            Some(true) => Some(vec![FunctionAttribute::Symmetric]),
-            Some(false) => Some(vec![]),
-            None => None,
+    pub fn __new__(
+        name: &str,
+        is_symmetric: Option<bool>,
+        is_antisymmetric: Option<bool>,
+    ) -> PyResult<Self> {
+        let opts = match (is_symmetric, is_antisymmetric) {
+            (Some(true), Some(true)) => Err(exceptions::PyValueError::new_err(
+                "Function cannot be both symmetric and antisymmetric",
+            ))?,
+            (Some(true), _) => Some(vec![FunctionAttribute::Symmetric]),
+            (_, Some(true)) => Some(vec![FunctionAttribute::Antisymmetric]),
+            (Some(false), _) | (_, Some(false)) => Some(vec![]),
+            (None, None) => None,
         };
 
         let id = get_state_mut!()?

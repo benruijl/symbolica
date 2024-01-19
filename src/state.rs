@@ -23,6 +23,7 @@ pub struct FiniteFieldIndex(pub(crate) usize);
 #[derive(Clone, Copy, PartialEq)]
 pub enum FunctionAttribute {
     Symmetric,
+    Antisymmetric,
 }
 
 /// A global state, that stores mappings from variable and function names to ids.

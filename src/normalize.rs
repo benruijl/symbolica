@@ -8,7 +8,11 @@ use crate::{
         Add, Atom, AtomSet, AtomView, Fun, ListSlice, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
         OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
-    state::{BufferHandle, FunctionAttribute::Symmetric, State, Workspace},
+    state::{
+        BufferHandle,
+        FunctionAttribute::{Antisymmetric, Symmetric},
+        State, Workspace,
+    },
 };
 
 impl<'a, P: AtomSet> AtomView<'a, P> {
@@ -766,20 +770,61 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
 
-                if state.get_function_attributes(name).contains(&Symmetric) {
-                    let mut arg_buf: SmallVec<[BufferHandle<Atom<P>>; 20]> = SmallVec::new();
+                if state.get_function_attributes(name).contains(&Symmetric)
+                    || state.get_function_attributes(name).contains(&Antisymmetric)
+                {
+                    let mut arg_buf: SmallVec<[(usize, BufferHandle<Atom<P>>); 20]> =
+                        SmallVec::new();
 
-                    for a in out_f.to_fun_view().iter() {
+                    for (i, a) in out_f.to_fun_view().iter().enumerate() {
                         let mut handle = workspace.new_atom();
                         handle.set_from_view(&a);
-                        arg_buf.push(handle);
+                        arg_buf.push((i, handle));
                     }
 
-                    arg_buf.sort_by(|a, b| a.as_view().cmp(&b.as_view()));
+                    arg_buf.sort_by(|a, b| a.1.as_view().cmp(&b.1.as_view()));
+
+                    if state.get_function_attributes(name).contains(&Antisymmetric) {
+                        if arg_buf
+                            .windows(2)
+                            .any(|w| w[0].1.as_view() == w[1].1.as_view())
+                        {
+                            let on = out.to_num();
+                            on.set_from_number(Number::Natural(0, 1));
+                            return;
+                        }
+
+                        // find the number of swaps needed to sort the arguments
+                        let mut order: SmallVec<[usize; 20]> = (0..arg_buf.len())
+                            .map(|i| arg_buf.iter().position(|(j, _)| *j == i).unwrap())
+                            .collect();
+                        let mut swaps = 0;
+                        for i in 0..order.len() {
+                            let pos = order[i..].iter().position(|&x| x == i).unwrap();
+                            order.swap(i + pos, i);
+                            swaps += pos;
+                        }
+
+                        if swaps % 2 == 1 {
+                            let mut handle = workspace.new_atom();
+                            let out_f = handle.to_fun();
+                            out_f.set_from_name(name);
+                            for (_, a) in arg_buf {
+                                out_f.add_arg(a.as_view());
+                            }
+
+                            let m = out.to_mul();
+                            m.extend(handle.as_view());
+                            handle.to_num().set_from_number(Number::Natural(-1, 1));
+                            m.extend(handle.as_view());
+
+                            return;
+                        }
+                    }
 
                     let out_f = out.to_fun();
                     out_f.set_from_name(name);
-                    for a in arg_buf {
+                    for (_, a) in arg_buf {
                         out_f.add_arg(a.as_view());
                     }
                 }

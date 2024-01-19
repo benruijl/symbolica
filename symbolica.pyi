@@ -107,7 +107,7 @@ class Expression:
         """
 
     @classmethod
-    def fun(_cls, name: str, is_symmetric: bool = False) -> Function:
+    def fun(_cls, name: str, is_symmetric: bool = False, is_antisymmetric: bool = False) -> Function:
         """
         Create a new Symbolica function with a given name.
 
@@ -115,6 +115,13 @@ class Expression:
         --------
         >>> f = Expression.fun('f')
         >>> e = f(1,2)
+        >>> print(e)
+        f(1,2)
+
+
+        Define a symmetric function:
+        >>> f = Expression.fun('f', is_symmetric=True)
+        >>> e = f(2,1)
         >>> print(e)
         f(1,2)
         """
@@ -853,10 +860,10 @@ class Function:
     LOG: Function
     """The built-in logarithm function."""
 
-    def __new__(_cls, name: str, is_symmetric: Optional[bool]) -> Function:
+    def __new__(_cls, name: str, is_symmetric: Optional[bool], is_antisymmetric: Optional[bool]) -> Function:
         """
         Create a new function from a `name`. Can be turned into a symmetric function
-        using `is_symmetric=True`.
+        using `is_symmetric=True` or into an antisymmetric function using `is_antisymmetric=True`.
 
         Once attributes are defined on a function, they cannot be redefined later.
         """

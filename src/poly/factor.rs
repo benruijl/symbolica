@@ -2514,7 +2514,17 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
                 *l = (&*l * &new).make_primitive();
 
-                lcoeff_left = &lcoeff_left / &new;
+                let (q, r) = lcoeff_left.quot_rem(&new, true);
+                if !r.is_zero() {
+                    panic!(
+                        "Problem with bivariate factor scaling in factorization of {}: order={:?}, samples={:?}",
+                        self,
+                        order,
+                        sample_points
+                    );
+                }
+
+                lcoeff_left = q;
             }
         }
 

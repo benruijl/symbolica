@@ -94,6 +94,10 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
         }
     }
 
+    pub fn is_constant(&self) -> bool {
+        self.numerator.is_constant() && self.denominators.is_empty()
+    }
+
     /// Constuct a pretty-printer for the rational polynomial.
     pub fn printer<'a, 'b>(
         &'a self,

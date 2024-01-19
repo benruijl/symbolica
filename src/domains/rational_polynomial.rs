@@ -104,6 +104,10 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         self.denominator.unify_var_map(&mut other.denominator);
     }
 
+    pub fn is_constant(&self) -> bool {
+        self.numerator.is_constant() && self.denominator.is_constant()
+    }
+
     /// Constuct a pretty-printer for the rational polynomial.
     pub fn printer<'a, 'b>(&'a self, state: &'b State) -> RationalPolynomialPrinter<'a, 'b, R, E> {
         RationalPolynomialPrinter::new(self, state)

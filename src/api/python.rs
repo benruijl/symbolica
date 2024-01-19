@@ -2141,7 +2141,7 @@ impl PythonExpression {
     /// When the option `cmp_any_atom` is set to `True`, this function compares atoms
     /// of any type. The result depends on the internal ordering and may change between
     /// different Symbolica versions.
-    /// 
+    ///
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
@@ -3500,6 +3500,41 @@ macro_rules! generate_methods {
     ($type:ty, $exp_type:ty) => {
         #[pymethods]
         impl $type {
+            /// Compare two polynomials.
+            fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+                match op {
+                    CompareOp::Eq => Ok(self.poly == other.poly),
+                    CompareOp::Ne => Ok(self.poly != other.poly),
+                    _ => {
+                        if self.poly.is_constant() && other.poly.is_constant() {
+                            return Ok(match op {
+                                CompareOp::Eq => self.poly == other.poly,
+                                CompareOp::Ge => self.poly.lcoeff() >= other.poly.lcoeff(),
+                                CompareOp::Gt => self.poly.lcoeff() > other.poly.lcoeff(),
+                                CompareOp::Le => self.poly.lcoeff() <= other.poly.lcoeff(),
+                                CompareOp::Lt => self.poly.lcoeff() < other.poly.lcoeff(),
+                                CompareOp::Ne => self.poly != other.poly,
+                            });
+                        }
+
+                        Err(exceptions::PyTypeError::new_err(format!(
+                            "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
+                            self.__str__()?,
+                            match op {
+                                CompareOp::Eq => "==",
+                                CompareOp::Ge => ">=",
+                                CompareOp::Gt => ">",
+                                CompareOp::Le => "<=",
+                                CompareOp::Lt => "<",
+                                CompareOp::Ne => "!=",
+                            },
+                            other.__str__()?,
+                        )
+                    ))
+                    }
+                }
+            }
+
             /// Copy the polynomial.
             pub fn __copy__(&self) -> Self {
                 Self {
@@ -3875,6 +3910,30 @@ macro_rules! generate_rat_methods {
             pub fn __copy__(&self) -> Self {
                 Self {
                     poly: Arc::new((*self.poly).clone()),
+                }
+            }
+
+            /// Compare two polynomials.
+            fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+                match op {
+                    CompareOp::Eq => Ok(self.poly == other.poly),
+                    CompareOp::Ne => Ok(self.poly != other.poly),
+                    _ => {
+                        Err(exceptions::PyTypeError::new_err(format!(
+                            "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
+                            self.__str__()?,
+                            match op {
+                                CompareOp::Eq => "==",
+                                CompareOp::Ge => ">=",
+                                CompareOp::Gt => ">",
+                                CompareOp::Le => "<=",
+                                CompareOp::Lt => "<",
+                                CompareOp::Ne => "!=",
+                            },
+                            other.__str__()?,
+                        )
+                    ))
+                    }
                 }
             }
 

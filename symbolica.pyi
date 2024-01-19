@@ -181,6 +181,7 @@ class Expression:
         color_top_level_sum: bool = True,
         color_builtin_functions: bool = True,
         print_finite_field: bool = True,
+        symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
         multiplication_operator: str = "*",
@@ -1146,6 +1147,7 @@ class Transformer:
         color_top_level_sum: bool = True,
         color_builtin_functions: bool = True,
         print_finite_field: bool = True,
+        symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
         multiplication_operator: str = "*",
@@ -1305,6 +1307,31 @@ class Polynomial:
     def to_latex(self) -> str:
         """Convert the polynomial into a LaTeX string."""
 
+    def pretty_str(
+        self,
+        terms_on_new_line: bool = False,
+        color_top_level_sum: bool = True,
+        color_builtin_functions: bool = True,
+        print_finite_field: bool = True,
+        symmetric_representation_for_finite_field: bool = False,
+        explicit_rational_polynomial: bool = False,
+        number_thousands_separator: Optional[str] = None,
+        multiplication_operator: str = "*",
+        square_brackets_for_function: bool = False,
+        num_exp_as_superscript: bool = True,
+        latex: bool = False,
+    ) -> str:
+        """
+        Convert the polynomial into a human-readable string, with tunable settings.
+
+        Examples
+        --------
+        >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+        >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+
+        Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
+        """
+
     def __repr__(self) -> str:
         """Print the polynomial in a debug representation."""
 
@@ -1405,6 +1432,31 @@ class IntegerPolynomial:
     def to_latex(self) -> str:
         """Convert the polynomial into a LaTeX string."""
 
+    def pretty_str(
+        self,
+        terms_on_new_line: bool = False,
+        color_top_level_sum: bool = True,
+        color_builtin_functions: bool = True,
+        print_finite_field: bool = True,
+        symmetric_representation_for_finite_field: bool = False,
+        explicit_rational_polynomial: bool = False,
+        number_thousands_separator: Optional[str] = None,
+        multiplication_operator: str = "*",
+        square_brackets_for_function: bool = False,
+        num_exp_as_superscript: bool = True,
+        latex: bool = False,
+    ) -> str:
+        """
+        Convert the polynomial into a human-readable string, with tunable settings.
+
+        Examples
+        --------
+        >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+        >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+
+        Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
+        """
+
     def __repr__(self) -> str:
         """Print the polynomial in a debug representation."""
 
@@ -1492,6 +1544,31 @@ class FiniteFieldPolynomial:
 
     def to_latex(self) -> str:
         """Convert the polynomial into a LaTeX string."""
+
+    def pretty_str(
+        self,
+        terms_on_new_line: bool = False,
+        color_top_level_sum: bool = True,
+        color_builtin_functions: bool = True,
+        print_finite_field: bool = True,
+        symmetric_representation_for_finite_field: bool = False,
+        explicit_rational_polynomial: bool = False,
+        number_thousands_separator: Optional[str] = None,
+        multiplication_operator: str = "*",
+        square_brackets_for_function: bool = False,
+        num_exp_as_superscript: bool = True,
+        latex: bool = False,
+    ) -> str:
+        """
+        Convert the polynomial into a human-readable string, with tunable settings.
+
+        Examples
+        --------
+        >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+        >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+
+        Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
+        """
 
     def __repr__(self) -> str:
         """Print the polynomial in a debug representation."""

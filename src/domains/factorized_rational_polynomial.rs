@@ -468,6 +468,7 @@ impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomial<R, E> {
                         ring: &self.numerator.field,
                         element: &self.denom_coeff,
                         state: None,
+                        opts: &PrintOptions::default(),
                         in_product: false,
                     }
                 ))?;
@@ -606,6 +607,7 @@ where
         &self,
         element: &Self::Element,
         state: Option<&State>,
+        opts: &PrintOptions,
         in_product: bool,
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
@@ -619,7 +621,7 @@ where
                 FactorizedRationalPolynomialPrinter {
                     poly: element,
                     state,
-                    opts: PrintOptions::default(),
+                    opts: opts.clone(),
                     add_parentheses: in_product
                 },
             ))

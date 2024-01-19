@@ -14,7 +14,7 @@ use crate::domains::finite_field::{
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::RationalField;
 use crate::domains::{EuclideanDomain, Field, Ring, RingPrinter};
-use crate::printer::PolynomialPrinter;
+use crate::printer::{PolynomialPrinter, PrintOptions};
 use crate::state::State;
 
 use super::gcd::PolynomialGCD;
@@ -551,8 +551,13 @@ impl<F: Ring + Display, E: Exponent, O: MonomialOrder> Display for MultivariateP
                 write!(f, "-")?;
             } else {
                 if is_first_term {
-                    self.field
-                        .fmt_display(monomial.coefficient, None, true, f)?;
+                    self.field.fmt_display(
+                        monomial.coefficient,
+                        None,
+                        &PrintOptions::default(),
+                        true,
+                        f,
+                    )?;
                 } else {
                     write!(
                         f,
@@ -561,6 +566,7 @@ impl<F: Ring + Display, E: Exponent, O: MonomialOrder> Display for MultivariateP
                             ring: &self.field,
                             element: monomial.coefficient,
                             state: None,
+                            opts: &PrintOptions::default(),
                             in_product: true
                         }
                     )?;

@@ -11,7 +11,7 @@ use rug::{
     Complete, Integer as ArbitraryPrecisionInteger,
 };
 
-use crate::{state::State, utils};
+use crate::{state::State, utils, printer::PrintOptions};
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField},
@@ -668,6 +668,7 @@ impl Ring for IntegerRing {
         &self,
         element: &Self::Element,
         _state: Option<&State>,
+        _opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {

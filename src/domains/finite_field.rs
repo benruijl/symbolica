@@ -4,6 +4,7 @@ use std::hash::Hash;
 use std::ops::Neg;
 
 use crate::domains::integer::{Integer, IntegerRing};
+use crate::printer::PrintOptions;
 use crate::state::State;
 
 use super::{EuclideanDomain, Field, Ring};
@@ -278,13 +279,14 @@ impl Ring for FiniteField<u32> {
         &self,
         element: &Self::Element,
         _state: Option<&State>,
+        opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
-        if f.sign_plus() {
-            write!(f, "+{}", self.from_element(element))
+        if opts.symmetric_representation_for_finite_field {
+            self.to_symmetric_integer(element).fmt(f)
         } else {
-            write!(f, "{}", self.from_element(element))
+            self.from_element(element).fmt(f)
         }
     }
 }
@@ -569,13 +571,14 @@ impl Ring for FiniteField<u64> {
         &self,
         element: &Self::Element,
         _state: Option<&State>,
+        opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
-        if f.sign_plus() {
-            write!(f, "+{}", self.from_element(element))
+        if opts.symmetric_representation_for_finite_field {
+            self.to_symmetric_integer(element).fmt(f)
         } else {
-            write!(f, "{}", self.from_element(element))
+            self.from_element(element).fmt(f)
         }
     }
 }
@@ -840,13 +843,14 @@ impl Ring for FiniteField<Mersenne64> {
         &self,
         element: &Self::Element,
         _state: Option<&State>,
+        opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
-        if f.sign_plus() {
-            write!(f, "+{}", self.from_element(element))
+        if opts.symmetric_representation_for_finite_field {
+            self.to_symmetric_integer(element).fmt(f)
         } else {
-            write!(f, "{}", self.from_element(element))
+            self.from_element(element).fmt(f)
         }
     }
 }
@@ -1035,10 +1039,15 @@ impl Ring for FiniteField<Integer> {
         &self,
         element: &Self::Element,
         _state: Option<&State>,
+        opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
-        element.fmt(f)
+        if opts.symmetric_representation_for_finite_field {
+            self.to_symmetric_integer(element).fmt(f)
+        } else {
+            self.from_element(element).fmt(f)
+        }
     }
 }
 

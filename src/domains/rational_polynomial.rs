@@ -530,6 +530,7 @@ where
         &self,
         element: &Self::Element,
         state: Option<&State>,
+        opts: &PrintOptions,
         in_product: bool,
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
@@ -543,7 +544,7 @@ where
                 RationalPolynomialPrinter {
                     poly: element,
                     state,
-                    opts: PrintOptions::default(),
+                    opts: opts.clone(),
                     add_parentheses: in_product
                 },
             ))

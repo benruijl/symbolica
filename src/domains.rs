@@ -8,7 +8,7 @@ pub mod rational_polynomial;
 
 use std::fmt::{Debug, Display, Error, Formatter};
 
-use crate::state::State;
+use crate::{printer::PrintOptions, state::State};
 
 pub trait Ring: Clone + PartialEq + Debug + Display {
     type Element: Clone + PartialEq + PartialOrd + Debug;
@@ -38,6 +38,7 @@ pub trait Ring: Clone + PartialEq + Debug + Display {
         &self,
         element: &Self::Element,
         state: Option<&State>,
+        opts: &PrintOptions,
         in_product: bool, // can be used to add parentheses
         f: &mut Formatter<'_>,
     ) -> Result<(), Error>;
@@ -59,12 +60,13 @@ pub struct RingPrinter<'a, R: Ring> {
     pub ring: &'a R,
     pub element: &'a R::Element,
     pub state: Option<&'a State>,
+    pub opts: &'a PrintOptions,
     pub in_product: bool,
 }
 
 impl<'a, R: Ring> Display for RingPrinter<'a, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.ring
-            .fmt_display(self.element, self.state, self.in_product, f)
+            .fmt_display(self.element, self.state, self.opts, self.in_product, f)
     }
 }

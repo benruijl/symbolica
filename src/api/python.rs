@@ -703,6 +703,7 @@ impl PythonPattern {
             color_top_level_sum = true,
             color_builtin_functions = true,
             print_finite_field = true,
+            symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
             number_thousands_separator = None,
             multiplication_operator = '*',
@@ -716,6 +717,7 @@ impl PythonPattern {
         color_top_level_sum: bool,
         color_builtin_functions: bool,
         print_finite_field: bool,
+        symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
@@ -730,6 +732,7 @@ impl PythonPattern {
                 color_top_level_sum,
                 color_builtin_functions,
                 print_finite_field,
+                symmetric_representation_for_finite_field,
                 explicit_rational_polynomial,
                 number_thousands_separator,
                 multiplication_operator,
@@ -1329,6 +1332,7 @@ impl PythonExpression {
         color_top_level_sum = true,
         color_builtin_functions = true,
         print_finite_field = true,
+        symmetric_representation_for_finite_field = false,
         explicit_rational_polynomial = false,
         number_thousands_separator = None,
         multiplication_operator = '*',
@@ -1342,6 +1346,7 @@ impl PythonExpression {
         color_top_level_sum: bool,
         color_builtin_functions: bool,
         print_finite_field: bool,
+        symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
@@ -1358,6 +1363,7 @@ impl PythonExpression {
                     color_top_level_sum,
                     color_builtin_functions,
                     print_finite_field,
+                    symmetric_representation_for_finite_field,
                     explicit_rational_polynomial,
                     number_thousands_separator,
                     multiplication_operator,
@@ -3449,13 +3455,6 @@ pub struct PythonIntegerPolynomial {
     pub poly: Arc<MultivariatePolynomial<IntegerRing, u8>>,
 }
 
-/// A Symbolica polynomial over finite fields.
-#[pyclass(name = "FiniteFieldPolynomial")]
-#[derive(Clone)]
-pub struct PythonFiniteFieldPolynomial {
-    pub poly: Arc<MultivariatePolynomial<FiniteField<u32>, u16>>,
-}
-
 #[pymethods]
 impl PythonIntegerPolynomial {
     /// Parse a polynomial with integer coefficients from a string.
@@ -3490,6 +3489,57 @@ impl PythonIntegerPolynomial {
         let e = Token::parse(arg)
             .map_err(exceptions::PyValueError::new_err)?
             .to_polynomial(&IntegerRing::new(), &Arc::new(var_map), &var_name_map)
+            .map_err(exceptions::PyValueError::new_err)?;
+
+        Ok(Self { poly: Arc::new(e) })
+    }
+}
+
+/// A Symbolica polynomial over finite fields.
+#[pyclass(name = "FiniteFieldPolynomial")]
+#[derive(Clone)]
+pub struct PythonFiniteFieldPolynomial {
+    pub poly: Arc<MultivariatePolynomial<FiniteField<u32>, u16>>,
+}
+
+#[pymethods]
+impl PythonFiniteFieldPolynomial {
+    /// Parse a polynomial with integer coefficients from a string.
+    /// The input must be written in an expanded format and a list of all
+    /// the variables must be provided.
+    ///
+    /// If these requirements are too strict, use `Expression.to_polynomial()` or
+    /// `RationalPolynomial.parse()` instead.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = Polynomial.parse('3*x^2+y+y*4', ['x', 'y'], 5)
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the input is not a valid Symbolica polynomial.
+    #[classmethod]
+    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>, prime: u32) -> PyResult<Self> {
+        let mut var_map = vec![];
+        let mut var_name_map = vec![];
+
+        {
+            let mut state = get_state_mut!()?;
+            for v in vars {
+                let id = state.get_or_insert_var(v);
+                var_map.push(id.into());
+                var_name_map.push(v.into());
+            }
+        }
+
+        let e = Token::parse(arg)
+            .map_err(exceptions::PyValueError::new_err)?
+            .to_polynomial(
+                &FiniteField::<u32>::new(prime),
+                &Arc::new(var_map),
+                &var_name_map,
+            )
             .map_err(exceptions::PyValueError::new_err)?;
 
         Ok(Self { poly: Arc::new(e) })
@@ -3541,6 +3591,61 @@ macro_rules! generate_methods {
                     poly: Arc::new((*self.poly).clone()),
                 }
             }
+
+            /// Convert the polynomial into a human-readable string, with tunable settings.
+            ///
+            /// Examples
+            /// --------
+            /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+            /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+            #[pyo3(signature =
+                (terms_on_new_line = false,
+                    color_top_level_sum = true,
+                    color_builtin_functions = true,
+                    print_finite_field = true,
+                    symmetric_representation_for_finite_field = false,
+                    explicit_rational_polynomial = false,
+                    number_thousands_separator = None,
+                    multiplication_operator = '*',
+                    square_brackets_for_function = false,
+                    num_exp_as_superscript = true,
+                    latex = false)
+                )]
+                pub fn pretty_str(
+                    &self,
+                    terms_on_new_line: bool,
+                    color_top_level_sum: bool,
+                    color_builtin_functions: bool,
+                    print_finite_field: bool,
+                    symmetric_representation_for_finite_field: bool,
+                    explicit_rational_polynomial: bool,
+                    number_thousands_separator: Option<char>,
+                    multiplication_operator: char,
+                    square_brackets_for_function: bool,
+                    num_exp_as_superscript: bool,
+                    latex: bool,
+                ) -> PyResult<String> {
+                    Ok(format!(
+                        "{}",
+                        PolynomialPrinter::new_with_options(
+                            &self.poly,
+                            &&get_state!()?,
+                            PrintOptions {
+                                terms_on_new_line,
+                                color_top_level_sum,
+                                color_builtin_functions,
+                                print_finite_field,
+                                symmetric_representation_for_finite_field,
+                                explicit_rational_polynomial,
+                                number_thousands_separator,
+                                multiplication_operator,
+                                square_brackets_for_function,
+                                num_exp_as_superscript,
+                                latex
+                            },
+                        )
+                    ))
+                }
 
             /// Print the polynomial in a human-readable format.
             pub fn __str__(&self) -> PyResult<String> {

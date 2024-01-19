@@ -9,11 +9,11 @@ use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
 
 use crate::{
+    domains::finite_field::{FiniteField, FiniteFieldCore},
     representations::{
         default::Linear, number::Number, AsAtomView, Atom, AtomSet, AtomView, Identifier, OwnedNum,
         OwnedVar,
     },
-    domains::finite_field::{FiniteField, FiniteFieldCore},
     LicenseManager, LICENSE_MANAGER,
 };
 
@@ -242,7 +242,7 @@ pub struct Stack<T: ResettableBuffer> {
 impl<T: ResettableBuffer> Stack<T> {
     /// Create a new stack.
     #[inline]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             buffers: RefCell::new(vec![]),
         }

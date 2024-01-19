@@ -5,6 +5,8 @@ use std::{
     slice::Chunks,
 };
 
+use crate::printer::PrintOptions;
+
 use super::Field;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -58,7 +60,8 @@ impl<F: Field> Display for Matrix<F> {
         for (ri, r) in self.row_iter().enumerate() {
             f.write_char('{')?;
             for (ci, c) in r.iter().enumerate() {
-                self.field.fmt_display(c, None, true, f)?;
+                self.field
+                    .fmt_display(c, None, &PrintOptions::default(), true, f)?;
                 if ci + 1 < self.shape.1 as usize {
                     f.write_char(',')?;
                 }

@@ -5,17 +5,17 @@ use std::sync::Arc;
 
 use smartstring::{LazyCompact, SmartString};
 
-use crate::parser::Token;
-use crate::poly::Variable;
 use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64};
 use crate::domains::integer::IntegerRing;
 use crate::domains::rational::RationalField;
+use crate::parser::Token;
+use crate::poly::Variable;
 use crate::LicenseManager;
 use crate::{
-    printer::{FactorizedRationalPolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
-    representations::default::Linear,
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
     domains::rational_polynomial::RationalPolynomial,
+    printer::{FactorizedRationalPolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
+    representations::default::Linear,
     state::{State, Workspace},
 };
 
@@ -121,8 +121,7 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
     let mut var_map = vec![];
 
     for var in cstr.split(',') {
-        var_map
-            .push(Variable::Identifier(symbolica.state.get_or_insert_var(var)));
+        var_map.push(Variable::Identifier(symbolica.state.get_or_insert_var(var)));
         symbolica.local_state.var_name_map.push(var.into());
     }
 
@@ -150,6 +149,7 @@ unsafe extern "C" fn simplify(
         color_top_level_sum: false,
         color_builtin_functions: false,
         print_finite_field: false,
+        symmetric_representation_for_finite_field: false,
         explicit_rational_polynomial,
         number_thousands_separator: None,
         multiplication_operator: '*',
@@ -297,6 +297,7 @@ unsafe extern "C" fn simplify_factorized(
         color_top_level_sum: false,
         color_builtin_functions: false,
         print_finite_field: false,
+        symmetric_representation_for_finite_field: false,
         explicit_rational_polynomial,
         number_thousands_separator: None,
         multiplication_operator: '*',

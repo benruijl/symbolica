@@ -1027,11 +1027,11 @@ impl<'a> FromPyObject<'a> for Complex<f64> {
     }
 }
 
-macro_rules! req_num_cmp {
-    ($self:ident,$num:ident,$c:ident) => {{
+macro_rules! req_cmp {
+    ($self:ident,$num:ident,$cmp_any_atom:ident,$c:ident) => {{
         let num = $num.to_expression();
 
-        if !matches!(num.expr.as_view(), AtomView::Num(_)) {
+        if !$cmp_any_atom && !matches!(num.expr.as_view(), AtomView::Num(_)) {
             return Err(exceptions::PyTypeError::new_err(
                 "Can only compare to number",
             ));
@@ -1051,11 +1051,17 @@ macro_rules! req_num_cmp {
                     name,
                     vec![PatternRestriction::Filter(Box::new(move |v: &Match<_>| {
                         let k = num.expr.as_view();
+
                         if let Match::Single(m) = v {
-                            if let AtomView::Num(_) = m {
+                            if !$cmp_any_atom {
+                                if let AtomView::Num(_) = m {
+                                    return m.cmp(&k).$c();
+                                }
+                            } else {
                                 return m.cmp(&k).$c();
                             }
                         }
+
                         false
                     }))],
                 );
@@ -1071,8 +1077,8 @@ macro_rules! req_num_cmp {
     }};
 }
 
-macro_rules! req_cmp_num_cmp {
-    ($self:ident,$other:ident,$c:ident) => {{
+macro_rules! req_wc_cmp {
+    ($self:ident,$other:ident,$cmp_any_atom:ident,$c:ident) => {{
         let id = match $self.expr.as_view() {
             AtomView::Var(v) => {
                 let name = v.get_name();
@@ -1112,13 +1118,17 @@ macro_rules! req_cmp_num_cmp {
             id,
             vec![PatternRestriction::Cmp(
                 other_id,
-                Box::new(|m1: &Match<_>, m2: &Match<_>| {
+                Box::new(move |m1: &Match<_>, m2: &Match<_>| {
                     if let Match::Single(a1) = m1 {
                         if let Match::Single(a2) = m2 {
-                            if let AtomView::Num(_) = a1 {
-                                if let AtomView::Num(_) = a2 {
-                                    return a1.cmp(a2).$c();
+                            if !$cmp_any_atom {
+                                if let AtomView::Num(_) = a1 {
+                                    if let AtomView::Num(_) = a2 {
+                                        return a1.cmp(a2).$c();
+                                    }
                                 }
+                            } else {
+                                return a1.cmp(a2).$c();
                             }
                         }
                     }
@@ -1912,6 +1922,10 @@ impl PythonExpression {
     /// Create a pattern restriction that passes when the wildcard is smaller than a number `num`.
     /// If the matched wildcard is not a number, the pattern fails.
     ///
+    /// When the option `cmp_any_atom` is set to `True`, this function compares atoms
+    /// of any type. The result depends on the internal ordering and may change between
+    /// different Symbolica versions.
+    ///
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
@@ -1919,12 +1933,21 @@ impl PythonExpression {
     /// >>> f = Expression.fun("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_), 1, x_.req_lt(2))
-    pub fn req_lt(&self, num: ConvertibleToExpression) -> PyResult<PythonPatternRestriction> {
-        return req_num_cmp!(self, num, is_lt);
+    #[pyo3(signature =(other, cmp_any_atom = false))]
+    pub fn req_lt(
+        &self,
+        other: ConvertibleToExpression,
+        cmp_any_atom: bool,
+    ) -> PyResult<PythonPatternRestriction> {
+        return req_cmp!(self, other, cmp_any_atom, is_lt);
     }
 
     /// Create a pattern restriction that passes when the wildcard is greater than a number `num`.
     /// If the matched wildcard is not a number, the pattern fails.
+    ///
+    /// When the option `cmp_any_atom` is set to `True`, this function compares atoms
+    /// of any type. The result depends on the internal ordering and may change between
+    /// different Symbolica versions.
     ///
     /// Examples
     /// --------
@@ -1933,12 +1956,21 @@ impl PythonExpression {
     /// >>> f = Expression.fun("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_), 1, x_.req_gt(2))
-    pub fn req_gt(&self, num: ConvertibleToExpression) -> PyResult<PythonPatternRestriction> {
-        return req_num_cmp!(self, num, is_gt);
+    #[pyo3(signature =(other, cmp_any_atom = false))]
+    pub fn req_gt(
+        &self,
+        other: ConvertibleToExpression,
+        cmp_any_atom: bool,
+    ) -> PyResult<PythonPatternRestriction> {
+        return req_cmp!(self, other, cmp_any_atom, is_gt);
     }
 
     /// Create a pattern restriction that passes when the wildcard is smaller than or equal to a number `num`.
     /// If the matched wildcard is not a number, the pattern fails.
+    ///
+    /// When the option `cmp_any_atom` is set to `True`, this function compares atoms
+    /// of any type. The result depends on the internal ordering and may change between
+    /// different Symbolica versions.
     ///
     /// Examples
     /// --------
@@ -1947,12 +1979,21 @@ impl PythonExpression {
     /// >>> f = Expression.fun("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_), 1, x_.req_le(2))
-    pub fn req_le(&self, num: ConvertibleToExpression) -> PyResult<PythonPatternRestriction> {
-        return req_num_cmp!(self, num, is_le);
+    #[pyo3(signature =(other, cmp_any_atom = false))]
+    pub fn req_le(
+        &self,
+        other: ConvertibleToExpression,
+        cmp_any_atom: bool,
+    ) -> PyResult<PythonPatternRestriction> {
+        return req_cmp!(self, other, cmp_any_atom, is_le);
     }
 
     /// Create a pattern restriction that passes when the wildcard is greater than or equal to a number `num`.
     /// If the matched wildcard is not a number, the pattern fails.
+    ///
+    /// When the option `cmp_any_atom` is set to `True`, this function compares atoms
+    /// of any type. The result depends on the internal ordering and may change between
+    /// different Symbolica versions.
     ///
     /// Examples
     /// --------
@@ -1961,8 +2002,13 @@ impl PythonExpression {
     /// >>> f = Expression.fun("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_), 1, x_.req_ge(2))
-    pub fn req_ge(&self, num: ConvertibleToExpression) -> PyResult<PythonPatternRestriction> {
-        return req_num_cmp!(self, num, is_ge);
+    #[pyo3(signature =(other, cmp_any_atom = false))]
+    pub fn req_ge(
+        &self,
+        other: ConvertibleToExpression,
+        cmp_any_atom: bool,
+    ) -> PyResult<PythonPatternRestriction> {
+        return req_cmp!(self, other, cmp_any_atom, is_ge);
     }
 
     /// Create a new pattern restriction that calls the function `filter_fn` with the matched
@@ -2023,6 +2069,10 @@ impl PythonExpression {
     /// Create a pattern restriction that passes when the wildcard is smaller than another wildcard.
     /// If the matched wildcards are not a numbers, the pattern fails.
     ///
+    /// When the option `cmp_any_atom` is set to `True`, this function compares atoms
+    /// of any type. The result depends on the internal ordering and may change between
+    /// different Symbolica versions.
+    ///
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
@@ -2030,12 +2080,21 @@ impl PythonExpression {
     /// >>> f = Expression.fun("f")
     /// >>> e = f(1,2)
     /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_lt(y_))
-    pub fn req_cmp_lt(&self, other: PythonExpression) -> PyResult<PythonPatternRestriction> {
-        return req_cmp_num_cmp!(self, other, is_lt);
+    #[pyo3(signature =(other, cmp_any_atom = false))]
+    pub fn req_cmp_lt(
+        &self,
+        other: PythonExpression,
+        cmp_any_atom: bool,
+    ) -> PyResult<PythonPatternRestriction> {
+        return req_wc_cmp!(self, other, cmp_any_atom, is_lt);
     }
 
     /// Create a pattern restriction that passes when the wildcard is greater than another wildcard.
     /// If the matched wildcards are not a numbers, the pattern fails.
+    ///
+    /// When the option `cmp_any_atom` is set to `True`, this function compares atoms
+    /// of any type. The result depends on the internal ordering and may change between
+    /// different Symbolica versions.
     ///
     /// Examples
     /// --------
@@ -2044,12 +2103,21 @@ impl PythonExpression {
     /// >>> f = Expression.fun("f")
     /// >>> e = f(2,1)
     /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_gt(y_))
-    pub fn req_cmp_gt(&self, other: PythonExpression) -> PyResult<PythonPatternRestriction> {
-        return req_cmp_num_cmp!(self, other, is_gt);
+    #[pyo3(signature =(other, cmp_any_atom = false))]
+    pub fn req_cmp_gt(
+        &self,
+        other: PythonExpression,
+        cmp_any_atom: bool,
+    ) -> PyResult<PythonPatternRestriction> {
+        return req_wc_cmp!(self, other, cmp_any_atom, is_gt);
     }
 
     /// Create a pattern restriction that passes when the wildcard is less than or equal to another wildcard.
     /// If the matched wildcards are not a numbers, the pattern fails.
+    ///
+    /// When the option `cmp_any_atom` is set to `True`, this function compares atoms
+    /// of any type. The result depends on the internal ordering and may change between
+    /// different Symbolica versions.
     ///
     /// Examples
     /// --------
@@ -2058,13 +2126,22 @@ impl PythonExpression {
     /// >>> f = Expression.fun("f")
     /// >>> e = f(1,2)
     /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_le(y_))
-    pub fn req_cmp_le(&self, other: PythonExpression) -> PyResult<PythonPatternRestriction> {
-        return req_cmp_num_cmp!(self, other, is_le);
+    #[pyo3(signature =(other, cmp_any_atom = false))]
+    pub fn req_cmp_le(
+        &self,
+        other: PythonExpression,
+        cmp_any_atom: bool,
+    ) -> PyResult<PythonPatternRestriction> {
+        return req_wc_cmp!(self, other, cmp_any_atom, is_le);
     }
 
     /// Create a pattern restriction that passes when the wildcard is greater than or equal to another wildcard.
     /// If the matched wildcards are not a numbers, the pattern fails.
     ///
+    /// When the option `cmp_any_atom` is set to `True`, this function compares atoms
+    /// of any type. The result depends on the internal ordering and may change between
+    /// different Symbolica versions.
+    /// 
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
@@ -2072,8 +2149,13 @@ impl PythonExpression {
     /// >>> f = Expression.fun("f")
     /// >>> e = f(2,1)
     /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_ge(y_))
-    pub fn req_cmp_ge(&self, other: PythonExpression) -> PyResult<PythonPatternRestriction> {
-        return req_cmp_num_cmp!(self, other, is_ge);
+    #[pyo3(signature =(other, cmp_any_atom = false))]
+    pub fn req_cmp_ge(
+        &self,
+        other: PythonExpression,
+        cmp_any_atom: bool,
+    ) -> PyResult<PythonPatternRestriction> {
+        return req_wc_cmp!(self, other, cmp_any_atom, is_ge);
     }
 
     /// Create a new pattern restriction that calls the function `cmp_fn` with another the matched

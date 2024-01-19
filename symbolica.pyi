@@ -404,9 +404,13 @@ class Expression:
         Yields `f(1)*f(2,3)`.
         """
 
-    def req_lt(self, num: Expression | int) -> PatternRestriction:
+    def req_lt(self, num: Expression | int, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is smaller than a number `num`.
         If the matched wildcard is not a number, the pattern fails.
+
+        When the option `cmp_any_atom` is set to `True`, this function compares atoms
+        of any type. The result depends on the internal ordering and may change between
+        different Symbolica versions.
 
         Examples
         --------
@@ -417,9 +421,13 @@ class Expression:
         >>> e = e.replace_all(f(x_), 1, x_.req_lt(2))
         """
 
-    def req_gt(self, num: Expression | int) -> PatternRestriction:
+    def req_gt(self, num: Expression | int, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is greater than a number `num`.
         If the matched wildcard is not a number, the pattern fails.
+
+        When the option `cmp_any_atom` is set to `True`, this function compares atoms
+        of any type. The result depends on the internal ordering and may change between
+        different Symbolica versions.
 
         Examples
         --------
@@ -430,9 +438,13 @@ class Expression:
         >>> e = e.replace_all(f(x_), 1, x_.req_gt(2))
         """
 
-    def req_le(self, num: Expression | int) -> PatternRestriction:
+    def req_le(self, num: Expression | int, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is smaller than or equal to a number `num`.
         If the matched wildcard is not a number, the pattern fails.
+
+        When the option `cmp_any_atom` is set to `True`, this function compares atoms
+        of any type. The result depends on the internal ordering and may change between
+        different Symbolica versions.
 
         Examples
         --------
@@ -443,9 +455,13 @@ class Expression:
         >>> e = e.replace_all(f(x_), 1, x_.req_le(2))
         """
 
-    def req_ge(self, num: Expression | int) -> PatternRestriction:
+    def req_ge(self, num: Expression | int, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is greater than or equal to a number `num`.
         If the matched wildcard is not a number, the pattern fails.
+
+        When the option `cmp_any_atom` is set to `True`, this function compares atoms
+        of any type. The result depends on the internal ordering and may change between
+        different Symbolica versions.
 
         Examples
         --------
@@ -456,9 +472,13 @@ class Expression:
         >>> e = e.replace_all(f(x_), 1, x_.req_ge(2))
         """
 
-    def req_cmp_lt(self, num: Expression) -> PatternRestriction:
+    def req_cmp_lt(self, num: Expression, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is smaller than another wildcard.
         If the matched wildcards are not a numbers, the pattern fails.
+
+        When the option `cmp_any_atom` is set to `True`, this function compares atoms
+        of any type. The result depends on the internal ordering and may change between
+        different Symbolica versions.
 
         Examples
         --------
@@ -469,9 +489,13 @@ class Expression:
         >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_lt(y_))
         """
 
-    def req_cmp_gt(self, num: Expression) -> PatternRestriction:
+    def req_cmp_gt(self, num: Expression, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is greater than another wildcard.
         If the matched wildcards are not a numbers, the pattern fails.
+
+        When the option `cmp_any_atom` is set to `True`, this function compares atoms
+        of any type. The result depends on the internal ordering and may change between
+        different Symbolica versions.
 
         Examples
         --------
@@ -482,9 +506,13 @@ class Expression:
         >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_gt(y_))
         """
 
-    def req_cmp_le(self, num: Expression) -> PatternRestriction:
+    def req_cmp_le(self, num: Expression, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is smaller than or equal to another wildcard.
         If the matched wildcards are not a numbers, the pattern fails.
+
+        When the option `cmp_any_atom` is set to `True`, this function compares atoms
+        of any type. The result depends on the internal ordering and may change between
+        different Symbolica versions.
 
         Examples
         --------
@@ -495,9 +523,13 @@ class Expression:
         >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_le(y_))
         """
 
-    def req_cmp_ge(self, num: Expression) -> PatternRestriction:
+    def req_cmp_ge(self, num: Expression, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is greater than or equal to another wildcard.
         If the matched wildcards are not a numbers, the pattern fails.
+
+        When the option `cmp_any_atom` is set to `True`, this function compares atoms
+        of any type. The result depends on the internal ordering and may change between
+        different Symbolica versions.
 
         Examples
         --------

@@ -5,11 +5,11 @@ use std::{
 
 use smartstring::{LazyCompact, SmartString};
 use symbolica::{
-    parser::Token,
-    printer::{PrintOptions, RationalPolynomialPrinter},
     domains::{
         integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
     },
+    parser::Token,
+    printer::{PrintOptions, RationalPolynomialPrinter},
     state::{State, Workspace},
 };
 
@@ -52,6 +52,7 @@ fn main() {
         color_top_level_sum: false,
         color_builtin_functions: false,
         print_finite_field: false,
+        symmetric_representation_for_finite_field: false,
         explicit_rational_polynomial: false,
         number_thousands_separator: None,
         multiplication_operator: '*',

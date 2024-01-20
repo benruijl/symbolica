@@ -2410,9 +2410,12 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 continue;
             }
 
-            // only construct factors that depend on var and remove integer content
+            // only construct factors that depend on var and remove integer content and unit
             let c = lcoeff_square_free.univariate_content(var);
-            let lcoeff_square_free_pp = &lcoeff_square_free / &c;
+            let mut lcoeff_square_free_pp = &lcoeff_square_free / &c;
+            if lcoeff_square_free_pp.lcoeff().is_negative() {
+                lcoeff_square_free_pp = -lcoeff_square_free_pp;
+            }
             debug!("Content-free lcsqf {}", lcoeff_square_free_pp);
 
             // check if the evaluated leading coefficient remains square free
@@ -2469,7 +2472,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 .map(|f| f.univariate_lcoeff(order[0]).square_free_factorization())
                 .collect();
 
-            let basis = Self::gcd_free_basis(
+            let mut basis = Self::gcd_free_basis(
                 square_free_lc_biv_factors
                     .iter()
                     .flatten()
@@ -2477,6 +2480,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     .filter(|x| !x.is_constant())
                     .collect(),
             );
+
+            // make sure every basis element has positive lcoeff such that the product
+            // of the basis elements equals the evaluated lcoeff_square_free_pp
+            for b in &mut basis {
+                if b.lcoeff().is_negative() {
+                    *b = -b.clone();
+                }
+            }
 
             if basis.is_empty() {
                 continue;

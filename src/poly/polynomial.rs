@@ -361,15 +361,6 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         }
     }
 
-    /// Grow the exponent list so the variable index fits in.
-    pub fn grow_to(&mut self, var: usize) {
-        if self.nterms() < var {
-            // move all the exponents
-            self.exponents.resize(var, E::zero());
-            unimplemented!()
-        }
-    }
-
     /// Check if the polynomial is sorted and has only non-zero coefficients
     pub fn check_consistency(&self) {
         assert_eq!(self.coefficients.len(), self.nterms());
@@ -1932,6 +1923,11 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             return Some(self.clone());
         }
 
+        // check if the leading coefficients divide
+        if !F::is_zero(&self.field.rem(&self.lcoeff(), &div.lcoeff())) {
+            return None;
+        }
+
         if (0..self.nvars).any(|v| self.degree(v) < div.degree(v)) {
             return None;
         }
@@ -1941,7 +1937,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let c = div.get_constant();
             if !F::is_zero(&c)
                 && !self.field.is_one(&c)
-                && !F::is_zero(&self.field.quot_rem(&self.get_constant(), &c).1)
+                && !F::is_zero(&self.field.rem(&self.get_constant(), &c))
             {
                 return None;
             }
@@ -1958,7 +1954,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
             if !F::is_zero(&den)
                 && !self.field.is_one(&den)
-                && !F::is_zero(&self.field.quot_rem(&num, &den).1)
+                && !F::is_zero(&self.field.rem(&num, &den))
             {
                 return None;
             }
@@ -2048,7 +2044,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             return (q, self.zero());
         }
 
-        // check if the multiplication is univariate with the same variable
+        // check if the division is univariate with the same variable
         let degree_sum: Vec<_> = (0..self.nvars)
             .map(|i| self.degree(i).to_u32() as usize + div.degree(i).to_u32() as usize)
             .collect();

@@ -2919,13 +2919,9 @@ impl<E: Exponent> MultiPrecisionUpgradeableMultiplication<E> for IntegerRing {
         a: &MultivariatePolynomial<Self, E>,
         b: &MultivariatePolynomial<Self, E>,
     ) -> MultivariatePolynomial<Self, E> {
-        if a.nterms() > 100
-            && a.coefficients
-                .iter()
-                .filter(|c| matches!(c, Integer::Large(_)))
-                .count() as f64
+        a.heap_mul(b)
 
-        if a.nterms() > 30000 || b.nterms() > 30000 {
+        /*if a.nterms() > 30000 || b.nterms() > 30000 {
             let r1 = a
                 .coefficients
                 .iter()
@@ -2959,11 +2955,13 @@ impl<E: Exponent> MultiPrecisionUpgradeableMultiplication<E> for IntegerRing {
                 ArbitraryPrecisionIntegerRing::new(),
             );
 
-            p1.heap_mul(&p2)
+            p1
+                .heap_mul(&p2)
                 .map_coeff(|c| Integer::from_large(c.clone()), a.field.clone())
+
         } else {
             a.heap_mul(b)
-        }
+        }*/
     }
 }
 
@@ -3025,7 +3023,8 @@ impl<E: Exponent> MultiPrecisionUpgradeableDivision<E> for IntegerRing {
         MultivariatePolynomial<Self, E>,
         MultivariatePolynomial<Self, E>,
     ) {
-        if !div
+        a.quot_rem(div, abort_on_remainder)
+        /*if !div
             .coefficients
             .iter()
             .any(|c| matches!(c, Integer::Large(_)))
@@ -3059,7 +3058,7 @@ impl<E: Exponent> MultiPrecisionUpgradeableDivision<E> for IntegerRing {
             );
         } else {
             a.quot_rem(div, abort_on_remainder)
-        }
+        }*/
     }
 }
 

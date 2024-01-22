@@ -11,7 +11,7 @@ use rug::{
     Complete, Integer as ArbitraryPrecisionInteger,
 };
 
-use crate::{state::State, utils, printer::PrintOptions};
+use crate::{printer::PrintOptions, state::State, utils};
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField},
@@ -1087,5 +1087,140 @@ impl<'a> Rem for &'a Integer {
             }
             (Integer::Large(a), Integer::Large(b)) => Integer::from_large(a.rem_euc(b).into()),
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ArbitraryPrecisionIntegerRing;
+
+impl Display for ArbitraryPrecisionIntegerRing {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+impl ArbitraryPrecisionIntegerRing {
+    pub fn new() -> ArbitraryPrecisionIntegerRing {
+        ArbitraryPrecisionIntegerRing
+    }
+}
+
+impl Ring for ArbitraryPrecisionIntegerRing {
+    type Element = ArbitraryPrecisionInteger;
+
+    #[inline]
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() + b
+    }
+
+    #[inline]
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() - b
+    }
+
+    #[inline]
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() * b
+    }
+
+    #[inline]
+    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a += b;
+    }
+
+    #[inline]
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a -= b;
+    }
+
+    #[inline]
+    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a *= b;
+    }
+
+    #[inline(always)]
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        a.add_assign(b * c)
+    }
+
+    #[inline(always)]
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        a.sub_assign(b * c)
+    }
+
+    #[inline]
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        a.clone().neg()
+    }
+
+    #[inline]
+    fn zero(&self) -> Self::Element {
+        ArbitraryPrecisionInteger::new()
+    }
+
+    #[inline]
+    fn one(&self) -> Self::Element {
+        ArbitraryPrecisionInteger::from(1)
+    }
+
+    #[inline]
+    fn nth(&self, n: u64) -> Self::Element {
+        ArbitraryPrecisionInteger::from(n)
+    }
+
+    #[inline]
+    fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
+        if e > u32::MAX as u64 {
+            panic!("Power of exponentation is larger than 2^32: {}", e);
+        }
+        b.clone().pow(e as u32)
+    }
+
+    #[inline]
+    fn is_zero(a: &Self::Element) -> bool {
+        a.is_zero()
+    }
+
+    #[inline]
+    fn is_one(&self, a: &Self::Element) -> bool {
+        *a == self.one()
+    }
+
+    fn one_is_gcd_unit() -> bool {
+        true
+    }
+
+    fn is_characteristic_zero(&self) -> bool {
+        true
+    }
+
+    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
+        let r = rng.gen_range(range.0..range.1);
+        ArbitraryPrecisionInteger::from(r)
+    }
+
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        _state: Option<&State>,
+        _opts: &PrintOptions,
+        _in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
+        element.fmt(f)
+    }
+}
+
+impl EuclideanDomain for ArbitraryPrecisionIntegerRing {
+    fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() % b
+    }
+
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        a.clone().div_rem_euc(b.clone())
+    }
+
+    fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone().gcd(b)
     }
 }

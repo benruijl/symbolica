@@ -17,24 +17,24 @@ use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
-use crate::parser::{Operator, Token};
-use crate::representations::number::{BorrowedNumber, ConvertToRing, Number};
-use crate::representations::{
-    Add, Atom, AtomSet, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow,
-    OwnedVar, Pow, Var,
-};
 use crate::domains::factorized_rational_polynomial::{
     FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
 };
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::domains::{EuclideanDomain, Ring};
+use crate::parser::{Operator, Token};
+use crate::representations::number::{BorrowedNumber, ConvertToRing, Number};
+use crate::representations::{
+    Add, Atom, AtomSet, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow,
+    OwnedVar, Pow, Var,
+};
 use crate::state::{BufferHandle, State, Workspace};
 use crate::utils;
 
 use self::factor::Factorize;
 use self::gcd::PolynomialGCD;
-use self::polynomial::MultivariatePolynomial;
+use self::polynomial::{MultiPrecisionUpgradeableDivision, MultivariatePolynomial};
 
 pub const INLINED_EXPONENTS: usize = 6;
 
@@ -582,8 +582,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     /// Convert an expression to a rational polynomial if possible.
     pub fn to_rational_polynomial<
-        R: EuclideanDomain + ConvertToRing,
-        RO: EuclideanDomain + PolynomialGCD<E>,
+        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
+        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -680,8 +680,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     /// Convert an expression to a rational polynomial if possible.
     pub fn to_factorized_rational_polynomial<
-        R: EuclideanDomain + ConvertToRing,
-        RO: EuclideanDomain + PolynomialGCD<E>,
+        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
+        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -888,8 +888,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// all non-rational subexpressions. These are stored in `map`.
     pub fn to_rational_polynomial_with_map<
         'b,
-        R: EuclideanDomain + ConvertToRing,
-        RO: EuclideanDomain + PolynomialGCD<E>,
+        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
+        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -942,7 +942,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 None,
                                 Some(Arc::new(vec![id])),
                             );
-                            p.append_monomial(field.one(), &[E::from_u32(nn.unsigned_abs() as u32)]);
+                            p.append_monomial(
+                                field.one(),
+                                &[E::from_u32(nn.unsigned_abs() as u32)],
+                            );
                             let den = p.one();
                             let r = RationalPolynomial::from_num_den(p, den, out_field, false);
 
@@ -1339,8 +1342,8 @@ impl Token {
     /// i.e. the ordering is the same
     pub fn to_rational_polynomial<
         P: AtomSet,
-        R: EuclideanDomain + ConvertToRing,
-        RO: EuclideanDomain + PolynomialGCD<E>,
+        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
+        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -1488,8 +1491,8 @@ impl Token {
     /// i.e. the ordering is the same
     pub fn to_factorized_rational_polynomial<
         P: AtomSet,
-        R: EuclideanDomain + ConvertToRing,
-        RO: EuclideanDomain + PolynomialGCD<E>,
+        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
+        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,

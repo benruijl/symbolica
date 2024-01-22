@@ -9,8 +9,13 @@ use std::{
 
 use crate::{
     poly::{
-        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent,
-        Variable,
+        factor::Factorize,
+        gcd::PolynomialGCD,
+        polynomial::{
+            MultiPrecisionUpgradeableDivision, MultiPrecisionUpgradeableMultiplication,
+            MultivariatePolynomial,
+        },
+        Exponent, Variable,
     },
     printer::{FactorizedRationalPolynomialPrinter, PrintOptions},
     state::State,
@@ -351,7 +356,8 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> FactorizedRationalPolynomial<R, E>
+impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
+    FactorizedRationalPolynomial<R, E>
 where
     Self: FromNumeratorAndFactorizedDenominator<R, R, E>,
     MultivariatePolynomial<R, E>: Factorize,
@@ -376,7 +382,8 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> FactorizedRationalPolynomial<R, E>
+impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
+    FactorizedRationalPolynomial<R, E>
 where
     Self: FromNumeratorAndFactorizedDenominator<R, R, E>,
 {
@@ -493,7 +500,7 @@ impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomialField<R, E> {
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Ring
+impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> Ring
     for FactorizedRationalPolynomialField<R, E>
 where
     FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
@@ -633,7 +640,7 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> EuclideanDomain
+impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> EuclideanDomain
     for FactorizedRationalPolynomialField<R, E>
 where
     FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
@@ -656,7 +663,7 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Field
+impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> Field
     for FactorizedRationalPolynomialField<R, E>
 where
     FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
@@ -675,8 +682,12 @@ where
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Exponent>
-    Add<&'a FactorizedRationalPolynomial<R, E>> for &'b FactorizedRationalPolynomial<R, E>
+impl<
+        'a,
+        'b,
+        R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E> + PolynomialGCD<E>,
+        E: Exponent,
+    > Add<&'a FactorizedRationalPolynomial<R, E>> for &'b FactorizedRationalPolynomial<R, E>
 {
     type Output = FactorizedRationalPolynomial<R, E>;
 
@@ -730,7 +741,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
         // TODO: are there some factors we can skip the division check for?
         for (d, p) in &mut den {
             while *p > 0 {
-                if let Some(q) = num.divides(d) {
+                if let Some(q) = MultiPrecisionUpgradeableDivision::divides(&num, d) {
                     num = q;
                     *p -= 1;
                 } else {
@@ -761,7 +772,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub
+impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> Sub
     for FactorizedRationalPolynomial<R, E>
 {
     type Output = Self;
@@ -771,7 +782,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
+impl<'a, 'b, R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
     Sub<&'a FactorizedRationalPolynomial<R, E>> for &'b FactorizedRationalPolynomial<R, E>
 {
     type Output = FactorizedRationalPolynomial<R, E>;
@@ -794,7 +805,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
+impl<'a, 'b, R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
     Mul<&'a FactorizedRationalPolynomial<R, E>> for &'b FactorizedRationalPolynomial<R, E>
 {
     type Output = FactorizedRationalPolynomial<R, E>;
@@ -819,7 +830,8 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
 
             let mut p = *p;
             while p > 0 {
-                if let Some(q) = reduced_numerator_1.divides(d) {
+                if let Some(q) = MultiPrecisionUpgradeableDivision::divides(&reduced_numerator_1, d)
+                {
                     reduced_numerator_1 = Cow::Owned(q);
                     p -= 1;
                 } else {
@@ -839,7 +851,8 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
 
             let mut p = *p;
             while p > 0 {
-                if let Some(q) = reduced_numerator_2.divides(d) {
+                if let Some(q) = MultiPrecisionUpgradeableDivision::divides(&reduced_numerator_2, d)
+                {
                     reduced_numerator_2 = Cow::Owned(q);
                     p -= 1;
                 } else {
@@ -868,14 +881,17 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
         }
 
         FactorizedRationalPolynomial {
-            numerator: reduced_numerator_1.as_ref() * reduced_numerator_2.as_ref(),
+            numerator: MultiPrecisionUpgradeableMultiplication::mul(
+                reduced_numerator_1.as_ref(),
+                reduced_numerator_2.as_ref(),
+            ),
             denom_coeff: constant,
             denominators: den,
         }
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
+impl<'a, 'b, R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
     Div<&'a FactorizedRationalPolynomial<R, E>> for &'b FactorizedRationalPolynomial<R, E>
 where
     FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,

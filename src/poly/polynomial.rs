@@ -11,8 +11,11 @@ use std::sync::Arc;
 use crate::domains::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
 };
-use crate::domains::integer::{Integer, IntegerRing};
+use crate::domains::integer::{ArbitraryPrecisionIntegerRing, Integer, IntegerRing};
 use crate::domains::rational::RationalField;
+use crate::domains::rational_polynomial::{
+    FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
+};
 use crate::domains::{EuclideanDomain, Field, Ring, RingPrinter};
 use crate::printer::{PolynomialPrinter, PrintOptions};
 use crate::state::State;
@@ -1467,7 +1470,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     /// only has new monomials, and by taking (and removing) the corresponding entry from the hashmap, all
     /// monomials that have that exponent can be summed. Then, new monomials combinations are added that
     /// should be considered next as they are smaller than the current monomial.
-    pub fn heap_mul(
+    fn heap_mul(
         &self,
         other: &MultivariatePolynomial<F, E, LexOrder>,
     ) -> MultivariatePolynomial<F, E, LexOrder> {
@@ -1622,12 +1625,12 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     /// Heap multiplication, but with the exponents packed into a `u64`.
     /// Each exponent is limited to 65535 if there are four or fewer variables,
     /// or 255 if there are 8 or fewer variables.
-    pub fn heap_mul_packed_exp(
+    fn heap_mul_packed_exp(
         &self,
         other: &MultivariatePolynomial<F, E, LexOrder>,
         pack_u8: bool,
     ) -> MultivariatePolynomial<F, E, LexOrder> {
-        let mut res = self.zero_with_capacity(self.nterms());
+        let mut res = self.zero_with_capacity(self.nterms() * other.nterms());
 
         let pack_a: Vec<_> = if pack_u8 {
             self.exponents
@@ -1670,9 +1673,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         let mut in_heap = vec![false; other.nterms()];
         in_heap[0] = true;
 
-        while !h.is_empty() {
-            let cur_mon = h.pop().unwrap();
-
+        while let Some(cur_mon) = h.pop() {
             let mut coefficient = self.field.zero();
 
             let mut q = cache.remove(&cur_mon.0).unwrap();
@@ -2876,4 +2877,206 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
             index: 0,
         }
     }
+}
+
+/// Allow for a faster multiplication by converting all elements to multiprecision numbers
+/// if many are already multiprecision.
+pub trait MultiPrecisionUpgradeableMultiplication<E: Exponent>: Ring {
+    fn mul(
+        a: &MultivariatePolynomial<Self, E>,
+        b: &MultivariatePolynomial<Self, E>,
+    ) -> MultivariatePolynomial<Self, E> {
+        a.heap_mul(b)
+    }
+}
+
+/// Allow for a faster division by converting all elements to multiprecision numbers
+/// if many are already multiprecision.
+pub trait MultiPrecisionUpgradeableDivision<E: Exponent>:
+    EuclideanDomain + MultiPrecisionUpgradeableMultiplication<E>
+{
+    fn divides(
+        a: &MultivariatePolynomial<Self, E>,
+        div: &MultivariatePolynomial<Self, E>,
+    ) -> Option<MultivariatePolynomial<Self, E, LexOrder>> {
+        a.divides(div)
+    }
+
+    fn quot_rem(
+        a: &MultivariatePolynomial<Self, E>,
+        div: &MultivariatePolynomial<Self, E>,
+        abort_on_remainder: bool,
+    ) -> (
+        MultivariatePolynomial<Self, E>,
+        MultivariatePolynomial<Self, E>,
+    ) {
+        a.quot_rem(div, abort_on_remainder)
+    }
+}
+
+impl<E: Exponent> MultiPrecisionUpgradeableMultiplication<E> for IntegerRing {
+    fn mul(
+        a: &MultivariatePolynomial<Self, E>,
+        b: &MultivariatePolynomial<Self, E>,
+    ) -> MultivariatePolynomial<Self, E> {
+        if a.nterms() > 100
+            && a.coefficients
+                .iter()
+                .filter(|c| matches!(c, Integer::Large(_)))
+                .count() as f64
+                / a.coefficients.len() as f64
+                > 0.3
+            || b.nterms() > 100
+                && b.coefficients
+                    .iter()
+                    .filter(|c| matches!(c, Integer::Large(_)))
+                    .count() as f64
+                    / a.coefficients.len() as f64
+                    > 0.3
+        {
+            // switch to arb prec ring
+            let p1 = a.map_coeff(
+                |c| match c {
+                    Integer::Natural(x) => rug::Integer::from(*x),
+                    Integer::Large(x) => x.clone(),
+                },
+                ArbitraryPrecisionIntegerRing::new(),
+            );
+            let p2 = b.map_coeff(
+                |c| match c {
+                    Integer::Natural(x) => rug::Integer::from(*x),
+                    Integer::Large(x) => x.clone(),
+                },
+                ArbitraryPrecisionIntegerRing::new(),
+            );
+
+            p1.heap_mul(&p2)
+                .map_coeff(|c| Integer::from_large(c.clone()), a.field.clone())
+        } else {
+            a.heap_mul(b)
+        }
+    }
+}
+
+impl<E: Exponent> MultiPrecisionUpgradeableDivision<E> for IntegerRing {
+    fn divides(
+        a: &MultivariatePolynomial<Self, E>,
+        div: &MultivariatePolynomial<Self, E>,
+    ) -> Option<MultivariatePolynomial<Self, E, LexOrder>> {
+        if div.is_zero() {
+            panic!("Cannot divide by 0 polynomial");
+        }
+
+        if a.is_zero() {
+            return Some(a.clone());
+        }
+
+        // check if the leading coefficients divide
+        if !a.field.rem(&a.lcoeff(), &div.lcoeff()).is_zero() {
+            return None;
+        }
+
+        if (0..a.nvars).any(|v| a.degree(v) < div.degree(v)) {
+            return None;
+        }
+
+        // test division of constant term (evaluation at x_i = 0)
+        let c = div.get_constant();
+        if !c.is_zero() && !c.is_one() && !a.field.rem(&a.get_constant(), &c).is_zero() {
+            return None;
+        }
+
+        // test division at x_i = 1
+        let mut num = a.field.zero();
+        for c in &a.coefficients {
+            a.field.add_assign(&mut num, c);
+        }
+        let mut den = a.field.zero();
+        for c in &div.coefficients {
+            a.field.add_assign(&mut den, c);
+        }
+
+        if !den.is_zero() && !den.is_one() && !(&num % &den).is_zero() {
+            return None;
+        }
+
+        let (a, b) = MultiPrecisionUpgradeableDivision::quot_rem(a, div, true);
+        if b.nterms() == 0 {
+            Some(a)
+        } else {
+            None
+        }
+    }
+
+    fn quot_rem(
+        a: &MultivariatePolynomial<Self, E>,
+        div: &MultivariatePolynomial<Self, E>,
+        abort_on_remainder: bool,
+    ) -> (
+        MultivariatePolynomial<Self, E>,
+        MultivariatePolynomial<Self, E>,
+    ) {
+        if a.nterms() > 100
+            && a.coefficients
+                .iter()
+                .filter(|c| matches!(c, Integer::Large(_)))
+                .count() as f64
+                / a.coefficients.len() as f64
+                > 0.3
+        {
+            // switch to arb prec ring
+            let p1 = a.map_coeff(
+                |c| match c {
+                    Integer::Natural(x) => rug::Integer::from(*x),
+                    Integer::Large(x) => x.clone(),
+                },
+                ArbitraryPrecisionIntegerRing::new(),
+            );
+            let p2 = div.map_coeff(
+                |c| match c {
+                    Integer::Natural(x) => rug::Integer::from(*x),
+                    Integer::Large(x) => x.clone(),
+                },
+                ArbitraryPrecisionIntegerRing::new(),
+            );
+
+            let (q, r) = p1.quot_rem(&p2, abort_on_remainder);
+            return (
+                q.map_coeff(|c| Integer::from_large(c.clone()), a.field.clone()),
+                r.map_coeff(|c| Integer::from_large(c.clone()), a.field.clone()),
+            );
+        } else {
+            a.quot_rem(div, abort_on_remainder)
+        }
+    }
+}
+
+impl<E: Exponent, UField: FiniteFieldWorkspace> MultiPrecisionUpgradeableMultiplication<E>
+    for FiniteField<UField>
+where
+    FiniteField<UField>: Ring,
+{
+}
+
+impl<E: Exponent, UField: FiniteFieldWorkspace> MultiPrecisionUpgradeableDivision<E>
+    for FiniteField<UField>
+where
+    FiniteField<UField>: EuclideanDomain,
+{
+}
+
+impl<E: Exponent> MultiPrecisionUpgradeableMultiplication<E> for RationalField {}
+impl<E: Exponent> MultiPrecisionUpgradeableDivision<E> for RationalField {}
+
+impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
+    MultiPrecisionUpgradeableMultiplication<E> for RationalPolynomialField<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+{
+}
+impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
+    MultiPrecisionUpgradeableDivision<E> for RationalPolynomialField<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+{
 }

@@ -2472,10 +2472,20 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             let square_free_lc_biv_factors: Vec<_> = bivariate_factors
                 .iter()
-                .map(|f| f.univariate_lcoeff(order[0]).square_free_factorization())
+                .map(|f| {
+                    let mut sff = f.univariate_lcoeff(order[0]).square_free_factorization();
+                    // make sure every bivariate factor has positive lcoeff such that the product
+                    // of the basis elements equals the evaluated lcoeff_square_free_pp
+                    for (b, _) in &mut sff {
+                        if b.lcoeff().is_negative() {
+                            *b = -b.clone();
+                        }
+                    }
+                    sff
+                })
                 .collect();
 
-            let mut basis = Self::gcd_free_basis(
+            let basis = Self::gcd_free_basis(
                 square_free_lc_biv_factors
                     .iter()
                     .flatten()
@@ -2483,14 +2493,6 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     .filter(|x| !x.is_constant())
                     .collect(),
             );
-
-            // make sure every basis element has positive lcoeff such that the product
-            // of the basis elements equals the evaluated lcoeff_square_free_pp
-            for b in &mut basis {
-                if b.lcoeff().is_negative() {
-                    *b = -b.clone();
-                }
-            }
 
             if basis.is_empty() {
                 continue;

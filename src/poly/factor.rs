@@ -589,7 +589,7 @@ where
             if d == 1 {
                 return vec![s];
             } else {
-                panic!("Degree mismatch");
+                panic!("Degree mismatch for {}: {}", self, d);
             }
         };
 
@@ -1078,8 +1078,11 @@ where
 
         if !lcoeff_left.is_one() {
             panic!(
-                "Could not reconstruct leading coefficient for {}. Rest = {}",
-                self, lcoeff_left
+                "Could not reconstruct leading coefficient of {}: order={:?}, samples={:?} Rest = {}",
+                self,
+                order,
+                sample_points,
+                lcoeff_left
             );
         }
 
@@ -1846,7 +1849,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         loop {
             let p = pi.next().unwrap();
             if p > u32::MAX as u64 {
-                panic!("Ran out of primes during factorization");
+                panic!("Ran out of primes during factorization of {}", self);
             }
             let p = p as u32;
 
@@ -2103,7 +2106,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             let p = pi.next().unwrap();
             if p > u32::MAX as u64 {
-                panic!("Ran out of primes during factorization");
+                panic!("Ran out of primes during factorization of {}", self);
             }
             let p = p as u32;
 
@@ -2541,7 +2544,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         if !lcoeff_left.is_constant() {
             panic!(
-                "Could not reconstruct leading coefficient. Rest = {}",
+                "Could not reconstruct leading coefficient of {}: order={:?}, samples={:?} Rest = {}",
+                self,
+                order,
+                sample_points,
                 lcoeff_left
             );
         }
@@ -2576,8 +2582,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         if !lcoeff_left.is_one() {
             panic!(
-                "Could not distribute content for {}. Rest = {}",
-                self, lcoeff_left
+                "Could not distribute content of {}: order={:?}, samples={:?} Rest = {}",
+                self, order, sample_points, lcoeff_left
             );
         }
 
@@ -2846,7 +2852,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         'new_prime: loop {
             i += 1;
             if i == LARGE_U32_PRIMES.len() {
-                panic!("Ran out of primes during factorization");
+                panic!("Ran out of primes during factorization of {}", self);
             }
 
             let p = LARGE_U32_PRIMES[i];

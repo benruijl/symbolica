@@ -2924,16 +2924,25 @@ impl<E: Exponent> MultiPrecisionUpgradeableMultiplication<E> for IntegerRing {
                 .iter()
                 .filter(|c| matches!(c, Integer::Large(_)))
                 .count() as f64
-                / a.coefficients.len() as f64
-                > 0.3
-            || b.nterms() > 100
-                && b.coefficients
-                    .iter()
-                    .filter(|c| matches!(c, Integer::Large(_)))
-                    .count() as f64
-                    / a.coefficients.len() as f64
-                    > 0.3
-        {
+
+        if a.nterms() > 30000 || b.nterms() > 30000 {
+            let r1 = a
+                .coefficients
+                .iter()
+                .filter(|c| matches!(c, Integer::Large(_)))
+                .count() as f64
+                / a.coefficients.len() as f64;
+            let r2 = b
+                .coefficients
+                .iter()
+                .filter(|c| matches!(c, Integer::Large(_)))
+                .count() as f64
+                / b.coefficients.len() as f64;
+
+            if !(r1 > 0.5 && r2 < 0.1 || r1 < 0.1 && r2 > 0.5) {
+                return a.heap_mul(b);
+            }
+
             // switch to arb prec ring
             let p1 = a.map_coeff(
                 |c| match c {
@@ -3016,13 +3025,16 @@ impl<E: Exponent> MultiPrecisionUpgradeableDivision<E> for IntegerRing {
         MultivariatePolynomial<Self, E>,
         MultivariatePolynomial<Self, E>,
     ) {
-        if a.nterms() > 100
+        if !div
+            .coefficients
+            .iter()
+            .any(|c| matches!(c, Integer::Large(_)))
             && a.coefficients
                 .iter()
                 .filter(|c| matches!(c, Integer::Large(_)))
                 .count() as f64
                 / a.coefficients.len() as f64
-                > 0.3
+                > 0.5
         {
             // switch to arb prec ring
             let p1 = a.map_coeff(

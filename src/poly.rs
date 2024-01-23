@@ -13,7 +13,7 @@ use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Neg, Rem, Sub};
 use std::sync::Arc;
 
 use ahash::HashMap;
-use rug::{Complete, Integer as ArbitraryPrecisionInteger};
+use rug::{Complete, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryPrecisionRational};
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
@@ -1120,6 +1120,7 @@ impl<P: AtomSet> Atom<P> {
             let num = num_h.to_num();
             let number = match monomial.coefficient {
                 Integer::Natural(n) => Number::Natural(*n, 1),
+                Integer::Double(d) => Number::Large(ArbitraryPrecisionRational::from(*d)),
                 Integer::Large(r) => Number::Large(r.into()),
             };
             num.set_from_number(number);

@@ -28,6 +28,10 @@ def request_sublicense(name: str, email: str, company: str, super_licence: str) 
     The key will be sent to the e-mail address `email`."""
 
 
+def get_offline_license_key() -> str:
+    """Get a license key for offline use, generated from a licensed Symbolica session. The key will remain valid for 24 hours."""
+
+
 class AtomType(Enum):
     """Specifies the type of the atom."""
 

@@ -5,7 +5,7 @@ use std::{
     net::{TcpListener, TcpStream},
     process::abort,
     thread::ThreadId,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use colored::Colorize;
@@ -17,6 +17,7 @@ pub mod coefficient;
 pub mod collect;
 pub mod combinatorics;
 pub mod derivative;
+pub mod domains;
 pub mod evaluate;
 pub mod expand;
 pub mod id;
@@ -26,7 +27,6 @@ pub mod parser;
 pub mod poly;
 pub mod printer;
 pub mod representations;
-pub mod domains;
 pub mod solve;
 pub mod state;
 pub mod streaming;
@@ -53,6 +53,16 @@ const MULTIPLE_INSTANCE_WARNING: &str = "┌────────────
 │ Cannot start new unlicensed Symbolica instance since there is already another one running on the machine. │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
 ;
+
+const NETWORK_ERROR: &str = "┌────────────────────────────────────────────────┐
+│ Could not connect to Symbolica license server. │
+│                                                │
+│ Please check your network configuration.       │
+└────────────────────────────────────────────────┘";
+
+const ACTIVATION_ERROR: &str = "┌──────────────────────────────────────────┐
+│ Could not activate the Symbolica license │
+└──────────────────────────────────────────┘";
 
 impl LicenseManager {
     pub fn new() -> LicenseManager {
@@ -149,19 +159,46 @@ impl LicenseManager {
             .or(env::var("SYMBOLICA_LICENSE").ok());
 
         let Some(key) = key else {
-            return Err("┌──────────────────────────┐
-│ No license key specified │
-└──────────────────────────┘"
-                .to_owned());
+            return Err(ACTIVATION_ERROR.to_owned());
         };
 
+        if key.contains('@') {
+            let mut a = key.split('@');
+            let f1 = a.next().unwrap();
+            let f2 = a.next().unwrap();
+            let f3 = a.next().ok_or_else(|| ACTIVATION_ERROR.to_owned())?;
+
+            let mut h: u32 = 5381;
+            for b in f2.as_bytes() {
+                h = h.wrapping_mul(33).wrapping_add(*b as u32);
+            }
+            for b in f3.as_bytes() {
+                h = h.wrapping_mul(33).wrapping_add(*b as u32);
+            }
+
+            if f1 != h.to_string() {
+                Err(ACTIVATION_ERROR.to_owned())?;
+            }
+
+            let t = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
+            let t2 = f2.parse::<u64>().map_err(|_| ACTIVATION_ERROR.to_owned())?;
+
+            if t < t2 || t - t2 > 24 * 60 * 60 {
+                Err("┌───────────────────────────────────────────┐
+│ The offline Symbolica license has expired │
+└───────────────────────────────────────────┘"
+                    .to_owned())?;
+            }
+
+            return Ok(());
+        }
+
         let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") else {
-            return Err("┌────────────────────────────────────────────────┐
-│ Could not connect to Symbolica license server. │
-│                                                │
-│ Please check your network configuration.       │
-└────────────────────────────────────────────────┘"
-                .to_owned());
+            return Err(NETWORK_ERROR.to_owned());
         };
 
         let mut m: HashMap<String, JsonValue> = HashMap::default();
@@ -173,11 +210,16 @@ impl LicenseManager {
         let mut v = JsonValue::from(m).stringify().unwrap();
         v.push('\n');
 
-        stream.write_all(v.as_bytes()).unwrap();
+        stream
+            .write_all(v.as_bytes())
+            .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
 
         let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).unwrap();
-        let read_str = std::str::from_utf8(&buf).unwrap();
+        stream
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
+        let read_str =
+            std::str::from_utf8(&buf).map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
 
         if read_str == "{\"status\":\"ok\"}\n" {
             Ok(())
@@ -187,9 +229,17 @@ impl LicenseManager {
 └──────────────────────────────────────────┘"
                 .to_owned())
         } else {
-            let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-            let message_parsed: &HashMap<_, _> = message.get().unwrap();
-            let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+            let message: JsonValue = read_str[..read_str.len() - 1]
+                .parse()
+                .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
+            let message_parsed: &HashMap<_, _> = message
+                .get()
+                .ok_or_else(|| format!("{}\nError: Empty response", NETWORK_ERROR))?;
+            let status: &String = message_parsed
+                .get("status")
+                .unwrap()
+                .get()
+                .ok_or_else(|| format!("{}\nError: missing status", NETWORK_ERROR))?;
             Err(format!(
                 "┌──────────────────────────────────────────┐
 │ Could not activate the Symbolica license │
@@ -329,6 +379,41 @@ Error: {}",
             }
         } else {
             Err("Could not connect to the license server".to_owned())
+        }
+    }
+
+    /// Get a license key for offline use, generated from a licensed Symbolica session. The key will remain valid for 24 hours.
+    pub fn get_offline_license_key() -> Result<String, String> {
+        if !Self::check_license_key().is_ok() {
+            Err("Cannot request offline license from an unlicensed session".to_owned())?;
+        }
+        let key = LICENSE_KEY
+            .get()
+            .cloned()
+            .or(env::var("SYMBOLICA_LICENSE").ok());
+
+        let Some(key) = key else {
+            return Err(ACTIVATION_ERROR.to_owned());
+        };
+
+        if !key.contains('@') {
+            let t = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .to_string();
+
+            let mut hash: u32 = 5381;
+            for b in t.as_bytes() {
+                hash = hash.wrapping_mul(33).wrapping_add(*b as u32);
+            }
+            for b in key.as_bytes() {
+                hash = hash.wrapping_mul(33).wrapping_add(*b as u32);
+            }
+
+            Ok(format!("{}@{}@{}", hash, t, key))
+        } else {
+            Err("Cannot request offline license key from an offline session".to_owned())
         }
     }
 }

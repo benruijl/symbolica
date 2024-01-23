@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{c_char, CStr, CString};
 use std::fmt::Write;
 use std::os::raw::c_ulonglong;
 use std::sync::Arc;
@@ -77,6 +77,23 @@ unsafe extern "C" fn request_trial_license(
         .map(|_| println!("A license key was sent to your e-mail address."))
         .map_err(|e| eprintln!("{}", e))
         .is_ok()
+}
+
+/// Get a license key for offline use, generated from a licensed Symbolica session. The key will remain valid for 24 hours.
+/// The key is written into `key`, which must be a buffer of at least 100 bytes.
+#[no_mangle]
+unsafe extern "C" fn get_offline_license_key(key: *mut c_char) -> bool {
+    match LicenseManager::get_offline_license_key() {
+        Ok(k) => {
+            let cs = CString::new(k).unwrap();
+            key.copy_from_nonoverlapping(cs.as_ptr(), cs.as_bytes_with_nul().len());
+            true
+        }
+        Err(e) => {
+            eprintln!("{}", e);
+            false
+        }
+    }
 }
 
 /// Create a new Symbolica handle.

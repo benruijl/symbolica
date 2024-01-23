@@ -2117,8 +2117,8 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 if &m == monomial {
                     h.pop().unwrap();
 
-                    for (i, j, next_in_divisor) in cache.remove(&m).unwrap() {
-                        // TODO: use fraction-free routines
+                    let mut qs = cache.remove(&m).unwrap();
+                    for (i, j, next_in_divisor) in qs.drain(..) {
                         self.field.sub_mul_assign(
                             &mut c,
                             &q.coefficients[i],
@@ -2203,13 +2203,18 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                             }
                         }
                     }
+
+                    q_cache.push(qs);
                 }
             }
 
-            if !F::is_zero(&c) && div.last_exponents().iter().zip(&m).all(|(ge, me)| me >= ge) {
+            if F::is_zero(&c) {
+                continue;
+            }
+
+            if div.last_exponents().iter().zip(&m).all(|(ge, me)| me >= ge) {
                 let (quot, rem) = self.field.quot_rem(&c, &div.lcoeff());
                 if !F::is_zero(&rem) {
-                    // TODO: support upgrade to a RationalField
                     if abort_on_remainder {
                         r = self.one();
                         return (q, r);
@@ -2289,14 +2294,12 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                         }
                     }
                 }
-            } else if !F::is_zero(&c) {
-                if abort_on_remainder {
-                    r = self.one();
-                    return (q, r);
-                } else {
-                    r.coefficients.push(c);
-                    r.exponents.extend(&m);
-                }
+            } else if abort_on_remainder {
+                r = self.one();
+                return (q, r);
+            } else {
+                r.coefficients.push(c);
+                r.exponents.extend(&m);
             }
         }
 
@@ -2480,7 +2483,6 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             if let Some(q_e) = q_e {
                 let (quot, rem) = self.field.quot_rem(&c, &div.lcoeff());
                 if !F::is_zero(&rem) {
-                    // TODO: support upgrade to a RationalField
                     if abort_on_remainder {
                         r = self.one();
                         return (q, r);

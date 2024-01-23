@@ -750,7 +750,7 @@ impl<'a, 'b> Add<&'b Integer> for &'a Integer {
                 if let Some(num) = (*n1 as i128).checked_add(*r2) {
                     Integer::from_double(num)
                 } else {
-                    Integer::Double(*n1 as i128 + *r2)
+                    Integer::Large(ArbitraryPrecisionInteger::from(*r2) + *n1)
                 }
             }
             (Integer::Double(r1), Integer::Double(r2)) => {
@@ -785,14 +785,14 @@ impl<'a, 'b> Sub<&'b Integer> for &'a Integer {
                 if let Some(num) = (*n1 as i128).checked_sub(*r2) {
                     Integer::from_double(num)
                 } else {
-                    Integer::Double(*n1 as i128 - *r2)
+                    Integer::Large(ArbitraryPrecisionInteger::from(*n1) - *r2)
                 }
             }
             (Integer::Double(r1), Integer::Natural(r2)) => {
                 if let Some(num) = r1.checked_sub(*r2 as i128) {
                     Integer::from_double(num)
                 } else {
-                    Integer::Double(*r1 - *r2 as i128)
+                    Integer::Large(ArbitraryPrecisionInteger::from(*r1) - *r2)
                 }
             }
             (Integer::Double(r1), Integer::Double(r2)) => {
@@ -828,7 +828,7 @@ impl<'a, 'b> Mul<&'b Integer> for &'a Integer {
                 if let Some(num) = (*n1 as i128).checked_mul(*r2) {
                     Integer::from_double(num)
                 } else {
-                    Integer::Double(*n1 as i128 * *r2)
+                    Integer::Large(ArbitraryPrecisionInteger::from(*r2) * *n1)
                 }
             }
             (Integer::Double(r1), Integer::Double(r2)) => {
@@ -863,14 +863,14 @@ impl<'a, 'b> Div<&'b Integer> for &'a Integer {
                 if let Some(num) = (*n1 as i128).checked_div(*r2) {
                     Integer::from_double(num)
                 } else {
-                    Integer::Double(*n1 as i128 / *r2)
+                    Integer::Large(ArbitraryPrecisionInteger::from(*n1) / *r2)
                 }
             }
             (Integer::Double(r1), Integer::Natural(r2)) => {
                 if let Some(num) = r1.checked_div(*r2 as i128) {
                     Integer::from_double(num)
                 } else {
-                    Integer::Double(*r1 / *r2 as i128)
+                    Integer::Large(ArbitraryPrecisionInteger::from(*r1) / *r2)
                 }
             }
             (Integer::Double(r1), Integer::Double(r2)) => {

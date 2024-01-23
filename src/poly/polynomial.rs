@@ -2398,7 +2398,8 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 if &m == monomial {
                     h.pop().unwrap();
 
-                    for (i, j, next_in_divisor) in cache.remove(&m).unwrap() {
+                    let mut qs = cache.remove(&m).unwrap();
+                    for (i, j, next_in_divisor) in qs.drain(..) {
                         // TODO: use fraction-free routines
                         self.field.sub_mul_assign(
                             &mut c,
@@ -2466,11 +2467,17 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                             }
                         }
                     }
+
+                    q_cache.push(qs);
                 }
             }
 
+            if F::is_zero(&c) {
+                continue;
+            }
+
             let q_e = divides(m, pack_div[pack_div.len() - 1], pack_u8);
-            if !F::is_zero(&c) && q_e.is_some() {
+            if let Some(q_e) = q_e {
                 let (quot, rem) = self.field.quot_rem(&c, &div.lcoeff());
                 if !F::is_zero(&rem) {
                     // TODO: support upgrade to a RationalField
@@ -2482,7 +2489,6 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                     }
                 }
 
-                let q_e = q_e.unwrap();
                 q.coefficients.push(quot);
                 let len = q.exponents.len();
                 q.exponents.resize(len + self.nvars, E::zero());
@@ -2551,20 +2557,18 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                         }
                     }
                 }
-            } else if !F::is_zero(&c) {
-                if abort_on_remainder {
-                    r = self.one();
-                    return (q, r);
-                } else {
-                    r.coefficients.push(c);
-                    let len = r.exponents.len();
-                    r.exponents.resize(len + self.nvars, E::zero());
+            } else if abort_on_remainder {
+                r = self.one();
+                return (q, r);
+            } else {
+                r.coefficients.push(c);
+                let len = r.exponents.len();
+                r.exponents.resize(len + self.nvars, E::zero());
 
-                    if pack_u8 {
-                        E::unpack(m, &mut r.exponents[len..len + self.nvars]);
-                    } else {
-                        E::unpack_u16(m, &mut r.exponents[len..len + self.nvars]);
-                    }
+                if pack_u8 {
+                    E::unpack(m, &mut r.exponents[len..len + self.nvars]);
+                } else {
+                    E::unpack_u16(m, &mut r.exponents[len..len + self.nvars]);
                 }
             }
         }

@@ -745,7 +745,7 @@ impl EuclideanDomain for IntegerRing {
 impl<'a, 'b> Add<&'b Integer> for &'a Integer {
     type Output = Integer;
 
-    #[inline]
+    #[inline(always)]
     fn add(self, rhs: &'b Integer) -> Integer {
         match (self, rhs) {
             (Integer::Natural(n1), Integer::Natural(n2)) => {
@@ -782,7 +782,7 @@ impl<'a, 'b> Add<&'b Integer> for &'a Integer {
 impl<'a, 'b> Sub<&'b Integer> for &'a Integer {
     type Output = Integer;
 
-    #[inline]
+    #[inline(always)]
     fn sub(self, rhs: &'b Integer) -> Integer {
         match (self, rhs) {
             (Integer::Natural(n1), Integer::Natural(n2)) => {
@@ -825,7 +825,7 @@ impl<'a, 'b> Sub<&'b Integer> for &'a Integer {
 impl<'a, 'b> Mul<&'b Integer> for &'a Integer {
     type Output = Integer;
 
-    #[inline]
+    #[inline(always)]
     fn mul(self, rhs: &'b Integer) -> Integer {
         match (self, rhs) {
             (Integer::Natural(n1), Integer::Natural(n2)) => {
@@ -862,7 +862,7 @@ impl<'a, 'b> Mul<&'b Integer> for &'a Integer {
 impl<'a, 'b> Div<&'b Integer> for &'a Integer {
     type Output = Integer;
 
-    #[inline]
+    #[inline(always)]
     fn div(self, rhs: &'b Integer) -> Integer {
         match (self, rhs) {
             (Integer::Natural(n1), Integer::Natural(n2)) => {
@@ -905,7 +905,7 @@ impl<'a, 'b> Div<&'b Integer> for &'a Integer {
 impl<'a> Add<i64> for &'a Integer {
     type Output = Integer;
 
-    #[inline]
+    #[inline(always)]
     fn add(self, rhs: i64) -> Integer {
         match self {
             Integer::Natural(n1) => {
@@ -930,7 +930,7 @@ impl<'a> Add<i64> for &'a Integer {
 impl<'a> Sub<i64> for &'a Integer {
     type Output = Integer;
 
-    #[inline]
+    #[inline(always)]
     fn sub(self, rhs: i64) -> Integer {
         match self {
             Integer::Natural(n1) => {
@@ -955,7 +955,7 @@ impl<'a> Sub<i64> for &'a Integer {
 impl<'a> Mul<i64> for &'a Integer {
     type Output = Integer;
 
-    #[inline]
+    #[inline(always)]
     fn mul(self, rhs: i64) -> Integer {
         match self {
             Integer::Natural(n1) => {
@@ -980,7 +980,7 @@ impl<'a> Mul<i64> for &'a Integer {
 impl<'a> Div<i64> for &'a Integer {
     type Output = Integer;
 
-    #[inline]
+    #[inline(always)]
     fn div(self, rhs: i64) -> Integer {
         match self {
             Integer::Natural(n1) => {
@@ -1003,7 +1003,7 @@ impl<'a> Div<i64> for &'a Integer {
 }
 
 impl<'a> AddAssign<&'a Integer> for Integer {
-    #[inline]
+    #[inline(always)]
     fn add_assign(&mut self, rhs: &'a Integer) {
         if let Integer::Large(l) = self {
             match rhs {
@@ -1020,7 +1020,7 @@ impl<'a> AddAssign<&'a Integer> for Integer {
 }
 
 impl<'a> SubAssign<&'a Integer> for Integer {
-    #[inline]
+    #[inline(always)]
     fn sub_assign(&mut self, rhs: &'a Integer) {
         if let Integer::Large(l) = self {
             match rhs {
@@ -1037,7 +1037,7 @@ impl<'a> SubAssign<&'a Integer> for Integer {
 }
 
 impl<'a> MulAssign<&'a Integer> for Integer {
-    #[inline]
+    #[inline(always)]
     fn mul_assign(&mut self, rhs: &'a Integer) {
         if let Integer::Large(l) = self {
             match rhs {
@@ -1054,7 +1054,7 @@ impl<'a> MulAssign<&'a Integer> for Integer {
 }
 
 impl<'a> DivAssign<&'a Integer> for Integer {
-    #[inline]
+    #[inline(always)]
     fn div_assign(&mut self, rhs: &'a Integer) {
         if let Integer::Large(l) = self {
             match rhs {

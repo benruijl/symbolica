@@ -10,14 +10,7 @@ use std::{
 use ahash::HashMap;
 
 use crate::{
-    poly::{
-        gcd::PolynomialGCD,
-        polynomial::{
-            MultiPrecisionUpgradeableDivision, MultiPrecisionUpgradeableMultiplication,
-            MultivariatePolynomial,
-        },
-        Exponent, Variable,
-    },
+    poly::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent, Variable},
     printer::{PrintOptions, RationalPolynomialPrinter},
     state::State,
 };
@@ -280,8 +273,7 @@ where
     }
 }
 
-impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
-    RationalPolynomial<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
 where
     Self: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -429,8 +421,7 @@ impl<R: Ring, E: Exponent> Display for RationalPolynomialField<R, E> {
     }
 }
 
-impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> Ring
-    for RationalPolynomialField<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Ring for RationalPolynomialField<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -565,7 +556,7 @@ where
     }
 }
 
-impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> EuclideanDomain
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> EuclideanDomain
     for RationalPolynomialField<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
@@ -586,8 +577,7 @@ where
     }
 }
 
-impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> Field
-    for RationalPolynomialField<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Field for RationalPolynomialField<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -604,12 +594,8 @@ where
     }
 }
 
-impl<
-        'a,
-        'b,
-        R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E> + PolynomialGCD<E>,
-        E: Exponent,
-    > Add<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
+impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Exponent>
+    Add<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
 {
     type Output = RationalPolynomial<R, E>;
 
@@ -620,32 +606,28 @@ impl<
         let mut b_denom_red = Cow::Borrowed(&other.denominator);
 
         if !denom_gcd.is_one() {
-            a_denom_red = Cow::Owned(
-                MultiPrecisionUpgradeableDivision::quot_rem(&self.denominator, &denom_gcd, true).0,
-            );
-            b_denom_red = Cow::Owned(
-                MultiPrecisionUpgradeableDivision::quot_rem(&other.denominator, &denom_gcd, true).0,
-            );
+            a_denom_red = Cow::Owned(&self.denominator / &denom_gcd);
+            b_denom_red = Cow::Owned(&other.denominator / &denom_gcd);
         }
 
-        let num1 = MultiPrecisionUpgradeableMultiplication::mul(&self.numerator, &b_denom_red);
-        let num2 = MultiPrecisionUpgradeableMultiplication::mul(&other.numerator, &a_denom_red);
+        let num1 = &self.numerator * &b_denom_red;
+        let num2 = &other.numerator * &a_denom_red;
         let mut num = num1 + num2;
 
         // prefer small * large over medium * medium sized polynomials
         let mut den = if self.denominator.nterms() > other.denominator.nterms()
             && self.denominator.nterms() > a_denom_red.nterms()
         {
-            MultiPrecisionUpgradeableMultiplication::mul(b_denom_red.as_ref(), &self.denominator)
+            b_denom_red.as_ref() * &self.denominator
         } else {
-            MultiPrecisionUpgradeableMultiplication::mul(a_denom_red.as_ref(), &other.denominator)
+            a_denom_red.as_ref() * &other.denominator
         };
 
         let g = MultivariatePolynomial::gcd(&num, &denom_gcd);
 
         if !g.is_one() {
-            num = MultiPrecisionUpgradeableDivision::quot_rem(&num, &g, false).0;
-            den = MultiPrecisionUpgradeableDivision::quot_rem(&den, &g, false).0;
+            num = num / &g;
+            den = den / &g;
         }
 
         RationalPolynomial {
@@ -655,9 +637,7 @@ impl<
     }
 }
 
-impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> Sub
-    for RationalPolynomial<R, E>
-{
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub for RationalPolynomial<R, E> {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
@@ -665,8 +645,8 @@ impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> Su
     }
 }
 
-impl<'a, 'b, R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
-    Sub<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
+impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub<&'a RationalPolynomial<R, E>>
+    for &'b RationalPolynomial<R, E>
 {
     type Output = RationalPolynomial<R, E>;
 
@@ -675,9 +655,7 @@ impl<'a, 'b, R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Expo
     }
 }
 
-impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> Neg
-    for RationalPolynomial<R, E>
-{
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg for RationalPolynomial<R, E> {
     type Output = Self;
     fn neg(self) -> Self::Output {
         RationalPolynomial {
@@ -687,8 +665,8 @@ impl<R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent> Ne
     }
 }
 
-impl<'a, 'b, R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
-    Mul<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
+impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Mul<&'a RationalPolynomial<R, E>>
+    for &'b RationalPolynomial<R, E>
 {
     type Output = RationalPolynomial<R, E>;
 
@@ -699,61 +677,31 @@ impl<'a, 'b, R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Expo
         if gcd1.is_one() {
             if gcd2.is_one() {
                 RationalPolynomial {
-                    numerator: MultiPrecisionUpgradeableMultiplication::mul(
-                        &self.numerator,
-                        &other.numerator,
-                    ),
-                    denominator: MultiPrecisionUpgradeableMultiplication::mul(
-                        &self.denominator,
-                        &other.denominator,
-                    ),
+                    numerator: &self.numerator * &other.numerator,
+                    denominator: &self.denominator * &other.denominator,
                 }
             } else {
                 RationalPolynomial {
-                    numerator: MultiPrecisionUpgradeableMultiplication::mul(
-                        &self.numerator,
-                        &MultiPrecisionUpgradeableDivision::quot_rem(&other.numerator, &gcd2, true)
-                            .0,
-                    ),
-                    denominator: MultiPrecisionUpgradeableMultiplication::mul(
-                        &MultiPrecisionUpgradeableDivision::quot_rem(
-                            &self.denominator,
-                            &gcd2,
-                            true,
-                        )
-                        .0,
-                        &other.denominator,
-                    ),
+                    numerator: &self.numerator * &(&other.numerator / &gcd2),
+                    denominator: (&self.denominator / &gcd2) * &other.denominator,
                 }
             }
         } else if gcd2.is_one() {
             RationalPolynomial {
-                numerator: MultiPrecisionUpgradeableMultiplication::mul(
-                    &MultiPrecisionUpgradeableDivision::quot_rem(&self.numerator, &gcd1, true).0,
-                    &other.numerator,
-                ),
-                denominator: MultiPrecisionUpgradeableMultiplication::mul(
-                    &self.denominator,
-                    &MultiPrecisionUpgradeableDivision::quot_rem(&other.denominator, &gcd1, true).0,
-                ),
+                numerator: (&self.numerator / &gcd1) * &other.numerator,
+                denominator: &self.denominator * &(&other.denominator / &gcd1),
             }
         } else {
             RationalPolynomial {
-                numerator: MultiPrecisionUpgradeableMultiplication::mul(
-                    &MultiPrecisionUpgradeableDivision::quot_rem(&self.numerator, &gcd1, true).0,
-                    &MultiPrecisionUpgradeableDivision::quot_rem(&other.numerator, &gcd2, true).0,
-                ),
-                denominator: MultiPrecisionUpgradeableMultiplication::mul(
-                    &MultiPrecisionUpgradeableDivision::quot_rem(&self.denominator, &gcd2, true).0,
-                    &MultiPrecisionUpgradeableDivision::quot_rem(&other.denominator, &gcd1, true).0,
-                ),
+                numerator: (&self.numerator / &gcd1) * &(&other.numerator / &gcd2),
+                denominator: (&self.denominator / &gcd2) * &(&other.denominator / &gcd1),
             }
         }
     }
 }
 
-impl<'a, 'b, R: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>, E: Exponent>
-    Div<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
+impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Div<&'a RationalPolynomial<R, E>>
+    for &'b RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {

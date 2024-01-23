@@ -34,7 +34,7 @@ use crate::utils;
 
 use self::factor::Factorize;
 use self::gcd::PolynomialGCD;
-use self::polynomial::{MultiPrecisionUpgradeableDivision, MultivariatePolynomial};
+use self::polynomial::MultivariatePolynomial;
 
 pub const INLINED_EXPONENTS: usize = 6;
 
@@ -582,8 +582,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     /// Convert an expression to a rational polynomial if possible.
     pub fn to_rational_polynomial<
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -680,8 +680,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     /// Convert an expression to a rational polynomial if possible.
     pub fn to_factorized_rational_polynomial<
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -888,8 +888,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// all non-rational subexpressions. These are stored in `map`.
     pub fn to_rational_polynomial_with_map<
         'b,
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -1343,8 +1343,8 @@ impl Token {
     /// i.e. the ordering is the same
     pub fn to_rational_polynomial<
         P: AtomSet,
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -1492,8 +1492,8 @@ impl Token {
     /// i.e. the ordering is the same
     pub fn to_factorized_rational_polynomial<
         P: AtomSet,
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,

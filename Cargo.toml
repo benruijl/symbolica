@@ -1,7 +1,7 @@
 [package]
 authors = ["Ben Ruijl <benruyl@gmail.com>"]
 categories = ["science"]
-description = "A symbolic manipulation toolkit which aims to handle expressions with billions of terms, taking up terabytes of diskspace."
+description = "A blazing fast computer algebra system"
 edition = "2021"
 keywords = ["algebra", "symbolic", "manipulation", "mathematics", "physics"]
 license-file = "License.md"
@@ -9,6 +9,7 @@ name = "symbolica"
 readme = "Readme.md"
 repository = "https://github/benruijl/symbolica"
 version = "0.1.4"
+build = "build.rs"
 
 [profile.release]
 lto = true

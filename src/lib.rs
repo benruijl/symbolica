@@ -169,6 +169,9 @@ impl LicenseManager {
             let f3 = a.next().ok_or_else(|| ACTIVATION_ERROR.to_owned())?;
 
             let mut h: u32 = 5381;
+            for b in env!("SYMBOLICA_VERSION").as_bytes() {
+                h = h.wrapping_mul(33).wrapping_add(*b as u32);
+            }
             for b in f2.as_bytes() {
                 h = h.wrapping_mul(33).wrapping_add(*b as u32);
             }
@@ -276,6 +279,11 @@ Error: {}",
     /// Returns `true` iff this instance has a valid license key set.
     pub fn is_licensed() -> bool {
         Self::check_license_key().is_ok()
+    }
+
+    /// Get the current Symbolica version.
+    pub fn get_version() -> &'static str {
+        env!("SYMBOLICA_VERSION")
     }
 
     /// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address
@@ -403,15 +411,18 @@ Error: {}",
                 .as_secs()
                 .to_string();
 
-            let mut hash: u32 = 5381;
+            let mut h: u32 = 5381;
+            for b in env!("SYMBOLICA_VERSION").as_bytes() {
+                h = h.wrapping_mul(33).wrapping_add(*b as u32);
+            }
             for b in t.as_bytes() {
-                hash = hash.wrapping_mul(33).wrapping_add(*b as u32);
+                h = h.wrapping_mul(33).wrapping_add(*b as u32);
             }
             for b in key.as_bytes() {
-                hash = hash.wrapping_mul(33).wrapping_add(*b as u32);
+                h = h.wrapping_mul(33).wrapping_add(*b as u32);
             }
 
-            Ok(format!("{}@{}@{}", hash, t, key))
+            Ok(format!("{}@{}@{}", h, t, key))
         } else {
             Err("Cannot request offline license key from an offline session".to_owned())
         }

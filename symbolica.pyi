@@ -7,6 +7,10 @@ from enum import Enum
 from typing import Any, Callable, overload, Iterator, Optional, Sequence, Tuple, List
 
 
+def get_version() -> str:
+    """Get the current Symbolica version."""
+
+
 def is_licensed() -> bool:
     """Check if the current Symbolica instance has a valid license key set."""
 

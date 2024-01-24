@@ -928,7 +928,8 @@ where
 
                         second_index += 1;
                         if second_index == shape.len() {
-                            eprintln!("Could not find scaling. Please report this problem with the attached output.\n\na={}\nb={}\na_ldegree={}\nb_ldegree={}\nbounds={:?}\nvars={:?}\nmain_var={},\nmat={}\nrhs={}",
+                            // the system remains underdetermined, that means the shape is bad
+                            debug!("Could not determine monomial scaling due to a bad shape\na={}\nb={}\na_ldegree={}, b_ldegree={}\nbounds={:?}, vars={:?}, main_var={},\nmat={}\nrhs={},\nshape=",
                             a,
                             b,
                             a_ldegree,
@@ -939,14 +940,14 @@ where
                             mat,
                             rhs);
                             for s in shape {
-                                eprintln!("({}, {})", s.0, s.1);
+                                debug!("\t({}, {})", s.0, s.1);
                             }
 
                             return Err(GCDError::BadOriginalImage);
                         }
                     }
                     Err(LinearSolverError::Inconsistent) => {
-                        debug!("Inconsistent system");
+                        debug!("Inconsistent system: bad shape");
                         return Err(GCDError::BadOriginalImage);
                     }
                     Err(LinearSolverError::NotSquare) => {

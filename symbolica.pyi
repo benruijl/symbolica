@@ -227,11 +227,6 @@ class Expression:
         Yields `$$z^{34}+x^{x+2}+y^{4}+f(x,x^{2})+128378127123 z^{\\frac{2}{3}} w^{2} \\frac{1}{x} \\frac{1}{y}+\\frac{3}{5}$$`.
         """
 
-    def __repr__(self) -> str:
-        """
-        Convert the expression into a debug string.
-        """
-
     def __hash__(self) -> str:
         """
         Hash the expression.
@@ -1347,8 +1342,8 @@ class Polynomial:
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
         """
 
-    def __repr__(self) -> str:
-        """Print the polynomial in a debug representation."""
+    def nterms(self) -> int:
+        """Get the number of terms in the polynomial."""
 
     def get_var_list(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""
@@ -1414,6 +1409,42 @@ class Polynomial:
         >>>     print('\t({})^{}'.format(f, exp))
         """
 
+    def derivative(self, x: Expression) -> Polynomial:
+        """Take a derivative in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> print(p.derivative(x))
+        """
+
+    def content(self) -> Polynomial:
+        """Get the content, i.e., the GCD of the coefficients.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+        >>> print(p.content())
+        """
+
+    def coefficient_list(self, x: Expression) -> list[Tuple[int, Polynomial]]:
+        """Get the coefficient list in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> for n, pp in p.coefficient_list(x):
+        >>>     print(n, pp)
+        """
+
 
 class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""
@@ -1472,8 +1503,8 @@ class IntegerPolynomial:
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
         """
 
-    def __repr__(self) -> str:
-        """Print the polynomial in a debug representation."""
+    def nterms(self) -> int:
+        """Get the number of terms in the polynomial."""
 
     def get_var_list(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""
@@ -1525,6 +1556,42 @@ class IntegerPolynomial:
         >>> print('Factorization of {}:'.format(p))
         >>> for f, exp in p.factor():
         >>>     print('\t({})^{}'.format(f, exp))
+        """
+
+    def derivative(self, x: Expression) -> IntegerPolynomial:
+        """Take a derivative in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> print(p.derivative(x))
+        """
+
+    def content(self) -> IntegerPolynomial:
+        """Get the content, i.e., the GCD of the coefficients.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+        >>> print(p.content())
+        """
+
+    def coefficient_list(self, x: Expression) -> list[Tuple[int, IntegerPolynomial]]:
+        """Get the coefficient list in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> for n, pp in p.coefficient_list(x):
+        >>>     print(n, pp)
         """
 
 
@@ -1585,8 +1652,8 @@ class FiniteFieldPolynomial:
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
         """
 
-    def __repr__(self) -> str:
-        """Print the polynomial in a debug representation."""
+    def nterms(self) -> int:
+        """Get the number of terms in the polynomial."""
 
     def get_var_list(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""
@@ -1648,6 +1715,42 @@ class FiniteFieldPolynomial:
         >>>     print('\t({})^{}'.format(f, exp))
         """
 
+    def derivative(self, x: Expression) -> FiniteFieldPolynomial:
+        """Take a derivative in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> print(p.derivative(x))
+        """
+
+    def content(self) -> FiniteFieldPolynomial:
+        """Get the content, i.e., the GCD of the coefficients.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+        >>> print(p.content())
+        """
+
+    def coefficient_list(self, x: Expression) -> list[Tuple[int, FiniteFieldPolynomial]]:
+        """Get the coefficient list in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> for n, pp in p.coefficient_list(x):
+        >>>     print(n, pp)
+        """
+
 
 class RationalPolynomial:
     """A Symbolica rational polynomial."""
@@ -1681,9 +1784,6 @@ class RationalPolynomial:
 
     def to_latex(self) -> str:
         """Convert the rational polynomial into a LaTeX string."""
-
-    def __repr__(self) -> str:
-        """Print the rational polynomial in a debug representation."""
 
     def get_var_list(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""
@@ -1745,9 +1845,6 @@ class RationalPolynomialSmallExponent:
 
     def to_latex(self) -> str:
         """Convert the rational polynomial into a LaTeX string."""
-
-    def __repr__(self) -> str:
-        """Print the rational polynomial in a debug representation."""
 
     def get_var_list(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""
@@ -1813,9 +1910,6 @@ class FiniteFieldRationalPolynomial:
 
     def to_latex(self) -> str:
         """Convert the rational polynomial into a LaTeX string."""
-
-    def __repr__(self) -> str:
-        """Print the rational polynomial in a debug representation."""
 
     def get_var_list(self) -> Sequence[Expression]:
         """Get the list of variables in the internal ordering of the polynomial."""

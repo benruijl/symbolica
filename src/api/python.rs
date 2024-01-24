@@ -3704,9 +3704,9 @@ macro_rules! generate_methods {
                 ))
             }
 
-            /// Print the polynomial in a debug representation.
-            pub fn __repr__(&self) -> PyResult<String> {
-                Ok(format!("{:?}", self.poly))
+            /// Get the number of terms.
+            pub fn nterms(&self) -> usize {
+                self.poly.nterms()
             }
 
             /// Get the list of variables in the internal ordering of the polynomial.
@@ -3872,6 +3872,88 @@ macro_rules! generate_methods {
                     .into_iter()
                     .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
                     .collect()
+            }
+
+            /// Take a derivative in `x`.
+            ///
+            /// Examples
+            /// --------
+            ///
+            /// >>> from symbolica import Expression
+            /// >>> x = Expression.var('x')
+            /// >>> p = Expression.parse('x^2+2').to_polynomial()
+            /// >>> print(p.derivative(x))
+            pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
+                let id = match x.expr.as_view() {
+                    AtomView::Var(x) => {
+                        x.get_name()
+                    }
+                    _ => {
+                        return Err(exceptions::PyValueError::new_err(
+                            "Derivative must be taken wrt a variable",
+                        ))
+                    }
+                };
+
+                let x = self.poly.get_var_map().as_ref().ok_or(
+                    exceptions::PyValueError::new_err("Variable map missing"),
+                )?.iter().position(|x| match x {
+                    Variable::Identifier(y) => *y == id,
+                    _ => false,
+                }).ok_or(exceptions::PyValueError::new_err(format!(
+                    "Variable {} not found in polynomial",
+                    x.__str__()?
+                )))?;
+
+                Ok(Self { poly: Arc::new(self.poly.derivative(x))})
+            }
+
+            /// Get the content, i.e., the GCD of the coefficients.
+            ///
+            /// Examples
+            /// --------
+            ///
+            /// >>> from symbolica import Expression
+            /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+            /// >>> print(p.content())
+            pub fn content(&self) -> PyResult<Self> {
+                Ok(Self { poly: Arc::new(self.poly.constant(self.poly.content()))})
+            }
+
+            /// Get the coefficient list in `x`.
+            ///
+            /// Examples
+            /// --------
+            ///
+            /// >>> from symbolica import Expression
+            /// >>> x = Expression.var('x')
+            /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+            /// >>> for n, pp in p.coefficient_list(x):
+            /// >>>     print(n, pp)
+            pub fn coefficient_list(&self, x: PythonExpression) -> PyResult<Vec<(usize, Self)>> {
+                let id = match x.expr.as_view() {
+                    AtomView::Var(x) => {
+                        x.get_name()
+                    }
+                    _ => {
+                        return Err(exceptions::PyValueError::new_err(
+                            "Derivative must be taken wrt a variable",
+                        ))
+                    }
+                };
+
+                let x = self.poly.get_var_map().as_ref().ok_or(
+                    exceptions::PyValueError::new_err("Variable map missing"),
+                )?.iter().position(|x| match x {
+                    Variable::Identifier(y) => *y == id,
+                    _ => false,
+                }).ok_or(exceptions::PyValueError::new_err(format!(
+                    "Variable {} not found in polynomial",
+                    x.__str__()?
+                )))?;
+
+                Ok(self.poly.to_univariate_polynomial_list(x).into_iter()
+                    .map(|(f, p)| (p as usize, Self { poly: Arc::new(f) })).collect())
             }
         }
     };
@@ -4124,11 +4206,6 @@ macro_rules! generate_rat_methods {
                         PrintOptions::latex(),
                     )
                 ))
-            }
-
-            /// Print the rational polynomial in a debug representation.
-            pub fn __repr__(&self) -> PyResult<String> {
-                Ok(format!("{:?}", self.poly))
             }
 
             /// Add two rational polynomials `self and `rhs`, returning the result.

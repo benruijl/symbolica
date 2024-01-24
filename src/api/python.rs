@@ -98,6 +98,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonAtomTree>()?;
     m.add_class::<PythonInstructionEvaluator>()?;
 
+    m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_function(wrap_pyfunction!(is_licensed, m)?)?;
     m.add_function(wrap_pyfunction!(set_license_key, m)?)?;
     m.add_function(wrap_pyfunction!(request_hobbyist_license, m)?)?;
@@ -106,6 +107,12 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_offline_license_key, m)?)?;
 
     Ok(())
+}
+
+/// Get the current Symbolica version.
+#[pyfunction]
+fn get_version() -> String {
+    LicenseManager::get_version().to_string()
 }
 
 /// Check if the current Symbolica instance has a valid license key set.

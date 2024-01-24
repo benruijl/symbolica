@@ -106,6 +106,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         if coeff_f != Integer::one() {
                             coeff.set_from_number(match coeff_f {
                                 Integer::Natural(n) => Number::Natural(n, 1),
+                                Integer::Double(d) =>Number::Large(Rational::from(d)),
                                 Integer::Large(l) => Number::Large(Rational::from(l)),
                             });
 

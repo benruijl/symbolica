@@ -13,7 +13,7 @@ use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Neg, Rem, Sub};
 use std::sync::Arc;
 
 use ahash::HashMap;
-use rug::{Complete, Integer as ArbitraryPrecisionInteger};
+use rug::{Complete, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryPrecisionRational};
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
@@ -34,7 +34,7 @@ use crate::utils;
 
 use self::factor::Factorize;
 use self::gcd::PolynomialGCD;
-use self::polynomial::{MultiPrecisionUpgradeableDivision, MultivariatePolynomial};
+use self::polynomial::MultivariatePolynomial;
 
 pub const INLINED_EXPONENTS: usize = 6;
 
@@ -582,8 +582,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     /// Convert an expression to a rational polynomial if possible.
     pub fn to_rational_polynomial<
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -680,8 +680,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
     /// Convert an expression to a rational polynomial if possible.
     pub fn to_factorized_rational_polynomial<
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -888,8 +888,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// all non-rational subexpressions. These are stored in `map`.
     pub fn to_rational_polynomial_with_map<
         'b,
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -1120,6 +1120,7 @@ impl<P: AtomSet> Atom<P> {
             let num = num_h.to_num();
             let number = match monomial.coefficient {
                 Integer::Natural(n) => Number::Natural(*n, 1),
+                Integer::Double(d) => Number::Large(ArbitraryPrecisionRational::from(*d)),
                 Integer::Large(r) => Number::Large(r.into()),
             };
             num.set_from_number(number);
@@ -1342,8 +1343,8 @@ impl Token {
     /// i.e. the ordering is the same
     pub fn to_rational_polynomial<
         P: AtomSet,
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
@@ -1491,8 +1492,8 @@ impl Token {
     /// i.e. the ordering is the same
     pub fn to_factorized_rational_polynomial<
         P: AtomSet,
-        R: MultiPrecisionUpgradeableDivision<E> + ConvertToRing,
-        RO: MultiPrecisionUpgradeableDivision<E> + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,

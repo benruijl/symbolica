@@ -2053,6 +2053,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 debug!("round {}, xi={}", retry, xi);
                 match &xi * &Integer::Natural(a.degree(var).max(b.degree(var)).to_u32() as i64) {
                     Integer::Natural(_) => {}
+                    Integer::Double(_) => {}
                     Integer::Large(r) => {
                         if r.as_limbs().len() > 4 {
                             debug!("big num {}", r);

@@ -9,7 +9,7 @@ use rug::{
     Rational as ArbitraryPrecisionRational,
 };
 
-use crate::{poly::gcd::LARGE_U32_PRIMES, state::State, utils, printer::PrintOptions};
+use crate::{poly::gcd::LARGE_U32_PRIMES, printer::PrintOptions, state::State, utils};
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
@@ -65,6 +65,7 @@ impl From<&Integer> for Rational {
     fn from(val: &Integer) -> Self {
         match val {
             Integer::Natural(n) => Rational::Natural(*n, 1),
+            Integer::Double(n) => Rational::Large(ArbitraryPrecisionRational::from(*n)),
             Integer::Large(l) => Rational::Large(l.into()),
         }
     }
@@ -106,6 +107,21 @@ impl Rational {
                 Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
             }
             (Integer::Large(n), Integer::Natural(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Double(n), Integer::Large(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Large(n), Integer::Double(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Natural(n), Integer::Double(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Double(n), Integer::Natural(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Double(n), Integer::Double(d)) => {
                 Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
             }
             (Integer::Large(n), Integer::Large(d)) => {
@@ -249,6 +265,7 @@ impl Rational {
                 // set t to 2^20*ceil(log2(m))
                 let ceil_log2 = match &p {
                     Integer::Natural(n) => u64::BITS as u64 - (*n as u64).leading_zeros() as u64,
+                    Integer::Double(n) => u128::BITS as u64 - (*n as u128).leading_zeros() as u64,
                     Integer::Large(n) => {
                         let mut pos = 0;
                         while let Some(p) = n.find_one_64(pos) {

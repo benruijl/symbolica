@@ -2328,6 +2328,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         bound = &match bound {
             Integer::Natural(b) => Integer::Natural((b as f64).sqrt() as i64),
+            Integer::Double(b) => Integer::from_large(rug::Integer::from(b).sqrt()),
             Integer::Large(b) => Integer::from_large(b.sqrt()),
         } + &1i64.into();
 
@@ -2936,6 +2937,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let factorization = if max_p < u64::MAX.into() {
             let prime = match max_p {
                 Integer::Natural(b) => b as u64,
+                Integer::Double(b) => b as u64,
                 Integer::Large(b) => b.to_u64().unwrap(),
             };
             let small_field_mod = FiniteField::<u64>::new(prime);

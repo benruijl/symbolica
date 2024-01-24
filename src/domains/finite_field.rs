@@ -920,7 +920,8 @@ impl FiniteFieldWorkspace for Integer {
         if self <= &u64::MAX.into() {
             match self {
                 Integer::Natural(x) => *x as u64,
-                Integer::Large(x) => x.to_u64().unwrap(),
+                Integer::Double(x) => *x as u64,
+                Integer::Large(_) => unreachable!(),
             }
         } else {
             panic!("Modulus {} is too large to be converted to u64", self)

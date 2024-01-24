@@ -76,6 +76,7 @@ impl From<Integer> for Number {
     fn from(value: Integer) -> Self {
         match value {
             Integer::Natural(n) => Number::Natural(n, 1),
+            Integer::Double(r) => Number::Large(ArbitraryPrecisionRational::from(r)),
             Integer::Large(r) => Number::Large(ArbitraryPrecisionRational::from(r)),
         }
     }

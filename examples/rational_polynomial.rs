@@ -1,8 +1,8 @@
 use symbolica::{
-    representations::Atom,
     domains::{
         integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
     },
+    representations::Atom,
     state::{State, Workspace},
 };
 

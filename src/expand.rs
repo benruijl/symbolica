@@ -3,11 +3,11 @@ use smallvec::SmallVec;
 
 use crate::{
     combinatorics::CombinationWithReplacementIterator,
+    domains::integer::Integer,
     representations::{
         number::{BorrowedNumber, Number},
         Add, Atom, AtomSet, AtomView, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow, Pow,
     },
-    domains::integer::Integer,
     state::{BufferHandle, State, Workspace},
 };
 
@@ -106,7 +106,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         if coeff_f != Integer::one() {
                             coeff.set_from_number(match coeff_f {
                                 Integer::Natural(n) => Number::Natural(n, 1),
-                                Integer::Double(d) =>Number::Large(Rational::from(d)),
+                                Integer::Double(d) => Number::Large(Rational::from(d)),
                                 Integer::Large(l) => Number::Large(Rational::from(l)),
                             });
 

@@ -4,14 +4,14 @@ use ahash::HashMap;
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
+    domains::{
+        integer::{Integer, IntegerRing},
+        rational_polynomial::RationalPolynomial,
+    },
     poly::{polynomial::MultivariatePolynomial, Variable, INLINED_EXPONENTS},
     representations::{
         number::{BorrowedNumber, Number},
         Add, Atom, AtomSet, AtomView, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
-    },
-    domains::{
-        integer::{Integer, IntegerRing},
-        rational_polynomial::RationalPolynomial,
     },
     state::{ResettableBuffer, State, Workspace},
 };

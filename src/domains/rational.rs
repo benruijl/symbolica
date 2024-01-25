@@ -20,6 +20,12 @@ use super::{
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct RationalField;
 
+impl Default for RationalField {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RationalField {
     pub fn new() -> RationalField {
         RationalField

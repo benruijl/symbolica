@@ -64,6 +64,12 @@ const ACTIVATION_ERROR: &str = "┌───────────────
 │ Could not activate the Symbolica license │
 └──────────────────────────────────────────┘";
 
+impl Default for LicenseManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LicenseManager {
     pub fn new() -> LicenseManager {
         let pid = std::process::id();
@@ -392,7 +398,7 @@ Error: {}",
 
     /// Get a license key for offline use, generated from a licensed Symbolica session. The key will remain valid for 24 hours.
     pub fn get_offline_license_key() -> Result<String, String> {
-        if !Self::check_license_key().is_ok() {
+        if Self::check_license_key().is_err() {
             Err("Cannot request offline license from an unlicensed session".to_owned())?;
         }
         let key = LICENSE_KEY

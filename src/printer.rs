@@ -316,10 +316,10 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                 if !opts.latex
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
-                    format_num(num.unsigned_abs().to_string(), &opts, &print_state, f)?;
+                    format_num(num.unsigned_abs().to_string(), opts, &print_state, f)?;
                     if den != 1 {
                         f.write_char('/')?;
-                        format_num(den.to_string(), &opts, &print_state, f)?;
+                        format_num(den.to_string(), opts, &print_state, f)?;
                     }
                     Ok(())
                 } else if den != 1 {
@@ -337,10 +337,10 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                 if !opts.latex
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
-                    format_num(rat.numer().to_string(), &opts, &print_state, f)?;
+                    format_num(rat.numer().to_string(), opts, &print_state, f)?;
                     if !rat.is_integer() {
                         f.write_char('/')?;
-                        format_num(rat.denom().to_string(), &opts, &print_state, f)?;
+                        format_num(rat.denom().to_string(), opts, &print_state, f)?;
                     }
                     Ok(())
                 } else if !rat.is_integer() {
@@ -366,7 +366,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                 RationalPolynomialPrinter {
                     poly: p,
                     state,
-                    opts: opts.clone(),
+                    opts: *opts,
                     add_parentheses: true,
                 }
             )),
@@ -717,7 +717,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                         PolynomialPrinter {
                             poly: &self.poly.numerator,
                             state: self.state,
-                            opts: self.opts.clone(),
+                            opts: self.opts,
                         }
                     ))?;
                 }
@@ -727,7 +727,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     },
                 ))?;
 
@@ -750,7 +750,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                         PolynomialPrinter {
                             poly: d,
                             state: self.state,
-                            opts: self.opts.clone(),
+                            opts: self.opts,
                         }
                     ))?;
                     f.write_fmt(format_args!(",{}", p))?;
@@ -771,7 +771,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ))
             } else {
@@ -780,7 +780,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ))
             }
@@ -791,7 +791,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     },
                 ))?;
 
@@ -815,7 +815,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                             PolynomialPrinter {
                                 poly: d,
                                 state: self.state,
-                                opts: self.opts.clone(),
+                                opts: self.opts,
                             }
                         ))?;
                     } else {
@@ -824,7 +824,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                             PolynomialPrinter {
                                 poly: d,
                                 state: self.state,
-                                opts: self.opts.clone(),
+                                opts: self.opts,
                             },
                             p
                         ))?;
@@ -840,7 +840,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ))?;
             } else {
@@ -849,7 +849,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ))?;
             }
@@ -883,7 +883,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                         PolynomialPrinter {
                             poly: d,
                             state: self.state,
-                            opts: self.opts.clone(),
+                            opts: self.opts,
                         }
                     ));
                 }
@@ -911,7 +911,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                         PolynomialPrinter {
                             poly: d,
                             state: self.state,
-                            opts: self.opts.clone(),
+                            opts: self.opts,
                         }
                     ))?;
                 } else {
@@ -920,7 +920,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                         PolynomialPrinter {
                             poly: d,
                             state: self.state,
-                            opts: self.opts.clone(),
+                            opts: self.opts,
                         },
                         p
                     ))?;
@@ -978,7 +978,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                         PolynomialPrinter {
                             poly: &self.poly.numerator,
                             state: self.state,
-                            opts: self.opts.clone(),
+                            opts: self.opts,
                         }
                     ))?;
                 }
@@ -988,12 +988,12 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     },
                     PolynomialPrinter {
                         poly: &self.poly.denominator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ))?;
             }
@@ -1008,7 +1008,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ))
             } else {
@@ -1017,7 +1017,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ))
             }
@@ -1028,12 +1028,12 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     },
                     PolynomialPrinter {
                         poly: &self.poly.denominator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ));
             }
@@ -1044,7 +1044,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ))?;
             } else {
@@ -1053,7 +1053,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
                         state: self.state,
-                        opts: self.opts.clone(),
+                        opts: self.opts,
                     }
                 ))?;
             }
@@ -1080,7 +1080,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                         PolynomialPrinter {
                             poly: &self.poly.denominator,
                             state: self.state,
-                            opts: self.opts.clone(),
+                            opts: self.opts,
                         }
                     ));
                 }
@@ -1091,7 +1091,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, 'b,
                 PolynomialPrinter {
                     poly: &self.poly.denominator,
                     state: self.state,
-                    opts: self.opts.clone(),
+                    opts: self.opts,
                 }
             ))
         }

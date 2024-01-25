@@ -690,7 +690,7 @@ impl<T: Real> std::fmt::Debug for Complex<T> {
 impl<T: Real> NumericalFloatLike for Complex<T> {
     #[inline]
     fn mul_add(&self, a: &Self, b: &Self) -> Self {
-        *self + &(*a * b)
+        *self + (*a * b)
     }
 
     #[inline]

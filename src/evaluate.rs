@@ -1,9 +1,9 @@
 use ahash::HashMap;
 
 use crate::{
+    domains::{float::Real, rational::Rational},
     poly::Variable,
     representations::{number::BorrowedNumber, Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
-    domains::{float::Real, rational::Rational},
     state::State,
 };
 

@@ -1,9 +1,9 @@
 use symbolica::{
-    poly::polynomial::MultivariatePolynomial,
     domains::{
         finite_field::{FiniteField, FiniteFieldCore},
         rational::{Rational, RationalField},
     },
+    poly::polynomial::MultivariatePolynomial,
 };
 
 fn main() {

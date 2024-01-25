@@ -1,7 +1,7 @@
 use symbolica::{
+    domains::finite_field::{FiniteField, FiniteFieldCore},
     poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
     representations::Atom,
-    domains::finite_field::{FiniteField, FiniteFieldCore},
     state::{State, Workspace},
 };
 
@@ -33,7 +33,7 @@ fn main() {
         })
         .collect();
 
-    // compute the Groebner basis with grevlex ordering
+    // compute the Groebner basis with lex ordering
     let gb = GroebnerBasis::new(&ideal, true);
 
     println!("Lex order basis:");

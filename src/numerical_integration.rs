@@ -307,6 +307,12 @@ pub enum Sample<T: Real + NumericalFloatComparison> {
     Discrete(T, usize, Option<Box<Sample<T>>>),
 }
 
+impl<T: Real + NumericalFloatComparison> Default for Sample<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Real + NumericalFloatComparison> Sample<T> {
     /// Construct a new empty sample that can be handed over to [`Grid::sample()`].
     pub fn new() -> Sample<T> {
@@ -518,7 +524,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
     /// and adapt all sub-grids based on the new training samples.
     ///
     /// If `learning_rate` is set to 0, no training happens.
-    pub fn update<'a>(&mut self, learning_rate: T) {
+    pub fn update(&mut self, learning_rate: T) {
         let mut err_sum = T::zero();
         for bin in &mut self.bins {
             if let Some(sub_grid) = &mut bin.sub_grid {

@@ -7,12 +7,12 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    domains::Ring,
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
     representations::{
         number::{ConvertToRing, Number},
         Atom, AtomSet, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar,
     },
-    domains::Ring,
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -725,7 +725,9 @@ impl Token {
                     "Unexpected end of input: missing right-hand side for operator '{}'",
                     op
                 )),
-                Some(Token::OpenParenthesis) => Err("Unexpected end of input: open parenthesis is not closed".to_string()),
+                Some(Token::OpenParenthesis) => {
+                    Err("Unexpected end of input: open parenthesis is not closed".to_string())
+                }
 
                 Some(Token::Fn(true, args)) => Err(format!(
                     "Unexpected end of input: Missing closing parenthesis for function '{}'",

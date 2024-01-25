@@ -36,6 +36,12 @@ pub struct State {
     finite_fields: Vec<FiniteField<u64>>,
 }
 
+impl Default for State {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl State {
     pub const ARG: Identifier = Identifier::init(0);
     pub const EXP: Identifier = Identifier::init(1);

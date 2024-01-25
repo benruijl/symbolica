@@ -22,14 +22,15 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     domains::{
-        finite_field::{FiniteField, FiniteFieldCore},
-        float::Complex,
-        integer::IntegerRing,
-    },
-    domains::{
+        finite_field::ToFiniteField,
         integer::Integer,
         rational::RationalField,
         rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
+    },
+    domains::{
+        finite_field::{FiniteField, FiniteFieldCore},
+        float::Complex,
+        integer::IntegerRing,
     },
     evaluate::EvaluationFn,
     id::{
@@ -44,8 +45,9 @@ use crate::{
             InstructionSetPrinter,
         },
         factor::Factorize,
+        groebner::GroebnerBasis,
         polynomial::MultivariatePolynomial,
-        Variable, INLINED_EXPONENTS,
+        GrevLexOrder, LexOrder, Variable, INLINED_EXPONENTS,
     },
     printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::{
@@ -3422,19 +3424,17 @@ impl PythonPolynomial {
 
     /// Convert the coefficients of the polynomial to a finite field with prime `prime`.
     pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldPolynomial {
+        let f = FiniteField::<u32>::new(prime);
         PythonFiniteFieldPolynomial {
-            poly: Arc::new(self.poly.to_finite_field(&FiniteField::<u32>::new(prime))),
+            poly: Arc::new(self.poly.map_coeff(|c| c.to_finite_field(&f), f.clone())),
         }
     }
 
-    #[pyo3(signature =
-        (iterations = 1000,
-        to_file = None)
-    )]
     /// Optimize the polynomial for evaluation using `iterations` number of iterations.
     /// The optimized output can be exported in a C++ format using `to_file`.
     ///
     /// Returns an evaluator for the polynomial.
+    #[pyo3(signature = (iterations = 1000, to_file = None))]
     pub fn optimize(
         &self,
         iterations: usize,
@@ -3463,6 +3463,56 @@ impl PythonPolynomial {
         Ok(PythonInstructionEvaluator {
             instr: Arc::new(o_f64.evaluator()),
         })
+    }
+
+    /// Compute the Groebner basis of a polynomial system.
+    ///
+    /// If `grevlex=True`, reverse graded lexicographical ordering is used,
+    /// otherwise the ordering is lexicographical.
+    ///
+    /// If `print_stats=True` intermediate statistics will be printed.
+    ///
+    /// Examples
+    /// --------
+    /// >>> basis = Polynomial.groebner_basis(
+    /// >>>     [Expression.parse("a b c d - 1").to_polynomial(),
+    /// >>>      Expression.parse("a b c + a b d + a c d + b c d").to_polynomial(),
+    /// >>>      Expression.parse("a b + b c + a d + c d").to_polynomial(),
+    /// >>>      Expression.parse("a + b + c + d").to_polynomial()],
+    /// >>>     grevlex=True,
+    /// >>>     print_stats=True
+    /// >>> )
+    /// >>> for p in basis:
+    /// >>>     print(p)
+    #[pyo3(signature = (system, grevlex = true, print_stats = false))]
+    #[classmethod]
+    pub fn groebner_basis(
+        _cls: &PyType,
+        system: Vec<Self>,
+        grevlex: bool,
+        print_stats: bool,
+    ) -> Vec<Self> {
+        if grevlex {
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+            let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
+
+            gb.system
+                .into_iter()
+                .map(|p| Self {
+                    poly: Arc::new(p.reorder::<LexOrder>()),
+                })
+                .collect()
+        } else {
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.as_ref().clone()).collect();
+            let gb = GroebnerBasis::new(&ideal, print_stats);
+            gb.system
+                .into_iter()
+                .map(|p| Self { poly: Arc::new(p) })
+                .collect()
+        }
     }
 }
 
@@ -3576,6 +3626,43 @@ impl PythonFiniteFieldPolynomial {
             .map_err(exceptions::PyValueError::new_err)?;
 
         Ok(Self { poly: Arc::new(e) })
+    }
+
+    /// Compute the Groebner basis of a polynomial system.
+    ///
+    /// If `grevlex=True`, reverse graded lexicographical ordering is used,
+    /// otherwise the ordering is lexicographical.
+    ///
+    /// If `print_stats=True` intermediate statistics will be printed.
+    #[pyo3(signature = (system, grevlex = true, print_stats = false))]
+    #[classmethod]
+    pub fn groebner_basis(
+        _cls: &PyType,
+        system: Vec<Self>,
+        grevlex: bool,
+        print_stats: bool,
+    ) -> Vec<Self> {
+        if grevlex {
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+            let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
+
+            gb.system
+                .into_iter()
+                .map(|p| Self {
+                    poly: Arc::new(p.reorder::<LexOrder>()),
+                })
+                .collect()
+        } else {
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.as_ref().clone()).collect();
+            let gb = GroebnerBasis::new(&ideal, print_stats);
+            gb.system
+                .into_iter()
+                .map(|p| Self { poly: Arc::new(p) })
+                .collect()
+        }
     }
 }
 

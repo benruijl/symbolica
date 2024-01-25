@@ -1,8 +1,8 @@
 use ahash::HashMap;
 use symbolica::{
+    domains::finite_field,
     id::{Match, PatternRestriction},
     representations::{number::BorrowedNumber, Atom, AtomView, Num},
-    domains::finite_field,
     state::{State, Workspace},
 };
 fn main() {

@@ -1445,6 +1445,29 @@ class Polynomial:
         >>>     print(n, pp)
         """
 
+    @classmethod
+    def groebner_basis(_cls, system: list[Polynomial], grevlex: bool = True, print_stats: bool = False) -> list[Polynomial]:
+        """Compute the Groebner basis of a polynomial system.
+
+        If `grevlex=True`, reverse graded lexicographical ordering is used,
+        otherwise the ordering is lexicographical.
+
+        If `print_stats=True` intermediate statistics will be printed.
+
+        Examples
+        --------
+        >>> basis = Polynomial.groebner_basis(
+        >>>     [Expression.parse("a b c d - 1").to_polynomial(),
+        >>>     Expression.parse("a b c + a b d + a c d + b c d").to_polynomial(),
+        >>>     Expression.parse("a b + b c + a d + c d").to_polynomial(),
+        >>>     Expression.parse("a + b + c + d").to_polynomial()],
+        >>>     grevlex=True,
+        >>>     print_stats=True
+        >>> )
+        >>> for p in basis:
+        >>>     print(p)
+        """
+
 
 class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""
@@ -1749,6 +1772,29 @@ class FiniteFieldPolynomial:
         >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
         >>> for n, pp in p.coefficient_list(x):
         >>>     print(n, pp)
+        """
+
+    @classmethod
+    def groebner_basis(_cls, system: list[FiniteFieldPolynomial], grevlex: bool = True, print_stats: bool = False) -> list[FiniteFieldPolynomial]:
+        """Compute the Groebner basis of a polynomial system.
+
+        If `grevlex=True`, reverse graded lexicographical ordering is used,
+        otherwise the ordering is lexicographical.
+
+        If `print_stats=True` intermediate statistics will be printed.
+
+        Examples
+        --------
+        >>> basis = Polynomial.groebner_basis(
+        >>>     [Expression.parse("a b c d - 1").to_polynomial(),
+        >>>     Expression.parse("a b c + a b d + a c d + b c d").to_polynomial(),
+        >>>     Expression.parse("a b + b c + a d + c d").to_polynomial(),
+        >>>     Expression.parse("a + b + c + d").to_polynomial()],
+        >>>     grevlex=True,
+        >>>     print_stats=True
+        >>> )
+        >>> for p in basis:
+        >>>     print(p)
         """
 
 

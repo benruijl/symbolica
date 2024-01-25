@@ -6,7 +6,6 @@ use tracing::debug;
 
 use crate::{
     combinatorics::CombinationIterator,
-    poly::gcd::LARGE_U32_PRIMES,
     domains::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldWorkspace, PrimeIteratorU64, ToFiniteField,
@@ -15,6 +14,7 @@ use crate::{
         rational::RationalField,
         EuclideanDomain, Field, Ring,
     },
+    poly::gcd::LARGE_U32_PRIMES,
     utils,
 };
 
@@ -935,7 +935,7 @@ where
 
         let mut lcoeff_square_free = self.one();
         for (f, _) in &sqf {
-            lcoeff_square_free = &lcoeff_square_free * &f;
+            lcoeff_square_free = lcoeff_square_free * &f;
         }
 
         let sorted_main_factors = Self::canonical_sort(bivariate_factors, order[1], sample_points);
@@ -1307,7 +1307,7 @@ where
             }
         }
 
-        let (mut sorted_biv_factors, true_lcoeffs) =
+        let (sorted_biv_factors, true_lcoeffs) =
             match self.lcoeff_precomputation(&bivariate_factors, &sample_points, order) {
                 Ok((sorted_biv_factors, true_lcoeffs)) => (sorted_biv_factors, true_lcoeffs),
                 Err(max_biv) => {
@@ -1332,7 +1332,7 @@ where
         );
 
         let factorization = self.multivariate_hensel_lifting(
-            &mut sorted_biv_factors,
+            &sorted_biv_factors,
             &mut uni,
             &delta,
             &sample_points,
@@ -1885,7 +1885,9 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         #[cfg(debug_assertions)]
         for (h, h_p) in factors.iter().zip(&hs) {
-            let hh_p = h.to_finite_field(&field).make_monic();
+            let hh_p = h
+                .map_coeff(|c| c.to_finite_field(&field), field.clone())
+                .make_monic();
             if &hh_p != h_p {
                 panic!("Mismatch of lifted factor: {} vs {} in {}", hh_p, h_p, self);
             }
@@ -2117,7 +2119,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             field = FiniteField::<u32>::new(p);
 
             // make sure the factors stay coprime
-            let fs_p: Vec<_> = uni_fs.iter().map(|f| f.to_finite_field(&field)).collect();
+            let fs_p: Vec<_> = uni_fs
+                .iter()
+                .map(|f| f.map_coeff(|c| c.to_finite_field(&field), field.clone()))
+                .collect();
 
             for (j, f) in fs_p.iter().enumerate() {
                 for g in &fs_p[j + 1..] {
@@ -2869,7 +2874,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             // make sure the bivariate factors stay coprime
             let fs_p: Vec<_> = bivariate_factors
                 .iter()
-                .map(|f| f.to_finite_field(&field))
+                .map(|f| f.map_coeff(|c| c.to_finite_field(&field), field.clone()))
                 .collect();
 
             for (j, f) in fs_p.iter().enumerate() {

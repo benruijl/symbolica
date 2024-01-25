@@ -30,6 +30,12 @@ pub const SMALL_PRIMES: [i64; 100] = [
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct IntegerRing;
 
+impl Default for IntegerRing {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IntegerRing {
     pub fn new() -> IntegerRing {
         IntegerRing
@@ -1291,7 +1297,7 @@ impl<'a> Rem for &'a Integer {
                 }
             }
             (Integer::Double(a), Integer::Double(b)) => {
-                if let Some(r) = a.checked_rem_euclid(*b as i128) {
+                if let Some(r) = a.checked_rem_euclid(*b) {
                     Integer::from_double(r)
                 } else {
                     Integer::Natural(0)
@@ -1314,6 +1320,12 @@ pub struct ArbitraryPrecisionIntegerRing;
 impl Display for ArbitraryPrecisionIntegerRing {
     fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
+    }
+}
+
+impl Default for ArbitraryPrecisionIntegerRing {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

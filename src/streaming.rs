@@ -126,6 +126,16 @@ pub struct TermStreamer<P: AtomSet> {
     exp_out: TermOutputStream<P>,
 }
 
+impl<P: AtomSet + GetLocalWorkspace + Send + 'static> Default for TermStreamer<P>
+where
+    for<'a> AtomView<'a, P>: Send,
+    Atom<P>: Send,
+ {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<P: AtomSet + GetLocalWorkspace + Send + 'static> TermStreamer<P>
 where
     for<'a> AtomView<'a, P>: Send,

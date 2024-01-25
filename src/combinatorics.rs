@@ -250,7 +250,7 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
     // sort the bins from largest to smallest and based on the bin id
     sorted_bins.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
 
-    fn fill_bin<'a, T: Copy>(
+    fn fill_bin<T: Copy>(
         len: usize,
         elems: &mut [(T, usize)],
         accum: &mut Vec<T>,
@@ -273,7 +273,7 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
         }
     }
 
-    fn fill_rec<'a, T: Ord + Copy, B: Copy + Eq>(
+    fn fill_rec<T: Ord + Copy, B: Copy + Eq>(
         bins: &[(B, usize)],
         elems: &mut [(T, usize)],
         single_bin_accum: &mut Vec<T>,

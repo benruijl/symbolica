@@ -23,7 +23,7 @@ pub struct CriticalPair<R: Field, E: Exponent, O: MonomialOrder> {
     disjoint: bool,
 }
 
-impl<'a, R: Field, E: Exponent, O: MonomialOrder> CriticalPair<R, E, O> {
+impl<R: Field, E: Exponent, O: MonomialOrder> CriticalPair<R, E, O> {
     pub fn new(
         f1: Rc<MultivariatePolynomial<R, E, O>>,
         f2: Rc<MultivariatePolynomial<R, E, O>>,
@@ -99,12 +99,12 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
         b.reduce_basis()
     }
 
+    #[inline]
     fn simplify(
-        tab: &mut Vec<Vec<(Vec<E>, Rc<MultivariatePolynomial<R, E, O>>)>>,
-        index: usize,
+        tab: &mut Vec<(Vec<E>, Rc<MultivariatePolynomial<R, E, O>>)>,
         lcm: &[E],
     ) -> Rc<MultivariatePolynomial<R, E, O>> {
-        for (m, f) in tab[index].iter().rev() {
+        for (m, f) in tab.iter().rev() {
             if m == lcm {
                 return f.clone();
             }
@@ -112,11 +112,11 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
             if lcm.iter().zip(m).all(|(el, em)| *el >= *em) {
                 let diff: Vec<_> = lcm.iter().zip(m).map(|(el, em)| *el - *em).collect();
                 let a = Rc::new((**f).clone().mul_exp(&diff));
-                tab[index].push((lcm.to_vec(), a.clone()));
+                tab.push((lcm.to_vec(), a.clone()));
                 return a;
             }
         }
-        panic!("Unknown polynomial {}", index);
+        panic!("Unknown polynomial associated with exponent map {:?}", lcm);
     }
 
     /// The F4 algorithm for computing a Groebner basis.
@@ -180,7 +180,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
                     for poly_info in e {
                         if !l_tmp.contains(&poly_info) {
                             let new_f1 =
-                                Self::simplify(&mut simplifications, poly_info.0, &poly_info.1);
+                                Self::simplify(&mut simplifications[poly_info.0], &poly_info.1);
                             selected_polys.push(new_f1);
                             l_tmp.push(poly_info);
                         }
@@ -244,7 +244,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
                             *e = *pe - *ge;
                         }
 
-                        let pp = Self::simplify(&mut simplifications, *index, &exp);
+                        let pp = Self::simplify(&mut simplifications[*index], &exp);
                         new_polys.push(pp);
                     }
                 }
@@ -577,7 +577,7 @@ pub trait Echelonize: Field {
         selected_polys: &mut Vec<Rc<MultivariatePolynomial<Self, E, O>>>,
         nvars: usize,
         all_monomials: &HashMap<Vec<E>, MonomialData>,
-        sorted_monomial_indices: &Vec<usize>,
+        sorted_monomial_indices: &[usize],
         field: &Self,
         buffer: &mut Vec<Self::LargerField>,
         pivots: &mut Vec<Option<usize>>,
@@ -595,7 +595,7 @@ impl Echelonize for FiniteField<u32> {
         selected_polys: &mut Vec<Rc<MultivariatePolynomial<FiniteField<u32>, E, O>>>,
         nvars: usize,
         all_monomials: &HashMap<Vec<E>, MonomialData>,
-        sorted_monomial_indices: &Vec<usize>,
+        sorted_monomial_indices: &[usize],
         field: &FiniteField<u32>,
         buffer: &mut Vec<i64>,
         pivots: &mut Vec<Option<usize>>,
@@ -803,7 +803,7 @@ macro_rules! echelonize_impl {
                 selected_polys: &mut Vec<Rc<MultivariatePolynomial<Self, E, O>>>,
                 nvars: usize,
                 all_monomials: &HashMap<Vec<E>, MonomialData>,
-                sorted_monomial_indices: &Vec<usize>,
+                sorted_monomial_indices: &[usize],
                 field: &Self,
                 buffer: &mut Vec<Self::Element>,
                 pivots: &mut Vec<Option<usize>>,

@@ -7,7 +7,6 @@ use std::mem;
 use std::ops::Add;
 use tracing::{debug, instrument};
 
-use crate::poly::INLINED_EXPONENTS;
 use crate::domains::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
 };
@@ -15,6 +14,7 @@ use crate::domains::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIME
 use crate::domains::linear_system::{LinearSolverError, Matrix};
 use crate::domains::rational::RationalField;
 use crate::domains::{EuclideanDomain, Field, Ring};
+use crate::poly::INLINED_EXPONENTS;
 
 use super::polynomial::MultivariatePolynomial;
 use super::Exponent;
@@ -244,7 +244,7 @@ where
     FiniteField<UField>: FiniteFieldCore<UField>,
     <FiniteField<UField> as Ring>::Element: Copy,
 {
-    let mut gp = MultivariatePolynomial::new(a.nvars, &a.field, None, None);
+    let mut gp = a.zero();
 
     // solve the transposed Vandermonde system
     for (((c, ex), sample), rhs) in shape.iter().zip(&row_sample_values).zip(&samples) {
@@ -446,18 +446,8 @@ where
         let mut a_current = Cow::Borrowed(&a_eval);
         let mut b_current = Cow::Borrowed(&b_eval);
 
-        let mut a_poly = MultivariatePolynomial::new(
-            a.nvars,
-            &a.field,
-            Some(a.degree(main_var).to_u32() as usize + 1),
-            None,
-        );
-        let mut b_poly = MultivariatePolynomial::new(
-            b.nvars,
-            &b.field,
-            Some(b.degree(main_var).to_u32() as usize + 1),
-            None,
-        );
+        let mut a_poly = a.zero_with_capacity(a.degree(main_var).to_u32() as usize + 1);
+        let mut b_poly = b.zero_with_capacity(b.degree(main_var).to_u32() as usize + 1);
 
         for sample_index in 0..samples_needed {
             // sample at r^i
@@ -700,18 +690,8 @@ where
         let mut a_current = Cow::Borrowed(&a_eval);
         let mut b_current = Cow::Borrowed(&b_eval);
 
-        let mut a_poly = MultivariatePolynomial::new(
-            a.nvars,
-            &a.field,
-            Some(a.degree(main_var).to_u32() as usize + 1),
-            None,
-        );
-        let mut b_poly = MultivariatePolynomial::new(
-            b.nvars,
-            &b.field,
-            Some(b.degree(main_var).to_u32() as usize + 1),
-            None,
-        );
+        let mut a_poly = a.zero_with_capacity(a.degree(main_var).to_u32() as usize + 1);
+        let mut b_poly = b.zero_with_capacity(b.degree(main_var).to_u32() as usize + 1);
 
         let mut second_index = 1;
         let mut solved_coeff = None;
@@ -1073,7 +1053,7 @@ where
                 .or_insert(c);
         }
 
-        let mut res = MultivariatePolynomial::new(self.nvars, &self.field, None, None);
+        let mut res = self.zero();
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm.drain() {
             if !FiniteField::<UField>::is_zero(&c) {
@@ -1118,7 +1098,7 @@ where
         }
 
         // TODO: add bounds estimate
-        let mut res = MultivariatePolynomial::new(self.nvars, &self.field, None, None);
+        let mut res = self.zero();
         let mut e = vec![E::zero(); self.nvars];
         for (k, c) in tm.iter_mut().enumerate() {
             if !FiniteField::<UField>::is_zero(c) {
@@ -2282,8 +2262,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 continue 'newfirstprime;
             }
 
-            let ap = a.to_finite_field(&finite_field);
-            let bp = b.to_finite_field(&finite_field);
+            let ap = a.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
+            let bp = b.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
 
             debug!("New first image: gcd({},{}) mod {}", ap, bp, p);
 
@@ -2393,8 +2373,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                     }
                 }
 
-                let ap = a.to_finite_field(&finite_field);
-                let bp = b.to_finite_field(&finite_field);
+                let ap = a.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
+                let bp = b.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
                 debug!("New image: gcd({},{})", ap, bp);
 
                 // for the univariate case, we don't need to construct an image
@@ -2603,8 +2583,9 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
         let mut i = 0;
         loop {
-            let ap = a.to_finite_field(&FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
-            let bp = b.to_finite_field(&FiniteField::<u32>::new(LARGE_U32_PRIMES[i]));
+            let f = FiniteField::<u32>::new(LARGE_U32_PRIMES[i]);
+            let ap = a.map_coeff(|c| c.to_finite_field(&f), f.clone());
+            let bp = b.map_coeff(|c| c.to_finite_field(&f), f.clone());
             if ap.nterms() > 0
                 && bp.nterms() > 0
                 && ap.last_exponents() == a.last_exponents()
@@ -2661,45 +2642,11 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         // remove the content so that the polynomials have integer coefficients
         let content = a.field.gcd(&a.content(), &b.content());
 
-        let mut a_int = MultivariatePolynomial::new(
-            a.nvars,
-            &IntegerRing::new(),
-            Some(a.nterms()),
-            a.var_map.clone(),
-        );
+        let a_int = a.map_coeff(|c| a.field.div(c, &content).numerator(), IntegerRing::new());
+        let b_int = b.map_coeff(|c| b.field.div(c, &content).numerator(), IntegerRing::new());
 
-        for t in a {
-            let coeff = a.field.div(t.coefficient, &content);
-            debug_assert!(coeff.is_integer());
-            a_int.append_monomial(coeff.numerator(), t.exponents);
-        }
-
-        let mut b_int = MultivariatePolynomial::new(
-            b.nvars,
-            &IntegerRing::new(),
-            Some(b.nterms()),
-            b.var_map.clone(),
-        );
-
-        for t in b {
-            let coeff = b.field.div(t.coefficient, &content);
-            debug_assert!(coeff.is_integer());
-            b_int.append_monomial(coeff.numerator(), t.exponents);
-        }
-
-        let res_int =
-            MultivariatePolynomial::gcd_zippel::<u32>(&a_int, &b_int, vars, bounds, tight_bounds);
-
-        let mut res = a.zero_with_capacity(res_int.nterms());
-
-        for t in &res_int {
-            res.append_monomial(
-                a.field.mul(&t.coefficient.to_rational(), &content),
-                t.exponents,
-            );
-        }
-
-        res
+        MultivariatePolynomial::gcd_zippel::<u32>(&a_int, &b_int, vars, bounds, tight_bounds)
+            .map_coeff(|c| c.to_rational(), RationalField::new())
     }
 
     fn get_gcd_var_bounds(
@@ -2712,8 +2659,8 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         let mut i = 0;
         loop {
             let f = FiniteField::<u32>::new(LARGE_U32_PRIMES[i]);
-            let ap = a.to_finite_field(&f);
-            let bp = b.to_finite_field(&f);
+            let ap = a.map_coeff(|c| c.to_finite_field(&f), f.clone());
+            let bp = b.map_coeff(|c| c.to_finite_field(&f), f.clone());
             if ap.nterms() > 0
                 && bp.nterms() > 0
                 && ap.last_exponents() == a.last_exponents()

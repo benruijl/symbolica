@@ -8,9 +8,6 @@ use std::mem;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::Arc;
 
-use crate::domains::finite_field::{
-    FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField,
-};
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::RationalField;
 use crate::domains::{EuclideanDomain, Field, Ring, RingPrinter};
@@ -944,37 +941,6 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             return self.field.one();
         }
         self.coefficients.last().unwrap().clone()
-    }
-
-    /// Convert the coefficient from the current field to a finite field.
-    /// TODO: deprecate, use map_coeff
-    pub fn to_finite_field<UField: FiniteFieldWorkspace>(
-        &self,
-        field: &FiniteField<UField>,
-    ) -> MultivariatePolynomial<FiniteField<UField>, E>
-    where
-        F::Element: ToFiniteField<UField>,
-        FiniteField<UField>: FiniteFieldCore<UField>,
-    {
-        let mut coefficients = Vec::with_capacity(self.coefficients.len());
-        let mut exponents = Vec::with_capacity(self.exponents.len());
-
-        for m in self.into_iter() {
-            let nc = m.coefficient.to_finite_field(field);
-            if !FiniteField::<UField>::is_zero(&nc) {
-                coefficients.push(nc);
-                exponents.extend(m.exponents);
-            }
-        }
-
-        MultivariatePolynomial {
-            coefficients,
-            exponents,
-            nvars: self.nvars,
-            field: field.clone(),
-            var_map: self.var_map.clone(),
-            _phantom: PhantomData,
-        }
     }
 
     /// Perform self % var^pow.

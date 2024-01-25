@@ -655,6 +655,12 @@ impl Field for FiniteField<u64> {
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Mersenne64(u64);
 
+impl Default for Mersenne64 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Mersenne64 {
     pub fn new() -> Self {
         Mersenne64(Self::PRIME)

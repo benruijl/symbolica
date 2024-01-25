@@ -1,7 +1,7 @@
 use std::process::Command;
 fn main() {
     let output = Command::new("git")
-        .args(&["describe", "--tags"])
+        .args(["describe", "--tags"])
         .output()
         .expect("Could not run git command. Is it installed?");
     let git_desc = String::from_utf8(output.stdout).unwrap();

@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use symbolica::{
-    parser::Token,
-    poly::Variable,
-    representations::{Atom, AtomView},
     domains::{
         integer::IntegerRing,
         linear_system::Matrix,
         rational::RationalField,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
+    parser::Token,
+    poly::Variable,
+    representations::{Atom, AtomView},
     state::{State, Workspace},
 };
 

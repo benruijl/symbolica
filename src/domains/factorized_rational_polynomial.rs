@@ -120,10 +120,12 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
 
         // check the gcd, since the rational polynomial may simplify
         FactorizedRationalPolynomial::from_num_den(
-            self.numerator.to_finite_field(field).mul_coeff(constant),
+            self.numerator
+                .map_coeff(|c| c.to_finite_field(field), field.clone())
+                .mul_coeff(constant),
             self.denominators
                 .iter()
-                .map(|(f, p)| (f.to_finite_field(field), *p))
+                .map(|(f, p)| (f.map_coeff(|c| c.to_finite_field(field), field.clone()), *p))
                 .collect(),
             field,
             true,
@@ -621,7 +623,7 @@ where
                 FactorizedRationalPolynomialPrinter {
                     poly: element,
                     state,
-                    opts: opts.clone(),
+                    opts: *opts,
                     add_parentheses: in_product
                 },
             ))

@@ -3,14 +3,14 @@ use std::ops::Neg;
 use ahash::HashMap;
 
 use crate::{
-    poly::{Exponent, Variable},
-    representations::{Atom, AtomSet, AtomView, Identifier},
     domains::{
         integer::IntegerRing,
         linear_system::Matrix,
         rational::RationalField,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
+    poly::{Exponent, Variable},
+    representations::{Atom, AtomSet, AtomView, Identifier},
     state::{ResettableBuffer, State, Workspace},
 };
 

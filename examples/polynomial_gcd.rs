@@ -1,9 +1,9 @@
 use symbolica::{
-    poly::polynomial::MultivariatePolynomial,
     domains::{
         integer::{Integer, IntegerRing},
         rational::{Rational, RationalField},
     },
+    poly::polynomial::MultivariatePolynomial,
 };
 use tracing_subscriber::{fmt, prelude::*, util::SubscriberInitExt, EnvFilter};
 

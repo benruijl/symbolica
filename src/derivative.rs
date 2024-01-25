@@ -1,12 +1,12 @@
 use ahash::HashMap;
 
 use crate::{
+    domains::{integer::Integer, rational::Rational},
     representations::{
         number::{BorrowedNumber, Number},
         Add, AsAtomView, Atom, AtomBuilder, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd,
         OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
     },
-    domains::{integer::Integer, rational::Rational},
     state::{State, Workspace},
 };
 

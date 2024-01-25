@@ -483,7 +483,7 @@ impl Integer {
             panic!("{} is not invertible in ring {}", self, n);
         }
         if t0.is_negative() {
-            t0 += &n;
+            t0 += n;
         }
 
         t0
@@ -563,13 +563,28 @@ impl Ring for IntegerRing {
 
     #[inline(always)]
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        // TODO: recycle a gmp integer coming from b * c if a is not a gmp integer
-        a.add_assign(&(b * c))
+        if let Integer::Large(l) = a {
+            if let Integer::Large(b1) = b {
+                if let Integer::Large(c1) = c {
+                    return l.add_assign(b1 * c1);
+                }
+            }
+        }
+
+        *a += b * c;
     }
 
     #[inline(always)]
     fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        a.sub_assign(&(b * c))
+        if let Integer::Large(l) = a {
+            if let Integer::Large(b1) = b {
+                if let Integer::Large(c1) = c {
+                    return l.sub_assign(b1 * c1);
+                }
+            }
+        }
+
+        *a -= b * c;
     }
 
     #[inline]
@@ -766,6 +781,23 @@ impl EuclideanDomain for IntegerRing {
     }
 }
 
+impl<'b> Add<&'b Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn add(self, rhs: &'b Integer) -> Integer {
+        if let Integer::Large(r) = self {
+            match rhs {
+                Integer::Natural(n) => Integer::from_large(*n + r),
+                Integer::Double(n) => Integer::from_large(*n + r),
+                Integer::Large(n) => Integer::from_large(n + r),
+            }
+        } else {
+            &self + rhs
+        }
+    }
+}
+
 impl<'a, 'b> Add<&'b Integer> for &'a Integer {
     type Output = Integer;
 
@@ -799,6 +831,23 @@ impl<'a, 'b> Add<&'b Integer> for &'a Integer {
             (Integer::Double(n1), Integer::Large(r2))
             | (Integer::Large(r2), Integer::Double(n1)) => Integer::from_large((*n1 + r2).into()),
             (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 + r2).into()),
+        }
+    }
+}
+
+impl<'a> Sub<Integer> for &'a Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn sub(self, rhs: Integer) -> Integer {
+        if let Integer::Large(r) = rhs {
+            match self {
+                Integer::Natural(n) => Integer::from_large(*n - r),
+                Integer::Double(n) => Integer::from_large(*n - r),
+                Integer::Large(n) => Integer::from_large(n - r),
+            }
+        } else {
+            self - &rhs
         }
     }
 }
@@ -842,6 +891,23 @@ impl<'a, 'b> Sub<&'b Integer> for &'a Integer {
             (Integer::Double(n1), Integer::Large(r2)) => Integer::from_large((*n1 - r2).into()),
             (Integer::Large(r1), Integer::Double(n2)) => Integer::from_large((r1 - *n2).into()),
             (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 - r2).into()),
+        }
+    }
+}
+
+impl<'a> Mul<&'a Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn mul(self, rhs: &'a Integer) -> Integer {
+        if let Integer::Large(r) = self {
+            match rhs {
+                Integer::Natural(n) => Integer::from_large(*n * r),
+                Integer::Double(n) => Integer::from_large(*n * r),
+                Integer::Large(n) => Integer::from_large(n * r),
+            }
+        } else {
+            &self * rhs
         }
     }
 }
@@ -1026,6 +1092,23 @@ impl<'a> Div<i64> for &'a Integer {
     }
 }
 
+impl AddAssign<Integer> for Integer {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: Integer) {
+        if let Integer::Large(l) = self {
+            match rhs {
+                Integer::Natural(r) => l.add_assign(r),
+                Integer::Double(r) => l.add_assign(r),
+                Integer::Large(r) => l.add_assign(r),
+            }
+
+            self.simplify();
+        } else {
+            *self = rhs + &*self;
+        }
+    }
+}
+
 impl<'a> AddAssign<&'a Integer> for Integer {
     #[inline(always)]
     fn add_assign(&mut self, rhs: &'a Integer) {
@@ -1039,6 +1122,23 @@ impl<'a> AddAssign<&'a Integer> for Integer {
             self.simplify();
         } else {
             *self = &*self + rhs;
+        }
+    }
+}
+
+impl SubAssign<Integer> for Integer {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: Integer) {
+        if let Integer::Large(l) = self {
+            match rhs {
+                Integer::Natural(r) => l.sub_assign(r),
+                Integer::Double(r) => l.sub_assign(r),
+                Integer::Large(r) => l.sub_assign(r),
+            }
+
+            self.simplify();
+        } else {
+            *self = &*self - rhs;
         }
     }
 }

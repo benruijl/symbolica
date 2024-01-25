@@ -48,7 +48,7 @@ impl State {
     pub const I: Identifier = Identifier::init(8);
     pub const PI: Identifier = Identifier::init(9);
 
-    pub(crate) const BUILTIN_VAR_LIST: [&str; 10] = [
+    pub(crate) const BUILTIN_VAR_LIST: [&'static str; 10] = [
         "arg", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 

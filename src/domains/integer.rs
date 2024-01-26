@@ -680,7 +680,7 @@ impl EuclideanDomain for IntegerRing {
                 if let Some(q) = aa.checked_div_euclid(*bb) {
                     (Integer::Natural(q), a - &(b * &Integer::Natural(q)))
                 } else {
-                    (Integer::Double(-(i64::MIN as i128)), Integer::Natural(0))
+                    (Integer::Double(-(i64::MIN as i128)), Integer::zero())
                 }
             }
             (Integer::Natural(a), Integer::Double(b)) => {
@@ -692,21 +692,28 @@ impl EuclideanDomain for IntegerRing {
                         (Integer::Natural(1), Integer::from_double(*a as i128 - *b))
                     }
                 } else {
-                    (Integer::Natural(0), Integer::Natural(*a))
+                    (Integer::zero(), Integer::Natural(*a))
                 }
             }
-            (Integer::Double(a), Integer::Natural(b)) => {
-                let r = ArbitraryPrecisionInteger::from(*a)
-                    .div_rem_euc(ArbitraryPrecisionInteger::from(*b));
-                (Integer::from_large(r.0), Integer::from_large(r.1))
-            }
-            (Integer::Double(aa), Integer::Double(bb)) => {
-                if let Some(q) = aa.checked_div_euclid(*bb) {
-                    (Integer::Double(q), a - &(b * &Integer::Double(q)))
+            (Integer::Double(aa), Integer::Natural(bb)) => {
+                if let Some(q) = aa.checked_div_euclid(*bb as i128) {
+                    let q = Integer::from_double(q);
+                    (q.clone(), a - &(b * &q))
                 } else {
                     (
                         Integer::Large(ArbitraryPrecisionInteger::from(i128::MIN).neg()),
-                        Integer::Natural(0),
+                        Integer::zero(),
+                    )
+                }
+            }
+            (Integer::Double(aa), Integer::Double(bb)) => {
+                if let Some(q) = aa.checked_div_euclid(*bb) {
+                    let q = Integer::from_double(q);
+                    (q.clone(), a - &(b * &q))
+                } else {
+                    (
+                        Integer::Large(ArbitraryPrecisionInteger::from(i128::MIN).neg()),
+                        Integer::zero(),
                     )
                 }
             }
@@ -718,7 +725,7 @@ impl EuclideanDomain for IntegerRing {
                         (Integer::Natural(1), Integer::from_large((a - b).into()))
                     }
                 } else {
-                    (Integer::Natural(0), Integer::Natural(*a))
+                    (Integer::zero(), Integer::Natural(*a))
                 }
             }
             (Integer::Large(a), Integer::Natural(b)) => {
@@ -738,7 +745,7 @@ impl EuclideanDomain for IntegerRing {
                         (Integer::Natural(1), Integer::from_large((a - b).into()))
                     }
                 } else {
-                    (Integer::Natural(0), Integer::Double(*a))
+                    (Integer::zero(), Integer::Double(*a))
                 }
             }
             (Integer::Large(a), Integer::Double(b)) => {
@@ -1249,10 +1256,10 @@ impl<'a> Rem for &'a Integer {
 
         match (self, rhs) {
             (Integer::Natural(a), Integer::Natural(b)) => {
-                if let Some(q) = a.checked_rem_euclid(*b) {
-                    Integer::Natural(q)
+                if let Some(r) = a.checked_rem_euclid(*b) {
+                    Integer::Natural(r)
                 } else {
-                    Integer::Natural(0)
+                    Integer::zero()
                 }
             }
             (Integer::Natural(a), Integer::Double(b)) => {
@@ -1293,14 +1300,14 @@ impl<'a> Rem for &'a Integer {
                 if let Some(r) = a.checked_rem_euclid(*b as i128) {
                     Integer::from_double(r)
                 } else {
-                    Integer::Natural(0)
+                    Integer::zero()
                 }
             }
             (Integer::Double(a), Integer::Double(b)) => {
                 if let Some(r) = a.checked_rem_euclid(*b) {
                     Integer::from_double(r)
                 } else {
-                    Integer::Natural(0)
+                    Integer::zero()
                 }
             }
             (Integer::Large(a), Integer::Natural(b)) => {

@@ -158,7 +158,7 @@ impl FromFiniteField<u64> for Integer {
         if r <= i64::MAX as u64 {
             Integer::Natural(r as i64)
         } else {
-            Integer::Large(ArbitraryPrecisionInteger::from(r))
+            Integer::Double(r as i128)
         }
     }
 
@@ -167,7 +167,7 @@ impl FromFiniteField<u64> for Integer {
         if r <= i64::MAX as u64 {
             Integer::Natural(r as i64)
         } else {
-            Integer::Large(ArbitraryPrecisionInteger::from(r))
+            Integer::Double(r as i128)
         }
     }
 }
@@ -188,7 +188,7 @@ impl Integer {
     }
 
     #[inline]
-    fn simplify(&mut self) {
+    fn simplify(&mut self) -> &mut Self {
         match self {
             Integer::Double(n) => {
                 *self = Integer::from_double(*n);
@@ -202,6 +202,7 @@ impl Integer {
             }
             _ => {}
         }
+        self
     }
 
     #[inline]
@@ -295,26 +296,24 @@ impl Integer {
     pub fn abs_cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Integer::Large(n1), Integer::Large(n2)) => n1.as_abs().cmp(&n2.as_abs()),
-            (Integer::Natural(n1), Integer::Large(n2)) => {
-                if *n1 == i64::MIN {
-                    ArbitraryPrecisionInteger::from(*n1).as_abs().cmp(n2)
-                } else {
-                    n2.as_abs()
-                        .partial_cmp(&n1.abs())
-                        .unwrap_or(Ordering::Equal)
-                        .reverse()
-                }
-            }
-            (Integer::Large(n1), Integer::Natural(n2)) => {
-                if *n1 == i64::MIN {
-                    n1.as_abs()
-                        .cmp(&ArbitraryPrecisionInteger::from(*n2).as_abs())
-                } else {
-                    n1.as_abs()
-                        .partial_cmp(&n2.abs())
-                        .unwrap_or(Ordering::Equal)
-                }
-            }
+            (Integer::Natural(n1), Integer::Large(n2)) => n2
+                .as_abs()
+                .partial_cmp(&n1.unsigned_abs())
+                .unwrap_or(Ordering::Equal)
+                .reverse(),
+            (Integer::Double(n1), Integer::Large(n2)) => n2
+                .as_abs()
+                .partial_cmp(&n1.unsigned_abs())
+                .unwrap_or(Ordering::Equal)
+                .reverse(),
+            (Integer::Large(n1), Integer::Natural(n2)) => n1
+                .as_abs()
+                .partial_cmp(&n2.unsigned_abs())
+                .unwrap_or(Ordering::Equal),
+            (Integer::Large(n1), Integer::Double(n2)) => n1
+                .as_abs()
+                .partial_cmp(&n2.unsigned_abs())
+                .unwrap_or(Ordering::Equal),
             (_, _) => self.abs().cmp(&other.abs()),
         }
     }
@@ -572,7 +571,9 @@ impl Ring for IntegerRing {
         if let Integer::Large(l) = a {
             if let Integer::Large(b1) = b {
                 if let Integer::Large(c1) = c {
-                    return l.add_assign(b1 * c1);
+                    l.add_assign(b1 * c1);
+                    a.simplify();
+                    return;
                 }
             }
         }
@@ -585,7 +586,9 @@ impl Ring for IntegerRing {
         if let Integer::Large(l) = a {
             if let Integer::Large(b1) = b {
                 if let Integer::Large(c1) = c {
-                    return l.sub_assign(b1 * c1);
+                    l.sub_assign(b1 * c1);
+                    a.simplify();
+                    return;
                 }
             }
         }
@@ -613,7 +616,7 @@ impl Ring for IntegerRing {
         if n <= i64::MAX as u64 {
             Integer::Natural(n as i64)
         } else {
-            Integer::Large(ArbitraryPrecisionInteger::from(n))
+            Integer::Double(n as i128)
         }
     }
 
@@ -707,15 +710,8 @@ impl EuclideanDomain for IntegerRing {
                 }
             }
             (Integer::Double(aa), Integer::Double(bb)) => {
-                if let Some(q) = aa.checked_div_euclid(*bb) {
-                    let q = Integer::from_double(q);
-                    (q.clone(), a - &(b * &q))
-                } else {
-                    (
-                        Integer::Large(ArbitraryPrecisionInteger::from(i128::MIN).neg()),
-                        Integer::zero(),
-                    )
-                }
+                let q = Integer::from_double(aa.div_euclid(*bb)); // b != -1
+                (q.clone(), a - &(b * &q))
             }
             (Integer::Natural(a), Integer::Large(b)) => {
                 if *a < 0 {

@@ -569,13 +569,20 @@ impl Ring for IntegerRing {
     #[inline(always)]
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
         if let Integer::Large(l) = a {
-            if let Integer::Large(b1) = b {
-                if let Integer::Large(c1) = c {
-                    l.add_assign(b1 * c1);
-                    a.simplify();
-                    return;
+            // prevent the creation of a GMP integer b * c
+            match (b, c) {
+                (Integer::Natural(b1), Integer::Large(c1)) => l.add_assign(b1 * c1),
+                (Integer::Double(b1), Integer::Large(c1)) => l.add_assign(b1 * c1),
+                (Integer::Large(b1), Integer::Natural(c1)) => l.add_assign(b1 * c1),
+                (Integer::Large(b1), Integer::Double(c1)) => l.add_assign(b1 * c1),
+                (Integer::Large(b1), Integer::Large(c1)) => l.add_assign(b1 * c1),
+                _ => {
+                    return *a += b * c;
                 }
             }
+
+            a.simplify();
+            return;
         }
 
         *a += b * c;
@@ -584,13 +591,19 @@ impl Ring for IntegerRing {
     #[inline(always)]
     fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
         if let Integer::Large(l) = a {
-            if let Integer::Large(b1) = b {
-                if let Integer::Large(c1) = c {
-                    l.sub_assign(b1 * c1);
-                    a.simplify();
-                    return;
+            match (b, c) {
+                (Integer::Natural(b1), Integer::Large(c1)) => l.sub_assign(b1 * c1),
+                (Integer::Double(b1), Integer::Large(c1)) => l.sub_assign(b1 * c1),
+                (Integer::Large(b1), Integer::Natural(c1)) => l.sub_assign(b1 * c1),
+                (Integer::Large(b1), Integer::Double(c1)) => l.sub_assign(b1 * c1),
+                (Integer::Large(b1), Integer::Large(c1)) => l.sub_assign(b1 * c1),
+                _ => {
+                    return *a -= b * c;
                 }
             }
+
+            a.simplify();
+            return;
         }
 
         *a -= b * c;

@@ -78,15 +78,21 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             }
         }
 
+        let field = RationalPolynomialField::new(
+            IntegerRing::new(),
+            rhs[0].numerator.nvars,
+            rhs[0].numerator.var_map.clone(),
+        );
+
         let m = Matrix {
             shape: ((mat.len() / rhs.len()) as u32, rhs.len() as u32),
             data: mat.into(),
-            field: RationalPolynomialField::new(IntegerRing::new()),
+            field: field.clone(),
         };
         let b = Matrix {
             shape: (rhs.len() as u32, 1),
             data: rhs.into(),
-            field: RationalPolynomialField::new(IntegerRing::new()),
+            field: field,
         };
 
         let sol = match m.solve(&b) {

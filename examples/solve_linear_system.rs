@@ -91,12 +91,12 @@ fn solve_from_matrix() {
     let m = Matrix {
         shape: (system.len() as u32, system.len() as u32),
         data: system_rat.into(),
-        field: RationalPolynomialField::new(IntegerRing::new()),
+        field: RationalPolynomialField::new_from_poly(&rhs_rat[0].numerator),
     };
     let b = Matrix {
         shape: (rhs.len() as u32, 1),
+        field: RationalPolynomialField::new_from_poly(&rhs_rat[0].numerator),
         data: rhs_rat.into(),
-        field: RationalPolynomialField::new(IntegerRing::new()),
     };
 
     match m.solve(&b) {

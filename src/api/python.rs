@@ -4494,6 +4494,42 @@ macro_rules! generate_rat_methods {
                     }
                 }
             }
+
+            /// Compute the partial fraction decomposition in `x`.
+            ///
+            /// Examples
+            /// --------
+            ///
+            /// >>> from symbolica import Expression
+            /// >>> x = Expression.var('x')
+            /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+            /// >>> for pp in p.apart(x):
+            /// >>>     print(pp)
+            pub fn apart(&self, x: PythonExpression) -> PyResult<Vec<Self>> {
+                let id = match x.expr.as_view() {
+                    AtomView::Var(x) => {
+                        x.get_name()
+                    }
+                    _ => {
+                        return Err(exceptions::PyValueError::new_err(
+                            "Invalid variable specified.",
+                        ))
+                    }
+                };
+
+                let x = self.poly.get_var_map().as_ref().ok_or(
+                    exceptions::PyValueError::new_err("Variable map missing"),
+                )?.iter().position(|x| match x {
+                    Variable::Identifier(y) => *y == id,
+                    _ => false,
+                }).ok_or(exceptions::PyValueError::new_err(format!(
+                    "Variable {} not found in polynomial",
+                    x.__str__()?
+                )))?;
+
+                Ok(self.poly.apart(x).into_iter()
+                    .map(|f| Self { poly: Arc::new(f) }).collect())
+            }
         }
     };
 }

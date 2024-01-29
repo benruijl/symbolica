@@ -23,16 +23,35 @@ use super::{
     EuclideanDomain, Field, Ring, RingPrinter,
 };
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct FactorizedRationalPolynomialField<R: Ring, E: Exponent> {
     ring: R,
+    nvars: usize,
+    var_map: Option<Arc<Vec<Variable>>>,
     _phantom_exp: PhantomData<E>,
 }
 
 impl<R: Ring, E: Exponent> FactorizedRationalPolynomialField<R, E> {
-    pub fn new(coeff_ring: R) -> FactorizedRationalPolynomialField<R, E> {
+    pub fn new(
+        coeff_ring: R,
+        nvars: usize,
+        var_map: Option<Arc<Vec<Variable>>>,
+    ) -> FactorizedRationalPolynomialField<R, E> {
         FactorizedRationalPolynomialField {
             ring: coeff_ring,
+            nvars,
+            var_map,
+            _phantom_exp: PhantomData,
+        }
+    }
+
+    pub fn new_from_poly(
+        poly: &MultivariatePolynomial<R, E>,
+    ) -> FactorizedRationalPolynomialField<R, E> {
+        FactorizedRationalPolynomialField {
+            ring: poly.field.clone(),
+            nvars: poly.nvars,
+            var_map: poly.var_map.clone(),
             _phantom_exp: PhantomData,
         }
     }
@@ -542,7 +561,12 @@ where
 
     fn zero(&self) -> Self::Element {
         FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::new(0, &self.ring, None, None),
+            numerator: MultivariatePolynomial::new(
+                self.nvars,
+                &self.ring,
+                None,
+                self.var_map.clone(),
+            ),
             denom_coeff: self.ring.one(),
             denominators: vec![],
         }
@@ -550,18 +574,22 @@ where
 
     fn one(&self) -> Self::Element {
         FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::one_no_vars(&self.ring),
+            numerator: MultivariatePolynomial::new(
+                self.nvars,
+                &self.ring,
+                None,
+                self.var_map.clone(),
+            )
+            .one(),
             denom_coeff: self.ring.one(),
             denominators: vec![],
         }
     }
 
     fn nth(&self, n: u64) -> Self::Element {
-        FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::one_no_vars(&self.ring).mul_coeff(self.ring.nth(n)),
-            denom_coeff: self.ring.one(),
-            denominators: vec![],
-        }
+        let mut r = self.one();
+        r.numerator = r.numerator.mul_coeff(self.ring.nth(n));
+        r
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
@@ -889,5 +917,87 @@ where
         // TODO: optimize
         // the factored form can be kept intact and cancellations can be achieved before writing out the new numerator
         self * &other.clone().inv()
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> FactorizedRationalPolynomial<R, E>
+where
+    FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
+    MultivariatePolynomial<R, E>: Factorize,
+{
+    /// Compute the partial fraction decomposition of the rational polynomial in `var`.
+    pub fn apart(&self, var: usize) -> Vec<Self> {
+        if self.denominators.len() == 1 {
+            return vec![self.clone()];
+        }
+
+        let rat_field = FactorizedRationalPolynomialField::new_from_poly(&self.numerator);
+
+        let mut poly_univ = vec![];
+        for (f, p) in &self.denominators {
+            let f = f.clone().pow(*p);
+
+            let l = f.to_univariate_polynomial_list(var);
+            let mut res: MultivariatePolynomial<_, E> = MultivariatePolynomial::new(
+                self.numerator.nvars,
+                &rat_field,
+                Some(l.len()),
+                self.numerator.var_map.clone(),
+            );
+
+            let mut exp = vec![E::zero(); self.numerator.nvars];
+            for (p, e) in l {
+                exp[var] = e;
+                res.append_monomial(
+                    FactorizedRationalPolynomial::from_num_den(
+                        p,
+                        vec![],
+                        &self.numerator.field,
+                        false,
+                    ),
+                    &exp,
+                );
+            }
+            poly_univ.push(res);
+        }
+
+        let rhs = poly_univ[0].one();
+        let deltas = MultivariatePolynomial::diophantine_univariate(&mut poly_univ, &rhs);
+
+        let mut factors = Vec::with_capacity(deltas.len());
+        for (d, (p, pe)) in deltas.into_iter().zip(&self.denominators) {
+            let mut unfold = rat_field.zero();
+            for (c, e) in d
+                .coefficients
+                .into_iter()
+                .zip(d.exponents.chunks(self.numerator.nvars))
+            {
+                unfold = &unfold
+                    + &(&c
+                        * &FactorizedRationalPolynomial::from_num_den(
+                            unfold
+                                .numerator
+                                .monomial(self.numerator.field.one(), e.to_vec()),
+                            vec![],
+                            &self.numerator.field,
+                            true,
+                        ));
+            }
+
+            unfold = &unfold
+                * &FactorizedRationalPolynomial::from_num_den(
+                    self.numerator.clone(),
+                    vec![
+                        (p.clone(), *pe),
+                        (self.numerator.constant(self.denom_coeff.clone()), 1),
+                    ],
+                    &self.numerator.field,
+                    false,
+                );
+
+            factors.push(unfold.clone());
+        }
+
+        factors
     }
 }

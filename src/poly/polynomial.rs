@@ -154,25 +154,8 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     }
 
     #[inline]
-    pub fn zero_no_vars(field: &F) -> Self {
-        Self::new(0, field, None, None)
-    }
-
-    #[inline]
     pub fn is_zero(&self) -> bool {
         self.nterms() == 0
-    }
-
-    #[inline]
-    pub fn one_no_vars(field: &F) -> Self {
-        Self {
-            coefficients: vec![field.one()],
-            exponents: vec![],
-            nvars: 0,
-            field: field.clone(),
-            var_map: None,
-            _phantom: PhantomData,
-        }
     }
 
     #[inline]
@@ -910,6 +893,10 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     /// Get the degree of the variable `x`.
     /// This operation is O(n).
     pub fn degree(&self, x: usize) -> E {
+        if self.nvars == 0 {
+            return E::zero();
+        }
+
         let mut max = E::zero();
         for e in self.exponents.iter().skip(x).step_by(self.nvars) {
             if max < *e {

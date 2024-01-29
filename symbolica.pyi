@@ -1936,6 +1936,19 @@ class RationalPolynomial:
         >>> print((e - p.to_expression()).expand())
         """
 
+    def apart(self, x: Expression) -> List[RationalPolynomial]:
+        """Compute the partial fraction decomposition in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+        >>> for pp in p.apart(x):
+        >>>     print(pp)
+        """
+
 
 class RationalPolynomialSmallExponent:
     """A Symbolica rational polynomial with variable powers limited to 255."""
@@ -2010,6 +2023,20 @@ class RationalPolynomialSmallExponent:
         >>> print((e - p.to_expression()).expand())
         """
 
+    def apart(self, x: Expression) -> List[RationalPolynomialSmallExponent]:
+        """Compute the partial fraction decomposition in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+        >>> for pp in p.apart(x):
+        >>>     print(pp)
+        """
+
+
 
 class FiniteFieldRationalPolynomial:
     """A Symbolica rational polynomial."""
@@ -2064,6 +2091,20 @@ class FiniteFieldRationalPolynomial:
 
     def gcd(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
+
+    def apart(self, x: Expression) -> List[FiniteFieldRationalPolynomial]:
+        """Compute the partial fraction decomposition in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+        >>> for pp in p.apart(x):
+        >>>     print(pp)
+        """
+
 
 
 class Evaluator:

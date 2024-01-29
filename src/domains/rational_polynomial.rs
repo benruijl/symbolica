@@ -10,7 +10,10 @@ use std::{
 use ahash::HashMap;
 
 use crate::{
-    poly::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent, Variable},
+    poly::{
+        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent,
+        Variable,
+    },
     printer::{PrintOptions, RationalPolynomialPrinter},
     state::State,
 };
@@ -22,16 +25,33 @@ use super::{
     EuclideanDomain, Field, Ring,
 };
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct RationalPolynomialField<R: Ring, E: Exponent> {
     ring: R,
+    nvars: usize,
+    var_map: Option<Arc<Vec<Variable>>>,
     _phantom_exp: PhantomData<E>,
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomialField<R, E> {
-    pub fn new(coeff_ring: R) -> RationalPolynomialField<R, E> {
+    pub fn new(
+        coeff_ring: R,
+        nvars: usize,
+        var_map: Option<Arc<Vec<Variable>>>,
+    ) -> RationalPolynomialField<R, E> {
         RationalPolynomialField {
             ring: coeff_ring,
+            nvars,
+            var_map,
+            _phantom_exp: PhantomData,
+        }
+    }
+
+    pub fn new_from_poly(poly: &MultivariatePolynomial<R, E>) -> RationalPolynomialField<R, E> {
+        RationalPolynomialField {
+            ring: poly.field.clone(),
+            nvars: poly.nvars,
+            var_map: poly.var_map.clone(),
             _phantom_exp: PhantomData,
         }
     }
@@ -374,12 +394,10 @@ where
             }
         }
 
-        let mut poly = MultivariatePolynomial::new(
-            variables.len(),
-            &RationalPolynomialField::new(self.numerator.field.clone()),
-            Some(hm.len()),
-            Some(Arc::new(variables.to_vec())),
-        );
+        let v = Some(Arc::new(variables.to_vec()));
+        let field =
+            RationalPolynomialField::new(self.numerator.field.clone(), variables.len(), v.clone());
+        let mut poly = MultivariatePolynomial::new(variables.len(), &field, Some(hm.len()), v);
 
         if !ignore_denominator {
             let denom = RationalPolynomial::from_num_den(
@@ -468,24 +486,26 @@ where
     }
 
     fn zero(&self) -> Self::Element {
+        let num = MultivariatePolynomial::new(self.nvars, &self.ring, None, self.var_map.clone());
         RationalPolynomial {
-            numerator: MultivariatePolynomial::new(0, &self.ring, None, None),
-            denominator: MultivariatePolynomial::one_no_vars(&self.ring),
+            denominator: num.one(),
+            numerator: num,
         }
     }
 
     fn one(&self) -> Self::Element {
+        let num =
+            MultivariatePolynomial::new(self.nvars, &self.ring, None, self.var_map.clone()).one();
         RationalPolynomial {
-            numerator: MultivariatePolynomial::one_no_vars(&self.ring),
-            denominator: MultivariatePolynomial::one_no_vars(&self.ring),
+            numerator: num.clone(),
+            denominator: num,
         }
     }
 
     fn nth(&self, n: u64) -> Self::Element {
-        RationalPolynomial {
-            numerator: MultivariatePolynomial::one_no_vars(&self.ring).mul_coeff(self.ring.nth(n)),
-            denominator: MultivariatePolynomial::one_no_vars(&self.ring),
-        }
+        let mut r = self.one();
+        r.numerator = r.numerator.mul_coeff(self.ring.nth(n));
+        r
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
@@ -712,5 +732,82 @@ where
     fn div(self, other: &'a RationalPolynomial<R, E>) -> Self::Output {
         // TODO: optimize
         self * &other.clone().inv()
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+    MultivariatePolynomial<R, E>: Factorize,
+{
+    /// Compute the partial fraction decomposition of the rational polynomial in `var`.
+    pub fn apart(&self, var: usize) -> Vec<Self> {
+        let fs = self.denominator.factor();
+
+        if fs.len() == 1 {
+            return vec![self.clone()];
+        }
+
+        let rat_field = RationalPolynomialField::new_from_poly(&self.numerator);
+
+        let mut poly_univ = vec![];
+        let mut exp = vec![E::zero(); self.numerator.nvars];
+        for (f, p) in &fs {
+            let f = f.clone().pow(*p);
+
+            let l = f.to_univariate_polynomial_list(var);
+            let mut res: MultivariatePolynomial<_, E> = MultivariatePolynomial::new(
+                self.numerator.nvars,
+                &rat_field,
+                Some(l.len()),
+                self.numerator.var_map.clone(),
+            );
+
+            for (p, e) in l {
+                exp[var] = e;
+                let one = p.one();
+                res.append_monomial(
+                    RationalPolynomial::from_num_den(p, one, &self.numerator.field, false),
+                    &exp,
+                );
+            }
+            poly_univ.push(res);
+        }
+
+        let rhs = poly_univ[0].one();
+        let deltas = MultivariatePolynomial::diophantine_univariate(&mut poly_univ, &rhs);
+
+        let mut factors = Vec::with_capacity(deltas.len());
+        for (d, (p, pe)) in deltas.into_iter().zip(fs.into_iter()) {
+            let mut unfold = rat_field.zero();
+            for (c, e) in d
+                .coefficients
+                .into_iter()
+                .zip(d.exponents.chunks(self.numerator.nvars))
+            {
+                unfold = &unfold
+                    + &(&c
+                        * &RationalPolynomial::from_num_den(
+                            unfold
+                                .numerator
+                                .monomial(self.numerator.field.one(), e.to_vec()),
+                            unfold.numerator.one(),
+                            &self.numerator.field,
+                            true,
+                        ));
+            }
+
+            unfold = &unfold
+                * &RationalPolynomial::from_num_den(
+                    self.numerator.clone(),
+                    p.pow(pe),
+                    &self.numerator.field,
+                    false,
+                );
+
+            factors.push(unfold.clone());
+        }
+
+        factors
     }
 }

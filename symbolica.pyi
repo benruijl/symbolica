@@ -1468,6 +1468,31 @@ class Polynomial:
         >>>     print(p)
         """
 
+    def to_expression(self) -> Expression:
+        """ Convert the polynomial to an expression.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> e = Expression.parse('x*y+2*x+x^2')
+        >>> p = e.to_polynomial()
+        >>> print((e - p.to_expression()).expand())
+        """
+
+    def replace(self, x: Expression, v: Polynomial) -> Polynomial:
+        """Replace the variable `x` with a polynomial `v`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> r = Expression.parse('y+1').to_polynomial())
+        >>> p.replace(x, r)
+        """
+
 
 class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""
@@ -1615,6 +1640,31 @@ class IntegerPolynomial:
         >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
         >>> for n, pp in p.coefficient_list(x):
         >>>     print(n, pp)
+        """
+
+    def to_expression(self) -> Expression:
+        """ Convert the polynomial to an expression.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> e = Expression.parse('x*y+2*x+x^2')
+        >>> p = e.to_polynomial()
+        >>> print((e - p.to_expression()).expand())
+        """
+
+    def replace(self, x: Expression, v: Polynomial) -> Polynomial:
+        """Replace the variable `x` with a polynomial `v`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> r = Expression.parse('y+1').to_polynomial())
+        >>> p.replace(x, r)
         """
 
 
@@ -1797,6 +1847,19 @@ class FiniteFieldPolynomial:
         >>>     print(p)
         """
 
+    def replace(self, x: Expression, v: Polynomial) -> Polynomial:
+        """Replace the variable `x` with a polynomial `v`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> r = Expression.parse('y+1').to_polynomial())
+        >>> p.replace(x, r)
+        """
+
 
 class RationalPolynomial:
     """A Symbolica rational polynomial."""
@@ -1861,6 +1924,18 @@ class RationalPolynomial:
     def to_finite_field(self, prime: int) -> FiniteFieldRationalPolynomial:
         """Convert the coefficients of the rational polynomial to a finite field with prime `prime`."""
 
+    def to_expression(self) -> Expression:
+        """ Convert the polynomial to an expression.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> e = Expression.parse('(x*y+2*x+x^2)/(x^7+y+1)')
+        >>> p = e.to_polynomial()
+        >>> print((e - p.to_expression()).expand())
+        """
+
 
 class RationalPolynomialSmallExponent:
     """A Symbolica rational polynomial with variable powers limited to 255."""
@@ -1922,6 +1997,18 @@ class RationalPolynomialSmallExponent:
         self, rhs: RationalPolynomialSmallExponent
     ) -> RationalPolynomialSmallExponent:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
+
+    def to_expression(self) -> Expression:
+        """ Convert the polynomial to an expression.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> e = Expression.parse('(x*y+2*x+x^2)/(x^7+y+1)')
+        >>> p = e.to_polynomial()
+        >>> print((e - p.to_expression()).expand())
+        """
 
 
 class FiniteFieldRationalPolynomial:

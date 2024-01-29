@@ -66,6 +66,11 @@ impl OwnedNum for OwnedNumD {
         assert!(self.data[0] & TYPE_MASK == NUM_ID);
         NumViewD { data: &self.data }
     }
+
+    #[inline(always)]
+    fn as_view(&self) -> AtomView<Self::P> {
+        AtomView::Num(self.to_num_view())
+    }
 }
 
 impl Convert<Linear> for OwnedNumD {
@@ -139,6 +144,11 @@ impl OwnedVar for OwnedVarD {
     fn set_from_view<'a>(&mut self, view: &VarViewD) {
         self.data.clear();
         self.data.extend(view.data);
+    }
+
+    #[inline(always)]
+    fn as_view(&self) -> AtomView<Self::P> {
+        AtomView::Var(self.to_var_view())
     }
 }
 
@@ -276,6 +286,11 @@ impl OwnedFun for OwnedFunD {
         self.data.clear();
         self.data.extend(view.data);
     }
+
+    #[inline(always)]
+    fn as_view(&self) -> AtomView<Self::P> {
+        AtomView::Fun(self.to_fun_view())
+    }
 }
 
 impl Convert<Linear> for OwnedFunD {
@@ -360,6 +375,11 @@ impl OwnedPow for OwnedPowD {
     fn set_from_view(&mut self, view: &<Self::P as AtomSet>::P<'_>) {
         self.data.clear();
         self.data.extend(view.data);
+    }
+
+    #[inline(always)]
+    fn as_view(&self) -> AtomView<Self::P> {
+        AtomView::Pow(self.to_pow_view())
     }
 }
 
@@ -549,6 +569,11 @@ impl OwnedMul for OwnedMulD {
             self.data[0] &= !HAS_COEFF_FLAG;
         }
     }
+
+    #[inline(always)]
+    fn as_view(&self) -> AtomView<Self::P> {
+        AtomView::Mul(self.to_mul_view())
+    }
 }
 
 impl Convert<Linear> for OwnedMulD {
@@ -684,6 +709,11 @@ impl OwnedAdd for OwnedAddD {
     fn set_from_view(&mut self, view: &<Self::P as AtomSet>::A<'_>) {
         self.data.clear();
         self.data.extend(view.data);
+    }
+
+    #[inline(always)]
+    fn as_view(&self) -> AtomView<Self::P> {
+        AtomView::Add(self.to_add_view())
     }
 }
 

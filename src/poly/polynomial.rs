@@ -1176,6 +1176,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         let mut res = self.zero_with_capacity(self.nterms());
         let mut e: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); self.nvars];
 
+        // TODO: cache power taking?
         for t in self {
             if t.exponents[n] == E::zero() {
                 res.append_monomial(t.coefficient.clone(), t.exponents);
@@ -1192,6 +1193,33 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             res.append_monomial(c, &e);
         }
 
+        res
+    }
+
+    /// Replace a variable `n` in the polynomial by a polynomial `v`.
+    pub fn replace_with_poly(&self, n: usize, v: &Self) -> Self {
+        assert_eq!(self.var_map, v.var_map);
+
+        if v.is_constant() {
+            return self.replace(n, &v.lcoeff());
+        }
+
+        let mut res = self.zero_with_capacity(self.nterms());
+        let mut exp = vec![E::zero(); self.nvars];
+        for t in self {
+            if t.exponents[n] == E::zero() {
+                res.append_monomial(t.coefficient.clone(), &t.exponents[..self.nvars]);
+                continue;
+            }
+
+            exp.copy_from_slice(t.exponents);
+            exp[n] = E::zero();
+
+            // TODO: cache v^e
+            res = res
+                + (&v.pow(t.exponents[n].to_u32() as usize)
+                    * &self.monomial(t.coefficient.clone(), exp.clone()));
+        }
         res
     }
 

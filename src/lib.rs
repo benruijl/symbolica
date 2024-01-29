@@ -175,9 +175,6 @@ impl LicenseManager {
             let f3 = a.next().ok_or_else(|| ACTIVATION_ERROR.to_owned())?;
 
             let mut h: u32 = 5381;
-            for b in env!("SYMBOLICA_VERSION").as_bytes() {
-                h = h.wrapping_mul(33).wrapping_add(*b as u32);
-            }
             for b in f2.as_bytes() {
                 h = h.wrapping_mul(33).wrapping_add(*b as u32);
             }
@@ -418,9 +415,6 @@ Error: {}",
                 .to_string();
 
             let mut h: u32 = 5381;
-            for b in env!("SYMBOLICA_VERSION").as_bytes() {
-                h = h.wrapping_mul(33).wrapping_add(*b as u32);
-            }
             for b in t.as_bytes() {
                 h = h.wrapping_mul(33).wrapping_add(*b as u32);
             }

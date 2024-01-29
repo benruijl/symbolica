@@ -100,7 +100,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         let inv_map = map.iter().map(|(k, v)| (*v, k.as_view())).collect();
         for (s, v) in sol.data.iter().zip(&vars) {
             let mut a = Atom::new();
-            a.from_rational_polynomial(workspace, state, s, &inv_map);
+            s.to_expression(workspace, state, &inv_map, &mut a);
             let Variable::Identifier(_) = *v else {
                 panic!("Temp var left");
             };

@@ -45,18 +45,23 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             true
                         } else {
                             let mut n1 = workspace.new_atom();
-                            n1.from_polynomial(workspace, state, &r.numerator, &HashMap::default());
+                            r.numerator.to_expression(
+                                workspace,
+                                state,
+                                &HashMap::default(),
+                                &mut n1,
+                            );
 
                             let mut n1_conv = workspace.new_atom();
                             n1.as_view()
                                 .set_coefficient_ring(vars, state, workspace, &mut n1_conv);
 
                             let mut n2 = workspace.new_atom();
-                            n2.from_polynomial(
+                            r.denominator.to_expression(
                                 workspace,
                                 state,
-                                &r.denominator,
                                 &HashMap::default(),
+                                &mut n2,
                             );
 
                             let mut n2_conv = workspace.new_atom();

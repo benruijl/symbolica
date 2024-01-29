@@ -13,14 +13,13 @@ use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Neg, Rem, Sub};
 use std::sync::Arc;
 
 use ahash::HashMap;
-use rug::{Complete, Integer as ArbitraryPrecisionInteger, Rational as ArbitraryPrecisionRational};
+use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
 use crate::domains::factorized_rational_polynomial::{
     FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
 };
-use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::domains::{EuclideanDomain, Ring};
 use crate::parser::{Operator, Token};
@@ -1062,34 +1061,38 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     }
 }
 
-impl<P: AtomSet> Atom<P> {
-    pub fn from_polynomial<E: Exponent>(
-        &mut self,
+impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
+    pub fn to_expression<P: AtomSet>(
+        &self,
         workspace: &Workspace<P>,
         state: &State,
-        poly: &MultivariatePolynomial<IntegerRing, E>,
         map: &HashMap<Variable, AtomView<P>>,
-    ) {
-        let var_map = poly
+        out: &mut Atom<P>,
+    ) where
+        R::Element: Into<Number>,
+    {
+        let var_map = self
             .var_map
             .as_ref()
             .expect("No variable map present in polynomial");
 
-        if poly.is_zero() {
-            self.set_from_view(&workspace.new_num(0).as_view());
+        if self.is_zero() {
+            out.set_from_view(&workspace.new_num(0).as_view());
             return;
         }
 
-        let add = self.to_add();
+        let add = out.to_add();
 
-        for monomial in poly {
-            let mut mul_h = workspace.new_atom();
+        let mut mul_h = workspace.new_atom();
+        let mut var_h = workspace.new_atom();
+        let mut num_h = workspace.new_atom();
+        let mut pow_h = workspace.new_atom();
+
+        for monomial in self {
             let mul = mul_h.to_mul();
 
             for (&var_id, &pow) in var_map.iter().zip(monomial.exponents) {
                 if pow > E::zero() {
-                    let mut var_h = workspace.new_atom();
-
                     match var_id {
                         Variable::Identifier(v) => {
                             let var = var_h.to_var();
@@ -1102,11 +1105,9 @@ impl<P: AtomSet> Atom<P> {
                     }
 
                     if pow > E::one() {
-                        let mut num_h = workspace.new_atom();
                         let num = num_h.to_num();
                         num.set_from_number(Number::Natural(pow.to_u32() as i64, 1));
 
-                        let mut pow_h = workspace.new_atom();
                         let pow = pow_h.to_pow();
                         pow.set_from_base_and_exp(var_h.get().as_view(), num_h.get().as_view());
                         mul.extend(pow_h.get().as_view());
@@ -1116,13 +1117,8 @@ impl<P: AtomSet> Atom<P> {
                 }
             }
 
-            let mut num_h = workspace.new_atom();
             let num = num_h.to_num();
-            let number = match monomial.coefficient {
-                Integer::Natural(n) => Number::Natural(*n, 1),
-                Integer::Double(d) => Number::Large(ArbitraryPrecisionRational::from(*d)),
-                Integer::Large(r) => Number::Large(r.into()),
-            };
+            let number = monomial.coefficient.clone().into();
             num.set_from_number(number);
             mul.extend(num_h.get().as_view());
             mul.set_dirty(true);
@@ -1132,31 +1128,37 @@ impl<P: AtomSet> Atom<P> {
         }
 
         let mut norm = workspace.new_atom();
-        self.as_view().normalize(workspace, state, &mut norm);
-        std::mem::swap(norm.get_mut(), self);
+        out.as_view().normalize(workspace, state, &mut norm);
+        std::mem::swap(norm.get_mut(), out);
     }
+}
 
+impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     /// Convert from a rational polynomial to an atom. The `map` maps all
     /// temporary variables back to atoms.
-    pub fn from_rational_polynomial<E: Exponent>(
-        &mut self,
+    pub fn to_expression<P: AtomSet>(
+        &self,
         workspace: &Workspace<P>,
         state: &State,
-        rat: &RationalPolynomial<IntegerRing, E>,
         map: &HashMap<Variable, AtomView<P>>,
-    ) {
-        if rat.denominator.is_one() {
-            self.from_polynomial(workspace, state, &rat.numerator, map);
+        out: &mut Atom<P>,
+    ) where
+        R::Element: Into<Number>,
+    {
+        if self.denominator.is_one() {
+            self.numerator.to_expression(workspace, state, map, out);
             return;
         }
 
-        let mul = self.to_mul();
+        let mul = out.to_mul();
 
         let mut poly = workspace.new_atom();
-        poly.from_polynomial(workspace, state, &rat.numerator, map);
+        self.numerator
+            .to_expression(workspace, state, map, &mut poly);
         mul.extend(poly.as_view());
 
-        poly.from_polynomial(workspace, state, &rat.denominator, map);
+        self.denominator
+            .to_expression(workspace, state, map, &mut poly);
 
         let mut pow_h = workspace.new_atom();
         let pow = pow_h.to_pow();
@@ -1166,8 +1168,8 @@ impl<P: AtomSet> Atom<P> {
         mul.set_dirty(true);
 
         let mut norm = workspace.new_atom();
-        self.as_view().normalize(workspace, state, &mut norm);
-        std::mem::swap(norm.get_mut(), self);
+        out.as_view().normalize(workspace, state, &mut norm);
+        std::mem::swap(norm.get_mut(), out);
     }
 }
 

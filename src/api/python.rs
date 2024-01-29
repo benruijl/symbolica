@@ -3514,6 +3514,29 @@ impl PythonPolynomial {
                 .collect()
         }
     }
+
+    /// Convert the polynomial to an expression.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.var('x')
+    /// >>> e = Expression.parse('x*y+2*x+x^2')
+    /// >>> p = e.to_polynomial()
+    /// >>> print(e - p.to_expression())
+    pub fn to_expression(&self) -> PyResult<PythonExpression> {
+        let mut atom = Atom::new();
+        let state = get_state!()?;
+        WORKSPACE.with(|workspace| {
+            self.poly
+                .to_expression(workspace, &&state, &HashMap::default(), &mut atom)
+        });
+
+        Ok(PythonExpression {
+            expr: Arc::new(atom),
+        })
+    }
 }
 
 #[pyclass(name = "Evaluator")]
@@ -3575,6 +3598,28 @@ impl PythonIntegerPolynomial {
             .map_err(exceptions::PyValueError::new_err)?;
 
         Ok(Self { poly: Arc::new(e) })
+    }
+
+    /// Convert the polynomial to an expression.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> e = Expression.parse('x*y+2*x+x^2')
+    /// >>> p = e.to_polynomial()
+    /// >>> print((e - p.to_expression()).expand())
+    pub fn to_expression(&self) -> PyResult<PythonExpression> {
+        let mut atom = Atom::new();
+        let state = get_state!()?;
+        WORKSPACE.with(|workspace| {
+            self.poly
+                .to_expression(workspace, &&state, &HashMap::default(), &mut atom)
+        });
+
+        Ok(PythonExpression {
+            expr: Arc::new(atom),
+        })
     }
 }
 
@@ -4042,6 +4087,52 @@ macro_rules! generate_methods {
                 Ok(self.poly.to_univariate_polynomial_list(x).into_iter()
                     .map(|(f, p)| (p as usize, Self { poly: Arc::new(f) })).collect())
             }
+
+            /// Replace the variable `x` with a polynomial `v`.
+            ///
+            /// Examples
+            /// --------
+            ///
+            /// >>> from symbolica import Expression
+            /// >>> x = Expression.var('x')
+            /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+            /// >>> r = Expression.parse('y+1').to_polynomial())
+            /// >>> p.replace(x, r)
+            pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+                let id = match x.expr.as_view() {
+                    AtomView::Var(x) => {
+                        x.get_name()
+                    }
+                    _ => {
+                        return Err(exceptions::PyValueError::new_err(
+                            "Derivative must be taken wrt a variable",
+                        ))
+                    }
+                };
+
+                let x = self.poly.get_var_map().as_ref().ok_or(
+                    exceptions::PyValueError::new_err("Variable map missing"),
+                )?.iter().position(|x| match x {
+                    Variable::Identifier(y) => *y == id,
+                    _ => false,
+                }).ok_or(exceptions::PyValueError::new_err(format!(
+                    "Variable {} not found in polynomial",
+                    x.__str__()?
+                )))?;
+
+                if self.poly.get_var_map() == v.poly.get_var_map() {
+                    Ok(Self {
+                        poly: Arc::new(self.poly.replace_with_poly(x, &v.poly))
+                    })
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*v.poly).clone();
+                    new_self.unify_var_map(&mut new_rhs);
+                    Ok(Self {
+                        poly: Arc::new(new_self.replace_with_poly(x, &new_rhs))
+                    })
+                }
+            }
         }
     };
 }
@@ -4146,6 +4237,28 @@ macro_rules! generate_rat_parse {
                 })?;
 
                 Ok(Self { poly: Arc::new(e) })
+            }
+
+            /// Convert the rational polynomial to an expression.
+            ///
+            /// Examples
+            /// --------
+            ///
+            /// >>> from symbolica import Expression
+            /// >>> e = Expression.parse('(x*y+2*x+x^2)/(1+y^2+x^7)')
+            /// >>> p = e.to_rational_polynomial()
+            /// >>> print((e - p.to_expression()).expand())
+            pub fn to_expression(&self) -> PyResult<PythonExpression> {
+                let mut atom = Atom::new();
+                let state = get_state!()?;
+                WORKSPACE.with(|workspace| {
+                    self.poly
+                        .to_expression(workspace, &&state, &HashMap::default(), &mut atom)
+                });
+
+                Ok(PythonExpression {
+                    expr: Arc::new(atom),
+                })
             }
         }
     };

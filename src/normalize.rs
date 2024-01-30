@@ -3,6 +3,8 @@ use std::cmp::Ordering;
 use smallvec::SmallVec;
 
 use crate::{
+    domains::{integer::IntegerRing, rational::RationalField},
+    poly::Variable,
     representations::{
         number::{BorrowedNumber, Number},
         Add, Atom, AtomSet, AtomView, Fun, ListSlice, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
@@ -767,6 +769,38 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         add_arg(out_f, handle.as_view());
                     } else {
                         add_arg(out_f, a);
+                    }
+                }
+
+                // try to turn the argument into a number
+                if name == State::NUM && out_f.to_fun_view().get_nargs() == 1 {
+                    let arg = out_f.to_fun_view().iter().next().unwrap();
+                    if let AtomView::Num(_) = arg {
+                        let mut buffer = workspace.new_atom();
+                        buffer.set_from_view(&arg);
+                        out.set_from_view(&buffer.as_view());
+                        return;
+                    } else if let Ok(r) = arg.to_rational_polynomial(
+                        workspace,
+                        state,
+                        &RationalField::new(),
+                        &IntegerRing::new(),
+                        None, // TODO: get a compatible one from the state?
+                    ) {
+                        // disallow wildcards in the variable map
+                        if let Some(v) = r.numerator.var_map.as_ref() {
+                            if v.iter().all(|v| {
+                                if let Variable::Identifier(v) = v {
+                                    state.get_wildcard_level(*v) == 0
+                                } else {
+                                    false
+                                }
+                            }) {
+                                let nn = out.to_num();
+                                nn.set_from_number(Number::RationalPolynomial(r));
+                                return;
+                            }
+                        }
                     }
                 }
 

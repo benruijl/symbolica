@@ -394,6 +394,17 @@ impl PythonPattern {
         return append_transformer!(self, Transformer::Deduplicate);
     }
 
+    /// Create a transformer that extracts a rational polynomial from a number.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Function
+    /// >>> e = Function.NUM((x^2+1)/y^2).transform().from_num()
+    /// >>> print(e)
+    pub fn from_num(&self) -> PyResult<PythonPattern> {
+        return append_transformer!(self, Transformer::FromNumber);
+    }
+
     /// Create a transformer that split a sum or product into a list of arguments.
     ///
     /// Examples
@@ -3100,6 +3111,13 @@ impl PythonFunction {
             .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
         Ok(PythonFunction { id })
+    }
+
+    /// The built-in function that converts rational polynomials to a number.
+    #[classattr]
+    #[pyo3(name = "NUM")]
+    pub fn num() -> PythonFunction {
+        PythonFunction { id: State::NUM }
     }
 
     /// The built-in cosine function.

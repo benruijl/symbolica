@@ -5,8 +5,9 @@ use crate::{
     id::{Pattern, PatternRestriction},
     printer::{AtomPrinter, PrintOptions},
     representations::{
-        number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedFun,
-        OwnedMul, OwnedNum,
+        number::{BorrowedNumber, Number},
+        Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
+        OwnedNum,
     },
     state::{State, Workspace},
 };
@@ -82,6 +83,7 @@ pub enum Transformer<P: AtomSet + 'static> {
     Repeat(Vec<Transformer<P>>),
     Print(PrintOptions),
     Stats(StatsOptions, Vec<Transformer<P>>),
+    FromNumber,
 }
 
 impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
@@ -115,6 +117,7 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
             Transformer::Repeat(r) => f.debug_tuple("Repeat").field(r).finish(),
             Transformer::Print(p) => f.debug_tuple("Print").field(p).finish(),
             Transformer::Stats(o, r) => f.debug_tuple("Timing").field(o).field(r).finish(),
+            Transformer::FromNumber => f.debug_tuple("FromNumber").finish(),
         }
     }
 }
@@ -459,6 +462,16 @@ impl<P: AtomSet> Transformer<P> {
                         Instant::now().duration_since(t),
                         width = in_nterms_s.len().max(out_nterms_s.len()).min(6),
                     );
+                }
+                Transformer::FromNumber => {
+                    if let AtomView::Num(n) = input {
+                        if let BorrowedNumber::RationalPolynomial(r) = n.get_number_view() {
+                            r.to_expression(workspace, state, &HashMap::default(), out);
+                            continue;
+                        }
+                    }
+
+                    out.set_from_view(&input);
                 }
             }
         }

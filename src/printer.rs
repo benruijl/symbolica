@@ -362,12 +362,12 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                 ))
             }
             BorrowedNumber::RationalPolynomial(p) => f.write_fmt(format_args!(
-                "{}",
+                "[{}]",
                 RationalPolynomialPrinter {
                     poly: p,
                     state,
                     opts: *opts,
-                    add_parentheses: true,
+                    add_parentheses: false,
                 }
             )),
         }

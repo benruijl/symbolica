@@ -82,6 +82,38 @@ impl From<Integer> for Number {
     }
 }
 
+impl From<(Integer, Integer)> for Number {
+    fn from(value: (Integer, Integer)) -> Self {
+        match (value.0, value.1) {
+            (Integer::Natural(n), Integer::Natural(d)) => Number::Natural(n, d),
+            (Integer::Large(n), Integer::Natural(d)) => {
+                Number::Large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Natural(n), Integer::Large(d)) => {
+                Number::Large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Large(n), Integer::Large(d)) => {
+                Number::Large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Natural(n), Integer::Double(d)) => {
+                Number::Large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Double(n), Integer::Natural(d)) => {
+                Number::Large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Double(n), Integer::Double(d)) => {
+                Number::Large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Double(n), Integer::Large(d)) => {
+                Number::Large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Large(n), Integer::Double(d)) => {
+                Number::Large(ArbitraryPrecisionRational::from((n, d)))
+            }
+        }
+    }
+}
+
 impl From<Rational> for Number {
     fn from(value: Rational) -> Self {
         match value {
@@ -327,13 +359,19 @@ impl BorrowedNumber<'_> {
                 Number::RationalPolynomial(&r + &r2)
             }
             (BorrowedNumber::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
-                if p1.get_var_map() != p2.get_var_map() {
+                let r = if p1.get_var_map() != p2.get_var_map() {
                     let mut p1 = (*p1).clone();
                     let mut p2 = (*p2).clone();
                     p1.unify_var_map(&mut p2);
-                    Number::RationalPolynomial(&p1 + &p2)
+                    &p1 + &p2
                 } else {
-                    Number::RationalPolynomial(*p1 + *p2)
+                    *p1 + *p2
+                };
+
+                if r.is_constant() {
+                    (r.numerator.lcoeff(), r.denominator.lcoeff()).into()
+                } else {
+                    Number::RationalPolynomial(r)
                 }
             }
         }
@@ -398,13 +436,19 @@ impl BorrowedNumber<'_> {
                 Number::RationalPolynomial(r)
             }
             (BorrowedNumber::RationalPolynomial(p1), BorrowedNumber::RationalPolynomial(p2)) => {
-                if p1.get_var_map() != p2.get_var_map() {
+                let r = if p1.get_var_map() != p2.get_var_map() {
                     let mut p1 = (*p1).clone();
                     let mut p2 = (*p2).clone();
                     p1.unify_var_map(&mut p2);
-                    Number::RationalPolynomial(&p1 * &p2)
+                    &p1 * &p2
                 } else {
-                    Number::RationalPolynomial(*p1 * *p2)
+                    *p1 * *p2
+                };
+
+                if r.is_constant() {
+                    (r.numerator.lcoeff(), r.denominator.lcoeff()).into()
+                } else {
+                    Number::RationalPolynomial(r)
                 }
             }
         }

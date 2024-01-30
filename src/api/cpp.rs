@@ -107,7 +107,7 @@ unsafe extern "C" fn init() -> *mut Symbolica {
             var_map: Arc::new(vec![]),
             var_name_map: vec![],
             input_has_rational_numbers: false,
-            exp_fits_in_u8: true,
+            exp_fits_in_u8: false,
         },
     };
 

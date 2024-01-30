@@ -44,18 +44,19 @@ impl Default for State {
 
 impl State {
     pub const ARG: Identifier = Identifier::init(0);
-    pub const EXP: Identifier = Identifier::init(1);
-    pub const LOG: Identifier = Identifier::init(2);
-    pub const SIN: Identifier = Identifier::init(3);
-    pub const COS: Identifier = Identifier::init(4);
-    pub const SQRT: Identifier = Identifier::init(5);
-    pub const DERIVATIVE: Identifier = Identifier::init(6);
-    pub const E: Identifier = Identifier::init(7);
-    pub const I: Identifier = Identifier::init(8);
-    pub const PI: Identifier = Identifier::init(9);
+    pub const NUM: Identifier = Identifier::init(1);
+    pub const EXP: Identifier = Identifier::init(2);
+    pub const LOG: Identifier = Identifier::init(3);
+    pub const SIN: Identifier = Identifier::init(4);
+    pub const COS: Identifier = Identifier::init(5);
+    pub const SQRT: Identifier = Identifier::init(6);
+    pub const DERIVATIVE: Identifier = Identifier::init(7);
+    pub const E: Identifier = Identifier::init(8);
+    pub const I: Identifier = Identifier::init(9);
+    pub const PI: Identifier = Identifier::init(10);
 
-    pub(crate) const BUILTIN_VAR_LIST: [&'static str; 10] = [
-        "arg", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
+    pub(crate) const BUILTIN_VAR_LIST: [&'static str; 11] = [
+        "arg", "num", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 
     pub fn new() -> State {

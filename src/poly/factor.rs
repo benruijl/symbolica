@@ -1053,7 +1053,9 @@ where
             for (l, fac) in true_lcoeffs.iter_mut().zip(&square_free_lc_biv_factors) {
                 let mut contrib = self.one();
                 for (full, b) in lifted.iter().zip(&basis) {
-                    if let Some((_, m)) = fac.iter().find(|(f, _)| f == b) {
+                    // check if a GCD-free basis element is a factor of the leading coefficient of this bivariate factor
+                    if let Some((_, m)) = fac.iter().find(|(f, _)| f == b || f.divides(b).is_some())
+                    {
                         for _ in 0..*m {
                             contrib = &contrib * &full;
                         }
@@ -2524,7 +2526,9 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             for (l, fac) in true_lcoeffs.iter_mut().zip(&square_free_lc_biv_factors) {
                 let mut contrib = self.one();
                 for (full, b) in lifted.iter().zip(&basis) {
-                    if let Some((_, m)) = fac.iter().find(|(f, _)| f == b) {
+                    // check if a GCD-free basis element is a factor of the leading coefficient of this bivariate factor
+                    if let Some((_, m)) = fac.iter().find(|(f, _)| f == b || f.divides(b).is_some())
+                    {
                         for _ in 0..*m {
                             contrib = &contrib * full;
                         }

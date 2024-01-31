@@ -7,12 +7,12 @@ use crate::{
     poly::Variable,
     representations::{
         number::{BorrowedNumber, Number},
-        Add, Atom, AtomSet, AtomView, Fun, ListSlice, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
-        OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+        Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice, Mul, Num, OwnedAdd, OwnedFun,
+        OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
     state::{
         BufferHandle,
-        FunctionAttribute::{Antisymmetric, Symmetric},
+        FunctionAttribute::{Antisymmetric, Linear, Symmetric},
         State, Workspace,
     },
 };
@@ -762,6 +762,34 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     f.add_arg(a);
                 }
 
+                /// Take Cartesian product of arguments
+                #[inline(always)]
+                fn cartesian_product<'a, 'b, P: AtomSet>(
+                    workspace: &'a Workspace<P>,
+                    list: &[Vec<AtomView<'b, P>>],
+                    fun_name: Identifier,
+                    cur: &mut Vec<AtomView<'b, P>>,
+                    acc: &mut Vec<BufferHandle<'a, Atom<P>>>,
+                ) {
+                    if list.is_empty() {
+                        let mut h = workspace.new_atom();
+                        let f = h.to_fun();
+                        f.set_from_name(fun_name);
+                        for a in cur.iter() {
+                            add_arg(f, *a);
+                        }
+                        f.set_dirty(true);
+                        acc.push(h);
+                        return;
+                    }
+
+                    for a in &list[0] {
+                        cur.push(*a);
+                        cartesian_product(workspace, &list[1..], fun_name, cur, acc);
+                        cur.pop();
+                    }
+                }
+
                 let mut handle = workspace.new_atom();
                 for a in f.iter() {
                     if a.is_dirty() {
@@ -801,6 +829,97 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 return;
                             }
                         }
+                    }
+                }
+
+                if let Some(Linear) = state
+                    .get_function_attributes(name)
+                    .iter()
+                    .find(|a| matches!(a, Linear))
+                {
+                    // linearize sums
+                    if out_f
+                        .to_fun_view()
+                        .iter()
+                        .any(|a| matches!(a, AtomView::Add(_)))
+                    {
+                        let mut arg_buf = Vec::with_capacity(out_f.to_fun_view().get_nargs());
+
+                        for a in out_f.to_fun_view().iter() {
+                            let mut vec = vec![];
+                            if let AtomView::Add(aa) = a {
+                                for a in aa.iter() {
+                                    vec.push(a);
+                                }
+                            } else {
+                                vec.push(a);
+                            }
+                            arg_buf.push(vec);
+                        }
+
+                        let mut acc = Vec::new();
+                        cartesian_product(workspace, &arg_buf, name, &mut vec![], &mut acc);
+
+                        let mut add_h = workspace.new_atom();
+                        let add = add_h.to_add();
+
+                        let mut h = workspace.new_atom();
+                        for a in acc {
+                            a.as_view().normalize(workspace, state, &mut h);
+                            add.extend(h.as_view());
+                        }
+
+                        add.set_dirty(true);
+
+                        drop(arg_buf);
+
+                        add_h.as_view().normalize(workspace, state, out);
+                        return;
+                    }
+
+                    // linearize products
+                    if out_f.to_fun_view().iter().any(|a| {
+                        if let AtomView::Mul(m) = a {
+                            m.has_coefficient()
+                        } else {
+                            false
+                        }
+                    }) {
+                        let mut new_term = workspace.new_atom();
+                        let t = new_term.to_mul();
+                        let mut new_fun = workspace.new_atom();
+                        let nf = new_fun.to_fun();
+                        nf.set_from_name(name);
+                        let mut coeff = Number::Natural(1, 1);
+                        for a in out_f.to_fun_view().iter() {
+                            if let AtomView::Mul(m) = a {
+                                if m.has_coefficient() {
+                                    let mut stripped = workspace.new_atom();
+                                    let mul = stripped.to_mul();
+                                    for a in m.iter() {
+                                        if let AtomView::Num(n) = a {
+                                            coeff =
+                                                coeff.mul(n.get_number_view().to_owned(), state);
+                                        } else {
+                                            mul.extend(a);
+                                        }
+                                    }
+                                    mul.set_has_coefficient(false); // TODO: no need to normalize?
+                                    nf.add_arg(stripped.as_view());
+                                } else {
+                                    nf.add_arg(a);
+                                }
+                            } else {
+                                nf.add_arg(a);
+                            }
+                        }
+
+                        nf.set_dirty(true);
+                        t.extend(new_fun.as_view());
+                        t.extend(workspace.new_num(coeff).as_view());
+                        t.set_dirty(true);
+                        t.as_view().normalize(workspace, state, out);
+                        return;
                     }
                 }
 

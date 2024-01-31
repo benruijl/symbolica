@@ -115,7 +115,7 @@ class Expression:
         """
 
     @classmethod
-    def fun(_cls, name: str, is_symmetric: bool = False, is_antisymmetric: bool = False) -> Function:
+    def fun(_cls, name: str, is_symmetric: bool = False, is_antisymmetric: bool = False, is_linear: bool = False) -> Function:
         """
         Create a new Symbolica function with a given name.
 
@@ -132,6 +132,12 @@ class Expression:
         >>> e = f(2,1)
         >>> print(e)
         f(1,2)
+
+        Define a linear and symmetric function:
+        >>> p1, p2, p3, p4 = Expression.vars('p1', 'p2', 'p3', 'p4')
+        >>> dot = Expression.fun('dot', is_symmetric=True, is_linear=True)
+        >>> e = dot(p2+2*p3,p1+3*p2-p3)
+        dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
         """
 
     @classmethod
@@ -866,10 +872,11 @@ class Function:
     LOG: Function
     """The built-in logarithm function."""
 
-    def __new__(_cls, name: str, is_symmetric: Optional[bool], is_antisymmetric: Optional[bool]) -> Function:
+    def __new__(_cls, name: str, is_symmetric: Optional[bool], is_antisymmetric: Optional[bool], is_linear: Optional[bool]) -> Function:
         """
         Create a new function from a `name`. Can be turned into a symmetric function
         using `is_symmetric=True` or into an antisymmetric function using `is_antisymmetric=True`.
+        The function can be made multilinear using `is_linear=True`.
 
         Once attributes are defined on a function, they cannot be redefined later.
         """
@@ -2050,7 +2057,6 @@ class RationalPolynomialSmallExponent:
         """
 
 
-
 class FiniteFieldRationalPolynomial:
     """A Symbolica rational polynomial."""
 
@@ -2117,7 +2123,6 @@ class FiniteFieldRationalPolynomial:
         >>> for pp in p.apart(x):
         >>>     print(pp)
         """
-
 
 
 class Evaluator:

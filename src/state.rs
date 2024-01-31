@@ -24,6 +24,7 @@ pub struct FiniteFieldIndex(pub(crate) usize);
 pub enum FunctionAttribute {
     Symmetric,
     Antisymmetric,
+    Linear,
 }
 
 /// A global state, that stores mappings from variable and function names to ids.

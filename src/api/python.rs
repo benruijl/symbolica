@@ -1232,14 +1232,21 @@ impl PythonExpression {
     /// >>> e = f(2,1)
     /// >>> print(e)
     /// f(1,2)
+    /// 
+    /// Define a linear and symmetric function:
+    /// >>> p1, p2, p3, p4 = Expression.vars('p1', 'p2', 'p3', 'p4')
+    /// >>> dot = Expression.fun('dot', is_symmetric=True, is_linear=True)
+    /// >>> e = dot(p2+2*p3,p1+3*p2-p3)
+    /// dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
     #[classmethod]
     pub fn fun(
         _cls: &PyType,
         name: &str,
         is_symmetric: Option<bool>,
         is_antisymmetric: Option<bool>,
+        is_linear: Option<bool>,
     ) -> PyResult<PythonFunction> {
-        PythonFunction::__new__(name, is_symmetric, is_antisymmetric)
+        PythonFunction::__new__(name, is_symmetric, is_antisymmetric, is_linear)
     }
 
     /// Create a Symbolica function for every name in `*names`.
@@ -1249,7 +1256,7 @@ impl PythonExpression {
         let mut result = Vec::with_capacity(args.len());
         for a in args {
             let name = a.extract::<&str>()?;
-            result.push(PythonFunction::__new__(name, None, None)?);
+            result.push(PythonFunction::__new__(name, None, None, None)?);
         }
 
         Ok(result)
@@ -3087,6 +3094,7 @@ pub struct PythonFunction {
 impl PythonFunction {
     /// Create a new function from a `name`. Can be turned into a symmetric function
     /// using `is_symmetric=True` or into an antisymmetric function using `is_antisymmetric=True`.
+    /// The function can be made multilinear using `is_linear=True`.
     ///
     /// Once attributes are defined on a function, they cannot be redefined later.
     #[new]
@@ -3094,8 +3102,9 @@ impl PythonFunction {
         name: &str,
         is_symmetric: Option<bool>,
         is_antisymmetric: Option<bool>,
+        is_linear: Option<bool>,
     ) -> PyResult<Self> {
-        let opts = match (is_symmetric, is_antisymmetric) {
+        let mut opts = match (is_symmetric, is_antisymmetric) {
             (Some(true), Some(true)) => Err(exceptions::PyValueError::new_err(
                 "Function cannot be both symmetric and antisymmetric",
             ))?,
@@ -3104,6 +3113,22 @@ impl PythonFunction {
             (Some(false), _) | (_, Some(false)) => Some(vec![]),
             (None, None) => None,
         };
+
+        match is_linear {
+            Some(true) => {
+                if let Some(opts) = &mut opts {
+                    opts.push(FunctionAttribute::Linear);
+                } else {
+                    opts = Some(vec![FunctionAttribute::Linear]);
+                }
+            }
+            Some(false) => {
+                if opts.is_none() {
+                    opts = Some(vec![]);
+                }
+            }
+            None => {}
+        }
 
         let id = get_state_mut!()?
             .borrow_mut()

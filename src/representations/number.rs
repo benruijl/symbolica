@@ -60,7 +60,7 @@ pub trait ConvertToRing: Ring {
 // TODO: rename to Coefficient
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Number {
-    Natural(i64, i64),
+    Natural(i64, i64), // TODO: change to Rational
     Large(ArbitraryPrecisionRational),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
     RationalPolynomial(RationalPolynomial<IntegerRing, u16>),
@@ -130,6 +130,142 @@ impl Number {
             Number::Large(_r) => false,
             Number::FiniteField(num, _field) => num.0 == 0,
             Number::RationalPolynomial(r) => r.numerator.is_zero(),
+        }
+    }
+
+    pub fn add(self, other: Number, state: &State) -> Number {
+        match (self, other) {
+            (Number::Natural(n1, d1), Number::Natural(n2, d2)) => {
+                let r = &Rational::Natural(n1, d1) + &Rational::Natural(n2, d2);
+                match r {
+                    Rational::Natural(n, d) => Number::Natural(n, d),
+                    Rational::Large(r) => Number::Large(r),
+                }
+            }
+            // TODO: check downcast
+            (Number::Natural(n1, d1), Number::Large(r2))
+            | (Number::Large(r2), Number::Natural(n1, d1)) => {
+                let r1 = ArbitraryPrecisionRational::from((n1, d1));
+                Number::Large(r1 + r2)
+            }
+            (Number::Large(r1), Number::Large(r2)) => Number::Large(r1 + r2),
+            (Number::FiniteField(n1, i1), Number::FiniteField(n2, i2)) => {
+                if i1 != i2 {
+                    panic!(
+                        "Cannot add numbers from different finite fields: p1={}, p2={}",
+                        state.get_finite_field(i1).get_prime(),
+                        state.get_finite_field(i2).get_prime()
+                    );
+                }
+                let f = state.get_finite_field(i1);
+                Number::FiniteField(f.add(&n1, &n2), i1)
+            }
+            (Number::FiniteField(_, _), _) => {
+                panic!("Cannot add finite field to non-finite number. Convert other number first?");
+            }
+            (_, Number::FiniteField(_, _)) => {
+                panic!("Cannot add finite field to non-finite number. Convert other number first?");
+            }
+            (Number::Natural(n, d), Number::RationalPolynomial(r))
+            | (Number::RationalPolynomial(r), Number::Natural(n, d)) => {
+                let r2 = RationalPolynomial {
+                    numerator: r.numerator.constant(Integer::Natural(n)),
+                    denominator: r.denominator.constant(Integer::Natural(d)),
+                };
+                Number::RationalPolynomial(&r + &r2)
+            }
+            (Number::Large(l), Number::RationalPolynomial(r))
+            | (Number::RationalPolynomial(r), Number::Large(l)) => {
+                let (n, d) = l.into_numer_denom();
+                let r2 = RationalPolynomial {
+                    numerator: r.numerator.constant(Integer::Large(n)),
+                    denominator: r.denominator.constant(Integer::Large(d)),
+                };
+                Number::RationalPolynomial(&r + &r2)
+            }
+            (Number::RationalPolynomial(mut p1), Number::RationalPolynomial(mut p2)) => {
+                if p1.get_var_map() != p2.get_var_map() {
+                    p1.unify_var_map(&mut p2);
+                };
+
+                let r = &p1 + &p2;
+
+                if r.is_constant() {
+                    (r.numerator.lcoeff(), r.denominator.lcoeff()).into()
+                } else {
+                    Number::RationalPolynomial(r)
+                }
+            }
+        }
+    }
+
+    pub fn mul(self, other: Number, state: &State) -> Number {
+        match (self, other) {
+            (Number::Natural(n1, d1), Number::Natural(n2, d2)) => {
+                let r = &Rational::Natural(n1, d1) * &Rational::Natural(n2, d2);
+                match r {
+                    Rational::Natural(n, d) => Number::Natural(n, d),
+                    Rational::Large(r) => Number::Large(r),
+                }
+            }
+            // TODO: check downcast
+            (Number::Natural(n1, d1), Number::Large(r2))
+            | (Number::Large(r2), Number::Natural(n1, d1)) => {
+                let r1 = ArbitraryPrecisionRational::from((n1, d1));
+                Number::Large(r1 * r2)
+            }
+            (Number::Large(r1), Number::Large(r2)) => Number::Large(r1 * r2),
+            (Number::FiniteField(n1, i1), Number::FiniteField(n2, i2)) => {
+                if i1 != i2 {
+                    panic!(
+                        "Cannot multiply numbers from different finite fields: p1={}, p2={}",
+                        state.get_finite_field(i1).get_prime(),
+                        state.get_finite_field(i2).get_prime()
+                    );
+                }
+                let f = state.get_finite_field(i1);
+                Number::FiniteField(f.mul(&n1, &n2), i1)
+            }
+            (Number::FiniteField(_, _), _) => {
+                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+            }
+            (_, Number::FiniteField(_, _)) => {
+                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+            }
+            (Number::Natural(n, d), Number::RationalPolynomial(mut r))
+            | (Number::RationalPolynomial(mut r), Number::Natural(n, d)) => {
+                let (n, d) = (Integer::Natural(n), Integer::Natural(d));
+
+                let gcd1 = IntegerRing::new().gcd(&n, &r.denominator.content());
+                let gcd2 = IntegerRing::new().gcd(&d, &r.numerator.content());
+                r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
+                r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
+                Number::RationalPolynomial(r)
+            }
+            (Number::Large(l), Number::RationalPolynomial(mut r))
+            | (Number::RationalPolynomial(mut r), Number::Large(l)) => {
+                let (n, d) = l.into_numer_denom();
+                let (n, d) = (Integer::Large(n), Integer::Large(d));
+
+                let gcd1 = IntegerRing::new().gcd(&n, &r.denominator.content());
+                let gcd2 = IntegerRing::new().gcd(&d, &r.numerator.content());
+                r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
+                r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
+                Number::RationalPolynomial(r)
+            }
+            (Number::RationalPolynomial(mut p1), Number::RationalPolynomial(mut p2)) => {
+                if p1.get_var_map() != p2.get_var_map() {
+                    p1.unify_var_map(&mut p2);
+                };
+
+                let r = &p1 * &p2;
+
+                if r.is_constant() {
+                    (r.numerator.lcoeff(), r.denominator.lcoeff()).into()
+                } else {
+                    Number::RationalPolynomial(r)
+                }
+            }
         }
     }
 }

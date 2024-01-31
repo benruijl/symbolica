@@ -1340,6 +1340,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
         self.length
     }
 
+    #[inline]
     fn get(&self, index: usize) -> AtomView<'a, Self::P> {
         let start = self.fast_forward(index);
         Self::get_entry(start.data).0

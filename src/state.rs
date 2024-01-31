@@ -206,16 +206,19 @@ impl<P: AtomSet> Workspace<P> {
         }
     }
 
+    #[inline]
     pub fn new_atom(&self) -> BufferHandle<Atom<P>> {
         self.atom_stack.get_buf_ref()
     }
 
+    #[inline]
     pub fn new_var(&self, id: Identifier) -> BufferHandle<Atom<P>> {
         let mut owned = self.new_atom();
         owned.to_var().set_from_id(id);
         owned
     }
 
+    #[inline]
     pub fn new_num<T: Into<Number>>(&self, num: T) -> BufferHandle<Atom<P>> {
         let mut owned = self.new_atom();
         owned.to_num().set_from_number(num.into());
@@ -261,15 +264,15 @@ impl<T: ResettableBuffer> Stack<T> {
     /// else create a new one.
     #[inline]
     pub fn get_buf_ref(&self) -> BufferHandle<T> {
-        let b = self
-            .buffers
-            .borrow_mut()
-            .pop()
-            .map(|mut b| {
-                b.reset();
+        let b = if let Ok(mut a) = self.buffers.try_borrow_mut() {
+            if let Some(b) = a.pop() {
                 b
-            })
-            .unwrap_or_else(|| T::new());
+            } else {
+                T::new()
+            }
+        } else {
+            T::new() // should never happen
+        };
 
         BufferHandle {
             buf: Some(b),
@@ -279,8 +282,11 @@ impl<T: ResettableBuffer> Stack<T> {
 
     /// Return a buffer to the stack.
     #[inline]
-    fn return_arg(&self, b: T) {
-        self.buffers.borrow_mut().push(b);
+    fn return_arg(&self, mut b: T) {
+        if let Ok(mut a) = self.buffers.try_borrow_mut() {
+            b.reset();
+            a.push(b);
+        }
     }
 }
 

@@ -1,5 +1,4 @@
 use dyn_clone::DynClone;
-use smallvec::{smallvec, SmallVec};
 
 use crate::{
     representations::{
@@ -1081,7 +1080,7 @@ impl<P: AtomSet + 'static> std::fmt::Debug for PatternRestriction<P> {
 #[derive(Clone, PartialEq)]
 pub enum Match<'a, P: AtomSet = Linear> {
     Single(AtomView<'a, P>),
-    Multiple(SliceType, SmallVec<[AtomView<'a, P>; 10]>),
+    Multiple(SliceType, Vec<AtomView<'a, P>>),
     FunctionName(Identifier),
 }
 
@@ -1158,7 +1157,7 @@ pub struct MatchSettings {
 /// It keeps track of all conditions on wildcards and will check them
 /// before inserting.
 pub struct MatchStack<'a, 'b, P: AtomSet> {
-    stack: SmallVec<[(Identifier, Match<'a, P>); 10]>,
+    stack: Vec<(Identifier, Match<'a, P>)>,
     conditions: &'b Condition<WildcardAndRestriction<P>>,
     settings: &'b MatchSettings,
 }
@@ -1178,7 +1177,7 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
         settings: &'b MatchSettings,
     ) -> MatchStack<'a, 'b, P> {
         MatchStack {
-            stack: SmallVec::new(),
+            stack: Vec::new(),
             conditions,
             settings,
         }
@@ -1281,7 +1280,7 @@ impl<'a, 'b, 'c, P: AtomSet> IntoIterator for &'c MatchStack<'a, 'b, P> {
 struct WildcardIter {
     initialized: bool,
     name: Identifier,
-    indices: SmallVec<[u32; 10]>,
+    indices: Vec<u32>,
     size_target: u32,
     min_size: u32,
     max_size: u32,
@@ -1636,7 +1635,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                         PatternIter::Wildcard(WildcardIter {
                             initialized: false,
                             name: *name,
-                            indices: SmallVec::new(),
+                            indices: Vec::new(),
                             size_target: if greedy {
                                 range.1 as u32
                             } else {
@@ -1714,7 +1713,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                         // check for an empty slice match
                         if w.size_target == 0 && w.indices.is_empty() {
                             if let Some(new_stack_len) = match_stack
-                                .insert(w.name, Match::Multiple(SliceType::Empty, SmallVec::new()))
+                                .insert(w.name, Match::Multiple(SliceType::Empty, Vec::new()))
                             {
                                 self.matches.push(new_stack_len);
                                 continue 'next_match;
@@ -1744,14 +1743,14 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                                 let matched = if w.indices.len() == 1 {
                                     match self.target.get(w.indices[0] as usize) {
                                         AtomView::Mul(m) => Match::Multiple(SliceType::Mul, {
-                                            let mut v = SmallVec::new();
+                                            let mut v = Vec::new();
                                             for x in m.iter() {
                                                 v.push(x);
                                             }
                                             v
                                         }),
                                         AtomView::Add(a) => Match::Multiple(SliceType::Add, {
-                                            let mut v = SmallVec::new();
+                                            let mut v = Vec::new();
                                             for x in a.iter() {
                                                 v.push(x);
                                             }
@@ -1760,13 +1759,12 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                                         x => Match::Single(x),
                                     }
                                 } else {
-                                    Match::Multiple(
-                                        self.target.get_type(),
-                                        w.indices
-                                            .iter()
-                                            .map(|ii| self.target.get(*ii as usize))
-                                            .collect(),
-                                    )
+                                    let mut atoms = Vec::with_capacity(w.indices.len());
+                                    for i in &w.indices {
+                                        atoms.push(self.target.get(*i as usize));
+                                    }
+
+                                    Match::Multiple(self.target.get_type(), atoms)
                                 };
 
                                 // add the match to the stack if it is compatible
@@ -1989,19 +1987,19 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
 
 /// Iterator over the atoms of an expression tree.
 pub struct AtomTreeIterator<'a, P: AtomSet> {
-    stack: SmallVec<[(Option<usize>, AtomView<'a, P>); 10]>,
+    stack: Vec<(Option<usize>, AtomView<'a, P>)>,
 }
 
 impl<'a, P: AtomSet> AtomTreeIterator<'a, P> {
     pub fn new(target: AtomView<'a, P>) -> AtomTreeIterator<'a, P> {
         AtomTreeIterator {
-            stack: smallvec![(None, target)],
+            stack: vec![(None, target)],
         }
     }
 }
 
 impl<'a, P: AtomSet> Iterator for AtomTreeIterator<'a, P> {
-    type Item = (SmallVec<[usize; 10]>, AtomView<'a, P>);
+    type Item = (Vec<usize>, AtomView<'a, P>);
 
     /// Return the next position and atom in the tree.
     fn next(&mut self) -> Option<Self::Item> {
@@ -2029,7 +2027,7 @@ impl<'a, P: AtomSet> Iterator for AtomTreeIterator<'a, P> {
                     .stack
                     .iter()
                     .map(|(ind, _)| ind.unwrap() - 1)
-                    .collect::<SmallVec<[usize; 10]>>();
+                    .collect::<Vec<_>>();
                 self.stack.push((Some(0), atom));
                 return Some((location, atom));
             }
@@ -2047,7 +2045,7 @@ pub struct PatternAtomTreeIterator<'a, 'b, P: AtomSet> {
     pattern_iter: Option<AtomMatchIterator<'a, 'b, P>>,
     state: &'a State,
     match_stack: MatchStack<'a, 'b, P>,
-    tree_pos: SmallVec<[usize; 10]>,
+    tree_pos: Vec<usize>,
     first_match: bool,
 }
 
@@ -2066,19 +2064,14 @@ impl<'a: 'b, 'b, P: AtomSet> PatternAtomTreeIterator<'a, 'b, P> {
             pattern_iter: None,
             state,
             match_stack: MatchStack::new(conditions, settings),
-            tree_pos: SmallVec::new(),
+            tree_pos: Vec::new(),
             first_match: false,
         }
     }
 
     pub fn next(
         &mut self,
-    ) -> Option<(
-        &[usize],
-        SmallVec<[bool; 10]>,
-        AtomView<'a, P>,
-        &MatchStack<'a, 'b, P>,
-    )> {
+    ) -> Option<(&[usize], Vec<bool>, AtomView<'a, P>, &MatchStack<'a, 'b, P>)> {
         loop {
             if let Some(ct) = self.current_target {
                 if let Some(it) = self.pattern_iter.as_mut() {

@@ -388,23 +388,6 @@ class Expression:
         >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
         """
 
-    def req_ngreedy(self) -> PatternRestriction:
-        """
-        Create a pattern restriction that sets the wildcard to
-        be as short as possible.
-
-        Examples
-        --------
-        >>> from symbolica import Expression
-        >>> x__, y__ = Expression.vars('x__', 'y__')
-        >>> f = Expression.fun('f')
-        >>> e = f(1,2,3)
-        >>> e = e.replace_all(f(x__,y__), f(x__)*f(y__), x__.req_ngreedy())
-        >>> print(e)
-
-        Yields `f(1)*f(2,3)`.
-        """
-
     def req_lt(self, num: Expression | int, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is smaller than a number `num`.
         If the matched wildcard is not a number, the pattern fails.
@@ -761,11 +744,14 @@ class Expression:
         pattern: Transformer | Expression | int,
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
+        non_greedy_wildcards: Optional[List[Expression]] = None,
         repeat: Optional[bool] = False,
     ) -> Expression:
         """
         Replace all atoms matching the pattern `pattern` by the right-hand side `rhs`.
         Restrictions on pattern can be supplied through `cond`.
+        The settings `non_greedy_wildcards` can be used to specify
+        wildcards that try to match as little as possible.
 
         The entire operation can be repeated until there are no more matches using `repeat=True`.
 
@@ -1146,10 +1132,13 @@ class Transformer:
         pat: Transformer | Expression | int,
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
+        non_greedy_wildcards: Optional[List[Expression]] = None,
     ) -> Transformer:
         """
         Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
         Restrictions on pattern can be supplied through `cond`.
+        The settings `non_greedy_wildcards` can be used to specify
+        wildcards that try to match as little as possible.
 
         Examples
         --------

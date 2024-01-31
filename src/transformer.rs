@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use crate::{
     combinatorics::{partitions, unique_permutations},
-    id::{Condition, Pattern, WildcardAndRestriction},
+    id::{Condition, MatchSettings, Pattern, WildcardAndRestriction},
     printer::{AtomPrinter, PrintOptions},
     representations::{
         number::{BorrowedNumber, Number},
@@ -62,6 +62,7 @@ pub enum Transformer<P: AtomSet + 'static> {
         Pattern<P>,
         Pattern<P>,
         Option<Condition<WildcardAndRestriction<P>>>,
+        Option<MatchSettings>,
     ),
     /// Take the product of a list of arguments in the rhs.
     Product,
@@ -177,8 +178,16 @@ impl<P: AtomSet> Transformer<P> {
                         out,
                     );
                 }
-                Transformer::ReplaceAll(pat, rhs, cond) => {
-                    pat.replace_all(input, rhs, state, workspace, cond.as_ref(), out);
+                Transformer::ReplaceAll(pat, rhs, cond, settings) => {
+                    pat.replace_all(
+                        input,
+                        rhs,
+                        state,
+                        workspace,
+                        cond.as_ref(),
+                        settings.as_ref(),
+                        out,
+                    );
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = input {

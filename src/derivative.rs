@@ -378,6 +378,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 state,
                 workspace,
                 None,
+                None,
                 &mut next_order,
             );
 

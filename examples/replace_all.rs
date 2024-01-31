@@ -13,6 +13,14 @@ fn main() {
     let rhs = Pattern::parse("f(1,2,y_+1)", &mut state, &workspace).unwrap();
 
     let mut out = Atom::new();
-    pat.replace_all(expr.as_view(), &rhs, &state, &workspace, None, &mut out);
+    pat.replace_all(
+        expr.as_view(),
+        &rhs,
+        &state,
+        &workspace,
+        None,
+        None,
+        &mut out,
+    );
     println!("{}", out.printer(&state));
 }

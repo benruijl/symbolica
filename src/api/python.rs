@@ -34,7 +34,7 @@ use crate::{
     },
     evaluate::EvaluationFn,
     id::{
-        AtomType, Condition, Match, MatchStack, Pattern, PatternAtomTreeIterator,
+        AtomType, Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
         PatternRestriction, ReplaceIterator, WildcardAndRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, Sample},
@@ -639,7 +639,7 @@ impl PythonPattern {
                 &state.borrow(),
                 workspace,
                 &mut out,
-                &MatchStack::new(&Condition::default()),
+                &MatchStack::new(&Condition::default(), &MatchSettings::default()),
             );
         });
 
@@ -693,7 +693,8 @@ impl PythonPattern {
     }
 
     /// Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
-    /// Restrictions on pattern can be supplied through `cond`.
+    /// Restrictions on pattern can be supplied through `cond`. The settings `non_greedy_wildcards` can be used to specify
+    /// wildcards that try to match as little as possible.
     ///
     /// Examples
     /// --------
@@ -708,13 +709,39 @@ impl PythonPattern {
         lhs: ConvertibleToPattern,
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
+        non_greedy_wildcards: Option<Vec<PythonExpression>>,
     ) -> PyResult<PythonPattern> {
+        let settings = if let Some(ngw) = non_greedy_wildcards {
+            Some(MatchSettings {
+                non_greedy_wildcards: ngw
+                    .iter()
+                    .map(|x| match x.expr.as_view() {
+                        AtomView::Var(v) => {
+                            let name = v.get_name();
+                            if get_state!()?.get_wildcard_level(name) == 0 {
+                                return Err(exceptions::PyTypeError::new_err(
+                                    "Only wildcards can be restricted.",
+                                ));
+                            }
+                            Ok(name)
+                        }
+                        _ => Err(exceptions::PyTypeError::new_err(
+                            "Only wildcards can be restricted.",
+                        )),
+                    })
+                    .collect::<Result<_, _>>()?,
+            })
+        } else {
+            None
+        };
+
         return append_transformer!(
             self,
             Transformer::ReplaceAll(
                 (*lhs.to_pattern()?.expr).clone(),
                 (*rhs.to_pattern()?.expr).clone(),
-                cond.map(|r| r.condition.as_ref().clone())
+                cond.map(|r| r.condition.as_ref().clone()),
+                settings,
             )
         );
     }
@@ -1828,39 +1855,6 @@ impl PythonExpression {
         }
     }
 
-    /// Create a pattern restriction that sets the wildcard to
-    /// be as short as possible.
-    ///
-    /// Examples
-    /// --------
-    /// >>> from symbolica import Expression
-    /// >>> x__, y__ = Expression.vars('x__', 'y__')
-    /// >>> f = Expression.fun('f')
-    /// >>> e = f(1,2,3)
-    /// >>> e = e.replace_all(f(x__,y__), f(x__)*f(y__), x__.req_ngreedy())
-    /// >>> print(e)
-    ///
-    /// Yields `f(1)*f(2,3)`.
-    pub fn req_ngreedy(&self) -> PyResult<PythonPatternRestriction> {
-        match self.expr.as_view() {
-            AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) < 2 {
-                    return Err(exceptions::PyTypeError::new_err(
-                        "Only wildcards with variable range set non-greedy.",
-                    ));
-                }
-
-                Ok(PythonPatternRestriction {
-                    condition: Arc::new((name, PatternRestriction::NotGreedy).into()),
-                })
-            }
-            _ => Err(exceptions::PyTypeError::new_err(
-                "Only wildcards can be restricted.",
-            )),
-        }
-    }
-
     /// Create a pattern restriction that treats the wildcard as a literal variable,
     /// so that it only matches to itself.
     pub fn req_lit(&self) -> PyResult<PythonPatternRestriction> {
@@ -2781,18 +2775,20 @@ impl PythonExpression {
         lhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
     ) -> PyResult<PythonMatchIterator> {
-        let restrictions = cond
+        let conditions = cond
             .map(|r| r.condition.clone())
             .unwrap_or(Arc::new(Condition::default()));
+        let settings = Arc::new(MatchSettings::default());
         Ok(PythonMatchIterator::new(
             (
                 lhs.to_pattern()?.expr,
                 self.expr.clone(),
-                restrictions,
+                conditions,
+                settings,
                 get_state!()?.clone(), // FIXME: state is cloned
             ),
-            move |(lhs, target, res, state)| {
-                PatternAtomTreeIterator::new(lhs, target.as_view(), state, res)
+            move |(lhs, target, res, settings, state)| {
+                PatternAtomTreeIterator::new(lhs, target.as_view(), state, res, settings)
             },
         ))
     }
@@ -2822,20 +2818,22 @@ impl PythonExpression {
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
     ) -> PyResult<PythonReplaceIterator> {
-        let restrictions = cond
+        let conditions = cond
             .map(|r| r.condition.clone())
             .unwrap_or(Arc::new(Condition::default()));
+        let settings = Arc::new(MatchSettings::default());
 
         Ok(PythonReplaceIterator::new(
             (
                 lhs.to_pattern()?.expr,
                 self.expr.clone(),
                 rhs.to_pattern()?.expr,
-                restrictions,
+                conditions,
+                settings,
                 get_state!()?.clone(), // FIXME: state is cloned
             ),
-            move |(lhs, target, rhs, res, state)| {
-                ReplaceIterator::new(lhs, target.as_view(), rhs, state, res)
+            move |(lhs, target, rhs, res, settings, state)| {
+                ReplaceIterator::new(lhs, target.as_view(), rhs, state, res, settings)
             },
         ))
     }
@@ -2858,11 +2856,36 @@ impl PythonExpression {
         pattern: ConvertibleToPattern,
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
+        non_greedy_wildcards: Option<Vec<PythonExpression>>,
         repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
         let rhs = &rhs.to_pattern()?.expr;
         let mut out = Atom::new();
+
+        let settings = if let Some(ngw) = non_greedy_wildcards {
+            Some(MatchSettings {
+                non_greedy_wildcards: ngw
+                    .iter()
+                    .map(|x| match x.expr.as_view() {
+                        AtomView::Var(v) => {
+                            let name = v.get_name();
+                            if get_state!()?.get_wildcard_level(name) == 0 {
+                                return Err(exceptions::PyTypeError::new_err(
+                                    "Only wildcards can be restricted.",
+                                ));
+                            }
+                            Ok(name)
+                        }
+                        _ => Err(exceptions::PyTypeError::new_err(
+                            "Only wildcards can be restricted.",
+                        )),
+                    })
+                    .collect::<Result<_, _>>()?,
+            })
+        } else {
+            None
+        };
 
         let guard = get_state!()?;
         let state = guard.borrow();
@@ -2877,6 +2900,7 @@ impl PythonExpression {
                 state,
                 workspace,
                 cond.as_ref().map(|r| r.condition.as_ref()),
+                settings.as_ref(),
                 &mut out,
             ) {
                 if !repeat.unwrap_or(false) {
@@ -3239,6 +3263,7 @@ type OwnedMatch = (
     Arc<Pattern>,
     Arc<Atom>,
     Arc<Condition<WildcardAndRestriction>>,
+    Arc<MatchSettings>,
     State,
 );
 type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a, crate::representations::default::Linear>;
@@ -3291,6 +3316,7 @@ type OwnedReplace = (
     Arc<Atom>,
     Arc<Pattern>,
     Arc<Condition<WildcardAndRestriction>>,
+    Arc<MatchSettings>,
     State,
 );
 type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a, crate::representations::default::Linear>;

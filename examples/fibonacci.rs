@@ -43,15 +43,32 @@ fn main() {
             &state,
             &workspace,
             Some(&restrictions),
+            None,
             &mut out,
         );
 
         let mut out2 = workspace.new_atom();
         out.as_view().expand(&workspace, &state, &mut out2);
 
-        lhs_zero_pat.replace_all(out2.as_view(), &rhs_one, &state, &workspace, None, &mut out);
+        lhs_zero_pat.replace_all(
+            out2.as_view(),
+            &rhs_one,
+            &state,
+            &workspace,
+            None,
+            None,
+            &mut out,
+        );
 
-        lhs_one_pat.replace_all(out.as_view(), &rhs_one, &state, &workspace, None, &mut out2);
+        lhs_one_pat.replace_all(
+            out.as_view(),
+            &rhs_one,
+            &state,
+            &workspace,
+            None,
+            None,
+            &mut out2,
+        );
 
         println!("\t{}", out2.printer(&state),);
 

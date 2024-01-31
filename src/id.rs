@@ -532,9 +532,10 @@ impl<P: AtomSet> Pattern<P> {
         target: AtomView<'a, P>,
         rhs: &'a Pattern<P>,
         state: &'a State,
-        restrictions: &'a Condition<WildcardAndRestriction<P>>,
+        conditions: &'a Condition<WildcardAndRestriction<P>>,
+        settings: &'a MatchSettings,
     ) -> ReplaceIterator<'a, 'a, P> {
-        ReplaceIterator::new(self, target, rhs, state, restrictions)
+        ReplaceIterator::new(self, target, rhs, state, conditions, settings)
     }
 
     /// Replace all occurrences of the pattern in the target.
@@ -545,7 +546,8 @@ impl<P: AtomSet> Pattern<P> {
         rhs: &Pattern<P>,
         state: &'a State,
         workspace: &Workspace<P>,
-        restrictions: Option<&Condition<WildcardAndRestriction<P>>>,
+        conditions: Option<&Condition<WildcardAndRestriction<P>>>,
+        settings: Option<&MatchSettings>,
         out: &mut Atom<P>,
     ) -> bool {
         let matched = self.replace_all_no_norm(
@@ -553,7 +555,8 @@ impl<P: AtomSet> Pattern<P> {
             rhs,
             state,
             workspace,
-            restrictions.unwrap_or(&Condition::default()),
+            conditions.unwrap_or(&Condition::default()),
+            settings.unwrap_or(&MatchSettings::default()),
             out,
         );
 
@@ -574,10 +577,11 @@ impl<P: AtomSet> Pattern<P> {
         rhs: &Pattern<P>,
         state: &'a State,
         workspace: &Workspace<P>,
-        restrictions: &Condition<WildcardAndRestriction<P>>,
+        conditions: &Condition<WildcardAndRestriction<P>>,
+        settings: &MatchSettings,
         out: &mut Atom<P>,
     ) -> bool {
-        let mut match_stack = MatchStack::new(restrictions);
+        let mut match_stack = MatchStack::new(conditions, settings);
 
         if self.could_match(target) {
             let mut it = AtomMatchIterator::new(self, target, state);
@@ -640,12 +644,7 @@ impl<P: AtomSet> Pattern<P> {
                     let child_buf = child_handle.get_mut();
 
                     submatch |= self.replace_all_no_norm(
-                        child,
-                        rhs,
-                        state,
-                        workspace,
-                        restrictions,
-                        child_buf,
+                        child, rhs, state, workspace, conditions, settings, child_buf,
                     );
 
                     out.add_arg(child_buf.as_view());
@@ -661,13 +660,14 @@ impl<P: AtomSet> Pattern<P> {
 
                 let mut base_handle = workspace.new_atom();
                 let base_out = base_handle.get_mut();
-                let mut submatch =
-                    self.replace_all_no_norm(base, rhs, state, workspace, restrictions, base_out);
+                let mut submatch = self.replace_all_no_norm(
+                    base, rhs, state, workspace, conditions, settings, base_out,
+                );
 
                 let mut exp_handle = workspace.new_atom();
                 let exp_out = exp_handle.get_mut();
-                submatch |=
-                    self.replace_all_no_norm(exp, rhs, state, workspace, restrictions, exp_out);
+                submatch |= self
+                    .replace_all_no_norm(exp, rhs, state, workspace, conditions, settings, exp_out);
 
                 out.set_from_base_and_exp(base_out.as_view(), exp_out.as_view());
 
@@ -683,12 +683,7 @@ impl<P: AtomSet> Pattern<P> {
                     let child_buf = child_handle.get_mut();
 
                     submatch |= self.replace_all_no_norm(
-                        child,
-                        rhs,
-                        state,
-                        workspace,
-                        restrictions,
-                        child_buf,
+                        child, rhs, state, workspace, conditions, settings, child_buf,
                     );
 
                     mul.extend(child_buf.as_view());
@@ -706,12 +701,7 @@ impl<P: AtomSet> Pattern<P> {
                     let child_buf = child_handle.get_mut();
 
                     submatch |= self.replace_all_no_norm(
-                        child,
-                        rhs,
-                        state,
-                        workspace,
-                        restrictions,
-                        child_buf,
+                        child, rhs, state, workspace, conditions, settings, child_buf,
                     );
 
                     out.extend(child_buf.as_view());
@@ -732,9 +722,10 @@ impl<P: AtomSet> Pattern<P> {
         &'a self,
         target: AtomView<'a, P>,
         state: &'a State,
-        restrictions: &'a Condition<WildcardAndRestriction<P>>,
+        conditions: &'a Condition<WildcardAndRestriction<P>>,
+        settings: &'a MatchSettings,
     ) -> PatternAtomTreeIterator<'a, 'a, P> {
-        PatternAtomTreeIterator::new(self, target, state, restrictions)
+        PatternAtomTreeIterator::new(self, target, state, conditions, settings)
     }
 }
 
@@ -1158,12 +1149,18 @@ impl<'a, P: AtomSet> Match<'a, P> {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct MatchSettings {
+    pub non_greedy_wildcards: Vec<Identifier>,
+}
+
 /// An insertion-ordered map of wildcard identifiers to a subexpressions.
-/// It keeps track of all restrictions on wildcards and will check them
+/// It keeps track of all conditions on wildcards and will check them
 /// before inserting.
 pub struct MatchStack<'a, 'b, P: AtomSet> {
     stack: SmallVec<[(Identifier, Match<'a, P>); 10]>,
-    restrictions: &'b Condition<WildcardAndRestriction<P>>,
+    conditions: &'b Condition<WildcardAndRestriction<P>>,
+    settings: &'b MatchSettings,
 }
 
 impl<'a, 'b, P: AtomSet> std::fmt::Debug for MatchStack<'a, 'b, P> {
@@ -1176,10 +1173,14 @@ impl<'a, 'b, P: AtomSet> std::fmt::Debug for MatchStack<'a, 'b, P> {
 
 impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
     /// Create a new match stack.
-    pub fn new(restrictions: &'b Condition<WildcardAndRestriction<P>>) -> MatchStack<'a, 'b, P> {
+    pub fn new(
+        conditions: &'b Condition<WildcardAndRestriction<P>>,
+        settings: &'b MatchSettings,
+    ) -> MatchStack<'a, 'b, P> {
         MatchStack {
             stack: SmallVec::new(),
-            restrictions,
+            conditions,
+            settings,
         }
     }
 
@@ -1197,9 +1198,9 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
             }
         }
 
-        // test whether the current value passes all restrictions
+        // test whether the current value passes all conditions
         // or returns an inconclusive result
-        if self.restrictions.check_possible(key, &value, self) == ConditionResult::False {
+        if self.conditions.check_possible(key, &value, self) == ConditionResult::False {
             return None;
         }
 
@@ -1230,7 +1231,7 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
     }
 
     /// Get the range of an identifier based on previous matches and based
-    /// on restrictions.
+    /// on conditions.
     pub fn get_range(&self, identifier: Identifier, state: &State) -> (usize, Option<usize>) {
         if state.get_wildcard_level(identifier) == 0 {
             return (1, Some(1));
@@ -1258,7 +1259,7 @@ impl<'a, 'b, P: AtomSet> MatchStack<'a, 'b, P> {
             }
         }
 
-        let (minimal, maximal) = self.restrictions.get_range_hint(identifier);
+        let (minimal, maximal) = self.conditions.get_range_hint(identifier);
 
         match state.get_wildcard_level(identifier) {
             1 => (minimal.unwrap_or(1), Some(maximal.unwrap_or(1))), // x_
@@ -1630,16 +1631,7 @@ impl<'a, 'b, P: AtomSet> SubSliceIterator<'a, 'b, P> {
                             }
                         }
 
-                        // FIXME: this should be a setting and not a restriction
-                        let greedy = false;
-                        /*let greedy = match_stack
-                        .restrictions
-                        .get(name)
-                        .map(|c| {
-                            !c.iter()
-                                .any(|cc| matches!(cc, PatternRestriction::NotGreedy))
-                        })
-                        .unwrap_or(true);*/
+                        let greedy = !match_stack.settings.non_greedy_wildcards.contains(name);
 
                         PatternIter::Wildcard(WildcardIter {
                             initialized: false,
@@ -2064,7 +2056,8 @@ impl<'a: 'b, 'b, P: AtomSet> PatternAtomTreeIterator<'a, 'b, P> {
         pattern: &'b Pattern<P>,
         target: AtomView<'a, P>,
         state: &'a State,
-        restrictions: &'a Condition<WildcardAndRestriction<P>>,
+        conditions: &'a Condition<WildcardAndRestriction<P>>,
+        settings: &'a MatchSettings,
     ) -> PatternAtomTreeIterator<'a, 'b, P> {
         PatternAtomTreeIterator {
             pattern,
@@ -2072,7 +2065,7 @@ impl<'a: 'b, 'b, P: AtomSet> PatternAtomTreeIterator<'a, 'b, P> {
             current_target: None,
             pattern_iter: None,
             state,
-            match_stack: MatchStack::new(restrictions),
+            match_stack: MatchStack::new(conditions, settings),
             tree_pos: SmallVec::new(),
             first_match: false,
         }
@@ -2133,14 +2126,12 @@ impl<'a: 'b, 'b, P: AtomSet + 'a + 'b> ReplaceIterator<'a, 'b, P> {
         target: AtomView<'a, P>,
         rhs: &'b Pattern<P>,
         state: &'a State,
-        restrictions: &'a Condition<WildcardAndRestriction<P>>,
+        conditions: &'a Condition<WildcardAndRestriction<P>>,
+        settings: &'a MatchSettings,
     ) -> ReplaceIterator<'a, 'b, P> {
         ReplaceIterator {
             pattern_tree_iterator: PatternAtomTreeIterator::new(
-                pattern,
-                target,
-                state,
-                restrictions,
+                pattern, target, state, conditions, settings,
             ),
             rhs,
             target,

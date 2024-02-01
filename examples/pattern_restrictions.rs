@@ -1,8 +1,8 @@
-use ahash::HashMap;
 use symbolica::{
+    coefficient::CoefficientView,
     domains::finite_field,
     id::{Condition, Match, MatchSettings, PatternRestriction},
-    representations::{coefficient::BorrowedCoefficient, Atom, AtomView, Num},
+    representations::{Atom, AtomView, Num},
     state::{State, Workspace},
 };
 fn main() {
@@ -42,7 +42,7 @@ fn main() {
             z,
             PatternRestriction::Filter(Box::new(|x: &Match| {
                 if let Match::Single(AtomView::Num(num)) = x {
-                    if let BorrowedCoefficient::Natural(x, y) = num.get_number_view() {
+                    if let CoefficientView::Natural(x, y) = num.get_coeff_view() {
                         y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
                     } else {
                         false

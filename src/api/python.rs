@@ -21,7 +21,6 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    coefficient::Coefficient,
     domains::{
         finite_field::ToFiniteField,
         integer::Integer,
@@ -1630,7 +1629,7 @@ impl PythonExpression {
         let b = WORKSPACE.with(|workspace| {
             let mut pow = workspace.new_atom();
             let pow_num = pow.to_num();
-            pow_num.set_from_number(Coefficient::Natural(-1, 1));
+            pow_num.set_from_coeff((-1).into());
 
             let mut e = workspace.new_atom();
             let a = e.to_pow();
@@ -1722,7 +1721,7 @@ impl PythonExpression {
 
             let mut sign = workspace.new_atom();
             let sign_num = sign.to_num();
-            sign_num.set_from_number(Coefficient::Natural(-1, 1));
+            sign_num.set_from_coeff((-1).into());
 
             a.extend(self.expr.as_view());
             a.extend(sign.get().as_view());

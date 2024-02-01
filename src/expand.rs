@@ -1,8 +1,7 @@
-use rug::Rational;
 use smallvec::SmallVec;
 
 use crate::{
-    coefficient::{BorrowedCoefficient, Coefficient},
+    coefficient::CoefficientView,
     combinatorics::CombinationWithReplacementIterator,
     domains::integer::Integer,
     representations::{
@@ -39,7 +38,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 let (negative, num) = 'get_num: {
                     if let AtomView::Num(n) = new_exp.get().as_view() {
-                        if let BorrowedCoefficient::Natural(n, 1) = n.get_number_view() {
+                        if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
                             if n.unsigned_abs() <= u32::MAX as u64 {
                                 break 'get_num (n < 0, n.unsigned_abs() as u32);
                             }
@@ -77,7 +76,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             if *pow != 0 {
                                 let mut new_exp_h = workspace.new_atom();
                                 let new_exp = new_exp_h.get_mut().to_num();
-                                new_exp.set_from_number(Coefficient::Natural(*pow as i64, 1));
+                                new_exp.set_from_coeff((*pow as i64).into());
                                 new_pow.set_from_base_and_exp(*a, new_exp_h.get().as_view());
                                 new_pow.set_dirty(true);
                                 p.extend(hhh.get().as_view());
@@ -104,11 +103,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         let coeff_f = Integer::multinom(new_term);
 
                         if coeff_f != Integer::one() {
-                            coeff.set_from_number(match coeff_f {
-                                Integer::Natural(n) => Coefficient::Natural(n, 1),
-                                Integer::Double(d) => Coefficient::Large(Rational::from(d)),
-                                Integer::Large(l) => Coefficient::Large(Rational::from(l)),
-                            });
+                            coeff.set_from_coeff(coeff_f.into());
 
                             if let Atom::Mul(m) = expanded_child.get_mut() {
                                 m.extend(coeff_h.get().as_view());
@@ -134,7 +129,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                         let mut num_h = workspace.new_atom();
                         let num = num_h.get_mut().to_num();
-                        num.set_from_number(Coefficient::Natural(-1, 1));
+                        num.set_from_coeff((-1i64).into());
 
                         pow.set_from_base_and_exp(add_h.get().as_view(), num_h.get().as_view());
                         pow.set_dirty(true);
@@ -151,7 +146,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                     let mut exp_h = workspace.new_atom();
                     let exp = exp_h.get_mut().to_num();
-                    exp.set_from_number(Coefficient::Natural(num as i64, 1));
+                    exp.set_from_coeff((num as i64).into());
 
                     for arg in m.iter() {
                         let mut pow_h = workspace.new_atom();
@@ -168,7 +163,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                         let mut num_h = workspace.new_atom();
                         let num = num_h.get_mut().to_num();
-                        num.set_from_number(Coefficient::Natural(-1, 1));
+                        num.set_from_coeff((-1).into());
 
                         pow.set_from_base_and_exp(mul_h.get().as_view(), num_h.get().as_view());
                         pow.set_dirty(true);

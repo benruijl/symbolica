@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use crate::{
-    coefficient::{BorrowedCoefficient, Coefficient},
+    coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
     id::{Condition, MatchSettings, Pattern, WildcardAndRestriction},
     printer::{AtomPrinter, PrintOptions},
@@ -229,15 +229,14 @@ impl<P: AtomSet> Transformer<P> {
                     if let AtomView::Fun(f) = input {
                         if !*only_for_arg_fun || f.get_name() == State::ARG {
                             let n_args = f.get_nargs();
-                            out.to_num()
-                                .set_from_number(Coefficient::Natural(n_args as i64, 1));
+                            out.to_num().set_from_coeff((n_args as i64).into());
                         } else {
-                            out.to_num().set_from_number(Coefficient::Natural(1, 1));
+                            out.to_num().set_from_coeff(1.into());
                         }
                     } else if !only_for_arg_fun {
-                        out.to_num().set_from_number(Coefficient::Natural(1, 1));
+                        out.to_num().set_from_coeff(1.into());
                     } else {
-                        out.to_num().set_from_number(Coefficient::Natural(0, 1));
+                        out.to_num().set_from_coeff(Coefficient::zero());
                     }
                 }
                 Transformer::Split => match input {
@@ -474,7 +473,7 @@ impl<P: AtomSet> Transformer<P> {
                 }
                 Transformer::FromNumber => {
                     if let AtomView::Num(n) = input {
-                        if let BorrowedCoefficient::RationalPolynomial(r) = n.get_number_view() {
+                        if let CoefficientView::RationalPolynomial(r) = n.get_coeff_view() {
                             r.to_expression(workspace, state, &HashMap::default(), out);
                             continue;
                         }

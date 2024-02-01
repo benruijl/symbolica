@@ -2,7 +2,7 @@ mod coefficient;
 pub mod default;
 
 use crate::{
-    coefficient::{BorrowedCoefficient, Coefficient},
+    coefficient::{Coefficient, CoefficientView},
     parser::Token,
     printer::AtomPrinter,
     state::{BufferHandle, ResettableBuffer, State, Workspace},
@@ -75,7 +75,7 @@ pub trait Convert<P: AtomSet> {
 pub trait OwnedNum: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
     type P: AtomSet;
 
-    fn set_from_number(&mut self, num: Coefficient);
+    fn set_from_coeff(&mut self, num: Coefficient);
     fn set_from_view(&mut self, a: &<Self::P as AtomSet>::N<'_>);
     fn add(&mut self, other: &<Self::P as AtomSet>::N<'_>, state: &State);
     fn mul(&mut self, other: &<Self::P as AtomSet>::N<'_>, state: &State);
@@ -141,7 +141,7 @@ pub trait Num<'a>: Copy + Clone + Hash + for<'b> PartialEq<<Self::P as AtomSet>:
     fn is_zero(&self) -> bool;
     fn is_one(&self) -> bool;
     fn is_dirty(&self) -> bool;
-    fn get_number_view(&self) -> BorrowedCoefficient<'_>;
+    fn get_coeff_view(&self) -> CoefficientView<'_>;
     fn as_view(&self) -> AtomView<'a, Self::P>;
     fn get_byte_size(&self) -> usize;
 }
@@ -619,7 +619,7 @@ impl<P: AtomSet> Atom<P> {
 
     pub fn new_num<T: Into<Coefficient>>(num: T) -> Atom<P> {
         let mut owned = Self::new();
-        owned.to_num().set_from_number(num.into());
+        owned.to_num().set_from_coeff(num.into());
         owned
     }
 

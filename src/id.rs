@@ -1,7 +1,6 @@
 use dyn_clone::DynClone;
 
 use crate::{
-    coefficient::Coefficient,
     representations::{
         default::Linear, Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice, Mul, OwnedAdd,
         OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, SliceType, Var,
@@ -114,7 +113,7 @@ impl<P: AtomSet> Pattern<P> {
         if let Pattern::Literal(l2) = rhs {
             let mut pow = workspace.new_atom();
             let pow_num = pow.to_num();
-            pow_num.set_from_number(Coefficient::Natural(-1, 1));
+            pow_num.set_from_coeff((-1).into());
 
             let mut e = workspace.new_atom();
             let a = e.to_pow();
@@ -147,7 +146,7 @@ impl<P: AtomSet> Pattern<P> {
         } else {
             let mut pow = Atom::<P>::new();
             let pow_num = pow.to_num();
-            pow_num.set_from_number(Coefficient::Natural(-1, 1));
+            pow_num.set_from_coeff((-1).into());
 
             let rhs = Pattern::Mul(vec![
                 self.clone(),
@@ -191,7 +190,7 @@ impl<P: AtomSet> Pattern<P> {
 
             let mut sign = workspace.new_atom();
             let sign_num = sign.to_num();
-            sign_num.set_from_number(Coefficient::Natural(-1, 1));
+            sign_num.set_from_coeff((-1).into());
 
             a.extend(l1.as_view());
             a.extend(sign.get().as_view());
@@ -204,7 +203,7 @@ impl<P: AtomSet> Pattern<P> {
         } else {
             let mut pow = Atom::<P>::new();
             let pow_num = pow.to_num();
-            pow_num.set_from_number(Coefficient::Natural(-1, 1));
+            pow_num.set_from_coeff((-1).into());
 
             // TODO: simplify if a literal is already present
             Pattern::Mul(vec![self.clone(), Pattern::Literal(pow)])

@@ -221,7 +221,7 @@ impl<P: AtomSet> Workspace<P> {
     #[inline]
     pub fn new_num<T: Into<Coefficient>>(&self, num: T) -> BufferHandle<Atom<P>> {
         let mut owned = self.new_atom();
-        owned.to_num().set_from_number(num.into());
+        owned.to_num().set_from_coeff(num.into());
         owned
     }
 }

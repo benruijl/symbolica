@@ -3,7 +3,7 @@ use bytes::{Buf, BufMut};
 use std::cmp::Ordering;
 
 use crate::{
-    coefficient::{BorrowedCoefficient, Coefficient},
+    coefficient::{Coefficient, CoefficientView},
     state::{ResettableBuffer, State},
 };
 
@@ -34,7 +34,7 @@ pub struct OwnedNumD {
 impl OwnedNum for OwnedNumD {
     type P = Linear;
 
-    fn set_from_number(&mut self, num: Coefficient) {
+    fn set_from_coeff(&mut self, num: Coefficient) {
         self.data.clear();
         self.data.put_u8(NUM_ID);
         num.write_packed(&mut self.data);
@@ -47,8 +47,8 @@ impl OwnedNum for OwnedNumD {
 
     fn add(&mut self, other: &NumViewD<'_>, state: &State) {
         let nv = self.to_num_view();
-        let a = nv.get_number_view();
-        let b = other.get_number_view();
+        let a = nv.get_coeff_view();
+        let b = other.get_coeff_view();
         let n = a.add(&b, state);
 
         self.data.truncate(1);
@@ -57,8 +57,8 @@ impl OwnedNum for OwnedNumD {
 
     fn mul(&mut self, other: &NumViewD<'_>, state: &State) {
         let nv = self.to_num_view();
-        let a = nv.get_number_view();
-        let b = other.get_number_view();
+        let a = nv.get_coeff_view();
+        let b = other.get_coeff_view();
         let n = a.mul(&b, state);
 
         self.data.truncate(1);
@@ -944,8 +944,8 @@ impl<'a> Num<'a> for NumViewD<'a> {
     }
 
     #[inline]
-    fn get_number_view(&self) -> BorrowedCoefficient<'_> {
-        self.data[1..].get_number_view().0
+    fn get_coeff_view(&self) -> CoefficientView<'_> {
+        self.data[1..].get_coeff_view().0
     }
 
     fn as_view(&self) -> AtomView<'a, Self::P> {

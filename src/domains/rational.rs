@@ -46,6 +46,95 @@ pub enum Rational {
     Large(ArbitraryPrecisionRational),
 }
 
+impl From<i64> for Rational {
+    #[inline]
+    fn from(value: i64) -> Self {
+        Rational::Natural(value, 1)
+    }
+}
+
+impl From<u64> for Rational {
+    #[inline]
+    fn from(value: u64) -> Self {
+        if value <= i64::MAX as u64 {
+            Rational::Natural(value as i64, 1)
+        } else {
+            Rational::Large(value.into())
+        }
+    }
+}
+
+impl From<&Integer> for Rational {
+    fn from(val: &Integer) -> Self {
+        match val {
+            Integer::Natural(n) => Rational::Natural(*n, 1),
+            Integer::Double(n) => Rational::Large(ArbitraryPrecisionRational::from(*n)),
+            Integer::Large(l) => Rational::Large(l.into()),
+        }
+    }
+}
+
+impl From<Integer> for Rational {
+    fn from(value: Integer) -> Self {
+        match value {
+            Integer::Natural(n) => Rational::Natural(n.into(), 1),
+            Integer::Double(r) => Rational::Large(ArbitraryPrecisionRational::from(r)),
+            Integer::Large(r) => Rational::Large(ArbitraryPrecisionRational::from(r)),
+        }
+    }
+}
+
+impl From<(i64, i64)> for Rational {
+    #[inline]
+    fn from((n, d): (i64, i64)) -> Self {
+        Rational::new(n, d)
+    }
+}
+
+impl From<(Integer, Integer)> for Rational {
+    fn from((num, den): (Integer, Integer)) -> Self {
+        match (num, den) {
+            (Integer::Natural(n), Integer::Natural(d)) => Rational::new(n, d),
+            (Integer::Natural(n), Integer::Large(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Large(n), Integer::Natural(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Double(n), Integer::Large(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Large(n), Integer::Double(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Natural(n), Integer::Double(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Double(n), Integer::Natural(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Double(n), Integer::Double(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+            (Integer::Large(n), Integer::Large(d)) => {
+                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+            }
+        }
+    }
+}
+
+impl From<ArbitraryPrecisionInteger> for Rational {
+    fn from(value: ArbitraryPrecisionInteger) -> Self {
+        Rational::from_large(value.into())
+    }
+}
+
+impl From<ArbitraryPrecisionRational> for Rational {
+    fn from(value: ArbitraryPrecisionRational) -> Self {
+        Rational::from_large(value)
+    }
+}
+
 impl ToFiniteField<u32> for Rational {
     fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
         match self {
@@ -63,16 +152,6 @@ impl ToFiniteField<u32> for Rational {
                 &field.to_element(r.numer().mod_u(field.get_prime())),
                 &field.to_element(r.denom().mod_u(field.get_prime())),
             ),
-        }
-    }
-}
-
-impl From<&Integer> for Rational {
-    fn from(val: &Integer) -> Self {
-        match val {
-            Integer::Natural(n) => Rational::Natural(*n, 1),
-            Integer::Double(n) => Rational::Large(ArbitraryPrecisionRational::from(*n)),
-            Integer::Large(l) => Rational::Large(l.into()),
         }
     }
 }
@@ -103,36 +182,6 @@ impl Rational {
             }
         } else {
             Rational::Natural(num, den)
-        }
-    }
-
-    pub fn from_num_den(num: Integer, den: Integer) -> Rational {
-        match (num, den) {
-            (Integer::Natural(n), Integer::Natural(d)) => Rational::new(n, d),
-            (Integer::Natural(n), Integer::Large(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
-            }
-            (Integer::Large(n), Integer::Natural(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
-            }
-            (Integer::Double(n), Integer::Large(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
-            }
-            (Integer::Large(n), Integer::Double(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
-            }
-            (Integer::Natural(n), Integer::Double(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
-            }
-            (Integer::Double(n), Integer::Natural(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
-            }
-            (Integer::Double(n), Integer::Double(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
-            }
-            (Integer::Large(n), Integer::Large(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
-            }
         }
     }
 
@@ -320,7 +369,7 @@ impl Rational {
             d = d.neg();
         }
 
-        Ok(Rational::from_num_den(n, d))
+        Ok((n, d).into())
     }
 
     /// Return the rational number that corresponds to `f` evaluated at sample point `sample`,

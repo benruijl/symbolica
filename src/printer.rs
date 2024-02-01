@@ -3,7 +3,7 @@ use std::fmt::{self, Display, Write};
 use colored::Colorize;
 
 use crate::{
-    coefficient::BorrowedCoefficient,
+    coefficient::CoefficientView,
     domains::{
         factorized_rational_polynomial::FactorizedRationalPolynomial,
         finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
@@ -229,21 +229,21 @@ impl<'a, A: Var<'a>> FormattedPrintVar for A {
 
 impl<'a, A: Num<'a>> FormattedPrintNum for A {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let d = self.get_number_view();
+        let d = self.get_coeff_view();
 
         match d {
-            BorrowedCoefficient::Natural(num, den) => {
+            CoefficientView::Natural(num, den) => {
                 if den != 1 {
                     f.write_fmt(format_args!("{}/{}", num, den))
                 } else {
                     f.write_fmt(format_args!("{}", num))
                 }
             }
-            BorrowedCoefficient::Large(r) => f.write_fmt(format_args!("{}", r.to_rat())),
-            BorrowedCoefficient::FiniteField(num, fi) => {
+            CoefficientView::Large(r) => f.write_fmt(format_args!("{}", r.to_rat())),
+            CoefficientView::FiniteField(num, fi) => {
                 f.write_fmt(format_args!("[m_{}%f_{}]", num.0, fi.0))
             }
-            BorrowedCoefficient::RationalPolynomial(p) => f.write_fmt(format_args!("{}", p,)),
+            CoefficientView::RationalPolynomial(p) => f.write_fmt(format_args!("{}", p,)),
         }
     }
 
@@ -288,11 +288,11 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
             }
         }
 
-        let d = self.get_number_view();
+        let d = self.get_coeff_view();
 
         let is_negative = match d {
-            BorrowedCoefficient::Natural(n, _) => n < 0,
-            BorrowedCoefficient::Large(r) => r.is_negative(),
+            CoefficientView::Natural(n, _) => n < 0,
+            CoefficientView::Large(r) => r.is_negative(),
             _ => false,
         };
 
@@ -313,7 +313,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
         }
 
         match d {
-            BorrowedCoefficient::Natural(num, den) => {
+            CoefficientView::Natural(num, den) => {
                 if !opts.latex
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
@@ -333,7 +333,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                     f.write_fmt(format_args!("{}", num.unsigned_abs()))
                 }
             }
-            BorrowedCoefficient::Large(r) => {
+            CoefficientView::Large(r) => {
                 let rat = r.to_rat().abs();
                 if !opts.latex
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
@@ -354,7 +354,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                     f.write_fmt(format_args!("{}", rat.numer()))
                 }
             }
-            BorrowedCoefficient::FiniteField(num, fi) => {
+            CoefficientView::FiniteField(num, fi) => {
                 let ff = state.get_finite_field(fi);
                 f.write_fmt(format_args!(
                     "[{}%{}]",
@@ -362,7 +362,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
                     ff.get_prime()
                 ))
             }
-            BorrowedCoefficient::RationalPolynomial(p) => f.write_fmt(format_args!(
+            CoefficientView::RationalPolynomial(p) => f.write_fmt(format_args!(
                 "[{}]",
                 RationalPolynomialPrinter {
                     poly: p,
@@ -407,7 +407,7 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
         let mut skip_num = false;
         if let Some(AtomView::Num(n)) = self.iter().last() {
             // write -1*x as -x
-            if n.get_number_view() == BorrowedCoefficient::Natural(-1, 1) {
+            if n.get_coeff_view() == CoefficientView::Natural(-1, 1) {
                 if print_state.level == 1 && opts.color_top_level_sum {
                     f.write_fmt(format_args!("{}", "-".yellow()))?;
                 } else {
@@ -553,7 +553,7 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         let mut superscript_exponent = false;
         if opts.latex {
             if let AtomView::Num(n) = e {
-                if n.get_number_view() == BorrowedCoefficient::Natural(-1, 1) {
+                if n.get_coeff_view() == CoefficientView::Natural(-1, 1) {
                     // TODO: construct the numerator
                     f.write_str("\\frac{1}{")?;
                     b.fmt_output(f, opts, state, print_state)?;
@@ -562,14 +562,14 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
             }
         } else if opts.num_exp_as_superscript {
             if let AtomView::Num(n) = e {
-                superscript_exponent = n.get_number_view().is_integer()
+                superscript_exponent = n.get_coeff_view().is_integer()
             }
         }
 
         let base_needs_parentheses =
             matches!(b, AtomView::Add(_) | AtomView::Mul(_) | AtomView::Pow(_))
                 || if let AtomView::Num(n) = b {
-                    !n.get_number_view().is_integer()
+                    !n.get_coeff_view().is_integer()
                 } else {
                     false
                 };
@@ -593,7 +593,7 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
         } else {
             let exp_needs_parentheses = matches!(e, AtomView::Add(_) | AtomView::Mul(_))
                 || if let AtomView::Num(n) = e {
-                    !n.get_number_view().is_integer()
+                    !n.get_coeff_view().is_integer()
                 } else {
                     false
                 };

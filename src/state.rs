@@ -9,10 +9,10 @@ use ahash::{HashMap, HashMapExt};
 use smartstring::alias::String;
 
 use crate::{
+    coefficient::Coefficient,
     domains::finite_field::{FiniteField, FiniteFieldCore},
     representations::{
-        default::Linear, number::Number, AsAtomView, Atom, AtomSet, AtomView, Identifier, OwnedNum,
-        OwnedVar,
+        default::Linear, AsAtomView, Atom, AtomSet, AtomView, Identifier, OwnedNum, OwnedVar,
     },
     LicenseManager, LICENSE_MANAGER,
 };
@@ -45,7 +45,7 @@ impl Default for State {
 
 impl State {
     pub const ARG: Identifier = Identifier::init(0);
-    pub const NUM: Identifier = Identifier::init(1);
+    pub const COEFF: Identifier = Identifier::init(1);
     pub const EXP: Identifier = Identifier::init(2);
     pub const LOG: Identifier = Identifier::init(3);
     pub const SIN: Identifier = Identifier::init(4);
@@ -57,7 +57,7 @@ impl State {
     pub const PI: Identifier = Identifier::init(10);
 
     pub(crate) const BUILTIN_VAR_LIST: [&'static str; 11] = [
-        "arg", "num", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
+        "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 
     pub fn new() -> State {
@@ -219,7 +219,7 @@ impl<P: AtomSet> Workspace<P> {
     }
 
     #[inline]
-    pub fn new_num<T: Into<Number>>(&self, num: T) -> BufferHandle<Atom<P>> {
+    pub fn new_num<T: Into<Coefficient>>(&self, num: T) -> BufferHandle<Atom<P>> {
         let mut owned = self.new_atom();
         owned.to_num().set_from_number(num.into());
         owned

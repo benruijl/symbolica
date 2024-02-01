@@ -2,10 +2,13 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
 use std::cmp::Ordering;
 
-use crate::state::{ResettableBuffer, State};
+use crate::{
+    coefficient::{BorrowedCoefficient, Coefficient},
+    state::{ResettableBuffer, State},
+};
 
 use super::{
-    number::{BorrowedNumber, Number, PackedRationalNumberReader, PackedRationalNumberWriter},
+    coefficient::{PackedRationalNumberReader, PackedRationalNumberWriter},
     Add, Atom, AtomSet, AtomView, Convert, Fun, Identifier, ListSlice, Mul, Num, OwnedAdd,
     OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, SliceType, Var,
 };
@@ -31,7 +34,7 @@ pub struct OwnedNumD {
 impl OwnedNum for OwnedNumD {
     type P = Linear;
 
-    fn set_from_number(&mut self, num: Number) {
+    fn set_from_number(&mut self, num: Coefficient) {
         self.data.clear();
         self.data.put_u8(NUM_ID);
         num.write_packed(&mut self.data);
@@ -941,7 +944,7 @@ impl<'a> Num<'a> for NumViewD<'a> {
     }
 
     #[inline]
-    fn get_number_view(&self) -> BorrowedNumber<'_> {
+    fn get_number_view(&self) -> BorrowedCoefficient<'_> {
         self.data[1..].get_number_view().0
     }
 

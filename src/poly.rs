@@ -17,13 +17,13 @@ use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
+use crate::coefficient::{BorrowedCoefficient, Coefficient, ConvertToRing};
 use crate::domains::factorized_rational_polynomial::{
     FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
 };
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::domains::{EuclideanDomain, Ring};
 use crate::parser::{Operator, Token};
-use crate::representations::number::{BorrowedNumber, ConvertToRing, Number};
 use crate::representations::{
     Add, Atom, AtomSet, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow,
     OwnedVar, Pow, Var,
@@ -393,7 +393,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         ) -> Result<(), &'static str> {
             match factor {
                 AtomView::Num(n) => match n.get_number_view() {
-                    BorrowedNumber::FiniteField(_, _) => {
+                    BorrowedCoefficient::FiniteField(_, _) => {
                         Err("Finite field not supported in conversion routine")
                     }
                     _ => Ok(()),
@@ -430,14 +430,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                     match exp {
                         AtomView::Num(n) => match n.get_number_view() {
-                            BorrowedNumber::Natural(n, d) => {
+                            BorrowedCoefficient::Natural(n, d) => {
                                 if d == 1 && n >= 0 && n <= u32::MAX as i64 {
                                     Ok(())
                                 } else {
                                     Err("Exponent negative or a fraction")
                                 }
                             }
-                            BorrowedNumber::Large(r) => {
+                            BorrowedCoefficient::Large(r) => {
                                 let r = r.to_rat();
                                 if r.denom().to_u8() == Some(1) && r.numer().to_u32().is_some() {
                                     Ok(())
@@ -445,10 +445,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                     Err("Exponent too large or negative or a fraction")
                                 }
                             }
-                            BorrowedNumber::FiniteField(_, _) => {
+                            BorrowedCoefficient::FiniteField(_, _) => {
                                 Err("Finite field not supported in conversion routine")
                             }
-                            BorrowedNumber::RationalPolynomial(_) => {
+                            BorrowedCoefficient::RationalPolynomial(_) => {
                                 Err("Rational polynomial not supported in conversion routine")
                             }
                         },
@@ -503,7 +503,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 AtomView::Num(n) => {
                     field.mul_assign(
                         coefficient,
-                        &field.element_from_borrowed_number(n.get_number_view()),
+                        &field.element_from_borrowed_coefficient(n.get_number_view()),
                     );
                 }
                 AtomView::Var(v) => {
@@ -523,10 +523,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                     match exp {
                         AtomView::Num(n) => match n.get_number_view() {
-                            BorrowedNumber::Natural(r, _) => {
+                            BorrowedCoefficient::Natural(r, _) => {
                                 exponents[var_index] += E::from_u32(r as u32)
                             }
-                            BorrowedNumber::Large(r) => {
+                            BorrowedCoefficient::Large(r) => {
                                 exponents[var_index] +=
                                     E::from_u32(r.to_rat().numer().to_u32().unwrap())
                             }
@@ -613,7 +613,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_number_view();
 
-                    if let BorrowedNumber::Natural(nn, nd) = num_n {
+                    if let BorrowedCoefficient::Natural(nn, nd) = num_n {
                         if nd != 1 {
                             Err("Exponent cannot be a fraction")?
                         }
@@ -716,7 +716,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_number_view();
 
-                    if let BorrowedNumber::Natural(nn, nd) = num_n {
+                    if let BorrowedCoefficient::Natural(nn, nd) = num_n {
                         if nd != 1 {
                             Err("Exponent cannot be a fraction")?
                         }
@@ -812,7 +812,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_number_view();
-                    if let BorrowedNumber::Natural(nn, nd) = num_n {
+                    if let BorrowedCoefficient::Natural(nn, nd) = num_n {
                         if nd == 1 && nn > 0 && nn < u32::MAX as i64 {
                             let id = if let Some(x) = map.get(&base) {
                                 *x
@@ -918,13 +918,13 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_number_view();
 
-                    if let BorrowedNumber::Natural(nn, nd) = num_n {
+                    if let BorrowedCoefficient::Natural(nn, nd) = num_n {
                         if nd != 1 {
                             // convert base^(1/nd) to a new variable
                             let mut pow_h = workspace.new_atom();
                             pow_h.to_pow().set_from_base_and_exp(
                                 base,
-                                workspace.new_num(Number::Natural(1, nd)).as_view(),
+                                workspace.new_num(Coefficient::Natural(1, nd)).as_view(),
                             );
 
                             let id = if let Some(x) = map.get(&pow_h) {
@@ -1069,7 +1069,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
         map: &HashMap<Variable, AtomView<P>>,
         out: &mut Atom<P>,
     ) where
-        R::Element: Into<Number>,
+        R::Element: Into<Coefficient>,
     {
         let var_map = self
             .var_map
@@ -1106,7 +1106,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
 
                     if pow > E::one() {
                         let num = num_h.to_num();
-                        num.set_from_number(Number::Natural(pow.to_u32() as i64, 1));
+                        num.set_from_number(Coefficient::Natural(pow.to_u32() as i64, 1));
 
                         let pow = pow_h.to_pow();
                         pow.set_from_base_and_exp(var_h.get().as_view(), num_h.get().as_view());
@@ -1143,7 +1143,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         map: &HashMap<Variable, AtomView<P>>,
         out: &mut Atom<P>,
     ) where
-        R::Element: Into<Number>,
+        R::Element: Into<Coefficient>,
     {
         if self.denominator.is_one() {
             self.numerator.to_expression(workspace, state, map, out);
@@ -1190,12 +1190,12 @@ impl Token {
             match factor {
                 Token::Number(n) => {
                     let num = if let Ok(x) = n.parse::<i64>() {
-                        field.element_from_number(Number::Natural(x, 1))
+                        field.element_from_coefficient(Coefficient::Natural(x, 1))
                     } else {
                         match ArbitraryPrecisionInteger::parse(n) {
                             Ok(x) => {
                                 let p = x.complete().into();
-                                field.element_from_number(Number::Large(p))
+                                field.element_from_coefficient(Coefficient::Large(p))
                             }
                             Err(e) => Err(format!("Could not parse number: {}", e))?,
                         }

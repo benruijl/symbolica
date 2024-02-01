@@ -3,10 +3,10 @@ use std::cmp::Ordering;
 use smallvec::SmallVec;
 
 use crate::{
+    coefficient::{BorrowedCoefficient, Coefficient},
     domains::{integer::IntegerRing, rational::RationalField},
     poly::Variable,
     representations::{
-        number::{BorrowedNumber, Number},
         Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice, Mul, Num, OwnedAdd, OwnedFun,
         OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
@@ -312,7 +312,7 @@ impl<P: AtomSet> Atom<P> {
 
                         if new_exp.to_num_view().is_zero() {
                             let num = self.to_num();
-                            num.set_from_number(Number::Natural(1, 1));
+                            num.set_from_number(Coefficient::Natural(1, 1));
                         } else if new_exp.to_num_view().is_one() {
                             self.set_from_view(&base2);
                         } else {
@@ -345,12 +345,12 @@ impl<P: AtomSet> Atom<P> {
 
                     let new_exp = n
                         .get_number_view()
-                        .add(&BorrowedNumber::Natural(1, 1), state);
+                        .add(&BorrowedCoefficient::Natural(1, 1), state);
 
                     if new_exp.is_zero() {
                         let num = self.to_num();
-                        num.set_from_number(Number::Natural(1, 1));
-                    } else if Number::Natural(1, 1) == new_exp {
+                        num.set_from_number(Coefficient::Natural(1, 1));
+                    } else if Coefficient::Natural(1, 1) == new_exp {
                         self.set_from_view(&base);
                     } else {
                         num.set_from_number(new_exp);
@@ -358,7 +358,7 @@ impl<P: AtomSet> Atom<P> {
                             .set_from_base_and_exp(base, AtomView::Num(num.to_num_view()));
                     }
                 } else {
-                    self.to_num().set_from_number(Number::Natural(1, 1));
+                    self.to_num().set_from_number(Coefficient::Natural(1, 1));
 
                     let new_exp = helper.to_add();
                     new_exp.extend(self.as_view());
@@ -389,14 +389,14 @@ impl<P: AtomSet> Atom<P> {
         if self.as_view() == other.as_view() {
             if let AtomView::Var(v) = self.as_view() {
                 if v.get_name() == State::I {
-                    self.to_num().set_from_number(Number::Natural(-1, 1));
+                    self.to_num().set_from_number(Coefficient::Natural(-1, 1));
                     return true;
                 }
             }
 
             // add powers
             let exp = other.to_num();
-            exp.set_from_number(Number::Natural(2, 1));
+            exp.set_from_number(Coefficient::Natural(2, 1));
 
             //let mut a = workspace.get_atom_test_buf();
             let new_pow = helper.to_pow();
@@ -452,13 +452,13 @@ impl<P: AtomSet> Atom<P> {
                     let num = if let AtomView::Num(n) = &last_elem {
                         n.get_number_view()
                     } else {
-                        BorrowedNumber::Natural(1, 1)
+                        BorrowedCoefficient::Natural(1, 1)
                     };
 
                     let new_coeff = if let AtomView::Num(n) = &last_elem2 {
                         num.add(&n.get_number_view(), state)
                     } else {
-                        num.add(&BorrowedNumber::Natural(1, 1), state)
+                        num.add(&BorrowedCoefficient::Natural(1, 1), state)
                     };
 
                     let len = slice.len();
@@ -467,7 +467,7 @@ impl<P: AtomSet> Atom<P> {
                     drop(non_coeff1);
                     drop(slice);
 
-                    if new_coeff == Number::Natural(1, 1) {
+                    if new_coeff == Coefficient::Natural(1, 1) {
                         assert!(has_coeff);
 
                         if len == 2 {
@@ -513,7 +513,7 @@ impl<P: AtomSet> Atom<P> {
 
                 let new_coeff = if let AtomView::Num(n) = &last_elem {
                     n.get_number_view()
-                        .add(&BorrowedNumber::Natural(1, 1), state)
+                        .add(&BorrowedCoefficient::Natural(1, 1), state)
                 } else {
                     return false;
                 };
@@ -522,7 +522,7 @@ impl<P: AtomSet> Atom<P> {
                 drop(slice);
                 drop(non_coeff1);
 
-                assert!(new_coeff != Number::Natural(1, 1));
+                assert!(new_coeff != Coefficient::Natural(1, 1));
                 if new_coeff.is_zero() {
                     let num = self.to_num();
                     num.set_from_number(new_coeff);
@@ -550,7 +550,7 @@ impl<P: AtomSet> Atom<P> {
                 let (new_coeff, has_num) = if let AtomView::Num(n) = &last_elem {
                     (
                         n.get_number_view()
-                            .add(&BorrowedNumber::Natural(1, 1), state),
+                            .add(&BorrowedCoefficient::Natural(1, 1), state),
                         true,
                     )
                 } else {
@@ -560,7 +560,7 @@ impl<P: AtomSet> Atom<P> {
                 // help the borrow checker by dropping all references
                 drop(slice);
 
-                assert!(new_coeff != Number::Natural(1, 1));
+                assert!(new_coeff != Coefficient::Natural(1, 1));
                 if new_coeff.is_zero() {
                     let num = self.to_num();
                     num.set_from_number(new_coeff);
@@ -585,7 +585,7 @@ impl<P: AtomSet> Atom<P> {
             let mul = helper.to_mul();
 
             let num = other.to_num();
-            num.set_from_number(Number::Natural(2, 1));
+            num.set_from_number(Coefficient::Natural(2, 1));
 
             mul.extend(self.as_view());
             mul.extend(other.as_view());
@@ -647,7 +647,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                                 if n.is_zero() {
                                     let on = out.to_num();
-                                    on.set_from_number(Number::Natural(0, 1));
+                                    on.set_from_number(Coefficient::Natural(0, 1));
                                     return;
                                 }
                             }
@@ -662,7 +662,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                             if n.is_zero() {
                                 let on = out.to_num();
-                                on.set_from_number(Number::Natural(0, 1));
+                                on.set_from_number(Coefficient::Natural(0, 1));
                                 return;
                             }
                         }
@@ -728,7 +728,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 } else {
                     let on = out.to_num();
-                    on.set_from_number(Number::Natural(1, 1));
+                    on.set_from_number(Coefficient::Natural(1, 1));
                 }
             }
             AtomView::Num(n) => {
@@ -801,7 +801,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 }
 
                 // try to turn the argument into a number
-                if name == State::NUM && out_f.to_fun_view().get_nargs() == 1 {
+                if name == State::COEFF && out_f.to_fun_view().get_nargs() == 1 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
                     if let AtomView::Num(_) = arg {
                         let mut buffer = workspace.new_atom();
@@ -825,7 +825,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                 }
                             }) {
                                 let nn = out.to_num();
-                                nn.set_from_number(Number::RationalPolynomial(r));
+                                nn.set_from_number(Coefficient::RationalPolynomial(r));
                                 return;
                             }
                         }
@@ -890,7 +890,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         let mut new_fun = workspace.new_atom();
                         let nf = new_fun.to_fun();
                         nf.set_from_name(name);
-                        let mut coeff = Number::Natural(1, 1);
+                        let mut coeff = Coefficient::Natural(1, 1);
                         for a in out_f.to_fun_view().iter() {
                             if let AtomView::Mul(m) = a {
                                 if m.has_coefficient() {
@@ -943,7 +943,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             .any(|w| w[0].1.as_view() == w[1].1.as_view())
                         {
                             let on = out.to_num();
-                            on.set_from_number(Number::Natural(0, 1));
+                            on.set_from_number(Coefficient::Natural(0, 1));
                             return;
                         }
 
@@ -968,7 +968,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                             let m = out.to_mul();
                             m.extend(handle.as_view());
-                            handle.to_num().set_from_number(Number::Natural(-1, 1));
+                            handle.to_num().set_from_number(Coefficient::Natural(-1, 1));
                             m.extend(handle.as_view());
 
                             return;
@@ -1004,12 +1004,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 'pow_simplify: {
                     if let AtomView::Num(e) = exp_handle.as_view() {
-                        if let BorrowedNumber::Natural(0, 1) = &e.get_number_view() {
+                        if let BorrowedCoefficient::Natural(0, 1) = &e.get_number_view() {
                             // x^0 = 1
                             let n = out.to_num();
-                            n.set_from_number(Number::Natural(1, 1));
+                            n.set_from_number(Coefficient::Natural(1, 1));
                             break 'pow_simplify;
-                        } else if let BorrowedNumber::Natural(1, 1) = &e.get_number_view() {
+                        } else if let BorrowedCoefficient::Natural(1, 1) = &e.get_number_view() {
                             // remove power of 1
                             out.set_from_view(&base_handle.as_view());
                             break 'pow_simplify;
@@ -1018,7 +1018,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             let (new_base_num, new_exp_num) =
                                 n.get_number_view().pow(&e.get_number_view(), state);
 
-                            if let Number::Natural(1, 1) = &new_exp_num {
+                            if let Coefficient::Natural(1, 1) = &new_exp_num {
                                 let out = out.to_num();
                                 out.set_from_number(new_base_num);
                                 break 'pow_simplify;
@@ -1031,17 +1031,17 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             ne.set_from_number(new_exp_num);
                         } else if let AtomView::Var(v) = base_handle.as_view() {
                             if v.get_name() == State::I {
-                                if let BorrowedNumber::Natural(n, d) = &e.get_number_view() {
+                                if let BorrowedCoefficient::Natural(n, d) = &e.get_number_view() {
                                     let mut new_base = workspace.new_atom();
 
                                     // the case n < 0 is handled automagically
                                     if *n % 2 == 0 {
                                         if *n % 4 == 0 {
                                             let n = new_base.to_num();
-                                            n.set_from_number(Number::Natural(1, 1));
+                                            n.set_from_number(Coefficient::Natural(1, 1));
                                         } else {
                                             let n = new_base.to_num();
-                                            n.set_from_number(Number::Natural(-1, 1));
+                                            n.set_from_number(Coefficient::Natural(-1, 1));
                                         }
                                     } else if (*n - 1) % 4 == 0 {
                                         new_base.set_from_view(&base_handle.as_view());
@@ -1049,7 +1049,9 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                         let n = new_base.to_mul();
                                         n.extend(base_handle.as_view());
                                         let mut helper = workspace.new_atom();
-                                        helper.to_num().set_from_number(Number::Natural(-1, 1));
+                                        helper
+                                            .to_num()
+                                            .set_from_number(Coefficient::Natural(-1, 1));
                                         n.extend(helper.as_view());
                                         n.set_dirty(true);
                                         new_base.as_view().normalize(workspace, state, &mut helper);
@@ -1060,7 +1062,9 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                         out.set_from_view(&new_base.as_view());
                                     } else {
                                         let mut new_exp = workspace.new_atom();
-                                        new_exp.to_num().set_from_number(Number::Natural(1, *d));
+                                        new_exp
+                                            .to_num()
+                                            .set_from_number(Coefficient::Natural(1, *d));
                                         out.to_pow().set_from_base_and_exp(
                                             new_base.as_view(),
                                             new_exp.as_view(),
@@ -1076,7 +1080,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             if let AtomView::Num(n) = p_base_exp {
                                 let new_exp = n.get_number_view().mul(&e.get_number_view(), state);
 
-                                if let Number::Natural(1, 1) = &new_exp {
+                                if let Coefficient::Natural(1, 1) = &new_exp {
                                     out.set_from_view(&p_base_base);
                                     break 'pow_simplify;
                                 }
@@ -1189,7 +1193,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 } else {
                     let on = out.to_num();
-                    on.set_from_number(Number::Natural(0, 1));
+                    on.set_from_number(Coefficient::Natural(0, 1));
                 }
             }
         }

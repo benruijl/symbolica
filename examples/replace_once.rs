@@ -1,5 +1,5 @@
 use symbolica::{
-    id::Condition,
+    id::{Condition, MatchSettings},
     representations::Atom,
     state::{ResettableBuffer, State, Workspace},
 };
@@ -16,6 +16,7 @@ fn main() {
 
     let pattern = pat_expr.as_view().into_pattern(&state);
     let restrictions = Condition::default();
+    let settings = MatchSettings::default();
 
     println!(
         "> Replace once {}={} in {}:",
@@ -26,7 +27,7 @@ fn main() {
 
     let mut replaced = Atom::new();
 
-    let mut it = pattern.replace_iter(expr.as_view(), &rhs, &state, &restrictions);
+    let mut it = pattern.replace_iter(expr.as_view(), &rhs, &state, &restrictions, &settings);
     while let Some(()) = it.next(&state, &workspace, &mut replaced) {
         println!("\t{}", replaced.printer(&state));
     }

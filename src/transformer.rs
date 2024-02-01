@@ -1,11 +1,11 @@
 use std::time::Instant;
 
 use crate::{
+    coefficient::{BorrowedCoefficient, Coefficient},
     combinatorics::{partitions, unique_permutations},
     id::{Condition, MatchSettings, Pattern, WildcardAndRestriction},
     printer::{AtomPrinter, PrintOptions},
     representations::{
-        number::{BorrowedNumber, Number},
         Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
         OwnedNum,
     },
@@ -230,14 +230,14 @@ impl<P: AtomSet> Transformer<P> {
                         if !*only_for_arg_fun || f.get_name() == State::ARG {
                             let n_args = f.get_nargs();
                             out.to_num()
-                                .set_from_number(Number::Natural(n_args as i64, 1));
+                                .set_from_number(Coefficient::Natural(n_args as i64, 1));
                         } else {
-                            out.to_num().set_from_number(Number::Natural(1, 1));
+                            out.to_num().set_from_number(Coefficient::Natural(1, 1));
                         }
                     } else if !only_for_arg_fun {
-                        out.to_num().set_from_number(Number::Natural(1, 1));
+                        out.to_num().set_from_number(Coefficient::Natural(1, 1));
                     } else {
-                        out.to_num().set_from_number(Number::Natural(0, 1));
+                        out.to_num().set_from_number(Coefficient::Natural(0, 1));
                     }
                 }
                 Transformer::Split => match input {
@@ -474,7 +474,7 @@ impl<P: AtomSet> Transformer<P> {
                 }
                 Transformer::FromNumber => {
                     if let AtomView::Num(n) = input {
-                        if let BorrowedNumber::RationalPolynomial(r) = n.get_number_view() {
+                        if let BorrowedCoefficient::RationalPolynomial(r) = n.get_number_view() {
                             r.to_expression(workspace, state, &HashMap::default(), out);
                             continue;
                         }

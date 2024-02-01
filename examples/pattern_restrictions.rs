@@ -1,8 +1,8 @@
 use ahash::HashMap;
 use symbolica::{
     domains::finite_field,
-    id::{Condition, Match, PatternRestriction},
-    representations::{number::BorrowedNumber, Atom, AtomView, Num},
+    id::{Condition, Match, MatchSettings, PatternRestriction},
+    representations::{coefficient::BorrowedCoefficient, Atom, AtomView, Num},
     state::{State, Workspace},
 };
 fn main() {
@@ -42,7 +42,7 @@ fn main() {
             z,
             PatternRestriction::Filter(Box::new(|x: &Match| {
                 if let Match::Single(AtomView::Num(num)) = x {
-                    if let BorrowedNumber::Natural(x, y) = num.get_number_view() {
+                    if let BorrowedCoefficient::Natural(x, y) = num.get_number_view() {
                         y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
                     } else {
                         false
@@ -53,6 +53,7 @@ fn main() {
             })),
         )
         & (w, PatternRestriction::Length(0, None));
+    let settings = MatchSettings::default().into();
 
     println!(
         "> Matching pattern {} : 0 <= len(x) <= 2, 0 <= len(y) <= 4, len(x) >= len(y) & is_prime(z) to {}:",
@@ -60,7 +61,7 @@ fn main() {
         expr.printer(&state)
     );
 
-    let mut it = pattern.pattern_match(expr.as_view(), &state, &conditions);
+    let mut it = pattern.pattern_match(expr.as_view(), &state, &conditions, &settings);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\tMatch at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {

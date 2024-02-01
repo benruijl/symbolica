@@ -1,5 +1,5 @@
 use symbolica::{
-    id::{Condition, Match, PatternAtomTreeIterator},
+    id::{Condition, Match, MatchSettings, PatternAtomTreeIterator},
     representations::Atom,
     state::{State, Workspace},
 };
@@ -13,6 +13,7 @@ fn main() {
 
     let pattern = pat_expr.as_view().into_pattern(&state);
     let restrictions = Condition::default();
+    let settings = MatchSettings::default();
 
     println!(
         "> Matching pattern {} to {}:",
@@ -20,7 +21,8 @@ fn main() {
         expr.printer(&state)
     );
 
-    let mut it = PatternAtomTreeIterator::new(&pattern, expr.as_view(), &state, &restrictions);
+    let mut it =
+        PatternAtomTreeIterator::new(&pattern, expr.as_view(), &state, &restrictions, &settings);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\tMatch at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {

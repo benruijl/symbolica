@@ -3,9 +3,8 @@ use std::{sync::Mutex, thread::LocalKey};
 use rayon::prelude::*;
 
 use crate::{
-    representations::{
-        default::Linear, number::Number, Add, Atom, AtomSet, AtomView, Num, OwnedAdd, OwnedNum,
-    },
+    coefficient::Coefficient,
+    representations::{default::Linear, Add, Atom, AtomSet, AtomView, Num, OwnedAdd, OwnedNum},
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -105,7 +104,7 @@ impl<P: AtomSet> TermOutputStream<P> {
 
         if self.mem_buf.is_empty() {
             let mut out = Atom::<P>::new();
-            out.to_num().set_from_number(Number::Natural(0, 1));
+            out.to_num().set_from_number(Coefficient::Natural(0, 1));
             out
         } else if self.mem_buf.len() == 1 {
             self.mem_buf.pop().unwrap()
@@ -130,7 +129,7 @@ impl<P: AtomSet + GetLocalWorkspace + Send + 'static> Default for TermStreamer<P
 where
     for<'a> AtomView<'a, P>: Send,
     Atom<P>: Send,
- {
+{
     fn default() -> Self {
         Self::new()
     }

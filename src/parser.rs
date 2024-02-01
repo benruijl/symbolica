@@ -7,12 +7,10 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    coefficient::{Coefficient, ConvertToRing},
     domains::Ring,
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
-    representations::{
-        number::{ConvertToRing, Number},
-        Atom, AtomSet, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar,
-    },
+    representations::{Atom, AtomSet, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar},
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -296,12 +294,12 @@ impl Token {
         match self {
             Token::Number(n) => {
                 if let Ok(x) = n.parse::<i64>() {
-                    out.to_num().set_from_number(Number::Natural(x, 1));
+                    out.to_num().set_from_number(Coefficient::Natural(x, 1));
                 } else {
                     match Integer::parse(n) {
                         Ok(x) => {
                             out.to_num()
-                                .set_from_number(Number::Large(x.complete().into()));
+                                .set_from_number(Coefficient::Large(x.complete().into()));
                         }
                         Err(e) => return Err(format!("Could not parse number: {}", e)),
                     }
@@ -802,12 +800,12 @@ impl Token {
                     coeff = field.neg(&field.one());
                 } else {
                     coeff = if let Ok(x) = n.parse::<i64>() {
-                        field.element_from_number(Number::Natural(x, 1))
+                        field.element_from_coefficient(Coefficient::Natural(x, 1))
                     } else {
                         match Integer::parse(n) {
                             Ok(x) => {
                                 let p = x.complete().into();
-                                field.element_from_number(Number::Large(p))
+                                field.element_from_coefficient(Coefficient::Large(p))
                             }
                             Err(e) => panic!("Could not parse number: {}", e),
                         }

@@ -833,8 +833,8 @@ class CompareOp:
 class Function:
     """A Symbolica function. Will turn into an expression or a transformer when called with arguments."""
 
-    NUM: Function
-    """The built-in function that converts rational polynomials to a number."""
+    COEFF: Function
+    """The built-in function that convert a rational polynomials to a coefficient."""
 
     COS: Function
     """The built-in cosine function."""
@@ -975,13 +975,13 @@ class Transformer:
         Yields `f(1,2)`.
         """
 
-    def from_num(self) -> Transformer:
-        """Create a transformer that extracts a rational polynomial from a number.
+    def from_coeff(self) -> Transformer:
+        """Create a transformer that extracts a rational polynomial from a coefficient.
 
         Examples
         --------
         >>> from symbolica import Expression, Function
-        >>> e = Function.NUM((x^2+1)/y^2).transform().from_num()
+        >>> e = Function.COEFF((x^2+1)/y^2).transform().from_coeff()
         >>> print(e)
         """
 

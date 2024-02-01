@@ -1,9 +1,10 @@
 use ahash::HashMap;
 
 use crate::{
+    coefficient::BorrowedCoefficient,
     domains::{float::Real, rational::Rational},
     poly::Variable,
-    representations::{number::BorrowedNumber, Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
+    representations::{Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
     state::State,
 };
 
@@ -41,12 +42,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     ) -> T {
         match self {
             AtomView::Num(n) => match n.get_number_view() {
-                BorrowedNumber::Natural(n, d) => (&Rational::Natural(n, d)).into(),
-                BorrowedNumber::Large(l) => (&Rational::Large(l.to_rat())).into(),
-                BorrowedNumber::FiniteField(_, _) => {
+                BorrowedCoefficient::Natural(n, d) => (&Rational::Natural(n, d)).into(),
+                BorrowedCoefficient::Large(l) => (&Rational::Large(l.to_rat())).into(),
+                BorrowedCoefficient::FiniteField(_, _) => {
                     unimplemented!("Finite field not yet supported for evaluation")
                 }
-                BorrowedNumber::RationalPolynomial(_) => unimplemented!(
+                BorrowedCoefficient::RationalPolynomial(_) => unimplemented!(
                     "Rational polynomial coefficient not yet supported for evaluation"
                 ),
             },
@@ -90,7 +91,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let b_eval = b.evaluate(var_map, function_map, cache);
 
                 if let AtomView::Num(n) = e {
-                    if let BorrowedNumber::Natural(num, den) = n.get_number_view() {
+                    if let BorrowedCoefficient::Natural(num, den) = n.get_number_view() {
                         if den == 1 {
                             if num >= 0 {
                                 return b_eval.pow(num as u64);

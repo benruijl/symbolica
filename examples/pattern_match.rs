@@ -1,6 +1,5 @@
-use ahash::HashMap;
 use symbolica::{
-    id::{Match, PatternRestriction},
+    id::{Match, MatchSettings, PatternRestriction},
     representations::Atom,
     state::{State, Workspace},
 };
@@ -19,6 +18,7 @@ fn main() {
         PatternRestriction::Length(1, Some(100)),
     )
         .into();
+    let settings = MatchSettings::default().into();
 
     println!(
         "> Matching pattern {} to {}:",
@@ -26,7 +26,7 @@ fn main() {
         expr.as_view().printer(&state)
     );
 
-    let mut it = pattern.pattern_match(expr.as_view(), &state, &restrictions);
+    let mut it = pattern.pattern_match(expr.as_view(), &state, &restrictions, &settings);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\t Match at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {

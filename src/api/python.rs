@@ -21,6 +21,7 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    coefficient::Coefficient,
     domains::{
         finite_field::ToFiniteField,
         integer::Integer,
@@ -51,8 +52,8 @@ use crate::{
     },
     printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
     representations::{
-        default::ListIteratorD, number::Number, Add, Atom, AtomSet, AtomView, Fun, Identifier,
-        ListSlice, Mul, Num, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+        default::ListIteratorD, Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice, Mul, Num,
+        OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
     state::{FunctionAttribute, ResettableBuffer, State, Workspace},
     streaming::TermStreamer,
@@ -394,14 +395,14 @@ impl PythonPattern {
         return append_transformer!(self, Transformer::Deduplicate);
     }
 
-    /// Create a transformer that extracts a rational polynomial from a number.
+    /// Create a transformer that extracts a rational polynomial from a coefficient.
     ///
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Function
-    /// >>> e = Function.NUM((x^2+1)/y^2).transform().from_num()
+    /// >>> e = Function.COEFF((x^2+1)/y^2).transform().from_coeff()
     /// >>> print(e)
-    pub fn from_num(&self) -> PyResult<PythonPattern> {
+    pub fn from_coeff(&self) -> PyResult<PythonPattern> {
         return append_transformer!(self, Transformer::FromNumber);
     }
 
@@ -1629,7 +1630,7 @@ impl PythonExpression {
         let b = WORKSPACE.with(|workspace| {
             let mut pow = workspace.new_atom();
             let pow_num = pow.to_num();
-            pow_num.set_from_number(Number::Natural(-1, 1));
+            pow_num.set_from_number(Coefficient::Natural(-1, 1));
 
             let mut e = workspace.new_atom();
             let a = e.to_pow();
@@ -1721,7 +1722,7 @@ impl PythonExpression {
 
             let mut sign = workspace.new_atom();
             let sign_num = sign.to_num();
-            sign_num.set_from_number(Number::Natural(-1, 1));
+            sign_num.set_from_number(Coefficient::Natural(-1, 1));
 
             a.extend(self.expr.as_view());
             a.extend(sign.get().as_view());
@@ -3111,11 +3112,11 @@ impl PythonFunction {
         Ok(PythonFunction { id })
     }
 
-    /// The built-in function that converts rational polynomials to a number.
+    /// The built-in function that converts a rational polynomial to a coefficient.
     #[classattr]
-    #[pyo3(name = "NUM")]
-    pub fn num() -> PythonFunction {
-        PythonFunction { id: State::NUM }
+    #[pyo3(name = "COEFF")]
+    pub fn coeff() -> PythonFunction {
+        PythonFunction { id: State::COEFF }
     }
 
     /// The built-in cosine function.

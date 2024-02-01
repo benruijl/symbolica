@@ -925,7 +925,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     /// Get the leading coefficient.
     pub fn lcoeff(&self) -> F::Element {
         if self.is_zero() {
-            return self.field.one();
+            return self.field.zero();
         }
         self.coefficients.last().unwrap().clone()
     }

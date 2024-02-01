@@ -2686,6 +2686,10 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         while !r1.is_zero() {
             let (q, r) = r0.quot_rem_univariate(&mut r1);
+            if F::is_zero(&r.lcoeff()) {
+                return (r1, s1, t1);
+            }
+
             let a = self.field.inv(&r.lcoeff());
             (r1, r0) = (r.mul_coeff(a.clone()), r1);
             (s1, s0) = ((s0 - &q * &s1).mul_coeff(a.clone()), s1);

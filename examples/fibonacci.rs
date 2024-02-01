@@ -1,6 +1,5 @@
-use ahash::HashMap;
 use symbolica::{
-    id::{Condition, Match, Pattern, PatternRestriction},
+    id::{Match, Pattern, PatternRestriction},
     representations::{Atom, AtomView, Num},
     state::{State, Workspace},
 };
@@ -17,7 +16,7 @@ fn main() {
     let rhs_one = Atom::new_num(1).into_pattern(&state);
 
     // prepare the pattern restriction `x_ > 1`
-    let mut restrictions = (
+    let restrictions = (
         state.get_or_insert_var("x_"),
         PatternRestriction::Filter(Box::new(|v: &Match| match v {
             Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),

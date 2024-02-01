@@ -16,10 +16,12 @@
 
 # Symbolica
 
-[Symbolica](https://symbolica.io) is a computer algebra system which aims to handle expressions with billions
-of terms, taking up terabytes of diskspace. It can easily be incorporated into existing projects using its Python, Rust or C++ bindings.
+Symbolica is a blazing fast and modern computer algebra system which aims to handle huge expressions. It can easily be incorporated into existing projects using its Python, Rust or C++ bindings.
+Check out the live [Jupyter Notebook demo](https://colab.research.google.com/drive/1VAtND2kddgBwNt1Tjsai8vnbVIbgg-7D?usp=sharing)!
 
 For documentation and more, see [symbolica.io](https://symbolica.io).
+
+
 
 ## Quick Example
 
@@ -43,15 +45,6 @@ You are able to perform these operations from the comfort of a programming langu
 
 Visit the [Get Started](https://symbolica.io/docs/get_started.html) page for detailed installation instructions.
 
-## Rust
-
-If you are using Symbolica as a library in Rust, simply include it in the `Cargo.toml`:
-
-```toml
-[dependencies]
-symbolica = "0.1"
-```
-
 ## Python
 
 Symbolica can be installed for Python >3.5 using `pip`:
@@ -60,20 +53,20 @@ Symbolica can be installed for Python >3.5 using `pip`:
 pip install symbolica
 ```
 
-The installation may take some time, as it may have to compile Symbolica.
+The installation may take some time on Mac OS and Windows, as it may have to compile Symbolica.
+
+## Rust
+
+If you want to use Symbolica as a library in Rust, simply include it in the `Cargo.toml`:
+
+```toml
+[dependencies]
+symbolica = "0.2"
+```
 
 # Examples
 
-In the following example we create a Symbolica expression `(1+x)^2`, expand it, and replace `x^2` by `6`:
-
-```python
-from symbolica import Expression
-x = Expression.var('x')
-e = (1+x)**2
-r = e.expand().replace_all(x**2, 6)
-print(r)
-```
-which yields `2*x+7`.
+Below we list some examples of the features of Symbolica. Check the [guide](https://symbolica.io/docs/) for a complete overview.
 
 ### Pattern matching
 
@@ -89,6 +82,39 @@ r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2))
 print(r)
 ```
 which yields `y^2*f(2,x^2)+5`.
+
+### Solving a linear system
+
+Solve a linear system in `x` and `y` with a parameter `c`:
+
+```python
+from symbolica import Expression
+
+x, y, c = Expression.vars('x', 'y', 'c')
+f = Expression.fun('f')
+
+x_r, y_r = Expression.solve_linear_system(
+    [f(c)*x + y + c, y + c**2], [x, y])
+print('x =', x_r, ', y =', y_r)
+```
+which yields `x = (-c+c^2)*f(c)^-1` and `y = -c^2`.
+
+### Series expansion
+
+Perform the Taylor series in `x` of an expression that contains a user-defined function `f`:
+
+```python
+from symbolica import Expression
+
+x, y = Expression.vars('x', 'y')
+f = Expression.fun('f')
+
+e = 2* x**2 * y + f(x)
+e = e.taylor_series(x, 0, 2)
+
+print(e)
+```
+which yields `f(0)+x*der(1,f(0))+1/2*x^2*(4*y+der(2,f(0)))`.
 
 ### Rational arithmetic
 

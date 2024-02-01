@@ -12,7 +12,7 @@ keywords = ["math", "algebra", "polynomial", "expression", "manipulation"]
 license = {file = "License.md"}
 name = "symbolica"
 readme = "Readme.md"
-version = "0.1.6"
+version = "0.2.0"
 
 classifiers = [
   "Development Status :: 3 - Alpha",

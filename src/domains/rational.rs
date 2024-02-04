@@ -219,14 +219,14 @@ impl Rational {
     pub fn numerator(&self) -> Integer {
         match self {
             Rational::Natural(n, _) => Integer::Natural(*n),
-            Rational::Large(r) => Integer::Large(r.numer().clone()),
+            Rational::Large(r) => Integer::from_large(r.numer().clone()),
         }
     }
 
     pub fn denominator(&self) -> Integer {
         match self {
             Rational::Natural(_, d) => Integer::Natural(*d),
-            Rational::Large(r) => Integer::Large(r.denom().clone()),
+            Rational::Large(r) => Integer::from_large(r.denom().clone()),
         }
     }
 

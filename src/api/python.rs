@@ -1033,7 +1033,7 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             }))
         } else if let Ok(num) = ob.extract::<&PyLong>() {
             let a = format!("{}", num);
-            let i = Integer::Large(rug::Integer::parse(&a).unwrap().complete());
+            let i = Integer::from_large(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(PythonExpression {
                 expr: Arc::new(Atom::new_num(i)),
             }))

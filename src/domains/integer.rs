@@ -62,7 +62,7 @@ impl From<u64> for Integer {
         if value <= i64::MAX as u64 {
             Integer::Natural(value as i64)
         } else {
-            Integer::Large(value.into())
+            Integer::Double(value as i128)
         }
     }
 }

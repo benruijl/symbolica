@@ -64,6 +64,10 @@ const ACTIVATION_ERROR: &str = "┌───────────────
 │ Could not activate the Symbolica license │
 └──────────────────────────────────────────┘";
 
+const MISSING_LICENSE_ERROR: &str = "┌───────────────────────────────┐
+│ Symbolica license key missing │
+└───────────────────────────────┘";
+
 impl Default for LicenseManager {
     fn default() -> Self {
         Self::new()
@@ -98,15 +102,15 @@ impl LicenseManager {
 │ is limited to one instance and core.                   │
 │                                                        │
 │ {} can easily acquire a free license to unlock  │
-│ all cores and to remove this banner and the prompt:    │
+│ all cores and to remove this banner:                   │
 │                                                        │
-│   from symbolica import request_hobbyist_license       │
+│   from symbolica import *                              │
 │   request_hobbyist_license('YOUR_NAME', 'YOUR_EMAIL')  │
 │                                                        │
 │ {} users must obtain an appropriate license, │
-│ or can get a free 14-day trial license:                │
+│ or can get a free 30-day trial license:                │
 │                                                        │
-│   from symbolica import request_trial_license          │
+│   from symbolica import *                              │
 │   request_trial_license('NAME', 'EMAIL', 'EMPLOYER')   │
 │                                                        │
 │ See https://symbolica.io/docs/get_started.html#license │
@@ -114,13 +118,6 @@ impl LicenseManager {
             "Hobbyists".bold(),
             "Professional".bold(),
         );
-        print!("Confirm that you are a non-professional user of Symbolica (y/N): ");
-        std::io::stdout().flush().unwrap();
-        let mut buffer = String::new();
-        std::io::stdin().read_line(&mut buffer).unwrap();
-        if !["Y\n", "y\n", "yes\n"].contains(&buffer.as_str()) {
-            abort();
-        }
 
         match TcpListener::bind("127.0.0.1:12011") {
             Ok(o) => {
@@ -165,7 +162,7 @@ impl LicenseManager {
             .or(env::var("SYMBOLICA_LICENSE").ok());
 
         let Some(key) = key else {
-            return Err(ACTIVATION_ERROR.to_owned());
+            return Err(MISSING_LICENSE_ERROR.to_owned());
         };
 
         if key.contains('@') {

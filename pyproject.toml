@@ -7,7 +7,7 @@ authors = [
   {email = "benruyl@gmail.com"},
   {name = "Ben Ruijl"},
 ]
-description = "Symbolica is a blazing fast symbolic manipulation toolkit"
+description = "Symbolica is a blazing fast computer algebra system"
 keywords = ["math", "algebra", "polynomial", "expression", "manipulation"]
 license = {file = "License.md"}
 name = "symbolica"

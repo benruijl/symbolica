@@ -798,6 +798,26 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
 
+                if [State::COS, State::SIN, State::EXP, State::LOG].contains(&name) {
+                    if out_f.to_fun_view().get_nargs() == 1 {
+                        let arg = out_f.to_fun_view().iter().next().unwrap();
+                        if let AtomView::Num(n) = arg {
+                            if n.is_zero() && name != State::LOG || n.is_one() && name == State::LOG
+                            {
+                                if name == State::COS || name == State::EXP {
+                                    let buffer = workspace.new_num(Coefficient::one());
+                                    out.set_from_view(&buffer.as_view());
+                                    return;
+                                } else if name == State::SIN || name == State::LOG {
+                                    let buffer = workspace.new_num(Coefficient::zero());
+                                    out.set_from_view(&buffer.as_view());
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // try to turn the argument into a number
                 if name == State::COEFF && out_f.to_fun_view().get_nargs() == 1 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();

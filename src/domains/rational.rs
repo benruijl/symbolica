@@ -5,8 +5,8 @@ use std::{
 
 use rand::Rng;
 use rug::{
-    integer::IntegerExt64, ops::Pow, Integer as ArbitraryPrecisionInteger,
-    Rational as ArbitraryPrecisionRational,
+    integer::IntegerExt64, ops::Pow, Integer as MultiPrecisionInteger,
+    Rational as MultiPrecisionRational,
 };
 
 use crate::{poly::gcd::LARGE_U32_PRIMES, printer::PrintOptions, state::State, utils};
@@ -43,7 +43,7 @@ impl RationalField {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Rational {
     Natural(i64, i64),
-    Large(ArbitraryPrecisionRational),
+    Large(MultiPrecisionRational),
 }
 
 impl From<i64> for Rational {
@@ -68,7 +68,7 @@ impl From<&Integer> for Rational {
     fn from(val: &Integer) -> Self {
         match val {
             Integer::Natural(n) => Rational::Natural(*n, 1),
-            Integer::Double(n) => Rational::Large(ArbitraryPrecisionRational::from(*n)),
+            Integer::Double(n) => Rational::Large(MultiPrecisionRational::from(*n)),
             Integer::Large(l) => Rational::Large(l.into()),
         }
     }
@@ -78,8 +78,8 @@ impl From<Integer> for Rational {
     fn from(value: Integer) -> Self {
         match value {
             Integer::Natural(n) => Rational::Natural(n.into(), 1),
-            Integer::Double(r) => Rational::Large(ArbitraryPrecisionRational::from(r)),
-            Integer::Large(r) => Rational::Large(ArbitraryPrecisionRational::from(r)),
+            Integer::Double(r) => Rational::Large(MultiPrecisionRational::from(r)),
+            Integer::Large(r) => Rational::Large(MultiPrecisionRational::from(r)),
         }
     }
 }
@@ -96,41 +96,41 @@ impl From<(Integer, Integer)> for Rational {
         match (num, den) {
             (Integer::Natural(n), Integer::Natural(d)) => Rational::new(n, d),
             (Integer::Natural(n), Integer::Large(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Rational::from_large(MultiPrecisionRational::from((n, d)))
             }
             (Integer::Large(n), Integer::Natural(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Rational::from_large(MultiPrecisionRational::from((n, d)))
             }
             (Integer::Double(n), Integer::Large(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Rational::from_large(MultiPrecisionRational::from((n, d)))
             }
             (Integer::Large(n), Integer::Double(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Rational::from_large(MultiPrecisionRational::from((n, d)))
             }
             (Integer::Natural(n), Integer::Double(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Rational::from_large(MultiPrecisionRational::from((n, d)))
             }
             (Integer::Double(n), Integer::Natural(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Rational::from_large(MultiPrecisionRational::from((n, d)))
             }
             (Integer::Double(n), Integer::Double(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Rational::from_large(MultiPrecisionRational::from((n, d)))
             }
             (Integer::Large(n), Integer::Large(d)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((n, d)))
+                Rational::from_large(MultiPrecisionRational::from((n, d)))
             }
         }
     }
 }
 
-impl From<ArbitraryPrecisionInteger> for Rational {
-    fn from(value: ArbitraryPrecisionInteger) -> Self {
+impl From<MultiPrecisionInteger> for Rational {
+    fn from(value: MultiPrecisionInteger) -> Self {
         Rational::from_large(value.into())
     }
 }
 
-impl From<ArbitraryPrecisionRational> for Rational {
-    fn from(value: ArbitraryPrecisionRational) -> Self {
+impl From<MultiPrecisionRational> for Rational {
+    fn from(value: MultiPrecisionRational) -> Self {
         Rational::from_large(value)
     }
 }
@@ -178,14 +178,14 @@ impl Rational {
             if let Some(neg) = den.checked_neg() {
                 Rational::Natural(num, neg).neg()
             } else {
-                Rational::Large(ArbitraryPrecisionRational::from((num, den)))
+                Rational::Large(MultiPrecisionRational::from((num, den)))
             }
         } else {
             Rational::Natural(num, den)
         }
     }
 
-    pub fn from_large(r: ArbitraryPrecisionRational) -> Rational {
+    pub fn from_large(r: MultiPrecisionRational) -> Rational {
         if let Some(d) = r.denom().to_i64() {
             if let Some(n) = r.numer().to_i64() {
                 return Rational::Natural(n, d);
@@ -205,7 +205,7 @@ impl Rational {
     pub fn is_negative(&self) -> bool {
         match self {
             Rational::Natural(n, _) => *n < 0,
-            Rational::Large(r) => ArbitraryPrecisionInteger::from(r.numer().signum_ref()) == -1,
+            Rational::Large(r) => MultiPrecisionInteger::from(r.numer().signum_ref()) == -1,
         }
     }
 
@@ -268,7 +268,7 @@ impl Rational {
                     }
                 }
 
-                Rational::Large(ArbitraryPrecisionRational::from((*n1, *d1)).pow(e))
+                Rational::Large(MultiPrecisionRational::from((*n1, *d1)).pow(e))
             }
             Rational::Large(r) => Rational::Large(r.pow(e).into()),
         }
@@ -281,7 +281,7 @@ impl Rational {
                     if let Some(neg) = n.checked_neg() {
                         Rational::Natural(-d, neg)
                     } else {
-                        Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).recip())
+                        Rational::Large(MultiPrecisionRational::from((*n, *d)).recip())
                     }
                 } else {
                     Rational::Natural(*d, *n)
@@ -297,7 +297,7 @@ impl Rational {
                 if let Some(neg) = n.checked_neg() {
                     Rational::Natural(neg, *d)
                 } else {
-                    Rational::Large(ArbitraryPrecisionRational::from((*n, *d)).neg())
+                    Rational::Large(MultiPrecisionRational::from((*n, *d)).neg())
                 }
             }
             Rational::Large(r) => Rational::from_large(r.neg().into()),
@@ -494,13 +494,13 @@ impl Ring for RationalField {
                     }
                 }
                 Rational::from_large(
-                    ArbitraryPrecisionRational::from((*n1, *d1))
-                        + ArbitraryPrecisionRational::from((*n2, *d2)),
+                    MultiPrecisionRational::from((*n1, *d1))
+                        + MultiPrecisionRational::from((*n2, *d2)),
                 )
             }
             (Rational::Natural(n1, d1), Rational::Large(r2))
             | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
-                let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
+                let r1 = MultiPrecisionRational::from((*n1, *d1));
                 Rational::from_large(r1 + r2)
             }
             (Rational::Large(r1), Rational::Large(r2)) => Rational::from_large((r1 + r2).into()),
@@ -532,21 +532,20 @@ impl Ring for RationalField {
                 match (n2).checked_mul(n1) {
                     Some(nn) => match (d1).checked_mul(d2) {
                         Some(nd) => Rational::Natural(nn, nd),
-                        None => Rational::Large(ArbitraryPrecisionRational::from((
+                        None => Rational::Large(MultiPrecisionRational::from((
                             nn,
-                            ArbitraryPrecisionInteger::from(d1)
-                                * ArbitraryPrecisionInteger::from(d2),
+                            MultiPrecisionInteger::from(d1) * MultiPrecisionInteger::from(d2),
                         ))),
                     },
-                    None => Rational::Large(ArbitraryPrecisionRational::from((
-                        ArbitraryPrecisionInteger::from(n1) * ArbitraryPrecisionInteger::from(n2),
-                        ArbitraryPrecisionInteger::from(d1) * ArbitraryPrecisionInteger::from(d2),
+                    None => Rational::Large(MultiPrecisionRational::from((
+                        MultiPrecisionInteger::from(n1) * MultiPrecisionInteger::from(n2),
+                        MultiPrecisionInteger::from(d1) * MultiPrecisionInteger::from(d2),
                     ))),
                 }
             }
             (Rational::Natural(n1, d1), Rational::Large(r2))
             | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
-                let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
+                let r1 = MultiPrecisionRational::from((*n1, *d1));
                 Rational::from_large(r1 * r2)
             }
             (Rational::Large(r1), Rational::Large(r2)) => Rational::from_large((r1 * r2).into()),
@@ -591,7 +590,7 @@ impl Ring for RationalField {
         if n <= i64::MAX as u64 {
             Rational::Natural(n as i64, 1)
         } else {
-            Rational::Large(ArbitraryPrecisionRational::from(n))
+            Rational::Large(MultiPrecisionRational::from(n))
         }
     }
 
@@ -662,9 +661,9 @@ impl EuclideanDomain for RationalField {
                 let lcm = d2.checked_mul(d1);
 
                 if gcd_num == i64::MAX as u64 + 1 || lcm.is_none() {
-                    Rational::Large(ArbitraryPrecisionRational::from((
-                        ArbitraryPrecisionInteger::from(gcd_num),
-                        ArbitraryPrecisionInteger::from(*d2) * ArbitraryPrecisionInteger::from(d1),
+                    Rational::Large(MultiPrecisionRational::from((
+                        MultiPrecisionInteger::from(gcd_num),
+                        MultiPrecisionInteger::from(*d2) * MultiPrecisionInteger::from(d1),
                     )))
                 } else {
                     Rational::Natural(gcd_num as i64, lcm.unwrap())
@@ -672,14 +671,14 @@ impl EuclideanDomain for RationalField {
             }
             (Rational::Natural(n1, d1), Rational::Large(r2))
             | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
-                let r1 = ArbitraryPrecisionRational::from((*n1, *d1));
-                Rational::from_large(ArbitraryPrecisionRational::from((
+                let r1 = MultiPrecisionRational::from((*n1, *d1));
+                Rational::from_large(MultiPrecisionRational::from((
                     r1.numer().clone().gcd(r2.numer()),
                     r1.denom().clone().lcm(r2.denom()),
                 )))
             }
             (Rational::Large(r1), Rational::Large(r2)) => {
-                Rational::from_large(ArbitraryPrecisionRational::from((
+                Rational::from_large(MultiPrecisionRational::from((
                     r1.numer().clone().gcd(r2.numer()),
                     r1.denom().clone().lcm(r2.denom()),
                 )))

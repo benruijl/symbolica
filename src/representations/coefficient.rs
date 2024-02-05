@@ -125,7 +125,7 @@ impl PackedRationalNumberWriter for Coefficient {
     }
 }
 
-/// A reader for generalized rational numbers. See [`ArbitraryPrecisionRationalNumberWriter`].
+/// A reader for generalized rational numbers. See [`MultiPrecisionRationalNumberWriter`].
 pub trait PackedRationalNumberReader {
     fn get_coeff_view(&self) -> (CoefficientView, &[u8]);
     fn get_frac_u64(&self) -> (u64, u64, &[u8]);

@@ -4,7 +4,7 @@ use ahash::HashMap;
 use rug::{
     integer::Order,
     ops::{NegAssign, Pow as RPow},
-    Integer as ArbitraryPrecisionInteger, Rational as ArbitraryPrecisionRational,
+    Integer as MultiPrecisionInteger, Rational as MultiPrecisionRational,
 };
 use smallvec::{smallvec, SmallVec};
 
@@ -26,7 +26,10 @@ use crate::{
 };
 
 pub trait ConvertToRing: Ring {
-    /// Convert from a Symbolica `Number` to a Ring.
+    /// Convert from an `Integer` to a Ring.
+    fn element_from_integer(&self, number: Integer) -> Self::Element;
+
+    /// Convert from a Symbolica `Coefficient` to a Ring.
     fn element_from_coefficient(&self, number: Coefficient) -> Self::Element;
 
     /// Convert from a Symbolica `CoefficientView` to a Ring.
@@ -68,14 +71,14 @@ impl From<(Integer, Integer)> for Coefficient {
     }
 }
 
-impl From<ArbitraryPrecisionInteger> for Coefficient {
-    fn from(value: ArbitraryPrecisionInteger) -> Self {
+impl From<MultiPrecisionInteger> for Coefficient {
+    fn from(value: MultiPrecisionInteger) -> Self {
         Coefficient::Rational(value.into())
     }
 }
 
-impl From<ArbitraryPrecisionRational> for Coefficient {
-    fn from(value: ArbitraryPrecisionRational) -> Self {
+impl From<MultiPrecisionRational> for Coefficient {
+    fn from(value: MultiPrecisionRational) -> Self {
         Coefficient::Rational(value.into())
     }
 }
@@ -224,14 +227,14 @@ impl<'a> SerializedRational<'a> {
         self.is_negative
     }
 
-    pub fn to_rat(&self) -> ArbitraryPrecisionRational {
-        let mut num = ArbitraryPrecisionInteger::from_digits(self.num_digits, Order::Lsf);
-        let den = ArbitraryPrecisionInteger::from_digits(self.den_digits, Order::Lsf);
+    pub fn to_rat(&self) -> MultiPrecisionRational {
+        let mut num = MultiPrecisionInteger::from_digits(self.num_digits, Order::Lsf);
+        let den = MultiPrecisionInteger::from_digits(self.den_digits, Order::Lsf);
         if self.is_negative {
             num.neg_assign();
         }
 
-        ArbitraryPrecisionRational::from((num, den))
+        MultiPrecisionRational::from((num, den))
     }
 }
 
@@ -245,6 +248,11 @@ pub enum CoefficientView<'a> {
 }
 
 impl ConvertToRing for RationalField {
+    #[inline]
+    fn element_from_integer(&self, number: Integer) -> Self::Element {
+        number.into()
+    }
+
     #[inline]
     fn element_from_coefficient(&self, number: Coefficient) -> Self::Element {
         match number {
@@ -272,6 +280,11 @@ impl ConvertToRing for RationalField {
 }
 
 impl ConvertToRing for IntegerRing {
+    #[inline]
+    fn element_from_integer(&self, number: Integer) -> Self::Element {
+        number
+    }
+
     #[inline]
     fn element_from_coefficient(&self, number: Coefficient) -> Integer {
         match number {
@@ -313,6 +326,11 @@ where
     FiniteField<UField>: FiniteFieldCore<UField>,
     Integer: ToFiniteField<UField>,
 {
+    #[inline]
+    fn element_from_integer(&self, number: Integer) -> Self::Element {
+        number.to_finite_field(self)
+    }
+
     #[inline]
     fn element_from_coefficient(
         &self,
@@ -539,9 +557,7 @@ impl CoefficientView<'_> {
                     }
 
                     (
-                        ArbitraryPrecisionRational::from((n1, d1))
-                            .pow(n2 as u32)
-                            .into(),
+                        MultiPrecisionRational::from((n1, d1)).pow(n2 as u32).into(),
                         (1, d2).into(),
                     )
                 } else {
@@ -602,17 +618,12 @@ impl CoefficientView<'_> {
                 match n1.checked_mul(d2) {
                     Some(a1) => match n2.checked_mul(d1) {
                         Some(a2) => a1.cmp(&a2),
-                        None => ArbitraryPrecisionInteger::from(a1).cmp(
-                            &(ArbitraryPrecisionInteger::from(n2)
-                                * ArbitraryPrecisionInteger::from(d1)),
+                        None => MultiPrecisionInteger::from(a1).cmp(
+                            &(MultiPrecisionInteger::from(n2) * MultiPrecisionInteger::from(d1)),
                         ),
                     },
-                    None => (ArbitraryPrecisionInteger::from(n1)
-                        * ArbitraryPrecisionInteger::from(d2))
-                    .cmp(
-                        &(ArbitraryPrecisionInteger::from(n2)
-                            * ArbitraryPrecisionInteger::from(d1)),
-                    ),
+                    None => (MultiPrecisionInteger::from(n1) * MultiPrecisionInteger::from(d2))
+                        .cmp(&(MultiPrecisionInteger::from(n2) * MultiPrecisionInteger::from(d1))),
                 }
             }
             (CoefficientView::Large(n1), CoefficientView::Large(n2)) => {
@@ -622,10 +633,10 @@ impl CoefficientView<'_> {
                 n1.0.cmp(&n2.0)
             }
             (&CoefficientView::Natural(n1, d1), CoefficientView::Large(n2)) => {
-                ArbitraryPrecisionRational::from((n1, d1)).cmp(&n2.to_rat())
+                MultiPrecisionRational::from((n1, d1)).cmp(&n2.to_rat())
             }
             (CoefficientView::Large(n1), &CoefficientView::Natural(n2, d2)) => {
-                n1.to_rat().cmp(&ArbitraryPrecisionRational::from((n2, d2)))
+                n1.to_rat().cmp(&MultiPrecisionRational::from((n2, d2)))
             }
             _ => unreachable!(),
         }

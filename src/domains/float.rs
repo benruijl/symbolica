@@ -8,7 +8,7 @@ use rand::Rng;
 use wide::{f64x2, f64x4};
 
 use super::rational::Rational;
-use rug::Rational as ArbitraryPrecisionRational;
+use rug::Rational as MultiPrecisionRational;
 
 pub trait NumericalFloatLike:
     PartialEq
@@ -435,7 +435,7 @@ impl NumericalFloatLike for Rational {
         if a < i64::MAX as usize {
             Rational::Natural(a as i64, 1)
         } else {
-            Rational::Large(ArbitraryPrecisionRational::from(a))
+            Rational::Large(MultiPrecisionRational::from(a))
         }
     }
 

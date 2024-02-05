@@ -13,7 +13,6 @@ use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Neg, Rem, Sub};
 use std::sync::Arc;
 
 use ahash::HashMap;
-use rug::{Complete, Integer as ArbitraryPrecisionInteger};
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
@@ -21,6 +20,7 @@ use crate::coefficient::{Coefficient, CoefficientView, ConvertToRing};
 use crate::domains::factorized_rational_polynomial::{
     FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
 };
+use crate::domains::integer::Integer;
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::domains::{EuclideanDomain, Ring};
 use crate::parser::{Operator, Token};
@@ -1190,17 +1190,12 @@ impl Token {
             field: &R,
         ) -> Result<(), Cow<'static, str>> {
             match factor {
-                Token::Number(n) => {
-                    let num = if let Ok(x) = n.parse::<i64>() {
-                        field.element_from_coefficient(x.into())
-                    } else {
-                        match ArbitraryPrecisionInteger::parse(n) {
-                            Ok(x) => field.element_from_coefficient(x.complete().into()),
-                            Err(e) => Err(format!("Could not parse number: {}", e))?,
-                        }
-                    };
-                    field.mul_assign(coefficient, &num);
-                }
+                Token::Number(n) => match n.parse::<Integer>() {
+                    Ok(x) => {
+                        field.mul_assign(coefficient, &field.element_from_integer(x));
+                    }
+                    Err(e) => Err(format!("Could not parse number: {}", e))?,
+                },
                 Token::ID(x) => {
                     let Some(index) = var_name_map.iter().position(|v| v == x) else {
                         Err(format!("Variable {} not specified in variable map", x))?
@@ -1230,20 +1225,10 @@ impl Token {
 
                     match &args[1] {
                         Token::Number(n) => {
-                            if let Ok(x) = n.parse::<i64>() {
-                                if x < 1 || x > u32::MAX as i64 {
-                                    Err("Invalid exponent")?;
-                                }
-                                exponents[var_index] += E::from_u32(x as u32);
+                            if let Ok(x) = n.parse::<u32>() {
+                                exponents[var_index] += E::from_u32(x);
                             } else {
-                                match ArbitraryPrecisionInteger::parse(n) {
-                                    Ok(x) => {
-                                        let p: ArbitraryPrecisionInteger = x.complete();
-                                        let exp = p.to_u32().ok_or("Cannot convert to u32")?;
-                                        exponents[var_index] += E::from_u32(exp);
-                                    }
-                                    Err(e) => Err(format!("Could not parse number: {}", e))?,
-                                }
+                                Err("Invalid exponent")?
                             };
                         }
                         _ => Err("Unsupported exponent")?,

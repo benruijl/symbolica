@@ -25,8 +25,8 @@ use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalP
 use crate::domains::{EuclideanDomain, Ring};
 use crate::parser::{Operator, Token};
 use crate::representations::{
-    Add, Atom, AtomSet, AtomView, Identifier, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow,
-    OwnedVar, Pow, Var,
+    Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
+    OwnedNum, OwnedPow, OwnedVar, Pow, Var,
 };
 use crate::state::{BufferHandle, State, Workspace};
 use crate::utils;
@@ -345,6 +345,7 @@ impl MonomialOrder for LexOrder {
 pub enum Variable {
     Identifier(Identifier),
     Temporary(usize),
+    Array(Identifier, usize), // an array entry, e.g. a[0]
 }
 
 impl From<Identifier> for Variable {
@@ -357,7 +358,7 @@ impl Variable {
     pub fn to_id(&self) -> Option<Identifier> {
         match self {
             Variable::Identifier(s) => Some(*s),
-            Variable::Temporary(_) => None,
+            _ => None,
         }
     }
 
@@ -365,6 +366,7 @@ impl Variable {
         match self {
             Variable::Identifier(v) => f.write_str(state.get_name(*v)),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
+            Variable::Array(t, i) => f.write_fmt(format_args!("{}[{}]", state.get_name(*t), i)),
         }
     }
 
@@ -372,6 +374,7 @@ impl Variable {
         match self {
             Variable::Identifier(v) => format!("{}", state.get_name(*v)),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
+            Variable::Array(t, i) => format!("{}[{}]", state.get_name(*t), i),
         }
     }
 }
@@ -847,8 +850,30 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 r.append_monomial(field.one(), &[E::one()]);
                 r
             }
-            AtomView::Fun(_) => {
+            AtomView::Fun(f) => {
                 // TODO: make sure that this coefficient does not depend on any of the variables in var_map
+
+                // check if the argument consists of a single positive integer. If so, treat the function as an array
+                if f.get_nargs() == 1 {
+                    let arg = f.iter().next().unwrap();
+
+                    if let AtomView::Num(n) = arg {
+                        if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
+                            if n >= 0 {
+                                let id = Variable::Array(f.get_name(), n as usize);
+                                let mut r = MultivariatePolynomial::new(
+                                    1,
+                                    field,
+                                    None,
+                                    Some(Arc::new(vec![id])),
+                                );
+                                r.append_monomial(field.one(), &[E::one()]);
+                                return r;
+                            }
+                        }
+                    }
+                }
+
                 let id = if let Some(x) = map.get(self) {
                     *x
                 } else {
@@ -1103,6 +1128,11 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                         Variable::Temporary(_) => {
                             let a = map.get(&var_id).expect("Variable missing from map");
                             var_h.set_from_view(a);
+                        }
+                        Variable::Array(n, i) => {
+                            let fun = var_h.to_fun();
+                            fun.set_from_name(n);
+                            fun.add_arg(workspace.new_num(i as i64).as_view());
                         }
                     }
 

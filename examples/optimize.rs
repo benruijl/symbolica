@@ -49,6 +49,7 @@ fn main() {
         format!(
             "{}",
             InstructionSetPrinter {
+                name: "sigma".to_string(),
                 instr: &o,
                 state: &state,
                 mode: symbolica::poly::evaluate::InstructionSetMode::CPP(

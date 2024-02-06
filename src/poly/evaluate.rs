@@ -6,12 +6,19 @@ use std::{
 use ahash::{AHasher, HashMap, HashSet, HashSetExt};
 use rand::{thread_rng, Rng};
 
-use crate::domains::{
-    float::NumericalFloatLike,
-    rational::{Rational, RationalField},
-    EuclideanDomain,
+use crate::{
+    domains::Ring,
+    representations::{Atom, AtomView, Fun},
+    state::State,
 };
-use crate::{domains::Ring, state::State};
+use crate::{
+    domains::{
+        float::NumericalFloatLike,
+        rational::{Rational, RationalField},
+        EuclideanDomain,
+    },
+    representations::Identifier,
+};
 
 use super::{polynomial::MultivariatePolynomial, Exponent};
 
@@ -685,7 +692,7 @@ impl HornerScheme<RationalField> {
         constants.sort_by_key(|(_, c)| *c);
 
         let mut instr: Vec<_> = (0..nvars)
-            .map(|i| Instruction::Init(Variable::Var(i)))
+            .map(|i| Instruction::Init(Variable::Var(i, None)))
             .collect();
 
         for x in constants {
@@ -846,7 +853,7 @@ pub enum Instruction<N: NumericalFloatLike> {
 // which may refer to another instruction in the instruction list.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Variable<N: NumericalFloatLike> {
-    Var(usize),
+    Var(usize, Option<usize>), // var or var[index]
     Constant(N),
 }
 
@@ -858,7 +865,15 @@ impl Variable<Rational> {
         mode: InstructionSetMode,
     ) -> String {
         match self {
-            Variable::Var(v) => var_map[*v].to_string(state),
+            Variable::Var(v, index) => {
+                let mut s = var_map[*v].to_string(state);
+
+                if let Some(index) = index {
+                    s.push_str(&format!("[{}]", index));
+                }
+
+                s
+            }
             Variable::Constant(c) => match mode {
                 InstructionSetMode::Plain => format!("{}", c),
                 InstructionSetMode::CPP(_) => {
@@ -876,7 +891,13 @@ impl Variable<Rational> {
 impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Variable::Var(v) => f.write_fmt(format_args!("x{}", v)),
+            Variable::Var(v, index) => {
+                if let Some(index) = index {
+                    f.write_fmt(format_args!("x[{}][{}]", v, index))
+                } else {
+                    f.write_fmt(format_args!("x{}", v))
+                }
+            }
             Variable::Constant(c) => <N as std::fmt::Display>::fmt(c, f),
         }
     }
@@ -885,7 +906,7 @@ impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
 impl<N: NumericalFloatLike> Variable<N> {
     pub fn convert<'a, NO: NumericalFloatLike + From<&'a N>>(&'a self) -> Variable<NO> {
         match self {
-            Variable::Var(v) => Variable::Var(*v),
+            Variable::Var(v, index) => Variable::Var(*v, *index),
             Variable::Constant(c) => Variable::Constant(NO::from(c)),
         }
     }
@@ -919,7 +940,7 @@ impl InstructionList {
                     eval[reg] = r;
                 }
                 Instruction::Init(i) => match i {
-                    Variable::Var(v) => eval[reg] = samples[*v].clone(),
+                    Variable::Var(v, _index) => eval[reg] = samples[*v].clone(),
                     Variable::Constant(c) => eval[reg] = c.clone(),
                 },
                 Instruction::Yield(y) => return eval[*y].clone(),
@@ -1291,6 +1312,16 @@ pub struct InstructionEvaluator<N: NumericalFloatLike> {
 }
 
 impl<N: NumericalFloatLike> InstructionEvaluator<N> {
+    pub fn output_len(&self) -> usize {
+        let mut len = 0;
+        for x in &self.instr {
+            if let InstructionRange::Out(pos) = x {
+                len = len.max(*pos + 1);
+            }
+        }
+        len
+    }
+
     /// Evaluate the converted polynomials at a given sample point and
     /// write the values in `out`.
     ///
@@ -1493,6 +1524,7 @@ pub struct InstructionSetPrinter<'a> {
     pub instr: &'a InstructionListOutput<Rational>,
     pub state: &'a State,
     pub mode: InstructionSetMode,
+    pub name: String, // function name
 }
 
 impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
@@ -1518,13 +1550,35 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
 
             f.write_str("template<typename T>\n")?;
 
+            let mut seen_arrays = vec![];
+
             f.write_fmt(format_args!(
-                "{} evaluate({}{}) {{\n",
+                "{} {}({}{}) {{\n",
                 if use_return_value { "T" } else { "void" },
+                self.name,
                 self.instr
                     .input_map
                     .iter()
-                    .map(|x| format!("T {}", x.to_string(self.state)))
+                    .filter_map(|x| if let super::Variable::Array(x, _) = x {
+                        if !seen_arrays.contains(x) {
+                            seen_arrays.push(*x);
+
+                            Some(format!(
+                                "T* {}",
+                                super::Variable::Identifier(*x).to_string(self.state)
+                            ))
+                        } else {
+                            None
+                        }
+                    } else if let super::Variable::Identifier(i) = x {
+                        if [State::E, State::I, State::PI].contains(i) {
+                            None
+                        } else {
+                            Some(format!("T {}", x.to_string(self.state)))
+                        }
+                    } else {
+                        Some(format!("T {}", x.to_string(self.state)))
+                    })
                     .collect::<Vec<_>>()
                     .join(","),
                 if use_return_value { "" } else { ", T* out" }
@@ -1612,5 +1666,211 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
         }
 
         Ok(())
+    }
+}
+
+/// A computational graph with efficient output evaluation for a nesting of variable identifications (`x_n = x_{n-1} + 2*x_{n-2}`, etc).
+pub struct ExpressionEvaluator<'a> {
+    operations: Vec<(
+        super::Variable,
+        usize,
+        InstructionListOutput<Rational>,
+        Vec<super::Variable>,
+    )>,
+    state: &'a State,
+}
+
+impl<'a> ExpressionEvaluator<'a> {
+    /// Create a computational graph with efficient output evaluation for a nesting of variable identifications (`x_n = x_{n-1} + 2*x_{n-2}`, etc).
+    /// Every level provides a list of independent vectors whose expressions only depend on variables defined in previous levels.
+    /// In these expressions, the references to previous vectors are represented using functions with the vector's name whose single argument is an index into the output array of the evaluation of that vector.
+    /// For example:
+    /// ```text
+    /// x_0 = (p1, p2)
+    /// x_1 = x_0[0] * x_0[1] + 2
+    /// x_2 = x_1 + 2*x_0
+    /// ```
+    /// can be represented by:
+    /// ```
+    /// vec![
+    ///       vec![(x0, vec![Atom.parse("p1"), Atom.parse("p2")])],
+    ///       vec![(x1, vec![Atom.parse("x0(0) * x0(1) + 2")])],
+    ///       vec![(x2, vec![Atom.parse("x1(0) * 2 * x0(1)")])]
+    /// ]
+    /// ```
+    ///
+    /// Each expression will be converted to a polynomial and optimized by writing it in a near-optimal Horner scheme and by performing
+    /// common subexpression elimination. The number of optimization iterations can be set using `n_iter`.
+    ///
+    pub fn new(
+        levels: Vec<Vec<(Identifier, Vec<Atom>)>>,
+        state: &State,
+        n_iter: usize,
+    ) -> ExpressionEvaluator {
+        let mut overall_ops = vec![]; // the main function that calls all levels
+
+        for l in levels {
+            for (id, joint) in l {
+                let mut map = HashMap::default();
+                let mut polys: Vec<MultivariatePolynomial<_, u16>> = joint
+                    .iter()
+                    .map(|a| {
+                        a.as_view()
+                            .to_polynomial_with_map(&RationalField::new(), &mut map)
+                    })
+                    .collect();
+
+                // fuse the variable maps
+                let (first, rest) = polys.split_first_mut().unwrap();
+                for _ in 0..2 {
+                    for p in &mut *rest {
+                        first.unify_var_map(p);
+                    }
+                }
+
+                let var_map = first.var_map.clone().unwrap();
+
+                let poly_ref = polys.iter().map(|x| x).collect::<Vec<_>>();
+
+                let (h, _score, _scheme) = HornerScheme::optimize_multiple(&poly_ref, n_iter);
+
+                // TODO: support giving output names and multiple destinations?
+                let mut i = HornerScheme::to_instr_multiple(&h, var_map.len());
+
+                i.fuse_operations();
+
+                for _ in 0..20_000 {
+                    if !i.common_pair_elimination() {
+                        break;
+                    }
+                    i.fuse_operations();
+                }
+
+                // convert function calls
+                let requirements: HashMap<super::Variable, String> = map
+                    .iter()
+                    .filter_map(|(a, r)| {
+                        if let AtomView::Fun(f) = a {
+                            Some((*r, state.get_name(f.get_name()).to_string()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                if map.len() != requirements.len() {
+                    panic!("Input contains functions that cannot be written to an array or other unsupported operations");
+                }
+
+                let o = i.to_output(var_map.as_ref().to_vec(), true);
+
+                let mut seen_arrays = vec![];
+                let call_args = var_map
+                    .as_ref()
+                    .iter()
+                    .filter_map(|x| {
+                        if let super::Variable::Array(x, _) = x {
+                            if !seen_arrays.contains(x) {
+                                seen_arrays.push(*x);
+
+                                Some(super::Variable::Identifier(*x))
+                            } else {
+                                None
+                            }
+                        } else if let super::Variable::Identifier(i) = x {
+                            if [State::E, State::I, State::PI].contains(i) {
+                                None
+                            } else {
+                                Some(x.clone())
+                            }
+                        } else {
+                            panic!("Expression contains non-array functions")
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                overall_ops.push((super::Variable::Identifier(id), h.len(), o, call_args));
+            }
+        }
+
+        ExpressionEvaluator {
+            operations: overall_ops,
+            state,
+        }
+    }
+}
+
+impl<'a> std::fmt::Display for ExpressionEvaluator<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "#include <cmath>
+#include <complex>
+#include <iostream>
+
+using namespace std::complex_literals;
+
+auto 𝑖 = 1i;\n",
+        )?;
+
+        for (id, _, o, _) in self.operations.iter() {
+            f.write_fmt(format_args!(
+                "{}\n",
+                InstructionSetPrinter {
+                    instr: &o,
+                    state: &self.state,
+                    name: id.to_string(self.state),
+                    mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {
+                        write_header_and_test: false,
+                        always_pass_output_array: true,
+                    },),
+                }
+            ))?;
+        }
+
+        let internal: HashSet<_> = self.operations.iter().map(|x| &x.0).collect();
+        let mut external = HashSet::new();
+        for (_, _, _, args) in &self.operations {
+            for arg in args {
+                if !internal.contains(arg) {
+                    external.insert(arg);
+                }
+            }
+        }
+
+        f.write_str("template<typename T>\n")?;
+        f.write_fmt(format_args!(
+            "T evaluate({}) {{\n",
+            external
+                .into_iter()
+                .map(|x| format!("T* {}", x.to_string(self.state)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ))?;
+
+        for (id, out_len, _, args) in &self.operations {
+            let name = id.to_string(self.state);
+            f.write_fmt(format_args!("\tT {}_res[{}];\n", name, out_len))?;
+
+            let mut f_args: Vec<_> = args
+                .iter()
+                .map(|x| {
+                    if self.operations.iter().any(|(name, _, _, _)| x == name) {
+                        x.to_string(self.state) + "_res"
+                    } else {
+                        x.to_string(self.state)
+                    }
+                })
+                .collect();
+            f_args.push(format!("{}_res", name));
+
+            f.write_fmt(format_args!("\t{}({});\n", name, f_args.join(",")))?;
+        }
+
+        f.write_fmt(format_args!(
+            "\treturn {}_res[0];\n",
+            self.operations.last().unwrap().0.to_string(self.state),
+        ))?;
+
+        f.write_str("}")
     }
 }

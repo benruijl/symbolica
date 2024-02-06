@@ -3465,6 +3465,7 @@ impl PythonPolynomial {
                 format!(
                     "{}",
                     InstructionSetPrinter {
+                        name: "evaluate".to_string(),
                         instr: &o,
                         state: &&get_state!()?,
                         mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {

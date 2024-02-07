@@ -15,9 +15,17 @@ use ahash::HashMap;
 use colored::Colorize;
 use dyn_clone::DynClone;
 
-pub trait Map<P: AtomSet>: Fn(AtomView<P>, &mut Atom<P>) + DynClone + Send + Sync {}
+pub trait Map<P: AtomSet>:
+    Fn(AtomView<P>, &mut Atom<P>) -> Result<(), TransformerError> + DynClone + Send + Sync
+{
+}
 dyn_clone::clone_trait_object!(<P: AtomSet> Map<P>);
-impl<P: AtomSet, T: Clone + Send + Sync + Fn(AtomView<'_, P>, &mut Atom<P>)> Map<P> for T {}
+impl<
+        P: AtomSet,
+        T: Clone + Send + Sync + Fn(AtomView<'_, P>, &mut Atom<P>) -> Result<(), TransformerError>,
+    > Map<P> for T
+{
+}
 
 #[derive(Clone, Debug)]
 pub struct StatsOptions {
@@ -46,6 +54,12 @@ impl StatsOptions {
     pub fn format_count(&self, count: usize) -> String {
         format!("{}", count)
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum TransformerError {
+    ValueError(String),
+    Interrupt,
 }
 
 /// Operations that take a pattern as the input and produce an expression
@@ -151,7 +165,7 @@ impl<P: AtomSet> Transformer<P> {
         state: &State,
         workspace: &Workspace<P>,
         out: &mut Atom<P>,
-    ) {
+    ) -> Result<(), TransformerError> {
         out.set_from_view(&orig_input);
         let mut tmp = workspace.new_atom();
         for t in chain {
@@ -160,7 +174,7 @@ impl<P: AtomSet> Transformer<P> {
 
             match t {
                 Transformer::Map(f) => {
-                    f(input, out);
+                    f(input, out)?;
                 }
                 Transformer::Expand => {
                     input.expand(workspace, state, out);
@@ -413,7 +427,7 @@ impl<P: AtomSet> Transformer<P> {
                     out.set_from_view(&input);
                 }
                 Transformer::Repeat(r) => loop {
-                    Self::execute(tmp.as_view(), r, state, workspace, out);
+                    Self::execute(tmp.as_view(), r, state, workspace, out)?;
 
                     if tmp.as_view() == out.as_view() {
                         break;
@@ -434,7 +448,7 @@ impl<P: AtomSet> Transformer<P> {
                     let in_size = input.get_byte_size();
 
                     let t = Instant::now();
-                    Self::execute(input, r, state, workspace, out);
+                    Self::execute(input, r, state, workspace, out)?;
 
                     let out_nterms = if let AtomView::Add(a) = out.as_view() {
                         a.get_nargs()
@@ -483,5 +497,7 @@ impl<P: AtomSet> Transformer<P> {
                 }
             }
         }
+
+        Ok(())
     }
 }

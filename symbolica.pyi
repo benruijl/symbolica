@@ -1045,7 +1045,7 @@ class Transformer:
         ```
         """
 
-    def map(self, f: Callable[[Expression | int], Expression]) -> Transformer:
+    def map(self, f: Callable[[Expression], Expression | int]) -> Transformer:
         """Create a transformer that applies a Python function.
 
         Examples
@@ -1055,6 +1055,19 @@ class Transformer:
         >>> f = Expression.fun('f')
         >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
         >>> print(e)
+        """
+
+    def check_interrupt(self) -> Transformer:
+        """Create a transformer that checks for a Python interrupt,
+        such as ctrl-c and aborts the current transformer.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> x_ = Expression.var('x_')
+        >>> f = Expression.fun('f')
+        >>> f(10).transform().repeat(Transformer().replace_all(
+        >>> f(x_), f(x_+1)).check_interrupt()).execute()
         """
 
     def repeat(self, *transformers: Transformer) -> Transformer:

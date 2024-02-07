@@ -6,7 +6,7 @@ use crate::{
         OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, SliceType, Var,
     },
     state::{FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace},
-    transformer::Transformer,
+    transformer::{Transformer, TransformerError},
 };
 
 #[derive(Clone)]
@@ -327,7 +327,7 @@ impl<P: AtomSet> Pattern<P> {
         workspace: &Workspace<P>,
         out: &mut Atom<P>,
         match_stack: &MatchStack<P>,
-    ) {
+    ) -> Result<(), TransformerError> {
         match self {
             Pattern::Wildcard(name) => {
                 if let Some(w) = match_stack.get(*name) {
@@ -384,7 +384,7 @@ impl<P: AtomSet> Pattern<P> {
                     }
 
                     let mut handle = workspace.new_atom();
-                    arg.substitute_wildcards(state, workspace, &mut handle, match_stack);
+                    arg.substitute_wildcards(state, workspace, &mut handle, match_stack)?;
                     func.add_arg(handle.as_view());
                 }
 
@@ -418,7 +418,7 @@ impl<P: AtomSet> Pattern<P> {
                     }
 
                     let mut handle = workspace.new_atom();
-                    arg.substitute_wildcards(state, workspace, &mut handle, match_stack);
+                    arg.substitute_wildcards(state, workspace, &mut handle, match_stack)?;
                     out.set_from_view(&handle.as_view());
                 }
 
@@ -461,7 +461,7 @@ impl<P: AtomSet> Pattern<P> {
                     }
 
                     let mut handle = workspace.new_atom();
-                    arg.substitute_wildcards(state, workspace, &mut handle, match_stack);
+                    arg.substitute_wildcards(state, workspace, &mut handle, match_stack)?;
                     mul.extend(handle.as_view());
                 }
                 mul.set_dirty(true);
@@ -502,7 +502,7 @@ impl<P: AtomSet> Pattern<P> {
 
                     let mut handle = workspace.new_atom();
                     let oa = handle.get_mut();
-                    arg.substitute_wildcards(state, workspace, oa, match_stack);
+                    arg.substitute_wildcards(state, workspace, oa, match_stack)?;
                     add.extend(oa.as_view());
                 }
                 add.set_dirty(true);
@@ -513,16 +513,20 @@ impl<P: AtomSet> Pattern<P> {
             }
             Pattern::Transformer(p) => {
                 let (pat, ts) = &**p;
-                let pat = pat
-                    .as_ref()
-                    .expect("Transformer is missing an expression to act on.");
+                let pat = pat.as_ref().ok_or_else(|| {
+                    TransformerError::ValueError(
+                        "Transformer is missing an expression to act on.".to_owned(),
+                    )
+                })?;
 
                 let mut handle = workspace.new_atom();
-                pat.substitute_wildcards(state, workspace, &mut handle, match_stack);
+                pat.substitute_wildcards(state, workspace, &mut handle, match_stack)?;
 
-                Transformer::execute(handle.as_view(), ts, state, workspace, out);
+                Transformer::execute(handle.as_view(), ts, state, workspace, out)?;
             }
         }
+
+        Ok(())
     }
 
     /// Return an iterator that replaces the pattern in the target once.
@@ -588,7 +592,8 @@ impl<P: AtomSet> Pattern<P> {
             if let Some((_, used_flags)) = it.next(&mut match_stack) {
                 let mut handle = workspace.new_atom();
                 let rhs_subs = handle.get_mut();
-                rhs.substitute_wildcards(state, workspace, rhs_subs, &match_stack);
+                rhs.substitute_wildcards(state, workspace, rhs_subs, &match_stack)
+                    .unwrap(); // TODO: escalate?
 
                 if used_flags.iter().all(|x| *x) {
                     // all used, return rhs
@@ -2267,7 +2272,8 @@ impl<'a: 'b, 'b, P: AtomSet + 'a + 'b> ReplaceIterator<'a, 'b, P> {
             let new_rhs = rhs_handle.get_mut();
 
             self.rhs
-                .substitute_wildcards(state, workspace, new_rhs, match_stack);
+                .substitute_wildcards(state, workspace, new_rhs, match_stack)
+                .unwrap(); // TODO: escalate?
 
             ReplaceIterator::copy_and_replace(
                 out,

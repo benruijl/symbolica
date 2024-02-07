@@ -56,7 +56,7 @@ use crate::{
     },
     state::{FunctionAttribute, ResettableBuffer, State, Workspace},
     streaming::TermStreamer,
-    transformer::{StatsOptions, Transformer},
+    transformer::{StatsOptions, Transformer, TransformerError},
     LicenseManager,
 };
 
@@ -528,12 +528,44 @@ impl PythonPattern {
 
             let res = Python::with_gil(|py| {
                 f.call(py, (expr,), None)
-                    .expect("Bad callback function")
+                    .map_err(|e| {
+                        TransformerError::ValueError(format!("Bad callback function: {}", e))
+                    })?
                     .extract::<ConvertibleToExpression>(py)
-                    .expect("Function does not return a pattern")
+                    .map_err(|e| {
+                        TransformerError::ValueError(format!(
+                            "Function does not return a pattern, but {}",
+                            e,
+                        ))
+                    })
             });
 
-            out.set_from_view(&res.to_expression().expr.as_view());
+            match res {
+                Ok(res) => {
+                    out.set_from_view(&res.to_expression().expr.as_view());
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }));
+
+        return append_transformer!(self, transformer);
+    }
+
+    /// Create a transformer that checks for a Python interrupt,
+    /// such as ctrl-c and aborts the current transformer.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> x_ = Expression.var('x_')
+    /// >>> f = Expression.fun('f')
+    /// >>> f(10).transform().repeat(Transformer().replace_all(
+    /// >>> f(x_), f(x_+1)).check_interrupt()).execute()
+    pub fn check_interrupt(&self) -> PyResult<PythonPattern> {
+        let transformer = Transformer::Map(Box::new(move |expr, out| {
+            out.set_from_view(&expr);
+            Python::with_gil(|py| py.check_signals()).map_err(|_| TransformerError::Interrupt)
         }));
 
         return append_transformer!(self, transformer);
@@ -634,14 +666,21 @@ impl PythonPattern {
     pub fn execute(&self) -> PyResult<PythonExpression> {
         let mut out = Atom::new();
         let state = get_state!()?;
-        WORKSPACE.with(|workspace| {
-            self.expr.substitute_wildcards(
-                &state.borrow(),
-                workspace,
-                &mut out,
-                &MatchStack::new(&Condition::default(), &MatchSettings::default()),
-            );
-        });
+        WORKSPACE
+            .with(|workspace| {
+                self.expr.substitute_wildcards(
+                    &state.borrow(),
+                    workspace,
+                    &mut out,
+                    &MatchStack::new(&Condition::default(), &MatchSettings::default()),
+                )
+            })
+            .map_err(|e| match e {
+                TransformerError::Interrupt => {
+                    exceptions::PyKeyboardInterrupt::new_err("Interrupted by user")
+                }
+                TransformerError::ValueError(v) => exceptions::PyValueError::new_err(v),
+            })?;
 
         Ok(PythonExpression {
             expr: Arc::new(out),
@@ -2295,7 +2334,11 @@ impl PythonExpression {
             let state = get_state!()?;
             let m = stream.map(|workspace, x| {
                 let mut out = Atom::new();
-                Transformer::execute(x.as_view(), &t, &state.borrow(), workspace, &mut out);
+                // TODO: capture and abort the parallel run
+                Transformer::execute(x.as_view(), &t, &state.borrow(), workspace, &mut out)
+                    .unwrap_or_else(|e| {
+                        panic!("Transformer failed during parallel execution: {:?}", e)
+                    });
                 out
             });
             Ok::<_, PyErr>(m)

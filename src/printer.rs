@@ -787,7 +787,7 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
         {
             if !self.poly.numerator.field.is_one(&self.poly.numer_coeff) {
                 f.write_fmt(format_args!(
-                    "{}*",
+                    "{}",
                     RingPrinter {
                         ring: &self.poly.numerator.field,
                         element: &self.poly.numer_coeff,
@@ -798,7 +798,17 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                 ))?;
             }
 
-            if !self.add_parentheses || self.poly.numerator.nterms() < 2 {
+            if (self.poly.numerator.field.is_one(&self.poly.numer_coeff) && !self.add_parentheses)
+                || self.poly.numerator.nterms() < 2
+            {
+                if !self.poly.numerator.field.is_one(&self.poly.numer_coeff) {
+                    if self.poly.numerator.is_one() {
+                        return Ok(());
+                    }
+
+                    f.write_char('*')?;
+                }
+
                 f.write_fmt(format_args!(
                     "{}",
                     PolynomialPrinter {
@@ -808,6 +818,14 @@ impl<'a, 'b, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrint
                     }
                 ))
             } else {
+                if !self.poly.numerator.field.is_one(&self.poly.numer_coeff) {
+                    if self.poly.numerator.is_one() {
+                        return Ok(());
+                    }
+
+                    f.write_char('*')?;
+                }
+
                 f.write_fmt(format_args!(
                     "({})",
                     PolynomialPrinter {

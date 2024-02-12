@@ -236,6 +236,17 @@ impl<E: Exponent> FromNumeratorAndFactorizedDenominator<IntegerRing, IntegerRing
         let mut den_const = num.field.one();
 
         if dens.is_empty() {
+            let g = num.content();
+            if !g.is_one() {
+                num = num.div_coeff(&g);
+                num_const = &num_const * &g;
+            }
+
+            if num.lcoeff().is_negative() {
+                num_const = num_const.neg();
+                num = -num;
+            }
+
             return FactorizedRationalPolynomial {
                 numerator: num,
                 numer_coeff: num_const,
@@ -290,12 +301,17 @@ impl<E: Exponent> FromNumeratorAndFactorizedDenominator<IntegerRing, IntegerRing
             }
         }
 
-        if do_factor {
-            let g = num.content();
-            if !g.is_one() {
-                num = num.div_coeff(&g);
-            }
+        // TODO: add flag for this?
+        let g = num.content();
+        if !g.is_one() {
+            num = num.div_coeff(&g);
             num_const = &num_const * &g;
+        }
+
+        // normalize numerator to have positive leading coefficient
+        if num.lcoeff().is_negative() {
+            num_const = num_const.neg();
+            num = -num;
         }
 
         FactorizedRationalPolynomial {
@@ -409,7 +425,8 @@ where
             num = num * &d.pow(p);
         }
 
-        let dens = self.numerator.factor();
+        let mut dens = self.numerator.factor();
+        dens.push((self.numerator.constant(self.numer_coeff), 1));
 
         let field = self.numerator.field.clone();
         Self::from_num_den(num, dens, &field, false)
@@ -494,24 +511,28 @@ where
 
 impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if !self.numerator.field.is_one(&self.numer_coeff) {
+            f.write_fmt(format_args!(
+                "{}*",
+                RingPrinter {
+                    ring: &self.numerator.field,
+                    element: &self.numer_coeff,
+                    state: None,
+                    opts: &PrintOptions::default(),
+                    in_product: false,
+                }
+            ))?;
+        }
+
         if self.denominators.is_empty() && self.numerator.field.is_one(&self.denom_coeff) {
-            self.numerator.fmt(f)
+            if !self.numerator.field.is_one(&self.numer_coeff) {
+                f.write_fmt(format_args!("({})", self.numerator))
+            } else {
+                self.numerator.fmt(f)
+            }
         } else {
             if f.sign_plus() {
                 f.write_char('+')?;
-            }
-
-            if !self.numerator.field.is_one(&self.numer_coeff) {
-                f.write_fmt(format_args!(
-                    "({})*",
-                    RingPrinter {
-                        ring: &self.numerator.field,
-                        element: &self.numer_coeff,
-                        state: None,
-                        opts: &PrintOptions::default(),
-                        in_product: false,
-                    }
-                ))?;
             }
 
             f.write_fmt(format_args!("({})/(", self.numerator))?;
@@ -785,8 +806,22 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
             num_2 = num_2.mul_coeff(self.denom_coeff.clone());
         }
 
-        let mut num =
-            num_1.mul_coeff(self.numer_coeff.clone()) + num_2.mul_coeff(other.numer_coeff.clone());
+        let numer_coeff = self
+            .numerator
+            .field
+            .gcd(&self.numer_coeff, &other.numer_coeff);
+
+        let mut num = num_1.mul_coeff(
+            self.numerator
+                .field
+                .quot_rem(&self.numer_coeff, &numer_coeff)
+                .0,
+        ) + num_2.mul_coeff(
+            self.numerator
+                .field
+                .quot_rem(&other.numer_coeff, &numer_coeff)
+                .0,
+        );
 
         if num.is_zero() {
             return FactorizedRationalPolynomial {
@@ -821,6 +856,8 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
         if !num.field.is_one(&c) {
             num = num.div_coeff(&c);
         }
+
+        num.field.mul_assign(&mut c, &numer_coeff);
 
         let g = num.field.gcd(&c, &constant);
         if !num.field.is_one(&g) {

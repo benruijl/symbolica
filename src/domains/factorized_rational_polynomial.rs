@@ -97,7 +97,7 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
 
         FactorizedRationalPolynomial {
             numerator: num,
-            numer_coeff: field.one(),
+            numer_coeff: field.zero(),
             denom_coeff: field.one(),
             denominators: vec![],
         }

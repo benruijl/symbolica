@@ -761,6 +761,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             AtomView::Mul(m) => {
                 let mut r = FactorizedRationalPolynomial::new(out_field, var_map.cloned());
                 r.numerator = r.numerator.add_monomial(out_field.one());
+                r.numer_coeff = out_field.one();
                 for arg in m.iter() {
                     let mut arg_r = arg.to_factorized_rational_polynomial(
                         workspace, state, field, out_field, var_map,
@@ -1599,6 +1600,7 @@ impl Token {
             Token::Op(_, _, Operator::Mul, args) => {
                 let mut r = FactorizedRationalPolynomial::new(out_field, Some(var_map.clone()));
                 r.numerator = r.numerator.add_monomial(out_field.one());
+                r.numer_coeff = out_field.one();
                 for arg in args {
                     let mut arg_r = arg.to_factorized_rational_polynomial(
                         workspace,

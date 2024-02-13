@@ -645,7 +645,7 @@ where
 
     fn nth(&self, n: u64) -> Self::Element {
         let mut r = self.one();
-        r.numerator = r.numerator.mul_coeff(self.ring.nth(n));
+        r.numer_coeff = self.ring.nth(n);
         r
     }
 
@@ -801,27 +801,24 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
             den.push((d.clone(), *p));
         }
 
+        let ring = &self.numerator.field;
+        let mut coeff1 = self.numer_coeff.clone();
+        let mut coeff2 = other.numer_coeff.clone();
+        let mut new_denom = self.denom_coeff.clone();
+
         if self.denom_coeff != other.denom_coeff {
-            num_1 = num_1.mul_coeff(other.denom_coeff.clone());
-            num_2 = num_2.mul_coeff(self.denom_coeff.clone());
+            let d_coeff = ring.gcd(&self.denom_coeff, &other.denom_coeff);
+            ring.mul_assign(&mut coeff1, &ring.quot_rem(&other.denom_coeff, &d_coeff).0);
+            ring.mul_assign(&mut coeff2, &ring.quot_rem(&self.denom_coeff, &d_coeff).0);
+            ring.mul_assign(
+                &mut new_denom,
+                &ring.quot_rem(&other.denom_coeff, &d_coeff).0,
+            );
         }
 
-        let numer_coeff = self
-            .numerator
-            .field
-            .gcd(&self.numer_coeff, &other.numer_coeff);
-
-        let mut num = num_1.mul_coeff(
-            self.numerator
-                .field
-                .quot_rem(&self.numer_coeff, &numer_coeff)
-                .0,
-        ) + num_2.mul_coeff(
-            self.numerator
-                .field
-                .quot_rem(&other.numer_coeff, &numer_coeff)
-                .0,
-        );
+        let num_gcd = ring.gcd(&coeff1, &coeff2);
+        let mut num = num_1.mul_coeff(ring.quot_rem(&coeff1, &num_gcd).0)
+            + num_2.mul_coeff(ring.quot_rem(&coeff2, &num_gcd).0);
 
         if num.is_zero() {
             return FactorizedRationalPolynomial {
@@ -846,29 +843,22 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
 
         den.retain(|(_, p)| *p > 0);
 
-        let mut constant = if self.denom_coeff != other.denom_coeff {
-            num.field.mul(&self.denom_coeff, &other.denom_coeff)
-        } else {
-            self.denom_coeff.clone()
-        };
-
-        let mut c = num.content();
-        if !num.field.is_one(&c) {
-            num = num.div_coeff(&c);
+        let mut new_numer = num.content();
+        if !num.field.is_one(&new_numer) {
+            num = num.div_coeff(&new_numer);
         }
+        num.field.mul_assign(&mut new_numer, &num_gcd);
 
-        num.field.mul_assign(&mut c, &numer_coeff);
-
-        let g = num.field.gcd(&c, &constant);
+        let g = num.field.gcd(&new_numer, &new_denom);
         if !num.field.is_one(&g) {
-            c = num.field.quot_rem(&c, &g).0;
-            constant = num.field.quot_rem(&constant, &g).0;
+            new_numer = num.field.quot_rem(&new_numer, &g).0;
+            new_denom = num.field.quot_rem(&new_denom, &g).0;
         }
 
         FactorizedRationalPolynomial {
             numerator: num,
-            numer_coeff: c,
-            denom_coeff: constant,
+            numer_coeff: new_numer,
+            denom_coeff: new_denom,
             denominators: den,
         }
     }

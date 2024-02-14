@@ -944,20 +944,24 @@ where
             }
         }
 
-        let mut new_dens = other.numerator.factor();
+        // factorize the numerator and normalize
+        let r = FactorizedRationalPolynomial::from_num_den(
+            self.numerator.one(),
+            other.numerator.factor(),
+            &self.numerator.field,
+            false,
+        );
 
         let field = &self.numerator.field;
-        let mut denom_coeff = field.one();
-        new_dens.retain(|(d, _)| {
-            if d.is_constant() {
-                field.mul_assign(&mut denom_coeff, &d.lcoeff());
-                false
-            } else {
-                true
-            }
-        });
 
-        for (d, mut p) in new_dens {
+        // multiply the numerator factor that appears during normalization of the new denominators
+        if !field.is_one(&r.numerator.lcoeff()) {
+            reduced_numerator_2 = reduced_numerator_2.mul_coeff(r.numerator.lcoeff());
+        }
+
+        let denom_coeff = r.denom_coeff;
+
+        for (d, mut p) in r.denominators {
             if let Some((_, p2)) = den.iter_mut().find(|(d2, _)| &d == d2) {
                 *p2 += p;
                 continue;
@@ -977,7 +981,6 @@ where
             }
         }
 
-        let field = &self.numerator.field;
         let mut constant = field.one();
 
         if !field.is_one(&self.denom_coeff) {

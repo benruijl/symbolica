@@ -914,9 +914,94 @@ where
     type Output = FactorizedRationalPolynomial<R, E>;
 
     fn div(self, other: &'a FactorizedRationalPolynomial<R, E>) -> Self::Output {
-        // TODO: optimize
-        // the factored form can be kept intact and cancellations can be achieved before writing out the new numerator
-        self * &other.clone().inv()
+        if other.is_one() {
+            return self.clone();
+        }
+        if other.is_zero() {
+            panic!("Cannot invert 0");
+        }
+
+        let mut reduced_numerator_1 = Cow::Borrowed(&self.numerator);
+
+        let mut den = Vec::with_capacity(self.denominators.len() + 1);
+
+        let mut reduced_numerator_2 = self.numerator.constant(other.denom_coeff.clone());
+
+        for (d, p) in &other.denominators {
+            if let Some((_, p2)) = self.denominators.iter().find(|(d2, _)| d == d2) {
+                if p > p2 {
+                    reduced_numerator_2 = reduced_numerator_2 * &d.pow(p - p2);
+                } else if p < p2 {
+                    den.push((d.clone(), p2 - p));
+                }
+            } else {
+                reduced_numerator_2 = reduced_numerator_2 * &d.pow(*p);
+            }
+        }
+        for (d, p) in &self.denominators {
+            if !other.denominators.iter().any(|(d2, _)| d == d2) {
+                den.push((d.clone(), *p));
+            }
+        }
+
+        // factorize the numerator and normalize
+        let r = FactorizedRationalPolynomial::from_num_den(
+            self.numerator.one(),
+            other.numerator.factor(),
+            &self.numerator.field,
+            false,
+        );
+
+        let field = &self.numerator.field;
+
+        // multiply the numerator factor that appears during normalization of the new denominators
+        if !field.is_one(&r.numerator.lcoeff()) {
+            reduced_numerator_2 = reduced_numerator_2.mul_coeff(r.numerator.lcoeff());
+        }
+
+        let denom_coeff = r.denom_coeff;
+
+        for (d, mut p) in r.denominators {
+            if let Some((_, p2)) = den.iter_mut().find(|(d2, _)| &d == d2) {
+                *p2 += p;
+                continue;
+            }
+
+            while p > 0 {
+                if let Some(q) = reduced_numerator_1.divides(&d) {
+                    reduced_numerator_1 = Cow::Owned(q);
+                    p -= 1;
+                } else {
+                    break;
+                }
+            }
+
+            if p > 0 {
+                den.push((d, p));
+            }
+        }
+
+        let mut constant = field.one();
+
+        if !field.is_one(&self.denom_coeff) {
+            let g = field.gcd(&reduced_numerator_2.content(), &self.denom_coeff);
+            reduced_numerator_2 = reduced_numerator_2.div_coeff(&g);
+            constant = field.quot_rem(&self.denom_coeff, &g).0;
+        }
+
+        if !field.is_one(&denom_coeff) {
+            let g = field.gcd(&reduced_numerator_1.content(), &denom_coeff);
+            reduced_numerator_1 = Cow::Owned(reduced_numerator_1.into_owned().div_coeff(&g));
+            field.mul_assign(&mut constant, &field.quot_rem(&denom_coeff, &g).0);
+        }
+
+        let num = reduced_numerator_2 * &reduced_numerator_1;
+        if !num.field.is_one(&constant) {
+            den.push((num.constant(constant), 1));
+        }
+
+        // properly normalize the rational polynomial
+        FactorizedRationalPolynomial::from_num_den(num, den, &self.numerator.field, false)
     }
 }
 

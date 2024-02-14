@@ -914,9 +914,64 @@ where
     type Output = FactorizedRationalPolynomial<R, E>;
 
     fn div(self, other: &'a FactorizedRationalPolynomial<R, E>) -> Self::Output {
-        // TODO: optimize
-        // the factored form can be kept intact and cancellations can be achieved before writing out the new numerator
-        self * &other.clone().inv()
+        if other.is_one() {
+            return self.clone();
+        }
+        if other.is_zero() {
+            panic!("Cannot invert 0");
+        }
+
+        let mut reduced_numerator_1 = Cow::Borrowed(&self.numerator);
+
+        let mut den = Vec::with_capacity(self.denominators.len() + 1);
+
+        let mut new_num_frags = self.numerator.one();
+
+        for (d, p) in &other.denominators {
+            if let Some((_, p2)) = self.denominators.iter().find(|(d2, _)| d == d2) {
+                if p > p2 {
+                    new_num_frags = new_num_frags * &d.pow(p - p2);
+                } else if p < p2 {
+                    den.push((d.clone(), p2 - p));
+                }
+            } else {
+                new_num_frags = new_num_frags * &d.pow(*p);
+            }
+        }
+        for (d, p) in &self.denominators {
+            if !other.denominators.iter().any(|(d2, _)| d == d2) {
+                den.push((d.clone(), *p));
+            }
+        }
+
+        let new_dens = other.numerator.factor();
+        for (d, mut p) in new_dens {
+            if let Some((_, p2)) = den.iter_mut().find(|(d2, _)| &d == d2) {
+                *p2 += p;
+                continue;
+            }
+
+            while p > 0 {
+                if let Some(q) = reduced_numerator_1.divides(&d) {
+                    reduced_numerator_1 = Cow::Owned(q);
+                    p -= 1;
+                } else {
+                    break;
+                }
+            }
+
+            if p > 0 {
+                den.push((d, p));
+            }
+        }
+
+        let num = (new_num_frags * &reduced_numerator_1).mul_coeff(other.denom_coeff.clone());
+        if !num.field.is_one(&self.denom_coeff) {
+            den.push((num.constant(self.denom_coeff.clone()), 1));
+        }
+
+        // properly normalize the rational polynomial
+        FactorizedRationalPolynomial::from_num_den(num, den, &self.numerator.field, false)
     }
 }
 

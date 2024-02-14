@@ -1893,16 +1893,31 @@ impl Token {
                 let mut r = FactorizedRationalPolynomial::new(out_field, Some(var_map.clone()));
                 r.numerator = r.numerator.add_monomial(out_field.one());
                 for arg in args {
-                    let mut arg_r = arg.to_factorized_rational_polynomial(
-                        workspace,
-                        state,
-                        field,
-                        out_field,
-                        var_map,
-                        var_name_map,
-                    )?;
-                    r.unify_var_map(&mut arg_r);
-                    r = &r * &arg_r;
+                    if let Token::Op(_, _, Operator::Inv, inv_args) = arg {
+                        debug_assert!(inv_args.len() == 1);
+                        let mut arg_r = inv_args[0].to_factorized_rational_polynomial(
+                            workspace,
+                            state,
+                            field,
+                            out_field,
+                            var_map,
+                            var_name_map,
+                        )?;
+
+                        r.unify_var_map(&mut arg_r);
+                        r = &r / &arg_r;
+                    } else {
+                        let mut arg_r = arg.to_factorized_rational_polynomial(
+                            workspace,
+                            state,
+                            field,
+                            out_field,
+                            var_map,
+                            var_name_map,
+                        )?;
+                        r.unify_var_map(&mut arg_r);
+                        r = &r * &arg_r;
+                    }
                 }
                 Ok(r)
             }

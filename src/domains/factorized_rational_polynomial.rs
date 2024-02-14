@@ -925,17 +925,17 @@ where
 
         let mut den = Vec::with_capacity(self.denominators.len() + 1);
 
-        let mut new_num_frags = self.numerator.one();
+        let mut reduced_numerator_2 = self.numerator.constant(other.denom_coeff.clone());
 
         for (d, p) in &other.denominators {
             if let Some((_, p2)) = self.denominators.iter().find(|(d2, _)| d == d2) {
                 if p > p2 {
-                    new_num_frags = new_num_frags * &d.pow(p - p2);
+                    reduced_numerator_2 = reduced_numerator_2 * &d.pow(p - p2);
                 } else if p < p2 {
                     den.push((d.clone(), p2 - p));
                 }
             } else {
-                new_num_frags = new_num_frags * &d.pow(*p);
+                reduced_numerator_2 = reduced_numerator_2 * &d.pow(*p);
             }
         }
         for (d, p) in &self.denominators {
@@ -944,7 +944,19 @@ where
             }
         }
 
-        let new_dens = other.numerator.factor();
+        let mut new_dens = other.numerator.factor();
+
+        let field = &self.numerator.field;
+        let mut denom_coeff = field.one();
+        new_dens.retain(|(d, _)| {
+            if d.is_constant() {
+                field.mul_assign(&mut denom_coeff, &d.lcoeff());
+                false
+            } else {
+                true
+            }
+        });
+
         for (d, mut p) in new_dens {
             if let Some((_, p2)) = den.iter_mut().find(|(d2, _)| &d == d2) {
                 *p2 += p;
@@ -965,9 +977,24 @@ where
             }
         }
 
-        let num = (new_num_frags * &reduced_numerator_1).mul_coeff(other.denom_coeff.clone());
-        if !num.field.is_one(&self.denom_coeff) {
-            den.push((num.constant(self.denom_coeff.clone()), 1));
+        let field = &self.numerator.field;
+        let mut constant = field.one();
+
+        if !field.is_one(&self.denom_coeff) {
+            let g = field.gcd(&reduced_numerator_2.content(), &self.denom_coeff);
+            reduced_numerator_2 = reduced_numerator_2.div_coeff(&g);
+            constant = field.quot_rem(&self.denom_coeff, &g).0;
+        }
+
+        if !field.is_one(&denom_coeff) {
+            let g = field.gcd(&reduced_numerator_1.content(), &denom_coeff);
+            reduced_numerator_1 = Cow::Owned(reduced_numerator_1.into_owned().div_coeff(&g));
+            field.mul_assign(&mut constant, &field.quot_rem(&denom_coeff, &g).0);
+        }
+
+        let num = reduced_numerator_2 * &reduced_numerator_1;
+        if !num.field.is_one(&constant) {
+            den.push((num.constant(constant), 1));
         }
 
         // properly normalize the rational polynomial

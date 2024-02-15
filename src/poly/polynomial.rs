@@ -1495,25 +1495,25 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         #[inline(always)]
-        fn to_uni_var<E: Exponent>(s: &[E], max_degs_rev: &[usize]) -> E {
-            let mut shift = E::one();
-            let mut res = *s.last().unwrap();
+        fn to_uni_var<E: Exponent>(s: &[E], max_degs_rev: &[usize]) -> u32 {
+            let mut shift = 1;
+            let mut res = s.last().unwrap().to_u32();
             for (ee, &x) in s.iter().rev().skip(1).zip(max_degs_rev) {
-                shift = shift * E::from_u32(x as u32);
-                res += *ee * shift;
+                shift = shift.to_u32() * x as u32;
+                res += ee.to_u32() * shift;
             }
             res
         }
 
         #[inline(always)]
-        fn from_uni_var<E: Exponent>(mut p: E, max_degs_rev: &[usize], exp: &mut [E]) {
+        fn from_uni_var<E: Exponent>(mut p: u32, max_degs_rev: &[usize], exp: &mut [E]) {
             for (ee, &x) in exp.iter_mut().rev().zip(max_degs_rev) {
-                *ee = p % E::from_u32(x as u32);
-                p = p / E::from_u32(x as u32);
+                *ee = E::from_u32(p % x as u32);
+                p = p / x as u32;
             }
         }
 
-        let mut uni_exp_self = vec![E::zero(); self.coefficients.len()];
+        let mut uni_exp_self = vec![0; self.coefficients.len()];
         for (es, s) in &mut uni_exp_self
             .iter_mut()
             .zip(self.exponents.chunks(self.nvars))
@@ -1521,7 +1521,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             *es = to_uni_var(s, &max_degs_rev);
         }
 
-        let mut uni_exp_rhs = vec![E::zero(); rhs.coefficients.len()];
+        let mut uni_exp_rhs = vec![0; rhs.coefficients.len()];
         for (es, s) in &mut uni_exp_rhs.iter_mut().zip(rhs.exponents.chunks(self.nvars)) {
             *es = to_uni_var(s, &max_degs_rev);
         }
@@ -1542,7 +1542,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
             for (p, c) in coeffs.into_iter().enumerate() {
                 if !F::is_zero(&c) {
-                    from_uni_var(E::from_u32(p as u32), &max_degs_rev, &mut exp);
+                    from_uni_var(p as u32, &max_degs_rev, &mut exp);
                     r.append_monomial(c, &exp);
                 }
             }
@@ -1570,7 +1570,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
             for (p, c) in coeff_index.into_iter().enumerate() {
                 if c != 0 {
-                    from_uni_var(E::from_u32(p as u32), &max_degs_rev, &mut exp);
+                    from_uni_var(p as u32, &max_degs_rev, &mut exp);
                     r.append_monomial(
                         std::mem::replace(&mut coeffs[c as usize - 1], self.field.zero()),
                         &exp,

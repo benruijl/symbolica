@@ -1209,8 +1209,8 @@ impl<'a, 'b, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
             f.write_char('+')?;
         }
 
-        let var_map = match self.poly.var_map.as_ref() {
-            Some(v) => v,
+        let var_map: Vec<String> = match self.poly.var_map.as_ref() {
+            Some(v) => v.iter().map(|v| v.to_string(self.state)).collect(),
             None => {
                 return write!(f, "{}", self.poly);
             }
@@ -1263,7 +1263,7 @@ impl<'a, 'b, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
                     write!(f, "*")?;
                 }
 
-                f.write_str(&var_id.to_string(self.state))?;
+                f.write_str(&var_id)?;
 
                 if e.to_u32() != 1 {
                     if self.opts.latex {

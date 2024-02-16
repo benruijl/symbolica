@@ -457,17 +457,25 @@ impl Token {
                     }
                 }
                 ParseState::RationalPolynomial => {
-                    if c == ']' {
-                        stack.push(Token::RationalPolynomial(id_buffer.as_str().into()));
-                        id_buffer.clear();
+                    let start = char_iter.clone();
+                    let mut pos = 0;
 
-                        state = ParseState::Any;
+                    let mut s = SmartString::new();
+                    s.push(c);
 
+                    while c != ']' {
+                        pos += 1;
                         column_counter += 1;
                         c = char_iter.next().unwrap_or('\0');
-                    } else if !whitespace.contains(&c) {
-                        id_buffer.push(c);
                     }
+
+                    s.push_str(&start.as_str()[..pos - 1]);
+                    stack.push(Token::RationalPolynomial(s));
+
+                    state = ParseState::Any;
+
+                    column_counter += 1;
+                    c = char_iter.next().unwrap_or('\0');
                 }
                 ParseState::Any => {}
             }

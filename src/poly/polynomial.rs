@@ -1,4 +1,5 @@
 use ahash::{HashMap, HashMapExt};
+use std::cell::Cell;
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BinaryHeap};
 use std::fmt::Display;
@@ -17,6 +18,9 @@ use crate::state::State;
 use super::gcd::PolynomialGCD;
 use super::{Exponent, LexOrder, MonomialOrder, Variable, INLINED_EXPONENTS};
 use smallvec::{smallvec, SmallVec};
+
+const MAX_DENSE_MUL_BUFFER_SIZE: usize = 1 << 24;
+thread_local! { static DENSE_MUL_BUFFER: Cell<Vec<u32>> = const { Cell::new(Vec::new()) }; }
 
 /// Multivariate polynomial with a sparse degree and variable dense representation.
 // TODO: implement EuclideanDomain for MultivariatePolynomial
@@ -1462,8 +1466,6 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         &self,
         rhs: &MultivariatePolynomial<F, E, LexOrder>,
     ) -> Option<MultivariatePolynomial<F, E, LexOrder>> {
-        let max_buf: usize = 1 << 30; // allow 1 GB max
-
         let max_degs_rev = (0..self.nvars)
             .rev()
             .map(|i| 1 + self.degree(i).to_u32() as usize + rhs.degree(i).to_u32() as usize)
@@ -1472,14 +1474,14 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         if max_degs_rev.iter().filter(|x| **x > 0).count() == 1 {
             if max_degs_rev.iter().sum::<usize>() < 10000 {
                 return Some(self.mul_univariate_dense(rhs, None));
-            } else {
-                return None;
             }
+
+            return None;
         }
 
         let mut total: usize = 1;
         for x in &max_degs_rev {
-            if *x > max_buf {
+            if *x > MAX_DENSE_MUL_BUFFER_SIZE {
                 return None;
             }
 
@@ -1490,7 +1492,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             }
         }
 
-        if total > max_buf / 4 {
+        if total > MAX_DENSE_MUL_BUFFER_SIZE {
             return None;
         }
 
@@ -1527,10 +1529,10 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         let mut exp = vec![E::zero(); self.nvars];
-        let mut r = self.zero_with_capacity(self.nterms() * rhs.nterms());
+        let mut r = self.zero_with_capacity(self.nterms().max(rhs.nterms()));
 
         // check if we need to use a dense indexing array to save memory
-        if total * std::mem::size_of::<F::Element>() < max_buf {
+        if total < 1000 {
             let mut coeffs = vec![self.field.zero(); total as usize];
 
             for (c1, e1) in self.coefficients.iter().zip(&uni_exp_self) {
@@ -1549,8 +1551,13 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
             Some(r)
         } else {
-            let mut coeffs = Vec::with_capacity(self.nterms() * rhs.nterms());
-            let mut coeff_index = vec![0u32; total as usize];
+            let mut coeffs = Vec::with_capacity(self.nterms().max(rhs.nterms()));
+
+            let mut coeff_index = DENSE_MUL_BUFFER.take();
+
+            if coeff_index.len() < total {
+                coeff_index.resize(total as usize, 0u32);
+            }
 
             for (c1, e1) in self.coefficients.iter().zip(&uni_exp_self) {
                 for (c2, e2) in rhs.coefficients.iter().zip(&uni_exp_rhs) {
@@ -1568,15 +1575,18 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                 }
             }
 
-            for (p, c) in coeff_index.into_iter().enumerate() {
-                if c != 0 {
+            for (p, c) in coeff_index[..total].iter_mut().enumerate() {
+                if *c != 0 {
                     from_uni_var(p as u32, &max_degs_rev, &mut exp);
                     r.append_monomial(
-                        std::mem::replace(&mut coeffs[c as usize - 1], self.field.zero()),
+                        std::mem::replace(&mut coeffs[*c as usize - 1], self.field.zero()),
                         &exp,
                     );
+                    *c = 0;
                 }
             }
+
+            DENSE_MUL_BUFFER.set(coeff_index);
 
             Some(r)
         }

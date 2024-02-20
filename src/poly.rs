@@ -25,8 +25,8 @@ use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalP
 use crate::domains::{EuclideanDomain, Ring};
 use crate::parser::{Operator, Token};
 use crate::representations::{
-    Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
-    OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+    Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, Num, OpaqueAtom, OwnedAdd, OwnedFun,
+    OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
 };
 use crate::state::{BufferHandle, State, Workspace};
 use crate::utils;
@@ -340,12 +340,28 @@ impl MonomialOrder for LexOrder {
 }
 
 /// A polynomial variable. It is either a (global) identifier
-/// or a temporary variable.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+/// a temporary variable (for internal use), an array entry,
+/// a function or any other non-polynomial part.
+#[derive(Clone, Hash, Eq, Debug)]
 pub enum Variable {
     Identifier(Identifier),
-    Temporary(usize),
+    Temporary(usize),         // a temporary variable, for internal use
     Array(Identifier, usize), // an array entry, e.g. a[0]
+    Function(Identifier, Arc<dyn OpaqueAtom>),
+    Other(Arc<dyn OpaqueAtom>), // any other non-polynomial part, for example x^-1, x^y, etc.
+}
+
+impl PartialEq for Variable {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Variable::Identifier(a), Variable::Identifier(b)) => a == b,
+            (Variable::Temporary(a), Variable::Temporary(b)) => a == b,
+            (Variable::Array(a, b), Variable::Array(c, d)) => a == c && b == d,
+            (Variable::Function(a, _), Variable::Function(c, _)) => a == c,
+            (Variable::Other(a), Variable::Other(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 impl From<Identifier> for Variable {
@@ -367,6 +383,7 @@ impl Variable {
             Variable::Identifier(v) => f.write_str(state.get_name(*v)),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
             Variable::Array(t, i) => f.write_fmt(format_args!("{}[{}]", state.get_name(*t), i)),
+            Variable::Function(_, a) | Variable::Other(a) => f.write_str(&a.printer(state)),
         }
     }
 
@@ -375,6 +392,7 @@ impl Variable {
             Variable::Identifier(v) => format!("{}", state.get_name(*v)),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Array(t, i) => format!("{}[{}]", state.get_name(*t), i),
+            Variable::Function(_, a) | Variable::Other(a) => a.printer(state),
         }
     }
 }
@@ -818,10 +836,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     if let CoefficientView::Natural(nn, nd) = num_n {
                         if nd == 1 && nn > 0 && nn < u32::MAX as i64 {
                             let id = if let Some(x) = map.get(&base) {
-                                *x
+                                x.clone()
                             } else {
                                 let new_id = Variable::Temporary(map.len());
-                                map.insert(base, new_id);
+                                map.insert(base, new_id.clone());
                                 new_id
                             };
 
@@ -839,10 +857,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 }
 
                 let id = if let Some(x) = map.get(self) {
-                    *x
+                    x.clone()
                 } else {
                     let new_id = Variable::Temporary(map.len());
-                    map.insert(*self, new_id);
+                    map.insert(*self, new_id.clone());
                     new_id
                 };
 
@@ -875,10 +893,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 }
 
                 let id = if let Some(x) = map.get(self) {
-                    *x
+                    x.clone()
                 } else {
                     let new_id = Variable::Temporary(map.len());
-                    map.insert(*self, new_id);
+                    map.insert(*self, new_id.clone());
                     new_id
                 };
 
@@ -900,6 +918,97 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let mut r = MultivariatePolynomial::new(0, field, None, None);
                 for arg in a.iter() {
                     let mut arg_r = arg.to_polynomial_with_map(field, map);
+                    r.unify_var_map(&mut arg_r);
+                    r = &r + &arg_r;
+                }
+                r
+            }
+        }
+    }
+
+    /// Convert an expression to a polynomial, converting all  non-polynomial subexpressions as independent variables.
+    pub fn to_polynomial_with_conversion<R: EuclideanDomain + ConvertToRing, E: Exponent>(
+        &self,
+        field: &R,
+    ) -> MultivariatePolynomial<R, E> {
+        // see if the current term can be cast into a polynomial using a fast routine
+        if let Ok(num) = self.to_polynomial(field, None) {
+            return num;
+        }
+
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) => {
+                // done by simple routine above
+                unreachable!()
+            }
+            AtomView::Pow(p) => {
+                // the case var^exp is already treated, so this must be a case that requires a map
+                // check if the exponent is a positive integer, if so the base must be mapped
+                // otherwise, map the entire power
+
+                // TODO: make sure that this coefficient does not depend on any of the variables in var_map
+
+                let (base, exp) = p.get_base_exp();
+
+                if let AtomView::Num(n) = exp {
+                    let num_n = n.get_coeff_view();
+                    if let CoefficientView::Natural(nn, nd) = num_n {
+                        if nd == 1 && nn > 0 && nn < u32::MAX as i64 {
+                            return base.to_polynomial_with_conversion(field).pow(nn as usize);
+                        }
+                    }
+                }
+
+                let id = Variable::Other(Arc::new(Atom::new_from_view(self)));
+
+                let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
+                r.append_monomial(field.one(), &[E::one()]);
+                r
+            }
+            AtomView::Fun(f) => {
+                // TODO: make sure that this coefficient does not depend on any of the variables in var_map
+
+                // check if the argument consists of a single positive integer. If so, treat the function as an array
+                if f.get_nargs() == 1 {
+                    let arg = f.iter().next().unwrap();
+
+                    if let AtomView::Num(n) = arg {
+                        if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
+                            if n >= 0 {
+                                let id = Variable::Array(f.get_name(), n as usize);
+                                let mut r = MultivariatePolynomial::new(
+                                    1,
+                                    field,
+                                    None,
+                                    Some(Arc::new(vec![id])),
+                                );
+                                r.append_monomial(field.one(), &[E::one()]);
+                                return r;
+                            }
+                        }
+                    }
+                }
+
+                let id = Variable::Function(f.get_name(), Arc::new(Atom::new_from_view(self)));
+
+                let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
+                r.append_monomial(field.one(), &[E::one()]);
+                r
+            }
+            AtomView::Mul(m) => {
+                let mut r = MultivariatePolynomial::new(0, field, None, None);
+                r = r.add_monomial(field.one());
+                for arg in m.iter() {
+                    let mut arg_r = arg.to_polynomial_with_conversion(field);
+                    r.unify_var_map(&mut arg_r);
+                    r = &r * &arg_r;
+                }
+                r
+            }
+            AtomView::Add(a) => {
+                let mut r = MultivariatePolynomial::new(0, field, None, None);
+                for arg in a.iter() {
+                    let mut arg_r = arg.to_polynomial_with_conversion(field);
                     r.unify_var_map(&mut arg_r);
                     r = &r + &arg_r;
                 }
@@ -955,10 +1064,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             );
 
                             let id = if let Some(x) = map.get(&pow_h) {
-                                *x
+                                x.clone()
                             } else {
                                 let new_id = Variable::Temporary(map.len());
-                                map.insert(pow_h, new_id);
+                                map.insert(pow_h, new_id.clone());
                                 new_id
                             };
 
@@ -1014,10 +1123,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         let mut a = workspace.new_atom();
                         a.set_from_view(self);
                         let id = if let Some(x) = map.get(&a) {
-                            *x
+                            x.clone()
                         } else {
                             let new_id = Variable::Temporary(map.len());
-                            map.insert(a, new_id);
+                            map.insert(a, new_id.clone());
                             new_id
                         };
 
@@ -1032,10 +1141,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     let mut a = workspace.new_atom();
                     a.set_from_view(self);
                     let id = if let Some(x) = map.get(&a) {
-                        *x
+                        x.clone()
                     } else {
                         let new_id = Variable::Temporary(map.len());
-                        map.insert(a, new_id);
+                        map.insert(a, new_id.clone());
                         new_id
                     };
 
@@ -1051,10 +1160,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let mut a = workspace.new_atom();
                 a.set_from_view(self);
                 let id = if let Some(x) = map.get(&a) {
-                    *x
+                    x.clone()
                 } else {
                     let new_id = Variable::Temporary(map.len());
-                    map.insert(a, new_id);
+                    map.insert(a, new_id.clone());
                     new_id
                 };
 
@@ -1118,12 +1227,12 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
         for monomial in self {
             let mul = mul_h.to_mul();
 
-            for (&var_id, &pow) in var_map.iter().zip(monomial.exponents) {
+            for (var_id, &pow) in var_map.iter().zip(monomial.exponents) {
                 if pow > E::zero() {
                     match var_id {
                         Variable::Identifier(v) => {
                             let var = var_h.to_var();
-                            var.set_from_id(v);
+                            var.set_from_id(*v);
                         }
                         Variable::Temporary(_) => {
                             let a = map.get(&var_id).expect("Variable missing from map");
@@ -1131,8 +1240,14 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                         }
                         Variable::Array(n, i) => {
                             let fun = var_h.to_fun();
-                            fun.set_from_name(n);
-                            fun.add_arg(workspace.new_num(i as i64).as_view());
+                            fun.set_from_name(*n);
+                            fun.add_arg(workspace.new_num(*i as i64).as_view());
+                        }
+                        Variable::Function(_, a) | Variable::Other(a) => {
+                            match a.as_any().downcast_ref::<Atom<P>>() {
+                                Some(b) => var_h.set_from_view(&b.as_view()),
+                                None => panic!("Wrong type in variable: {:?}", a),
+                            };
                         }
                     }
 

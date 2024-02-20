@@ -11,7 +11,7 @@ fn main() {
     let workspace: Workspace = Workspace::new();
 
     let x = state.get_or_insert_var("x").into();
-    let f = state.get_or_insert_var("f").into();
+    let f: Variable = state.get_or_insert_var("f").into();
     let g = state.get_or_insert_var("g").into();
     let a = Atom::parse("x*cos(x) + f(x, 1)^2 + g(g(x))", &mut state, &workspace).unwrap();
 
@@ -24,7 +24,7 @@ fn main() {
 
     // f(x, y) = x^2 + y
     fn_map.insert(
-        f,
+        f.clone(),
         EvaluationFn::new(Box::new(|args: &[f64], _, _, _| {
             args[0] * args[0] + args[1]
         })),

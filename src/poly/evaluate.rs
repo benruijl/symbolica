@@ -1751,7 +1751,7 @@ impl<'a> ExpressionEvaluator<'a> {
                     .iter()
                     .filter_map(|(a, r)| {
                         if let AtomView::Fun(f) = a {
-                            Some((*r, state.get_name(f.get_name()).to_string()))
+                            Some((r.clone(), state.get_name(f.get_name()).to_string()))
                         } else {
                             None
                         }

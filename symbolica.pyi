@@ -670,6 +670,9 @@ class Expression:
     def to_polynomial(self, vars: Optional[Sequence[Expression]] = None) -> Polynomial:
         """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`."""
 
+    def to_polynomial_with_conversion(self) -> Polynomial:
+        """Convert the expression to a polynomial, converting all non-polynomial parts to new, independent variables."""
+
     def to_rational_polynomial(
         self,
         vars: Optional[Sequence[Expression]] = None,
@@ -690,6 +693,9 @@ class Expression:
         vars: Optional[Sequence[Expression]] = None,
     ) -> RationalPolynomial:
         """Similar to `to_rational_polynomial()`, but the power of each variable is limited to 255."""
+
+    def to_rational_polynomial_with_conversion(self) -> RationalPolynomial:
+        """Convert the expression to a rational polynomial, converting all non-rational polynomial parts to new, independent variables."""
 
     def match(
         self,

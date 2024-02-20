@@ -281,7 +281,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
                 *pos = p;
             } else {
                 *pos = new_var_map.len();
-                new_var_map.push(*v);
+                new_var_map.push(v.clone());
             }
         }
 

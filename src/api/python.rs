@@ -2668,37 +2668,16 @@ impl PythonExpression {
             })
     }
 
-    /// Convert the expression to a polynomial, rewriting all non-polynomial elements.
-    pub fn to_polynomial_with_map(&self) -> (PythonPolynomial, HashMap<PythonExpression, usize>) {
-        let mut map = HashMap::default();
-
-        let poly = PythonPolynomial {
+    /// Convert the expression to a polynomial, converting all non-polynomial elements to
+    /// new independent variables.
+    pub fn to_polynomial_with_conversion(&self) -> PythonPolynomial {
+        PythonPolynomial {
             poly: Arc::new(
                 self.expr
                     .as_view()
-                    .to_polynomial_with_map(&RationalField::new(), &mut map),
+                    .to_polynomial_with_conversion(&RationalField::new()),
             ),
-        };
-
-        let map = map
-            .into_iter()
-            .map(|(k, v)| {
-                (
-                    PythonExpression {
-                        expr: Arc::new(Atom::new_from_view(&k)),
-                    },
-                    poly.poly
-                        .var_map
-                        .as_ref()
-                        .unwrap()
-                        .iter()
-                        .position(|v1| *v1 == v)
-                        .unwrap(),
-                )
-            })
-            .collect();
-
-        (poly, map)
+        }
     }
 
     /// Convert the expression to a rational polynomial, optionally, with the variables and the ordering specified in `vars`.
@@ -2798,6 +2777,22 @@ impl PythonExpression {
                     ))
                 })
         })
+    }
+
+    /// Convert the expression to a rational polynomial, converting all non-polynomial elements to
+    /// new independent variables.
+    pub fn to_rational_polynomial_with_conversion(&self) -> PyResult<PythonRationalPolynomial> {
+        let state = get_state!()?;
+        let p = WORKSPACE.with(|workspace| {
+            self.expr.as_view().to_rational_polynomial_with_conversion(
+                workspace,
+                &&state,
+                &RationalField::new(),
+                &IntegerRing::new(),
+            )
+        });
+
+        Ok(PythonRationalPolynomial { poly: Arc::new(p) })
     }
 
     /// Return an iterator over the pattern `self` matching to `lhs`.

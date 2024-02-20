@@ -1,6 +1,8 @@
 mod coefficient;
 pub mod default;
 
+use ahash::AHasher;
+
 use crate::{
     coefficient::{Coefficient, CoefficientView},
     parser::Token,
@@ -8,8 +10,9 @@ use crate::{
     state::{BufferHandle, ResettableBuffer, State, Workspace},
 };
 use std::{
+    any::Any,
     cmp::Ordering,
-    hash::Hash,
+    hash::{Hash, Hasher},
     ops::{DerefMut, Range},
 };
 
@@ -46,7 +49,7 @@ impl Identifier {
 
 /// Represents the collection of all types appearing in a mathematical expression, where
 /// each type has a compatible memory representation.
-pub trait AtomSet: Copy + Clone + PartialEq + Eq + Hash + Send + 'static {
+pub trait AtomSet: Copy + Clone + PartialEq + Eq + Hash + Send + Sync + 'static {
     type N<'a>: Num<'a, P = Self>;
     type V<'a>: Var<'a, P = Self>;
     type F<'a>: Fun<'a, P = Self>;
@@ -72,7 +75,9 @@ pub trait Convert<P: AtomSet> {
     fn to_owned_mul(self) -> P::OM;
 }
 
-pub trait OwnedNum: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedNum:
+    Clone + PartialEq + Hash + Send + Sync + ResettableBuffer + Convert<Self::P>
+{
     type P: AtomSet;
 
     fn set_from_coeff(&mut self, num: Coefficient);
@@ -83,7 +88,9 @@ pub trait OwnedNum: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert
     fn as_view(&self) -> AtomView<Self::P>;
 }
 
-pub trait OwnedVar: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedVar:
+    Clone + PartialEq + Hash + Send + Sync + ResettableBuffer + Convert<Self::P>
+{
     type P: AtomSet;
 
     fn set_from_id(&mut self, id: Identifier);
@@ -92,7 +99,9 @@ pub trait OwnedVar: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert
     fn as_view(&self) -> AtomView<Self::P>;
 }
 
-pub trait OwnedFun: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedFun:
+    Clone + PartialEq + Hash + Send + Sync + ResettableBuffer + Convert<Self::P>
+{
     type P: AtomSet;
 
     fn set_from_view(&mut self, view: &<Self::P as AtomSet>::F<'_>);
@@ -103,7 +112,9 @@ pub trait OwnedFun: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert
     fn as_view(&self) -> AtomView<Self::P>;
 }
 
-pub trait OwnedPow: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedPow:
+    Clone + PartialEq + Hash + Send + Sync + ResettableBuffer + Convert<Self::P>
+{
     type P: AtomSet;
 
     fn set_from_view(&mut self, view: &<Self::P as AtomSet>::P<'_>);
@@ -113,7 +124,9 @@ pub trait OwnedPow: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert
     fn as_view(&self) -> AtomView<Self::P>;
 }
 
-pub trait OwnedMul: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedMul:
+    Clone + PartialEq + Hash + Send + Sync + ResettableBuffer + Convert<Self::P>
+{
     type P: AtomSet;
 
     fn set_dirty(&mut self, dirty: bool);
@@ -125,7 +138,9 @@ pub trait OwnedMul: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert
     fn as_view(&self) -> AtomView<Self::P>;
 }
 
-pub trait OwnedAdd: Clone + PartialEq + Hash + Send + ResettableBuffer + Convert<Self::P> {
+pub trait OwnedAdd:
+    Clone + PartialEq + Hash + Send + Sync + ResettableBuffer + Convert<Self::P>
+{
     type P: AtomSet;
 
     fn set_dirty(&mut self, dirty: bool);
@@ -845,6 +860,57 @@ impl<P: AtomSet> ResettableBuffer for Atom<P> {
             Atom::Add(a) => a.reset(),
             Atom::Empty => {}
         }
+    }
+}
+
+/// An opaque atom trait that erases the atom set.
+/// It can be used for equality testing, hashing and printing.
+/// Using `as_any()` any `dyn OpaqueAtom` can be downcast to an atom
+/// with a specific atom set.
+///
+/// Useful to prevent a proliferation of passing an atom set
+/// by using dynamic dispatching.
+pub trait OpaqueAtom: std::fmt::Debug + Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn eq(&self, _: &dyn OpaqueAtom) -> bool;
+    fn printer(&self, state: &State) -> String;
+    fn ahash(&self) -> u64;
+}
+
+impl<P: AtomSet> OpaqueAtom for Atom<P> {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn eq(&self, other: &dyn OpaqueAtom) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |a| self == a)
+    }
+
+    fn printer(&self, state: &State) -> String {
+        format!("{}", self.printer(state))
+    }
+
+    fn ahash(&self) -> u64 {
+        let mut h = AHasher::default();
+        self.hash(&mut h);
+        h.finish()
+    }
+}
+
+impl PartialEq for dyn OpaqueAtom {
+    fn eq(&self, other: &Self) -> bool {
+        self.eq(other)
+    }
+}
+
+impl Eq for dyn OpaqueAtom {}
+
+impl Hash for dyn OpaqueAtom {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_u64(self.ahash())
     }
 }
 

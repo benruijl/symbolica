@@ -103,7 +103,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         // replace the temporary variables
         let mut result = Vec::with_capacity(vars.len());
 
-        let inv_map = map.iter().map(|(k, v)| (*v, k.as_view())).collect();
+        let inv_map = map.iter().map(|(k, v)| (v.clone(), k.as_view())).collect();
         for (s, v) in sol.data.iter().zip(&vars) {
             let mut a = Atom::new();
             s.to_expression(workspace, state, &inv_map, &mut a);

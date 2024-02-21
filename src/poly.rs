@@ -1925,17 +1925,33 @@ impl Token {
             }
             Token::Op(_, _, Operator::Add, args) => {
                 let mut r = FactorizedRationalPolynomial::new(out_field, Some(var_map.clone()));
-                for arg in args {
-                    let mut arg_r = arg.to_factorized_rational_polynomial(
-                        workspace,
-                        state,
-                        field,
-                        out_field,
-                        var_map,
-                        var_name_map,
-                    )?;
-                    r.unify_var_map(&mut arg_r);
-                    r = &r + &arg_r;
+
+                // sort based on length, as this may improve performance
+                let mut polys: Vec<FactorizedRationalPolynomial<_, _>> = args
+                    .iter()
+                    .map(|arg| {
+                        arg.to_factorized_rational_polynomial(
+                            workspace,
+                            state,
+                            field,
+                            out_field,
+                            var_map,
+                            var_name_map,
+                        )
+                    })
+                    .collect::<Result<_, _>>()?;
+
+                polys.sort_by_key(|p| {
+                    p.numerator.nterms()
+                        + p.denominators
+                            .iter()
+                            .map(|(x, _)| x.nterms())
+                            .sum::<usize>()
+                });
+
+                for mut p in polys {
+                    r.unify_var_map(&mut p);
+                    r = &r + &p;
                 }
                 Ok(r)
             }

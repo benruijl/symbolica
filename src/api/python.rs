@@ -4961,6 +4961,56 @@ impl PythonMatrix {
         })
     }
 
+    /// Get the content of the matrix, i.e. the gcd of all entries.
+    pub fn content(&self) -> PythonRationalPolynomial {
+        PythonRationalPolynomial {
+            poly: Arc::new(self.matrix.content()),
+        }
+    }
+
+    /// Construct the same matrix, but with the content removed.
+    pub fn primitive_part(&self) -> PythonMatrix {
+        PythonMatrix {
+            matrix: Arc::new(self.matrix.primitive_part()),
+        }
+    }
+
+    /// Apply a function `f` to every entry of the matrix.
+    pub fn map(&self, f: PyObject) -> PyResult<PythonMatrix> {
+        let data = self
+            .matrix
+            .data
+            .iter()
+            .map(|x| {
+                let expr = PythonRationalPolynomial {
+                    poly: Arc::new(x.clone()),
+                };
+
+                Python::with_gil(|py| {
+                    Ok(f.call1(py, (expr,))
+                        .map_err(|e| e)?
+                        .extract::<ConvertibleToRationalPolynomial>(py)?
+                        .to_rational_polynomial()?
+                        .poly
+                        .as_ref()
+                        .clone())
+                })
+            })
+            .collect::<PyResult<_>>()?;
+
+        Ok(PythonMatrix {
+            matrix: Arc::new(
+                Matrix::from_linear(
+                    data,
+                    self.matrix.nrows,
+                    self.matrix.ncols,
+                    self.matrix.field.clone(),
+                )
+                .unwrap(),
+            ),
+        })
+    }
+
     fn __getitem__(&self, mut idx: (isize, isize)) -> PyResult<PythonRationalPolynomial> {
         if idx.0 < 0 {
             idx.0 += self.matrix.nrows() as isize;
@@ -4986,6 +5036,17 @@ impl PythonMatrix {
         ))
     }
 
+    /// Compare two matrices.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.matrix == other.matrix),
+            CompareOp::Ne => Ok(self.matrix != other.matrix),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between matrices are not supported",
+            ))),
+        }
+    }
+
     /// Copy the matrix.
     pub fn __copy__(&self) -> Self {
         Self {
@@ -5006,12 +5067,12 @@ impl PythonMatrix {
         }
     }
 
-    ///  Subtract `other` from this transformer, returning the result.
+    ///  Subtract `rhs` from this matrix, returning the result.
     pub fn __sub__(&self, rhs: PythonMatrix) -> PythonMatrix {
         self.__add__(rhs.__neg__())
     }
 
-    /// Add this transformer to `other`, returning the result.
+    /// Add this matrix to `rhs`, returning the result.
     pub fn __mul__(&self, rhs: ScalarOrMatrix) -> PyResult<PythonMatrix> {
         match rhs {
             ScalarOrMatrix::Scalar(s) => {
@@ -5030,9 +5091,16 @@ impl PythonMatrix {
         }
     }
 
-    /// Add this transformer to `other`, returning the result.
+    /// Add this matrix to `rhs`, returning the result.
     pub fn __rmul__(&self, rhs: ConvertibleToRationalPolynomial) -> PyResult<PythonMatrix> {
         self.__mul__(ScalarOrMatrix::Scalar(rhs))
+    }
+
+    /// Divide the matrix by the scalar, returning the result.
+    pub fn __truediv__(&self, rhs: ConvertibleToRationalPolynomial) -> PyResult<PythonMatrix> {
+        Ok(PythonMatrix {
+            matrix: Arc::new(self.matrix.div_scalar(&rhs.to_rational_polynomial()?.poly)),
+        })
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.

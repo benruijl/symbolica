@@ -590,7 +590,7 @@ class Expression:
 
         Parameters
         ----------
-        vars : List[Expression]
+        vars : Sequence[Expression]
                 A list of variables
         """
 
@@ -750,7 +750,7 @@ class Expression:
         pattern: Transformer | Expression | int,
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
-        non_greedy_wildcards: Optional[List[Expression]] = None,
+        non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         repeat: Optional[bool] = False,
     ) -> Expression:
         """
@@ -1151,7 +1151,7 @@ class Transformer:
         pat: Transformer | Expression | int,
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
-        non_greedy_wildcards: Optional[List[Expression]] = None,
+        non_greedy_wildcards: Optional[Sequence[Expression]] = None,
     ) -> Transformer:
         """
         Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
@@ -1307,7 +1307,7 @@ class Polynomial:
     """A Symbolica polynomial with rational coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str]) -> Polynomial:
+    def parse(_cls, input: str, vars: Sequence[str]) -> Polynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -1516,7 +1516,7 @@ class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str]) -> IntegerPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str]) -> IntegerPolynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -1690,7 +1690,7 @@ class FiniteFieldPolynomial:
     """A Symbolica polynomial with finite field coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str], prime: int) -> FiniteFieldPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], prime: int) -> FiniteFieldPolynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -1886,7 +1886,7 @@ class RationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str]) -> RationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str]) -> RationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -1972,7 +1972,7 @@ class RationalPolynomialSmallExponent:
     """A Symbolica rational polynomial with variable powers limited to 255."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str]) -> RationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str]) -> RationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -2062,7 +2062,7 @@ class FiniteFieldRationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str], prime: int) -> FiniteFieldRationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], prime: int) -> FiniteFieldRationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -2132,19 +2132,19 @@ class Matrix:
         """Create a new square matrix with `nrows` rows and ones on the main diagonal and zeroes elsewhere."""
 
     @classmethod
-    def eye(cls, diag: List[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
+    def eye(cls, diag: Sequence[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
         """Create a new matrix with the scalars `diag` on the main diagonal and zeroes elsewhere."""
 
     @classmethod
-    def vec(cls, entries: List[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
+    def vec(cls, entries: Sequence[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
         """Create a new row vector from a list of scalars."""
 
     @classmethod
-    def from_linear(cls, nrows: int, ncols: int, entries: List[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
+    def from_linear(cls, nrows: int, ncols: int, entries: Sequence[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
         """Create a new matrix from a 1-dimensional vector of scalars."""
 
     @classmethod
-    def from_nested(cls, entries: List[List[RationalPolynomial | Polynomial | Expression | int]]) -> Matrix:
+    def from_nested(cls, entries: Sequence[Sequence[RationalPolynomial | Polynomial | Expression | int]]) -> Matrix:
         """Create a new matrix from a 2-dimensional vector of scalars."""
 
     def nrows(self) -> int:
@@ -2171,6 +2171,15 @@ class Matrix:
     def solve(self, b: Matrix) -> Matrix:
         """Solve `A * x = b` for `x`, where `A` is the current matrix."""
 
+    def content(self) -> RationalPolynomial:
+        """Get the content, i.e., the GCD of the coefficients."""
+
+    def primitive_part(self) -> Matrix:
+        """Construct the same matrix, but with the content removed."""
+
+    def map(self, f: Callable[[RationalPolynomial], RationalPolynomial]) -> Matrix:
+        """Apply a function `f` to every entry of the matrix."""
+
     def to_latex(self) -> str:
         """Convert the matrix into a LaTeX string."""
 
@@ -2182,6 +2191,12 @@ class Matrix:
 
     def __str__(self) -> str:
         """Print the matrix in a human-readable format."""
+
+    def __eq__(self, other: Matrix) -> bool:
+        """Compare two matrices."""
+
+    def __neq__(self, other: Matrix) -> bool:
+        """Compare two matrices."""
 
     def __add__(self, rhs: Matrix) -> Matrix:
         """Add two matrices `self` and `rhs`, returning the result."""
@@ -2195,12 +2210,15 @@ class Matrix:
     def __rmul__(self, rhs: RationalPolynomial | Polynomial | Expression | int) -> Matrix:
         """Multiply two matrices `self` and `rhs`, returning the result."""
 
+    def __truediv__(self, rhs: RationalPolynomial | Polynomial | Expression | int) -> Matrix:
+        """Divide this matrix by scalar `rhs` and return the result."""
+
     def __neg__(self) -> Matrix:
         """Negate the matrix, returning the result."""
 
 
 class Evaluator:
-    def evaluate(self, inputs: List[List[float]]) -> List[float]:
+    def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[float]:
         """Evaluate the polynomial for multiple inputs and return the result."""
 
 
@@ -2210,14 +2228,14 @@ class NumericalIntegrator:
         n_dims: int,
         n_bins: int = 128,
         min_samples_for_update: int = 100,
-        bin_number_evolution: Optional[List[int]] = None,
+        bin_number_evolution: Optional[Sequence[int]] = None,
         train_on_avg: bool = False,
     ) -> NumericalIntegrator:
         """Create a new continuous grid for the numerical integrator."""
 
     @staticmethod
     def discrete(
-        bins: List[Optional[NumericalIntegrator]],
+        bins: Sequence[Optional[NumericalIntegrator]],
         max_prob_ratio: float = 100.0,
         train_on_avg: bool = False,
     ) -> NumericalIntegrator:
@@ -2243,7 +2261,7 @@ class NumericalIntegrator:
     def sample(self, num_samples: int) -> List[Sample]:
         """Sample `num_samples` points from the grid."""
 
-    def add_training_samples(self, samples: List[Sample], evals: List[float]):
+    def add_training_samples(self, samples: Sequence[Sample], evals: Sequence[float]):
         """Add the samples and their corresponding function evaluations to the grid.
         Call `update` after to update the grid and to obtain the new expected value for the integral."""
 
@@ -2270,7 +2288,7 @@ class NumericalIntegrator:
 
     def integrate(
         self,
-        integrand: Callable[[List[Sample]], List[float]],
+        integrand: Callable[[Sequence[Sample]], List[float]],
         max_n_iter: int = 10000000,
         min_error: float = 0.01,
         n_samples_per_iter: int = 10000,

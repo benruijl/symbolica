@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    domains::{Field, Ring},
+    domains::{EuclideanDomain, Field, Ring},
     printer::{MatrixPrinter, PrintOptions},
     state::State,
 };
@@ -37,7 +37,13 @@ impl<F: Ring> Matrix<F> {
     pub fn identity(nrows: u32, field: F) -> Matrix<F> {
         Matrix {
             data: (0..nrows as usize * nrows as usize)
-                .map(|_| field.one())
+                .map(|i| {
+                    if i % nrows as usize == i / nrows as usize {
+                        field.one()
+                    } else {
+                        field.zero()
+                    }
+                })
                 .collect(),
             nrows,
             ncols: nrows,
@@ -373,6 +379,46 @@ impl<F: Ring> std::fmt::Display for MatrixError<F> {
             MatrixError::RightHandSideIsNotVector => {
                 write!(f, "The right-hand side is not a vector")
             }
+        }
+    }
+}
+
+impl<F: EuclideanDomain> Matrix<F> {
+    /// Get the content of the matrix, i.e. the gcd of all entries.
+    pub fn content(&self) -> F::Element {
+        let mut gcd = self.field.zero();
+        for e in &self.data {
+            gcd = self.field.gcd(&gcd, e);
+        }
+
+        gcd
+    }
+
+    /// Divide each entry in the matrix by the scalar `e`.
+    pub fn div_scalar(&self, e: &F::Element) -> Matrix<F> {
+        Matrix {
+            data: self
+                .data
+                .iter()
+                .map(|ee| {
+                    let (q, r) = self.field.quot_rem(ee, e);
+                    assert_eq!(r, self.field.zero());
+                    q
+                })
+                .collect(),
+            nrows: self.nrows,
+            ncols: self.ncols,
+            field: self.field.clone(),
+        }
+    }
+
+    /// Construct the same matrix, but with the content removed.
+    pub fn primitive_part(&self) -> Matrix<F> {
+        let c = self.content();
+        if self.field.is_one(&c) {
+            self.clone()
+        } else {
+            self.div_scalar(&c)
         }
     }
 }

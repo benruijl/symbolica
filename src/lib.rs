@@ -30,6 +30,7 @@ pub mod representations;
 pub mod solve;
 pub mod state;
 pub mod streaming;
+pub mod tensors;
 pub mod transformer;
 pub mod utils;
 

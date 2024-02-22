@@ -22,15 +22,14 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     domains::{
-        finite_field::ToFiniteField,
-        integer::Integer,
-        rational::RationalField,
-        rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
-    },
-    domains::{
-        finite_field::{FiniteField, FiniteFieldCore},
+        finite_field::{FiniteField, FiniteFieldCore, ToFiniteField},
         float::Complex,
-        integer::IntegerRing,
+        integer::{Integer, IntegerRing},
+        rational::RationalField,
+        rational_polynomial::{
+            FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
+        },
+        Ring,
     },
     evaluate::EvaluationFn,
     id::{
@@ -49,13 +48,16 @@ use crate::{
         polynomial::MultivariatePolynomial,
         GrevLexOrder, LexOrder, Variable, INLINED_EXPONENTS,
     },
-    printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
+    printer::{
+        AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
+    },
     representations::{
         default::ListIteratorD, Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice, Mul, Num,
         OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
     },
     state::{FunctionAttribute, ResettableBuffer, State, Workspace},
     streaming::TermStreamer,
+    tensors::matrix::Matrix,
     transformer::{StatsOptions, Transformer, TransformerError},
     LicenseManager,
 };
@@ -94,6 +96,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonRationalPolynomial>()?;
     m.add_class::<PythonRationalPolynomialSmallExponent>()?;
     m.add_class::<PythonFiniteFieldRationalPolynomial>()?;
+    m.add_class::<PythonMatrix>()?;
     m.add_class::<PythonNumericalIntegrator>()?;
     m.add_class::<PythonSample>()?;
     m.add_class::<PythonAtomType>()?;
@@ -4594,6 +4597,465 @@ macro_rules! generate_rat_methods {
 generate_rat_methods!(PythonRationalPolynomial);
 generate_rat_methods!(PythonRationalPolynomialSmallExponent);
 generate_rat_methods!(PythonFiniteFieldRationalPolynomial);
+
+#[derive(FromPyObject)]
+pub enum ConvertibleToRationalPolynomial {
+    Literal(PythonRationalPolynomial),
+    Expression(ConvertibleToExpression),
+}
+
+impl ConvertibleToRationalPolynomial {
+    pub fn to_rational_polynomial(self) -> PyResult<PythonRationalPolynomial> {
+        match self {
+            Self::Literal(l) => Ok(l),
+            Self::Expression(e) => {
+                let expr = &e.to_expression().expr;
+
+                let state = get_state!()?;
+
+                let poly = WORKSPACE.with(|workspace| {
+                    expr.as_view().to_rational_polynomial_with_conversion(
+                        workspace,
+                        &state,
+                        &RationalField::new(),
+                        &IntegerRing::new(),
+                    )
+                });
+
+                Ok(PythonRationalPolynomial {
+                    poly: Arc::new(poly),
+                })
+            }
+        }
+    }
+}
+
+#[derive(FromPyObject)]
+pub enum ScalarOrMatrix {
+    Scalar(ConvertibleToRationalPolynomial),
+    Matrix(PythonMatrix),
+}
+
+/// A Symbolica matrix with rational polynomial coefficients.
+#[pyclass(name = "Matrix")]
+#[derive(Clone)]
+pub struct PythonMatrix {
+    pub matrix: Arc<Matrix<RationalPolynomialField<IntegerRing, u16>>>,
+}
+
+impl PythonMatrix {
+    fn unify(&self, rhs: &PythonMatrix) -> (PythonMatrix, PythonMatrix) {
+        if self.matrix.field == rhs.matrix.field {
+            return (self.clone(), rhs.clone());
+        }
+
+        let mut new_self = self.matrix.as_ref().clone();
+        let mut new_rhs = rhs.matrix.as_ref().clone();
+
+        let mut zero = self.matrix.field.zero();
+
+        zero.unify_var_map(&mut new_rhs[(0, 0)]);
+        new_self.field = RationalPolynomialField::new(
+            IntegerRing::new(),
+            zero.numerator.nvars,
+            zero.numerator.var_map.clone(),
+        );
+        new_rhs.field = new_self.field.clone();
+
+        // now update every element
+        for e in &mut new_self.data {
+            zero.unify_var_map(e);
+        }
+        for e in &mut new_rhs.data {
+            zero.unify_var_map(e);
+        }
+
+        (
+            PythonMatrix {
+                matrix: Arc::new(new_self),
+            },
+            PythonMatrix {
+                matrix: Arc::new(new_rhs),
+            },
+        )
+    }
+
+    fn unify_scalar(
+        &self,
+        rhs: &PythonRationalPolynomial,
+    ) -> (PythonMatrix, PythonRationalPolynomial) {
+        if self.matrix.field
+            == RationalPolynomialField::new(
+                IntegerRing::new(),
+                rhs.poly.numerator.nvars,
+                rhs.poly.numerator.var_map.clone(),
+            )
+        {
+            return (self.clone(), rhs.clone());
+        }
+
+        let mut new_self = self.matrix.as_ref().clone();
+        let mut new_rhs = rhs.poly.as_ref().clone();
+
+        let mut zero = self.matrix.field.zero();
+
+        zero.unify_var_map(&mut new_rhs);
+        new_self.field = RationalPolynomialField::new(
+            IntegerRing::new(),
+            zero.numerator.nvars,
+            zero.numerator.var_map.clone(),
+        );
+
+        // now update every element
+        for e in &mut new_self.data {
+            zero.unify_var_map(e);
+        }
+
+        (
+            PythonMatrix {
+                matrix: Arc::new(new_self),
+            },
+            PythonRationalPolynomial {
+                poly: Arc::new(new_rhs),
+            },
+        )
+    }
+}
+
+#[pymethods]
+impl PythonMatrix {
+    /// Create a new zeroed matrix with `nrows` rows and `ncols` columns.
+    #[new]
+    pub fn new(nrows: u32, ncols: u32) -> PyResult<PythonMatrix> {
+        if nrows == 0 || ncols == 0 {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        Ok(PythonMatrix {
+            matrix: Arc::new(Matrix::new(
+                nrows,
+                ncols,
+                RationalPolynomialField::new(IntegerRing::new(), 0, None),
+            )),
+        })
+    }
+
+    /// Create a new square matrix with `nrows` rows and ones on the main diagonal and zeroes elsewhere.
+    #[classmethod]
+    pub fn identity(_cls: &PyType, nrows: u32) -> PyResult<PythonMatrix> {
+        if nrows == 0 {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        Ok(PythonMatrix {
+            matrix: Arc::new(Matrix::identity(
+                nrows,
+                RationalPolynomialField::new(IntegerRing::new(), 0, None),
+            )),
+        })
+    }
+
+    /// Create a new matrix with the scalars `diag` on the main diagonal and zeroes elsewhere.
+    #[classmethod]
+    pub fn eye(
+        _cls: &PyType,
+        diag: Vec<ConvertibleToRationalPolynomial>,
+    ) -> PyResult<PythonMatrix> {
+        if diag.is_empty() {
+            return Err(exceptions::PyValueError::new_err(
+                "The diagonal must have at least one entry",
+            ));
+        }
+
+        let mut diag: Vec<_> = diag
+            .into_iter()
+            .map(|x| Ok(x.to_rational_polynomial()?.poly.as_ref().clone()))
+            .collect::<PyResult<_>>()?;
+
+        // unify the entries
+        let (first, rest) = diag.split_first_mut().unwrap();
+        for _ in 0..2 {
+            for x in &mut *rest {
+                first.unify_var_map(x);
+            }
+        }
+
+        let field = RationalPolynomialField::new(
+            IntegerRing::new(),
+            first.numerator.nvars,
+            first.numerator.var_map.clone(),
+        );
+
+        Ok(PythonMatrix {
+            matrix: Arc::new(Matrix::eye(&diag, field)),
+        })
+    }
+
+    /// Create a new row vector from a list of scalars.
+    #[classmethod]
+    pub fn vec(
+        _cls: &PyType,
+        entries: Vec<ConvertibleToRationalPolynomial>,
+    ) -> PyResult<PythonMatrix> {
+        if entries.is_empty() {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        let mut entries: Vec<_> = entries
+            .into_iter()
+            .map(|x| Ok(x.to_rational_polynomial()?.poly.as_ref().clone()))
+            .collect::<PyResult<_>>()?;
+
+        // unify the entries
+        let (first, rest) = entries.split_first_mut().unwrap();
+        for _ in 0..2 {
+            for x in &mut *rest {
+                first.unify_var_map(x);
+            }
+        }
+
+        let field = RationalPolynomialField::new(
+            IntegerRing::new(),
+            first.numerator.nvars,
+            first.numerator.var_map.clone(),
+        );
+
+        Ok(PythonMatrix {
+            matrix: Arc::new(Matrix::new_vec(entries, field)),
+        })
+    }
+
+    /// Create a new row vector from a list of scalars.
+    #[classmethod]
+    pub fn from_linear(
+        _cls: &PyType,
+        nrows: u32,
+        ncols: u32,
+        entries: Vec<ConvertibleToRationalPolynomial>,
+    ) -> PyResult<PythonMatrix> {
+        if entries.is_empty() {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        let mut entries: Vec<_> = entries
+            .into_iter()
+            .map(|x| Ok(x.to_rational_polynomial()?.poly.as_ref().clone()))
+            .collect::<PyResult<_>>()?;
+
+        // unify the entries
+        let (first, rest) = entries.split_first_mut().unwrap();
+        for _ in 0..2 {
+            for x in &mut *rest {
+                first.unify_var_map(x);
+            }
+        }
+
+        let field = RationalPolynomialField::new(
+            IntegerRing::new(),
+            first.numerator.nvars,
+            first.numerator.var_map.clone(),
+        );
+
+        Ok(PythonMatrix {
+            matrix: Arc::new(
+                Matrix::from_linear(entries, nrows, ncols, field).map_err(|e| {
+                    exceptions::PyValueError::new_err(format!("Invalid matrix: {}", e))
+                })?,
+            ),
+        })
+    }
+
+    /// Create a new matrix from a 2-dimensional vector of scalars.
+    #[classmethod]
+    pub fn from_nested(
+        cls: &PyType,
+        entries: Vec<Vec<ConvertibleToRationalPolynomial>>,
+    ) -> PyResult<PythonMatrix> {
+        if entries.is_empty() || entries.iter().any(|x| x.is_empty()) {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        let nrows = entries.len() as u32;
+        let ncols = entries[0].len() as u32;
+
+        if entries.iter().any(|x| x.len() != ncols as usize) {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix is not rectangular",
+            ));
+        }
+
+        let entries: Vec<_> = entries.into_iter().flatten().collect();
+
+        Self::from_linear(cls, nrows, ncols, entries)
+    }
+
+    /// Return the number of rows.
+    pub fn nrows(&self) -> usize {
+        self.matrix.nrows()
+    }
+
+    /// Return the number of columns.
+    pub fn ncols(&self) -> usize {
+        self.matrix.nrows()
+    }
+
+    /// Return true iff every entry in the matrix is zero.
+    pub fn is_zero(&self) -> bool {
+        self.matrix.is_zero()
+    }
+
+    /// Return true iff every non- main diagonal entry in the matrix is zero.
+    pub fn is_diagonal(&self) -> bool {
+        self.matrix.is_diagonal()
+    }
+
+    /// Return the transpose of the matrix.
+    pub fn transpose(&self) -> PythonMatrix {
+        PythonMatrix {
+            matrix: Arc::new(self.matrix.transpose()),
+        }
+    }
+
+    /// Return the inverse of the matrix, if it exists.
+    pub fn inv(&self) -> PyResult<PythonMatrix> {
+        Ok(PythonMatrix {
+            matrix: Arc::new(
+                self.matrix
+                    .inv()
+                    .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
+            ),
+        })
+    }
+
+    /// Return the determinant of the matrix.
+    pub fn det(&self) -> PyResult<PythonRationalPolynomial> {
+        Ok(PythonRationalPolynomial {
+            poly: Arc::new(
+                self.matrix
+                    .det()
+                    .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
+            ),
+        })
+    }
+
+    /// Solve `A * x = b` for `x`, where `A` is the current matrix.
+    pub fn solve(&self, b: PythonMatrix) -> PyResult<PythonMatrix> {
+        let (new_self, new_rhs) = self.unify(&b);
+        Ok(PythonMatrix {
+            matrix: Arc::new(
+                new_self
+                    .matrix
+                    .solve(&new_rhs.matrix)
+                    .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
+            ),
+        })
+    }
+
+    fn __getitem__(&self, mut idx: (isize, isize)) -> PyResult<PythonRationalPolynomial> {
+        if idx.0 < 0 {
+            idx.0 += self.matrix.nrows() as isize;
+        }
+        if idx.1 < 0 {
+            idx.1 += self.matrix.ncols() as isize;
+        }
+
+        if idx.0 as usize >= self.matrix.nrows() || idx.1 as usize >= self.matrix.ncols() {
+            return Err(exceptions::PyIndexError::new_err("Index out of bounds"));
+        }
+
+        Ok(PythonRationalPolynomial {
+            poly: Arc::new(self.matrix[(idx.0 as u32, idx.1 as u32)].clone()),
+        })
+    }
+
+    /// Convert the matrix into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            MatrixPrinter::new_with_options(&self.matrix, &&get_state!()?, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Copy the matrix.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            matrix: Arc::new((*self.matrix).clone()),
+        }
+    }
+
+    /// Convert the matrix into a human-readable string.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.matrix.printer(&&get_state!()?)))
+    }
+
+    /// Add this matrix to `rhs`, returning the result.
+    pub fn __add__(&self, rhs: PythonMatrix) -> PythonMatrix {
+        let (new_self, new_rhs) = self.unify(&rhs);
+        PythonMatrix {
+            matrix: Arc::new(&*new_self.matrix + &*new_rhs.matrix),
+        }
+    }
+
+    ///  Subtract `other` from this transformer, returning the result.
+    pub fn __sub__(&self, rhs: PythonMatrix) -> PythonMatrix {
+        self.__add__(rhs.__neg__())
+    }
+
+    /// Add this transformer to `other`, returning the result.
+    pub fn __mul__(&self, rhs: ScalarOrMatrix) -> PyResult<PythonMatrix> {
+        match rhs {
+            ScalarOrMatrix::Scalar(s) => {
+                let (new_self, new_rhs) = self.unify_scalar(&s.to_rational_polynomial()?);
+
+                Ok(Self {
+                    matrix: Arc::new(new_self.matrix.mul_scalar(&new_rhs.poly)),
+                })
+            }
+            ScalarOrMatrix::Matrix(m) => {
+                let (new_self, new_rhs) = self.unify(&m);
+                Ok(PythonMatrix {
+                    matrix: Arc::new(&*new_self.matrix * &*new_rhs.matrix),
+                })
+            }
+        }
+    }
+
+    /// Add this transformer to `other`, returning the result.
+    pub fn __rmul__(&self, rhs: ConvertibleToRationalPolynomial) -> PyResult<PythonMatrix> {
+        self.__mul__(ScalarOrMatrix::Scalar(rhs))
+    }
+
+    /// Returns a warning that `**` should be used instead of `^` for taking a power.
+    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonMatrix> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor a matrix. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
+    }
+
+    /// Returns a warning that `**` should be used instead of `^` for taking a power.
+    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonMatrix> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor a matrix. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
+    }
+
+    /// Negate the matrix, returning the result.
+    pub fn __neg__(&self) -> PythonMatrix {
+        PythonMatrix {
+            matrix: Arc::new(-self.matrix.as_ref().clone()),
+        }
+    }
+}
 
 /// A sample from the Symbolica integrator. It could consist of discrete layers,
 /// accessible with `d` (empty when there are not discrete layers), and the final continous layer `c` if it is present.

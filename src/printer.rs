@@ -11,6 +11,7 @@ use crate::{
     poly::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder},
     representations::{Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
     state::State,
+    tensors::matrix::Matrix,
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -1210,5 +1211,91 @@ impl<'a, 'b, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
         }
 
         Ok(())
+    }
+}
+
+pub struct MatrixPrinter<'a, 'b, F: Ring + Display> {
+    pub matrix: &'a Matrix<F>,
+    pub state: &'b State,
+    pub opts: PrintOptions,
+}
+
+impl<'a, 'b, F: Ring + Display> MatrixPrinter<'a, 'b, F> {
+    pub fn new(matrix: &'a Matrix<F>, state: &'b State) -> MatrixPrinter<'a, 'b, F> {
+        MatrixPrinter {
+            matrix,
+            state,
+            opts: PrintOptions::default(),
+        }
+    }
+
+    pub fn new_with_options(
+        matrix: &'a Matrix<F>,
+        state: &'b State,
+        opts: PrintOptions,
+    ) -> MatrixPrinter<'a, 'b, F> {
+        MatrixPrinter {
+            matrix,
+            state,
+            opts,
+        }
+    }
+}
+
+impl<'a, 'b, F: Ring + Display> Display for MatrixPrinter<'a, 'b, F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.opts.latex {
+            f.write_str("\\begin{pmatrix}")?;
+
+            for (ri, r) in self.matrix.row_iter().enumerate() {
+                for (ci, c) in r.iter().enumerate() {
+                    f.write_fmt(format_args!(
+                        "{}",
+                        RingPrinter {
+                            ring: &self.matrix.field,
+                            element: c,
+                            opts: &self.opts,
+                            state: Some(self.state),
+                            in_product: false,
+                        },
+                    ))?;
+
+                    if ci + 1 < self.matrix.ncols as usize {
+                        f.write_str(" & ")?;
+                    }
+                }
+                if ri + 1 < self.matrix.nrows as usize {
+                    f.write_str(r" \\ ")?;
+                }
+            }
+
+            f.write_str("\\end{pmatrix}")
+        } else {
+            f.write_char('{')?;
+            for (ri, r) in self.matrix.row_iter().enumerate() {
+                f.write_char('{')?;
+                for (ci, c) in r.iter().enumerate() {
+                    f.write_fmt(format_args!(
+                        "{}",
+                        RingPrinter {
+                            ring: &self.matrix.field,
+                            element: c,
+                            opts: &self.opts,
+                            state: Some(self.state),
+                            in_product: false,
+                        },
+                    ))?;
+
+                    if ci + 1 < self.matrix.ncols as usize {
+                        f.write_char(',')?;
+                    }
+                }
+                f.write_char('}')?;
+                if ri + 1 < self.matrix.nrows as usize {
+                    f.write_char(',')?;
+                }
+            }
+            f.write_char('}')
+        }
     }
 }

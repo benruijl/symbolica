@@ -272,12 +272,12 @@ class Expression:
 
     def __mul__(self, other: Expression | int) -> Expression:
         """
-        Add this expression to `other`, returning the result.
+        Multiply this expression with `other`, returning the result.
         """
 
     def __rmul__(self, other: Expression | int) -> Expression:
         """
-        Add this expression to `other`, returning the result.
+        Multiply this expression with `other`, returning the result.
         """
 
     def __truediv__(self, other: Expression | int) -> Expression:
@@ -1367,13 +1367,13 @@ class Polynomial:
         """Get the list of variables in the internal ordering of the polynomial."""
 
     def __add__(self, rhs: Polynomial) -> Polynomial:
-        """Add two polynomials `self and `rhs`, returning the result."""
+        """Add two polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: Polynomial) -> Polynomial:
         """Subtract polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: Polynomial) -> Polynomial:
-        """Multiply two polynomials `self and `rhs`, returning the result."""
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: Polynomial) -> Polynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
@@ -1576,13 +1576,13 @@ class IntegerPolynomial:
         """Get the list of variables in the internal ordering of the polynomial."""
 
     def __add__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Add two polynomials `self and `rhs`, returning the result."""
+        """Add two polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Subtract polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Multiply two polynomials `self and `rhs`, returning the result."""
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
@@ -1750,13 +1750,13 @@ class FiniteFieldPolynomial:
         """Get the list of variables in the internal ordering of the polynomial."""
 
     def __add__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
-        """Add two polynomials `self and `rhs`, returning the result."""
+        """Add two polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
         """Subtract polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
-        """Multiply two polynomials `self and `rhs`, returning the result."""
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
@@ -1922,13 +1922,13 @@ class RationalPolynomial:
         """Get the denominator."""
 
     def __add__(self, rhs: RationalPolynomial) -> RationalPolynomial:
-        """Add two rational polynomials `self and `rhs`, returning the result."""
+        """Add two rational polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Subtract rational polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: RationalPolynomial) -> RationalPolynomial:
-        """Multiply two rational polynomials `self and `rhs`, returning the result."""
+        """Multiply two rational polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Divide the rational polynomial `self` by `rhs` if possible, returning the result."""
@@ -2004,7 +2004,7 @@ class RationalPolynomialSmallExponent:
     def __add__(
         self, rhs: RationalPolynomialSmallExponent
     ) -> RationalPolynomialSmallExponent:
-        """Add two rational polynomials `self and `rhs`, returning the result."""
+        """Add two rational polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(
         self, rhs: RationalPolynomialSmallExponent
@@ -2014,7 +2014,7 @@ class RationalPolynomialSmallExponent:
     def __mul__(
         self, rhs: RationalPolynomialSmallExponent
     ) -> RationalPolynomialSmallExponent:
-        """Multiply two rational polynomials `self and `rhs`, returning the result."""
+        """Multiply two rational polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(
         self, rhs: RationalPolynomialSmallExponent
@@ -2092,13 +2092,13 @@ class FiniteFieldRationalPolynomial:
         """Get the list of variables in the internal ordering of the polynomial."""
 
     def __add__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
-        """Add two rational polynomials `self and `rhs`, returning the result."""
+        """Add two rational polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
         """Subtract rational polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
-        """Multiply two rational polynomials `self and `rhs`, returning the result."""
+        """Multiply two rational polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
         """Divide the rational polynomial `self` by `rhs` if possible, returning the result."""
@@ -2121,6 +2121,82 @@ class FiniteFieldRationalPolynomial:
         >>> for pp in p.apart(x):
         >>>     print(pp)
         """
+
+
+class Matrix:
+    def __new__(cls, nrows: int, ncols: int) -> Matrix:
+        """Create a new zeroed matrix with `nrows` rows and `ncols` columns."""
+
+    @classmethod
+    def identity(cls, nrows: int) -> Matrix:
+        """Create a new square matrix with `nrows` rows and ones on the main diagonal and zeroes elsewhere."""
+
+    @classmethod
+    def eye(cls, diag: List[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
+        """Create a new matrix with the scalars `diag` on the main diagonal and zeroes elsewhere."""
+
+    @classmethod
+    def vec(cls, entries: List[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
+        """Create a new row vector from a list of scalars."""
+
+    @classmethod
+    def from_linear(cls, nrows: int, ncols: int, entries: List[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
+        """Create a new matrix from a 1-dimensional vector of scalars."""
+
+    @classmethod
+    def from_nested(cls, entries: List[List[RationalPolynomial | Polynomial | Expression | int]]) -> Matrix:
+        """Create a new matrix from a 2-dimensional vector of scalars."""
+
+    def nrows(self) -> int:
+        """Get the number of rows in the matrix."""
+
+    def ncols(self) -> int:
+        """Get the number of columns in the matrix."""
+
+    def is_zero(self) -> bool:
+        """Return true iff every entry in the matrix is zero."""
+
+    def is_diagonal(self) -> bool:
+        """Return true iff every non- main diagonal entry in the matrix is zero."""
+
+    def transpose(self) -> Matrix:
+        """Return the transpose of the matrix."""
+
+    def inv(self) -> Matrix:
+        """Return the inverse of the matrix, if it exists."""
+
+    def det(self) -> RationalPolynomial:
+        """Return the determinant of the matrix."""
+
+    def solve(self, b: Matrix) -> Matrix:
+        """Solve `A * x = b` for `x`, where `A` is the current matrix."""
+
+    def to_latex(self) -> str:
+        """Convert the matrix into a LaTeX string."""
+
+    def __copy__(self) -> Matrix:
+        """Copy the matrix."""
+
+    def __getitem__(self, key: Tuple[int, int]) -> RationalPolynomial:
+        """Get the entry at position `key` in the matrix."""
+
+    def __str__(self) -> str:
+        """Print the matrix in a human-readable format."""
+
+    def __add__(self, rhs: Matrix) -> Matrix:
+        """Add two matrices `self` and `rhs`, returning the result."""
+
+    def __sub__(self, rhs: Matrix) -> Matrix:
+        """Subtract matrix `rhs` from `self`, returning the result."""
+
+    def __mul__(self, rhs: Matrix | RationalPolynomial | Polynomial | Expression | int) -> Matrix:
+        """Multiply two matrices `self` and `rhs`, returning the result."""
+
+    def __rmul__(self, rhs: RationalPolynomial | Polynomial | Expression | int) -> Matrix:
+        """Multiply two matrices `self` and `rhs`, returning the result."""
+
+    def __neg__(self) -> Matrix:
+        """Negate the matrix, returning the result."""
 
 
 class Evaluator:

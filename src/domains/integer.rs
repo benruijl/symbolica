@@ -698,11 +698,31 @@ impl Ring for IntegerRing {
         &self,
         element: &Self::Element,
         _state: Option<&State>,
-        _opts: &PrintOptions,
+        opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
     ) -> Result<(), Error> {
-        element.fmt(f)
+        if opts.explicit_rational_polynomial {
+            match element {
+                Integer::Natural(n) => n.fmt(f),
+                Integer::Double(n) => n.fmt(f),
+                Integer::Large(r) => {
+                    // write the GMP number in hexadecimal representation,
+                    // since the conversion is much faster than for the decimal representation
+                    if r.is_negative() {
+                        write!(f, "-#{:X}", r.as_abs())
+                    } else {
+                        if f.sign_plus() {
+                            write!(f, "+#{:X}", r)
+                        } else {
+                            write!(f, "#{:X}", r)
+                        }
+                    }
+                }
+            }
+        } else {
+            element.fmt(f)
+        }
     }
 }
 

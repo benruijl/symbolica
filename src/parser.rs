@@ -1,14 +1,14 @@
 use std::{fmt::Write, string::String, sync::Arc};
 
 use bytes::Buf;
-use rug::{Complete, Integer};
+use rug::Integer as MultiPrecisionInteger;
 
 use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     coefficient::ConvertToRing,
-    domains::Ring,
+    domains::{integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
     representations::{Atom, AtomSet, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar},
     state::{ResettableBuffer, State, Workspace},
@@ -292,18 +292,12 @@ impl Token {
         out: &mut Atom<P>,
     ) -> Result<(), String> {
         match self {
-            Token::Number(n) => {
-                if let Ok(x) = n.parse::<i64>() {
+            Token::Number(n) => match n.parse::<Integer>() {
+                Ok(x) => {
                     out.to_num().set_from_coeff(x.into());
-                } else {
-                    match Integer::parse(n) {
-                        Ok(x) => {
-                            out.to_num().set_from_coeff(x.complete().into());
-                        }
-                        Err(e) => return Err(format!("Could not parse number: {}", e)),
-                    }
                 }
-            }
+                Err(e) => return Err(format!("Could not parse number: {}", e)),
+            },
             Token::ID(x) => {
                 out.to_var().set_from_id(state.get_or_insert_var(x));
             }
@@ -465,7 +459,6 @@ impl Token {
 
                     while c != ']' {
                         pos += 1;
-                        column_counter += 1;
                         c = char_iter.next().unwrap_or('\0');
                     }
 
@@ -474,7 +467,7 @@ impl Token {
 
                     state = ParseState::Any;
 
-                    column_counter += 1;
+                    column_counter += pos + 1;
                     c = char_iter.next().unwrap_or('\0');
                 }
                 ParseState::Any => {}
@@ -758,6 +751,8 @@ impl Token {
 
         let mut last_pos = input;
         let mut c = input.get_u8();
+
+        let mut digit_buffer = vec![];
         loop {
             if c == b'(' || c == b')' || c == b'/' {
                 break;
@@ -801,19 +796,39 @@ impl Token {
             }
 
             if len > 0 {
-                let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
+                coeff = 'read_coeff: {
+                    if len == 1 && num_start[0] == b'-' {
+                        break 'read_coeff field.neg(&field.one());
+                    }
 
-                if len == 1 && num_start[0] == b'-' {
-                    coeff = field.neg(&field.one());
-                } else {
-                    coeff = if let Ok(x) = n.parse::<i64>() {
-                        field.element_from_coefficient(x.into())
-                    } else {
-                        match Integer::parse(n) {
-                            Ok(x) => field.element_from_coefficient(x.complete().into()),
-                            Err(e) => panic!("Could not parse number: {}", e),
+                    if len <= 40 {
+                        let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
+
+                        if len <= 20 {
+                            if let Ok(n) = n.parse::<i64>() {
+                                break 'read_coeff field.element_from_coefficient(n.into());
+                            }
                         }
+
+                        if let Ok(n) = n.parse::<i128>() {
+                            break 'read_coeff field
+                                .element_from_coefficient(Integer::Double(n).into());
+                        }
+                    }
+
+                    let (is_negative, digits) = if num_start[0] == b'-' {
+                        (true, &num_start[1..len])
+                    } else {
+                        (false, &num_start[..len])
                     };
+
+                    digit_buffer.clear();
+                    digit_buffer.extend(digits.iter().map(|d| *d - b'0'));
+
+                    let mut p = MultiPrecisionInteger::new();
+                    unsafe { p.assign_bytes_radix_unchecked(&digit_buffer, 10, is_negative) };
+
+                    field.element_from_coefficient(p.into())
                 }
             }
 

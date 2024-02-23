@@ -14,6 +14,56 @@ use crate::{
     state::{ResettableBuffer, State, Workspace},
 };
 
+const HEX_DIGIT_MASK: [bool; 255] = [
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, true, true, true, true, true,
+    true, true, true, true, true, false, false, false, false, false, false, false, true, true,
+    true, true, true, true, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false,
+];
+
+const DIGIT_MASK: [bool; 255] = [
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, true, true, true, true, true,
+    true, true, true, true, true, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false,
+];
+
+const HEX_TO_DIGIT: [u8; 24] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, 14, 15, 0,
+];
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ParseState {
     Identifier,
@@ -776,22 +826,26 @@ impl Token {
                 c = input.get_u8();
             }
 
-            loop {
-                if !c.is_ascii_digit() {
-                    break;
-                }
+            let mut is_hex = false;
+            let mask = if c == b'#' {
+                is_hex = true;
+                last_pos = input;
+                c = input.get_u8();
+                &HEX_DIGIT_MASK
+            } else {
+                &DIGIT_MASK
+            };
 
-                if input.is_empty() {
-                    break;
-                }
-
+            while mask[c as usize] && !input.is_empty() {
                 last_pos = input;
                 c = input.get_u8();
             }
 
             // construct number
             let mut len = unsafe { input.as_ptr().offset_from(num_start.as_ptr()) } as usize;
-            if !c.is_ascii_digit() && (len > 1 || c != b'-') {
+            let mut last_read_is_non_digit = false;
+            if !mask[c as usize] && (len > 1 || c != b'-') {
+                last_read_is_non_digit = true;
                 len -= 1;
             }
 
@@ -801,7 +855,7 @@ impl Token {
                         break 'read_coeff field.neg(&field.one());
                     }
 
-                    if len <= 40 {
+                    if !is_hex && len <= 40 {
                         let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
 
                         if len <= 20 {
@@ -823,13 +877,33 @@ impl Token {
                     };
 
                     digit_buffer.clear();
-                    digit_buffer.extend(digits.iter().map(|d| *d - b'0'));
+
+                    if is_hex {
+                        digit_buffer.extend(
+                            digits[1..]
+                                .iter()
+                                .map(|&x| HEX_TO_DIGIT[(x - b'0') as usize]),
+                        );
+                    } else {
+                        digit_buffer.extend(digits.iter().map(|&x| (x - b'0')));
+                    }
 
                     let mut p = MultiPrecisionInteger::new();
-                    unsafe { p.assign_bytes_radix_unchecked(&digit_buffer, 10, is_negative) };
+                    unsafe {
+                        p.assign_bytes_radix_unchecked(
+                            &digit_buffer,
+                            if is_hex { 16 } else { 10 },
+                            is_negative,
+                        )
+                    };
 
                     field.element_from_coefficient(p.into())
                 }
+            }
+
+            if input.is_empty() && !last_read_is_non_digit {
+                poly.append_monomial(coeff, &exponents);
+                break;
             }
 
             if c == b'-' {

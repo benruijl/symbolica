@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-use symbolica::numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, Sample};
+use symbolica::numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample};
 
 fn main() {
     // Integrate x*pi + x^2 using multi-channeling:
@@ -20,7 +20,7 @@ fn main() {
         false,
     );
 
-    let mut rng = rand::thread_rng();
+    let mut rng = MonteCarloRng::new(0, 0);
 
     let mut sample = Sample::new();
     for iteration in 1..20 {

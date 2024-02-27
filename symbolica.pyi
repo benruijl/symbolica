@@ -2223,8 +2223,9 @@ class Evaluator:
 
 
 class NumericalIntegrator:
-    @staticmethod
+    @classmethod
     def continuous(
+        _cls,
         n_dims: int,
         n_bins: int = 128,
         min_samples_for_update: int = 100,
@@ -2233,8 +2234,9 @@ class NumericalIntegrator:
     ) -> NumericalIntegrator:
         """Create a new continuous grid for the numerical integrator."""
 
-    @staticmethod
+    @classmethod
     def discrete(
+        _cls,
         bins: Sequence[Optional[NumericalIntegrator]],
         max_prob_ratio: float = 100.0,
         train_on_avg: bool = False,
@@ -2258,10 +2260,45 @@ class NumericalIntegrator:
         >>> integrator.integrate(integrand, True, 10, 10000)
         """
 
-    def sample(self, num_samples: int) -> List[Sample]:
-        """Sample `num_samples` points from the grid."""
+    @classmethod
+    def rng(
+        _cls,
+        seed: int,
+        stream_id: int
+    ) -> RandomNumberGenerator:
+        """Create a new random number generator, suitable for use with the integrator.
+        Each thread of instance of the integrator should have its own random number generator,
+        that is initialized with the same seed but with a different stream id."""
 
-    def add_training_samples(self, samples: Sequence[Sample], evals: Sequence[float]):
+    @classmethod
+    def import_grid(
+        _cls,
+        grid: bytes
+    ) -> NumericalIntegrator:
+        """Import an exported grid from another thread or machine.
+        Use `export_grid` to export the grid."""
+
+    def export_grid(
+        self,
+    ) -> bytes:
+        """Export the grid, so that it can be sent to another thread or machine.
+        Use `import_grid` to load the grid."""
+
+    def get_live_estimate(
+        self,
+    ) -> Tuple[float, float, float, float, float, int]:
+        """Get the estamate of the average, error, chi-squared, maximum negative and positive evaluations, and the number of processed samples
+        for the current iteration, including the points submitted in the current iteration."""
+
+    def sample(self, num_samples: int, rng: RandomNumberGenerator) -> List[Sample]:
+        """Sample `num_samples` points from the grid using the random number generator
+        `rng`. See `rng()` for how to create a random number generator."""
+
+    def merge(self, other: NumericalIntegrator) -> None:
+        """Add the accumulated training samples from the grid `other` to the current grid.
+        The grid structure of `self` and `other` must be equivalent."""
+
+    def add_training_samples(self, samples: Sequence[Sample], evals: Sequence[float]) -> None:
         """Add the samples and their corresponding function evaluations to the grid.
         Call `update` after to update the grid and to obtain the new expected value for the integral."""
 
@@ -2292,6 +2329,7 @@ class NumericalIntegrator:
         max_n_iter: int = 10000000,
         min_error: float = 0.01,
         n_samples_per_iter: int = 10000,
+        seed: int = 0,
         show_stats: bool = True,
     ) -> Tuple[float, float, float]:
         """Integrate the function `integrand` that maps a list of `Sample`s to a list of `float`s.
@@ -2329,3 +2367,15 @@ class Sample:
     """ A sample point per (nested) discrete layer. Empty if not present."""
     c: List[float]
     """ A sample in the continuous layer. Empty if not present."""
+
+
+class RandomNumberGenerator:
+    """A reproducible, fast, non-cryptographic random number generator suitable for parallel Monte Carlo simulations.
+    A `seed` has to be set, which can be any `u64` number (small numbers work just as well as large numbers).
+
+    Each thread or instance generating samples should use the same `seed` but a different `stream_id`,
+    which is an instance counter starting at 0."""
+
+    def __new__(_cls, seed: int, stream_id: int):
+        """Create a new random number generator with a given `seed` and `stream_id`. For parallel runs,
+        each thread or instance generating samples should use the same `seed` but a different `stream_id`."""

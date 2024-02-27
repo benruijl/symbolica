@@ -12,7 +12,7 @@ use pyo3::{
     pyclass,
     pyclass::CompareOp,
     pyfunction, pymethods, pymodule,
-    types::{PyComplex, PyLong, PyModule, PyTuple, PyType},
+    types::{PyBytes, PyComplex, PyLong, PyModule, PyTuple, PyType},
     wrap_pyfunction, FromPyObject, IntoPy, PyErr, PyObject, PyRef, PyResult, Python,
 };
 use rug::Complete;
@@ -36,7 +36,7 @@ use crate::{
         AtomType, Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
         PatternRestriction, ReplaceIterator, WildcardAndRestriction,
     },
-    numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, Sample},
+    numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
     parser::Token,
     poly::{
         evaluate::{
@@ -102,6 +102,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonAtomType>()?;
     m.add_class::<PythonAtomTree>()?;
     m.add_class::<PythonInstructionEvaluator>()?;
+    m.add_class::<PythonRandomNumberGenerator>()?;
 
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_function(wrap_pyfunction!(is_licensed, m)?)?;
@@ -5198,6 +5199,28 @@ impl PythonSample {
     }
 }
 
+/// A reproducible, fast, non-cryptographic random number generator suitable for parallel Monte Carlo simulations.
+/// A `seed` has to be set, which can be any `u64` number (small numbers work just as well as large numbers).
+///
+/// Each thread or instance generating samples should use the same `seed` but a different `stream_id`,
+/// which is an instance counter starting at 0.
+#[pyclass(name = "RandomNumberGenerator")]
+struct PythonRandomNumberGenerator {
+    state: MonteCarloRng,
+}
+
+#[pymethods]
+impl PythonRandomNumberGenerator {
+    /// Create a new random number generator with a given `seed` and `stream_id`. For parallel runs,
+    /// each thread or instance generating samples should use the same `seed` but a different `stream_id`.
+    #[new]
+    fn new(seed: u64, stream_id: usize) -> Self {
+        Self {
+            state: MonteCarloRng::new(seed, stream_id),
+        }
+    }
+}
+
 #[pyclass(name = "NumericalIntegrator")]
 #[derive(Clone)]
 struct PythonNumericalIntegrator {
@@ -5269,14 +5292,26 @@ impl PythonNumericalIntegrator {
         }
     }
 
-    /// Sample `num_samples` points from the grid.
-    pub fn sample(&mut self, num_samples: usize) -> Vec<PythonSample> {
-        let mut rng = rand::thread_rng();
+    /// Create a new random number generator, suitable for use with the integrator.
+    /// Each thread of instance of the integrator should have its own random number generator,
+    /// that is initialized with the same seed but with a different stream id.
+    #[classmethod]
+    pub fn rng(_cls: &PyType, seed: u64, stream_id: usize) -> PythonRandomNumberGenerator {
+        PythonRandomNumberGenerator::new(seed, stream_id)
+    }
+
+    /// Sample `num_samples` points from the grid using the random number generator
+    /// `rng`. See `rng()` for how to create a random number generator.
+    pub fn sample(
+        &mut self,
+        num_samples: usize,
+        rng: &mut PythonRandomNumberGenerator,
+    ) -> Vec<PythonSample> {
         let mut sample = Sample::new();
 
         let mut samples = Vec::with_capacity(num_samples);
         for _ in 0..num_samples {
-            self.grid.sample(&mut rng, &mut sample);
+            self.grid.sample(&mut rng.state, &mut sample);
             samples.push(PythonSample::from_sample(&sample));
         }
 
@@ -5305,6 +5340,63 @@ impl PythonNumericalIntegrator {
         Ok(())
     }
 
+    /// Import an exported grid from another thread or machine.
+    /// Use `export_grid` to export the grid.
+    #[classmethod]
+    fn import_grid(_cls: &PyType, grid: &[u8]) -> PyResult<Self> {
+        let grid = bincode::deserialize(grid)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+
+        Ok(PythonNumericalIntegrator { grid })
+    }
+
+    /// Export the grid, so that it can be sent to another thread or machine.
+    /// Use `import_grid` to load the grid.
+    fn export_grid<'p>(&self, py: Python<'p>) -> PyResult<&'p PyBytes> {
+        bincode::serialize(&self.grid)
+            .map(|a| PyBytes::new(py, &a))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+
+    /// Get the estamate of the average, error, chi-squared, maximum negative and positive evaluations, and the number of processed samples
+    /// for the current iteration, including the points submitted in the current iteration.
+    fn get_live_estimate(&self) -> PyResult<(f64, f64, f64, f64, f64, usize)> {
+        match &self.grid {
+            Grid::Continuous(cs) => {
+                let mut a = cs.accumulator.shallow_copy();
+                a.update_iter();
+                Ok((
+                    a.avg,
+                    a.err,
+                    a.chi_sq,
+                    a.max_eval_negative,
+                    a.max_eval_positive,
+                    a.processed_samples,
+                ))
+            }
+            Grid::Discrete(ds) => {
+                let mut a = ds.accumulator.shallow_copy();
+                a.update_iter();
+                Ok((
+                    a.avg,
+                    a.err,
+                    a.chi_sq,
+                    a.max_eval_negative,
+                    a.max_eval_positive,
+                    a.processed_samples,
+                ))
+            }
+        }
+    }
+
+    /// Add the accumulated training samples from the grid `other` to the current grid.
+    /// The grid structure of `self` and `other` must be equivalent.
+    fn merge(&mut self, other: &PythonNumericalIntegrator) -> PyResult<()> {
+        self.grid
+            .merge(&other.grid)
+            .map_err(|e| pyo3::exceptions::PyAssertionError::new_err(e))
+    }
+
     /// Update the grid using the `learning_rate`.
     /// Examples
     /// --------
@@ -5327,7 +5419,7 @@ impl PythonNumericalIntegrator {
         self.grid.update(learing_rate);
 
         let stats = self.grid.get_statistics();
-        Ok((stats.avg, stats.err, stats.chi_sq))
+        Ok((stats.avg, stats.err, stats.chi_sq / stats.cur_iter as f64))
     }
 
     /// Integrate the function `integrand` that maps a list of `Sample`s to a list of `float`s.
@@ -5356,6 +5448,7 @@ impl PythonNumericalIntegrator {
         max_n_iter = 10_000_000,
         min_error = 0.01,
         n_samples_per_iter = 10_000,
+        seed = 0,
         show_stats = true)
     )]
     pub fn integrate(
@@ -5365,9 +5458,10 @@ impl PythonNumericalIntegrator {
         max_n_iter: usize,
         min_error: f64,
         n_samples_per_iter: usize,
+        seed: u64,
         show_stats: bool,
     ) -> PyResult<(f64, f64, f64)> {
-        let mut rng = rand::thread_rng();
+        let mut rng = MonteCarloRng::new(seed, 0);
 
         let mut samples = vec![Sample::new(); n_samples_per_iter];
         for iteration in 1..=max_n_iter {

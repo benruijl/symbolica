@@ -1,4 +1,6 @@
-use rand::Rng;
+use rand::{Rng, RngCore, SeedableRng};
+use rand_xoshiro::Xoshiro256StarStar;
+use serde::{Deserialize, Serialize};
 
 use crate::domains::float::{NumericalFloatComparison, Real};
 
@@ -17,7 +19,7 @@ use crate::domains::float::{NumericalFloatComparison, Real};
 ///
 /// The accumulator also stores which samples yielded the highest weight thus far.
 /// This can be used to study the input that impacted the average and error the most.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct StatisticsAccumulator<T: Real + NumericalFloatComparison> {
     sum: T,
     sum_sq: T,
@@ -301,7 +303,7 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
 /// and contains the weight and the list of sample points.
 /// If the sample comes from a [DiscreteGrid], it is the variant [Discrete](Sample::Discrete) and contains
 /// the weight, the bin and the subsample if the bin has a nested grid.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Sample<T: Real + NumericalFloatComparison> {
     Continuous(T, Vec<T>),
     Discrete(T, usize, Option<Box<Sample<T>>>),
@@ -354,7 +356,7 @@ impl<T: Real + NumericalFloatComparison> Sample<T> {
 /// An adapting grid that captures the enhancements of an integrand.
 /// It supports discrete and continuous dimensions. The discrete dimensions
 /// can have a nested grid.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Grid<T: Real + NumericalFloatComparison> {
     Continuous(ContinuousGrid<T>),
     Discrete(DiscreteGrid<T>),
@@ -424,9 +426,8 @@ impl<T: Real + NumericalFloatComparison> Grid<T> {
         }
     }
 }
-
 /// A bin of a discrete grid, which may contain a subgrid.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bin<T: Real + NumericalFloatComparison> {
     pub pdf: T,
     pub accumulator: StatisticsAccumulator<T>,
@@ -465,7 +466,7 @@ impl<T: Real + NumericalFloatComparison> Bin<T> {
 /// of a sample from the grid landing in a bin is proportional to its
 /// average value if training happens on the average, or to its
 /// variance (recommended).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscreteGrid<T: Real + NumericalFloatComparison> {
     pub bins: Vec<Bin<T>>,
     pub accumulator: StatisticsAccumulator<T>,
@@ -681,7 +682,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
 /// of a sample from the grid landing in a bin is proportional to its
 /// average value if training happens on the average, or to its
 /// variance (recommended).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContinuousGrid<T: Real + NumericalFloatComparison> {
     pub continuous_dimensions: Vec<ContinuousDimension<T>>,
     pub accumulator: StatisticsAccumulator<T>,
@@ -808,10 +809,9 @@ impl<T: Real + NumericalFloatComparison> ContinuousGrid<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContinuousDimension<T: Real + NumericalFloatComparison> {
     pub partitioning: Vec<T>,
-    pub new_partitioning: Vec<T>,
     bin_accumulator: Vec<StatisticsAccumulator<T>>,
     bin_importance: Vec<T>,
     counter: Vec<usize>,
@@ -842,7 +842,6 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
             partitioning: (0..=n_bins)
                 .map(|i| T::from_usize(i) / T::from_usize(n_bins))
                 .collect(),
-            new_partitioning: vec![],
             bin_importance: vec![T::zero(); n_bins],
             bin_accumulator: vec![StatisticsAccumulator::new(); n_bins],
             counter: vec![0; n_bins],
@@ -972,15 +971,13 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
         let new_weight_per_bin = imp_sum / T::from_usize(new_number_of_bins);
 
         // resize the bins using their importance measure
-        self.new_partitioning.clear();
-        self.new_partitioning
-            .resize(new_number_of_bins + 1, T::zero());
+        let mut new_partitioning = vec![T::zero(); new_number_of_bins + 1];
 
         // evenly distribute the bins such that each has weight_per_bin weight
         let mut acc = T::zero();
         let mut j = 0;
         let mut target = T::zero();
-        for nb in &mut self.new_partitioning[1..].iter_mut() {
+        for nb in &mut new_partitioning[1..].iter_mut() {
             target += new_weight_per_bin;
             // find the bin that has the accumulated weight we are looking for
             while j < self.bin_importance.len() && acc + self.bin_importance[j] < target {
@@ -1001,8 +998,8 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
 
         // it could be that all the weights are distributed before we reach 1, for example if the first bin
         // has all the weights. we still force to have the complete input range
-        self.new_partitioning[new_number_of_bins] = T::one();
-        std::mem::swap(&mut self.partitioning, &mut self.new_partitioning);
+        new_partitioning[new_number_of_bins] = T::one();
+        self.partitioning = new_partitioning;
 
         self.bin_importance.clear();
         self.bin_importance
@@ -1029,5 +1026,49 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
         for (bi, obi) in self.bin_accumulator.iter_mut().zip(&other.bin_accumulator) {
             bi.merge_samples_no_reset(obi);
         }
+    }
+}
+
+/// A reproducible, fast, non-cryptographic random number generator suitable for parallel Monte Carlo simulations.
+/// A `seed` has to be set, which can be any `u64` number (small numbers work just as well as large numbers).
+///
+/// Each thread or instance generating samples should use the same `seed` but a different `stream_id`,
+/// which is an instance counter starting at 0.
+pub struct MonteCarloRng {
+    state: Xoshiro256StarStar,
+}
+
+impl RngCore for MonteCarloRng {
+    #[inline]
+    fn next_u32(&mut self) -> u32 {
+        self.state.next_u32()
+    }
+
+    #[inline]
+    fn next_u64(&mut self) -> u64 {
+        self.state.next_u64()
+    }
+
+    #[inline]
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        self.state.fill_bytes(dest)
+    }
+
+    #[inline]
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+        self.state.try_fill_bytes(dest)
+    }
+}
+
+impl MonteCarloRng {
+    /// Create a new random number generator with a given `seed` and `stream_id`. For parallel runs,
+    /// each thread or instance generating samples should use the same `seed` but a different `stream_id`.
+    pub fn new(seed: u64, stream_id: usize) -> Self {
+        let mut state = Xoshiro256StarStar::seed_from_u64(seed);
+        for _ in 0..stream_id {
+            state.jump();
+        }
+
+        Self { state }
     }
 }

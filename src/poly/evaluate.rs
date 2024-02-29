@@ -1677,6 +1677,7 @@ pub struct ExpressionEvaluator<'a> {
         InstructionListOutput<Rational>,
         Vec<super::Variable>,
     )>,
+    input: Vec<super::Variable>,
     state: &'a State,
 }
 
@@ -1793,10 +1794,28 @@ impl<'a> ExpressionEvaluator<'a> {
             }
         }
 
+        let internal: HashSet<_> = overall_ops.iter().map(|x| &x.0).collect();
+        let mut external = HashSet::new();
+        for (_, _, _, args) in &overall_ops {
+            for arg in args {
+                if !internal.contains(arg) {
+                    external.insert(arg);
+                }
+            }
+        }
+        let mut input = external.into_iter().cloned().collect::<Vec<_>>();
+        input.sort_by_cached_key(|f| f.to_string(state));
+
         ExpressionEvaluator {
             operations: overall_ops,
+            input,
             state,
         }
+    }
+
+    /// Get the list of input variables that have to be provided in this order to the generated evaluation function.
+    pub fn get_input(&self) -> &[super::Variable] {
+        &self.input
     }
 }
 
@@ -1827,29 +1846,25 @@ auto 𝑖 = 1i;\n",
             ))?;
         }
 
-        let internal: HashSet<_> = self.operations.iter().map(|x| &x.0).collect();
-        let mut external = HashSet::new();
-        for (_, _, _, args) in &self.operations {
-            for arg in args {
-                if !internal.contains(arg) {
-                    external.insert(arg);
-                }
-            }
-        }
+        let last = self.operations.last().unwrap().0.clone();
 
         f.write_str("template<typename T>\n")?;
         f.write_fmt(format_args!(
-            "T evaluate({}) {{\n",
-            external
-                .into_iter()
+            "void evaluate({}, T* {}_res) {{\n",
+            self.input
+                .iter()
                 .map(|x| format!("T* {}", x.to_string(self.state)))
                 .collect::<Vec<_>>()
-                .join(",")
+                .join(", "),
+            last.to_string(self.state)
         ))?;
 
         for (id, out_len, _, args) in &self.operations {
             let name = id.to_string(self.state);
-            f.write_fmt(format_args!("\tT {}_res[{}];\n", name, out_len))?;
+
+            if *id != last {
+                f.write_fmt(format_args!("\tT {}_res[{}];\n", name, out_len))?;
+            }
 
             let mut f_args: Vec<_> = args
                 .iter()
@@ -1865,11 +1880,6 @@ auto 𝑖 = 1i;\n",
 
             f.write_fmt(format_args!("\t{}({});\n", name, f_args.join(",")))?;
         }
-
-        f.write_fmt(format_args!(
-            "\treturn {}_res[0];\n",
-            self.operations.last().unwrap().0.to_string(self.state),
-        ))?;
 
         f.write_str("}")
     }

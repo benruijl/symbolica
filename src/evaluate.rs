@@ -3,16 +3,15 @@ use ahash::HashMap;
 use crate::{
     coefficient::CoefficientView,
     domains::{float::Real, rational::Rational},
-    poly::Variable,
-    representations::{Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
+    representations::{Add, AtomSet, AtomView, Fun, Identifier, Mul, Num, Pow, Var},
     state::State,
 };
 
 type EvalFnType<T, P> = Box<
     dyn Fn(
         &[T],
-        &HashMap<Variable, T>,
-        &HashMap<Variable, EvaluationFn<T, P>>,
+        &HashMap<AtomView<'_, P>, T>,
+        &HashMap<Identifier, EvaluationFn<T, P>>,
         &mut HashMap<AtomView<'_, P>, T>,
     ) -> T,
 >;
@@ -31,15 +30,21 @@ impl<T, P: AtomSet> EvaluationFn<T, P> {
 }
 
 impl<'a, P: AtomSet> AtomView<'a, P> {
-    /// Evaluate an expression using a variable map and a function map.
+    /// Evaluate an expression using a constant map and a function map.
+    /// The constant map can map any literal expression to a value, for example
+    /// a variable or a function with fixed arguments.
     ///
     /// All variables and all user functions in the expression must occur in the map.
     pub fn evaluate<T: Real + for<'b> From<&'b Rational>>(
         &self,
-        var_map: &HashMap<Variable, T>,
-        function_map: &HashMap<Variable, EvaluationFn<T, P>>,
+        const_map: &HashMap<AtomView<'a, P>, T>,
+        function_map: &HashMap<Identifier, EvaluationFn<T, P>>,
         cache: &mut HashMap<AtomView<'a, P>, T>,
     ) -> T {
+        if let Some(c) = const_map.get(self) {
+            return *c;
+        }
+
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
                 CoefficientView::Natural(n, d) => (&Rational::Natural(n, d)).into(),
@@ -51,13 +56,13 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     "Rational polynomial coefficient not yet supported for evaluation"
                 ),
             },
-            AtomView::Var(v) => *var_map.get(&v.get_name().into()).unwrap(),
+            AtomView::Var(v) => panic!("Variable id {:?} not in constant map", v.get_name()),
             AtomView::Fun(f) => {
                 let name = f.get_name();
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
-                    let arg_eval = arg.evaluate(var_map, function_map, cache);
+                    let arg_eval = arg.evaluate(const_map, function_map, cache);
 
                     return match f.get_name() {
                         State::EXP => arg_eval.exp(),
@@ -75,20 +80,20 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 let mut args = Vec::with_capacity(f.get_nargs());
                 for arg in f.iter() {
-                    args.push(arg.evaluate(var_map, function_map, cache));
+                    args.push(arg.evaluate(const_map, function_map, cache));
                 }
 
-                let Some(fun) = function_map.get(&f.get_name().into()) else {
+                let Some(fun) = function_map.get(&f.get_name()) else {
                     panic!("Missing function with id {:?}", f.get_name()); // TODO: use state to get name
                 };
-                let eval = fun.get()(&args, var_map, function_map, cache);
+                let eval = fun.get()(&args, const_map, function_map, cache);
 
                 cache.insert(*self, eval);
                 eval
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
-                let b_eval = b.evaluate(var_map, function_map, cache);
+                let b_eval = b.evaluate(const_map, function_map, cache);
 
                 if let AtomView::Num(n) = e {
                     if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
@@ -102,20 +107,20 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
 
-                let e_eval = e.evaluate(var_map, function_map, cache);
+                let e_eval = e.evaluate(const_map, function_map, cache);
                 b_eval.powf(e_eval)
             }
             AtomView::Mul(m) => {
                 let mut r = T::one();
                 for arg in m.iter() {
-                    r *= arg.evaluate(var_map, function_map, cache);
+                    r *= arg.evaluate(const_map, function_map, cache);
                 }
                 r
             }
             AtomView::Add(a) => {
                 let mut r = T::zero();
                 for arg in a.iter() {
-                    r += arg.evaluate(var_map, function_map, cache);
+                    r += arg.evaluate(const_map, function_map, cache);
                 }
                 r
             }

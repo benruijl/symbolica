@@ -56,7 +56,7 @@ impl State {
     pub const I: Identifier = Identifier::init(9);
     pub const PI: Identifier = Identifier::init(10);
 
-    pub(crate) const BUILTIN_VAR_LIST: [&'static str; 11] = [
+    pub const BUILTIN_VAR_LIST: [&'static str; 11] = [
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 

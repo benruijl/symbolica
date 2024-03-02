@@ -8,7 +8,7 @@ use rand::{thread_rng, Rng};
 
 use crate::{
     domains::Ring,
-    representations::{Atom, AtomView, Fun},
+    representations::{Atom, AtomView},
     state::State,
 };
 use crate::{

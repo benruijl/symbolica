@@ -24,10 +24,7 @@ use crate::domains::integer::Integer;
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::domains::{EuclideanDomain, Ring};
 use crate::parser::{Operator, Token};
-use crate::representations::{
-    Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, Num, OpaqueAtom, OwnedAdd, OwnedFun,
-    OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
-};
+use crate::representations::{Atom, AtomView, Identifier};
 use crate::state::{BufferHandle, State, Workspace};
 use crate::utils;
 
@@ -347,8 +344,8 @@ pub enum Variable {
     Identifier(Identifier),
     Temporary(usize),         // a temporary variable, for internal use
     Array(Identifier, usize), // an array entry, e.g. a[0]
-    Function(Identifier, Arc<dyn OpaqueAtom>),
-    Other(Arc<dyn OpaqueAtom>), // any other non-polynomial part, for example x^-1, x^y, etc.
+    Function(Identifier, Arc<Atom>),
+    Other(Arc<Atom>), // any other non-polynomial part, for example x^-1, x^y, etc.
 }
 
 impl PartialEq for Variable {
@@ -383,7 +380,7 @@ impl Variable {
             Variable::Identifier(v) => f.write_str(state.get_name(*v)),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
             Variable::Array(t, i) => f.write_fmt(format_args!("{}[{}]", state.get_name(*t), i)),
-            Variable::Function(_, a) | Variable::Other(a) => f.write_str(&a.printer(state)),
+            Variable::Function(_, a) | Variable::Other(a) => a.printer(state).fmt(f),
         }
     }
 
@@ -392,12 +389,12 @@ impl Variable {
             Variable::Identifier(v) => format!("{}", state.get_name(*v)),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Array(t, i) => format!("{}[{}]", state.get_name(*t), i),
-            Variable::Function(_, a) | Variable::Other(a) => a.printer(state),
+            Variable::Function(_, a) | Variable::Other(a) => format!("{}", a.printer(state)),
         }
     }
 }
 
-impl<'a, P: AtomSet> AtomView<'a, P> {
+impl<'a> AtomView<'a> {
     /// Convert an expression to a polynomial.
     ///
     /// This function requires an expanded polynomial. If this yields too many terms, consider using
@@ -407,8 +404,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         field: &R,
         var_map: Option<&Arc<Vec<Variable>>>,
     ) -> Result<MultivariatePolynomial<R, E>, &'static str> {
-        fn check_factor<P: AtomSet>(
-            factor: &AtomView<'_, P>,
+        fn check_factor(
+            factor: &AtomView<'_>,
             vars: &mut Vec<Variable>,
             allow_new_vars: bool,
         ) -> Result<(), &'static str> {
@@ -481,8 +478,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             }
         }
 
-        fn check_term<P: AtomSet>(
-            term: &AtomView<'_, P>,
+        fn check_term(
+            term: &AtomView<'_>,
             vars: &mut Vec<Variable>,
             allow_new_vars: bool,
         ) -> Result<(), &'static str> {
@@ -513,8 +510,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             }
         }
 
-        fn parse_factor<P: AtomSet, R: Ring + ConvertToRing, E: Exponent>(
-            factor: &AtomView<'_, P>,
+        fn parse_factor<R: Ring + ConvertToRing, E: Exponent>(
+            factor: &AtomView<'_>,
             vars: &[Variable],
             coefficient: &mut R::Element,
             exponents: &mut SmallVec<[E; INLINED_EXPONENTS]>,
@@ -560,8 +557,8 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             }
         }
 
-        fn parse_term<P: AtomSet, R: Ring + ConvertToRing, E: Exponent>(
-            term: &AtomView<'_, P>,
+        fn parse_term<R: Ring + ConvertToRing, E: Exponent>(
+            term: &AtomView<'_>,
             vars: &[Variable],
             poly: &mut MultivariatePolynomial<R, E>,
             field: &R,
@@ -607,7 +604,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         E: Exponent,
     >(
         &self,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
         field: &R,
         out_field: &RO,
@@ -705,7 +702,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         E: Exponent,
     >(
         &self,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
         field: &R,
         out_field: &RO,
@@ -811,7 +808,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn to_polynomial_with_map<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
-        map: &mut HashMap<AtomView<'a, P>, Variable>,
+        map: &mut HashMap<AtomView<'a>, Variable>,
     ) -> MultivariatePolynomial<R, E> {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial(field, None) {
@@ -960,7 +957,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
 
-                let id = Variable::Other(Arc::new(Atom::new_from_view(self)));
+                let id = Variable::Other(Arc::new(self.to_owned()));
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                 r.append_monomial(field.one(), &[E::one()]);
@@ -990,7 +987,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 }
 
-                let id = Variable::Function(f.get_name(), Arc::new(Atom::new_from_view(self)));
+                let id = Variable::Function(f.get_name(), Arc::new(self.to_owned()));
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                 r.append_monomial(field.one(), &[E::one()]);
@@ -1027,11 +1024,11 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         E: Exponent,
     >(
         &self,
-        workspace: &'b Workspace<P>,
+        workspace: &'b Workspace,
         state: &State,
         field: &R,
         out_field: &RO,
-        map: &mut HashMap<BufferHandle<'b, Atom<P>>, Variable>,
+        map: &mut HashMap<BufferHandle<'b, Atom>, Variable>,
     ) -> RationalPolynomial<RO, E>
     where
         RationalPolynomial<RO, E>:
@@ -1057,7 +1054,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         if nd != 1 {
                             // convert base^(1/nd) to a new variable
                             let mut pow_h = workspace.new_atom();
-                            pow_h.to_pow().set_from_base_and_exp(
+                            pow_h.to_pow(
                                 base,
                                 workspace
                                     .new_num(Coefficient::Rational((1, nd).into()))
@@ -1205,7 +1202,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         E: Exponent,
     >(
         &self,
-        workspace: &'b Workspace<P>,
+        workspace: &'b Workspace,
         state: &State,
         field: &R,
         out_field: &RO,
@@ -1234,15 +1231,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         if nd != 1 {
                             // convert base^(1/nd) to a new variable
                             let mut pow_h = workspace.new_atom();
-                            pow_h.to_pow().set_from_base_and_exp(
+                            pow_h.to_pow(
                                 base,
                                 workspace
                                     .new_num(Coefficient::Rational((1, nd).into()))
                                     .as_view(),
                             );
 
-                            let id =
-                                Variable::Other(Arc::new(Atom::new_from_view(&pow_h.as_view())));
+                            let id = Variable::Other(Arc::new(pow_h.to_owned()));
 
                             let mut p = MultivariatePolynomial::new(
                                 1,
@@ -1294,7 +1290,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         }
                     } else {
                         // non-integer exponent, convert to new variable
-                        let id = Variable::Other(Arc::new(Atom::new_from_view(self)));
+                        let id = Variable::Other(Arc::new(self.to_owned()));
 
                         let mut r =
                             MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
@@ -1304,7 +1300,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     }
                 } else {
                     // non-number exponent, convert to new variable
-                    let id = Variable::Other(Arc::new(Atom::new_from_view(self)));
+                    let id = Variable::Other(Arc::new(self.to_owned()));
 
                     let mut r =
                         MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
@@ -1314,7 +1310,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 }
             }
             AtomView::Fun(f) => {
-                let id = Variable::Function(f.get_name(), Arc::new(Atom::new_from_view(self)));
+                let id = Variable::Function(f.get_name(), Arc::new(self.to_owned()));
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                 r.append_monomial(field.one(), &[E::one()]);
@@ -1347,12 +1343,12 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 }
 
 impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
-    pub fn to_expression<P: AtomSet>(
+    pub fn to_expression(
         &self,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
-        map: &HashMap<Variable, AtomView<P>>,
-        out: &mut Atom<P>,
+        map: &HashMap<Variable, AtomView>,
+        out: &mut Atom,
     ) where
         R::Element: Into<Coefficient>,
     {
@@ -1380,32 +1376,24 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                 if pow > E::zero() {
                     match var_id {
                         Variable::Identifier(v) => {
-                            let var = var_h.to_var();
-                            var.set_from_id(*v);
+                            var_h.to_var(*v);
                         }
                         Variable::Temporary(_) => {
                             let a = map.get(&var_id).expect("Variable missing from map");
                             var_h.set_from_view(a);
                         }
                         Variable::Array(n, i) => {
-                            let fun = var_h.to_fun();
-                            fun.set_from_name(*n);
+                            let fun = var_h.to_fun(*n);
                             fun.add_arg(workspace.new_num(*i as i64).as_view());
                         }
                         Variable::Function(_, a) | Variable::Other(a) => {
-                            match a.as_any().downcast_ref::<Atom<P>>() {
-                                Some(b) => var_h.set_from_view(&b.as_view()),
-                                None => panic!("Wrong type in variable: {:?}", a),
-                            };
+                            var_h.set_from_view(&a.as_view());
                         }
                     }
 
                     if pow > E::one() {
-                        let num = num_h.to_num();
-                        num.set_from_coeff((pow.to_u32() as i64).into());
-
-                        let pow = pow_h.to_pow();
-                        pow.set_from_base_and_exp(var_h.get().as_view(), num_h.get().as_view());
+                        num_h.to_num((pow.to_u32() as i64).into());
+                        pow_h.to_pow(var_h.as_view(), num_h.as_view());
                         mul.extend(pow_h.get().as_view());
                     } else {
                         mul.extend(var_h.get().as_view());
@@ -1413,9 +1401,8 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                 }
             }
 
-            let num = num_h.to_num();
             let number = monomial.coefficient.clone().into();
-            num.set_from_coeff(number);
+            num_h.to_num(number);
             mul.extend(num_h.get().as_view());
             mul.set_dirty(true);
 
@@ -1432,12 +1419,12 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     /// Convert from a rational polynomial to an atom. The `map` maps all
     /// temporary variables back to atoms.
-    pub fn to_expression<P: AtomSet>(
+    pub fn to_expression(
         &self,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
-        map: &HashMap<Variable, AtomView<P>>,
-        out: &mut Atom<P>,
+        map: &HashMap<Variable, AtomView>,
+        out: &mut Atom,
     ) where
         R::Element: Into<Coefficient>,
     {
@@ -1457,8 +1444,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
             .to_expression(workspace, state, map, &mut poly);
 
         let mut pow_h = workspace.new_atom();
-        let pow = pow_h.to_pow();
-        pow.set_from_base_and_exp(poly.as_view(), workspace.new_num(-1).as_view());
+        let pow = pow_h.to_pow(poly.as_view(), workspace.new_num(-1).as_view());
         pow.set_dirty(true);
         mul.extend(pow_h.as_view());
         mul.set_dirty(true);
@@ -1622,13 +1608,12 @@ impl Token {
     /// is faster if the parsed expression is already in the same format
     /// i.e. the ordering is the same
     pub fn to_rational_polynomial<
-        P: AtomSet,
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &mut State,
         field: &R,
         out_field: &RO,
@@ -1771,13 +1756,12 @@ impl Token {
     /// is faster if the parsed expression is already in the same format
     /// i.e. the ordering is the same
     pub fn to_factorized_rational_polynomial<
-        P: AtomSet,
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &mut State,
         field: &R,
         out_field: &RO,

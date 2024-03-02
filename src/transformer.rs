@@ -5,25 +5,20 @@ use crate::{
     combinatorics::{partitions, unique_permutations},
     id::{Condition, MatchSettings, Pattern, WildcardAndRestriction},
     printer::{AtomPrinter, PrintOptions},
-    representations::{
-        Add, Atom, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd, OwnedFun, OwnedMul,
-        OwnedNum,
-    },
+    representations::{Atom, AtomView, Identifier},
     state::{State, Workspace},
 };
 use ahash::HashMap;
 use colored::Colorize;
 use dyn_clone::DynClone;
 
-pub trait Map<P: AtomSet>:
-    Fn(AtomView<P>, &mut Atom<P>) -> Result<(), TransformerError> + DynClone + Send + Sync
+pub trait Map:
+    Fn(AtomView, &mut Atom) -> Result<(), TransformerError> + DynClone + Send + Sync
 {
 }
-dyn_clone::clone_trait_object!(<P: AtomSet> Map<P>);
-impl<
-        P: AtomSet,
-        T: Clone + Send + Sync + Fn(AtomView<'_, P>, &mut Atom<P>) -> Result<(), TransformerError>,
-    > Map<P> for T
+dyn_clone::clone_trait_object!(Map);
+impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> Result<(), TransformerError>> Map
+    for T
 {
 }
 
@@ -64,18 +59,18 @@ pub enum TransformerError {
 
 /// Operations that take a pattern as the input and produce an expression
 #[derive(Clone)]
-pub enum Transformer<P: AtomSet + 'static> {
+pub enum Transformer {
     /// Expand the rhs.
     Expand,
     /// Derive the rhs w.r.t a variable.
     Derivative(Identifier),
     /// Derive the rhs w.r.t a variable.
-    TaylorSeries(Identifier, Atom<P>, u32),
+    TaylorSeries(Identifier, Atom, u32),
     /// Apply find-and-replace on the rhs.
     ReplaceAll(
-        Pattern<P>,
-        Pattern<P>,
-        Option<Condition<WildcardAndRestriction<P>>>,
+        Pattern,
+        Pattern,
+        Option<Condition<WildcardAndRestriction>>,
         Option<MatchSettings>,
     ),
     /// Take the product of a list of arguments in the rhs.
@@ -88,20 +83,20 @@ pub enum Transformer<P: AtomSet + 'static> {
     /// If the argument is `false`, 0 is returned for non-functions.
     ArgCount(bool),
     /// Map the rhs with a user-specified function.
-    Map(Box<dyn Map<P>>),
+    Map(Box<dyn Map>),
     /// Split a `Mul` or `Add` into a list of arguments.
     Split,
     Partition(Vec<(Identifier, usize)>, bool, bool),
     Sort,
     Deduplicate,
     Permutations(Identifier),
-    Repeat(Vec<Transformer<P>>),
+    Repeat(Vec<Transformer>),
     Print(PrintOptions),
-    Stats(StatsOptions, Vec<Transformer<P>>),
+    Stats(StatsOptions, Vec<Transformer>),
     FromNumber,
 }
 
-impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
+impl std::fmt::Debug for Transformer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Transformer::Expand => f.debug_tuple("Expand").finish(),
@@ -137,9 +132,9 @@ impl<P: AtomSet> std::fmt::Debug for Transformer<P> {
     }
 }
 
-impl<P: AtomSet> Transformer<P> {
+impl Transformer {
     /// Create a new partition transformer that must exactly fit the input.
-    pub fn new_partition_exact(partitions: Vec<(Identifier, usize)>) -> Transformer<P> {
+    pub fn new_partition_exact(partitions: Vec<(Identifier, usize)>) -> Transformer {
         Transformer::Partition(partitions, false, false)
     }
 
@@ -148,23 +143,23 @@ impl<P: AtomSet> Transformer<P> {
     pub fn new_partition_collect_in_last(
         mut partitions: Vec<(Identifier, usize)>,
         rest: Identifier,
-    ) -> Transformer<P> {
+    ) -> Transformer {
         partitions.push((rest, 0));
         Transformer::Partition(partitions, true, false)
     }
 
     /// Create a new partition transformer that repeats the partitions so that it can fit
     /// the input.
-    pub fn new_partition_repeat(partition: (Identifier, usize)) -> Transformer<P> {
+    pub fn new_partition_repeat(partition: (Identifier, usize)) -> Transformer {
         Transformer::Partition(vec![partition], false, true)
     }
 
     pub fn execute(
-        orig_input: AtomView<'_, P>,
-        chain: &[Transformer<P>],
+        orig_input: AtomView<'_>,
+        chain: &[Transformer],
         state: &State,
-        workspace: &Workspace<P>,
-        out: &mut Atom<P>,
+        workspace: &Workspace,
+        out: &mut Atom,
     ) -> Result<(), TransformerError> {
         out.set_from_view(&orig_input);
         let mut tmp = workspace.new_atom();
@@ -243,21 +238,20 @@ impl<P: AtomSet> Transformer<P> {
                     if let AtomView::Fun(f) = input {
                         if !*only_for_arg_fun || f.get_name() == State::ARG {
                             let n_args = f.get_nargs();
-                            out.to_num().set_from_coeff((n_args as i64).into());
+                            out.to_num((n_args as i64).into());
                         } else {
-                            out.to_num().set_from_coeff(1.into());
+                            out.to_num(1.into());
                         }
                     } else if !only_for_arg_fun {
-                        out.to_num().set_from_coeff(1.into());
+                        out.to_num(1.into());
                     } else {
-                        out.to_num().set_from_coeff(Coefficient::zero());
+                        out.to_num(Coefficient::zero());
                     }
                 }
                 Transformer::Split => match input {
                     AtomView::Mul(m) => {
                         let mut arg_h = workspace.new_atom();
-                        let arg = arg_h.to_fun();
-                        arg.set_from_name(State::ARG);
+                        let arg = arg_h.to_fun(State::ARG);
 
                         for factor in m.iter() {
                             arg.add_arg(factor);
@@ -269,8 +263,7 @@ impl<P: AtomSet> Transformer<P> {
                     }
                     AtomView::Add(a) => {
                         let mut arg_h = workspace.new_atom();
-                        let arg = arg_h.to_fun();
-                        arg.set_from_name(State::ARG);
+                        let arg = arg_h.to_fun(State::ARG);
 
                         for summand in a.iter() {
                             arg.add_arg(summand);
@@ -309,8 +302,7 @@ impl<P: AtomSet> Transformer<P> {
 
                                 for (name, f_args) in args {
                                     let mut fun_h = workspace.new_atom();
-                                    let fun = fun_h.to_fun();
-                                    fun.set_from_name(name);
+                                    let fun = fun_h.to_fun(name);
                                     for x in f_args {
                                         fun.add_arg(x);
                                     }
@@ -338,8 +330,7 @@ impl<P: AtomSet> Transformer<P> {
                             args.sort();
 
                             let mut fun_h = workspace.new_atom();
-                            let fun = fun_h.to_fun();
-                            fun.set_from_name(State::ARG);
+                            let fun = fun_h.to_fun(State::ARG);
 
                             for arg in args {
                                 fun.add_arg(arg);
@@ -367,8 +358,7 @@ impl<P: AtomSet> Transformer<P> {
                             }
 
                             let mut fun_h = workspace.new_atom();
-                            let fun = fun_h.to_fun();
-                            fun.set_from_name(State::ARG);
+                            let fun = fun_h.to_fun(State::ARG);
 
                             for arg in args_dedup {
                                 fun.add_arg(arg);
@@ -399,8 +389,7 @@ impl<P: AtomSet> Transformer<P> {
 
                             for a in permutations {
                                 let mut fun_h = workspace.new_atom();
-                                let fun = fun_h.to_fun();
-                                fun.set_from_name(*f_name);
+                                let fun = fun_h.to_fun(*f_name);
                                 for x in a {
                                     fun.add_arg(x);
                                 }

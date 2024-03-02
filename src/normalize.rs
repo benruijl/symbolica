@@ -399,10 +399,10 @@ impl Atom {
     /// Merge two terms if possible. If this function returns `true`, `self`
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
-    pub fn merge_terms(&mut self, other: &mut Self, helper: &mut Self, state: &State) -> bool {
+    pub fn merge_terms(&mut self, other: AtomView, helper: &mut Self, state: &State) -> bool {
         if let Atom::Num(n1) = self {
-            if let Atom::Num(n2) = other {
-                n1.add(&n2.to_num_view(), state);
+            if let AtomView::Num(n2) = other {
+                n1.add(&n2, state);
                 return true;
             } else {
                 return false;
@@ -421,14 +421,14 @@ impl Atom {
                 (m.to_mul_view().to_slice(), false)
             };
 
-            if let Atom::Mul(m2) = other {
-                let slice2 = m2.to_mul_view().to_slice();
+            if let AtomView::Mul(m2) = other {
+                let slice2 = m2.to_slice();
                 let last_elem2 = slice2.get(slice2.len() - 1);
 
                 let non_coeff2 = if let AtomView::Num(_) = &last_elem2 {
                     slice2.get_subslice(0..slice2.len() - 1)
                 } else {
-                    m2.to_mul_view().to_slice()
+                    m2.to_slice()
                 };
 
                 if non_coeff1.eq(&non_coeff2) {
@@ -481,7 +481,7 @@ impl Atom {
                     return true;
                 }
             } else {
-                if non_coeff1.len() != 1 || other.as_view() != slice.get(0) {
+                if non_coeff1.len() != 1 || other != slice.get(0) {
                     return false;
                 }
 
@@ -504,8 +504,8 @@ impl Atom {
 
                 return true;
             }
-        } else if let Atom::Mul(m) = other {
-            let slice = m.to_mul_view().to_slice();
+        } else if let AtomView::Mul(m) = other {
+            let slice = m.to_slice();
 
             if slice.len() != 2 {
                 return false; // no match
@@ -532,22 +532,23 @@ impl Atom {
 
                 let on = helper.to_num(new_coeff);
 
-                if has_num {
-                    m.replace_last(on.to_num_view().as_view());
-                } else {
-                    m.extend(on.to_num_view().as_view());
-                }
+                other.clone_into(self);
 
-                std::mem::swap(self, other);
+                if let Atom::Mul(m) = self {
+                    if has_num {
+                        m.replace_last(on.to_num_view().as_view());
+                    } else {
+                        m.extend(on.to_num_view().as_view());
+                    }
+                }
 
                 return true;
             }
-        } else if self.as_view() == other.as_view() {
+        } else if self.as_view() == other {
             let mul = helper.to_mul();
-
-            other.to_num((2, 1).into());
             mul.extend(self.as_view());
-            mul.extend(other.as_view());
+            self.to_num((2, 1).into());
+            mul.extend(self.as_view());
             mul.set_has_coefficient(true);
 
             std::mem::swap(self, helper);
@@ -580,7 +581,7 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Mul(t) => {
-                let mut atom_test_buf: SmallVec<[BufferHandle<Atom>; 20]> = SmallVec::new();
+                let mut atom_test_buf: SmallVec<[_; 20]> = SmallVec::new();
 
                 for a in t.iter() {
                     let mut handle = workspace.new_atom();
@@ -895,7 +896,7 @@ impl<'a> AtomView<'a> {
                 if state.get_function_attributes(name).contains(&Symmetric)
                     || state.get_function_attributes(name).contains(&Antisymmetric)
                 {
-                    let mut arg_buf: SmallVec<[(usize, BufferHandle<Atom>); 20]> = SmallVec::new();
+                    let mut arg_buf: SmallVec<[(usize, _); 20]> = SmallVec::new();
 
                     for (i, a) in out_f.to_fun_view().iter().enumerate() {
                         let mut handle = workspace.new_atom();
@@ -1053,95 +1054,97 @@ impl<'a> AtomView<'a> {
                 }
             }
             AtomView::Add(a) => {
-                let mut atom_test_buf: SmallVec<[BufferHandle<Atom>; 20]> = SmallVec::new();
+                let mut new_sum = workspace.new_atom();
+                let ns = new_sum.to_add();
 
+                let mut atom_sort_buf: SmallVec<[_; 20]> = SmallVec::new();
+
+                let mut norm_arg = workspace.new_atom();
                 for a in a.iter() {
-                    let mut handle = workspace.new_atom();
-                    let new_at = handle.get_mut();
+                    let r = if a.is_dirty() {
+                        let new_at = norm_arg.get_mut();
 
-                    if a.is_dirty() {
                         // TODO: if a is a nested addition, prevent a sort
                         a.normalize(workspace, state, new_at);
+
+                        new_at.as_view()
                     } else {
-                        new_at.set_from_view(&a);
-                    }
+                        a
+                    };
 
-                    if let Atom::Add(new_add) = new_at {
-                        for c in new_add.to_add_view().iter() {
-                            // TODO: remove this copy
-                            let mut handle = workspace.new_atom();
-                            let child_copy = handle.get_mut();
-                            child_copy.set_from_view(&c);
-
+                    if let AtomView::Add(new_add) = r {
+                        for c in new_add.iter() {
                             if let AtomView::Num(n) = c {
                                 if n.is_zero() {
                                     continue;
                                 }
                             }
 
-                            atom_test_buf.push(handle);
+                            ns.extend(r);
                         }
                     } else {
-                        if let AtomView::Num(n) = handle.as_view() {
+                        if let AtomView::Num(n) = r {
                             if n.is_zero() {
                                 continue;
                             }
                         }
-                        atom_test_buf.push(handle);
+
+                        ns.extend(r); // TODO: prevent copy?
                     }
                 }
 
-                atom_test_buf.sort_by(|a, b| a.as_view().cmp_terms(&b.as_view()));
+                for x in ns.to_add_view().iter() {
+                    atom_sort_buf.push(x);
+                }
 
-                if !atom_test_buf.is_empty() {
-                    let out_add = out.to_add();
+                atom_sort_buf.sort_by(|a, b| a.cmp_terms(&b));
 
-                    let mut last_buf = atom_test_buf.remove(0);
+                if atom_sort_buf.is_empty() {
+                    out.to_num(Coefficient::zero());
+                    return;
+                }
+                let out_add = out.to_add();
 
-                    let mut handle = workspace.new_atom();
-                    let helper = handle.get_mut();
-                    let mut cur_len = 0;
+                let mut last_buf = workspace.new_atom();
+                last_buf.set_from_view(&atom_sort_buf[0]);
 
-                    for mut cur_buf in atom_test_buf.drain(..) {
-                        if !last_buf
-                            .get_mut()
-                            .merge_terms(cur_buf.get_mut(), helper, state)
-                        {
-                            // we are done merging
-                            {
-                                let v = last_buf.as_view();
-                                if let AtomView::Num(n) = v {
-                                    if !n.is_zero() {
-                                        out_add.extend(last_buf.as_view());
-                                        cur_len += 1;
-                                    }
-                                } else {
-                                    out_add.extend(last_buf.as_view());
-                                    cur_len += 1;
-                                }
-                            }
-                            last_buf = cur_buf;
-                        }
-                    }
+                let mut helper = workspace.new_atom();
+                let mut cur_len = 0;
 
-                    if cur_len == 0 {
-                        out.set_from_view(&last_buf.as_view());
-                    } else {
+                for cur in atom_sort_buf.iter().skip(1) {
+                    if !last_buf.merge_terms(*cur, &mut helper, state) {
+                        // we are done merging
                         let v = last_buf.as_view();
                         if let AtomView::Num(n) = v {
                             if !n.is_zero() {
                                 out_add.extend(v);
-                            } else if cur_len == 1 {
-                                // downgrade
-                                last_buf.set_from_view(&out_add.to_add_view().to_slice().get(0));
-                                out.set_from_view(&last_buf.as_view());
+                                cur_len += 1;
                             }
                         } else {
                             out_add.extend(v);
+                            cur_len += 1;
                         }
+
+                        // TODO: prevent this copy, as it occurs on every non-merge
+                        cur.clone_into(&mut last_buf);
                     }
+                }
+
+                if cur_len == 0 {
+                    out.set_from_view(&last_buf.as_view());
                 } else {
-                    out.to_num(Coefficient::zero());
+                    let v = last_buf.as_view();
+                    if let AtomView::Num(n) = v {
+                        if !n.is_zero() {
+                            out_add.extend(v);
+                        } else if cur_len == 1 {
+                            // downgrade
+                            last_buf.set_from_view(&out_add.to_add_view().to_slice().get(0));
+                            out.set_from_view(&last_buf.as_view());
+                        }
+                    } else {
+                        out_add.extend(v);
+                    }
                 }
             }
         }

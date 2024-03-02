@@ -59,8 +59,8 @@ impl TermOutputStream {
             let helper = handle.get_mut();
             let mut cur_len = 0;
 
-            for mut cur_buf in self.mem_buf.drain(..) {
-                if !last_buf.merge_terms(&mut cur_buf, helper, state) {
+            for cur_buf in self.mem_buf.drain(..) {
+                if !last_buf.merge_terms(cur_buf.as_view(), helper, state) {
                     // we are done merging
                     {
                         let v = last_buf.as_view();

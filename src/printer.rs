@@ -9,7 +9,7 @@ use crate::{
         finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
     },
     poly::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder},
-    representations::{Add, AtomSet, AtomView, Fun, Mul, Num, Pow, Var},
+    representations::{default::FunView, AddView, AtomView, MulView, NumView, PowView, VarView},
     state::State,
     tensors::matrix::Matrix,
 };
@@ -119,15 +119,15 @@ define_formatters!(
     FormattedPrintAdd
 );
 
-pub struct AtomPrinter<'a, 'b, P: AtomSet> {
-    pub atom: AtomView<'a, P>,
+pub struct AtomPrinter<'a, 'b> {
+    pub atom: AtomView<'a>,
     pub state: &'b State,
     pub print_opts: PrintOptions,
 }
 
-impl<'a, 'b, P: AtomSet> AtomPrinter<'a, 'b, P> {
+impl<'a, 'b> AtomPrinter<'a, 'b> {
     /// Create a new atom printer with default printing options.
-    pub fn new(atom: AtomView<'a, P>, state: &'b State) -> AtomPrinter<'a, 'b, P> {
+    pub fn new(atom: AtomView<'a>, state: &'b State) -> AtomPrinter<'a, 'b> {
         AtomPrinter {
             atom,
             state,
@@ -136,10 +136,10 @@ impl<'a, 'b, P: AtomSet> AtomPrinter<'a, 'b, P> {
     }
 
     pub fn new_with_options(
-        atom: AtomView<'a, P>,
+        atom: AtomView<'a>,
         print_opts: PrintOptions,
         state: &'b State,
-    ) -> AtomPrinter<'a, 'b, P> {
+    ) -> AtomPrinter<'a, 'b> {
         AtomPrinter {
             atom,
             state,
@@ -148,7 +148,7 @@ impl<'a, 'b, P: AtomSet> AtomPrinter<'a, 'b, P> {
     }
 }
 
-impl<'a, 'b, P: AtomSet> fmt::Display for AtomPrinter<'a, 'b, P> {
+impl<'a, 'b> fmt::Display for AtomPrinter<'a, 'b> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let print_state = PrintState {
             level: 0,
@@ -160,7 +160,7 @@ impl<'a, 'b, P: AtomSet> fmt::Display for AtomPrinter<'a, 'b, P> {
     }
 }
 
-impl<'a, P: AtomSet> AtomView<'a, P> {
+impl<'a> AtomView<'a> {
     fn fmt_debug(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
             AtomView::Num(n) => n.fmt_debug(fmt),
@@ -190,13 +190,13 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     }
 }
 
-impl<'a, P: AtomSet> fmt::Debug for AtomView<'a, P> {
+impl<'a> fmt::Debug for AtomView<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         self.fmt_debug(fmt)
     }
 }
 
-impl<'a, A: Var<'a>> FormattedPrintVar for A {
+impl<'a> FormattedPrintVar for VarView<'a> {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -228,7 +228,7 @@ impl<'a, A: Var<'a>> FormattedPrintVar for A {
     }
 }
 
-impl<'a, A: Num<'a>> FormattedPrintNum for A {
+impl<'a> FormattedPrintNum for NumView<'a> {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let d = self.get_coeff_view();
 
@@ -376,7 +376,7 @@ impl<'a, A: Num<'a>> FormattedPrintNum for A {
     }
 }
 
-impl<'a, A: Mul<'a>> FormattedPrintMul for A {
+impl<'a> FormattedPrintMul for MulView<'a> {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut first = true;
         for x in self.iter() {
@@ -458,7 +458,7 @@ impl<'a, A: Mul<'a>> FormattedPrintMul for A {
     }
 }
 
-impl<'a, A: Fun<'a>> FormattedPrintFn for A {
+impl<'a> FormattedPrintFn for FunView<'a> {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -529,7 +529,7 @@ impl<'a, A: Fun<'a>> FormattedPrintFn for A {
     }
 }
 
-impl<'a, A: Pow<'a>> FormattedPrintPow for A {
+impl<'a> FormattedPrintPow for PowView<'a> {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,
@@ -633,7 +633,7 @@ impl<'a, A: Pow<'a>> FormattedPrintPow for A {
     }
 }
 
-impl<'a, A: Add<'a>> FormattedPrintAdd for A {
+impl<'a> FormattedPrintAdd for AddView<'a> {
     fn fmt_output(
         &self,
         f: &mut fmt::Formatter,

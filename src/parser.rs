@@ -10,7 +10,7 @@ use crate::{
     coefficient::ConvertToRing,
     domains::Ring,
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
-    representations::{Atom, AtomSet, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar},
+    representations::Atom,
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -274,38 +274,34 @@ impl Token {
     }
 
     /// Parse the token into an atom.
-    pub fn to_atom<P: AtomSet>(
-        &self,
-        state: &mut State,
-        workspace: &Workspace<P>,
-    ) -> Result<Atom<P>, String> {
+    pub fn to_atom(&self, state: &mut State, workspace: &Workspace) -> Result<Atom, String> {
         let mut atom = Atom::new();
         self.to_atom_with_output(state, workspace, &mut atom)?;
         Ok(atom)
     }
 
     /// Parse the token into the atom `out`.
-    pub fn to_atom_with_output<P: AtomSet>(
+    pub fn to_atom_with_output(
         &self,
         state: &mut State,
-        workspace: &Workspace<P>,
-        out: &mut Atom<P>,
+        workspace: &Workspace,
+        out: &mut Atom,
     ) -> Result<(), String> {
         match self {
             Token::Number(n) => {
                 if let Ok(x) = n.parse::<i64>() {
-                    out.to_num().set_from_coeff(x.into());
+                    out.to_num(x.into());
                 } else {
                     match Integer::parse(n) {
                         Ok(x) => {
-                            out.to_num().set_from_coeff(x.complete().into());
+                            out.to_num(x.complete().into());
                         }
                         Err(e) => return Err(format!("Could not parse number: {}", e)),
                     }
                 }
             }
             Token::ID(x) => {
-                out.to_var().set_from_id(state.get_or_insert_var(x));
+                out.to_var(state.get_or_insert_var(x));
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -342,8 +338,7 @@ impl Token {
                     args[1].to_atom_with_output(state, workspace, &mut exp)?;
 
                     let mut pow_h = workspace.new_atom();
-                    let pow = pow_h.to_pow();
-                    pow.set_from_base_and_exp(base.as_view(), exp.as_view());
+                    let pow = pow_h.to_pow(base.as_view(), exp.as_view());
                     pow.set_dirty(true);
                     pow_h.as_view().normalize(workspace, state, out);
                 }
@@ -372,8 +367,7 @@ impl Token {
                     let num = workspace.new_num(-1);
 
                     let mut pow_h = workspace.new_atom();
-                    let mul = pow_h.to_pow();
-                    mul.set_from_base_and_exp(base.as_view(), num.as_view());
+                    let mul = pow_h.to_pow(base.as_view(), num.as_view());
                     mul.set_dirty(true);
                     pow_h.as_view().normalize(workspace, state, out);
                 }
@@ -385,8 +379,7 @@ impl Token {
                 };
 
                 let mut fun_h = workspace.new_atom();
-                let fun = fun_h.to_fun();
-                fun.set_from_name(state.get_or_insert_fn(name, None)?);
+                let fun = fun_h.to_fun(state.get_or_insert_fn(name, None)?);
                 fun.set_dirty(true);
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {

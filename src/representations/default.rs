@@ -4,13 +4,12 @@ use std::cmp::Ordering;
 
 use crate::{
     coefficient::{Coefficient, CoefficientView},
-    state::{ResettableBuffer, State},
+    state::State,
 };
 
 use super::{
     coefficient::{PackedRationalNumberReader, PackedRationalNumberWriter},
-    Add, Atom, AtomSet, AtomView, Convert, Fun, Identifier, ListSlice, Mul, Num, OwnedAdd,
-    OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, SliceType, Var,
+    AtomView, Identifier, SliceType,
 };
 
 const NUM_ID: u8 = 1;
@@ -23,29 +22,60 @@ const TYPE_MASK: u8 = 0b00000111;
 const DIRTY_FLAG: u8 = 0b10000000;
 const HAS_COEFF_FLAG: u8 = 0b01000000;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct Linear {}
+pub type RawAtom = Vec<u8>;
 
-#[derive(Debug, Clone, PartialEq, Hash)]
-pub struct OwnedNumD {
-    data: Vec<u8>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Num {
+    data: RawAtom,
 }
 
-impl OwnedNum for OwnedNumD {
-    type P = Linear;
+impl Num {
+    #[inline(always)]
+    pub fn zero(mut buffer: RawAtom) -> Num {
+        buffer.clear();
+        buffer.put_u8(NUM_ID);
+        buffer.put_u8(1);
+        buffer.put_u8(0);
+        Num { data: buffer }
+    }
 
-    fn set_from_coeff(&mut self, num: Coefficient) {
+    #[inline]
+    pub fn new(num: Coefficient) -> Num {
+        let mut buffer = Vec::new();
+        buffer.put_u8(NUM_ID);
+        num.write_packed(&mut buffer);
+        Num { data: buffer }
+    }
+
+    #[inline(always)]
+    pub fn new_into(num: Coefficient, mut buffer: RawAtom) -> Num {
+        buffer.clear();
+        buffer.put_u8(NUM_ID);
+        num.write_packed(&mut buffer);
+        Num { data: buffer }
+    }
+
+    #[inline]
+    pub fn from_view_into(a: &NumView<'_>, mut buffer: RawAtom) -> Num {
+        buffer.clear();
+        buffer.extend(a.data);
+        Num { data: buffer }
+    }
+
+    #[inline]
+    pub fn set_from_coeff(&mut self, num: Coefficient) {
         self.data.clear();
         self.data.put_u8(NUM_ID);
         num.write_packed(&mut self.data);
     }
 
-    fn set_from_view(&mut self, a: &NumViewD<'_>) {
+    #[inline]
+    pub fn set_from_view(&mut self, a: &NumView<'_>) {
         self.data.clear();
         self.data.extend(a.data);
     }
 
-    fn add(&mut self, other: &NumViewD<'_>, state: &State) {
+    pub fn add(&mut self, other: &NumView<'_>, state: &State) {
         let nv = self.to_num_view();
         let a = nv.get_coeff_view();
         let b = other.get_coeff_view();
@@ -55,7 +85,7 @@ impl OwnedNum for OwnedNumD {
         n.write_packed(&mut self.data);
     }
 
-    fn mul(&mut self, other: &NumViewD<'_>, state: &State) {
+    pub fn mul(&mut self, other: &NumView<'_>, state: &State) {
         let nv = self.to_num_view();
         let a = nv.get_coeff_view();
         let b = other.get_coeff_view();
@@ -65,155 +95,118 @@ impl OwnedNum for OwnedNumD {
         n.write_packed(&mut self.data);
     }
 
-    fn to_num_view(&self) -> NumViewD {
-        assert!(self.data[0] & TYPE_MASK == NUM_ID);
-        NumViewD { data: &self.data }
+    #[inline]
+    pub fn to_num_view(&self) -> NumView {
+        NumView { data: &self.data }
     }
 
     #[inline(always)]
-    fn as_view(&self) -> AtomView<Self::P> {
+    pub fn as_view(&self) -> AtomView {
         AtomView::Num(self.to_num_view())
     }
-}
-
-impl Convert<Linear> for OwnedNumD {
-    #[inline(always)]
-    fn to_owned_var(mut self) -> OwnedVarD {
-        self.data.clear();
-        OwnedVarD { data: self.data }
-    }
 
     #[inline(always)]
-    fn to_owned_pow(mut self) -> OwnedPowD {
-        self.data.clear();
-        OwnedPowD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_num(mut self) -> OwnedNumD {
-        self.data.clear();
-        OwnedNumD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_fun(mut self) -> OwnedFunD {
-        self.data.clear();
-        OwnedFunD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_add(mut self) -> OwnedAddD {
-        self.data.clear();
-        OwnedAddD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_mul(mut self) -> OwnedMulD {
-        self.data.clear();
-        OwnedMulD { data: self.data }
+    pub fn into_raw(self) -> RawAtom {
+        self.data
     }
 }
 
-impl ResettableBuffer for OwnedNumD {
-    #[inline(always)]
-    fn new() -> Self {
-        OwnedNumD { data: vec![] }
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Var {
+    data: RawAtom,
+}
+
+impl Var {
+    #[inline]
+    pub fn new(id: Identifier) -> Var {
+        let mut buffer = Vec::new();
+        buffer.put_u8(VAR_ID);
+        (id.to_u32() as u64, 1).write_packed(&mut buffer);
+        Var { data: buffer }
     }
 
-    #[inline(always)]
-    fn reset(&mut self) {
+    #[inline]
+    pub fn new_into(id: Identifier, mut buffer: RawAtom) -> Var {
+        buffer.clear();
+        buffer.put_u8(VAR_ID);
+        (id.to_u32() as u64, 1).write_packed(&mut buffer);
+        Var { data: buffer }
+    }
+
+    #[inline]
+    pub fn from_view_into(a: &VarView<'_>, mut buffer: RawAtom) -> Var {
+        buffer.clear();
+        buffer.extend(a.data);
+        Var { data: buffer }
+    }
+
+    #[inline]
+    pub fn set_from_coeff(&mut self, num: Coefficient) {
         self.data.clear();
+        self.data.put_u8(NUM_ID);
+        num.write_packed(&mut self.data);
     }
-}
 
-#[derive(Debug, Clone, PartialEq, Hash)]
-pub struct OwnedVarD {
-    data: Vec<u8>,
-}
-
-impl OwnedVar for OwnedVarD {
-    type P = Linear;
-
-    fn set_from_id(&mut self, id: Identifier) {
+    #[inline]
+    pub fn set_from_id(&mut self, id: Identifier) {
         self.data.clear();
         self.data.put_u8(VAR_ID);
         (id.to_u32() as u64, 1).write_packed(&mut self.data);
     }
 
-    fn to_var_view(&self) -> <Self::P as AtomSet>::V<'_> {
-        VarViewD { data: &self.data }
+    #[inline]
+    pub fn to_var_view(&self) -> VarView {
+        VarView { data: &self.data }
     }
 
-    fn set_from_view<'a>(&mut self, view: &VarViewD) {
+    #[inline]
+    pub fn set_from_view<'a>(&mut self, view: &VarView) {
         self.data.clear();
         self.data.extend(view.data);
     }
 
     #[inline(always)]
-    fn as_view(&self) -> AtomView<Self::P> {
+    pub fn as_view(&self) -> AtomView {
         AtomView::Var(self.to_var_view())
     }
-}
-
-impl Convert<Linear> for OwnedVarD {
-    #[inline(always)]
-    fn to_owned_var(mut self) -> OwnedVarD {
-        self.data.clear();
-        OwnedVarD { data: self.data }
-    }
 
     #[inline(always)]
-    fn to_owned_pow(mut self) -> OwnedPowD {
-        self.data.clear();
-        OwnedPowD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_num(mut self) -> OwnedNumD {
-        self.data.clear();
-        OwnedNumD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_fun(mut self) -> OwnedFunD {
-        self.data.clear();
-        OwnedFunD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_add(mut self) -> OwnedAddD {
-        self.data.clear();
-        OwnedAddD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_mul(mut self) -> OwnedMulD {
-        self.data.clear();
-        OwnedMulD { data: self.data }
+    pub fn into_raw(self) -> RawAtom {
+        self.data
     }
 }
 
-impl ResettableBuffer for OwnedVarD {
-    #[inline(always)]
-    fn new() -> Self {
-        OwnedVarD { data: vec![] }
-    }
-
-    #[inline(always)]
-    fn reset(&mut self) {
-        self.data.clear();
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Fun {
+    data: RawAtom,
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
-pub struct OwnedFunD {
-    data: Vec<u8>,
-}
+impl Fun {
+    #[inline]
+    pub fn new(id: Identifier) -> Fun {
+        let mut f = Fun {
+            data: RawAtom::new(),
+        };
+        f.set_from_name(id);
+        f
+    }
 
-impl OwnedFun for OwnedFunD {
-    type P = Linear;
+    #[inline]
+    pub fn new_into(id: Identifier, buffer: RawAtom) -> Fun {
+        let mut f = Fun { data: buffer };
+        f.set_from_name(id);
+        f
+    }
 
-    fn set_from_name(&mut self, id: Identifier) {
+    #[inline]
+    pub fn from_view_into(a: &FunView<'_>, mut buffer: RawAtom) -> Fun {
+        buffer.clear();
+        buffer.extend(a.data);
+        Fun { data: buffer }
+    }
+
+    #[inline]
+    pub fn set_from_name(&mut self, id: Identifier) {
         self.data.clear();
         self.data.put_u8(FUN_ID);
         self.data.put_u32_le(0_u32);
@@ -229,7 +222,8 @@ impl OwnedFun for OwnedFunD {
             .unwrap();
     }
 
-    fn set_dirty(&mut self, dirty: bool) {
+    #[inline]
+    pub(crate) fn set_dirty(&mut self, dirty: bool) {
         if dirty {
             self.data[0] |= DIRTY_FLAG;
         } else {
@@ -237,7 +231,7 @@ impl OwnedFun for OwnedFunD {
         }
     }
 
-    fn add_arg(&mut self, other: AtomView<Self::P>) {
+    pub fn add_arg(&mut self, other: AtomView) {
         // may increase size of the num of args
         let mut c = &self.data[1 + 4..];
 
@@ -281,87 +275,65 @@ impl OwnedFun for OwnedFunD {
     }
 
     #[inline(always)]
-    fn to_fun_view(&self) -> <Self::P as AtomSet>::F<'_> {
-        FnViewD { data: &self.data }
+    pub fn to_fun_view(&self) -> FunView {
+        FunView { data: &self.data }
     }
 
-    fn set_from_view(&mut self, view: &<Self::P as AtomSet>::F<'_>) {
+    pub fn set_from_view(&mut self, view: &FunView) {
         self.data.clear();
         self.data.extend(view.data);
     }
 
     #[inline(always)]
-    fn as_view(&self) -> AtomView<Self::P> {
+    pub fn as_view(&self) -> AtomView {
         AtomView::Fun(self.to_fun_view())
     }
-}
-
-impl Convert<Linear> for OwnedFunD {
-    #[inline(always)]
-    fn to_owned_var(mut self) -> OwnedVarD {
-        self.data.clear();
-        OwnedVarD { data: self.data }
-    }
 
     #[inline(always)]
-    fn to_owned_pow(mut self) -> OwnedPowD {
-        self.data.clear();
-        OwnedPowD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_num(mut self) -> OwnedNumD {
-        self.data.clear();
-        OwnedNumD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_fun(mut self) -> OwnedFunD {
-        self.data.clear();
-        OwnedFunD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_add(mut self) -> OwnedAddD {
-        self.data.clear();
-        OwnedAddD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_mul(mut self) -> OwnedMulD {
-        self.data.clear();
-        OwnedMulD { data: self.data }
+    pub fn into_raw(self) -> RawAtom {
+        self.data
     }
 }
 
-impl ResettableBuffer for OwnedFunD {
-    #[inline(always)]
-    fn new() -> Self {
-        OwnedFunD { data: vec![] }
-    }
-    #[inline(always)]
-
-    fn reset(&mut self) {
-        self.data.clear();
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Pow {
+    data: RawAtom,
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
-pub struct OwnedPowD {
-    data: Vec<u8>,
-}
+impl Pow {
+    #[inline]
+    pub fn new(base: AtomView, exp: AtomView) -> Pow {
+        let mut f = Pow {
+            data: RawAtom::new(),
+        };
+        f.set_from_base_and_exp(base, exp);
+        f
+    }
 
-impl OwnedPow for OwnedPowD {
-    type P = Linear;
+    #[inline]
+    pub fn new_into(base: AtomView, exp: AtomView, buffer: RawAtom) -> Pow {
+        let mut f = Pow { data: buffer };
+        f.set_from_base_and_exp(base, exp);
+        f
+    }
 
-    fn set_from_base_and_exp(&mut self, base: AtomView<Self::P>, exp: AtomView<Self::P>) {
+    #[inline]
+    pub fn from_view_into(a: &PowView<'_>, mut buffer: RawAtom) -> Pow {
+        buffer.clear();
+        buffer.extend(a.data);
+        Pow { data: buffer }
+    }
+
+    #[inline]
+    pub fn set_from_base_and_exp(&mut self, base: AtomView, exp: AtomView) {
         self.data.clear();
         self.data.put_u8(POW_ID);
         self.data.extend(base.get_data());
         self.data.extend(exp.get_data());
     }
 
-    fn set_dirty(&mut self, dirty: bool) {
+    #[inline]
+    pub(crate) fn set_dirty(&mut self, dirty: bool) {
         if dirty {
             self.data[0] |= DIRTY_FLAG;
         } else {
@@ -370,81 +342,59 @@ impl OwnedPow for OwnedPowD {
     }
 
     #[inline(always)]
-    fn to_pow_view(&self) -> <Self::P as AtomSet>::P<'_> {
-        PowViewD { data: &self.data }
+    pub fn to_pow_view(&self) -> PowView {
+        PowView { data: &self.data }
     }
 
     #[inline(always)]
-    fn set_from_view(&mut self, view: &<Self::P as AtomSet>::P<'_>) {
+    pub fn set_from_view(&mut self, view: &PowView) {
         self.data.clear();
         self.data.extend(view.data);
     }
 
     #[inline(always)]
-    fn as_view(&self) -> AtomView<Self::P> {
+    pub fn as_view(&self) -> AtomView {
         AtomView::Pow(self.to_pow_view())
     }
-}
-
-impl Convert<Linear> for OwnedPowD {
-    #[inline(always)]
-    fn to_owned_var(mut self) -> OwnedVarD {
-        self.data.clear();
-        OwnedVarD { data: self.data }
-    }
 
     #[inline(always)]
-    fn to_owned_pow(mut self) -> OwnedPowD {
-        self.data.clear();
-        OwnedPowD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_num(mut self) -> OwnedNumD {
-        self.data.clear();
-        OwnedNumD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_fun(mut self) -> OwnedFunD {
-        self.data.clear();
-        OwnedFunD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_add(mut self) -> OwnedAddD {
-        self.data.clear();
-        OwnedAddD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_mul(mut self) -> OwnedMulD {
-        self.data.clear();
-        OwnedMulD { data: self.data }
+    pub fn into_raw(self) -> RawAtom {
+        self.data
     }
 }
 
-impl ResettableBuffer for OwnedPowD {
-    #[inline(always)]
-    fn new() -> Self {
-        OwnedPowD { data: vec![] }
-    }
-
-    #[inline(always)]
-    fn reset(&mut self) {
-        self.data.clear();
-    }
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Mul {
+    data: RawAtom,
 }
 
-#[derive(Clone, PartialEq, Hash)]
-pub struct OwnedMulD {
-    data: Vec<u8>,
-}
+impl Mul {
+    #[inline]
+    pub fn new() -> Mul {
+        Self::new_into(RawAtom::new())
+    }
 
-impl OwnedMul for OwnedMulD {
-    type P = Linear;
+    #[inline]
+    pub fn new_into(mut buffer: RawAtom) -> Mul {
+        buffer.clear();
+        buffer.put_u8(MUL_ID);
+        buffer.put_u32_le(0_u32);
+        (0u64, 1).write_packed(&mut buffer);
+        let len = buffer.len() as u32 - 1 - 4;
+        (&mut buffer[1..]).put_u32_le(len);
 
-    fn set_dirty(&mut self, dirty: bool) {
+        Mul { data: buffer }
+    }
+
+    #[inline]
+    pub fn from_view_into(a: &MulView<'_>, mut buffer: RawAtom) -> Mul {
+        buffer.clear();
+        buffer.extend(a.data);
+        Mul { data: buffer }
+    }
+
+    #[inline]
+    pub(crate) fn set_dirty(&mut self, dirty: bool) {
         if dirty {
             self.data[0] |= DIRTY_FLAG;
         } else {
@@ -452,18 +402,13 @@ impl OwnedMul for OwnedMulD {
         }
     }
 
-    fn set_from_view(&mut self, view: &<Self::P as AtomSet>::M<'_>) {
+    #[inline]
+    pub fn set_from_view(&mut self, view: &MulView) {
         self.data.clear();
         self.data.extend(view.data);
     }
 
-    fn extend(&mut self, other: AtomView<'_, Linear>) {
-        if self.data.is_empty() {
-            self.data.put_u8(MUL_ID);
-            self.data.put_u32_le(0_u32);
-            (0u64, 1).write_packed(&mut self.data);
-        }
-
+    pub fn extend(&mut self, other: AtomView<'_>) {
         // may increase size of the num of args
         let mut c = &self.data[1 + 4..];
 
@@ -476,7 +421,7 @@ impl OwnedMul for OwnedMulD {
 
         let new_slice = match other {
             AtomView::Mul(m) => m.to_slice(),
-            _ => ListSliceD::from_one(other),
+            _ => ListSlice::from_one(other),
         };
 
         n_args += new_slice.len() as u64;
@@ -512,11 +457,7 @@ impl OwnedMul for OwnedMulD {
             .unwrap();
     }
 
-    fn replace_last(&mut self, other: AtomView<Self::P>) {
-        if self.data.is_empty() {
-            panic!("Cannot pop empty mul");
-        }
-
+    pub(crate) fn replace_last(&mut self, other: AtomView) {
         let mut c = &self.data[1 + 4..];
 
         let buf_pos = 1 + 4;
@@ -561,11 +502,12 @@ impl OwnedMul for OwnedMulD {
             .unwrap();
     }
 
-    fn to_mul_view(&self) -> <Self::P as AtomSet>::M<'_> {
-        MulViewD { data: &self.data }
+    #[inline]
+    pub fn to_mul_view(&self) -> MulView {
+        MulView { data: &self.data }
     }
 
-    fn set_has_coefficient(&mut self, has_coeff: bool) {
+    pub(crate) fn set_has_coefficient(&mut self, has_coeff: bool) {
         if has_coeff {
             self.data[0] |= HAS_COEFF_FLAG;
         } else {
@@ -574,70 +516,48 @@ impl OwnedMul for OwnedMulD {
     }
 
     #[inline(always)]
-    fn as_view(&self) -> AtomView<Self::P> {
+    pub fn as_view(&self) -> AtomView {
         AtomView::Mul(self.to_mul_view())
     }
-}
-
-impl Convert<Linear> for OwnedMulD {
-    #[inline(always)]
-    fn to_owned_var(mut self) -> OwnedVarD {
-        self.data.clear();
-        OwnedVarD { data: self.data }
-    }
 
     #[inline(always)]
-    fn to_owned_pow(mut self) -> OwnedPowD {
-        self.data.clear();
-        OwnedPowD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_num(mut self) -> OwnedNumD {
-        self.data.clear();
-        OwnedNumD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_fun(mut self) -> OwnedFunD {
-        self.data.clear();
-        OwnedFunD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_add(mut self) -> OwnedAddD {
-        self.data.clear();
-        OwnedAddD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_mul(mut self) -> OwnedMulD {
-        self.data.clear();
-        OwnedMulD { data: self.data }
+    pub fn into_raw(self) -> RawAtom {
+        self.data
     }
 }
 
-impl ResettableBuffer for OwnedMulD {
-    #[inline(always)]
-    fn new() -> Self {
-        OwnedMulD { data: vec![] }
-    }
-
-    #[inline(always)]
-    fn reset(&mut self) {
-        self.data.clear();
-    }
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Add {
+    data: RawAtom,
 }
 
-#[derive(Clone, PartialEq, Hash)]
-pub struct OwnedAddD {
-    data: Vec<u8>,
-}
+impl Add {
+    #[inline]
+    pub fn new() -> Add {
+        Self::new_into(RawAtom::new())
+    }
 
-impl OwnedAdd for OwnedAddD {
-    type P = Linear;
+    #[inline]
+    pub fn new_into(mut buffer: RawAtom) -> Add {
+        buffer.clear();
+        buffer.put_u8(ADD_ID);
+        buffer.put_u32_le(0_u32);
+        (0u64, 1).write_packed(&mut buffer);
+        let len = buffer.len() as u32 - 1 - 4;
+        (&mut buffer[1..]).put_u32_le(len);
 
-    fn set_dirty(&mut self, dirty: bool) {
+        Add { data: buffer }
+    }
+
+    #[inline]
+    pub fn from_view_into(a: &AddView<'_>, mut buffer: RawAtom) -> Add {
+        buffer.clear();
+        buffer.extend(a.data);
+        Add { data: buffer }
+    }
+
+    #[inline]
+    pub(crate) fn set_dirty(&mut self, dirty: bool) {
         if dirty {
             self.data[0] |= DIRTY_FLAG;
         } else {
@@ -645,13 +565,7 @@ impl OwnedAdd for OwnedAddD {
         }
     }
 
-    fn extend(&mut self, other: AtomView<'_, Linear>) {
-        if self.data.is_empty() {
-            self.data.put_u8(ADD_ID);
-            self.data.put_u32_le(0_u32);
-            (0u64, 1).write_packed(&mut self.data);
-        }
-
+    pub fn extend(&mut self, other: AtomView<'_>) {
         // may increase size of the num of args
         let mut c = &self.data[1 + 4..];
 
@@ -664,7 +578,7 @@ impl OwnedAdd for OwnedAddD {
 
         let new_slice = match other {
             AtomView::Add(m) => m.to_slice(),
-            _ => ListSliceD::from_one(other),
+            _ => ListSlice::from_one(other),
         };
 
         n_args += new_slice.len() as u64;
@@ -704,174 +618,114 @@ impl OwnedAdd for OwnedAddD {
     }
 
     #[inline(always)]
-    fn to_add_view(&self) -> <Self::P as AtomSet>::A<'_> {
-        AddViewD { data: &self.data }
+    pub fn to_add_view(&self) -> AddView {
+        AddView { data: &self.data }
     }
 
     #[inline(always)]
-    fn set_from_view(&mut self, view: &<Self::P as AtomSet>::A<'_>) {
+    pub fn set_from_view(&mut self, view: AddView) {
         self.data.clear();
         self.data.extend(view.data);
     }
 
     #[inline(always)]
-    fn as_view(&self) -> AtomView<Self::P> {
+    pub fn as_view(&self) -> AtomView {
         AtomView::Add(self.to_add_view())
     }
-}
-
-impl Convert<Linear> for OwnedAddD {
-    #[inline(always)]
-    fn to_owned_var(mut self) -> OwnedVarD {
-        self.data.clear();
-        OwnedVarD { data: self.data }
-    }
 
     #[inline(always)]
-    fn to_owned_pow(mut self) -> OwnedPowD {
-        self.data.clear();
-        OwnedPowD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_num(mut self) -> OwnedNumD {
-        self.data.clear();
-        OwnedNumD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_fun(mut self) -> OwnedFunD {
-        self.data.clear();
-        OwnedFunD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_add(mut self) -> OwnedAddD {
-        self.data.clear();
-        OwnedAddD { data: self.data }
-    }
-
-    #[inline(always)]
-    fn to_owned_mul(mut self) -> OwnedMulD {
-        self.data.clear();
-        OwnedMulD { data: self.data }
+    pub fn into_raw(self) -> RawAtom {
+        self.data
     }
 }
 
-impl ResettableBuffer for OwnedAddD {
-    fn new() -> Self {
-        let mut data = Vec::new();
-        data.put_u8(ADD_ID);
-        data.put_u32_le(0_u32);
-        (0u64, 1).write_packed(&mut data);
-
-        OwnedAddD { data }
+impl<'a> VarView<'a> {
+    #[inline]
+    pub fn to_owned(&self) -> Var {
+        Var::from_view_into(self, Vec::new())
     }
 
-    fn reset(&mut self) {
-        self.data.clear();
-        self.data.put_u8(ADD_ID);
-        self.data.put_u32_le(0_u32);
-        (0u64, 1).write_packed(&mut self.data);
+    #[inline]
+    pub fn clone_into(&self, target: &mut Var) {
+        target.set_from_view(self);
     }
-}
 
-impl AtomSet for Linear {
-    type N<'a> = NumViewD<'a>;
-    type V<'a> = VarViewD<'a>;
-    type F<'a> = FnViewD<'a>;
-    type P<'a> = PowViewD<'a>;
-    type M<'a> = MulViewD<'a>;
-    type A<'a> = AddViewD<'a>;
-    type ON = OwnedNumD;
-    type OV = OwnedVarD;
-    type OF = OwnedFunD;
-    type OP = OwnedPowD;
-    type OM = OwnedMulD;
-    type OA = OwnedAddD;
-    type S<'a> = ListSliceD<'a>;
-}
-
-impl<'a> Var<'a> for VarViewD<'a> {
-    type P = Linear;
+    #[inline]
+    pub fn clone_into_raw(&self, mut buffer: RawAtom) -> Var {
+        buffer.clear();
+        buffer.extend(self.data);
+        Var { data: buffer }
+    }
 
     #[inline(always)]
-    fn get_name(&self) -> Identifier {
+    pub fn get_name(&self) -> Identifier {
         Identifier::from(self.data[1..].get_frac_i64().0 as u32)
     }
 
     #[inline]
-    fn as_view(&self) -> AtomView<'a, Self::P> {
+    pub fn as_view(&self) -> AtomView<'a> {
         AtomView::Var(*self)
     }
 
-    fn get_byte_size(&self) -> usize {
+    pub fn get_byte_size(&self) -> usize {
         self.data.len()
     }
 }
 
-impl Atom<Linear> {
-    pub fn get_data(&self) -> &[u8] {
-        match self {
-            Atom::Num(n) => &n.data,
-            Atom::Var(v) => &v.data,
-            Atom::Fun(f) => &f.data,
-            Atom::Pow(p) => &p.data,
-            Atom::Mul(m) => &m.data,
-            Atom::Add(a) => &a.data,
-            Atom::Empty => unreachable!(),
-        }
-    }
-
-    /// Get the total byte length of the atom and its children.
-    pub fn len(&self) -> usize {
-        self.get_data().len()
-    }
-}
-
 #[derive(Debug, Copy, Clone, Eq, Hash)]
-pub struct VarViewD<'a> {
-    pub data: &'a [u8],
+pub struct VarView<'a> {
+    data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<VarViewD<'b>> for VarViewD<'a> {
-    fn eq(&self, other: &VarViewD<'b>) -> bool {
+impl<'a, 'b> PartialEq<VarView<'b>> for VarView<'a> {
+    fn eq(&self, other: &VarView<'b>) -> bool {
         self.data == other.data
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, Hash)]
-pub struct FnViewD<'a> {
-    pub data: &'a [u8],
+pub struct FunView<'a> {
+    data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<FnViewD<'b>> for FnViewD<'a> {
-    fn eq(&self, other: &FnViewD<'b>) -> bool {
+impl<'a, 'b> PartialEq<FunView<'b>> for FunView<'a> {
+    fn eq(&self, other: &FunView<'b>) -> bool {
         self.data == other.data
     }
 }
 
-impl<'a> Fun<'a> for FnViewD<'a> {
-    type P = Linear;
-    type I = ListIteratorD<'a>;
+impl<'a> FunView<'a> {
+    pub fn to_owned(&self) -> Fun {
+        Fun::from_view_into(self, Vec::new())
+    }
+
+    pub fn clone_into(&self, target: &mut Fun) {
+        target.set_from_view(self);
+    }
+
+    pub fn clone_into_raw(&self, mut buffer: RawAtom) -> Fun {
+        buffer.clear();
+        buffer.extend(self.data);
+        Fun { data: buffer }
+    }
 
     #[inline(always)]
-    fn get_name(&self) -> Identifier {
+    pub fn get_name(&self) -> Identifier {
         Identifier::from(self.data[1 + 4..].get_frac_i64().0 as u32)
     }
 
     #[inline(always)]
-    fn get_nargs(&self) -> usize {
+    pub fn get_nargs(&self) -> usize {
         self.data[1 + 4..].get_frac_i64().1 as usize
     }
 
     #[inline(always)]
-    fn is_dirty(&self) -> bool {
+    pub(crate) fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
 
     #[inline]
-    fn iter(&self) -> Self::I {
+    pub fn iter(&self) -> ListIterator<'a> {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -879,17 +733,17 @@ impl<'a> Fun<'a> for FnViewD<'a> {
         let n_args;
         (_, n_args, c) = c.get_frac_i64(); // name
 
-        ListIteratorD {
+        ListIterator {
             data: c,
             length: n_args as u32,
         }
     }
 
-    fn as_view(&self) -> AtomView<'a, Self::P> {
+    pub fn as_view(&self) -> AtomView<'a> {
         AtomView::Fun(*self)
     }
 
-    fn to_slice(&self) -> ListSliceD<'a> {
+    pub fn to_slice(&self) -> ListSlice<'a> {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -897,101 +751,131 @@ impl<'a> Fun<'a> for FnViewD<'a> {
         let n_args;
         (_, n_args, c) = c.get_frac_i64(); // name
 
-        ListSliceD {
+        ListSlice {
             data: c,
             length: n_args as usize,
             slice_type: SliceType::Arg,
         }
     }
 
-    fn get_byte_size(&self) -> usize {
+    pub fn get_byte_size(&self) -> usize {
         self.data.len()
     }
 
-    fn fast_cmp(&self, other: <Self::P as AtomSet>::F<'_>) -> Ordering {
+    pub(crate) fn fast_cmp(&self, other: FunView) -> Ordering {
         self.data.cmp(other.data)
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, Hash)]
-pub struct NumViewD<'a> {
-    pub data: &'a [u8],
+pub struct NumView<'a> {
+    data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<NumViewD<'b>> for NumViewD<'a> {
+impl<'a, 'b> PartialEq<NumView<'b>> for NumView<'a> {
     #[inline]
-    fn eq(&self, other: &NumViewD<'b>) -> bool {
+    fn eq(&self, other: &NumView<'b>) -> bool {
         self.data == other.data
     }
 }
 
-impl<'a> Num<'a> for NumViewD<'a> {
-    type P = Linear;
+impl<'a> NumView<'a> {
+    #[inline]
+    pub fn to_owned(&self) -> Num {
+        Num::from_view_into(self, Vec::new())
+    }
 
     #[inline]
-    fn is_zero(&self) -> bool {
+    pub fn clone_into(&self, target: &mut Num) {
+        target.set_from_view(self);
+    }
+
+    #[inline]
+    pub fn clone_into_raw(&self, mut buffer: RawAtom) -> Num {
+        buffer.clear();
+        buffer.extend(self.data);
+        Num { data: buffer }
+    }
+
+    #[inline]
+    pub fn is_zero(&self) -> bool {
         self.data.is_zero_rat()
     }
 
     #[inline]
-    fn is_one(&self) -> bool {
+    pub fn is_one(&self) -> bool {
         self.data.is_one_rat()
     }
 
     #[inline]
-    fn is_dirty(&self) -> bool {
+    pub(crate) fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
 
     #[inline]
-    fn get_coeff_view(&self) -> CoefficientView<'_> {
+    pub fn get_coeff_view(&self) -> CoefficientView<'a> {
         self.data[1..].get_coeff_view().0
     }
 
-    fn as_view(&self) -> AtomView<'a, Self::P> {
+    pub fn as_view(&self) -> AtomView<'a> {
         AtomView::Num(*self)
     }
 
-    fn get_byte_size(&self) -> usize {
+    pub fn get_byte_size(&self) -> usize {
         self.data.len()
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, Hash)]
-pub struct PowViewD<'a> {
-    pub data: &'a [u8],
+pub struct PowView<'a> {
+    data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<PowViewD<'b>> for PowViewD<'a> {
+impl<'a, 'b> PartialEq<PowView<'b>> for PowView<'a> {
     #[inline]
-    fn eq(&self, other: &PowViewD<'b>) -> bool {
+    fn eq(&self, other: &PowView<'b>) -> bool {
         self.data == other.data
     }
 }
 
-impl<'a> Pow<'a> for PowViewD<'a> {
-    type P = Linear;
+impl<'a> PowView<'a> {
+    #[inline]
+    pub fn to_owned(&self) -> Pow {
+        Pow::from_view_into(self, Vec::new())
+    }
 
     #[inline]
-    fn get_base(&self) -> AtomView<'a, Self::P> {
+    pub fn clone_into(&self, target: &mut Pow) {
+        target.set_from_view(self);
+    }
+
+    #[inline]
+    pub fn clone_into_raw(&self, mut buffer: RawAtom) -> Pow {
+        buffer.clear();
+        buffer.extend(self.data);
+        Pow { data: buffer }
+    }
+
+    #[inline]
+    pub fn get_base(&self) -> AtomView<'a> {
         let (b, _) = self.get_base_exp();
         b
     }
 
     #[inline]
-    fn get_exp(&self) -> AtomView<'a, Self::P> {
+    pub fn get_exp(&self) -> AtomView<'a> {
         let (_, e) = self.get_base_exp();
         e
     }
 
     #[inline]
-    fn is_dirty(&self) -> bool {
+    pub(crate) fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
 
     #[inline]
-    fn get_base_exp(&self) -> (AtomView<'a, Self::P>, AtomView<'a, Self::P>) {
-        let mut it = ListIteratorD {
+    pub fn get_base_exp(&self) -> (AtomView<'a>, AtomView<'a>) {
+        let mut it = ListIterator {
             data: &self.data[1..],
             length: 2,
         };
@@ -999,50 +883,66 @@ impl<'a> Pow<'a> for PowViewD<'a> {
         (it.next().unwrap(), it.next().unwrap())
     }
 
-    fn as_view(&self) -> AtomView<'a, Self::P> {
+    #[inline]
+    pub fn as_view(&self) -> AtomView<'a> {
         AtomView::Pow(*self)
     }
 
-    fn to_slice(&self) -> ListSliceD<'a> {
-        ListSliceD {
+    #[inline]
+    pub fn to_slice(&self) -> ListSlice<'a> {
+        ListSlice {
             data: &self.data[1..],
             length: 2,
             slice_type: SliceType::Pow,
         }
     }
 
-    fn get_byte_size(&self) -> usize {
+    pub fn get_byte_size(&self) -> usize {
         self.data.len()
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, Hash)]
-pub struct MulViewD<'a> {
-    pub data: &'a [u8],
+pub struct MulView<'a> {
+    data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<MulViewD<'b>> for MulViewD<'a> {
+impl<'a, 'b> PartialEq<MulView<'b>> for MulView<'a> {
     #[inline]
-    fn eq(&self, other: &MulViewD<'b>) -> bool {
+    fn eq(&self, other: &MulView<'b>) -> bool {
         self.data == other.data
     }
 }
 
-impl<'a> Mul<'a> for MulViewD<'a> {
-    type P = Linear;
-    type I = ListIteratorD<'a>;
+impl<'a> MulView<'a> {
+    #[inline]
+    pub fn to_owned(&self) -> Mul {
+        Mul::from_view_into(self, Vec::new())
+    }
 
     #[inline]
-    fn is_dirty(&self) -> bool {
+    pub fn clone_into(&self, target: &mut Mul) {
+        target.set_from_view(self);
+    }
+
+    #[inline]
+    pub fn clone_into_raw(&self, mut buffer: RawAtom) -> Mul {
+        buffer.clear();
+        buffer.extend(self.data);
+        Mul { data: buffer }
+    }
+
+    #[inline]
+    pub(crate) fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
 
-    fn get_nargs(&self) -> usize {
+    pub fn get_nargs(&self) -> usize {
         self.data[1 + 4..].get_frac_i64().0 as usize
     }
 
     #[inline]
-    fn iter(&self) -> Self::I {
+    pub fn iter(&self) -> ListIterator<'a> {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -1050,17 +950,18 @@ impl<'a> Mul<'a> for MulViewD<'a> {
         let n_args;
         (n_args, _, c) = c.get_frac_i64();
 
-        ListIteratorD {
+        ListIterator {
             data: c,
             length: n_args as u32,
         }
     }
 
-    fn as_view(&self) -> AtomView<'a, Self::P> {
+    #[inline]
+    pub fn as_view(&self) -> AtomView<'a> {
         AtomView::Mul(*self)
     }
 
-    fn to_slice(&self) -> ListSliceD<'a> {
+    pub fn to_slice(&self) -> ListSlice<'a> {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -1068,7 +969,7 @@ impl<'a> Mul<'a> for MulViewD<'a> {
         let n_args;
         (n_args, _, c) = c.get_frac_i64();
 
-        ListSliceD {
+        ListSlice {
             data: c,
             length: n_args as usize,
             slice_type: SliceType::Mul,
@@ -1076,43 +977,54 @@ impl<'a> Mul<'a> for MulViewD<'a> {
     }
 
     #[inline]
-    fn has_coefficient(&self) -> bool {
+    pub fn has_coefficient(&self) -> bool {
         (self.data[0] & HAS_COEFF_FLAG) != 0
     }
 
-    fn get_byte_size(&self) -> usize {
+    pub fn get_byte_size(&self) -> usize {
         self.data.len()
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, Hash)]
-pub struct AddViewD<'a> {
-    pub data: &'a [u8],
+pub struct AddView<'a> {
+    data: &'a [u8],
 }
 
-impl<'a, 'b> PartialEq<AddViewD<'b>> for AddViewD<'a> {
+impl<'a, 'b> PartialEq<AddView<'b>> for AddView<'a> {
     #[inline]
-    fn eq(&self, other: &AddViewD<'b>) -> bool {
+    fn eq(&self, other: &AddView<'b>) -> bool {
         self.data == other.data
     }
 }
 
-impl<'a> Add<'a> for AddViewD<'a> {
-    type P = Linear;
-    type I = ListIteratorD<'a>;
+impl<'a> AddView<'a> {
+    pub fn to_owned(&self) -> Add {
+        Add::from_view_into(self, Vec::new())
+    }
+
+    pub fn clone_into(&self, target: &mut Add) {
+        target.set_from_view(*self);
+    }
+
+    pub fn clone_into_raw(&self, mut buffer: RawAtom) -> Add {
+        buffer.clear();
+        buffer.extend(self.data);
+        Add { data: buffer }
+    }
 
     #[inline(always)]
-    fn is_dirty(&self) -> bool {
+    pub(crate) fn is_dirty(&self) -> bool {
         (self.data[0] & DIRTY_FLAG) != 0
     }
 
     #[inline(always)]
-    fn get_nargs(&self) -> usize {
+    pub fn get_nargs(&self) -> usize {
         self.data[1 + 4..].get_frac_i64().0 as usize
     }
 
     #[inline]
-    fn iter(&self) -> Self::I {
+    pub fn iter(&self) -> ListIterator<'a> {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -1120,18 +1032,18 @@ impl<'a> Add<'a> for AddViewD<'a> {
         let n_args;
         (n_args, _, c) = c.get_frac_i64();
 
-        ListIteratorD {
+        ListIterator {
             data: c,
             length: n_args as u32,
         }
     }
 
     #[inline]
-    fn as_view(&self) -> AtomView<'a, Self::P> {
+    pub fn as_view(&self) -> AtomView<'a> {
         AtomView::Add(*self)
     }
 
-    fn to_slice(&self) -> ListSliceD<'a> {
+    pub fn to_slice(&self) -> ListSlice<'a> {
         let mut c = self.data;
         c.get_u8();
         c.get_u32_le(); // size
@@ -1139,27 +1051,27 @@ impl<'a> Add<'a> for AddViewD<'a> {
         let n_args;
         (n_args, _, c) = c.get_frac_i64();
 
-        ListSliceD {
+        ListSlice {
             data: c,
             length: n_args as usize,
             slice_type: SliceType::Add,
         }
     }
 
-    fn get_byte_size(&self) -> usize {
+    pub fn get_byte_size(&self) -> usize {
         self.data.len()
     }
 }
 
-impl<'a> AtomView<'a, Linear> {
-    pub fn from(source: &'a [u8]) -> AtomView<'a, Linear> {
+impl<'a> AtomView<'a> {
+    pub fn from(source: &'a [u8]) -> AtomView<'a> {
         match source[0] {
-            VAR_ID => AtomView::Var(VarViewD { data: source }),
-            FUN_ID => AtomView::Fun(FnViewD { data: source }),
-            NUM_ID => AtomView::Num(NumViewD { data: source }),
-            POW_ID => AtomView::Pow(PowViewD { data: source }),
-            MUL_ID => AtomView::Mul(MulViewD { data: source }),
-            ADD_ID => AtomView::Add(AddViewD { data: source }),
+            VAR_ID => AtomView::Var(VarView { data: source }),
+            FUN_ID => AtomView::Fun(FunView { data: source }),
+            NUM_ID => AtomView::Num(NumView { data: source }),
+            POW_ID => AtomView::Pow(PowView { data: source }),
+            MUL_ID => AtomView::Mul(MulView { data: source }),
+            ADD_ID => AtomView::Add(AddView { data: source }),
             x => unreachable!("Bad id: {}", x),
         }
     }
@@ -1177,13 +1089,13 @@ impl<'a> AtomView<'a, Linear> {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct ListIteratorD<'a> {
+pub struct ListIterator<'a> {
     data: &'a [u8],
     length: u32,
 }
 
-impl<'a> Iterator for ListIteratorD<'a> {
-    type Item = AtomView<'a, Linear>;
+impl<'a> Iterator for ListIterator<'a> {
+    type Item = AtomView<'a>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
@@ -1236,37 +1148,25 @@ impl<'a> Iterator for ListIteratorD<'a> {
 
         let data = unsafe { start.get_unchecked(..len) };
         match start_id {
-            VAR_ID => {
-                return Some(AtomView::Var(VarViewD { data }));
-            }
-            NUM_ID => {
-                return Some(AtomView::Num(NumViewD { data }));
-            }
-            FUN_ID => {
-                return Some(AtomView::Fun(FnViewD { data }));
-            }
-            POW_ID => {
-                return Some(AtomView::Pow(PowViewD { data }));
-            }
-            MUL_ID => {
-                return Some(AtomView::Mul(MulViewD { data }));
-            }
-            ADD_ID => {
-                return Some(AtomView::Add(AddViewD { data }));
-            }
+            VAR_ID => Some(AtomView::Var(VarView { data })),
+            NUM_ID => Some(AtomView::Num(NumView { data })),
+            FUN_ID => Some(AtomView::Fun(FunView { data })),
+            POW_ID => Some(AtomView::Pow(PowView { data })),
+            MUL_ID => Some(AtomView::Mul(MulView { data })),
+            ADD_ID => Some(AtomView::Add(AddView { data })),
             x => unreachable!("Bad id {}", x),
         }
     }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ListSliceD<'a> {
+pub struct ListSlice<'a> {
     data: &'a [u8],
     length: usize,
     slice_type: SliceType,
 }
 
-impl<'a> ListSliceD<'a> {
+impl<'a> ListSlice<'a> {
     #[inline(always)]
     fn skip_one(mut pos: &[u8]) -> &[u8] {
         // store how many more atoms to read
@@ -1299,21 +1199,21 @@ impl<'a> ListSliceD<'a> {
         pos
     }
 
-    fn fast_forward(&self, index: usize) -> ListSliceD<'a> {
+    fn fast_forward(&self, index: usize) -> ListSlice<'a> {
         let mut pos = self.data;
 
         for _ in 0..index {
             pos = Self::skip_one(pos);
         }
 
-        ListSliceD {
+        ListSlice {
             data: pos,
             length: self.length - index,
             slice_type: self.slice_type,
         }
     }
 
-    fn get_entry(start: &'a [u8]) -> (AtomView<'a, Linear>, &[u8]) {
+    fn get_entry(start: &'a [u8]) -> (AtomView<'a>, &[u8]) {
         let start_id = start[0] & TYPE_MASK;
         let end = Self::skip_one(start);
         let len = unsafe { end.as_ptr().offset_from(start.as_ptr()) } as usize;
@@ -1321,12 +1221,12 @@ impl<'a> ListSliceD<'a> {
         let data = unsafe { start.get_unchecked(..len) };
         (
             match start_id {
-                VAR_ID => AtomView::Var(VarViewD { data }),
-                NUM_ID => AtomView::Num(NumViewD { data }),
-                FUN_ID => AtomView::Fun(FnViewD { data }),
-                POW_ID => AtomView::Pow(PowViewD { data }),
-                MUL_ID => AtomView::Mul(MulViewD { data }),
-                ADD_ID => AtomView::Add(AddViewD { data }),
+                VAR_ID => AtomView::Var(VarView { data }),
+                NUM_ID => AtomView::Num(NumView { data }),
+                FUN_ID => AtomView::Fun(FunView { data }),
+                POW_ID => AtomView::Pow(PowView { data }),
+                MUL_ID => AtomView::Mul(MulView { data }),
+                ADD_ID => AtomView::Add(AddView { data }),
                 x => unreachable!("Bad id {}", x),
             },
             end,
@@ -1334,22 +1234,19 @@ impl<'a> ListSliceD<'a> {
     }
 }
 
-impl<'a> ListSlice<'a> for ListSliceD<'a> {
-    type P = Linear;
-    type ListSliceIterator = ListSliceIteratorD<'a>;
-
+impl<'a> ListSlice<'a> {
     #[inline]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.length
     }
 
     #[inline]
-    fn get(&self, index: usize) -> AtomView<'a, Self::P> {
+    pub fn get(&self, index: usize) -> AtomView<'a> {
         let start = self.fast_forward(index);
         Self::get_entry(start.data).0
     }
 
-    fn get_subslice(&self, range: std::ops::Range<usize>) -> Self {
+    pub fn get_subslice(&self, range: std::ops::Range<usize>) -> Self {
         let start = self.fast_forward(range.start);
 
         let mut s = start.data;
@@ -1358,7 +1255,7 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
         }
 
         let len = unsafe { s.as_ptr().offset_from(start.data.as_ptr()) } as usize;
-        ListSliceD {
+        ListSlice {
             data: &start.data[..len],
             length: range.len(),
             slice_type: self.slice_type,
@@ -1366,18 +1263,13 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
     }
 
     #[inline]
-    fn eq(&self, other: &ListSliceD<'_>) -> bool {
-        self.data == other.data
-    }
-
-    #[inline]
-    fn get_type(&self) -> SliceType {
+    pub fn get_type(&self) -> SliceType {
         self.slice_type
     }
 
     #[inline]
-    fn from_one(view: AtomView<'a, Self::P>) -> Self {
-        ListSliceD {
+    pub fn from_one(view: AtomView<'a>) -> Self {
+        ListSlice {
             data: view.get_data(),
             length: 1,
             slice_type: SliceType::One,
@@ -1385,23 +1277,23 @@ impl<'a> ListSlice<'a> for ListSliceD<'a> {
     }
 
     #[inline]
-    fn iter(&self) -> Self::ListSliceIterator {
-        ListSliceIteratorD { data: *self }
+    pub fn iter(&self) -> ListSliceIterator<'a> {
+        ListSliceIterator { data: *self }
     }
 }
 
-pub struct ListSliceIteratorD<'a> {
-    data: ListSliceD<'a>,
+pub struct ListSliceIterator<'a> {
+    data: ListSlice<'a>,
 }
 
-impl<'a> Iterator for ListSliceIteratorD<'a> {
-    type Item = AtomView<'a, Linear>;
+impl<'a> Iterator for ListSliceIterator<'a> {
+    type Item = AtomView<'a>;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         if self.data.length > 0 {
-            let (res, end) = ListSliceD::get_entry(self.data.data);
-            self.data = ListSliceD {
+            let (res, end) = ListSlice::get_entry(self.data.data);
+            self.data = ListSlice {
                 data: end,
                 length: self.data.length - 1,
                 slice_type: self.data.slice_type,

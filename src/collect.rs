@@ -1,14 +1,11 @@
 use ahash::HashMap;
 
 use crate::{
-    representations::{
-        Add, AsAtomView, Atom, AtomSet, AtomView, Fun, Identifier, Mul, OwnedAdd, OwnedMul, Pow,
-        Var,
-    },
+    representations::{Add, AsAtomView, Atom, AtomView, Identifier},
     state::{State, Workspace},
 };
 
-impl<'a, P: AtomSet> AtomView<'a, P> {
+impl<'a> AtomView<'a> {
     /// Collect terms involving the same power of `x`, where `x` is a variable or function name, e.g.
     ///
     /// ```math
@@ -20,24 +17,24 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn collect(
         &self,
         x: Identifier,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
-        key_map: Option<Box<dyn Fn(AtomView<P>, &mut Atom<P>)>>,
-        coeff_map: Option<Box<dyn Fn(AtomView<P>, &mut Atom<P>)>>,
-        out: &mut Atom<P>,
+        key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+        coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+        out: &mut Atom,
     ) {
         let (h, rest) = self.coefficient_list(x, workspace, state);
 
         let mut add_h = workspace.new_atom();
         let add = add_h.to_add();
 
-        fn map_key_coeff<P: AtomSet>(
-            key: AtomView<P>,
-            coeff: Atom<P>,
-            workspace: &Workspace<P>,
-            key_map: &Option<Box<dyn Fn(AtomView<P>, &mut Atom<P>)>>,
-            coeff_map: &Option<Box<dyn Fn(AtomView<P>, &mut Atom<P>)>>,
-            add: &mut P::OA,
+        fn map_key_coeff(
+            key: AtomView,
+            coeff: Atom,
+            workspace: &Workspace,
+            key_map: &Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+            coeff_map: &Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+            add: &mut Add,
         ) {
             let mut mul_h = workspace.new_atom();
             let mul = mul_h.to_mul();
@@ -87,9 +84,9 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn coefficient_list(
         &self,
         x: Identifier,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
-    ) -> (Vec<(AtomView<'a, P>, Atom<P>)>, Atom<P>) {
+    ) -> (Vec<(AtomView<'a>, Atom)>, Atom) {
         let mut h = HashMap::default();
         let mut rest = workspace.new_num(0);
 
@@ -102,10 +99,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
             _ => self.collect_factor(x, workspace, state, &mut h, &mut rest),
         }
 
-        (
-            h.into_iter().collect(),
-            Atom::new_from_view(&rest.as_view()),
-        )
+        (h.into_iter().collect(), rest.as_view().to_owned())
     }
 
     /// Check if a factor contains `x` at the ground level.
@@ -129,10 +123,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     fn collect_factor(
         &self,
         x: Identifier,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
-        h: &mut HashMap<AtomView<'a, P>, Atom<P>>,
-        rest: &mut Atom<P>,
+        h: &mut HashMap<AtomView<'a>, Atom>,
+        rest: &mut Atom,
     ) {
         match self {
             AtomView::Add(_) => {}
@@ -164,7 +158,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             e.add(state, workspace, col_n.as_view(), &mut res);
                             std::mem::swap(e, &mut res);
                         })
-                        .or_insert(Atom::new_from_view(&col_n.as_view()));
+                        .or_insert(col_n.as_view().to_owned());
 
                     return;
                 }
@@ -179,7 +173,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                             e.add(state, workspace, col_n.as_view(), &mut res);
                             std::mem::swap(e, &mut res);
                         })
-                        .or_insert(Atom::new_from_view(&col_n.as_view()));
+                        .or_insert(col_n.as_view().to_owned());
 
                     return;
                 }

@@ -51,10 +51,7 @@ use crate::{
     printer::{
         AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
     },
-    representations::{
-        default::ListIteratorD, Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice, Mul, Num,
-        OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
-    },
+    representations::{Atom, AtomView, Identifier, ListIterator},
     state::{FunctionAttribute, ResettableBuffer, State, Workspace},
     streaming::TermStreamer,
     tensors::matrix::Matrix,
@@ -211,8 +208,8 @@ pub struct PythonAtomTree {
     pub tail: Vec<PythonAtomTree>,
 }
 
-impl<'a, P: AtomSet> From<AtomView<'a, P>> for PyResult<PythonAtomTree> {
-    fn from(atom: AtomView<'a, P>) -> Self {
+impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
+    fn from(atom: AtomView<'a>) -> Self {
         let tree = match atom {
             AtomView::Num(_) => PythonAtomTree {
                 atom_type: PythonAtomType::Num,
@@ -245,8 +242,8 @@ impl<'a, P: AtomSet> From<AtomView<'a, P>> for PyResult<PythonAtomTree> {
                     atom_type: PythonAtomType::Pow,
                     head: None,
                     tail: vec![
-                        <AtomView<P> as Into<PyResult<PythonAtomTree>>>::into(b)?,
-                        <AtomView<P> as Into<PyResult<PythonAtomTree>>>::into(e)?,
+                        <AtomView as Into<PyResult<PythonAtomTree>>>::into(b)?,
+                        <AtomView as Into<PyResult<PythonAtomTree>>>::into(e)?,
                     ],
                 }
             }
@@ -486,7 +483,7 @@ impl PythonPattern {
     /// >>> from symbolica import Expression, Transformer
     /// >>> x_, f_id = Expression.vars('x_', 'f')
     /// >>> f = Expression.fun('f')
-    /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id)
+    /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id))
     /// >>> print(e)
     ///
     /// yields:
@@ -527,7 +524,7 @@ impl PythonPattern {
     pub fn map(&self, f: PyObject) -> PyResult<PythonPattern> {
         let transformer = Transformer::Map(Box::new(move |expr, out| {
             let expr = PythonExpression {
-                expr: Arc::new(expr.into()),
+                expr: Arc::new(expr.to_owned()),
             };
 
             let res = Python::with_gil(|py| {
@@ -1157,7 +1154,7 @@ macro_rules! req_cmp {
                     condition: Arc::new(
                         (
                             name,
-                            PatternRestriction::Filter(Box::new(move |v: &Match<_>| {
+                            PatternRestriction::Filter(Box::new(move |v: &Match| {
                                 let k = num.expr.as_view();
 
                                 if let Match::Single(m) = v {
@@ -1226,7 +1223,7 @@ macro_rules! req_wc_cmp {
                     id,
                     PatternRestriction::Cmp(
                         other_id,
-                        Box::new(move |m1: &Match<_>, m2: &Match<_>| {
+                        Box::new(move |m1: &Match, m2: &Match| {
                             if let Match::Single(a1) = m1 {
                                 if let Match::Single(a2) = m2 {
                                     if !$cmp_any_atom {
@@ -1671,12 +1668,10 @@ impl PythonExpression {
         let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut pow = workspace.new_atom();
-            let pow_num = pow.to_num();
-            pow_num.set_from_coeff((-1).into());
+            pow.to_num((-1).into());
 
             let mut e = workspace.new_atom();
-            let a = e.to_pow();
-            a.set_from_base_and_exp(rhs.to_expression().expr.as_view(), pow.get().as_view());
+            let a = e.to_pow(rhs.to_expression().expr.as_view(), pow.get().as_view());
             a.set_dirty(true);
 
             let mut m = workspace.new_atom();
@@ -1717,8 +1712,7 @@ impl PythonExpression {
         let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
-            let a = e.to_pow();
-            a.set_from_base_and_exp(self.expr.as_view(), rhs.to_expression().expr.as_view());
+            let a = e.to_pow(self.expr.as_view(), rhs.to_expression().expr.as_view());
             a.set_dirty(true);
 
             let mut b = Atom::new();
@@ -1763,8 +1757,7 @@ impl PythonExpression {
             let a = e.to_mul();
 
             let mut sign = workspace.new_atom();
-            let sign_num = sign.to_num();
-            sign_num.set_from_coeff((-1).into());
+            sign.to_num((-1).into());
 
             a.extend(self.expr.as_view());
             a.extend(sign.get().as_view());
@@ -1811,11 +1804,11 @@ impl PythonExpression {
 
         if idx.unsigned_abs() < slice.len() {
             Ok(PythonExpression {
-                expr: Arc::new(Atom::new_from_view(&if idx < 0 {
-                    slice.get(slice.len() - idx.abs() as usize)
+                expr: Arc::new(if idx < 0 {
+                    slice.get(slice.len() - idx.abs() as usize).to_owned()
                 } else {
-                    slice.get(idx as usize)
-                })),
+                    slice.get(idx as usize).to_owned()
+                }),
             })
         } else {
             Err(PyIndexError::new_err(format!(
@@ -2454,7 +2447,7 @@ impl PythonExpression {
                     Some(Box::new(move |key, out| {
                         Python::with_gil(|py| {
                             let key = PythonExpression {
-                                expr: Arc::new(key.into()),
+                                expr: Arc::new(key.to_owned()),
                             };
 
                             out.set_from_view(
@@ -2475,7 +2468,7 @@ impl PythonExpression {
                     Some(Box::new(move |coeff, out| {
                         Python::with_gil(|py| {
                             let coeff = PythonExpression {
-                                expr: Arc::new(coeff.into()),
+                                expr: Arc::new(coeff.to_owned()),
                             };
 
                             out.set_from_view(
@@ -2542,7 +2535,7 @@ impl PythonExpression {
                 .map(|e| {
                     (
                         PythonExpression {
-                            expr: Arc::new(e.0.into()),
+                            expr: Arc::new(e.0.to_owned()),
                         },
                         PythonExpression {
                             expr: Arc::new(e.1),
@@ -3263,8 +3256,7 @@ impl PythonFunction {
             // simplify to literal expression
             WORKSPACE.with(|workspace| {
                 let mut fun_b = workspace.new_atom();
-                let fun = fun_b.to_fun();
-                fun.set_from_name(self.id);
+                let fun = fun_b.to_fun(self.id);
                 fun.set_dirty(true);
 
                 for x in fn_args {
@@ -3304,7 +3296,7 @@ self_cell!(
     pub struct PythonAtomIterator {
         owner: Arc<Atom>,
         #[covariant]
-        dependent: ListIteratorD,
+        dependent: ListIterator,
     }
 );
 
@@ -3342,7 +3334,7 @@ type OwnedMatch = (
     Arc<MatchSettings>,
     State,
 );
-type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a, crate::representations::default::Linear>;
+type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a>;
 
 self_cell!(
     /// An iterator over matches.
@@ -3395,7 +3387,7 @@ type OwnedReplace = (
     Arc<MatchSettings>,
     State,
 );
-type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a, crate::representations::default::Linear>;
+type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a>;
 
 self_cell!(
     /// An iterator over all single replacements.

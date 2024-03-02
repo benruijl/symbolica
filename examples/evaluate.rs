@@ -21,7 +21,7 @@ fn main() {
     .unwrap();
 
     let mut const_map = HashMap::default();
-    let mut fn_map: HashMap<_, EvaluationFn<_, _>> = HashMap::default();
+    let mut fn_map: HashMap<_, EvaluationFn<_>> = HashMap::default();
     let mut cache = HashMap::default();
 
     // x = 6.

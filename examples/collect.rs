@@ -1,5 +1,5 @@
 use symbolica::{
-    representations::{Atom, OwnedFun},
+    representations::Atom,
     state::{ResettableBuffer, State, Workspace},
 };
 
@@ -46,13 +46,11 @@ fn main() {
         &workspace,
         &state,
         Some(Box::new(move |a, out| {
-            let f = out.to_fun();
-            f.set_from_name(key);
+            let f = out.to_fun(key);
             f.add_arg(a);
         })),
         Some(Box::new(move |a, out| {
-            let f = out.to_fun();
-            f.set_from_name(coeff);
+            let f = out.to_fun(coeff);
             f.add_arg(a);
         })),
         &mut out,

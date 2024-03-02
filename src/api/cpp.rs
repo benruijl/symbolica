@@ -15,7 +15,6 @@ use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
     domains::rational_polynomial::RationalPolynomial,
     printer::{FactorizedRationalPolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
-    representations::default::Linear,
     state::{State, Workspace},
 };
 
@@ -29,7 +28,7 @@ struct LocalState {
 
 struct Symbolica {
     state: State,
-    workspace: Workspace<Linear>,
+    workspace: Workspace,
     local_state: LocalState,
 }
 

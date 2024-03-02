@@ -10,19 +10,19 @@ use crate::{
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::{Exponent, Variable},
-    representations::{Atom, AtomSet, AtomView, Identifier},
+    representations::{Atom, AtomView, Identifier},
     state::{ResettableBuffer, State, Workspace},
 };
 
-impl<'a, P: AtomSet> AtomView<'a, P> {
+impl<'a> AtomView<'a> {
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
     pub fn solve_linear_system<E: Exponent>(
-        system: &[AtomView<P>],
+        system: &[AtomView],
         vars: &[Identifier],
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
-    ) -> Result<Vec<Atom<P>>, String> {
+    ) -> Result<Vec<Atom>, String> {
         let vars: Vec<_> = vars.iter().map(|v| Variable::Identifier(*v)).collect();
         let mut map = HashMap::default();
 

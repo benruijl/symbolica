@@ -1,38 +1,33 @@
 use crate::{
     coefficient::{Coefficient, CoefficientView},
     domains::integer::Integer,
-    representations::{
-        Add, AsAtomView, Atom, AtomBuilder, AtomSet, AtomView, Fun, Identifier, Mul, Num, OwnedAdd,
-        OwnedFun, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
-    },
+    representations::{AsAtomView, Atom, AtomBuilder, AtomView, Identifier},
     state::{State, Workspace},
 };
 
-impl<'a, P: AtomSet> AtomView<'a, P> {
+impl<'a> AtomView<'a> {
     /// Take a derivative of the expression with respect to `x` and
     /// write the result in `out`.
     /// Returns `true` if the derivative is non-zero.
     pub fn derivative(
         &self,
         x: Identifier,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
-        out: &mut Atom<P>,
+        out: &mut Atom,
     ) -> bool {
         match self {
             AtomView::Num(_) => {
-                let n = out.to_num();
-                n.set_from_coeff(Coefficient::zero());
+                out.to_num(Coefficient::zero());
                 false
             }
             AtomView::Var(v) => {
                 if v.get_name() == x {
-                    let n = out.to_num();
-                    n.set_from_coeff(1.into());
+                    out.to_num(1.into());
                     true
                 } else {
-                    let n = out.to_num();
-                    n.set_from_coeff(Coefficient::zero());
+                    out.to_num(Coefficient::zero());
+
                     false
                 }
             }
@@ -64,8 +59,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 }
 
                 if args_der.is_empty() {
-                    let n = out.to_num();
-                    n.set_from_coeff(Coefficient::zero());
+                    out.to_num(Coefficient::zero());
                     return false;
                 }
 
@@ -80,25 +74,22 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         }
                         State::LOG => {
                             let mut n = workspace.new_atom();
-                            n.to_num().set_from_coeff((-1).into());
+                            n.to_num((-1).into());
 
-                            let p = fn_der.to_pow();
-                            p.set_from_base_and_exp(f.iter().next().unwrap(), n.as_view());
+                            let p = fn_der.to_pow(f.iter().next().unwrap(), n.as_view());
                             p.set_dirty(true);
                         }
                         State::SIN => {
-                            let p = fn_der.to_fun();
-                            p.set_from_name(State::COS);
+                            let p = fn_der.to_fun(State::COS);
                             p.add_arg(f.iter().next().unwrap());
                             p.set_dirty(true);
                         }
                         State::COS => {
                             let mut n = workspace.new_atom();
-                            n.to_num().set_from_coeff((-1).into());
+                            n.to_num((-1).into());
 
                             let mut sin = workspace.new_atom();
-                            let sin_fun = sin.to_fun();
-                            sin_fun.set_from_name(State::SIN);
+                            let sin_fun = sin.to_fun(State::SIN);
                             sin_fun.add_arg(f.iter().next().unwrap());
 
                             let m = fn_der.to_mul();
@@ -133,8 +124,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let mut n = workspace.new_atom();
                 let mut mul = workspace.new_atom();
                 for (index, arg_der) in args_der {
-                    let p = fn_der.to_fun();
-                    p.set_from_name(State::DERIVATIVE);
+                    let p = fn_der.to_fun(State::DERIVATIVE);
 
                     if is_der {
                         for (i, x_orig) in f_orig.iter().take(f.get_nargs()).enumerate() {
@@ -143,7 +133,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                                     &CoefficientView::Natural(if i == index { 1 } else { 0 }, 1),
                                     state,
                                 );
-                                n.to_num().set_from_coeff(num);
+                                n.to_num(num);
                                 p.add_arg(n.as_view());
                             } else {
                                 panic!("Derivative function must contain numbers for all but the last position");
@@ -151,8 +141,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                         }
                     } else {
                         for i in 0..f.get_nargs() {
-                            n.to_num()
-                                .set_from_coeff((if i == index { 1 } else { 0 }, 1).into());
+                            n.to_num((if i == index { 1 } else { 0 }, 1).into());
                             p.add_arg(n.as_view());
                         }
                     }
@@ -183,8 +172,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let base_der_non_zero = base.derivative(x, workspace, state, &mut base_der);
 
                 if !exp_der_non_zero && !base_der_non_zero {
-                    let n = out.to_num();
-                    n.set_from_coeff(Coefficient::zero());
+                    out.to_num(0.into());
                     return false;
                 }
 
@@ -193,8 +181,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 if exp_der_non_zero {
                     // create log(base)
                     let mut log_base = workspace.new_atom();
-                    let lb = log_base.to_fun();
-                    lb.set_from_name(State::LOG);
+                    let lb = log_base.to_fun(State::LOG);
                     lb.add_arg(base);
 
                     if let Atom::Mul(m) = exp_der.get_mut() {
@@ -229,11 +216,10 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 if let AtomView::Num(n) = exp {
                     mul.extend(exp);
 
-                    let pow_min_one = new_exp.to_num();
                     let res = n
                         .get_coeff_view()
                         .add(&CoefficientView::Natural(-1, 1), state);
-                    pow_min_one.set_from_coeff(res);
+                    new_exp.to_num(res);
                 } else {
                     mul.extend(exp);
 
@@ -241,15 +227,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     ao.extend(exp);
 
                     let mut min_one = workspace.new_atom();
-                    min_one.to_num().set_from_coeff((-1).into());
+                    min_one.to_num((-1).into());
 
                     ao.extend(min_one.as_view());
                     ao.set_dirty(true);
                 }
 
                 let mut pow_h = workspace.new_atom();
-                let pow = pow_h.to_pow();
-                pow.set_from_base_and_exp(base, new_exp.as_view());
+                let pow = pow_h.to_pow(base, new_exp.as_view());
                 pow.set_dirty(true);
 
                 mul.extend(pow_h.as_view());
@@ -309,8 +294,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     add_h.as_view().normalize(workspace, state, out);
                     true
                 } else {
-                    let n = out.to_num();
-                    n.set_from_coeff(Coefficient::zero());
+                    out.to_num(0.into());
                     false
                 }
             }
@@ -331,8 +315,7 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                     add_h.as_view().normalize(workspace, state, out);
                     true
                 } else {
-                    let n = out.to_num();
-                    n.set_from_coeff(Coefficient::zero());
+                    out.to_num(0.into());
                     false
                 }
             }
@@ -343,11 +326,11 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     pub fn taylor_series(
         &self,
         x: Identifier,
-        expansion_point: AtomView<P>,
+        expansion_point: AtomView,
         depth: u32,
-        workspace: &Workspace<P>,
+        workspace: &Workspace,
         state: &State,
-        out: &mut Atom<P>,
+        out: &mut Atom,
     ) -> bool {
         let mut current_order = workspace.new_atom();
         current_order.set_from_view(self);
@@ -385,19 +368,14 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 m.extend(next_order.as_view());
                 if d > 1 {
                     let mut exp = workspace.new_atom();
-                    let e = exp.to_pow();
-                    e.set_from_base_and_exp(
-                        dist.as_atom_view(),
-                        workspace.new_num(d as i64).as_view(),
-                    );
+                    exp.to_pow(dist.as_atom_view(), workspace.new_num(d as i64).as_view());
                     m.extend(exp.as_atom_view());
                 } else if d == 1 {
                     m.extend(dist.as_atom_view());
                 }
 
                 let mut fact = workspace.new_atom();
-                fact.to_num()
-                    .set_from_coeff((Integer::one(), Integer::factorial(d)).into());
+                fact.to_num((Integer::one(), Integer::factorial(d)).into());
 
                 m.extend(fact.as_atom_view());
                 m.set_dirty(true);

@@ -11,9 +11,7 @@ use smartstring::alias::String;
 use crate::{
     coefficient::Coefficient,
     domains::finite_field::{FiniteField, FiniteFieldCore},
-    representations::{
-        default::Linear, AsAtomView, Atom, AtomSet, AtomView, Identifier, OwnedNum, OwnedVar,
-    },
+    representations::{AsAtomView, Atom, AtomView, Identifier},
     LicenseManager, LICENSE_MANAGER,
 };
 
@@ -193,11 +191,11 @@ impl State {
 }
 
 /// A workspace that stores reusable buffers.
-pub struct Workspace<P: AtomSet = Linear> {
-    atom_stack: Stack<Atom<P>>,
+pub struct Workspace {
+    atom_stack: Stack<Atom>,
 }
 
-impl<P: AtomSet> Workspace<P> {
+impl Workspace {
     pub fn new() -> Self {
         LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
@@ -207,26 +205,26 @@ impl<P: AtomSet> Workspace<P> {
     }
 
     #[inline]
-    pub fn new_atom(&self) -> BufferHandle<Atom<P>> {
+    pub fn new_atom(&self) -> BufferHandle<Atom> {
         self.atom_stack.get_buf_ref()
     }
 
     #[inline]
-    pub fn new_var(&self, id: Identifier) -> BufferHandle<Atom<P>> {
+    pub fn new_var(&self, id: Identifier) -> BufferHandle<Atom> {
         let mut owned = self.new_atom();
-        owned.to_var().set_from_id(id);
+        owned.to_var(id);
         owned
     }
 
     #[inline]
-    pub fn new_num<T: Into<Coefficient>>(&self, num: T) -> BufferHandle<Atom<P>> {
+    pub fn new_num<T: Into<Coefficient>>(&self, num: T) -> BufferHandle<Atom> {
         let mut owned = self.new_atom();
-        owned.to_num().set_from_coeff(num.into());
+        owned.to_num(num.into());
         owned
     }
 }
 
-impl Default for Workspace<Linear> {
+impl Default for Workspace {
     fn default() -> Self {
         Self {
             atom_stack: Stack::new(),
@@ -348,8 +346,8 @@ impl<'a, T: ResettableBuffer> Drop for BufferHandle<'a, T> {
     }
 }
 
-impl<'a, 'b, P: AtomSet> AsAtomView<'b, P> for &'b BufferHandle<'a, Atom<P>> {
-    fn as_atom_view(self) -> AtomView<'b, P> {
+impl<'a, 'b> AsAtomView<'b> for &'b BufferHandle<'a, Atom> {
+    fn as_atom_view(self) -> AtomView<'b> {
         self.as_view()
     }
 }

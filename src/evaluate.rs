@@ -3,33 +3,33 @@ use ahash::HashMap;
 use crate::{
     coefficient::CoefficientView,
     domains::{float::Real, rational::Rational},
-    representations::{Add, AtomSet, AtomView, Fun, Identifier, Mul, Num, Pow, Var},
+    representations::{AtomView, Identifier},
     state::State,
 };
 
-type EvalFnType<T, P> = Box<
+type EvalFnType<T> = Box<
     dyn Fn(
         &[T],
-        &HashMap<AtomView<'_, P>, T>,
-        &HashMap<Identifier, EvaluationFn<T, P>>,
-        &mut HashMap<AtomView<'_, P>, T>,
+        &HashMap<AtomView<'_>, T>,
+        &HashMap<Identifier, EvaluationFn<T>>,
+        &mut HashMap<AtomView<'_>, T>,
     ) -> T,
 >;
 
-pub struct EvaluationFn<T, P: AtomSet>(EvalFnType<T, P>);
+pub struct EvaluationFn<T>(EvalFnType<T>);
 
-impl<T, P: AtomSet> EvaluationFn<T, P> {
-    pub fn new(f: EvalFnType<T, P>) -> EvaluationFn<T, P> {
+impl<T> EvaluationFn<T> {
+    pub fn new(f: EvalFnType<T>) -> EvaluationFn<T> {
         EvaluationFn(f)
     }
 
     /// Get a reference to the function that can be called to evaluate it.
-    pub fn get(&self) -> &EvalFnType<T, P> {
+    pub fn get(&self) -> &EvalFnType<T> {
         &self.0
     }
 }
 
-impl<'a, P: AtomSet> AtomView<'a, P> {
+impl<'a> AtomView<'a> {
     /// Evaluate an expression using a constant map and a function map.
     /// The constant map can map any literal expression to a value, for example
     /// a variable or a function with fixed arguments.
@@ -37,9 +37,9 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
     /// All variables and all user functions in the expression must occur in the map.
     pub fn evaluate<T: Real + for<'b> From<&'b Rational>>(
         &self,
-        const_map: &HashMap<AtomView<'a, P>, T>,
-        function_map: &HashMap<Identifier, EvaluationFn<T, P>>,
-        cache: &mut HashMap<AtomView<'a, P>, T>,
+        const_map: &HashMap<AtomView<'a>, T>,
+        function_map: &HashMap<Identifier, EvaluationFn<T>>,
+        cache: &mut HashMap<AtomView<'a>, T>,
     ) -> T {
         if let Some(c) = const_map.get(self) {
             return *c;

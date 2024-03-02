@@ -3010,7 +3010,7 @@ impl PythonExpression {
             .collect())
     }
 
-    /// Evaluate the expression, using a map of all the variables and
+    /// Evaluate the expression, using a map of all the constants and
     /// user functions to a float.
     ///
     /// Examples
@@ -3022,16 +3022,30 @@ impl PythonExpression {
     /// >>> print(e.evaluate({x: 1}, {f: lambda args: args[0]+args[1]}))
     pub fn evaluate(
         &self,
-        vars: HashMap<Variable, f64>,
-        functions: HashMap<Variable, PyObject>,
-    ) -> f64 {
+        constants: HashMap<PythonExpression, f64>,
+        functions: HashMap<PythonExpression, PyObject>,
+    ) -> PyResult<f64> {
         let mut cache = HashMap::default();
+
+        let constants = constants
+            .iter()
+            .map(|(k, v)| (k.expr.as_view(), *v))
+            .collect();
 
         let functions = functions
             .into_iter()
             .map(|(k, v)| {
-                (
-                    k,
+                let id = if let AtomView::Var(v) = k.expr.as_view() {
+                    v.get_name()
+                } else {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Expected function name instead of {:?}",
+                        k.expr
+                    )))?
+                };
+
+                Ok((
+                    id,
                     EvaluationFn::new(Box::new(move |args, _, _, _| {
                         Python::with_gil(|py| {
                             v.call(py, (args.to_vec(),), None)
@@ -3040,11 +3054,14 @@ impl PythonExpression {
                                 .expect("Function does not return a float")
                         })
                     })),
-                )
+                ))
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
-        self.expr.as_view().evaluate(&vars, &functions, &mut cache)
+        Ok(self
+            .expr
+            .as_view()
+            .evaluate(&constants, &functions, &mut cache))
     }
 
     /// Evaluate the expression, using a map of all the variables and
@@ -3059,16 +3076,30 @@ impl PythonExpression {
     pub fn evaluate_complex<'py>(
         &self,
         py: Python<'py>,
-        vars: HashMap<Variable, Complex<f64>>,
-        functions: HashMap<Variable, PyObject>,
-    ) -> &'py PyComplex {
+        constants: HashMap<PythonExpression, Complex<f64>>,
+        functions: HashMap<PythonExpression, PyObject>,
+    ) -> PyResult<&'py PyComplex> {
         let mut cache = HashMap::default();
+
+        let constants = constants
+            .iter()
+            .map(|(k, v)| (k.expr.as_view(), *v))
+            .collect();
 
         let functions = functions
             .into_iter()
             .map(|(k, v)| {
-                (
-                    k,
+                let id = if let AtomView::Var(v) = k.expr.as_view() {
+                    v.get_name()
+                } else {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Expected function name instead of {:?}",
+                        k.expr
+                    )))?
+                };
+
+                Ok((
+                    id,
                     EvaluationFn::new(Box::new(move |args: &[Complex<f64>], _, _, _| {
                         Python::with_gil(|py| {
                             v.call(
@@ -3084,12 +3115,15 @@ impl PythonExpression {
                             .expect("Function does not return a complex number")
                         })
                     })),
-                )
+                ))
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
-        let r = self.expr.as_view().evaluate(&vars, &functions, &mut cache);
-        PyComplex::from_doubles(py, r.re, r.im)
+        let r = self
+            .expr
+            .as_view()
+            .evaluate(&constants, &functions, &mut cache);
+        Ok(PyComplex::from_doubles(py, r.re, r.im))
     }
 }
 

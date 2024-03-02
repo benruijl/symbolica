@@ -790,7 +790,7 @@ class Expression:
         """
 
     def evaluate(
-        self, vars: dict[Expression, float], funs: dict[Expression | Function, Callable[[Sequence[float]], float]]
+        self, constants: dict[Expression, float], funs: dict[Expression | Function, Callable[[Sequence[float]], float]]
     ) -> float:
         """Evaluate the expression, using a map of all the variables and
         user functions to a float.
@@ -805,7 +805,7 @@ class Expression:
         """
 
     def evaluate_complex(
-        self, vars: dict[Expression, float | complex], funs: dict[Expression | Function, Callable[[Sequence[complex]], float | complex]]
+        self, constants: dict[Expression, float | complex], funs: dict[Expression | Function, Callable[[Sequence[complex]], float | complex]]
     ) -> complex:
         """Evaluate the expression, using a map of all the variables and
         user functions to a complex number.

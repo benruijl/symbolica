@@ -16,8 +16,8 @@ const NUM_ID: u8 = 1;
 const VAR_ID: u8 = 2;
 const FUN_ID: u8 = 3;
 const MUL_ID: u8 = 4;
-const POW_ID: u8 = 5;
-const ADD_ID: u8 = 6;
+const POW_ID: u8 = 6;
+const ADD_ID: u8 = 5;
 const TYPE_MASK: u8 = 0b00000111;
 const DIRTY_FLAG: u8 = 0b10000000;
 const HAS_COEFF_FLAG: u8 = 0b01000000;
@@ -1115,45 +1115,38 @@ impl<'a> Iterator for ListIterator<'a> {
         let mut skip_count = 1;
         loop {
             match cur_id {
-                VAR_ID => {
+                NUM_ID | VAR_ID => {
                     self.data = self.data.skip_rational();
                 }
-                NUM_ID => {
-                    self.data = self.data.skip_rational();
-                }
-                FUN_ID => {
+                FUN_ID | MUL_ID | ADD_ID => {
                     let n_size = self.data.get_u32_le();
                     self.data.advance(n_size as usize);
                 }
                 POW_ID => {
                     skip_count += 2;
                 }
-                MUL_ID | ADD_ID => {
-                    let n_size = self.data.get_u32_le();
-                    self.data.advance(n_size as usize);
-                }
-                x => unreachable!("Bad id {}", x),
+                _ => unreachable!("Bad id"),
             }
 
             skip_count -= 1;
 
             if skip_count == 0 {
                 break;
-            } else {
-                cur_id = self.data.get_u8() & TYPE_MASK;
             }
+
+            cur_id = self.data.get_u8() & TYPE_MASK;
         }
 
         let len = unsafe { self.data.as_ptr().offset_from(start.as_ptr()) } as usize;
 
         let data = unsafe { start.get_unchecked(..len) };
         match start_id {
-            VAR_ID => Some(AtomView::Var(VarView { data })),
             NUM_ID => Some(AtomView::Num(NumView { data })),
+            VAR_ID => Some(AtomView::Var(VarView { data })),
             FUN_ID => Some(AtomView::Fun(FunView { data })),
-            POW_ID => Some(AtomView::Pow(PowView { data })),
             MUL_ID => Some(AtomView::Mul(MulView { data })),
             ADD_ID => Some(AtomView::Add(AddView { data })),
+            POW_ID => Some(AtomView::Pow(PowView { data })),
             x => unreachable!("Bad id {}", x),
         }
     }
@@ -1168,32 +1161,25 @@ pub struct ListSlice<'a> {
 
 impl<'a> ListSlice<'a> {
     #[inline(always)]
-    fn skip_one(mut pos: &[u8]) -> &[u8] {
+    fn skip(mut pos: &[u8], n: u32) -> &[u8] {
         // store how many more atoms to read
         // can be used instead of storing the byte length of an atom
-        let mut skip_count = 1u32;
+        let mut skip_count = n;
         while skip_count > 0 {
             skip_count -= 1;
 
             match pos.get_u8() & TYPE_MASK {
-                VAR_ID => {
+                NUM_ID | VAR_ID => {
                     pos = pos.skip_rational();
                 }
-                NUM_ID => {
-                    pos = pos.skip_rational();
-                }
-                FUN_ID => {
+                FUN_ID | MUL_ID | ADD_ID => {
                     let n_size = pos.get_u32_le();
                     pos.advance(n_size as usize);
                 }
                 POW_ID => {
                     skip_count += 2;
                 }
-                MUL_ID | ADD_ID => {
-                    let n_size = pos.get_u32_le();
-                    pos.advance(n_size as usize);
-                }
-                x => unreachable!("Bad id {}", x),
+                _ => unreachable!("Bad id"),
             }
         }
         pos
@@ -1202,9 +1188,7 @@ impl<'a> ListSlice<'a> {
     fn fast_forward(&self, index: usize) -> ListSlice<'a> {
         let mut pos = self.data;
 
-        for _ in 0..index {
-            pos = Self::skip_one(pos);
-        }
+        pos = Self::skip(pos, index as u32);
 
         ListSlice {
             data: pos,
@@ -1215,18 +1199,18 @@ impl<'a> ListSlice<'a> {
 
     fn get_entry(start: &'a [u8]) -> (AtomView<'a>, &[u8]) {
         let start_id = start[0] & TYPE_MASK;
-        let end = Self::skip_one(start);
+        let end = Self::skip(start, 1);
         let len = unsafe { end.as_ptr().offset_from(start.as_ptr()) } as usize;
 
         let data = unsafe { start.get_unchecked(..len) };
         (
             match start_id {
-                VAR_ID => AtomView::Var(VarView { data }),
                 NUM_ID => AtomView::Num(NumView { data }),
+                VAR_ID => AtomView::Var(VarView { data }),
                 FUN_ID => AtomView::Fun(FunView { data }),
-                POW_ID => AtomView::Pow(PowView { data }),
                 MUL_ID => AtomView::Mul(MulView { data }),
                 ADD_ID => AtomView::Add(AddView { data }),
+                POW_ID => AtomView::Pow(PowView { data }),
                 x => unreachable!("Bad id {}", x),
             },
             end,
@@ -1250,9 +1234,7 @@ impl<'a> ListSlice<'a> {
         let start = self.fast_forward(range.start);
 
         let mut s = start.data;
-        for _ in 0..range.len() {
-            s = Self::skip_one(s);
-        }
+        s = Self::skip(s, range.len() as u32);
 
         let len = unsafe { s.as_ptr().offset_from(start.data.as_ptr()) } as usize;
         ListSlice {

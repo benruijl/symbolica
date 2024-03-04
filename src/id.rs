@@ -2,7 +2,7 @@ use dyn_clone::DynClone;
 
 use crate::{
     representations::{default::ListSlice, Atom, AtomView, Identifier, Num, SliceType},
-    state::{FunctionAttribute::Symmetric, ResettableBuffer, State, Workspace},
+    state::{ResettableBuffer, State, Workspace},
     transformer::{Transformer, TransformerError},
 };
 
@@ -10,7 +10,7 @@ use crate::{
 pub enum Pattern {
     Literal(Atom),
     Wildcard(Identifier),
-    Fn(Identifier, bool, Vec<Pattern>), // bool signifies that the identifier is a wildcard
+    Fn(Identifier, Vec<Pattern>),
     Pow(Box<[Pattern; 2]>),
     Mul(Vec<Pattern>),
     Add(Vec<Pattern>),
@@ -194,7 +194,9 @@ impl Pattern {
     #[inline]
     pub fn could_match(&self, target: AtomView) -> bool {
         match (self, target) {
-            (Pattern::Fn(f1, wc, _), AtomView::Fun(f2)) => *wc || *f1 == f2.get_name(),
+            (Pattern::Fn(f1, _), AtomView::Fun(f2)) => {
+                f1.get_wildcard_level() > 0 || *f1 == f2.get_id()
+            }
             (Pattern::Mul(_), AtomView::Mul(_)) => true,
             (Pattern::Add(_), AtomView::Add(_)) => true,
             (Pattern::Wildcard(_), _) => true,
@@ -206,17 +208,17 @@ impl Pattern {
     }
 
     /// Check if the expression `atom` contains a wildcard.
-    fn has_wildcard(atom: AtomView<'_>, state: &State) -> bool {
+    fn has_wildcard(atom: AtomView<'_>) -> bool {
         match atom {
             AtomView::Num(_) => false,
-            AtomView::Var(v) => state.get_wildcard_level(v.get_name()) > 0,
+            AtomView::Var(v) => v.get_wildcard_level() > 0,
             AtomView::Fun(f) => {
-                if state.get_wildcard_level(f.get_name()) > 0 {
+                if f.get_id().get_wildcard_level() > 0 {
                     return true;
                 }
 
                 for arg in f.iter() {
-                    if Self::has_wildcard(arg, state) {
+                    if Self::has_wildcard(arg) {
                         return true;
                     }
                 }
@@ -225,11 +227,11 @@ impl Pattern {
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
-                Self::has_wildcard(base, state) || Self::has_wildcard(exp, state)
+                Self::has_wildcard(base) || Self::has_wildcard(exp)
             }
             AtomView::Mul(m) => {
                 for child in m.iter() {
-                    if Self::has_wildcard(child, state) {
+                    if Self::has_wildcard(child) {
                         return true;
                     }
                 }
@@ -237,7 +239,7 @@ impl Pattern {
             }
             AtomView::Add(a) => {
                 for child in a.iter() {
-                    if Self::has_wildcard(child, state) {
+                    if Self::has_wildcard(child) {
                         return true;
                     }
                 }
@@ -249,20 +251,20 @@ impl Pattern {
     /// Create a pattern from an atom view.
     fn from_view(atom: AtomView<'_>, state: &State, is_top_layer: bool) -> Pattern {
         // split up Add and Mul for literal patterns as well so that x+y can match to x+y+z
-        if Self::has_wildcard(atom, state)
+        if Self::has_wildcard(atom)
             || is_top_layer && matches!(atom, AtomView::Mul(_) | AtomView::Add(_))
         {
             match atom {
-                AtomView::Var(v) => Pattern::Wildcard(v.get_name()),
+                AtomView::Var(v) => Pattern::Wildcard(v.get_id()),
                 AtomView::Fun(f) => {
-                    let name = f.get_name();
+                    let name = f.get_id();
 
                     let mut args = Vec::with_capacity(f.get_nargs());
                     for arg in f.iter() {
                         args.push(Self::from_view(arg, state, false));
                     }
 
-                    Pattern::Fn(name, state.get_wildcard_level(name) > 0, args)
+                    Pattern::Fn(name, args)
                 }
                 AtomView::Pow(p) => {
                     let (base, exp) = p.get_base_exp();
@@ -311,11 +313,11 @@ impl Pattern {
                 if let Some(w) = match_stack.get(*name) {
                     w.to_atom(out);
                 } else {
-                    panic!("Unsubstituted wildcard {}", name.to_u32());
+                    panic!("Unsubstituted wildcard {}", name.get_id());
                 }
             }
-            Pattern::Fn(mut name, is_wildcard, args) => {
-                if *is_wildcard {
+            Pattern::Fn(mut name, args) => {
+                if name.get_wildcard_level() > 0 {
                     if let Some(w) = match_stack.get(name) {
                         if let Match::FunctionName(fname) = w {
                             name = *fname
@@ -323,7 +325,7 @@ impl Pattern {
                             unreachable!("Wildcard must be a function name")
                         }
                     } else {
-                        panic!("Unsubstituted wildcard {}", name.to_u32());
+                        panic!("Unsubstituted wildcard {}", name.get_id());
                     }
                 }
 
@@ -355,7 +357,7 @@ impl Pattern {
 
                             continue;
                         } else {
-                            panic!("Unsubstituted wildcard {}", name.to_u32());
+                            panic!("Unsubstituted wildcard {}", name.get_id());
                         }
                     }
 
@@ -389,7 +391,7 @@ impl Pattern {
 
                             continue;
                         } else {
-                            panic!("Unsubstituted wildcard {}", w.to_u32());
+                            panic!("Unsubstituted wildcard {}", w.get_id());
                         }
                     }
 
@@ -430,7 +432,7 @@ impl Pattern {
 
                             continue;
                         } else {
-                            panic!("Unsubstituted wildcard {}", w.to_u32());
+                            panic!("Unsubstituted wildcard {}", w.get_id());
                         }
                     }
 
@@ -469,7 +471,7 @@ impl Pattern {
 
                             continue;
                         } else {
-                            panic!("Unsubstituted wildcard {}", w.to_u32());
+                            panic!("Unsubstituted wildcard {}", w.get_id());
                         }
                     }
 
@@ -608,7 +610,7 @@ impl Pattern {
         // no match found at this level, so check the children
         let submatch = match target {
             AtomView::Fun(f) => {
-                let out = out.to_fun(f.get_name());
+                let out = out.to_fun(f.get_id());
 
                 let mut submatch = false;
 
@@ -703,12 +705,7 @@ impl std::fmt::Debug for Pattern {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Wildcard(arg0) => f.debug_tuple("Wildcard").field(arg0).finish(),
-            Self::Fn(arg0, arg1, arg2) => f
-                .debug_tuple("Fn")
-                .field(arg0)
-                .field(arg1)
-                .field(arg2)
-                .finish(),
+            Self::Fn(arg0, arg1) => f.debug_tuple("Fn").field(arg0).field(arg1).finish(),
             Self::Pow(arg0) => f.debug_tuple("Pow").field(arg0).finish(),
             Self::Mul(arg0) => f.debug_tuple("Mul").field(arg0).finish(),
             Self::Add(arg0) => f.debug_tuple("Add").field(arg0).finish(),
@@ -909,7 +906,7 @@ impl Condition<WildcardAndRestriction> {
                     }
                     PatternRestriction::IsLiteralWildcard(wc) => {
                         if let Match::Single(AtomView::Var(v)) = value {
-                            (wc == &v.get_name()).into()
+                            (wc == &v.get_id()).into()
                         } else {
                             false.into()
                         }
@@ -1187,8 +1184,8 @@ impl<'a, 'b> MatchStack<'a, 'b> {
 
     /// Get the range of an identifier based on previous matches and based
     /// on conditions.
-    pub fn get_range(&self, identifier: Identifier, state: &State) -> (usize, Option<usize>) {
-        if state.get_wildcard_level(identifier) == 0 {
+    pub fn get_range(&self, identifier: Identifier) -> (usize, Option<usize>) {
+        if identifier.get_wildcard_level() == 0 {
             return (1, Some(1));
         }
 
@@ -1216,7 +1213,7 @@ impl<'a, 'b> MatchStack<'a, 'b> {
 
         let (minimal, maximal) = self.conditions.get_range_hint(identifier);
 
-        match state.get_wildcard_level(identifier) {
+        match identifier.get_wildcard_level() {
             1 => (minimal.unwrap_or(1), Some(maximal.unwrap_or(1))), // x_
             2 => (minimal.unwrap_or(1), maximal),                    // x__
             _ => (minimal.unwrap_or(0), maximal),                    // x___
@@ -1249,7 +1246,6 @@ enum PatternIter<'a, 'b> {
     Fn(
         Option<usize>,
         Identifier,
-        bool,
         &'b [Pattern],
         Box<Option<SubSliceIterator<'a, 'b>>>,
     ), // index first
@@ -1295,7 +1291,7 @@ impl<'a, 'b> AtomMatchIterator<'a, 'b> {
             self.try_match_atom = false;
 
             if let Pattern::Wildcard(w) = self.pattern {
-                let range = match_stack.get_range(*w, self.state);
+                let range = match_stack.get_range(*w);
                 if range.0 <= 1 && range.1.map(|w| w >= 1).unwrap_or(true) {
                     // TODO: any problems with matching Single vs a list?
                     if let Some(new_stack_len) = match_stack.insert(*w, Match::Single(self.target))
@@ -1406,7 +1402,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
         let min_length: usize = pat_list
             .iter()
             .map(|x| match x {
-                Pattern::Wildcard(id) => match_stack.get_range(*id, state).0,
+                Pattern::Wildcard(id) => match_stack.get_range(*id).0,
                 _ => 1,
             })
             .sum();
@@ -1462,7 +1458,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
         let min_length: usize = pattern
             .iter()
             .map(|x| match x {
-                Pattern::Wildcard(id) => match_stack.get_range(*id, state).0,
+                Pattern::Wildcard(id) => match_stack.get_range(*id).0,
                 _ => 1,
             })
             .sum();
@@ -1474,9 +1470,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
         let max_length: usize = pattern
             .iter()
             .map(|x| match x {
-                Pattern::Wildcard(id) => {
-                    match_stack.get_range(*id, state).1.unwrap_or(target.len())
-                }
+                Pattern::Wildcard(id) => match_stack.get_range(*id).1.unwrap_or(target.len()),
                 _ => 1,
             })
             .sum();
@@ -1534,7 +1528,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                 let it = match &self.pattern[self.iterators.len()] {
                     Pattern::Wildcard(name) => {
                         let mut size_left = self.used_flag.iter().filter(|x| !*x).count();
-                        let range = match_stack.get_range(*name, self.state);
+                        let range = match_stack.get_range(*name);
 
                         if self.do_not_match_entire_slice {
                             size_left -= 1;
@@ -1556,7 +1550,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                             let mut new_max = size_left;
                             for p in &self.pattern[self.iterators.len() + 1..] {
                                 let p_range = if let Pattern::Wildcard(name) = p {
-                                    match_stack.get_range(*name, self.state)
+                                    match_stack.get_range(*name)
                                 } else {
                                     (1, Some(1))
                                 };
@@ -1602,9 +1596,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                             greedy,
                         })
                     }
-                    Pattern::Fn(name, is_wildcard, args) => {
-                        PatternIter::Fn(None, *name, *is_wildcard, args, Box::new(None))
-                    }
+                    Pattern::Fn(name, args) => PatternIter::Fn(None, *name, args, Box::new(None)),
                     Pattern::Pow(base_exp) => PatternIter::Sequence(
                         None,
                         SliceType::Pow,
@@ -1739,7 +1731,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                         wildcard_forward_pass = false;
                     }
                 }
-                PatternIter::Fn(index, name, is_wildcard, args, s) => {
+                PatternIter::Fn(index, name, args, s) => {
                     let mut tried_first_option = false;
 
                     // query an existing iterator
@@ -1750,7 +1742,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                 self.matches.push(x);
                                 continue 'next_match;
                             } else {
-                                if *is_wildcard {
+                                if name.get_wildcard_level() > 0 {
                                     // pop the matched name and truncate the stack
                                     // we cannot wait until the truncation at the start of 'next_match
                                     // as we will try to match this iterator to a new index
@@ -1780,8 +1772,8 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                         tried_first_option = true;
 
                         if let AtomView::Fun(f) = self.target.get(ii) {
-                            let target_name = f.get_name();
-                            let name_match = if *is_wildcard {
+                            let target_name = f.get_id();
+                            let name_match = if name.get_wildcard_level() > 0 {
                                 if let Some(new_stack_len) =
                                     match_stack.insert(*name, Match::FunctionName(target_name))
                                 {
@@ -1792,13 +1784,10 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                     continue;
                                 }
                             } else {
-                                f.get_name() == *name
+                                f.get_id() == *name
                             };
 
-                            let ordered = !self
-                                .state
-                                .get_function_attributes(target_name)
-                                .contains(&Symmetric);
+                            let ordered = !name.is_antisymmetric() && !name.is_symmetric();
 
                             if name_match {
                                 let mut it = SubSliceIterator::from_list(
@@ -1819,7 +1808,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                     continue 'next_match;
                                 }
 
-                                if *is_wildcard {
+                                if name.get_wildcard_level() > 0 {
                                     // pop the matched name and truncate the stack
                                     // we cannot wait until the truncation at the start of 'next_match
                                     // as we will try to match this iterator to a new index
@@ -2098,7 +2087,7 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                 AtomView::Fun(f) => {
                     let slice = f.to_slice();
 
-                    let out = out.to_fun(f.get_name());
+                    let out = out.to_fun(f.get_id());
 
                     for (index, arg) in slice.iter().enumerate() {
                         if index == *first {

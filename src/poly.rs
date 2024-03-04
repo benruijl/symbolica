@@ -417,12 +417,12 @@ impl<'a> AtomView<'a> {
                     _ => Ok(()),
                 },
                 AtomView::Var(v) => {
-                    let name = v.get_name();
+                    let name = v.get_id();
                     if !vars.contains(&name.into()) {
                         if !allow_new_vars {
                             return Err("Expression contains variable that is not in variable map");
                         } else {
-                            vars.push(v.get_name().into());
+                            vars.push(v.get_id().into());
                         }
                     }
                     Ok(())
@@ -432,14 +432,14 @@ impl<'a> AtomView<'a> {
                     let (base, exp) = p.get_base_exp();
                     match base {
                         AtomView::Var(v) => {
-                            let name = v.get_name();
+                            let name = v.get_id();
                             if !vars.contains(&name.into()) {
                                 if !allow_new_vars {
                                     return Err(
                                         "Expression contains variable that is not in variable map",
                                     );
                                 } else {
-                                    vars.push(v.get_name().into());
+                                    vars.push(v.get_id().into());
                                 }
                             }
                         }
@@ -525,7 +525,7 @@ impl<'a> AtomView<'a> {
                     );
                 }
                 AtomView::Var(v) => {
-                    let id = v.get_name();
+                    let id = v.get_id();
                     exponents[vars.iter().position(|v| *v == id.into()).unwrap()] += E::one();
                 }
                 AtomView::Pow(p) => {
@@ -533,7 +533,7 @@ impl<'a> AtomView<'a> {
 
                     let var_index = match base {
                         AtomView::Var(v) => {
-                            let id = v.get_name();
+                            let id = v.get_id();
                             vars.iter().position(|v| *v == id.into()).unwrap()
                         }
                         _ => unreachable!(),
@@ -875,7 +875,7 @@ impl<'a> AtomView<'a> {
                     if let AtomView::Num(n) = arg {
                         if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
                             if n >= 0 {
-                                let id = Variable::Array(f.get_name(), n as usize);
+                                let id = Variable::Array(f.get_id(), n as usize);
                                 let mut r = MultivariatePolynomial::new(
                                     1,
                                     field,
@@ -972,7 +972,7 @@ impl<'a> AtomView<'a> {
                     if let AtomView::Num(n) = arg {
                         if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
                             if n >= 0 {
-                                let id = Variable::Array(f.get_name(), n as usize);
+                                let id = Variable::Array(f.get_id(), n as usize);
                                 let mut r = MultivariatePolynomial::new(
                                     1,
                                     field,
@@ -986,7 +986,7 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                let id = Variable::Function(f.get_name(), Arc::new(self.to_owned()));
+                let id = Variable::Function(f.get_id(), Arc::new(self.to_owned()));
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                 r.append_monomial(field.one(), &[E::one()]);
@@ -1309,7 +1309,7 @@ impl<'a> AtomView<'a> {
                 }
             }
             AtomView::Fun(f) => {
-                let id = Variable::Function(f.get_name(), Arc::new(self.to_owned()));
+                let id = Variable::Function(f.get_id(), Arc::new(self.to_owned()));
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                 r.append_monomial(field.one(), &[E::one()]);
@@ -1440,7 +1440,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
             .to_expression(workspace, state, map, &mut poly);
 
         let mut pow_h = workspace.new_atom();
-        let pow = pow_h.to_pow(poly.as_view(), workspace.new_num(-1).as_view());
+        pow_h.to_pow(poly.as_view(), workspace.new_num(-1).as_view());
         mul.extend(pow_h.as_view());
 
         let mut norm = workspace.new_atom();

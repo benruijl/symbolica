@@ -18,29 +18,73 @@ use self::default::{FunView, RawAtom};
 /// An identifier, for example for a variable or function.
 /// Should be created using `get_or_insert` of `State`.
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Identifier(u32);
+pub struct Identifier {
+    id: u32,
+    wildcard_level: u8,
+    is_symmetric: bool,
+    is_antisymmetric: bool,
+    is_linear: bool,
+}
 
 impl Identifier {
-    pub(crate) const fn init(value: u32) -> Self {
-        Identifier(value)
+    /// Create a new identifier for a variable. This constructor should be used with care as there are no checks
+    /// about the validity of the identifier.
+    pub const fn init_var(id: u32, wildcard_level: u8) -> Self {
+        Identifier {
+            id,
+            wildcard_level,
+            is_symmetric: false,
+            is_antisymmetric: false,
+            is_linear: false,
+        }
+    }
+
+    /// Create a new identifier for a function. This constructor should be used with care as there are no checks
+    /// about the validity of the identifier.
+    pub const fn init_fn(
+        id: u32,
+        wildcard_level: u8,
+        is_symmetric: bool,
+        is_antisymmetric: bool,
+        is_linear: bool,
+    ) -> Self {
+        Identifier {
+            id,
+            wildcard_level,
+            is_symmetric,
+            is_antisymmetric,
+            is_linear,
+        }
+    }
+
+    pub fn get_id(&self) -> u32 {
+        self.id
+    }
+
+    pub fn get_wildcard_level(&self) -> u8 {
+        self.wildcard_level
+    }
+
+    pub fn is_symmetric(&self) -> bool {
+        self.is_symmetric
+    }
+
+    pub fn is_antisymmetric(&self) -> bool {
+        self.is_antisymmetric
+    }
+
+    pub fn is_linear(&self) -> bool {
+        self.is_linear
     }
 }
 
 impl std::fmt::Debug for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}", self.0))
-    }
-}
-
-impl From<u32> for Identifier {
-    fn from(value: u32) -> Self {
-        Identifier(value)
-    }
-}
-
-impl Identifier {
-    pub fn to_u32(&self) -> u32 {
-        self.0
+        f.write_fmt(format_args!("{}", self.id))?;
+        for _ in 0..self.wildcard_level {
+            f.write_str("_")?;
+        }
+        Ok(())
     }
 }
 
@@ -308,7 +352,7 @@ impl<'a> AtomView<'a> {
         exp: AtomView<'_>,
     ) -> BufferHandle<'b, Atom> {
         let mut e = workspace.new_atom();
-        let a = e.to_pow(*self, exp);
+        e.to_pow(*self, exp);
         e
     }
 

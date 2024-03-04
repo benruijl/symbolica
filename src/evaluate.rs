@@ -56,15 +56,15 @@ impl<'a> AtomView<'a> {
                     "Rational polynomial coefficient not yet supported for evaluation"
                 ),
             },
-            AtomView::Var(v) => panic!("Variable id {:?} not in constant map", v.get_name()),
+            AtomView::Var(v) => panic!("Variable id {:?} not in constant map", v.get_id()),
             AtomView::Fun(f) => {
-                let name = f.get_name();
+                let name = f.get_id();
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
                     let arg_eval = arg.evaluate(const_map, function_map, cache);
 
-                    return match f.get_name() {
+                    return match f.get_id() {
                         State::EXP => arg_eval.exp(),
                         State::LOG => arg_eval.log(),
                         State::SIN => arg_eval.sin(),
@@ -83,8 +83,8 @@ impl<'a> AtomView<'a> {
                     args.push(arg.evaluate(const_map, function_map, cache));
                 }
 
-                let Some(fun) = function_map.get(&f.get_name()) else {
-                    panic!("Missing function with id {:?}", f.get_name()); // TODO: use state to get name
+                let Some(fun) = function_map.get(&f.get_id()) else {
+                    panic!("Missing function with id {:?}", f.get_id()); // TODO: use state to get name
                 };
                 let eval = fun.get()(&args, const_map, function_map, cache);
 

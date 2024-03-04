@@ -28,10 +28,8 @@ pub enum FunctionAttribute {
 /// A global state, that stores mappings from variable and function names to ids.
 #[derive(Clone)]
 pub struct State {
-    // get variable maps from here
-    str_to_var_id: HashMap<String, Identifier>,
-    function_attributes: HashMap<Identifier, Vec<FunctionAttribute>>,
-    var_info: Vec<(String, usize)>,
+    str_to_id: HashMap<String, Identifier>,
+    id_to_str: Vec<String>, // TODO: make static FrozenVec
     finite_fields: Vec<FiniteField<u64>>,
 }
 
@@ -42,17 +40,17 @@ impl Default for State {
 }
 
 impl State {
-    pub const ARG: Identifier = Identifier::init(0);
-    pub const COEFF: Identifier = Identifier::init(1);
-    pub const EXP: Identifier = Identifier::init(2);
-    pub const LOG: Identifier = Identifier::init(3);
-    pub const SIN: Identifier = Identifier::init(4);
-    pub const COS: Identifier = Identifier::init(5);
-    pub const SQRT: Identifier = Identifier::init(6);
-    pub const DERIVATIVE: Identifier = Identifier::init(7);
-    pub const E: Identifier = Identifier::init(8);
-    pub const I: Identifier = Identifier::init(9);
-    pub const PI: Identifier = Identifier::init(10);
+    pub const ARG: Identifier = Identifier::init_fn(0, 0, false, false, false);
+    pub const COEFF: Identifier = Identifier::init_fn(1, 0, false, false, false);
+    pub const EXP: Identifier = Identifier::init_fn(2, 0, false, false, false);
+    pub const LOG: Identifier = Identifier::init_fn(3, 0, false, false, false);
+    pub const SIN: Identifier = Identifier::init_fn(4, 0, false, false, false);
+    pub const COS: Identifier = Identifier::init_fn(5, 0, false, false, false);
+    pub const SQRT: Identifier = Identifier::init_fn(6, 0, false, false, false);
+    pub const DERIVATIVE: Identifier = Identifier::init_fn(7, 0, false, false, false);
+    pub const E: Identifier = Identifier::init_var(8, 0);
+    pub const I: Identifier = Identifier::init_var(9, 0);
+    pub const PI: Identifier = Identifier::init_var(10, 0);
 
     pub const BUILTIN_VAR_LIST: [&'static str; 11] = [
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
@@ -62,9 +60,8 @@ impl State {
         LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
         let mut state = State {
-            str_to_var_id: HashMap::new(),
-            function_attributes: HashMap::new(),
-            var_info: vec![],
+            str_to_id: HashMap::new(),
+            id_to_str: vec![],
             finite_fields: vec![],
         };
 
@@ -77,22 +74,21 @@ impl State {
 
     /// Iterate over all defined symbols.
     pub fn symbol_iter(&self) -> impl Iterator<Item = &str> {
-        self.var_info.iter().map(|(s, _)| s.as_str())
+        self.id_to_str.iter().map(|s| s.as_str())
     }
 
     /// Returns `true` iff this identifier is defined by Symbolica.
     pub fn is_builtin(id: Identifier) -> bool {
-        id.to_u32() < Self::BUILTIN_VAR_LIST.len() as u32
+        id.get_id() < Self::BUILTIN_VAR_LIST.len() as u32
     }
 
-    // note: could be made immutable by using frozen collections
     /// Get the id for a certain name if the name is already registered,
     /// else register it and return a new id.
     pub fn get_or_insert_var<S: AsRef<str>>(&mut self, name: S) -> Identifier {
-        match self.str_to_var_id.entry(name.as_ref().into()) {
+        match self.str_to_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
-                if self.var_info.len() == u32::MAX as usize - 1 {
+                if self.id_to_str.len() == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
 
@@ -104,9 +100,9 @@ impl State {
                     wildcard_level += 1;
                 }
 
-                let new_id = Identifier::from(self.var_info.len() as u32);
+                let new_id = Identifier::init_var(self.id_to_str.len() as u32, wildcard_level);
                 v.insert(new_id);
-                self.var_info.push((name.as_ref().into(), wildcard_level));
+                self.id_to_str.push(name.as_ref().into());
                 new_id
             }
         }
@@ -122,19 +118,33 @@ impl State {
         name: S,
         attributes: Option<Vec<FunctionAttribute>>,
     ) -> Result<Identifier, String> {
-        match self.str_to_var_id.entry(name.as_ref().into()) {
+        match self.str_to_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
-                let old_attrib = self.function_attributes.get(&r);
 
-                if attributes.is_none() || attributes.as_ref() == old_attrib {
-                    Ok(r)
+                if let Some(attributes) = attributes {
+                    let new_id = Identifier::init_fn(
+                        r.get_id(),
+                        r.get_wildcard_level(),
+                        attributes.contains(&FunctionAttribute::Symmetric),
+                        attributes.contains(&FunctionAttribute::Antisymmetric),
+                        attributes.contains(&FunctionAttribute::Linear),
+                    );
+
+                    if r == new_id {
+                        Ok(r)
+                    } else {
+                        Err(
+                            format!("Function {} redefined with new attributes", name.as_ref())
+                                .into(),
+                        )
+                    }
                 } else {
-                    Err(format!("Function {} redefined with new attributes", name.as_ref()).into())
+                    Ok(r)
                 }
             }
             Entry::Vacant(v) => {
-                if self.var_info.len() == u32::MAX as usize - 1 {
+                if self.id_to_str.len() == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
 
@@ -146,32 +156,35 @@ impl State {
                     wildcard_level += 1;
                 }
 
-                let new_id = Identifier::from(self.var_info.len() as u32);
-                v.insert(new_id);
-                self.var_info.push((name.as_ref().into(), wildcard_level));
+                let new_id = if let Some(attributes) = attributes {
+                    Identifier::init_fn(
+                        self.id_to_str.len() as u32,
+                        wildcard_level,
+                        attributes.contains(&FunctionAttribute::Symmetric),
+                        attributes.contains(&FunctionAttribute::Antisymmetric),
+                        attributes.contains(&FunctionAttribute::Linear),
+                    )
+                } else {
+                    Identifier::init_fn(
+                        self.id_to_str.len() as u32,
+                        wildcard_level,
+                        false,
+                        false,
+                        false,
+                    )
+                };
 
-                self.function_attributes
-                    .insert(new_id, attributes.unwrap_or_default());
+                v.insert(new_id);
+                self.id_to_str.push(name.as_ref().into());
 
                 Ok(new_id)
             }
         }
     }
 
-    pub fn get_function_attributes(&self, id: Identifier) -> &[FunctionAttribute] {
-        self.function_attributes
-            .get(&id)
-            .map(|x| x.as_ref())
-            .unwrap_or(&[])
-    }
-
     /// Get the name for a given id.
     pub fn get_name(&self, id: Identifier) -> &String {
-        &self.var_info[id.to_u32() as usize].0
-    }
-
-    pub fn get_wildcard_level(&self, id: Identifier) -> usize {
-        self.var_info[id.to_u32() as usize].1
+        &self.id_to_str[id.get_id() as usize]
     }
 
     pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteField<u64> {

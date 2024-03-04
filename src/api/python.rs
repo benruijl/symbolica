@@ -51,7 +51,7 @@ use crate::{
     printer::{
         AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
     },
-    representations::{Atom, AtomView, Identifier, ListIterator},
+    representations::{Atom, AtomView, Fun, Identifier, ListIterator},
     state::{FunctionAttribute, ResettableBuffer, State, Workspace},
     streaming::TermStreamer,
     tensors::matrix::Matrix,
@@ -218,12 +218,12 @@ impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
             },
             AtomView::Var(v) => PythonAtomTree {
                 atom_type: PythonAtomType::Var,
-                head: Some(get_state!()?.get_name(v.get_name()).to_string()),
+                head: Some(get_state!()?.get_name(v.get_id()).to_string()),
                 tail: vec![],
             },
             AtomView::Fun(f) => PythonAtomTree {
                 atom_type: PythonAtomType::Fn,
-                head: Some(get_state!()?.get_name(f.get_name()).to_string()),
+                head: Some(get_state!()?.get_name(f.get_id()).to_string()),
                 tail: f.iter().map(|x| x.into()).collect::<Result<Vec<_>, _>>()?,
             },
             AtomView::Add(a) => PythonAtomTree {
@@ -455,7 +455,7 @@ impl PythonPattern {
             let id = match &*x.to_pattern()?.expr {
                 Pattern::Literal(x) => {
                     if let AtomView::Var(x) = x.as_view() {
-                        x.get_name()
+                        x.get_id()
                     } else {
                         return Err(exceptions::PyValueError::new_err(
                             "Derivative must be taken wrt a variable",
@@ -494,7 +494,7 @@ impl PythonPattern {
         let id = match &*function_name.to_pattern()?.expr {
             Pattern::Literal(x) => {
                 if let AtomView::Var(x) = x.as_view() {
-                    x.get_name()
+                    x.get_id()
                 } else {
                     return Err(exceptions::PyValueError::new_err(
                         "Derivative must be taken wrt a variable",
@@ -693,7 +693,7 @@ impl PythonPattern {
         let id = match &*x.to_pattern()?.expr {
             Pattern::Literal(x) => {
                 if let AtomView::Var(x) = x.as_view() {
-                    x.get_name()
+                    x.get_id()
                 } else {
                     return Err(exceptions::PyValueError::new_err(
                         "Derivative must be taken wrt a variable",
@@ -719,7 +719,7 @@ impl PythonPattern {
         depth: u32,
     ) -> PyResult<PythonPattern> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_id()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Derivative must be taken wrt a variable",
@@ -757,8 +757,8 @@ impl PythonPattern {
                     .iter()
                     .map(|x| match x.expr.as_view() {
                         AtomView::Var(v) => {
-                            let name = v.get_name();
-                            if get_state!()?.get_wildcard_level(name) == 0 {
+                            let name = v.get_id();
+                            if v.get_wildcard_level() == 0 {
                                 return Err(exceptions::PyTypeError::new_err(
                                     "Only wildcards can be restricted.",
                                 ));
@@ -1089,7 +1089,7 @@ impl<'a> FromPyObject<'a> for Identifier {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonExpression>() {
             match a.expr.as_view() {
-                AtomView::Var(v) => Ok(v.get_name()),
+                AtomView::Var(v) => Ok(v.get_id()),
                 e => Err(exceptions::PyValueError::new_err(format!(
                     "Expected variable instead of {:?}",
                     e
@@ -1143,8 +1143,8 @@ macro_rules! req_cmp {
 
         match $self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_id();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1185,8 +1185,8 @@ macro_rules! req_wc_cmp {
     ($self:ident,$other:ident,$cmp_any_atom:ident,$c:ident) => {{
         let id = match $self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_id();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1202,8 +1202,8 @@ macro_rules! req_wc_cmp {
 
         let other_id = match $other.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_id();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1544,60 +1544,13 @@ impl PythonExpression {
     pub fn get_name(&self) -> PyResult<Option<String>> {
         match self.expr.as_ref() {
             Atom::Var(v) => Ok(Some(
-                get_state!()?
-                    .get_name(v.to_var_view().get_name())
-                    .to_string(),
+                get_state!()?.get_name(v.to_var_view().get_id()).to_string(),
             )),
             Atom::Fun(f) => Ok(Some(
-                get_state!()?
-                    .get_name(f.to_fun_view().get_name())
-                    .to_string(),
+                get_state!()?.get_name(f.to_fun_view().get_id()).to_string(),
             )),
             _ => Ok(None),
         }
-    }
-
-    /// Create a wildcard from a variable name by appending a _
-    /// if none is present yet.
-    #[getter]
-    fn get_w(&self) -> PyResult<PythonExpression> {
-        let mut guard = get_state_mut!()?;
-        let state = guard.borrow_mut();
-        let mut var_name = match self.expr.as_view() {
-            AtomView::Var(v) => {
-                if state.get_wildcard_level(v.get_name()) > 0 {
-                    return Ok(self.clone());
-                } else {
-                    // create name with underscore
-                    state.get_name(v.get_name()).to_string()
-                }
-            }
-            AtomView::Fun(f) => {
-                if state.get_wildcard_level(f.get_name()) > 0 {
-                    return Ok(self.clone());
-                } else {
-                    // create name with underscore
-                    state.get_name(f.get_name()).to_string()
-                }
-            }
-            x => {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "Cannot convert to wildcard: {:?}",
-                    x
-                )));
-            }
-        };
-
-        // create name with underscore
-        var_name.push('_');
-
-        // TODO: check if the name meets the requirements
-        let id = state.get_or_insert_var(var_name);
-        let var = Atom::new_var(id);
-
-        Ok(PythonExpression {
-            expr: Arc::new(var),
-        })
     }
 
     /// Add this expression to `other`, returning the result.
@@ -1669,7 +1622,7 @@ impl PythonExpression {
             pow.to_num((-1).into());
 
             let mut e = workspace.new_atom();
-            let a = e.to_pow(rhs.to_expression().expr.as_view(), pow.get().as_view());
+            e.to_pow(rhs.to_expression().expr.as_view(), pow.get().as_view());
 
             let mut m = workspace.new_atom();
             let md = m.to_mul();
@@ -1708,7 +1661,7 @@ impl PythonExpression {
         let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
-            let a = e.to_pow(self.expr.as_view(), rhs.to_expression().expr.as_view());
+            e.to_pow(self.expr.as_view(), rhs.to_expression().expr.as_view());
 
             let mut b = Atom::new();
             e.get()
@@ -1821,8 +1774,8 @@ impl PythonExpression {
     ) -> PyResult<PythonPatternRestriction> {
         match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_id();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1855,8 +1808,8 @@ impl PythonExpression {
     pub fn req_type(&self, atom_type: PythonAtomType) -> PyResult<PythonPatternRestriction> {
         match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_id();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1890,8 +1843,8 @@ impl PythonExpression {
     pub fn req_lit(&self) -> PyResult<PythonPatternRestriction> {
         match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_id();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -2050,8 +2003,8 @@ impl PythonExpression {
     pub fn req(&self, filter_fn: PyObject) -> PyResult<PythonPatternRestriction> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_id();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -2201,8 +2154,8 @@ impl PythonExpression {
     ) -> PyResult<PythonPatternRestriction> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_id();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -2218,8 +2171,8 @@ impl PythonExpression {
 
         let other_id = match other.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_id();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -2352,7 +2305,7 @@ impl PythonExpression {
         let mut var_map = vec![];
         for v in vars {
             match v.expr.as_view() {
-                AtomView::Var(v) => var_map.push(v.get_name().into()),
+                AtomView::Var(v) => var_map.push(v.get_id().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
                         "Expected variable instead of {:?}",
@@ -2423,7 +2376,7 @@ impl PythonExpression {
         coeff_map: Option<PyObject>,
     ) -> PyResult<PythonExpression> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_id()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Collect must be done wrt a variable or function name",
@@ -2513,7 +2466,7 @@ impl PythonExpression {
         x: ConvertibleToExpression,
     ) -> PyResult<Vec<(PythonExpression, PythonExpression)>> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_id()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Coefficient list must be done wrt a variable or function name",
@@ -2560,7 +2513,7 @@ impl PythonExpression {
     /// Derive the expression w.r.t the variable `x`.
     pub fn derivative(&self, x: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_id()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Derivative must be taken wrt a variable",
@@ -2600,7 +2553,7 @@ impl PythonExpression {
         depth: u32,
     ) -> PyResult<PythonExpression> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_id()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Derivative must be taken wrt a variable",
@@ -2630,7 +2583,7 @@ impl PythonExpression {
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_name().into()),
+                    AtomView::Var(v) => var_map.push(v.get_id().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
                             "Expected variable instead of {:?}",
@@ -2687,7 +2640,7 @@ impl PythonExpression {
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_name().into()),
+                    AtomView::Var(v) => var_map.push(v.get_id().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
                             "Expected variable instead of {:?}",
@@ -2733,7 +2686,7 @@ impl PythonExpression {
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_name().into()),
+                    AtomView::Var(v) => var_map.push(v.get_id().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
                             "Expected variable instead of {:?}",
@@ -2898,8 +2851,8 @@ impl PythonExpression {
                     .iter()
                     .map(|x| match x.expr.as_view() {
                         AtomView::Var(v) => {
-                            let name = v.get_name();
-                            if get_state!()?.get_wildcard_level(name) == 0 {
+                            let name = v.get_id();
+                            if v.get_wildcard_level() == 0 {
                                 return Err(exceptions::PyTypeError::new_err(
                                     "Only wildcards can be restricted.",
                                 ));
@@ -2970,7 +2923,7 @@ impl PythonExpression {
         let mut vars = vec![];
         for v in variables {
             match v.expr.as_view() {
-                AtomView::Var(v) => vars.push(v.get_name().into()),
+                AtomView::Var(v) => vars.push(v.get_id().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
                         "Expected variable instead of {:?}",
@@ -3023,7 +2976,7 @@ impl PythonExpression {
             .into_iter()
             .map(|(k, v)| {
                 let id = if let AtomView::Var(v) = k.expr.as_view() {
-                    v.get_name()
+                    v.get_id()
                 } else {
                     Err(exceptions::PyValueError::new_err(format!(
                         "Expected function name instead of {:?}",
@@ -3077,7 +3030,7 @@ impl PythonExpression {
             .into_iter()
             .map(|(k, v)| {
                 let id = if let AtomView::Var(v) = k.expr.as_view() {
-                    v.get_name()
+                    v.get_id()
                 } else {
                     Err(exceptions::PyValueError::new_err(format!(
                         "Expected function name instead of {:?}",
@@ -3209,17 +3162,9 @@ impl PythonFunction {
         PythonFunction { id: State::LOG }
     }
 
-    #[getter]
-    fn get_w(&mut self) -> PythonFunction {
-        PythonFunction { id: self.id }
-    }
-
     /// Returns `True` iff this function is symmetric.
-    pub fn is_symmetric(&self) -> PyResult<bool> {
-        Ok(get_state!()?
-            .borrow_mut()
-            .get_function_attributes(self.id)
-            .contains(&FunctionAttribute::Symmetric))
+    pub fn is_symmetric(&self) -> bool {
+        self.id.is_symmetric()
     }
 
     /// Create a Symbolica expression or transformer by calling the function with appropriate arguments.
@@ -3278,7 +3223,7 @@ impl PythonFunction {
                 }
             }
 
-            let p = Pattern::Fn(self.id, state.get_wildcard_level(self.id) > 0, fn_args);
+            let p = Pattern::Fn(self.id, fn_args);
             Ok(PythonPattern { expr: Arc::new(p) }.into_py(py))
         }
     }
@@ -3940,10 +3885,25 @@ macro_rules! generate_methods {
                                 expr: Arc::new(Atom::new_var(*x)),
                             });
                         }
-                        _ => {
+                        Variable::Array(x, arg) => {
+                            let mut f = Atom::Fun(Fun::new(*x));
+                            if let Atom::Fun(f) = &mut f {
+                                f.add_arg(Atom::new_num(Integer::from(*arg as u64)).as_view());
+                            }
+
+                            var_list.push(PythonExpression {
+                                expr: Arc::new(f),
+                            });
+                        }
+                        Variable::Temporary(_) => {
                             Err(exceptions::PyValueError::new_err(format!(
                                 "Temporary variable in polynomial",
                             )))?;
+                        }
+                        Variable::Function(_, a) | Variable::Other(a) => {
+                            var_list.push(PythonExpression {
+                                expr: a.clone(),
+                            });
                         }
                     }
                 }
@@ -4098,7 +4058,7 @@ macro_rules! generate_methods {
             pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
                 let id = match x.expr.as_view() {
                     AtomView::Var(x) => {
-                        x.get_name()
+                        x.get_id()
                     }
                     _ => {
                         return Err(exceptions::PyValueError::new_err(
@@ -4145,7 +4105,7 @@ macro_rules! generate_methods {
             pub fn coefficient_list(&self, x: PythonExpression) -> PyResult<Vec<(usize, Self)>> {
                 let id = match x.expr.as_view() {
                     AtomView::Var(x) => {
-                        x.get_name()
+                        x.get_id()
                     }
                     _ => {
                         return Err(exceptions::PyValueError::new_err(
@@ -4181,7 +4141,7 @@ macro_rules! generate_methods {
             pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
                 let id = match x.expr.as_view() {
                     AtomView::Var(x) => {
-                        x.get_name()
+                        x.get_id()
                     }
                     _ => {
                         return Err(exceptions::PyValueError::new_err(
@@ -4452,10 +4412,25 @@ macro_rules! generate_rat_methods {
                                 expr: Arc::new(Atom::new_var(*x)),
                             });
                         }
-                        _ => {
+                        Variable::Array(x, arg) => {
+                            let mut f = Atom::Fun(Fun::new(*x));
+                            if let Atom::Fun(f) = &mut f {
+                                f.add_arg(Atom::new_num(Integer::from(*arg as u64)).as_view());
+                            }
+
+                            var_list.push(PythonExpression {
+                                expr: Arc::new(f),
+                            });
+                        }
+                        Variable::Temporary(_) => {
                             Err(exceptions::PyValueError::new_err(format!(
                                 "Temporary variable in polynomial",
                             )))?;
+                        }
+                        Variable::Function(_, a) | Variable::Other(a) => {
+                            var_list.push(PythonExpression {
+                                expr: a.clone(),
+                            });
                         }
                     }
                 }
@@ -4588,7 +4563,7 @@ macro_rules! generate_rat_methods {
             pub fn apart(&self, x: PythonExpression) -> PyResult<Vec<Self>> {
                 let id = match x.expr.as_view() {
                     AtomView::Var(x) => {
-                        x.get_name()
+                        x.get_id()
                     }
                     _ => {
                         return Err(exceptions::PyValueError::new_err(

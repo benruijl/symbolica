@@ -268,7 +268,6 @@ impl<'a> AtomView<'a> {
         // TODO: check if self or rhs is add
         a.extend(*self);
         a.extend(rhs);
-        a.set_dirty(true);
         e
     }
 
@@ -284,7 +283,6 @@ impl<'a> AtomView<'a> {
         // TODO: check if self or rhs is add
         a.extend(*self);
         a.extend(rhs.neg_no_norm(workspace).as_atom_view());
-        a.set_dirty(true);
         e
     }
 
@@ -300,7 +298,6 @@ impl<'a> AtomView<'a> {
         // TODO: check if self or rhs is mul
         a.extend(*self);
         a.extend(rhs);
-        a.set_dirty(true);
         e
     }
 
@@ -312,7 +309,6 @@ impl<'a> AtomView<'a> {
     ) -> BufferHandle<'b, Atom> {
         let mut e = workspace.new_atom();
         let a = e.to_pow(*self, exp);
-        a.set_dirty(true);
         e
     }
 
@@ -572,6 +568,19 @@ impl Atom {
             Atom::Empty => unreachable!("Empty atom"),
         }
     }
+
+    #[inline(always)]
+    pub fn set_normalized(&mut self, normalized: bool) {
+        match self {
+            Atom::Num(_) => {}
+            Atom::Var(_) => {}
+            Atom::Fun(a) => a.set_normalized(normalized),
+            Atom::Pow(a) => a.set_normalized(normalized),
+            Atom::Mul(a) => a.set_normalized(normalized),
+            Atom::Add(a) => a.set_normalized(normalized),
+            Atom::Empty => unreachable!("Empty atom"),
+        }
+    }
 }
 
 /// A constructor of a function, that wraps the state and workspace
@@ -611,8 +620,7 @@ impl<'a> FunctionBuilder<'a> {
         workspace: &'a Workspace,
     ) -> FunctionBuilder<'a> {
         let mut a = workspace.new_atom();
-        let f = a.to_fun(name);
-        f.set_dirty(true);
+        a.to_fun(name);
         FunctionBuilder {
             state,
             workspace,

@@ -1403,10 +1403,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
             let number = monomial.coefficient.clone().into();
             num_h.to_num(number);
             mul.extend(num_h.get().as_view());
-            mul.set_dirty(true);
-
             add.extend(mul_h.get().as_view());
-            add.set_dirty(true);
         }
 
         let mut norm = workspace.new_atom();
@@ -1444,9 +1441,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
 
         let mut pow_h = workspace.new_atom();
         let pow = pow_h.to_pow(poly.as_view(), workspace.new_num(-1).as_view());
-        pow.set_dirty(true);
         mul.extend(pow_h.as_view());
-        mul.set_dirty(true);
 
         let mut norm = workspace.new_atom();
         out.as_view().normalize(workspace, state, &mut norm);

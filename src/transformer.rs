@@ -208,7 +208,6 @@ impl Transformer {
                                 mul.extend(arg);
                             }
 
-                            mul.set_dirty(true);
                             mul_h.as_view().normalize(workspace, state, out);
                             continue;
                         }
@@ -226,7 +225,6 @@ impl Transformer {
                                 add.extend(arg);
                             }
 
-                            add.set_dirty(true);
                             add_h.as_view().normalize(workspace, state, out);
                             continue;
                         }
@@ -257,7 +255,6 @@ impl Transformer {
                             arg.add_arg(factor);
                         }
 
-                        arg.set_dirty(true);
                         arg_h.as_view().normalize(workspace, state, out);
                         continue;
                     }
@@ -269,7 +266,6 @@ impl Transformer {
                             arg.add_arg(summand);
                         }
 
-                        arg.set_dirty(true);
                         arg_h.as_view().normalize(workspace, state, out);
                         continue;
                     }
@@ -306,16 +302,13 @@ impl Transformer {
                                     for x in f_args {
                                         fun.add_arg(x);
                                     }
-                                    fun.set_dirty(true);
 
                                     mul.extend(fun_h.as_view());
                                 }
 
-                                mul.set_dirty(true);
                                 sum.extend(mul_h.as_view());
                             }
 
-                            sum.set_dirty(true);
                             sum_h.as_view().normalize(workspace, state, out);
                             continue;
                         }
@@ -336,7 +329,6 @@ impl Transformer {
                                 fun.add_arg(arg);
                             }
 
-                            fun.set_dirty(true);
                             fun_h.as_view().normalize(workspace, state, out);
                             continue;
                         }
@@ -364,7 +356,6 @@ impl Transformer {
                                 fun.add_arg(arg);
                             }
 
-                            fun.set_dirty(true);
                             fun_h.as_view().normalize(workspace, state, out);
                             continue;
                         }
@@ -393,21 +384,18 @@ impl Transformer {
                                 for x in a {
                                     fun.add_arg(x);
                                 }
-                                fun.set_dirty(true);
 
                                 if !prefactor.is_one() {
                                     let mut mul_h = workspace.new_atom();
                                     let mul = mul_h.to_mul();
                                     mul.extend(fun_h.as_view());
                                     mul.extend(workspace.new_num(prefactor.clone()).as_view());
-                                    mul.set_dirty(true);
                                     sum.extend(mul_h.as_view());
                                 } else {
                                     sum.extend(fun_h.as_view());
                                 }
                             }
 
-                            sum.set_dirty(true);
                             sum_h.as_view().normalize(workspace, state, out);
                             continue;
                         }

@@ -44,7 +44,6 @@ impl Pattern {
 
                 a.extend(l1.as_view());
                 a.extend(l2.as_view());
-                a.set_dirty(true);
 
                 let mut b = Atom::new();
                 e.get().as_view().normalize(workspace, state, &mut b);
@@ -77,7 +76,6 @@ impl Pattern {
 
                 a.extend(l1.as_view());
                 a.extend(l2.as_view());
-                a.set_dirty(true);
 
                 let mut b = Atom::new();
                 e.get().as_view().normalize(workspace, state, &mut b);
@@ -108,8 +106,7 @@ impl Pattern {
             pow.to_num((-1).into());
 
             let mut e = workspace.new_atom();
-            let a = e.to_pow(l2.as_view(), pow.as_view());
-            a.set_dirty(true);
+            e.to_pow(l2.as_view(), pow.as_view());
 
             let mut b = Atom::new();
             e.as_view().normalize(workspace, state, &mut b);
@@ -126,7 +123,6 @@ impl Pattern {
 
                     md.extend(l1.as_view());
                     md.extend(b.as_view());
-                    md.set_dirty(true);
 
                     let mut b = Atom::new();
                     m.get().as_view().normalize(workspace, state, &mut b);
@@ -157,8 +153,7 @@ impl Pattern {
         if let Pattern::Literal(l1) = self {
             if let Pattern::Literal(l2) = rhs {
                 let mut e = workspace.new_atom();
-                let a = e.to_pow(l1.as_view(), l2.as_view());
-                a.set_dirty(true);
+                e.to_pow(l1.as_view(), l2.as_view());
 
                 let mut b = Atom::new();
                 e.get().as_view().normalize(workspace, state, &mut b);
@@ -180,7 +175,6 @@ impl Pattern {
 
             a.extend(l1.as_view());
             a.extend(sign.as_view());
-            a.set_dirty(true);
 
             let mut b = Atom::new();
             e.get().as_view().normalize(workspace, state, &mut b);
@@ -335,7 +329,6 @@ impl Pattern {
 
                 let mut func_h = workspace.new_atom();
                 let func = func_h.to_fun(name);
-                func.set_dirty(true);
 
                 for arg in args {
                     if let Pattern::Wildcard(w) = arg {
@@ -406,8 +399,7 @@ impl Pattern {
                 }
 
                 let mut pow_h = workspace.new_atom();
-                let pow = pow_h.to_pow(oas[0].as_view(), oas[1].as_view());
-                pow.set_dirty(true);
+                pow_h.to_pow(oas[0].as_view(), oas[1].as_view());
                 pow_h.as_view().normalize(workspace, state, out);
             }
             Pattern::Mul(args) => {
@@ -446,7 +438,6 @@ impl Pattern {
                     arg.substitute_wildcards(state, workspace, &mut handle, match_stack)?;
                     mul.extend(handle.as_view());
                 }
-                mul.set_dirty(true);
                 mul_h.as_view().normalize(workspace, state, out);
             }
             Pattern::Add(args) => {
@@ -487,7 +478,6 @@ impl Pattern {
                     arg.substitute_wildcards(state, workspace, oa, match_stack)?;
                     add.extend(oa.as_view());
                 }
-                add.set_dirty(true);
                 add_h.as_view().normalize(workspace, state, out);
             }
             Pattern::Literal(oa) => {
@@ -594,7 +584,6 @@ impl Pattern {
                         }
 
                         out.extend(rhs_subs.as_view());
-                        out.set_dirty(true);
                     }
                     AtomView::Add(a) => {
                         let out = out.to_add();
@@ -606,7 +595,6 @@ impl Pattern {
                         }
 
                         out.extend(rhs_subs.as_view());
-                        out.set_dirty(true);
                     }
                     _ => {
                         out.set_from_view(&rhs_subs.as_view());
@@ -635,7 +623,7 @@ impl Pattern {
                     out.add_arg(child_buf.as_view());
                 }
 
-                out.set_dirty(submatch | f.is_dirty());
+                out.set_normalized(!submatch && f.is_normalized());
                 submatch
             }
             AtomView::Pow(p) => {
@@ -653,7 +641,7 @@ impl Pattern {
                     .replace_all_no_norm(exp, rhs, state, workspace, conditions, settings, exp_out);
 
                 let out = out.to_pow(base_out.as_view(), exp_out.as_view());
-                out.set_dirty(submatch | p.is_dirty());
+                out.set_normalized(!submatch && p.is_normalized());
                 submatch
             }
             AtomView::Mul(m) => {
@@ -671,7 +659,7 @@ impl Pattern {
                     mul.extend(child_buf.as_view());
                 }
 
-                mul.set_dirty(submatch | m.is_dirty());
+                mul.set_normalized(!submatch && m.is_normalized());
                 mul.set_has_coefficient(m.has_coefficient());
                 submatch
             }
@@ -688,7 +676,7 @@ impl Pattern {
 
                     out.extend(child_buf.as_view());
                 }
-                out.set_dirty(submatch | a.is_dirty());
+                out.set_normalized(!submatch && a.is_normalized());
                 submatch
             }
             _ => {
@@ -1076,6 +1064,8 @@ impl<'a> Match<'a> {
                     for arg in wargs {
                         add.extend(*arg);
                     }
+
+                    add.set_normalized(true);
                 }
                 SliceType::Mul => {
                     let mul = out.to_mul();
@@ -1083,30 +1073,32 @@ impl<'a> Match<'a> {
                         mul.extend(*arg);
                     }
 
-                    // set the dirty flag since the has_coefficient has to be set
-                    // during normalization
-                    if !wargs.is_empty() {
-                        mul.set_dirty(true);
-                    }
+                    // normalization may be needed, for example
+                    // to update the coefficient flag
                 }
                 SliceType::Arg => {
                     let fun = out.to_fun(State::ARG);
                     for arg in wargs {
                         fun.add_arg(*arg);
                     }
+
+                    fun.set_normalized(true);
                 }
                 SliceType::Pow => {
-                    out.to_pow(wargs[0], wargs[1]);
+                    let p = out.to_pow(wargs[0], wargs[1]);
+                    p.set_normalized(true);
                 }
                 SliceType::One => {
                     out.set_from_view(&wargs[0]);
                 }
                 SliceType::Empty => {
-                    out.to_fun(State::ARG);
+                    let f = out.to_fun(State::ARG);
+                    f.set_normalized(true);
                 }
             },
             Self::FunctionName(n) => {
-                out.to_fun(*n);
+                let f = out.to_fun(*n);
+                f.set_normalized(true);
             }
         }
     }
@@ -2118,8 +2110,6 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                             out.add_arg(arg);
                         }
                     }
-
-                    out.set_dirty(true);
                 }
                 AtomView::Pow(p) => {
                     let slice = p.to_slice();
@@ -2128,12 +2118,12 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                         let mut handle = workspace.new_atom();
                         let oa = handle.get_mut();
                         Self::copy_and_replace(oa, rest, used_flags, slice.get(0), rhs, workspace);
-                        out.to_pow(oa.as_view(), slice.get(1)).set_dirty(true);
+                        out.to_pow(oa.as_view(), slice.get(1));
                     } else {
                         let mut handle = workspace.new_atom();
                         let oa = handle.get_mut();
                         Self::copy_and_replace(oa, rest, used_flags, slice.get(1), rhs, workspace);
-                        out.to_pow(slice.get(0), oa.as_view()).set_dirty(true);
+                        out.to_pow(slice.get(0), oa.as_view());
                     }
                 }
                 AtomView::Mul(m) => {
@@ -2153,8 +2143,6 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                             out.extend(arg);
                         }
                     }
-
-                    out.set_dirty(true);
                 }
                 AtomView::Add(a) => {
                     let slice = a.to_slice();
@@ -2172,8 +2160,6 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                             out.extend(arg);
                         }
                     }
-
-                    out.set_dirty(true);
                 }
                 _ => unreachable!("Atom does not have children"),
             }
@@ -2189,7 +2175,6 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                     }
 
                     out.extend(rhs);
-                    out.set_dirty(true);
                 }
                 AtomView::Add(a) => {
                     let out = out.to_add();
@@ -2201,7 +2186,6 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                     }
 
                     out.extend(rhs);
-                    out.set_dirty(true);
                 }
                 _ => {
                     out.set_from_view(&rhs);

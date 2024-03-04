@@ -76,13 +76,11 @@ impl<'a> AtomView<'a> {
                             let mut n = workspace.new_atom();
                             n.to_num((-1).into());
 
-                            let p = fn_der.to_pow(f.iter().next().unwrap(), n.as_view());
-                            p.set_dirty(true);
+                            fn_der.to_pow(f.iter().next().unwrap(), n.as_view());
                         }
                         State::SIN => {
                             let p = fn_der.to_fun(State::COS);
                             p.add_arg(f.iter().next().unwrap());
-                            p.set_dirty(true);
                         }
                         State::COS => {
                             let mut n = workspace.new_atom();
@@ -95,7 +93,6 @@ impl<'a> AtomView<'a> {
                             let m = fn_der.to_mul();
                             m.extend(sin.as_view());
                             m.extend(n.as_view());
-                            m.set_dirty(true);
                         }
                         _ => unreachable!(),
                     }
@@ -103,14 +100,12 @@ impl<'a> AtomView<'a> {
                     let (_, mut arg_der) = args_der.pop().unwrap();
                     if let Atom::Mul(m) = arg_der.get_mut() {
                         m.extend(fn_der.as_view());
-                        m.set_dirty(true);
                         arg_der.as_view().normalize(workspace, state, out);
                     } else {
                         let mut mul = workspace.new_atom();
                         let m = mul.to_mul();
                         m.extend(fn_der.as_view());
                         m.extend(arg_der.as_view());
-                        m.set_dirty(true);
                         mul.as_view().normalize(workspace, state, out);
                     }
 
@@ -147,16 +142,13 @@ impl<'a> AtomView<'a> {
                     }
 
                     p.add_arg(to_derive);
-                    p.set_dirty(true);
 
                     let m = mul.to_mul();
                     m.extend(fn_der.as_view());
                     m.extend(arg_der.as_view());
-                    m.set_dirty(true);
                     mul.as_view().normalize(workspace, state, out);
 
                     a.extend(mul.as_view());
-                    a.set_dirty(true);
                 }
 
                 add.as_view().normalize(workspace, state, out);
@@ -187,7 +179,6 @@ impl<'a> AtomView<'a> {
                     if let Atom::Mul(m) = exp_der.get_mut() {
                         m.extend(*self);
                         m.extend(log_base.as_view());
-                        m.set_dirty(true);
                         exp_der
                             .as_view()
                             .normalize(workspace, state, &mut exp_der_contrib);
@@ -197,7 +188,6 @@ impl<'a> AtomView<'a> {
                         m.extend(*self);
                         m.extend(exp_der.as_view());
                         m.extend(log_base.as_view());
-                        m.set_dirty(true);
                         mul.as_view()
                             .normalize(workspace, state, &mut exp_der_contrib);
                     }
@@ -230,15 +220,12 @@ impl<'a> AtomView<'a> {
                     min_one.to_num((-1).into());
 
                     ao.extend(min_one.as_view());
-                    ao.set_dirty(true);
                 }
 
                 let mut pow_h = workspace.new_atom();
                 let pow = pow_h.to_pow(base, new_exp.as_view());
-                pow.set_dirty(true);
 
                 mul.extend(pow_h.as_view());
-                mul.set_dirty(true);
 
                 if exp_der_non_zero {
                     let mut add = workspace.new_atom();
@@ -246,7 +233,6 @@ impl<'a> AtomView<'a> {
 
                     a.extend(mul_h.as_view());
                     a.extend(exp_der_contrib.as_view());
-                    a.set_dirty(true);
 
                     add.as_view().normalize(workspace, state, out);
                 } else {
@@ -267,23 +253,19 @@ impl<'a> AtomView<'a> {
                             for other_arg in args.iter() {
                                 if other_arg != arg {
                                     mm.extend(other_arg);
-                                    mm.set_dirty(true);
                                 }
                             }
 
                             add.extend(arg_der.as_view());
-                            add.set_dirty(true);
                         } else {
                             let mm = mul_h.to_mul();
                             mm.extend(arg_der.as_view());
                             for other_arg in args.iter() {
                                 if other_arg != arg {
                                     mm.extend(other_arg);
-                                    mm.set_dirty(true);
                                 }
                             }
                             add.extend(mul_h.as_view());
-                            add.set_dirty(true);
                         }
 
                         non_zero = true;
@@ -307,7 +289,6 @@ impl<'a> AtomView<'a> {
                     if arg.derivative(x, workspace, state, &mut arg_der) {
                         add.extend(arg_der.as_view());
                         non_zero = true;
-                        add.set_dirty(true);
                     }
                 }
 
@@ -378,7 +359,6 @@ impl<'a> AtomView<'a> {
                 fact.to_num((Integer::one(), Integer::factorial(d)).into());
 
                 m.extend(fact.as_atom_view());
-                m.set_dirty(true);
 
                 series_sum.extend(series_contrib.as_view());
             } else {
@@ -401,7 +381,6 @@ impl<'a> AtomView<'a> {
             }
         }
 
-        series_sum.set_dirty(true);
         series.as_view().normalize(workspace, state, out);
 
         true

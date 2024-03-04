@@ -319,7 +319,6 @@ impl Atom {
                 let new_exp = helper.to_add();
                 new_exp.extend(exp1);
                 new_exp.extend(exp2);
-                new_exp.set_dirty(true);
                 let mut helper2 = workspace.new_atom();
                 helper.as_view().normalize(workspace, state, &mut helper2);
                 p1.set_from_base_and_exp(base2, helper2.as_view());
@@ -352,7 +351,6 @@ impl Atom {
                     let new_exp = helper.to_add();
                     new_exp.extend(self.as_view());
                     new_exp.extend(exp);
-                    new_exp.set_dirty(true);
                     let mut helper2 = workspace.new_atom();
                     helper.as_view().normalize(workspace, state, &mut helper2);
                     self.to_pow(base, helper2.as_view());
@@ -456,6 +454,7 @@ impl Atom {
                         } else {
                             // remove coefficient
                             let m = self.to_mul();
+                            m.set_normalized(true);
                             for a in non_coeff2.iter() {
                                 m.extend(a);
                             }
@@ -546,6 +545,7 @@ impl Atom {
             }
         } else if self.as_view() == other {
             let mul = helper.to_mul();
+            mul.set_normalized(true);
             mul.extend(self.as_view());
             self.to_num((2, 1).into());
             mul.extend(self.as_view());
@@ -561,20 +561,19 @@ impl Atom {
 
 impl<'a> AtomView<'a> {
     #[inline(always)]
-    pub fn is_dirty(&self) -> bool {
+    pub fn needs_normalization(&self) -> bool {
         match self {
-            AtomView::Num(n) => n.is_dirty(),
-            AtomView::Var(_) => false,
-            AtomView::Fun(f) => f.is_dirty(),
-            AtomView::Pow(p) => p.is_dirty(),
-            AtomView::Mul(m) => m.is_dirty(),
-            AtomView::Add(a) => a.is_dirty(),
+            AtomView::Num(_) | AtomView::Var(_) => false,
+            AtomView::Fun(f) => !f.is_normalized(),
+            AtomView::Pow(p) => !p.is_normalized(),
+            AtomView::Mul(m) => !m.is_normalized(),
+            AtomView::Add(a) => !a.is_normalized(),
         }
     }
 
     /// Normalize an atom.
     pub fn normalize(&self, workspace: &Workspace, state: &State, out: &mut Atom) {
-        if !self.is_dirty() {
+        if !self.needs_normalization() {
             out.set_from_view(self);
             return;
         }
@@ -587,7 +586,7 @@ impl<'a> AtomView<'a> {
                     let mut handle = workspace.new_atom();
                     let new_at = handle.get_mut();
 
-                    if a.is_dirty() {
+                    if a.needs_normalization() {
                         a.normalize(workspace, state, new_at);
                     } else {
                         new_at.set_from_view(&a);
@@ -633,6 +632,7 @@ impl<'a> AtomView<'a> {
 
                 if !atom_test_buf.is_empty() {
                     let out_mul = out.to_mul();
+                    out_mul.set_normalized(true);
 
                     let mut last_buf = atom_test_buf.remove(0);
 
@@ -698,6 +698,7 @@ impl<'a> AtomView<'a> {
             AtomView::Fun(f) => {
                 let name = f.get_name();
                 let out_f = out.to_fun(name);
+                out_f.set_normalized(true);
 
                 /// Add an argument `a` to `f` and flatten nested `arg`s.
                 #[inline(always)]
@@ -731,7 +732,6 @@ impl<'a> AtomView<'a> {
                         for a in cur.iter() {
                             add_arg(f, *a);
                         }
-                        f.set_dirty(true);
                         acc.push(h);
                         return;
                     }
@@ -745,7 +745,7 @@ impl<'a> AtomView<'a> {
 
                 let mut handle = workspace.new_atom();
                 for a in f.iter() {
-                    if a.is_dirty() {
+                    if a.needs_normalization() {
                         a.normalize(workspace, state, &mut handle);
                         add_arg(out_f, handle.as_view());
                     } else {
@@ -841,10 +841,6 @@ impl<'a> AtomView<'a> {
                             add.extend(h.as_view());
                         }
 
-                        add.set_dirty(true);
-
-                        drop(arg_buf);
-
                         add_h.as_view().normalize(workspace, state, out);
                         return;
                     }
@@ -867,6 +863,7 @@ impl<'a> AtomView<'a> {
                                 if m.has_coefficient() {
                                     let mut stripped = workspace.new_atom();
                                     let mul = stripped.to_mul();
+                                    mul.set_normalized(true);
                                     for a in m.iter() {
                                         if let AtomView::Num(n) = a {
                                             coeff = coeff.mul(n.get_coeff_view().to_owned(), state);
@@ -874,7 +871,7 @@ impl<'a> AtomView<'a> {
                                             mul.extend(a);
                                         }
                                     }
-                                    mul.set_has_coefficient(false); // TODO: no need to normalize?
+                                    mul.set_has_coefficient(false);
                                     nf.add_arg(stripped.as_view());
                                 } else {
                                     nf.add_arg(a);
@@ -884,10 +881,8 @@ impl<'a> AtomView<'a> {
                             }
                         }
 
-                        nf.set_dirty(true);
                         t.extend(new_fun.as_view());
                         t.extend(workspace.new_num(coeff).as_view());
-                        t.set_dirty(true);
                         t.as_view().normalize(workspace, state, out);
                         return;
                     }
@@ -929,11 +924,13 @@ impl<'a> AtomView<'a> {
                         if swaps % 2 == 1 {
                             let mut handle = workspace.new_atom();
                             let out_f = handle.to_fun(name);
+                            out_f.set_normalized(true);
                             for (_, a) in arg_buf {
                                 out_f.add_arg(a.as_view());
                             }
 
                             let m = out.to_mul();
+                            m.set_normalized(true);
                             m.extend(handle.as_view());
                             handle.to_num((-1).into());
                             m.extend(handle.as_view());
@@ -943,6 +940,7 @@ impl<'a> AtomView<'a> {
                     }
 
                     let out_f = out.to_fun(name);
+                    out_f.set_normalized(true);
                     for (_, a) in arg_buf {
                         out_f.add_arg(a.as_view());
                     }
@@ -954,14 +952,14 @@ impl<'a> AtomView<'a> {
                 let mut base_handle = workspace.new_atom();
                 let mut exp_handle = workspace.new_atom();
 
-                if base.is_dirty() {
+                if base.needs_normalization() {
                     base.normalize(workspace, state, &mut base_handle);
                 } else {
                     // TODO: prevent copy
                     base_handle.get_mut().set_from_view(&base);
                 };
 
-                if exp.is_dirty() {
+                if exp.needs_normalization() {
                     exp.normalize(workspace, state, &mut exp_handle);
                 } else {
                     // TODO: prevent copy
@@ -1011,7 +1009,6 @@ impl<'a> AtomView<'a> {
                                         let mut helper = workspace.new_atom();
                                         helper.to_num((-1).into());
                                         n.extend(helper.as_view());
-                                        n.set_dirty(true);
                                         new_base.as_view().normalize(workspace, state, &mut helper);
                                         std::mem::swap(&mut new_base, &mut helper);
                                     }
@@ -1040,7 +1037,8 @@ impl<'a> AtomView<'a> {
 
                                 exp_handle.get_mut().to_num(new_exp);
 
-                                out.to_pow(p_base_base, exp_handle.as_view());
+                                let p = out.to_pow(p_base_base, exp_handle.as_view());
+                                p.set_normalized(true);
 
                                 break 'pow_simplify;
                             }
@@ -1052,6 +1050,8 @@ impl<'a> AtomView<'a> {
 
                     out.to_pow(base_handle.as_view(), exp_handle.as_view());
                 }
+
+                out.set_normalized(true);
             }
             AtomView::Add(a) => {
                 let mut new_sum = workspace.new_atom();
@@ -1061,7 +1061,7 @@ impl<'a> AtomView<'a> {
 
                 let mut norm_arg = workspace.new_atom();
                 for a in a.iter() {
-                    let r = if a.is_dirty() {
+                    let r = if a.needs_normalization() {
                         let new_at = norm_arg.get_mut();
 
                         // TODO: if a is a nested addition, prevent a sort
@@ -1104,6 +1104,7 @@ impl<'a> AtomView<'a> {
                     return;
                 }
                 let out_add = out.to_add();
+                out_add.set_normalized(true);
 
                 let mut last_buf = workspace.new_atom();
                 last_buf.set_from_view(&atom_sort_buf[0]);

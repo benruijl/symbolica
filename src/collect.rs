@@ -55,8 +55,6 @@ impl<'a> AtomView<'a> {
                 mul.extend(coeff.as_view());
             }
 
-            mul.set_dirty(true);
-
             add.extend(mul_h.as_view());
         }
 
@@ -75,7 +73,6 @@ impl<'a> AtomView<'a> {
             add.extend(rest.as_view());
         }
 
-        add.set_dirty(true);
         add_h.as_view().normalize(workspace, state, out);
     }
 
@@ -146,8 +143,6 @@ impl<'a> AtomView<'a> {
                             mul.extend(a);
                         }
                     }
-
-                    mul.set_dirty(true);
 
                     let mut col_n = workspace.new_atom();
                     collected.as_view().normalize(workspace, state, &mut col_n);

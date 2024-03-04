@@ -66,3 +66,4 @@ tinyjson = "2.5"
 tracing = {version = "0.1", features = ["max_level_trace", "release_max_level_warn"]}
 wide = "0.7"
 wolfram-library-link = {version = "0.2.9", optional = true}
+append-only-vec = "0.1"

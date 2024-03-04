@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::sync::RwLock;
 use std::{
     cell::RefCell,
     collections::hash_map::Entry,
@@ -6,6 +7,8 @@ use std::{
 };
 
 use ahash::{HashMap, HashMapExt};
+use append_only_vec::AppendOnlyVec;
+use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
 use crate::{
@@ -25,12 +28,14 @@ pub enum FunctionAttribute {
     Linear,
 }
 
+static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
+static ID_TO_STR: AppendOnlyVec<String> = AppendOnlyVec::<String>::new();
+static FINITE_FIELDS: AppendOnlyVec<FiniteField<u64>> = AppendOnlyVec::<FiniteField<u64>>::new();
+
 /// A global state, that stores mappings from variable and function names to ids.
 #[derive(Clone)]
 pub struct State {
     str_to_id: HashMap<String, Identifier>,
-    id_to_str: Vec<String>, // TODO: make static FrozenVec
-    finite_fields: Vec<FiniteField<u64>>,
 }
 
 impl Default for State {
@@ -56,13 +61,12 @@ impl State {
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 
+    // TODO: make private
     pub fn new() -> State {
         LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
         let mut state = State {
             str_to_id: HashMap::new(),
-            id_to_str: vec![],
-            finite_fields: vec![],
         };
 
         for x in Self::BUILTIN_VAR_LIST {
@@ -72,9 +76,13 @@ impl State {
         state
     }
 
+    pub fn get_global_state() -> &'static RwLock<State> {
+        &STATE
+    }
+
     /// Iterate over all defined symbols.
     pub fn symbol_iter(&self) -> impl Iterator<Item = &str> {
-        self.id_to_str.iter().map(|s| s.as_str())
+        ID_TO_STR.iter().map(|s| s.as_str())
     }
 
     /// Returns `true` iff this identifier is defined by Symbolica.
@@ -88,7 +96,7 @@ impl State {
         match self.str_to_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
-                if self.id_to_str.len() == u32::MAX as usize - 1 {
+                if ID_TO_STR.len() == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
 
@@ -100,9 +108,12 @@ impl State {
                     wildcard_level += 1;
                 }
 
-                let new_id = Identifier::init_var(self.id_to_str.len() as u32, wildcard_level);
+                // there is no synchronization issue since only one thread can insert at a time
+                // as the state itself is behind a mutex
+                let new_index = ID_TO_STR.push(name.as_ref().into());
+
+                let new_id = Identifier::init_var(new_index as u32, wildcard_level);
                 v.insert(new_id);
-                self.id_to_str.push(name.as_ref().into());
                 new_id
             }
         }
@@ -144,9 +155,13 @@ impl State {
                 }
             }
             Entry::Vacant(v) => {
-                if self.id_to_str.len() == u32::MAX as usize - 1 {
+                if ID_TO_STR.len() == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
+
+                // there is no synchronization issue since only one thread can insert at a time
+                // as the state itself is behind a mutex
+                let new_index = ID_TO_STR.push(name.as_ref().into());
 
                 let mut wildcard_level = 0;
                 for x in name.as_ref().chars().rev() {
@@ -158,24 +173,17 @@ impl State {
 
                 let new_id = if let Some(attributes) = attributes {
                     Identifier::init_fn(
-                        self.id_to_str.len() as u32,
+                        new_index as u32,
                         wildcard_level,
                         attributes.contains(&FunctionAttribute::Symmetric),
                         attributes.contains(&FunctionAttribute::Antisymmetric),
                         attributes.contains(&FunctionAttribute::Linear),
                     )
                 } else {
-                    Identifier::init_fn(
-                        self.id_to_str.len() as u32,
-                        wildcard_level,
-                        false,
-                        false,
-                        false,
-                    )
+                    Identifier::init_fn(new_index as u32, wildcard_level, false, false, false)
                 };
 
                 v.insert(new_id);
-                self.id_to_str.push(name.as_ref().into());
 
                 Ok(new_id)
             }
@@ -183,23 +191,23 @@ impl State {
     }
 
     /// Get the name for a given id.
-    pub fn get_name(&self, id: Identifier) -> &String {
-        &self.id_to_str[id.get_id() as usize]
+    pub fn get_name<'a>(id: Identifier) -> &'a String {
+        &ID_TO_STR[id.get_id() as usize]
     }
 
-    pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteField<u64> {
-        &self.finite_fields[fi.0]
+    pub fn get_finite_field<'a>(fi: FiniteFieldIndex) -> &'a FiniteField<u64> {
+        &FINITE_FIELDS[fi.0]
     }
 
     pub fn get_or_insert_finite_field(&mut self, f: FiniteField<u64>) -> FiniteFieldIndex {
-        for (i, f2) in self.finite_fields.iter().enumerate() {
+        for (i, f2) in FINITE_FIELDS.iter().enumerate() {
             if f.get_prime() == f2.get_prime() {
                 return FiniteFieldIndex(i);
             }
         }
 
-        self.finite_fields.push(f);
-        FiniteFieldIndex(self.finite_fields.len() - 1)
+        let index = FINITE_FIELDS.push(f);
+        FiniteFieldIndex(index)
     }
 }
 

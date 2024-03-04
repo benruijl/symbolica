@@ -123,11 +123,11 @@ impl Coefficient {
                 if i1 != i2 {
                     panic!(
                         "Cannot add numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(i1).get_prime(),
-                        state.get_finite_field(i2).get_prime()
+                        State::get_finite_field(i1).get_prime(),
+                        State::get_finite_field(i2).get_prime()
                     );
                 }
-                let f = state.get_finite_field(i1);
+                let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.add(&n1, &n2), i1)
             }
             (Coefficient::FiniteField(_, _), _) => {
@@ -169,11 +169,11 @@ impl Coefficient {
                 if i1 != i2 {
                     panic!(
                         "Cannot multiply numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(i1).get_prime(),
-                        state.get_finite_field(i2).get_prime()
+                        State::get_finite_field(i1).get_prime(),
+                        State::get_finite_field(i2).get_prime()
                     );
                 }
-                let f = state.get_finite_field(i1);
+                let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.mul(&n1, &n2), i1)
             }
             (Coefficient::FiniteField(_, _), _) => {
@@ -411,11 +411,11 @@ impl CoefficientView<'_> {
                 if i1 != i2 {
                     panic!(
                         "Cannot add numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(*i1).get_prime(),
-                        state.get_finite_field(*i2).get_prime()
+                        State::get_finite_field(*i1).get_prime(),
+                        State::get_finite_field(*i2).get_prime()
                     );
                 }
-                let f = state.get_finite_field(*i1);
+                let f = State::get_finite_field(*i1);
                 Coefficient::FiniteField(f.add(n1, n2), *i1)
             }
             (CoefficientView::FiniteField(_, _), _) => {
@@ -478,11 +478,11 @@ impl CoefficientView<'_> {
                 if i1 != i2 {
                     panic!(
                         "Cannot multiply numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(*i1).get_prime(),
-                        state.get_finite_field(*i2).get_prime()
+                        State::get_finite_field(*i1).get_prime(),
+                        State::get_finite_field(*i2).get_prime()
                     );
                 }
-                let f = state.get_finite_field(*i1);
+                let f = State::get_finite_field(*i1);
                 Coefficient::FiniteField(f.mul(n1, n2), *i1)
             }
             (CoefficientView::FiniteField(_, _), _) => {

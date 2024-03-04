@@ -2,11 +2,10 @@ use std::{
     borrow::{Borrow, BorrowMut},
     hash::{Hash, Hasher},
     ops::Neg,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 
 use ahash::HashMap;
-use once_cell::sync::Lazy;
 use pyo3::{
     exceptions::{self, PyIndexError},
     pyclass,
@@ -59,12 +58,11 @@ use crate::{
     LicenseManager,
 };
 
-static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
 thread_local!(static WORKSPACE: Workspace = Workspace::new());
 
 macro_rules! get_state {
     () => {
-        STATE.read().map_err(|_| {
+        State::get_global_state().read().map_err(|_| {
             exceptions::PyRuntimeError::new_err(
                 "A critical error has occurred earlier in Symbolica: the Python interpreter must be restarted.",
             )
@@ -74,7 +72,7 @@ macro_rules! get_state {
 
 macro_rules! get_state_mut {
     () => {
-        STATE.write().map_err(|_| {
+        State::get_global_state().write().map_err(|_| {
             exceptions::PyRuntimeError::new_err(
                 "A critical error has occurred earlier in Symbolica: the Python interpreter must be restarted.",
             )
@@ -218,12 +216,12 @@ impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
             },
             AtomView::Var(v) => PythonAtomTree {
                 atom_type: PythonAtomType::Var,
-                head: Some(get_state!()?.get_name(v.get_id()).to_string()),
+                head: Some(State::get_name(v.get_id()).to_string()),
                 tail: vec![],
             },
             AtomView::Fun(f) => PythonAtomTree {
                 atom_type: PythonAtomType::Fn,
-                head: Some(get_state!()?.get_name(f.get_id()).to_string()),
+                head: Some(State::get_name(f.get_id()).to_string()),
                 tail: f.iter().map(|x| x.into()).collect::<Result<Vec<_>, _>>()?,
             },
             AtomView::Add(a) => PythonAtomTree {
@@ -1543,12 +1541,8 @@ impl PythonExpression {
     /// is a variable or function.
     pub fn get_name(&self) -> PyResult<Option<String>> {
         match self.expr.as_ref() {
-            Atom::Var(v) => Ok(Some(
-                get_state!()?.get_name(v.to_var_view().get_id()).to_string(),
-            )),
-            Atom::Fun(f) => Ok(Some(
-                get_state!()?.get_name(f.to_fun_view().get_id()).to_string(),
-            )),
+            Atom::Var(v) => Ok(Some(State::get_name(v.to_var_view().get_id()).to_string())),
+            Atom::Fun(f) => Ok(Some(State::get_name(f.to_fun_view().get_id()).to_string())),
             _ => Ok(None),
         }
     }

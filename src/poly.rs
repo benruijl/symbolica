@@ -377,18 +377,18 @@ impl Variable {
 
     pub fn fmt(&self, state: &State, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Variable::Identifier(v) => f.write_str(state.get_name(*v)),
+            Variable::Identifier(v) => f.write_str(State::get_name(*v)),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
-            Variable::Array(t, i) => f.write_fmt(format_args!("{}[{}]", state.get_name(*t), i)),
+            Variable::Array(t, i) => f.write_fmt(format_args!("{}[{}]", State::get_name(*t), i)),
             Variable::Function(_, a) | Variable::Other(a) => a.printer(state).fmt(f),
         }
     }
 
     pub fn to_string(&self, state: &State) -> String {
         match self {
-            Variable::Identifier(v) => format!("{}", state.get_name(*v)),
+            Variable::Identifier(v) => format!("{}", State::get_name(*v)),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
-            Variable::Array(t, i) => format!("{}[{}]", state.get_name(*t), i),
+            Variable::Array(t, i) => format!("{}[{}]", State::get_name(*t), i),
             Variable::Function(_, a) | Variable::Other(a) => format!("{}", a.printer(state)),
         }
     }

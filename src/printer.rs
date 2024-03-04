@@ -213,7 +213,7 @@ impl<'a> FormattedPrintVar for VarView<'a> {
         }
 
         let id = self.get_id();
-        let name = state.get_name(id);
+        let name = State::get_name(id);
         if name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))
         } else if opts.color_builtin_functions && State::is_builtin(id) {
@@ -356,7 +356,7 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                 }
             }
             CoefficientView::FiniteField(num, fi) => {
-                let ff = state.get_finite_field(fi);
+                let ff = State::get_finite_field(fi);
                 f.write_fmt(format_args!(
                     "[{}%{}]",
                     ff.from_element(&num),
@@ -475,7 +475,7 @@ impl<'a> FormattedPrintFn for FunView<'a> {
         }
 
         let id = self.get_id();
-        let name = state.get_name(id);
+        let name = State::get_name(id);
         if name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))?;
         } else {

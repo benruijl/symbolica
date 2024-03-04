@@ -102,13 +102,13 @@ impl<'a> AtomView<'a> {
     /// Check if a factor contains `x` at the ground level.
     fn has_key(&self, x: Identifier) -> bool {
         match self {
-            AtomView::Var(v) => v.get_name() == x,
-            AtomView::Fun(f) => f.get_name() == x,
+            AtomView::Var(v) => v.get_id() == x,
+            AtomView::Fun(f) => f.get_id() == x,
             AtomView::Pow(p) => {
                 let (base, _) = p.get_base_exp();
                 match base {
-                    AtomView::Var(v) => v.get_name() == x,
-                    AtomView::Fun(f) => f.get_name() == x,
+                    AtomView::Var(v) => v.get_id() == x,
+                    AtomView::Fun(f) => f.get_id() == x,
                     _ => false,
                 }
             }

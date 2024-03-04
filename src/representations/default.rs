@@ -16,11 +16,18 @@ const NUM_ID: u8 = 1;
 const VAR_ID: u8 = 2;
 const FUN_ID: u8 = 3;
 const MUL_ID: u8 = 4;
-const POW_ID: u8 = 6;
 const ADD_ID: u8 = 5;
+const POW_ID: u8 = 6;
 const TYPE_MASK: u8 = 0b00000111;
 const NOT_NORMALIZED: u8 = 0b10000000;
-const HAS_COEFF_FLAG: u8 = 0b01000000;
+const VAR_WILDCARD_LEVEL_MASK: u8 = 0b00011000;
+const VAR_WILDCARD_LEVEL_1: u8 = 0b00001000;
+const VAR_WILDCARD_LEVEL_2: u8 = 0b00010000;
+const VAR_WILDCARD_LEVEL_3: u8 = 0b00011000;
+const FUN_SYMMETRIC_FLAG: u8 = 0b00100000;
+const FUN_LINEAR_FLAG: u8 = 0b01000000;
+const FUN_ANTISYMMETRIC_FLAG: u64 = 1 << 32; // stored in the function id
+const MUL_HAS_COEFF_FLAG: u8 = 0b01000000;
 
 pub type RawAtom = Vec<u8>;
 
@@ -120,16 +127,30 @@ impl Var {
     #[inline]
     pub fn new(id: Identifier) -> Var {
         let mut buffer = Vec::new();
-        buffer.put_u8(VAR_ID);
-        (id.to_u32() as u64, 1).write_packed(&mut buffer);
+
+        match id.wildcard_level {
+            0 => buffer.put_u8(VAR_ID),
+            1 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_1),
+            2 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_2),
+            _ => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_3),
+        }
+
+        (id.id as u64, 1).write_packed(&mut buffer);
         Var { data: buffer }
     }
 
     #[inline]
     pub fn new_into(id: Identifier, mut buffer: RawAtom) -> Var {
         buffer.clear();
-        buffer.put_u8(VAR_ID);
-        (id.to_u32() as u64, 1).write_packed(&mut buffer);
+
+        match id.wildcard_level {
+            0 => buffer.put_u8(VAR_ID),
+            1 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_1),
+            2 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_2),
+            _ => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_3),
+        }
+
+        (id.id as u64, 1).write_packed(&mut buffer);
         Var { data: buffer }
     }
 
@@ -141,17 +162,17 @@ impl Var {
     }
 
     #[inline]
-    pub fn set_from_coeff(&mut self, num: Coefficient) {
-        self.data.clear();
-        self.data.put_u8(NUM_ID);
-        num.write_packed(&mut self.data);
-    }
-
-    #[inline]
     pub fn set_from_id(&mut self, id: Identifier) {
         self.data.clear();
-        self.data.put_u8(VAR_ID);
-        (id.to_u32() as u64, 1).write_packed(&mut self.data);
+
+        match id.wildcard_level {
+            0 => self.data.put_u8(VAR_ID),
+            1 => self.data.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_1),
+            2 => self.data.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_2),
+            _ => self.data.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_3),
+        }
+
+        (id.id as u64, 1).write_packed(&mut self.data);
     }
 
     #[inline]
@@ -187,14 +208,14 @@ impl Fun {
         let mut f = Fun {
             data: RawAtom::new(),
         };
-        f.set_from_name(id);
+        f.set_from_id(id);
         f
     }
 
     #[inline]
     pub fn new_into(id: Identifier, buffer: RawAtom) -> Fun {
         let mut f = Fun { data: buffer };
-        f.set_from_name(id);
+        f.set_from_id(id);
         f
     }
 
@@ -206,14 +227,37 @@ impl Fun {
     }
 
     #[inline]
-    pub fn set_from_name(&mut self, id: Identifier) {
+    pub fn set_from_id(&mut self, id: Identifier) {
         self.data.clear();
-        self.data.put_u8(FUN_ID | NOT_NORMALIZED);
+
+        let mut flags = FUN_ID | NOT_NORMALIZED;
+        match id.wildcard_level {
+            0 => {}
+            1 => flags |= VAR_WILDCARD_LEVEL_1,
+            2 => flags |= VAR_WILDCARD_LEVEL_2,
+            _ => flags |= VAR_WILDCARD_LEVEL_3,
+        }
+
+        if id.is_symmetric {
+            flags |= FUN_SYMMETRIC_FLAG;
+        }
+        if id.is_linear {
+            flags |= FUN_LINEAR_FLAG;
+        }
+
+        self.data.put_u8(flags);
+
         self.data.put_u32_le(0_u32);
 
         let buf_pos = self.data.len();
 
-        (id.to_u32() as u64, 0).write_packed(&mut self.data);
+        let id = if id.is_antisymmetric {
+            id.id as u64 | FUN_ANTISYMMETRIC_FLAG
+        } else {
+            id.id as u64
+        };
+
+        (id, 0).write_packed(&mut self.data);
 
         let new_buf_pos = self.data.len();
         let mut cursor = &mut self.data[1..];
@@ -509,9 +553,9 @@ impl Mul {
 
     pub(crate) fn set_has_coefficient(&mut self, has_coeff: bool) {
         if has_coeff {
-            self.data[0] |= HAS_COEFF_FLAG;
+            self.data[0] |= MUL_HAS_COEFF_FLAG;
         } else {
-            self.data[0] &= !HAS_COEFF_FLAG;
+            self.data[0] &= !MUL_HAS_COEFF_FLAG;
         }
     }
 
@@ -658,8 +702,22 @@ impl<'a> VarView<'a> {
     }
 
     #[inline(always)]
-    pub fn get_name(&self) -> Identifier {
-        Identifier::from(self.data[1..].get_frac_i64().0 as u32)
+    pub fn get_id(&self) -> Identifier {
+        Identifier::init_var(
+            self.data[1..].get_frac_i64().0 as u32,
+            self.get_wildcard_level(),
+        )
+    }
+
+    #[inline(always)]
+    pub fn get_wildcard_level(&self) -> u8 {
+        match self.data[0] & VAR_WILDCARD_LEVEL_MASK {
+            0 => 0,
+            VAR_WILDCARD_LEVEL_1 => 1,
+            VAR_WILDCARD_LEVEL_2 => 2,
+            VAR_WILDCARD_LEVEL_3 => 3,
+            _ => 0,
+        }
     }
 
     #[inline]
@@ -710,13 +768,48 @@ impl<'a> FunView<'a> {
     }
 
     #[inline(always)]
-    pub fn get_name(&self) -> Identifier {
-        Identifier::from(self.data[1 + 4..].get_frac_i64().0 as u32)
+    pub fn get_id(&self) -> Identifier {
+        let id = self.data[1 + 4..].get_frac_u64().0;
+
+        Identifier::init_fn(
+            id as u32,
+            self.get_wildcard_level(),
+            false,
+            id & FUN_ANTISYMMETRIC_FLAG != 0,
+            self.is_linear(),
+        )
+    }
+
+    #[inline(always)]
+    pub fn is_symmetric(&self) -> bool {
+        self.data[0] & FUN_SYMMETRIC_FLAG != 0
+    }
+
+    #[inline(always)]
+    pub fn is_antisymmetric(&self) -> bool {
+        let id = self.data[1 + 4..].get_frac_u64().0;
+        id & FUN_ANTISYMMETRIC_FLAG != 0
+    }
+
+    #[inline(always)]
+    pub fn is_linear(&self) -> bool {
+        self.data[0] & FUN_LINEAR_FLAG != 0
+    }
+
+    #[inline(always)]
+    pub fn get_wildcard_level(&self) -> u8 {
+        match self.data[0] & VAR_WILDCARD_LEVEL_MASK {
+            0 => 0,
+            VAR_WILDCARD_LEVEL_1 => 1,
+            VAR_WILDCARD_LEVEL_2 => 2,
+            VAR_WILDCARD_LEVEL_3 => 3,
+            _ => 0,
+        }
     }
 
     #[inline(always)]
     pub fn get_nargs(&self) -> usize {
-        self.data[1 + 4..].get_frac_i64().1 as usize
+        self.data[1 + 4..].get_frac_u64().1 as usize
     }
 
     #[inline(always)]
@@ -973,7 +1066,7 @@ impl<'a> MulView<'a> {
 
     #[inline]
     pub fn has_coefficient(&self) -> bool {
-        (self.data[0] & HAS_COEFF_FLAG) != 0
+        (self.data[0] & MUL_HAS_COEFF_FLAG) != 0
     }
 
     pub fn get_byte_size(&self) -> usize {

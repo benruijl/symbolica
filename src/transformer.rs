@@ -200,7 +200,7 @@ impl Transformer {
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == State::ARG {
+                        if f.get_id() == State::ARG {
                             let mut mul_h = workspace.new_atom();
                             let mul = mul_h.to_mul();
 
@@ -217,7 +217,7 @@ impl Transformer {
                 }
                 Transformer::Sum => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == State::ARG {
+                        if f.get_id() == State::ARG {
                             let mut add_h = workspace.new_atom();
                             let add = add_h.to_add();
 
@@ -234,7 +234,7 @@ impl Transformer {
                 }
                 Transformer::ArgCount(only_for_arg_fun) => {
                     if let AtomView::Fun(f) = input {
-                        if !*only_for_arg_fun || f.get_name() == State::ARG {
+                        if !*only_for_arg_fun || f.get_id() == State::ARG {
                             let n_args = f.get_nargs();
                             out.to_num((n_args as i64).into());
                         } else {
@@ -275,7 +275,7 @@ impl Transformer {
                 },
                 Transformer::Partition(bins, fill_last, repeat) => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == State::ARG {
+                        if f.get_id() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
 
                             let mut sum_h = workspace.new_atom();
@@ -318,7 +318,7 @@ impl Transformer {
                 }
                 Transformer::Sort => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == State::ARG {
+                        if f.get_id() == State::ARG {
                             let mut args: Vec<_> = f.iter().collect();
                             args.sort();
 
@@ -338,7 +338,7 @@ impl Transformer {
                 }
                 Transformer::Deduplicate => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == State::ARG {
+                        if f.get_id() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
                             let mut args_dedup: Vec<_> = Vec::with_capacity(args.len());
 
@@ -365,7 +365,7 @@ impl Transformer {
                 }
                 Transformer::Permutations(f_name) => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_name() == State::ARG {
+                        if f.get_id() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
 
                             let mut sum_h = workspace.new_atom();

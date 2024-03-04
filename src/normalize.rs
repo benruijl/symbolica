@@ -7,11 +7,7 @@ use crate::{
     domains::{integer::IntegerRing, rational::RationalField},
     poly::Variable,
     representations::{Atom, AtomView, Fun, Identifier},
-    state::{
-        BufferHandle,
-        FunctionAttribute::{Antisymmetric, Linear, Symmetric},
-        State, Workspace,
-    },
+    state::{BufferHandle, State, Workspace},
 };
 
 impl<'a> AtomView<'a> {
@@ -26,7 +22,7 @@ impl<'a> AtomView<'a> {
             (AtomView::Num(n1), AtomView::Num(n2)) => n1.get_coeff_view().cmp(&n2.get_coeff_view()),
             (AtomView::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
+            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_id().cmp(&v2.get_id()),
             (AtomView::Var(_), _) => Ordering::Less,
             (_, AtomView::Var(_)) => Ordering::Greater,
             (AtomView::Pow(p1), AtomView::Pow(p2)) => {
@@ -78,7 +74,7 @@ impl<'a> AtomView<'a> {
             (_, AtomView::Add(_)) => Ordering::Greater,
 
             (AtomView::Fun(f1), AtomView::Fun(f2)) => {
-                let name_comp = f1.get_name().cmp(&f2.get_name());
+                let name_comp = f1.get_id().cmp(&f2.get_id());
                 if name_comp != Ordering::Equal {
                     return name_comp;
                 }
@@ -111,7 +107,7 @@ impl<'a> AtomView<'a> {
             (AtomView::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,
 
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
+            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_id().cmp(&v2.get_id()),
             (AtomView::Pow(p1), AtomView::Pow(p2)) => {
                 // TODO: inline partial_cmp call by creating an inlined version
                 p1.get_base().cmp(&p2.get_base())
@@ -152,7 +148,7 @@ impl<'a> AtomView<'a> {
             (_, AtomView::Add(_)) => Ordering::Greater,
 
             (AtomView::Fun(f1), AtomView::Fun(f2)) => {
-                let name_comp = f1.get_name().cmp(&f2.get_name());
+                let name_comp = f1.get_id().cmp(&f2.get_id());
                 if name_comp != Ordering::Equal {
                     return name_comp;
                 }
@@ -187,7 +183,7 @@ impl<'a> AtomView<'a> {
             (AtomView::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,
 
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_name().cmp(&v2.get_name()),
+            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_id().cmp(&v2.get_id()),
             (AtomView::Pow(p1), AtomView::Pow(p2)) => {
                 let (b1, e1) = p1.get_base_exp();
                 let (b2, e2) = p2.get_base_exp();
@@ -249,7 +245,7 @@ impl<'a> AtomView<'a> {
             (AtomView::Pow(_), _) => Ordering::Less,
 
             (AtomView::Fun(f1), AtomView::Fun(f2)) => {
-                let name_comp = f1.get_name().cmp(&f2.get_name());
+                let name_comp = f1.get_id().cmp(&f2.get_id());
                 if name_comp != Ordering::Equal {
                     return name_comp;
                 }
@@ -375,7 +371,7 @@ impl Atom {
         // x * x => x^2
         if self.as_view() == other.as_view() {
             if let AtomView::Var(v) = self.as_view() {
-                if v.get_name() == State::I {
+                if v.get_id() == State::I {
                     self.to_num((-1).into());
                     return true;
                 }
@@ -696,15 +692,15 @@ impl<'a> AtomView<'a> {
                 self.clone_into(out);
             }
             AtomView::Fun(f) => {
-                let name = f.get_name();
-                let out_f = out.to_fun(name);
+                let id = f.get_id();
+                let out_f = out.to_fun(id);
                 out_f.set_normalized(true);
 
                 /// Add an argument `a` to `f` and flatten nested `arg`s.
                 #[inline(always)]
                 fn add_arg(f: &mut Fun, a: AtomView) {
                     if let AtomView::Fun(fa) = a {
-                        if fa.get_name() == State::ARG {
+                        if fa.get_id() == State::ARG {
                             // flatten f(arg(...)) = f(...)
                             for aa in fa.iter() {
                                 f.add_arg(aa);
@@ -753,17 +749,16 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                if [State::COS, State::SIN, State::EXP, State::LOG].contains(&name) {
+                if [State::COS, State::SIN, State::EXP, State::LOG].contains(&id) {
                     if out_f.to_fun_view().get_nargs() == 1 {
                         let arg = out_f.to_fun_view().iter().next().unwrap();
                         if let AtomView::Num(n) = arg {
-                            if n.is_zero() && name != State::LOG || n.is_one() && name == State::LOG
-                            {
-                                if name == State::COS || name == State::EXP {
+                            if n.is_zero() && id != State::LOG || n.is_one() && id == State::LOG {
+                                if id == State::COS || id == State::EXP {
                                     let buffer = workspace.new_num(Coefficient::one());
                                     out.set_from_view(&buffer.as_view());
                                     return;
-                                } else if name == State::SIN || name == State::LOG {
+                                } else if id == State::SIN || id == State::LOG {
                                     let buffer = workspace.new_num(Coefficient::zero());
                                     out.set_from_view(&buffer.as_view());
                                     return;
@@ -774,7 +769,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 // try to turn the argument into a number
-                if name == State::COEFF && out_f.to_fun_view().get_nargs() == 1 {
+                if id == State::COEFF && out_f.to_fun_view().get_nargs() == 1 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
                     if let AtomView::Num(_) = arg {
                         let mut buffer = workspace.new_atom();
@@ -792,7 +787,7 @@ impl<'a> AtomView<'a> {
                         if let Some(v) = r.numerator.var_map.as_ref() {
                             if v.iter().all(|v| {
                                 if let Variable::Identifier(v) = v {
-                                    state.get_wildcard_level(*v) == 0
+                                    v.get_wildcard_level() == 0
                                 } else {
                                     false
                                 }
@@ -804,11 +799,7 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                if let Some(Linear) = state
-                    .get_function_attributes(name)
-                    .iter()
-                    .find(|a| matches!(a, Linear))
-                {
+                if id.is_linear() {
                     // linearize sums
                     if out_f
                         .to_fun_view()
@@ -830,7 +821,7 @@ impl<'a> AtomView<'a> {
                         }
 
                         let mut acc = Vec::new();
-                        cartesian_product(workspace, &arg_buf, name, &mut vec![], &mut acc);
+                        cartesian_product(workspace, &arg_buf, id, &mut vec![], &mut acc);
 
                         let mut add_h = workspace.new_atom();
                         let add = add_h.to_add();
@@ -856,7 +847,7 @@ impl<'a> AtomView<'a> {
                         let mut new_term = workspace.new_atom();
                         let t = new_term.to_mul();
                         let mut new_fun = workspace.new_atom();
-                        let nf = new_fun.to_fun(name);
+                        let nf = new_fun.to_fun(id);
                         let mut coeff: Coefficient = 1.into();
                         for a in out_f.to_fun_view().iter() {
                             if let AtomView::Mul(m) = a {
@@ -888,9 +879,7 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                if state.get_function_attributes(name).contains(&Symmetric)
-                    || state.get_function_attributes(name).contains(&Antisymmetric)
-                {
+                if id.is_symmetric() | id.is_antisymmetric() {
                     let mut arg_buf: SmallVec<[(usize, _); 20]> = SmallVec::new();
 
                     for (i, a) in out_f.to_fun_view().iter().enumerate() {
@@ -901,7 +890,7 @@ impl<'a> AtomView<'a> {
 
                     arg_buf.sort_by(|a, b| a.1.as_view().cmp(&b.1.as_view()));
 
-                    if state.get_function_attributes(name).contains(&Antisymmetric) {
+                    if id.is_antisymmetric() {
                         if arg_buf
                             .windows(2)
                             .any(|w| w[0].1.as_view() == w[1].1.as_view())
@@ -923,7 +912,7 @@ impl<'a> AtomView<'a> {
 
                         if swaps % 2 == 1 {
                             let mut handle = workspace.new_atom();
-                            let out_f = handle.to_fun(name);
+                            let out_f = handle.to_fun(id);
                             out_f.set_normalized(true);
                             for (_, a) in arg_buf {
                                 out_f.add_arg(a.as_view());
@@ -939,7 +928,7 @@ impl<'a> AtomView<'a> {
                         }
                     }
 
-                    let out_f = out.to_fun(name);
+                    let out_f = out.to_fun(id);
                     out_f.set_normalized(true);
                     for (_, a) in arg_buf {
                         out_f.add_arg(a.as_view());
@@ -990,7 +979,7 @@ impl<'a> AtomView<'a> {
                             base_handle.get_mut().to_num(new_base_num);
                             exp_handle.get_mut().to_num(new_exp_num);
                         } else if let AtomView::Var(v) = base_handle.as_view() {
-                            if v.get_name() == State::I {
+                            if v.get_id() == State::I {
                                 if let CoefficientView::Natural(n, d) = exp_num {
                                     let mut new_base = workspace.new_atom();
 

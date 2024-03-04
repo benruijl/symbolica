@@ -22,7 +22,7 @@ impl<'a> AtomView<'a> {
                 false
             }
             AtomView::Var(v) => {
-                if v.get_name() == x {
+                if v.get_id() == x {
                     out.to_num(1.into());
                     true
                 } else {
@@ -35,7 +35,7 @@ impl<'a> AtomView<'a> {
                 // detect if the function to derive is the derivative function itself
                 // if so, derive the last argument of the derivative function and set
                 // a flag to later accumulate previous derivatives
-                let (to_derive, f, is_der) = if f_orig.get_name() == State::DERIVATIVE {
+                let (to_derive, f, is_der) = if f_orig.get_id() == State::DERIVATIVE {
                     let to_derive = f_orig.iter().last().unwrap();
                     (
                         to_derive,
@@ -65,10 +65,10 @@ impl<'a> AtomView<'a> {
 
                 // derive special functions
                 if f.get_nargs() == 1
-                    && [State::EXP, State::LOG, State::SIN, State::COS].contains(&f.get_name())
+                    && [State::EXP, State::LOG, State::SIN, State::COS].contains(&f.get_id())
                 {
                     let mut fn_der = workspace.new_atom();
-                    match f.get_name() {
+                    match f.get_id() {
                         State::EXP => {
                             fn_der.set_from_view(self);
                         }
@@ -223,7 +223,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 let mut pow_h = workspace.new_atom();
-                let pow = pow_h.to_pow(base, new_exp.as_view());
+                pow_h.to_pow(base, new_exp.as_view());
 
                 mul.extend(pow_h.as_view());
 

@@ -706,14 +706,12 @@ impl<'a> AtomView<'a> {
                             let mut n3 = workspace.new_atom();
                             let mut exp = workspace.new_atom();
                             exp.to_num(Coefficient::Rational((-1i64).into()));
-                            let n3p = n3.to_pow(n2_conv.as_view(), exp.as_view());
-                            n3p.set_dirty(true);
+                            n3.to_pow(n2_conv.as_view(), exp.as_view());
 
                             let mut m = workspace.new_atom();
                             let mm = m.to_mul();
                             mm.extend(n1_conv.as_view());
                             mm.extend(n3.as_view());
-                            mm.set_dirty(true);
                             m.as_view().normalize(workspace, state, out);
                             true
                         }
@@ -757,8 +755,7 @@ impl<'a> AtomView<'a> {
                 let mut nb = workspace.new_atom();
                 if base.set_coefficient_ring(vars, state, workspace, &mut nb) {
                     let mut o = workspace.new_atom();
-                    let pow = o.to_pow(nb.as_view(), exp);
-                    pow.set_dirty(true);
+                    o.to_pow(nb.as_view(), exp);
 
                     o.as_view().normalize(workspace, state, out);
                     true
@@ -781,7 +778,7 @@ impl<'a> AtomView<'a> {
                     mul.extend(arg_o.as_view());
                 }
 
-                mul.set_dirty(changed);
+                mul.set_normalized(!changed);
 
                 if !changed {
                     std::mem::swap(out, &mut o);
@@ -805,7 +802,7 @@ impl<'a> AtomView<'a> {
                     mul.extend(arg_o.as_view());
                 }
 
-                mul.set_dirty(changed);
+                mul.set_normalized(!changed);
 
                 if !changed {
                     std::mem::swap(out, &mut o);

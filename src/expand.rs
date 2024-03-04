@@ -47,7 +47,7 @@ impl<'a> AtomView<'a> {
                     let pow = pow_h
                         .get_mut()
                         .to_pow(new_base.as_view(), new_exp.as_view());
-                    pow.set_dirty(changed);
+                    pow.set_normalized(!changed);
                     pow_h.as_view().normalize(workspace, state, out);
                     return changed;
                 };
@@ -60,35 +60,30 @@ impl<'a> AtomView<'a> {
                     }
 
                     let mut add_h = workspace.new_atom();
-                    let add = add_h.get_mut().to_add();
+                    let add = add_h.to_add();
 
                     let mut ci = CombinationWithReplacementIterator::new(args.len(), num);
 
                     while let Some(new_term) = ci.next() {
                         let mut hh = workspace.new_atom();
-                        let p = hh.get_mut().to_mul();
+                        let p = hh.to_mul();
 
                         let mut hhh = workspace.new_atom();
                         for (a, pow) in args.iter().zip(new_term) {
                             if *pow != 0 {
                                 let mut new_exp_h = workspace.new_atom();
-                                new_exp_h.get_mut().to_num((*pow as i64).into());
-                                let new_pow = hhh.get_mut().to_pow(*a, new_exp_h.as_view());
-                                new_pow.set_dirty(true);
+                                new_exp_h.to_num((*pow as i64).into());
+                                hhh.to_pow(*a, new_exp_h.as_view());
                                 p.extend(hhh.as_view());
                             }
                         }
-                        p.set_dirty(true);
 
                         let mut normalized_child = workspace.new_atom();
-                        hh.get_mut().as_view().normalize(
-                            workspace,
-                            state,
-                            normalized_child.get_mut(),
-                        );
+                        hh.as_view()
+                            .normalize(workspace, state, normalized_child.get_mut());
 
                         let mut expanded_child = workspace.new_atom();
-                        normalized_child.get_mut().as_view().expand(
+                        normalized_child.as_view().expand(
                             workspace,
                             state,
                             expanded_child.get_mut(),
@@ -97,33 +92,29 @@ impl<'a> AtomView<'a> {
                         let coeff_f = Integer::multinom(new_term);
                         if coeff_f != Integer::one() {
                             let mut coeff_h = workspace.new_atom();
-                            coeff_h.get_mut().to_num(coeff_f.into());
+                            coeff_h.to_num(coeff_f.into());
 
                             if let Atom::Mul(m) = expanded_child.get_mut() {
                                 m.extend(coeff_h.as_view());
-                                m.set_dirty(true);
                                 add.extend(expanded_child.as_view());
                             } else {
                                 let mut mul_h = workspace.new_atom();
-                                let mul = mul_h.get_mut().to_mul();
+                                let mul = mul_h.to_mul();
                                 mul.extend(expanded_child.as_view());
                                 mul.extend(coeff_h.as_view());
-                                mul.set_dirty(true);
                                 add.extend(mul_h.as_view());
                             }
                         } else {
                             add.extend(expanded_child.as_view());
                         }
                     }
-                    add.set_dirty(true);
 
                     if negative {
                         let mut num_h = workspace.new_atom();
-                        num_h.get_mut().to_num((-1i64).into());
+                        num_h.to_num((-1i64).into());
 
                         let mut pow_h = workspace.new_atom();
-                        let pow = pow_h.get_mut().to_pow(add_h.as_view(), num_h.as_view());
-                        pow.set_dirty(true);
+                        pow_h.to_pow(add_h.as_view(), num_h.as_view());
 
                         pow_h.as_view().normalize(workspace, state, out);
                     } else {
@@ -133,26 +124,23 @@ impl<'a> AtomView<'a> {
                     true
                 } else if let AtomView::Mul(m) = new_base.as_view() {
                     let mut mul_h = workspace.new_atom();
-                    let mul = mul_h.get_mut().to_mul();
+                    let mul = mul_h.to_mul();
 
                     let mut exp_h = workspace.new_atom();
-                    exp_h.get_mut().to_num((num as i64).into());
+                    exp_h.to_num((num as i64).into());
 
                     for arg in m.iter() {
                         let mut pow_h = workspace.new_atom();
-                        let pow = pow_h.get_mut().to_pow(arg, exp_h.as_view());
-                        pow.set_dirty(true);
+                        pow_h.to_pow(arg, exp_h.as_view());
                         mul.extend(pow_h.as_view());
                     }
-                    mul.set_dirty(true);
 
                     if negative {
                         let mut num_h = workspace.new_atom();
-                        num_h.get_mut().to_num((-1).into());
+                        num_h.to_num((-1).into());
 
                         let mut pow_h = workspace.new_atom();
-                        let pow = pow_h.get_mut().to_pow(mul_h.as_view(), num_h.as_view());
-                        pow.set_dirty(true);
+                        pow_h.to_pow(mul_h.as_view(), num_h.as_view());
                         pow_h.as_view().normalize(workspace, state, out);
                     } else {
                         mul_h.as_view().normalize(workspace, state, out);
@@ -163,7 +151,7 @@ impl<'a> AtomView<'a> {
                     let pow = pow_h
                         .get_mut()
                         .to_pow(new_base.as_view(), new_exp.as_view());
-                    pow.set_dirty(changed);
+                    pow.set_normalized(!changed);
                     pow_h.as_view().normalize(workspace, state, out);
                     changed
                 }
@@ -185,25 +173,23 @@ impl<'a> AtomView<'a> {
                         for child in a.iter() {
                             for s in &sum {
                                 let mut b = workspace.new_atom();
-                                b.get_mut().set_from_view(&s.as_view());
+                                b.set_from_view(&s.as_view());
 
                                 if let Atom::Mul(m) = b.get_mut() {
                                     m.extend(child);
-                                    m.set_dirty(true);
                                     new_sum.push(b);
                                 } else {
                                     let mut mul_h = workspace.new_atom();
-                                    let mul = mul_h.get_mut().to_mul();
+                                    let mul = mul_h.to_mul();
                                     mul.extend(b.as_view());
                                     mul.extend(child);
-                                    mul.set_dirty(true);
                                     new_sum.push(mul_h);
                                 }
                             }
 
                             if sum.is_empty() {
                                 let mut b = workspace.new_atom();
-                                b.get_mut().set_from_view(&child);
+                                b.set_from_view(&child);
                                 new_sum.push(b);
                             }
                         }
@@ -216,13 +202,11 @@ impl<'a> AtomView<'a> {
                         for summand in &mut sum {
                             if let Atom::Mul(m) = summand.get_mut() {
                                 m.extend(new_arg.as_view());
-                                m.set_dirty(true);
                             } else {
                                 let mut mul_h = workspace.new_atom();
-                                let mul = mul_h.get_mut().to_mul();
+                                let mul = mul_h.to_mul();
                                 mul.extend(summand.as_view());
                                 mul.extend(new_arg.as_view());
-                                mul.set_dirty(true);
                                 *summand = mul_h;
                             }
                         }
@@ -243,7 +227,6 @@ impl<'a> AtomView<'a> {
                     for x in sum {
                         add.extend(x.as_view());
                     }
-                    add.set_dirty(true);
                 }
 
                 changed
@@ -259,7 +242,7 @@ impl<'a> AtomView<'a> {
                     add.extend(new_arg.as_view());
                 }
 
-                add.set_dirty(changed);
+                add.set_normalized(!changed);
                 changed
             }
             _ => {

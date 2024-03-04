@@ -1609,7 +1609,6 @@ impl PythonExpression {
 
             a.extend(self.expr.as_view());
             a.extend(rhs.to_expression().expr.as_view());
-            a.set_dirty(true);
 
             let mut b = Atom::new();
             e.get()
@@ -1646,7 +1645,6 @@ impl PythonExpression {
 
             a.extend(self.expr.as_view());
             a.extend(rhs.to_expression().expr.as_view());
-            a.set_dirty(true);
 
             let mut b = Atom::new();
             e.get()
@@ -1672,14 +1670,12 @@ impl PythonExpression {
 
             let mut e = workspace.new_atom();
             let a = e.to_pow(rhs.to_expression().expr.as_view(), pow.get().as_view());
-            a.set_dirty(true);
 
             let mut m = workspace.new_atom();
             let md = m.to_mul();
 
             md.extend(self.expr.as_view());
             md.extend(e.get().as_view());
-            md.set_dirty(true);
 
             let mut b = Atom::new();
             m.get()
@@ -1713,7 +1709,6 @@ impl PythonExpression {
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
             let a = e.to_pow(self.expr.as_view(), rhs.to_expression().expr.as_view());
-            a.set_dirty(true);
 
             let mut b = Atom::new();
             e.get()
@@ -1761,7 +1756,6 @@ impl PythonExpression {
 
             a.extend(self.expr.as_view());
             a.extend(sign.get().as_view());
-            a.set_dirty(true);
 
             let mut b = Atom::new();
             e.get()
@@ -3257,7 +3251,6 @@ impl PythonFunction {
             WORKSPACE.with(|workspace| {
                 let mut fun_b = workspace.new_atom();
                 let fun = fun_b.to_fun(self.id);
-                fun.set_dirty(true);
 
                 for x in fn_args {
                     if let Pattern::Literal(a) = x {

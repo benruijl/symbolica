@@ -358,7 +358,6 @@ impl Token {
                         mul.extend(atom.as_view());
                     }
 
-                    mul.set_dirty(true);
                     mul_h.as_view().normalize(workspace, state, out);
                 }
                 Operator::Add => {
@@ -371,7 +370,6 @@ impl Token {
                         add.extend(atom.as_view());
                     }
 
-                    add.set_dirty(true);
                     add_h.as_view().normalize(workspace, state, out);
                 }
                 Operator::Pow => {
@@ -382,8 +380,7 @@ impl Token {
                     args[1].to_atom_with_output(state, workspace, &mut exp)?;
 
                     let mut pow_h = workspace.new_atom();
-                    let pow = pow_h.to_pow(base.as_view(), exp.as_view());
-                    pow.set_dirty(true);
+                    pow_h.to_pow(base.as_view(), exp.as_view());
                     pow_h.as_view().normalize(workspace, state, out);
                 }
                 Operator::Argument => return Err("Unexpected argument operator".into()),
@@ -399,7 +396,6 @@ impl Token {
                     let mul = mul_h.to_mul();
                     mul.extend(base.as_view());
                     mul.extend(num.as_view());
-                    mul.set_dirty(true);
                     mul_h.as_view().normalize(workspace, state, out);
                 }
                 Operator::Inv => {
@@ -411,8 +407,7 @@ impl Token {
                     let num = workspace.new_num(-1);
 
                     let mut pow_h = workspace.new_atom();
-                    let mul = pow_h.to_pow(base.as_view(), num.as_view());
-                    mul.set_dirty(true);
+                    pow_h.to_pow(base.as_view(), num.as_view());
                     pow_h.as_view().normalize(workspace, state, out);
                 }
             },
@@ -424,7 +419,6 @@ impl Token {
 
                 let mut fun_h = workspace.new_atom();
                 let fun = fun_h.to_fun(state.get_or_insert_fn(name, None)?);
-                fun.set_dirty(true);
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
                     a.to_atom_with_output(state, workspace, &mut atom)?;

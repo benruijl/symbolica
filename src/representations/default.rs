@@ -19,7 +19,7 @@ const MUL_ID: u8 = 4;
 const POW_ID: u8 = 6;
 const ADD_ID: u8 = 5;
 const TYPE_MASK: u8 = 0b00000111;
-const DIRTY_FLAG: u8 = 0b10000000;
+const NOT_NORMALIZED: u8 = 0b10000000;
 const HAS_COEFF_FLAG: u8 = 0b01000000;
 
 pub type RawAtom = Vec<u8>;
@@ -208,7 +208,7 @@ impl Fun {
     #[inline]
     pub fn set_from_name(&mut self, id: Identifier) {
         self.data.clear();
-        self.data.put_u8(FUN_ID);
+        self.data.put_u8(FUN_ID | NOT_NORMALIZED);
         self.data.put_u32_le(0_u32);
 
         let buf_pos = self.data.len();
@@ -223,11 +223,11 @@ impl Fun {
     }
 
     #[inline]
-    pub(crate) fn set_dirty(&mut self, dirty: bool) {
-        if dirty {
-            self.data[0] |= DIRTY_FLAG;
+    pub(crate) fn set_normalized(&mut self, normalized: bool) {
+        if !normalized {
+            self.data[0] |= NOT_NORMALIZED;
         } else {
-            self.data[0] &= !DIRTY_FLAG;
+            self.data[0] &= !NOT_NORMALIZED;
         }
     }
 
@@ -327,17 +327,17 @@ impl Pow {
     #[inline]
     pub fn set_from_base_and_exp(&mut self, base: AtomView, exp: AtomView) {
         self.data.clear();
-        self.data.put_u8(POW_ID);
+        self.data.put_u8(POW_ID | NOT_NORMALIZED);
         self.data.extend(base.get_data());
         self.data.extend(exp.get_data());
     }
 
     #[inline]
-    pub(crate) fn set_dirty(&mut self, dirty: bool) {
-        if dirty {
-            self.data[0] |= DIRTY_FLAG;
+    pub(crate) fn set_normalized(&mut self, normalized: bool) {
+        if !normalized {
+            self.data[0] |= NOT_NORMALIZED;
         } else {
-            self.data[0] &= !DIRTY_FLAG;
+            self.data[0] &= !NOT_NORMALIZED;
         }
     }
 
@@ -377,7 +377,7 @@ impl Mul {
     #[inline]
     pub fn new_into(mut buffer: RawAtom) -> Mul {
         buffer.clear();
-        buffer.put_u8(MUL_ID);
+        buffer.put_u8(MUL_ID | NOT_NORMALIZED);
         buffer.put_u32_le(0_u32);
         (0u64, 1).write_packed(&mut buffer);
         let len = buffer.len() as u32 - 1 - 4;
@@ -394,11 +394,11 @@ impl Mul {
     }
 
     #[inline]
-    pub(crate) fn set_dirty(&mut self, dirty: bool) {
-        if dirty {
-            self.data[0] |= DIRTY_FLAG;
+    pub(crate) fn set_normalized(&mut self, normalized: bool) {
+        if !normalized {
+            self.data[0] |= NOT_NORMALIZED;
         } else {
-            self.data[0] &= !DIRTY_FLAG;
+            self.data[0] &= !NOT_NORMALIZED;
         }
     }
 
@@ -540,7 +540,7 @@ impl Add {
     #[inline]
     pub fn new_into(mut buffer: RawAtom) -> Add {
         buffer.clear();
-        buffer.put_u8(ADD_ID);
+        buffer.put_u8(ADD_ID | NOT_NORMALIZED);
         buffer.put_u32_le(0_u32);
         (0u64, 1).write_packed(&mut buffer);
         let len = buffer.len() as u32 - 1 - 4;
@@ -557,11 +557,11 @@ impl Add {
     }
 
     #[inline]
-    pub(crate) fn set_dirty(&mut self, dirty: bool) {
-        if dirty {
-            self.data[0] |= DIRTY_FLAG;
+    pub(crate) fn set_normalized(&mut self, normalized: bool) {
+        if !normalized {
+            self.data[0] |= NOT_NORMALIZED;
         } else {
-            self.data[0] &= !DIRTY_FLAG;
+            self.data[0] &= !NOT_NORMALIZED;
         }
     }
 
@@ -720,8 +720,8 @@ impl<'a> FunView<'a> {
     }
 
     #[inline(always)]
-    pub(crate) fn is_dirty(&self) -> bool {
-        (self.data[0] & DIRTY_FLAG) != 0
+    pub(crate) fn is_normalized(&self) -> bool {
+        (self.data[0] & NOT_NORMALIZED) == 0
     }
 
     #[inline]
@@ -808,11 +808,6 @@ impl<'a> NumView<'a> {
     }
 
     #[inline]
-    pub(crate) fn is_dirty(&self) -> bool {
-        (self.data[0] & DIRTY_FLAG) != 0
-    }
-
-    #[inline]
     pub fn get_coeff_view(&self) -> CoefficientView<'a> {
         self.data[1..].get_coeff_view().0
     }
@@ -869,8 +864,8 @@ impl<'a> PowView<'a> {
     }
 
     #[inline]
-    pub(crate) fn is_dirty(&self) -> bool {
-        (self.data[0] & DIRTY_FLAG) != 0
+    pub(crate) fn is_normalized(&self) -> bool {
+        (self.data[0] & NOT_NORMALIZED) == 0
     }
 
     #[inline]
@@ -933,8 +928,8 @@ impl<'a> MulView<'a> {
     }
 
     #[inline]
-    pub(crate) fn is_dirty(&self) -> bool {
-        (self.data[0] & DIRTY_FLAG) != 0
+    pub(crate) fn is_normalized(&self) -> bool {
+        (self.data[0] & NOT_NORMALIZED) == 0
     }
 
     pub fn get_nargs(&self) -> usize {
@@ -1014,8 +1009,8 @@ impl<'a> AddView<'a> {
     }
 
     #[inline(always)]
-    pub(crate) fn is_dirty(&self) -> bool {
-        (self.data[0] & DIRTY_FLAG) != 0
+    pub(crate) fn is_normalized(&self) -> bool {
+        (self.data[0] & NOT_NORMALIZED) == 0
     }
 
     #[inline(always)]
@@ -1065,7 +1060,7 @@ impl<'a> AddView<'a> {
 
 impl<'a> AtomView<'a> {
     pub fn from(source: &'a [u8]) -> AtomView<'a> {
-        match source[0] {
+        match source[0] & TYPE_MASK {
             VAR_ID => AtomView::Var(VarView { data: source }),
             FUN_ID => AtomView::Fun(FunView { data: source }),
             NUM_ID => AtomView::Num(NumView { data: source }),

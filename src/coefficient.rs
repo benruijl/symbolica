@@ -114,7 +114,7 @@ impl Coefficient {
         }
     }
 
-    pub fn add(self, other: Coefficient, state: &State) -> Coefficient {
+    pub fn add(self, other: Coefficient) -> Coefficient {
         match (self, other) {
             (Coefficient::Rational(r1), Coefficient::Rational(r2)) => {
                 Coefficient::Rational(r1 + r2)
@@ -160,7 +160,7 @@ impl Coefficient {
         }
     }
 
-    pub fn mul(self, other: Coefficient, state: &State) -> Coefficient {
+    pub fn mul(self, other: Coefficient) -> Coefficient {
         match (self, other) {
             (Coefficient::Rational(r1), Coefficient::Rational(r2)) => {
                 Coefficient::Rational(r1 * r2)
@@ -395,7 +395,7 @@ impl CoefficientView<'_> {
         }
     }
 
-    pub fn add(&self, other: &CoefficientView<'_>, state: &State) -> Coefficient {
+    pub fn add(&self, other: &CoefficientView<'_>) -> Coefficient {
         match (self, other) {
             (CoefficientView::Natural(n1, d1), CoefficientView::Natural(n2, d2)) => {
                 Coefficient::Rational(Rational::Natural(*n1, *d1) + &Rational::Natural(*n2, *d2))
@@ -462,7 +462,7 @@ impl CoefficientView<'_> {
         }
     }
 
-    pub fn mul(&self, other: &CoefficientView<'_>, state: &State) -> Coefficient {
+    pub fn mul(&self, other: &CoefficientView<'_>) -> Coefficient {
         match (self, other) {
             (CoefficientView::Natural(n1, d1), CoefficientView::Natural(n2, d2)) => {
                 Coefficient::Rational(Rational::Natural(*n1, *d1) * &Rational::Natural(*n2, *d2))
@@ -533,7 +533,7 @@ impl CoefficientView<'_> {
         }
     }
 
-    pub fn pow(&self, other: &CoefficientView<'_>, _state: &State) -> (Coefficient, Coefficient) {
+    pub fn pow(&self, other: &CoefficientView<'_>) -> (Coefficient, Coefficient) {
         // TODO: normalize 4^1/3 to 2^(2/3)?
         match (self, other) {
             (&CoefficientView::Natural(mut n1, mut d1), &CoefficientView::Natural(mut n2, d2)) => {
@@ -654,7 +654,6 @@ impl<'a> AtomView<'a> {
     pub fn set_coefficient_ring(
         &self,
         vars: &Arc<Vec<Variable>>,
-        state: &State,
         workspace: &Workspace,
         out: &mut Atom,
     ) -> bool {
@@ -679,28 +678,20 @@ impl<'a> AtomView<'a> {
                             true
                         } else {
                             let mut n1 = workspace.new_atom();
-                            r.numerator.to_expression(
-                                workspace,
-                                state,
-                                &HashMap::default(),
-                                &mut n1,
-                            );
+                            r.numerator
+                                .to_expression(workspace, &HashMap::default(), &mut n1);
 
                             let mut n1_conv = workspace.new_atom();
                             n1.as_view()
-                                .set_coefficient_ring(vars, state, workspace, &mut n1_conv);
+                                .set_coefficient_ring(vars, workspace, &mut n1_conv);
 
                             let mut n2 = workspace.new_atom();
-                            r.denominator.to_expression(
-                                workspace,
-                                state,
-                                &HashMap::default(),
-                                &mut n2,
-                            );
+                            r.denominator
+                                .to_expression(workspace, &HashMap::default(), &mut n2);
 
                             let mut n2_conv = workspace.new_atom();
                             n2.as_view()
-                                .set_coefficient_ring(vars, state, workspace, &mut n2_conv);
+                                .set_coefficient_ring(vars, workspace, &mut n2_conv);
 
                             // create n1/n2
                             let mut n3 = workspace.new_atom();
@@ -712,7 +703,7 @@ impl<'a> AtomView<'a> {
                             let mm = m.to_mul();
                             mm.extend(n1_conv.as_view());
                             mm.extend(n3.as_view());
-                            m.as_view().normalize(workspace, state, out);
+                            m.as_view().normalize(workspace, out);
                             true
                         }
                     } else {
@@ -753,11 +744,11 @@ impl<'a> AtomView<'a> {
                 let (base, exp) = p.get_base_exp();
 
                 let mut nb = workspace.new_atom();
-                if base.set_coefficient_ring(vars, state, workspace, &mut nb) {
+                if base.set_coefficient_ring(vars, workspace, &mut nb) {
                     let mut o = workspace.new_atom();
                     o.to_pow(nb.as_view(), exp);
 
-                    o.as_view().normalize(workspace, state, out);
+                    o.as_view().normalize(workspace, out);
                     true
                 } else {
                     out.set_from_view(self);
@@ -774,7 +765,7 @@ impl<'a> AtomView<'a> {
                 for arg in m.iter() {
                     arg_o.reset();
 
-                    changed |= arg.set_coefficient_ring(vars, state, workspace, &mut arg_o);
+                    changed |= arg.set_coefficient_ring(vars, workspace, &mut arg_o);
                     mul.extend(arg_o.as_view());
                 }
 
@@ -784,7 +775,7 @@ impl<'a> AtomView<'a> {
                     std::mem::swap(out, &mut o);
                     false
                 } else {
-                    o.as_view().normalize(workspace, state, out);
+                    o.as_view().normalize(workspace, out);
                     true
                 }
             }
@@ -798,7 +789,7 @@ impl<'a> AtomView<'a> {
                 for arg in a.iter() {
                     arg_o.reset();
 
-                    changed |= arg.set_coefficient_ring(vars, state, workspace, &mut arg_o);
+                    changed |= arg.set_coefficient_ring(vars, workspace, &mut arg_o);
                     mul.extend(arg_o.as_view());
                 }
 
@@ -808,7 +799,7 @@ impl<'a> AtomView<'a> {
                     std::mem::swap(out, &mut o);
                     false
                 } else {
-                    o.as_view().normalize(workspace, state, out);
+                    o.as_view().normalize(workspace, out);
                     true
                 }
             }

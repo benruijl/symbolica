@@ -4,7 +4,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::default();
 
     let inputs = [
@@ -20,8 +20,8 @@ fn main() {
         let mut a = Atom::new();
         input
             .as_view()
-            .derivative(state.get_or_insert_var("x"), &workspace, &state, &mut a);
+            .derivative(state.get_or_insert_var("x"), &workspace, &mut a);
 
-        println!("d({})/dx = {}:", input.printer(&state), a.printer(&state));
+        println!("d({})/dx = {}:", input, a);
     }
 }

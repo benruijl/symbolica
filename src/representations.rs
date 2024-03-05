@@ -157,6 +157,12 @@ impl Hash for AtomView<'_> {
     }
 }
 
+impl std::fmt::Display for AtomView<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        AtomPrinter::new(*self).fmt(f)
+    }
+}
+
 impl<'a> From<NumView<'a>> for AtomView<'a> {
     fn from(n: NumView<'a>) -> AtomView<'a> {
         AtomView::Num(n)
@@ -195,80 +201,28 @@ pub trait AsAtomView<'a>: Sized {
 
     /// Create a builder of an atom. Can be used for easy
     /// construction of terms.
-    fn builder<'b>(
-        self,
-        state: &'b State,
-        workspace: &'b Workspace,
-    ) -> AtomBuilder<'b, BufferHandle<'b, Atom>> {
-        AtomBuilder::new(self, state, workspace, workspace.new_atom())
+    fn builder<'b>(self, workspace: &'b Workspace) -> AtomBuilder<'b, BufferHandle<'b, Atom>> {
+        AtomBuilder::new(self, workspace, workspace.new_atom())
     }
 
-    fn add<'b, T: AsAtomView<'b>>(
-        self,
-        state: &State,
-        workspace: &Workspace,
-        rhs: T,
-        out: &mut Atom,
-    ) {
-        AtomView::add(
-            &self.as_atom_view(),
-            state,
-            workspace,
-            rhs.as_atom_view(),
-            out,
-        )
+    fn add<'b, T: AsAtomView<'b>>(self, workspace: &Workspace, rhs: T, out: &mut Atom) {
+        AtomView::add(&self.as_atom_view(), workspace, rhs.as_atom_view(), out)
     }
 
-    fn mul<'b, T: AsAtomView<'b>>(
-        self,
-        state: &State,
-        workspace: &Workspace,
-        rhs: T,
-        out: &mut Atom,
-    ) {
-        AtomView::mul(
-            &self.as_atom_view(),
-            state,
-            workspace,
-            rhs.as_atom_view(),
-            out,
-        )
+    fn mul<'b, T: AsAtomView<'b>>(self, workspace: &Workspace, rhs: T, out: &mut Atom) {
+        AtomView::mul(&self.as_atom_view(), workspace, rhs.as_atom_view(), out)
     }
 
-    fn div<'b, T: AsAtomView<'b>>(
-        self,
-        state: &State,
-        workspace: &Workspace,
-        rhs: T,
-        out: &mut Atom,
-    ) {
-        AtomView::div(
-            &self.as_atom_view(),
-            state,
-            workspace,
-            rhs.as_atom_view(),
-            out,
-        )
+    fn div<'b, T: AsAtomView<'b>>(self, workspace: &Workspace, rhs: T, out: &mut Atom) {
+        AtomView::div(&self.as_atom_view(), workspace, rhs.as_atom_view(), out)
     }
 
-    fn pow<'b, T: AsAtomView<'b>>(
-        self,
-        state: &State,
-        workspace: &Workspace,
-        rhs: T,
-        out: &mut Atom,
-    ) {
-        AtomView::pow(
-            &self.as_atom_view(),
-            state,
-            workspace,
-            rhs.as_atom_view(),
-            out,
-        )
+    fn pow<'b, T: AsAtomView<'b>>(self, workspace: &Workspace, rhs: T, out: &mut Atom) {
+        AtomView::pow(&self.as_atom_view(), workspace, rhs.as_atom_view(), out)
     }
 
-    fn neg(self, state: &State, workspace: &Workspace, out: &mut Atom) {
-        AtomView::neg(&self.as_atom_view(), state, workspace, out)
+    fn neg(self, workspace: &Workspace, out: &mut Atom) {
+        AtomView::neg(&self.as_atom_view(), workspace, out)
     }
 }
 
@@ -293,11 +247,6 @@ impl<'a> AtomView<'a> {
 
     pub fn clone_into(&self, target: &mut Atom) {
         target.set_from_view(self);
-    }
-
-    /// Create a pretty-printer for an atom.
-    pub fn printer<'b>(&self, state: &'b State) -> AtomPrinter<'a, 'b> {
-        AtomPrinter::new(*self, state)
     }
 
     /// Add two atoms and return the buffer that contains the unnormalized result.
@@ -375,38 +324,38 @@ impl<'a> AtomView<'a> {
     }
 
     /// Add `self` and `rhs`, writing the result in `out`.
-    pub fn add(&self, state: &State, workspace: &Workspace, rhs: AtomView<'_>, out: &mut Atom) {
+    pub fn add(&self, workspace: &Workspace, rhs: AtomView<'_>, out: &mut Atom) {
         self.add_no_norm(workspace, rhs)
             .as_view()
-            .normalize(workspace, state, out);
+            .normalize(workspace, out);
     }
 
     /// Multiply `self` and `rhs`, writing the result in `out`.
-    pub fn mul(&self, state: &State, workspace: &Workspace, rhs: AtomView<'_>, out: &mut Atom) {
+    pub fn mul(&self, workspace: &Workspace, rhs: AtomView<'_>, out: &mut Atom) {
         self.mul_no_norm(workspace, rhs)
             .as_view()
-            .normalize(workspace, state, out);
+            .normalize(workspace, out);
     }
 
     /// Construct `self^exp`, writing the result in `out`.
-    pub fn pow(&self, state: &State, workspace: &Workspace, exp: AtomView<'_>, out: &mut Atom) {
+    pub fn pow(&self, workspace: &Workspace, exp: AtomView<'_>, out: &mut Atom) {
         self.pow_no_norm(workspace, exp)
             .as_view()
-            .normalize(workspace, state, out);
+            .normalize(workspace, out);
     }
 
     /// Divide `self` by `div`, writing the result in `out`.
-    pub fn div(&self, state: &State, workspace: &Workspace, div: AtomView<'_>, out: &mut Atom) {
+    pub fn div(&self, workspace: &Workspace, div: AtomView<'_>, out: &mut Atom) {
         self.div_no_norm(workspace, div)
             .as_view()
-            .normalize(workspace, state, out);
+            .normalize(workspace, out);
     }
 
     /// Negate `self`, writing the result in `out`.
-    pub fn neg(&self, state: &State, workspace: &Workspace, out: &mut Atom) {
+    pub fn neg(&self, workspace: &Workspace, out: &mut Atom) {
         self.neg_no_norm(workspace)
             .as_view()
-            .normalize(workspace, state, out);
+            .normalize(workspace, out);
     }
 
     pub fn get_byte_size(&self) -> usize {
@@ -436,6 +385,12 @@ impl Default for Atom {
     #[inline]
     fn default() -> Self {
         Num::zero(RawAtom::new()).into()
+    }
+}
+
+impl std::fmt::Display for Atom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        AtomPrinter::new(self.as_view()).fmt(f)
     }
 }
 
@@ -494,8 +449,8 @@ impl Atom {
     }
 
     /// Create a pretty-printer for an atom.
-    pub fn printer<'a, 'b>(&'a self, state: &'b State) -> AtomPrinter<'a, 'b> {
-        AtomPrinter::new(self.as_view(), state)
+    pub fn printer<'a>(&'a self) -> AtomPrinter<'a> {
+        AtomPrinter::new(self.as_view())
     }
 
     #[inline]
@@ -640,33 +595,27 @@ impl Atom {
 /// let ws: Workspace = Workspace::new();
 ///
 /// let f_id = state.get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric]));
-/// let fb = FunctionBuilder::new(f_id, &state, &ws);
+/// let fb = FunctionBuilder::new(f_id, &ws);
 /// let a = fb
 ///     .add_arg(&ws.new_num(3))
 ///     .add_arg(&ws.new_num(2))
 ///     .add_arg(&ws.new_num(1))
 ///     .finish();
 ///
-/// println!("{}", a.as_atom_view().printer(&state));
+/// println!("{}", a.as_atom_view());
 /// # }
 /// ```
 pub struct FunctionBuilder<'a> {
-    state: &'a State,
     workspace: &'a Workspace,
     handle: BufferHandle<'a, Atom>,
 }
 
 impl<'a> FunctionBuilder<'a> {
     /// Create a new `FunctionBuilder`.
-    pub fn new(
-        name: Identifier,
-        state: &'a State,
-        workspace: &'a Workspace,
-    ) -> FunctionBuilder<'a> {
+    pub fn new(name: Identifier, workspace: &'a Workspace) -> FunctionBuilder<'a> {
         let mut a = workspace.new_atom();
         a.to_fun(name);
         FunctionBuilder {
-            state,
             workspace,
             handle: a,
         }
@@ -684,12 +633,9 @@ impl<'a> FunctionBuilder<'a> {
     /// Finish the function construction and return an `AtomBuilder`.
     pub fn finish(self) -> AtomBuilder<'a, BufferHandle<'a, Atom>> {
         let mut out = self.workspace.new_atom();
-        self.handle
-            .as_view()
-            .normalize(self.workspace, self.state, &mut out);
+        self.handle.as_view().normalize(self.workspace, &mut out);
 
         AtomBuilder {
-            state: self.state,
             workspace: self.workspace,
             out,
         }
@@ -713,14 +659,13 @@ impl<'a> FunctionBuilder<'a> {
 /// let x = Atom::parse("x", &mut state, &ws).unwrap();
 /// let y = Atom::parse("y", &mut state, &ws).unwrap();
 ///
-/// let mut xb = x.builder(&state, &ws);
+/// let mut xb = x.builder(&ws);
 /// xb = (-(xb + &y + &x) * &y * &ws.new_num(6)).pow(&ws.new_num(5)) / &y;
 ///
-/// println!("{}", xb.as_atom_view().printer(&state));
+/// println!("{}", xb.as_atom_view());
 /// # }
 /// ```
 pub struct AtomBuilder<'a, A: DerefMut<Target = Atom>> {
-    state: &'a State,
     workspace: &'a Workspace,
     out: A,
 }
@@ -729,16 +674,11 @@ impl<'a, A: DerefMut<Target = Atom>> AtomBuilder<'a, A> {
     /// Create a new `AtomBuilder`.
     pub fn new<'b, T: AsAtomView<'b>>(
         atom: T,
-        state: &'a State,
         workspace: &'a Workspace,
         mut out: A,
     ) -> AtomBuilder<'a, A> {
         out.set_from_view(&atom.as_atom_view());
-        AtomBuilder {
-            state,
-            workspace,
-            out,
-        }
+        AtomBuilder { workspace, out }
     }
 
     /// Yield the mutable reference to the output atom.
@@ -752,7 +692,7 @@ impl<'a, A: DerefMut<Target = Atom>> AtomBuilder<'a, A> {
             .as_view()
             .pow_no_norm(self.workspace, exp.as_atom_view())
             .as_view()
-            .normalize(self.workspace, self.state, &mut self.out);
+            .normalize(self.workspace, &mut self.out);
         self
     }
 
@@ -761,7 +701,7 @@ impl<'a, A: DerefMut<Target = Atom>> AtomBuilder<'a, A> {
         base.as_atom_view()
             .pow_no_norm(self.workspace, self.out.as_view())
             .as_view()
-            .normalize(self.workspace, self.state, &mut self.out);
+            .normalize(self.workspace, &mut self.out);
         self
     }
 }
@@ -773,7 +713,6 @@ impl<'a, A: DerefMut<Target = Atom>> From<&AtomBuilder<'a, A>>
         let mut h = value.workspace.new_atom();
         h.set_from_view(&value.as_atom_view());
         AtomBuilder {
-            state: value.state,
             workspace: value.workspace,
             out: h,
         }
@@ -785,7 +724,6 @@ impl<'a> Clone for AtomBuilder<'a, BufferHandle<'a, Atom>> {
         let mut h = self.workspace.new_atom();
         h.set_from_view(&self.as_atom_view());
         AtomBuilder {
-            state: self.state,
             workspace: self.workspace,
             out: h,
         }
@@ -802,7 +740,7 @@ impl<'a, 'b, T: AsAtomView<'b>, A: DerefMut<Target = Atom>> std::ops::Add<T>
             .as_view()
             .add_no_norm(self.workspace, rhs.as_atom_view())
             .as_view()
-            .normalize(self.workspace, self.state, &mut self.out);
+            .normalize(self.workspace, &mut self.out);
         self
     }
 }
@@ -817,7 +755,7 @@ impl<'a, 'b, T: AsAtomView<'b>, A: DerefMut<Target = Atom>> std::ops::Sub<T>
             .as_view()
             .sub_no_norm(self.workspace, rhs.as_atom_view())
             .as_view()
-            .normalize(self.workspace, self.state, &mut self.out);
+            .normalize(self.workspace, &mut self.out);
         self
     }
 }
@@ -832,7 +770,7 @@ impl<'a, 'b, T: AsAtomView<'b>, A: DerefMut<Target = Atom>> std::ops::Mul<T>
             .as_view()
             .mul_no_norm(self.workspace, rhs.as_atom_view())
             .as_view()
-            .normalize(self.workspace, self.state, &mut self.out);
+            .normalize(self.workspace, &mut self.out);
         self
     }
 }
@@ -847,7 +785,7 @@ impl<'a, 'b, T: AsAtomView<'b>, A: DerefMut<Target = Atom>> std::ops::Div<T>
             .as_view()
             .div_no_norm(self.workspace, rhs.as_atom_view())
             .as_view()
-            .normalize(self.workspace, self.state, &mut self.out);
+            .normalize(self.workspace, &mut self.out);
         self
     }
 }
@@ -860,7 +798,7 @@ impl<'a, A: DerefMut<Target = Atom>> std::ops::Neg for AtomBuilder<'a, A> {
             .as_view()
             .neg_no_norm(self.workspace)
             .as_view()
-            .normalize(self.workspace, self.state, &mut self.out);
+            .normalize(self.workspace, &mut self.out);
         self
     }
 }

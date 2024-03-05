@@ -11,27 +11,27 @@ use symbolica::{
 };
 
 fn factor_ff_univariate() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
     let mut exp = Atom::new();
     Atom::parse("x^100-1", &mut state, &workspace)
         .unwrap()
         .as_view()
-        .expand(&workspace, &mut state, &mut exp);
+        .expand(&workspace, &mut exp);
 
     let field = FiniteField::<u32>::new(17);
     let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
 
     let factors = poly.square_free_factorization();
 
-    println!("Factorization of {}:", poly.printer(&state));
+    println!("Factorization of {}:", poly);
     for (f, pow) in factors {
-        println!("\t({})^{}", f.printer(&state), pow);
+        println!("\t({})^{}", f, pow);
     }
 }
 
 fn factor_ff_bivariate() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
     let order = Arc::new(vec![
         Variable::Identifier(state.get_or_insert_var("x")),
@@ -44,46 +44,46 @@ fn factor_ff_bivariate() {
     Atom::parse(input, &mut state, &workspace)
         .unwrap()
         .as_view()
-        .expand(&workspace, &state, &mut exp);
+        .expand(&workspace, &mut exp);
 
     let field = FiniteField::<u32>::new(17);
     let poly: MultivariatePolynomial<FiniteField<u32>, u8> =
         exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
 
-    println!("Factorization of {}:", poly.printer(&state));
+    println!("Factorization of {}:", poly);
     for (f, pow) in poly.factor() {
-        println!("\t({})^{}", f.printer(&state), pow);
+        println!("\t({})^{}", f, pow);
     }
 }
 
 fn factor_ff_square_free() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
     let mut exp = Atom::new();
     Atom::parse("(1+x)*(1+x^2)^2*(x^4+1)^3", &mut state, &workspace)
         .unwrap()
         .as_view()
-        .expand(&workspace, &mut state, &mut exp);
+        .expand(&workspace, &mut exp);
 
     let field = FiniteField::<u32>::new(3);
     let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
 
     let factors = poly.square_free_factorization();
 
-    println!("Square-free factorization of {}:", poly.printer(&state));
+    println!("Square-free factorization of {}:", poly);
     for (f, pow) in factors {
-        println!("\t({})^{}", f.printer(&state), pow);
+        println!("\t({})^{}", f, pow);
     }
 }
 
 fn factor_square_free() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
     let mut exp = Atom::new();
     Atom::parse("3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)", &mut state, &workspace)
         .unwrap()
         .as_view()
-        .expand(&workspace, &mut state, &mut exp);
+        .expand(&workspace, &mut exp);
 
     let poly: MultivariatePolynomial<_, u8> = exp
         .as_view()
@@ -92,14 +92,14 @@ fn factor_square_free() {
 
     let factors = poly.square_free_factorization();
 
-    println!("Square-free factorization of {}:", poly.printer(&state));
+    println!("Square-free factorization of {}:", poly);
     for (f, pow) in factors {
-        println!("\t({})^{}", f.printer(&state), pow);
+        println!("\t({})^{}", f, pow);
     }
 }
 
 fn factor_univariate_1() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
     let mut exp = Atom::new();
     Atom::parse(
@@ -109,7 +109,7 @@ fn factor_univariate_1() {
     )
     .unwrap()
     .as_view()
-    .expand(&workspace, &mut state, &mut exp);
+    .expand(&workspace, &mut exp);
 
     let poly: MultivariatePolynomial<_, u8> = exp
         .as_view()
@@ -118,14 +118,14 @@ fn factor_univariate_1() {
 
     let fs = poly.factor();
 
-    println!("Factorization of {}:", poly.printer(&state));
+    println!("Factorization of {}:", poly);
     for (f, _p) in fs {
-        println!("\t {}", f.printer(&state));
+        println!("\t {}", f);
     }
 }
 
 fn factor_univariate_2() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
     let mut exp = Atom::new();
     Atom::parse(
@@ -135,7 +135,7 @@ fn factor_univariate_2() {
     )
     .unwrap()
     .as_view()
-    .expand(&workspace, &mut state, &mut exp);
+    .expand(&workspace, &mut exp);
 
     let poly: MultivariatePolynomial<_, u8> = exp
         .as_view()
@@ -144,14 +144,14 @@ fn factor_univariate_2() {
 
     let fs = poly.factor();
 
-    println!("Factorization of {}:", poly.printer(&state));
+    println!("Factorization of {}:", poly);
     for (f, p) in fs {
-        println!("\t {} {}", f.printer(&state), p);
+        println!("\t {} {}", f, p);
     }
 }
 
 fn factor_bivariate() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
     let order = Arc::new(vec![
         Variable::Identifier(state.get_or_insert_var("x")),
@@ -164,20 +164,20 @@ fn factor_bivariate() {
     Atom::parse(input, &mut state, &workspace)
         .unwrap()
         .as_view()
-        .expand(&workspace, &state, &mut exp);
+        .expand(&workspace, &mut exp);
 
     let field = IntegerRing::new();
     let poly: MultivariatePolynomial<_, u8> =
         exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
 
-    println!("Factorization of {}:", poly.printer(&state));
+    println!("Factorization of {}:", poly);
     for (f, pow) in poly.factor() {
-        println!("\t({})^{}", f.printer(&state), pow);
+        println!("\t({})^{}", f, pow);
     }
 }
 
 fn factor_multivariate() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
     let order = Arc::new(vec![
         Variable::Identifier(state.get_or_insert_var("x")),
@@ -192,15 +192,15 @@ fn factor_multivariate() {
     Atom::parse(input, &mut state, &workspace)
         .unwrap()
         .as_view()
-        .expand(&workspace, &state, &mut exp);
+        .expand(&workspace, &mut exp);
 
     let field = IntegerRing::new();
     let poly: MultivariatePolynomial<_, u8> =
         exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
 
-    println!("Factorization of {}:", poly.printer(&state));
+    println!("Factorization of {}:", poly);
     for (f, p) in poly.factor() {
-        println!("\t({})^{}", f.printer(&state), p);
+        println!("\t({})^{}", f, p);
     }
 }
 

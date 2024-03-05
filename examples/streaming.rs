@@ -6,7 +6,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::default();
 
     let input = Atom::parse("x+ f(x) + 2*f(y) + 7*f(z)", &mut state, &workspace).unwrap();
@@ -18,17 +18,17 @@ fn main() {
     // map every term in the expression
     stream = stream.map(|workspace, x| {
         let mut out1 = workspace.new_atom();
-        pattern.replace_all(x.as_view(), &rhs, &state, workspace, None, None, &mut out1);
+        pattern.replace_all(x.as_view(), &rhs, workspace, None, None, &mut out1);
 
         let mut out2 = workspace.new_atom();
-        out1.as_view().normalize(workspace, &state, &mut out2);
+        out1.as_view().normalize(workspace, &mut out2);
 
         let mut out3 = Atom::new();
-        out2.as_view().expand(workspace, &state, &mut out3);
+        out2.as_view().expand(workspace, &mut out3);
 
         out3
     });
 
-    let res = stream.to_expression(&workspace, &state);
-    println!("\t+ {}", res.printer(&state));
+    let res = stream.to_expression(&workspace);
+    println!("\t+ {}", res);
 }

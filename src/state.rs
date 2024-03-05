@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::hash::Hash;
 use std::sync::RwLock;
 use std::{
@@ -33,7 +34,6 @@ static ID_TO_STR: AppendOnlyVec<String> = AppendOnlyVec::<String>::new();
 static FINITE_FIELDS: AppendOnlyVec<FiniteField<u64>> = AppendOnlyVec::<FiniteField<u64>>::new();
 
 /// A global state, that stores mappings from variable and function names to ids.
-#[derive(Clone)]
 pub struct State {
     str_to_id: HashMap<String, Identifier>,
 }
@@ -61,8 +61,7 @@ impl State {
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 
-    // TODO: make private
-    pub fn new() -> State {
+    fn new() -> State {
         LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
         let mut state = State {
@@ -81,7 +80,7 @@ impl State {
     }
 
     /// Iterate over all defined symbols.
-    pub fn symbol_iter(&self) -> impl Iterator<Item = &str> {
+    pub fn symbol_iter<'a>() -> impl Iterator<Item = &'a str> {
         ID_TO_STR.iter().map(|s| s.as_str())
     }
 
@@ -132,7 +131,6 @@ impl State {
         match self.str_to_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
-
                 if let Some(attributes) = attributes {
                     let new_id = Identifier::init_fn(
                         r.get_id(),
@@ -327,6 +325,12 @@ impl<'a, T: ResettableBuffer + PartialEq> PartialEq for BufferHandle<'a, T> {
 impl<'a, T: ResettableBuffer + Hash> Hash for BufferHandle<'a, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.buf.hash(state);
+    }
+}
+
+impl<'a, T: ResettableBuffer + Display> Display for BufferHandle<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.buf.as_ref().unwrap().fmt(f)
     }
 }
 

@@ -5,14 +5,14 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace = Workspace::default();
 
     let expr = Atom::parse("x*y*w*z*f(x,y,x*y,z)", &mut state, &workspace).unwrap();
 
     let pat_expr = Atom::parse("z*x_*y_*g_(z_,x_,w_)", &mut state, &workspace).unwrap();
 
-    let pattern = pat_expr.as_view().into_pattern(&state);
+    let pattern = pat_expr.as_view().into_pattern();
     let restrictions = (
         state.get_or_insert_var("x_"),
         PatternRestriction::Length(1, Some(100)),
@@ -20,30 +20,26 @@ fn main() {
         .into();
     let settings = MatchSettings::default().into();
 
-    println!(
-        "> Matching pattern {} to {}:",
-        pat_expr.printer(&state),
-        expr.as_view().printer(&state)
-    );
+    println!("> Matching pattern {} to {}:", pat_expr, expr.as_view());
 
-    let mut it = pattern.pattern_match(expr.as_view(), &state, &restrictions, &settings);
+    let mut it = pattern.pattern_match(expr.as_view(), &restrictions, &settings);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\t Match at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {
-            print!("\t\t{} = ", state.get_name(*id));
+            print!("\t\t{} = ", State::get_name(*id));
             match v {
                 Match::Single(s) => {
-                    print!("{}", s.printer(&state))
+                    print!("{}", s)
                 }
                 Match::Multiple(slice_type, mm) => {
                     print!("{:?} ", slice_type);
                     for vv in mm {
-                        print!("{}", vv.printer(&state));
+                        print!("{}", vv);
                         print!(", ")
                     }
                 }
                 Match::FunctionName(f) => {
-                    print!("Fn {}", state.get_name(*f))
+                    print!("Fn {}", State::get_name(*f))
                 }
             }
             println!();

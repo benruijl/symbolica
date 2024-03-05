@@ -4,7 +4,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let ws: Workspace = Workspace::new();
 
     let x = Atom::parse("x", &mut state, &ws).unwrap();
@@ -12,15 +12,15 @@ fn main() {
     let f_id = state
         .get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric]))
         .unwrap();
-    let f = FunctionBuilder::new(f_id, &state, &ws)
+    let f = FunctionBuilder::new(f_id, &ws)
         .add_arg(&ws.new_num(1))
         .finish();
 
     // the cumbersome passing of the state and workspace can be avoided by using an
     // AtomBuilder, which accumulates the result
-    let mut xb = x.builder(&state, &ws);
+    let mut xb = x.builder(&ws);
 
     xb = (-(xb + &y + &x) * &y * &ws.new_num(6)).pow(&ws.new_num(5)) / &y * &f;
 
-    println!("{}", xb.as_atom_view().printer(&state));
+    println!("{}", xb.as_atom_view());
 }

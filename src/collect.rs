@@ -2,7 +2,7 @@ use ahash::HashMap;
 
 use crate::{
     representations::{Add, AsAtomView, Atom, AtomView, Identifier},
-    state::{State, Workspace},
+    state::Workspace,
 };
 
 impl<'a> AtomView<'a> {
@@ -18,12 +18,12 @@ impl<'a> AtomView<'a> {
         &self,
         x: Identifier,
         workspace: &Workspace,
-        state: &State,
+
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         out: &mut Atom,
     ) {
-        let (h, rest) = self.coefficient_list(x, workspace, state);
+        let (h, rest) = self.coefficient_list(x, workspace);
 
         let mut add_h = workspace.new_atom();
         let add = add_h.to_add();
@@ -73,7 +73,7 @@ impl<'a> AtomView<'a> {
             add.extend(rest.as_view());
         }
 
-        add_h.as_view().normalize(workspace, state, out);
+        add_h.as_view().normalize(workspace, out);
     }
 
     /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
@@ -82,7 +82,6 @@ impl<'a> AtomView<'a> {
         &self,
         x: Identifier,
         workspace: &Workspace,
-        state: &State,
     ) -> (Vec<(AtomView<'a>, Atom)>, Atom) {
         let mut h = HashMap::default();
         let mut rest = workspace.new_num(0);
@@ -90,10 +89,10 @@ impl<'a> AtomView<'a> {
         match self {
             AtomView::Add(a) => {
                 for arg in a.iter() {
-                    arg.collect_factor(x, workspace, state, &mut h, &mut rest)
+                    arg.collect_factor(x, workspace, &mut h, &mut rest)
                 }
             }
-            _ => self.collect_factor(x, workspace, state, &mut h, &mut rest),
+            _ => self.collect_factor(x, workspace, &mut h, &mut rest),
         }
 
         (h.into_iter().collect(), rest.as_view().to_owned())
@@ -121,7 +120,7 @@ impl<'a> AtomView<'a> {
         &self,
         x: Identifier,
         workspace: &Workspace,
-        state: &State,
+
         h: &mut HashMap<AtomView<'a>, Atom>,
         rest: &mut Atom,
     ) {
@@ -145,12 +144,12 @@ impl<'a> AtomView<'a> {
                     }
 
                     let mut col_n = workspace.new_atom();
-                    collected.as_view().normalize(workspace, state, &mut col_n);
+                    collected.as_view().normalize(workspace, &mut col_n);
 
                     h.entry(bracket.unwrap())
                         .and_modify(|e| {
                             let mut res = workspace.new_atom();
-                            e.add(state, workspace, col_n.as_view(), &mut res);
+                            e.add(workspace, col_n.as_view(), &mut res);
                             std::mem::swap(e, &mut res);
                         })
                         .or_insert(col_n.as_view().to_owned());
@@ -165,7 +164,7 @@ impl<'a> AtomView<'a> {
                     h.entry(*self)
                         .and_modify(|e| {
                             let mut res = workspace.new_atom();
-                            e.add(state, workspace, col_n.as_view(), &mut res);
+                            e.add(workspace, col_n.as_view(), &mut res);
                             std::mem::swap(e, &mut res);
                         })
                         .or_insert(col_n.as_view().to_owned());
@@ -176,7 +175,7 @@ impl<'a> AtomView<'a> {
         }
 
         let mut new_atom = workspace.new_atom();
-        rest.add(state, workspace, *self, &mut new_atom);
+        rest.add(workspace, *self, &mut new_atom);
         std::mem::swap(rest, new_atom.get_mut());
     }
 }

@@ -5,7 +5,6 @@ use std::ops::Neg;
 
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::printer::PrintOptions;
-use crate::state::State;
 
 use super::{EuclideanDomain, Field, Ring};
 
@@ -278,7 +277,6 @@ impl Ring for FiniteField<u32> {
     fn fmt_display(
         &self,
         element: &Self::Element,
-        _state: Option<&State>,
         opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
@@ -570,7 +568,6 @@ impl Ring for FiniteField<u64> {
     fn fmt_display(
         &self,
         element: &Self::Element,
-        _state: Option<&State>,
         opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
@@ -848,7 +845,6 @@ impl Ring for FiniteField<Mersenne64> {
     fn fmt_display(
         &self,
         element: &Self::Element,
-        _state: Option<&State>,
         opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
@@ -1045,7 +1041,6 @@ impl Ring for FiniteField<Integer> {
     fn fmt_display(
         &self,
         element: &Self::Element,
-        _state: Option<&State>,
         opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,

@@ -60,16 +60,6 @@ use crate::{
 
 thread_local!(static WORKSPACE: Workspace = Workspace::new());
 
-macro_rules! get_state {
-    () => {
-        State::get_global_state().read().map_err(|_| {
-            exceptions::PyRuntimeError::new_err(
-                "A critical error has occurred earlier in Symbolica: the Python interpreter must be restarted.",
-            )
-        })
-    };
-}
-
 macro_rules! get_state_mut {
     () => {
         State::get_global_state().write().map_err(|_| {
@@ -211,7 +201,7 @@ impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
         let tree = match atom {
             AtomView::Num(_) => PythonAtomTree {
                 atom_type: PythonAtomType::Num,
-                head: Some(format!("{}", AtomPrinter::new(atom, &&get_state!()?))),
+                head: Some(format!("{}", AtomPrinter::new(atom))),
                 tail: vec![],
             },
             AtomView::Var(v) => PythonAtomTree {
@@ -261,12 +251,7 @@ impl ConvertibleToPattern {
     pub fn to_pattern(self) -> PyResult<PythonPattern> {
         match self {
             Self::Literal(l) => Ok(PythonPattern {
-                expr: Arc::new(
-                    l.to_expression()
-                        .expr
-                        .as_view()
-                        .into_pattern(&&get_state!()?),
-                ),
+                expr: Arc::new(l.to_expression().expr.as_view().into_pattern()),
             }),
             Self::Pattern(e) => Ok(e),
         }
@@ -664,11 +649,9 @@ impl PythonPattern {
     /// >>> print(e)
     pub fn execute(&self) -> PyResult<PythonExpression> {
         let mut out = Atom::new();
-        let state = get_state!()?;
         WORKSPACE
             .with(|workspace| {
                 self.expr.substitute_wildcards(
-                    &state.borrow(),
                     workspace,
                     &mut out,
                     &MatchStack::new(&Condition::default(), &MatchSettings::default()),
@@ -885,11 +868,7 @@ impl PythonPattern {
     /// Add this transformer to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
         let res = WORKSPACE.with(|workspace| {
-            Ok::<Pattern, PyErr>(self.expr.add(
-                &rhs.to_pattern()?.expr,
-                workspace,
-                get_state!()?.borrow(),
-            ))
+            Ok::<Pattern, PyErr>(self.expr.add(&rhs.to_pattern()?.expr, workspace))
         })?;
 
         Ok(PythonPattern {
@@ -916,11 +895,7 @@ impl PythonPattern {
     /// Add this transformer to `other`, returning the result.
     pub fn __mul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
         let res = WORKSPACE.with(|workspace| {
-            Ok::<Pattern, PyErr>(self.expr.mul(
-                &rhs.to_pattern()?.expr,
-                workspace,
-                get_state!()?.borrow(),
-            ))
+            Ok::<Pattern, PyErr>(self.expr.mul(&rhs.to_pattern()?.expr, workspace))
         });
 
         Ok(PythonPattern {
@@ -936,11 +911,7 @@ impl PythonPattern {
     /// Divide this transformer by `other`, returning the result.
     pub fn __truediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
         let res = WORKSPACE.with(|workspace| {
-            Ok::<Pattern, PyErr>(self.expr.div(
-                &rhs.to_pattern()?.expr,
-                workspace,
-                get_state!()?.borrow(),
-            ))
+            Ok::<Pattern, PyErr>(self.expr.div(&rhs.to_pattern()?.expr, workspace))
         });
 
         Ok(PythonPattern {
@@ -966,13 +937,8 @@ impl PythonPattern {
             ));
         }
 
-        let res = WORKSPACE.with(|workspace| {
-            Ok::<_, PyErr>(self.expr.pow(
-                &rhs.to_pattern()?.expr,
-                workspace,
-                get_state!()?.borrow(),
-            ))
-        });
+        let res = WORKSPACE
+            .with(|workspace| Ok::<_, PyErr>(self.expr.pow(&rhs.to_pattern()?.expr, workspace)));
 
         Ok(PythonPattern {
             expr: Arc::new(res?),
@@ -1005,8 +971,7 @@ impl PythonPattern {
 
     /// Negate the current transformer, returning the result.
     pub fn __neg__(&self) -> PyResult<PythonPattern> {
-        let res = WORKSPACE
-            .with(|workspace| Ok::<Pattern, PyErr>(self.expr.neg(workspace, &&get_state!()?)));
+        let res = WORKSPACE.with(|workspace| Ok::<Pattern, PyErr>(self.expr.neg(workspace)));
 
         Ok(PythonPattern {
             expr: Arc::new(res?),
@@ -1384,10 +1349,7 @@ impl PythonExpression {
     /// Return all defined symbol names (function names and variables).
     #[classmethod]
     pub fn get_all_symbol_names(_cls: &PyType) -> PyResult<Vec<String>> {
-        let guard = get_state!()?;
-        let state = guard.borrow();
-
-        Ok(state.symbol_iter().map(|x| x.to_string()).collect())
+        Ok(State::symbol_iter().map(|x| x.to_string()).collect())
     }
 
     /// Parse a Symbolica expression from a string.
@@ -1427,10 +1389,7 @@ impl PythonExpression {
 
     /// Convert the expression into a human-readable string.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            AtomPrinter::new(self.expr.as_view(), &&get_state!()?)
-        ))
+        Ok(format!("{}", AtomPrinter::new(self.expr.as_view())))
     }
 
     /// Get the number of bytes that this expression takes up in memory.
@@ -1488,7 +1447,6 @@ impl PythonExpression {
                     num_exp_as_superscript,
                     latex
                 },
-                &&get_state!()?,
             )
         ))
     }
@@ -1504,11 +1462,7 @@ impl PythonExpression {
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            AtomPrinter::new_with_options(
-                self.expr.as_view(),
-                PrintOptions::latex(),
-                &&get_state!()?,
-            )
+            AtomPrinter::new_with_options(self.expr.as_view(), PrintOptions::latex(),)
         ))
     }
 
@@ -1549,7 +1503,6 @@ impl PythonExpression {
 
     /// Add this expression to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
             let a = e.to_add();
@@ -1558,9 +1511,7 @@ impl PythonExpression {
             a.extend(rhs.to_expression().expr.as_view());
 
             let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
+            e.get().as_view().normalize(workspace, &mut b);
             b
         });
 
@@ -1585,7 +1536,6 @@ impl PythonExpression {
 
     /// Add this expression to `other`, returning the result.
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
             let a = e.to_mul();
@@ -1594,9 +1544,7 @@ impl PythonExpression {
             a.extend(rhs.to_expression().expr.as_view());
 
             let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
+            e.get().as_view().normalize(workspace, &mut b);
             b
         });
 
@@ -1610,7 +1558,6 @@ impl PythonExpression {
 
     /// Divide this expression by `other`, returning the result.
     pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut pow = workspace.new_atom();
             pow.to_num((-1).into());
@@ -1625,9 +1572,7 @@ impl PythonExpression {
             md.extend(e.get().as_view());
 
             let mut b = Atom::new();
-            m.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
+            m.get().as_view().normalize(workspace, &mut b);
             b
         });
 
@@ -1652,15 +1597,12 @@ impl PythonExpression {
             ));
         }
 
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
             e.to_pow(self.expr.as_view(), rhs.to_expression().expr.as_view());
 
             let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
+            e.get().as_view().normalize(workspace, &mut b);
             b
         });
 
@@ -1693,7 +1635,6 @@ impl PythonExpression {
 
     /// Negate the current expression, returning the result.
     pub fn __neg__(&self) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut e = workspace.new_atom();
             let a = e.to_mul();
@@ -1705,9 +1646,7 @@ impl PythonExpression {
             a.extend(sign.get().as_view());
 
             let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
+            e.get().as_view().normalize(workspace, &mut b);
             b
         });
 
@@ -1728,7 +1667,7 @@ impl PythonExpression {
     pub fn transform(&self) -> PyResult<PythonPattern> {
         Ok(PythonPattern {
             expr: Arc::new(Pattern::Transformer(Box::new((
-                Some(self.expr.into_pattern(&&get_state!()?)),
+                Some(self.expr.into_pattern()),
                 vec![],
             )))),
         })
@@ -2269,21 +2208,18 @@ impl PythonExpression {
         let mut stream = py.allow_threads(move || {
             // map every term in the expression
             let stream = TermStreamer::new_from((*self.expr).clone());
-            let state = get_state!()?;
             let m = stream.map(|workspace, x| {
                 let mut out = Atom::new();
                 // TODO: capture and abort the parallel run
-                Transformer::execute(x.as_view(), &t, &state.borrow(), workspace, &mut out)
-                    .unwrap_or_else(|e| {
-                        panic!("Transformer failed during parallel execution: {:?}", e)
-                    });
+                Transformer::execute(x.as_view(), &t, workspace, &mut out).unwrap_or_else(|e| {
+                    panic!("Transformer failed during parallel execution: {:?}", e)
+                });
                 out
             });
             Ok::<_, PyErr>(m)
         })?;
 
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| stream.to_expression(workspace, state.borrow()));
+        let b = WORKSPACE.with(|workspace| stream.to_expression(workspace));
 
         Ok(PythonExpression { expr: Arc::new(b) })
     }
@@ -2309,15 +2245,11 @@ impl PythonExpression {
             }
         }
 
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut b = Atom::new();
-            self.expr.as_view().set_coefficient_ring(
-                &Arc::new(var_map),
-                state.borrow(),
-                workspace,
-                &mut b,
-            );
+            self.expr
+                .as_view()
+                .set_coefficient_ring(&Arc::new(var_map), workspace, &mut b);
             b
         });
 
@@ -2326,12 +2258,9 @@ impl PythonExpression {
 
     /// Expand the expression.
     pub fn expand(&self) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut b = Atom::new();
-            self.expr
-                .as_view()
-                .expand(workspace, state.borrow(), &mut b);
+            self.expr.as_view().expand(workspace, &mut b);
             b
         });
 
@@ -2377,13 +2306,11 @@ impl PythonExpression {
             ));
         };
 
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut b = Atom::new();
             self.expr.as_view().collect(
                 id,
                 workspace,
-                state.borrow(),
                 if let Some(key_map) = key_map {
                     Some(Box::new(move |key, out| {
                         Python::with_gil(|py| {
@@ -2467,9 +2394,8 @@ impl PythonExpression {
             ));
         };
 
-        let state = get_state!()?;
         WORKSPACE.with(|workspace| {
-            let (list, rest) = self.expr.as_view().coefficient_list(id, workspace, &state);
+            let (list, rest) = self.expr.as_view().coefficient_list(id, workspace);
 
             let mut py_list: Vec<_> = list
                 .into_iter()
@@ -2514,12 +2440,9 @@ impl PythonExpression {
             ));
         };
 
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut b = Atom::new();
-            self.expr
-                .as_view()
-                .derivative(id, workspace, state.borrow(), &mut b);
+            self.expr.as_view().derivative(id, workspace, &mut b);
             b
         });
 
@@ -2554,7 +2477,6 @@ impl PythonExpression {
             ));
         };
 
-        let state = get_state!()?;
         let b = WORKSPACE.with(|workspace| {
             let mut b = Atom::new();
             self.expr.as_view().taylor_series(
@@ -2562,7 +2484,6 @@ impl PythonExpression {
                 expansion_point.to_expression().expr.as_view(),
                 depth,
                 workspace,
-                state.borrow(),
                 &mut b,
             );
             b
@@ -2656,7 +2577,6 @@ impl PythonExpression {
                 .as_view()
                 .to_rational_polynomial(
                     workspace,
-                    &&get_state!()?,
                     &RationalField::new(),
                     &IntegerRing::new(),
                     var_map.as_ref(),
@@ -2702,7 +2622,6 @@ impl PythonExpression {
                 .as_view()
                 .to_rational_polynomial(
                     workspace,
-                    &&get_state!()?,
                     &RationalField::new(),
                     &IntegerRing::new(),
                     var_map.as_ref(),
@@ -2720,11 +2639,9 @@ impl PythonExpression {
     /// Convert the expression to a rational polynomial, converting all non-polynomial elements to
     /// new independent variables.
     pub fn to_rational_polynomial_with_conversion(&self) -> PyResult<PythonRationalPolynomial> {
-        let state = get_state!()?;
         let p = WORKSPACE.with(|workspace| {
             self.expr.as_view().to_rational_polynomial_with_conversion(
                 workspace,
-                &&state,
                 &RationalField::new(),
                 &IntegerRing::new(),
             )
@@ -2761,10 +2678,9 @@ impl PythonExpression {
                 self.expr.clone(),
                 conditions,
                 settings,
-                get_state!()?.clone(), // FIXME: state is cloned
             ),
-            move |(lhs, target, res, settings, state)| {
-                PatternAtomTreeIterator::new(lhs, target.as_view(), state, res, settings)
+            move |(lhs, target, res, settings)| {
+                PatternAtomTreeIterator::new(lhs, target.as_view(), res, settings)
             },
         ))
     }
@@ -2806,10 +2722,9 @@ impl PythonExpression {
                 rhs.to_pattern()?.expr,
                 conditions,
                 settings,
-                get_state!()?.clone(), // FIXME: state is cloned
             ),
-            move |(lhs, target, rhs, res, settings, state)| {
-                ReplaceIterator::new(lhs, target.as_view(), rhs, state, res, settings)
+            move |(lhs, target, rhs, res, settings)| {
+                ReplaceIterator::new(lhs, target.as_view(), rhs, res, settings)
             },
         ))
     }
@@ -2863,9 +2778,6 @@ impl PythonExpression {
             None
         };
 
-        let guard = get_state!()?;
-        let state = guard.borrow();
-
         WORKSPACE.with(|workspace| {
             let mut out2 = Atom::new();
             let mut expr_ref = self.expr.as_view();
@@ -2873,7 +2785,6 @@ impl PythonExpression {
             while pattern.replace_all(
                 expr_ref,
                 rhs,
-                state,
                 workspace,
                 cond.as_ref().map(|r| r.condition.as_ref()),
                 settings.as_ref(),
@@ -2927,13 +2838,8 @@ impl PythonExpression {
             }
         }
 
-        let mut guard = get_state_mut!()?;
-        let state = guard.borrow_mut();
-
         let res = WORKSPACE
-            .with(|workspace| {
-                AtomView::solve_linear_system::<u16>(&system_b, &vars, workspace, state)
-            })
+            .with(|workspace| AtomView::solve_linear_system::<u16>(&system_b, &vars, workspace))
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not solve system: {:?}", e))
             })?;
@@ -3198,10 +3104,7 @@ impl PythonFunction {
                 }
 
                 let mut out = Atom::new();
-                fun_b
-                    .get()
-                    .as_view()
-                    .normalize(workspace, &&get_state!()?, &mut out);
+                fun_b.get().as_view().normalize(workspace, &mut out);
 
                 Ok(PythonExpression {
                     expr: Arc::new(out),
@@ -3210,10 +3113,9 @@ impl PythonFunction {
             })
         } else {
             // convert all wildcards back from literals
-            let state = &&get_state!()?;
             for arg in &mut fn_args {
                 if let Pattern::Literal(a) = arg {
-                    *arg = a.as_view().into_pattern(state);
+                    *arg = a.as_view().into_pattern();
                 }
             }
 
@@ -3264,7 +3166,6 @@ type OwnedMatch = (
     Arc<Atom>,
     Arc<Condition<WildcardAndRestriction>>,
     Arc<MatchSettings>,
-    State,
 );
 type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a>;
 
@@ -3317,7 +3218,6 @@ type OwnedReplace = (
     Arc<Pattern>,
     Arc<Condition<WildcardAndRestriction>>,
     Arc<MatchSettings>,
-    State,
 );
 type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a>;
 
@@ -3344,7 +3244,7 @@ impl PythonReplaceIterator {
             WORKSPACE.with(|workspace| {
                 let mut out = Atom::new();
 
-                if i.next(&&get_state!()?, workspace, &mut out).is_none() {
+                if i.next(workspace, &mut out).is_none() {
                     Ok(None)
                 } else {
                     Ok::<_, PyErr>(Some(PythonExpression {
@@ -3467,7 +3367,6 @@ impl PythonPolynomial {
                     InstructionSetPrinter {
                         name: "evaluate".to_string(),
                         instr: &o,
-                        state: &&get_state!()?,
                         mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {
                             write_header_and_test: true,
                             always_pass_output_array: false,
@@ -3546,10 +3445,9 @@ impl PythonPolynomial {
     /// >>> print(e - p.to_expression())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
         let mut atom = Atom::new();
-        let state = get_state!()?;
         WORKSPACE.with(|workspace| {
             self.poly
-                .to_expression(workspace, &&state, &HashMap::default(), &mut atom)
+                .to_expression(workspace, &HashMap::default(), &mut atom)
         });
 
         Ok(PythonExpression {
@@ -3630,10 +3528,9 @@ impl PythonIntegerPolynomial {
     /// >>> print((e - p.to_expression()).expand())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
         let mut atom = Atom::new();
-        let state = get_state!()?;
         WORKSPACE.with(|workspace| {
             self.poly
-                .to_expression(workspace, &&state, &HashMap::default(), &mut atom)
+                .to_expression(workspace, &HashMap::default(), &mut atom)
         });
 
         Ok(PythonExpression {
@@ -3813,7 +3710,6 @@ macro_rules! generate_methods {
                         "{}",
                         PolynomialPrinter::new_with_options(
                             &self.poly,
-                            &&get_state!()?,
                             PrintOptions {
                                 terms_on_new_line,
                                 color_top_level_sum,
@@ -3837,7 +3733,6 @@ macro_rules! generate_methods {
                     "{}",
                     PolynomialPrinter {
                         poly: &self.poly,
-                        state: &&get_state!()?,
                         opts: PrintOptions::default()
                     }
                 ))
@@ -3849,7 +3744,6 @@ macro_rules! generate_methods {
                     "$${}$$",
                     PolynomialPrinter::new_with_options(
                         &self.poly,
-                        &&get_state!()?,
                         PrintOptions::latex(),
                     )
                 ))
@@ -4261,7 +4155,6 @@ macro_rules! generate_rat_parse {
                         .map_err(exceptions::PyValueError::new_err)?
                         .to_rational_polynomial(
                             workspace,
-                            &mut state,
                             &RationalField::new(),
                             &IntegerRing::new(),
                             &Arc::new(var_map),
@@ -4284,10 +4177,9 @@ macro_rules! generate_rat_parse {
             /// >>> print((e - p.to_expression()).expand())
             pub fn to_expression(&self) -> PyResult<PythonExpression> {
                 let mut atom = Atom::new();
-                let state = get_state!()?;
                 WORKSPACE.with(|workspace| {
                     self.poly
-                        .to_expression(workspace, &&state, &HashMap::default(), &mut atom)
+                        .to_expression(workspace, &HashMap::default(), &mut atom)
                 });
 
                 Ok(PythonExpression {
@@ -4342,7 +4234,6 @@ impl PythonFiniteFieldRationalPolynomial {
                 .map_err(exceptions::PyValueError::new_err)?
                 .to_rational_polynomial(
                     workspace,
-                    &mut state,
                     &field,
                     &field,
                     &Arc::new(var_map),
@@ -4438,7 +4329,6 @@ macro_rules! generate_rat_methods {
                     "{}",
                     RationalPolynomialPrinter {
                         poly: &self.poly,
-                        state: &&get_state!()?,
                         opts: PrintOptions::default(),
                         add_parentheses: false,
                     }
@@ -4451,7 +4341,6 @@ macro_rules! generate_rat_methods {
                     "$${}$$",
                     RationalPolynomialPrinter::new_with_options(
                         &self.poly,
-                        &&get_state!()?,
                         PrintOptions::latex(),
                     )
                 ))
@@ -4600,12 +4489,9 @@ impl ConvertibleToRationalPolynomial {
             Self::Expression(e) => {
                 let expr = &e.to_expression().expr;
 
-                let state = get_state!()?;
-
                 let poly = WORKSPACE.with(|workspace| {
                     expr.as_view().to_rational_polynomial_with_conversion(
                         workspace,
-                        &state,
                         &RationalField::new(),
                         &IntegerRing::new(),
                     )
@@ -5021,7 +4907,7 @@ impl PythonMatrix {
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            MatrixPrinter::new_with_options(&self.matrix, &&get_state!()?, PrintOptions::latex(),)
+            MatrixPrinter::new_with_options(&self.matrix, PrintOptions::latex(),)
         ))
     }
 
@@ -5045,7 +4931,7 @@ impl PythonMatrix {
 
     /// Convert the matrix into a human-readable string.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.matrix.printer(&&get_state!()?)))
+        Ok(format!("{}", self.matrix.printer()))
     }
 
     /// Add this matrix to `rhs`, returning the result.

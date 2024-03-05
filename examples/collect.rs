@@ -4,7 +4,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::default();
 
     let input = Atom::parse(
@@ -17,34 +17,32 @@ fn main() {
     let key = state.get_or_insert_var("key");
     let coeff = state.get_or_insert_var("coeff");
 
-    let (r, rest) = input.as_view().coefficient_list(x, &workspace, &state);
+    let (r, rest) = input.as_view().coefficient_list(x, &workspace);
 
     println!("> Coefficient list:");
     for (key, val) in r {
-        println!("\t{} {}", key.printer(&state), val.printer(&state));
+        println!("\t{} {}", key, val);
     }
-    println!("\t1 {}", rest.printer(&state));
+    println!("\t1 {}", rest);
 
     println!("> Collect in x:");
     let mut out = Atom::new();
     input.as_view().collect(
         x,
         &workspace,
-        &state,
         Some(Box::new(|x, out| {
             out.set_from_view(&x);
         })),
         None,
         &mut out,
     );
-    println!("\t{}", out.printer(&state));
+    println!("\t{}", out);
 
     println!("> Collect in x with wrapping:");
     let mut out = Atom::new();
     input.as_view().collect(
         x,
         &workspace,
-        &state,
         Some(Box::new(move |a, out| {
             let f = out.to_fun(key);
             f.add_arg(a);
@@ -55,5 +53,5 @@ fn main() {
         })),
         &mut out,
     );
-    println!("\t{}", out.printer(&state));
+    println!("\t{}", out);
 }

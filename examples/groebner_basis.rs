@@ -6,7 +6,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
 
     for x in 'a'..='z' {
@@ -26,7 +26,7 @@ fn main() {
         .map(|x| {
             let a = Atom::parse(x, &mut state, &workspace).unwrap();
             let mut res = workspace.new_atom();
-            a.as_view().expand(&workspace, &state, &mut res);
+            a.as_view().expand(&workspace, &mut res);
             res.as_view()
                 .to_polynomial(&FiniteField::<u32>::new(13), None)
                 .unwrap()
@@ -38,7 +38,7 @@ fn main() {
 
     println!("Lex order basis:");
     for g in &gb.system {
-        println!("\t{}", g.printer(&state));
+        println!("\t{}", g);
     }
 
     // compute the Groebner basis with grevlex ordering by converting the polynomials
@@ -46,6 +46,6 @@ fn main() {
     let gb = GroebnerBasis::new(&grevlex_ideal, true);
     println!("Grevlex order basis:");
     for g in &gb.system {
-        println!("\t{}", g.printer(&state));
+        println!("\t{}", g);
     }
 }

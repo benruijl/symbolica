@@ -27,7 +27,6 @@ struct LocalState {
 }
 
 struct Symbolica {
-    state: State,
     workspace: Workspace,
     local_state: LocalState,
 }
@@ -99,7 +98,6 @@ unsafe extern "C" fn get_offline_license_key(key: *mut c_char) -> bool {
 #[no_mangle]
 unsafe extern "C" fn init() -> *mut Symbolica {
     let s = Symbolica {
-        state: State::new(),
         workspace: Workspace::new(),
         local_state: LocalState {
             buffer: String::with_capacity(2048),
@@ -136,8 +134,10 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
 
     let mut var_map = vec![];
 
+    let mut state = State::get_global_state().write().unwrap();
+
     for var in cstr.split(',') {
-        var_map.push(Variable::Identifier(symbolica.state.get_or_insert_var(var)));
+        var_map.push(Variable::Identifier(state.get_or_insert_var(var)));
         symbolica.local_state.var_name_map.push(var.into());
     }
 
@@ -180,7 +180,6 @@ unsafe extern "C" fn simplify(
                 let r: RationalPolynomial<IntegerRing, $exp_size> = token
                     .to_rational_polynomial(
                         &symbolica.workspace,
-                        &mut symbolica.state,
                         &<$in_field>::new(),
                         &IntegerRing::new(),
                         &symbolica.local_state.var_map,
@@ -194,7 +193,6 @@ unsafe extern "C" fn simplify(
                     "{}\0", // add the NUL character
                     RationalPolynomialPrinter {
                         poly: &r,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -205,7 +203,6 @@ unsafe extern "C" fn simplify(
                 let rf: RationalPolynomial<FiniteField<u32>, $exp_size> = token
                     .to_rational_polynomial(
                         &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -219,7 +216,6 @@ unsafe extern "C" fn simplify(
                     "{}\0", // add the NUL character
                     RationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -230,7 +226,6 @@ unsafe extern "C" fn simplify(
                 let rf: RationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
                     .to_rational_polynomial(
                         &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -244,7 +239,6 @@ unsafe extern "C" fn simplify(
                     "{}\0", // add the NUL character
                     RationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -255,7 +249,6 @@ unsafe extern "C" fn simplify(
                 let rf: RationalPolynomial<FiniteField<u64>, $exp_size> = token
                     .to_rational_polynomial(
                         &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -269,7 +262,6 @@ unsafe extern "C" fn simplify(
                     "{}\0", // add the NUL character
                     RationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -328,7 +320,6 @@ unsafe extern "C" fn simplify_factorized(
                 let r: FactorizedRationalPolynomial<IntegerRing, $exp_size> = token
                     .to_factorized_rational_polynomial(
                         &symbolica.workspace,
-                        &mut symbolica.state,
                         &<$in_field>::new(),
                         &IntegerRing::new(),
                         &symbolica.local_state.var_map,
@@ -342,7 +333,6 @@ unsafe extern "C" fn simplify_factorized(
                     "{}\0", // add the NUL character
                     FactorizedRationalPolynomialPrinter {
                         poly: &r,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -353,7 +343,6 @@ unsafe extern "C" fn simplify_factorized(
                 let rf: FactorizedRationalPolynomial<FiniteField<u32>, $exp_size> = token
                     .to_factorized_rational_polynomial(
                         &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -367,7 +356,6 @@ unsafe extern "C" fn simplify_factorized(
                     "{}\0", // add the NUL character
                     FactorizedRationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -378,7 +366,6 @@ unsafe extern "C" fn simplify_factorized(
                 let rf: FactorizedRationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
                     .to_factorized_rational_polynomial(
                         &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -392,7 +379,6 @@ unsafe extern "C" fn simplify_factorized(
                     "{}\0", // add the NUL character
                     FactorizedRationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -403,7 +389,6 @@ unsafe extern "C" fn simplify_factorized(
                 let rf: FactorizedRationalPolynomial<FiniteField<u64>, $exp_size> = token
                     .to_factorized_rational_polynomial(
                         &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -417,7 +402,6 @@ unsafe extern "C" fn simplify_factorized(
                     "{}\0", // add the NUL character
                     FactorizedRationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }

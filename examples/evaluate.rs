@@ -6,7 +6,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
 
     let x = state.get_or_insert_var("x");

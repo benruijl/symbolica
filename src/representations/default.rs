@@ -2,10 +2,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
 use std::cmp::Ordering;
 
-use crate::{
-    coefficient::{Coefficient, CoefficientView},
-    state::State,
-};
+use crate::coefficient::{Coefficient, CoefficientView};
 
 use super::{
     coefficient::{PackedRationalNumberReader, PackedRationalNumberWriter},
@@ -82,21 +79,21 @@ impl Num {
         self.data.extend(a.data);
     }
 
-    pub fn add(&mut self, other: &NumView<'_>, state: &State) {
+    pub fn add(&mut self, other: &NumView<'_>) {
         let nv = self.to_num_view();
         let a = nv.get_coeff_view();
         let b = other.get_coeff_view();
-        let n = a.add(&b, state);
+        let n = a.add(&b);
 
         self.data.truncate(1);
         n.write_packed(&mut self.data);
     }
 
-    pub fn mul(&mut self, other: &NumView<'_>, state: &State) {
+    pub fn mul(&mut self, other: &NumView<'_>) {
         let nv = self.to_num_view();
         let a = nv.get_coeff_view();
         let b = other.get_coeff_view();
-        let n = a.mul(&b, state);
+        let n = a.mul(&b);
 
         self.data.truncate(1);
         n.write_packed(&mut self.data);
@@ -774,7 +771,7 @@ impl<'a> FunView<'a> {
         Identifier::init_fn(
             id as u32,
             self.get_wildcard_level(),
-            false,
+            self.is_symmetric(),
             id & FUN_ANTISYMMETRIC_FLAG != 0,
             self.is_linear(),
         )

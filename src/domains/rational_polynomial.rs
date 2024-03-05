@@ -15,7 +15,6 @@ use crate::{
         Variable,
     },
     printer::{PrintOptions, RationalPolynomialPrinter},
-    state::State,
 };
 
 use super::{
@@ -129,8 +128,8 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     }
 
     /// Constuct a pretty-printer for the rational polynomial.
-    pub fn printer<'a, 'b>(&'a self, state: &'b State) -> RationalPolynomialPrinter<'a, 'b, R, E> {
-        RationalPolynomialPrinter::new(self, state)
+    pub fn printer<'a>(&'a self) -> RationalPolynomialPrinter<'a, R, E> {
+        RationalPolynomialPrinter::new(self)
     }
 
     /// Convert the coefficient from the current field to a finite field.
@@ -551,7 +550,6 @@ where
     fn fmt_display(
         &self,
         element: &Self::Element,
-        state: Option<&State>,
         opts: &PrintOptions,
         in_product: bool,
         f: &mut Formatter<'_>,
@@ -560,21 +558,14 @@ where
             f.write_char('+')?;
         }
 
-        if let Some(state) = state {
-            f.write_fmt(format_args!(
-                "{}",
-                RationalPolynomialPrinter {
-                    poly: element,
-                    state,
-                    opts: *opts,
-                    add_parentheses: in_product
-                },
-            ))
-        } else if in_product {
-            f.write_fmt(format_args!("({})", element))
-        } else {
-            f.write_fmt(format_args!("{}", element))
-        }
+        f.write_fmt(format_args!(
+            "{}",
+            RationalPolynomialPrinter {
+                poly: element,
+                opts: *opts,
+                add_parentheses: in_product
+            },
+        ))
     }
 }
 

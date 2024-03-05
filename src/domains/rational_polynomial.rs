@@ -127,11 +127,6 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         self.numerator.is_constant() && self.denominator.is_constant()
     }
 
-    /// Constuct a pretty-printer for the rational polynomial.
-    pub fn printer<'a>(&'a self) -> RationalPolynomialPrinter<'a, R, E> {
-        RationalPolynomialPrinter::new(self)
-    }
-
     /// Convert the coefficient from the current field to a finite field.
     pub fn to_finite_field<UField: FiniteFieldWorkspace>(
         &self,
@@ -422,21 +417,13 @@ where
 
 impl<R: Ring, E: Exponent> Display for RationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.denominator.is_one() {
-            self.numerator.fmt(f)
-        } else {
-            if f.sign_plus() {
-                f.write_char('+')?;
-            }
-
-            f.write_fmt(format_args!("({})/({})", self.numerator, self.denominator))
-        }
+        RationalPolynomialPrinter::new(self).fmt(f)
     }
 }
 
 impl<R: Ring, E: Exponent> Display for RationalPolynomialField<R, E> {
     fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Ok(()) // FIXME
+        Ok(())
     }
 }
 

@@ -1,12 +1,12 @@
 use std::{
-    fmt::{Display, Write},
+    fmt::Display,
     ops::{Add, Index, IndexMut, Mul, Neg, Sub},
     slice::Chunks,
 };
 
 use crate::{
     domains::{EuclideanDomain, Field, Ring},
-    printer::{MatrixPrinter, PrintOptions},
+    printer::MatrixPrinter,
 };
 
 /// A matrix with entries that are elements of a ring `F`.
@@ -97,11 +97,11 @@ impl<F: Ring> Matrix<F> {
     pub fn from_nested_vec(matrix: Vec<Vec<F::Element>>, field: F) -> Result<Matrix<F>, String> {
         let mut data = vec![];
 
-        let cols = matrix.get(0).map(|r| r.len()).unwrap_or(0);
+        let cols = matrix.first().map(|r| r.len()).unwrap_or(0);
 
         for d in matrix {
             if d.len() != cols {
-                return Err(format!("Matrix is not rectangular"));
+                return Err("Matrix is not rectangular".to_string());
             }
 
             data.extend(d);
@@ -128,10 +128,6 @@ impl<F: Ring> Matrix<F> {
     /// Return the field of the matrix entries.
     pub fn field(&self) -> &F {
         &self.field
-    }
-
-    pub fn printer<'a, 'b>(&'a self) -> MatrixPrinter<'a, F> {
-        MatrixPrinter::new(self)
     }
 
     /// Return an iterator over the rows of the matrix.
@@ -199,7 +195,7 @@ impl<F: Ring> Matrix<F> {
     /// Apply a function `f` to each entry of the matrix.
     pub fn map<G: Ring>(&self, f: impl Fn(&F::Element) -> G::Element, field: G) -> Matrix<G> {
         Matrix {
-            data: self.data.iter().map(|e| f(e)).collect(),
+            data: self.data.iter().map(f).collect(),
             nrows: self.nrows,
             ncols: self.ncols,
             field,
@@ -237,22 +233,7 @@ impl<F: Ring> IndexMut<(u32, u32)> for Matrix<F> {
 
 impl<F: Ring> Display for Matrix<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_char('{')?;
-        for (ri, r) in self.row_iter().enumerate() {
-            f.write_char('{')?;
-            for (ci, c) in r.iter().enumerate() {
-                self.field
-                    .fmt_display(c, &PrintOptions::default(), true, f)?;
-                if ci + 1 < self.ncols as usize {
-                    f.write_char(',')?;
-                }
-            }
-            f.write_char('}')?;
-            if ri + 1 < self.nrows as usize {
-                f.write_char(',')?;
-            }
-        }
-        f.write_char('}')
+        MatrixPrinter::new(self).fmt(f)
     }
 }
 

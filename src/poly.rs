@@ -24,7 +24,7 @@ use crate::domains::integer::Integer;
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::domains::{EuclideanDomain, Ring};
 use crate::parser::{Operator, Token};
-use crate::representations::{Atom, AtomView, Identifier};
+use crate::representations::{Atom, AtomView, Symbol};
 use crate::state::{BufferHandle, State, Workspace};
 use crate::utils;
 
@@ -336,22 +336,22 @@ impl MonomialOrder for LexOrder {
     }
 }
 
-/// A polynomial variable. It is either a (global) identifier
+/// A polynomial variable. It is either a (global) symbol
 /// a temporary variable (for internal use), an array entry,
 /// a function or any other non-polynomial part.
 #[derive(Clone, Hash, Eq, Debug)]
 pub enum Variable {
-    Identifier(Identifier),
-    Temporary(usize),         // a temporary variable, for internal use
-    Array(Identifier, usize), // an array entry, e.g. a[0]
-    Function(Identifier, Arc<Atom>),
+    Symbol(Symbol),
+    Temporary(usize),     // a temporary variable, for internal use
+    Array(Symbol, usize), // an array entry, e.g. a[0]
+    Function(Symbol, Arc<Atom>),
     Other(Arc<Atom>), // any other non-polynomial part, for example x^-1, x^y, etc.
 }
 
 impl PartialEq for Variable {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Variable::Identifier(a), Variable::Identifier(b)) => a == b,
+            (Variable::Symbol(a), Variable::Symbol(b)) => a == b,
             (Variable::Temporary(a), Variable::Temporary(b)) => a == b,
             (Variable::Array(a, b), Variable::Array(c, d)) => a == c && b == d,
             (Variable::Function(a, b), Variable::Function(c, d)) => a == c && b == d,
@@ -361,35 +361,35 @@ impl PartialEq for Variable {
     }
 }
 
-impl From<Identifier> for Variable {
-    fn from(i: Identifier) -> Variable {
-        Variable::Identifier(i)
+impl From<Symbol> for Variable {
+    fn from(i: Symbol) -> Variable {
+        Variable::Symbol(i)
     }
 }
 
 impl Variable {
-    pub fn to_id(&self) -> Option<Identifier> {
+    pub fn to_id(&self) -> Option<Symbol> {
         match self {
-            Variable::Identifier(s) => Some(*s),
+            Variable::Symbol(s) => Some(*s),
             _ => None,
         }
     }
 
     pub fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Variable::Identifier(v) => f.write_str(State::get_name(*v)),
+            Variable::Symbol(v) => f.write_str(State::get_name(*v)),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
             Variable::Array(t, i) => f.write_fmt(format_args!("{}[{}]", State::get_name(*t), i)),
-            Variable::Function(_, a) | Variable::Other(a) => a.printer().fmt(f),
+            Variable::Function(_, a) | Variable::Other(a) => std::fmt::Display::fmt(a, f),
         }
     }
 
     pub fn to_string(&self) -> String {
         match self {
-            Variable::Identifier(v) => format!("{}", State::get_name(*v)),
+            Variable::Symbol(v) => format!("{}", State::get_name(*v)),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Array(t, i) => format!("{}[{}]", State::get_name(*t), i),
-            Variable::Function(_, a) | Variable::Other(a) => format!("{}", a.printer()),
+            Variable::Function(_, a) | Variable::Other(a) => format!("{}", a),
         }
     }
 }
@@ -417,12 +417,12 @@ impl<'a> AtomView<'a> {
                     _ => Ok(()),
                 },
                 AtomView::Var(v) => {
-                    let name = v.get_id();
+                    let name = v.get_symbol();
                     if !vars.contains(&name.into()) {
                         if !allow_new_vars {
                             return Err("Expression contains variable that is not in variable map");
                         } else {
-                            vars.push(v.get_id().into());
+                            vars.push(v.get_symbol().into());
                         }
                     }
                     Ok(())
@@ -432,14 +432,14 @@ impl<'a> AtomView<'a> {
                     let (base, exp) = p.get_base_exp();
                     match base {
                         AtomView::Var(v) => {
-                            let name = v.get_id();
+                            let name = v.get_symbol();
                             if !vars.contains(&name.into()) {
                                 if !allow_new_vars {
                                     return Err(
                                         "Expression contains variable that is not in variable map",
                                     );
                                 } else {
-                                    vars.push(v.get_id().into());
+                                    vars.push(v.get_symbol().into());
                                 }
                             }
                         }
@@ -525,7 +525,7 @@ impl<'a> AtomView<'a> {
                     );
                 }
                 AtomView::Var(v) => {
-                    let id = v.get_id();
+                    let id = v.get_symbol();
                     exponents[vars.iter().position(|v| *v == id.into()).unwrap()] += E::one();
                 }
                 AtomView::Pow(p) => {
@@ -533,7 +533,7 @@ impl<'a> AtomView<'a> {
 
                     let var_index = match base {
                         AtomView::Var(v) => {
-                            let id = v.get_id();
+                            let id = v.get_symbol();
                             vars.iter().position(|v| *v == id.into()).unwrap()
                         }
                         _ => unreachable!(),
@@ -605,7 +605,6 @@ impl<'a> AtomView<'a> {
     >(
         &self,
         workspace: &Workspace,
-
         field: &R,
         out_field: &RO,
         var_map: Option<&Arc<Vec<Variable>>>,
@@ -701,7 +700,6 @@ impl<'a> AtomView<'a> {
     >(
         &self,
         workspace: &Workspace,
-
         field: &R,
         out_field: &RO,
         var_map: Option<&Arc<Vec<Variable>>>,
@@ -872,7 +870,7 @@ impl<'a> AtomView<'a> {
                     if let AtomView::Num(n) = arg {
                         if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
                             if n >= 0 {
-                                let id = Variable::Array(f.get_id(), n as usize);
+                                let id = Variable::Array(f.get_symbol(), n as usize);
                                 let mut r = MultivariatePolynomial::new(
                                     1,
                                     field,
@@ -969,7 +967,7 @@ impl<'a> AtomView<'a> {
                     if let AtomView::Num(n) = arg {
                         if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
                             if n >= 0 {
-                                let id = Variable::Array(f.get_id(), n as usize);
+                                let id = Variable::Array(f.get_symbol(), n as usize);
                                 let mut r = MultivariatePolynomial::new(
                                     1,
                                     field,
@@ -983,7 +981,7 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                let id = Variable::Function(f.get_id(), Arc::new(self.to_owned()));
+                let id = Variable::Function(f.get_symbol(), Arc::new(self.to_owned()));
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                 r.append_monomial(field.one(), &[E::one()]);
@@ -1021,7 +1019,6 @@ impl<'a> AtomView<'a> {
     >(
         &self,
         workspace: &'b Workspace,
-
         field: &R,
         out_field: &RO,
         map: &mut HashMap<BufferHandle<'b, Atom>, Variable>,
@@ -1189,14 +1186,12 @@ impl<'a> AtomView<'a> {
     /// Convert an expression to a rational polynomial, converting all non-rational subexpressions
     /// to independent variables.
     pub fn to_rational_polynomial_with_conversion<
-        'b,
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
-        workspace: &'b Workspace,
-
+        workspace: &Workspace,
         field: &R,
         out_field: &RO,
     ) -> RationalPolynomial<RO, E>
@@ -1301,7 +1296,7 @@ impl<'a> AtomView<'a> {
                 }
             }
             AtomView::Fun(f) => {
-                let id = Variable::Function(f.get_id(), Arc::new(self.to_owned()));
+                let id = Variable::Function(f.get_symbol(), Arc::new(self.to_owned()));
 
                 let mut r = MultivariatePolynomial::new(1, field, None, Some(Arc::new(vec![id])));
                 r.append_monomial(field.one(), &[E::one()]);
@@ -1337,7 +1332,6 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
     pub fn to_expression(
         &self,
         workspace: &Workspace,
-
         map: &HashMap<Variable, AtomView>,
         out: &mut Atom,
     ) where
@@ -1366,11 +1360,11 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
             for (var_id, &pow) in var_map.iter().zip(monomial.exponents) {
                 if pow > E::zero() {
                     match var_id {
-                        Variable::Identifier(v) => {
+                        Variable::Symbol(v) => {
                             var_h.to_var(*v);
                         }
                         Variable::Temporary(_) => {
-                            let a = map.get(&var_id).expect("Variable missing from map");
+                            let a = map.get(var_id).expect("Variable missing from map");
                             var_h.set_from_view(a);
                         }
                         Variable::Array(n, i) => {
@@ -1410,7 +1404,6 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     pub fn to_expression(
         &self,
         workspace: &Workspace,
-
         map: &HashMap<Variable, AtomView>,
         out: &mut Atom,
     ) where

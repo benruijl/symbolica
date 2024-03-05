@@ -15,7 +15,7 @@ use smartstring::alias::String;
 use crate::{
     coefficient::Coefficient,
     domains::finite_field::{FiniteField, FiniteFieldCore},
-    representations::{AsAtomView, Atom, AtomView, Identifier},
+    representations::{AsAtomView, Atom, AtomView, Symbol},
     LicenseManager, LICENSE_MANAGER,
 };
 
@@ -35,7 +35,7 @@ static FINITE_FIELDS: AppendOnlyVec<FiniteField<u64>> = AppendOnlyVec::<FiniteFi
 
 /// A global state, that stores mappings from variable and function names to ids.
 pub struct State {
-    str_to_id: HashMap<String, Identifier>,
+    str_to_id: HashMap<String, Symbol>,
 }
 
 impl Default for State {
@@ -45,17 +45,17 @@ impl Default for State {
 }
 
 impl State {
-    pub const ARG: Identifier = Identifier::init_fn(0, 0, false, false, false);
-    pub const COEFF: Identifier = Identifier::init_fn(1, 0, false, false, false);
-    pub const EXP: Identifier = Identifier::init_fn(2, 0, false, false, false);
-    pub const LOG: Identifier = Identifier::init_fn(3, 0, false, false, false);
-    pub const SIN: Identifier = Identifier::init_fn(4, 0, false, false, false);
-    pub const COS: Identifier = Identifier::init_fn(5, 0, false, false, false);
-    pub const SQRT: Identifier = Identifier::init_fn(6, 0, false, false, false);
-    pub const DERIVATIVE: Identifier = Identifier::init_fn(7, 0, false, false, false);
-    pub const E: Identifier = Identifier::init_var(8, 0);
-    pub const I: Identifier = Identifier::init_var(9, 0);
-    pub const PI: Identifier = Identifier::init_var(10, 0);
+    pub const ARG: Symbol = Symbol::init_fn(0, 0, false, false, false);
+    pub const COEFF: Symbol = Symbol::init_fn(1, 0, false, false, false);
+    pub const EXP: Symbol = Symbol::init_fn(2, 0, false, false, false);
+    pub const LOG: Symbol = Symbol::init_fn(3, 0, false, false, false);
+    pub const SIN: Symbol = Symbol::init_fn(4, 0, false, false, false);
+    pub const COS: Symbol = Symbol::init_fn(5, 0, false, false, false);
+    pub const SQRT: Symbol = Symbol::init_fn(6, 0, false, false, false);
+    pub const DERIVATIVE: Symbol = Symbol::init_fn(7, 0, false, false, false);
+    pub const E: Symbol = Symbol::init_var(8, 0);
+    pub const I: Symbol = Symbol::init_var(9, 0);
+    pub const PI: Symbol = Symbol::init_var(10, 0);
 
     pub const BUILTIN_VAR_LIST: [&'static str; 11] = [
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
@@ -85,13 +85,13 @@ impl State {
     }
 
     /// Returns `true` iff this identifier is defined by Symbolica.
-    pub fn is_builtin(id: Identifier) -> bool {
+    pub fn is_builtin(id: Symbol) -> bool {
         id.get_id() < Self::BUILTIN_VAR_LIST.len() as u32
     }
 
     /// Get the id for a certain name if the name is already registered,
     /// else register it and return a new id.
-    pub fn get_or_insert_var<S: AsRef<str>>(&mut self, name: S) -> Identifier {
+    pub fn get_or_insert_var<S: AsRef<str>>(&mut self, name: S) -> Symbol {
         match self.str_to_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
@@ -111,7 +111,7 @@ impl State {
                 // as the state itself is behind a mutex
                 let new_index = ID_TO_STR.push(name.as_ref().into());
 
-                let new_id = Identifier::init_var(new_index as u32, wildcard_level);
+                let new_id = Symbol::init_var(new_index as u32, wildcard_level);
                 v.insert(new_id);
                 new_id
             }
@@ -127,12 +127,12 @@ impl State {
         &mut self,
         name: S,
         attributes: Option<Vec<FunctionAttribute>>,
-    ) -> Result<Identifier, String> {
+    ) -> Result<Symbol, String> {
         match self.str_to_id.entry(name.as_ref().into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
                 if let Some(attributes) = attributes {
-                    let new_id = Identifier::init_fn(
+                    let new_id = Symbol::init_fn(
                         r.get_id(),
                         r.get_wildcard_level(),
                         attributes.contains(&FunctionAttribute::Symmetric),
@@ -170,7 +170,7 @@ impl State {
                 }
 
                 let new_id = if let Some(attributes) = attributes {
-                    Identifier::init_fn(
+                    Symbol::init_fn(
                         new_index as u32,
                         wildcard_level,
                         attributes.contains(&FunctionAttribute::Symmetric),
@@ -178,7 +178,7 @@ impl State {
                         attributes.contains(&FunctionAttribute::Linear),
                     )
                 } else {
-                    Identifier::init_fn(new_index as u32, wildcard_level, false, false, false)
+                    Symbol::init_fn(new_index as u32, wildcard_level, false, false, false)
                 };
 
                 v.insert(new_id);
@@ -188,8 +188,8 @@ impl State {
         }
     }
 
-    /// Get the name for a given id.
-    pub fn get_name<'a>(id: Identifier) -> &'a String {
+    /// Get the name for a given symbol.
+    pub fn get_name<'a>(id: Symbol) -> &'a String {
         &ID_TO_STR[id.get_id() as usize]
     }
 
@@ -229,7 +229,7 @@ impl Workspace {
     }
 
     #[inline]
-    pub fn new_var(&self, id: Identifier) -> BufferHandle<Atom> {
+    pub fn new_var(&self, id: Symbol) -> BufferHandle<Atom> {
         let mut owned = self.new_atom();
         owned.to_var(id);
         owned

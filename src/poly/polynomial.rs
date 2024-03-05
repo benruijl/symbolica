@@ -3,7 +3,6 @@ use std::cell::Cell;
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BinaryHeap};
 use std::fmt::Display;
-use std::fmt::{self, Write};
 use std::marker::PhantomData;
 use std::mem;
 use std::ops::{Add, Div, Mul, Neg, Sub};
@@ -11,8 +10,8 @@ use std::sync::Arc;
 
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::RationalField;
-use crate::domains::{EuclideanDomain, Field, Ring, RingPrinter};
-use crate::printer::{PolynomialPrinter, PrintOptions};
+use crate::domains::{EuclideanDomain, Field, Ring};
+use crate::printer::PolynomialPrinter;
 
 use super::gcd::PolynomialGCD;
 use super::{Exponent, LexOrder, MonomialOrder, Variable, INLINED_EXPONENTS};
@@ -132,11 +131,6 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             var_map: self.var_map.clone(),
             _phantom: PhantomData,
         }
-    }
-
-    /// Constuct a pretty-printer for the polynomial.
-    pub fn printer<'a>(&'a self) -> PolynomialPrinter<'a, F, E, O> {
-        PolynomialPrinter::new(self)
     }
 
     /// Get the ith monomial
@@ -483,10 +477,10 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     }
 }
 
-impl<F: Ring + fmt::Debug, E: Exponent + fmt::Debug, O: MonomialOrder> fmt::Debug
+impl<F: Ring + std::fmt::Debug, E: Exponent + std::fmt::Debug, O: MonomialOrder> std::fmt::Debug
     for MultivariatePolynomial<F, E, O>
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if self.is_zero() {
             return write!(f, "[]");
         }
@@ -509,66 +503,8 @@ impl<F: Ring + fmt::Debug, E: Exponent + fmt::Debug, O: MonomialOrder> fmt::Debu
 }
 
 impl<F: Ring + Display, E: Exponent, O: MonomialOrder> Display for MultivariatePolynomial<F, E, O> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if f.sign_plus() {
-            f.write_char('+')?;
-        }
-
-        let mut is_first_term = true;
-        for monomial in self {
-            let mut is_first_factor = true;
-            if self.field.is_one(monomial.coefficient) {
-                if !is_first_term {
-                    write!(f, "+")?;
-                }
-            } else if monomial.coefficient.eq(&self.field.neg(&self.field.one())) {
-                write!(f, "-")?;
-            } else {
-                if is_first_term {
-                    self.field.fmt_display(
-                        monomial.coefficient,
-                        &PrintOptions::default(),
-                        true,
-                        f,
-                    )?;
-                } else {
-                    write!(
-                        f,
-                        "{:+}",
-                        RingPrinter {
-                            ring: &self.field,
-                            element: monomial.coefficient,
-                            opts: &PrintOptions::default(),
-                            in_product: true
-                        }
-                    )?;
-                }
-                is_first_factor = false;
-            }
-            is_first_term = false;
-            for (i, e) in monomial.exponents.iter().enumerate() {
-                if e.is_zero() {
-                    continue;
-                }
-                if is_first_factor {
-                    is_first_factor = false;
-                } else {
-                    write!(f, "*")?;
-                }
-                write!(f, "x{}", i)?;
-                if e.to_u32() != 1 {
-                    write!(f, "^{}", e)?;
-                }
-            }
-            if is_first_factor {
-                write!(f, "1")?;
-            }
-        }
-        if is_first_term {
-            write!(f, "0")?;
-        }
-
-        Display::fmt(&self.field, f)
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        PolynomialPrinter::new(self).fmt(f)
     }
 }
 

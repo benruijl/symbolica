@@ -77,7 +77,7 @@ impl From<&Integer> for Rational {
 impl From<Integer> for Rational {
     fn from(value: Integer) -> Self {
         match value {
-            Integer::Natural(n) => Rational::Natural(n.into(), 1),
+            Integer::Natural(n) => Rational::Natural(n, 1),
             Integer::Double(r) => Rational::Large(MultiPrecisionRational::from(r)),
             Integer::Large(r) => Rational::Large(MultiPrecisionRational::from(r)),
         }

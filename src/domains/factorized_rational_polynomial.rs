@@ -19,7 +19,7 @@ use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::IntegerRing,
     rational::RationalField,
-    EuclideanDomain, Field, Ring, RingPrinter,
+    EuclideanDomain, Field, Ring,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -116,11 +116,6 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
 
     pub fn is_constant(&self) -> bool {
         self.numerator.is_constant() && self.denominators.is_empty()
-    }
-
-    /// Constuct a pretty-printer for the rational polynomial.
-    pub fn printer<'a, 'b>(&'a self) -> FactorizedRationalPolynomialPrinter<'a, R, E> {
-        FactorizedRationalPolynomialPrinter::new(self)
     }
 
     /// Convert the coefficient from the current field to a finite field.
@@ -507,59 +502,13 @@ where
 
 impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.numerator.field.is_one(&self.numer_coeff) {
-            f.write_fmt(format_args!(
-                "{}*",
-                RingPrinter {
-                    ring: &self.numerator.field,
-                    element: &self.numer_coeff,
-                    opts: &PrintOptions::default(),
-                    in_product: false,
-                }
-            ))?;
-        }
-
-        if self.denominators.is_empty() && self.numerator.field.is_one(&self.denom_coeff) {
-            if !self.numerator.field.is_one(&self.numer_coeff) {
-                f.write_fmt(format_args!("({})", self.numerator))
-            } else {
-                self.numerator.fmt(f)
-            }
-        } else {
-            if f.sign_plus() {
-                f.write_char('+')?;
-            }
-
-            f.write_fmt(format_args!("({})/(", self.numerator))?;
-
-            if !self.numerator.field.is_one(&self.denom_coeff) {
-                f.write_fmt(format_args!(
-                    "({})",
-                    RingPrinter {
-                        ring: &self.numerator.field,
-                        element: &self.denom_coeff,
-                        opts: &PrintOptions::default(),
-                        in_product: false,
-                    }
-                ))?;
-            }
-
-            for (d, p) in &self.denominators {
-                if *p == 1 {
-                    f.write_fmt(format_args!("({})", d))?;
-                } else {
-                    f.write_fmt(format_args!("({})^{}", d, p))?;
-                }
-            }
-
-            f.write_char(')')
-        }
+        FactorizedRationalPolynomialPrinter::new(self).fmt(f)
     }
 }
 
 impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomialField<R, E> {
     fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Ok(()) // FIXME
+        Ok(())
     }
 }
 

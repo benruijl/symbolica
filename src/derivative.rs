@@ -1,7 +1,7 @@
 use crate::{
     coefficient::{Coefficient, CoefficientView},
     domains::integer::Integer,
-    representations::{AsAtomView, Atom, AtomBuilder, AtomView, Identifier},
+    representations::{AsAtomView, Atom, AtomBuilder, AtomView, Symbol},
     state::{State, Workspace},
 };
 
@@ -9,14 +9,14 @@ impl<'a> AtomView<'a> {
     /// Take a derivative of the expression with respect to `x` and
     /// write the result in `out`.
     /// Returns `true` if the derivative is non-zero.
-    pub fn derivative(&self, x: Identifier, workspace: &Workspace, out: &mut Atom) -> bool {
+    pub fn derivative(&self, x: Symbol, workspace: &Workspace, out: &mut Atom) -> bool {
         match self {
             AtomView::Num(_) => {
                 out.to_num(Coefficient::zero());
                 false
             }
             AtomView::Var(v) => {
-                if v.get_id() == x {
+                if v.get_symbol() == x {
                     out.to_num(1.into());
                     true
                 } else {
@@ -29,7 +29,7 @@ impl<'a> AtomView<'a> {
                 // detect if the function to derive is the derivative function itself
                 // if so, derive the last argument of the derivative function and set
                 // a flag to later accumulate previous derivatives
-                let (to_derive, f, is_der) = if f_orig.get_id() == State::DERIVATIVE {
+                let (to_derive, f, is_der) = if f_orig.get_symbol() == State::DERIVATIVE {
                     let to_derive = f_orig.iter().last().unwrap();
                     (
                         to_derive,
@@ -59,10 +59,10 @@ impl<'a> AtomView<'a> {
 
                 // derive special functions
                 if f.get_nargs() == 1
-                    && [State::EXP, State::LOG, State::SIN, State::COS].contains(&f.get_id())
+                    && [State::EXP, State::LOG, State::SIN, State::COS].contains(&f.get_symbol())
                 {
                     let mut fn_der = workspace.new_atom();
-                    match f.get_id() {
+                    match f.get_symbol() {
                         State::EXP => {
                             fn_der.set_from_view(self);
                         }
@@ -295,7 +295,7 @@ impl<'a> AtomView<'a> {
     /// Taylor expand in `x` around `expansion_point` to depth `depth`.
     pub fn taylor_series(
         &self,
-        x: Identifier,
+        x: Symbol,
         expansion_point: AtomView,
         depth: u32,
         workspace: &Workspace,

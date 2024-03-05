@@ -5,7 +5,7 @@ use crate::{
     combinatorics::{partitions, unique_permutations},
     id::{Condition, MatchSettings, Pattern, WildcardAndRestriction},
     printer::{AtomPrinter, PrintOptions},
-    representations::{Atom, AtomView, Identifier},
+    representations::{Atom, AtomView, Symbol},
     state::{State, Workspace},
 };
 use ahash::HashMap;
@@ -63,9 +63,9 @@ pub enum Transformer {
     /// Expand the rhs.
     Expand,
     /// Derive the rhs w.r.t a variable.
-    Derivative(Identifier),
+    Derivative(Symbol),
     /// Derive the rhs w.r.t a variable.
-    TaylorSeries(Identifier, Atom, u32),
+    TaylorSeries(Symbol, Atom, u32),
     /// Apply find-and-replace on the rhs.
     ReplaceAll(
         Pattern,
@@ -86,10 +86,10 @@ pub enum Transformer {
     Map(Box<dyn Map>),
     /// Split a `Mul` or `Add` into a list of arguments.
     Split,
-    Partition(Vec<(Identifier, usize)>, bool, bool),
+    Partition(Vec<(Symbol, usize)>, bool, bool),
     Sort,
     Deduplicate,
-    Permutations(Identifier),
+    Permutations(Symbol),
     Repeat(Vec<Transformer>),
     Print(PrintOptions),
     Stats(StatsOptions, Vec<Transformer>),
@@ -134,15 +134,15 @@ impl std::fmt::Debug for Transformer {
 
 impl Transformer {
     /// Create a new partition transformer that must exactly fit the input.
-    pub fn new_partition_exact(partitions: Vec<(Identifier, usize)>) -> Transformer {
+    pub fn new_partition_exact(partitions: Vec<(Symbol, usize)>) -> Transformer {
         Transformer::Partition(partitions, false, false)
     }
 
     /// Create a new partition transformer that collects all left-over
     /// atoms in the last bin.
     pub fn new_partition_collect_in_last(
-        mut partitions: Vec<(Identifier, usize)>,
-        rest: Identifier,
+        mut partitions: Vec<(Symbol, usize)>,
+        rest: Symbol,
     ) -> Transformer {
         partitions.push((rest, 0));
         Transformer::Partition(partitions, true, false)
@@ -150,7 +150,7 @@ impl Transformer {
 
     /// Create a new partition transformer that repeats the partitions so that it can fit
     /// the input.
-    pub fn new_partition_repeat(partition: (Identifier, usize)) -> Transformer {
+    pub fn new_partition_repeat(partition: (Symbol, usize)) -> Transformer {
         Transformer::Partition(vec![partition], false, true)
     }
 
@@ -185,7 +185,7 @@ impl Transformer {
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_id() == State::ARG {
+                        if f.get_symbol() == State::ARG {
                             let mut mul_h = workspace.new_atom();
                             let mul = mul_h.to_mul();
 
@@ -202,7 +202,7 @@ impl Transformer {
                 }
                 Transformer::Sum => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_id() == State::ARG {
+                        if f.get_symbol() == State::ARG {
                             let mut add_h = workspace.new_atom();
                             let add = add_h.to_add();
 
@@ -219,7 +219,7 @@ impl Transformer {
                 }
                 Transformer::ArgCount(only_for_arg_fun) => {
                     if let AtomView::Fun(f) = input {
-                        if !*only_for_arg_fun || f.get_id() == State::ARG {
+                        if !*only_for_arg_fun || f.get_symbol() == State::ARG {
                             let n_args = f.get_nargs();
                             out.to_num((n_args as i64).into());
                         } else {
@@ -260,7 +260,7 @@ impl Transformer {
                 },
                 Transformer::Partition(bins, fill_last, repeat) => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_id() == State::ARG {
+                        if f.get_symbol() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
 
                             let mut sum_h = workspace.new_atom();
@@ -303,7 +303,7 @@ impl Transformer {
                 }
                 Transformer::Sort => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_id() == State::ARG {
+                        if f.get_symbol() == State::ARG {
                             let mut args: Vec<_> = f.iter().collect();
                             args.sort();
 
@@ -323,7 +323,7 @@ impl Transformer {
                 }
                 Transformer::Deduplicate => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_id() == State::ARG {
+                        if f.get_symbol() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
                             let mut args_dedup: Vec<_> = Vec::with_capacity(args.len());
 
@@ -350,7 +350,7 @@ impl Transformer {
                 }
                 Transformer::Permutations(f_name) => {
                     if let AtomView::Fun(f) = input {
-                        if f.get_id() == State::ARG {
+                        if f.get_symbol() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
 
                             let mut sum_h = workspace.new_atom();

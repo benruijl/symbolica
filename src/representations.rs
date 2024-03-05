@@ -15,10 +15,11 @@ pub use self::default::{
 };
 use self::default::{FunView, RawAtom};
 
-/// An identifier, for example for a variable or function.
+/// A symbol, for example the name of a variable or the name of a function,
+/// together with its properties.
 /// Should be created using `get_or_insert` of `State`.
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Identifier {
+pub struct Symbol {
     id: u32,
     wildcard_level: u8,
     is_symmetric: bool,
@@ -26,11 +27,11 @@ pub struct Identifier {
     is_linear: bool,
 }
 
-impl Identifier {
-    /// Create a new identifier for a variable. This constructor should be used with care as there are no checks
+impl Symbol {
+    /// Create a new variable symbol. This constructor should be used with care as there are no checks
     /// about the validity of the identifier.
     pub const fn init_var(id: u32, wildcard_level: u8) -> Self {
-        Identifier {
+        Symbol {
             id,
             wildcard_level,
             is_symmetric: false,
@@ -39,7 +40,7 @@ impl Identifier {
         }
     }
 
-    /// Create a new identifier for a function. This constructor should be used with care as there are no checks
+    /// Create a new function symbol. This constructor should be used with care as there are no checks
     /// about the validity of the identifier.
     pub const fn init_fn(
         id: u32,
@@ -48,7 +49,7 @@ impl Identifier {
         is_antisymmetric: bool,
         is_linear: bool,
     ) -> Self {
-        Identifier {
+        Symbol {
             id,
             wildcard_level,
             is_symmetric,
@@ -78,7 +79,7 @@ impl Identifier {
     }
 }
 
-impl std::fmt::Debug for Identifier {
+impl std::fmt::Debug for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{}", self.id))?;
         for _ in 0..self.wildcard_level {
@@ -201,7 +202,7 @@ pub trait AsAtomView<'a>: Sized {
 
     /// Create a builder of an atom. Can be used for easy
     /// construction of terms.
-    fn builder<'b>(self, workspace: &'b Workspace) -> AtomBuilder<'b, BufferHandle<'b, Atom>> {
+    fn builder(self, workspace: &Workspace) -> AtomBuilder<'_, BufferHandle<'_, Atom>> {
         AtomBuilder::new(self, workspace, workspace.new_atom())
     }
 
@@ -448,13 +449,8 @@ impl Atom {
         Token::parse(input)?.to_atom(state, workspace)
     }
 
-    /// Create a pretty-printer for an atom.
-    pub fn printer<'a>(&'a self) -> AtomPrinter<'a> {
-        AtomPrinter::new(self.as_view())
-    }
-
     #[inline]
-    pub fn new_var(id: Identifier) -> Atom {
+    pub fn new_var(id: Symbol) -> Atom {
         Var::new(id).into()
     }
 
@@ -475,7 +471,7 @@ impl Atom {
     }
 
     #[inline]
-    pub fn to_var(&mut self, id: Identifier) -> &mut Var {
+    pub fn to_var(&mut self, id: Symbol) -> &mut Var {
         let buffer = std::mem::replace(self, Atom::Empty).into_raw();
         *self = Atom::Var(Var::new_into(id, buffer));
         if let Atom::Var(n) = self {
@@ -486,7 +482,7 @@ impl Atom {
     }
 
     #[inline]
-    pub fn to_fun(&mut self, id: Identifier) -> &mut Fun {
+    pub fn to_fun(&mut self, id: Symbol) -> &mut Fun {
         let buffer = std::mem::replace(self, Atom::Empty).into_raw();
         *self = Atom::Fun(Fun::new_into(id, buffer));
         if let Atom::Fun(n) = self {
@@ -612,7 +608,7 @@ pub struct FunctionBuilder<'a> {
 
 impl<'a> FunctionBuilder<'a> {
     /// Create a new `FunctionBuilder`.
-    pub fn new(name: Identifier, workspace: &'a Workspace) -> FunctionBuilder<'a> {
+    pub fn new(name: Symbol, workspace: &'a Workspace) -> FunctionBuilder<'a> {
         let mut a = workspace.new_atom();
         a.to_fun(name);
         FunctionBuilder {

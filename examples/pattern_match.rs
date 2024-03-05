@@ -18,7 +18,7 @@ fn main() {
         PatternRestriction::Length(1, Some(100)),
     )
         .into();
-    let settings = MatchSettings::default().into();
+    let settings = MatchSettings::default();
 
     println!("> Matching pattern {} to {}:", pat_expr, expr.as_view());
 

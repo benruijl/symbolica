@@ -450,7 +450,7 @@ impl Token {
                     .iter()
                     .position(|x| x == name)
                     .ok_or_else(|| format!("Undefined variable {}", name))?;
-                if let Variable::Identifier(id) = var_map[index] {
+                if let Variable::Symbol(id) = var_map[index] {
                     out.to_var(id);
                 } else {
                     Err(format!("Undefined variable {}", name))?;
@@ -560,7 +560,7 @@ impl Token {
                     .iter()
                     .position(|x| x == name)
                     .ok_or_else(|| format!("Undefined variable {}", name))?;
-                if let Variable::Identifier(id) = var_map[index] {
+                if let Variable::Symbol(id) = var_map[index] {
                     let mut fun_h = workspace.new_atom();
                     let fun = fun_h.to_fun(id);
                     let mut atom = workspace.new_atom();

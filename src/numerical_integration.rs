@@ -329,7 +329,7 @@ impl<T: Real + NumericalFloatComparison> Sample<T> {
     }
 
     /// Transform the sample to a discrete grid, used for recycling memory.
-    fn into_discrete_grid(&mut self) -> (&mut T, &mut usize, &mut Option<Box<Sample<T>>>) {
+    fn to_discrete_grid(&mut self) -> (&mut T, &mut usize, &mut Option<Box<Sample<T>>>) {
         if let Sample::Continuous(..) = self {
             *self = Sample::Discrete(T::zero(), 0, None);
         }
@@ -341,7 +341,7 @@ impl<T: Real + NumericalFloatComparison> Sample<T> {
     }
 
     /// Transform the sample to a continuous, used for recycling memory.
-    fn into_continuous_grid(&mut self) -> (&mut T, &mut Vec<T>) {
+    fn to_continuous_grid(&mut self) -> (&mut T, &mut Vec<T>) {
         if let Sample::Continuous(..) = self {
             *self = Sample::Continuous(T::zero(), vec![])
         }
@@ -586,7 +586,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
 
     /// Sample a point form this grid, writing the result in `sample`.
     pub fn sample<R: Rng + ?Sized>(&mut self, rng: &mut R, sample: &mut Sample<T>) {
-        let (weight, vs, child) = sample.into_discrete_grid();
+        let (weight, vs, child) = sample.to_discrete_grid();
 
         *weight = T::one();
         let (v, w) = self.sample_bin(rng);
@@ -723,7 +723,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousGrid<T> {
 
     /// Sample a point in the grid, writing the result in `sample`.
     pub fn sample<R: Rng + ?Sized>(&mut self, rng: &mut R, sample: &mut Sample<T>) {
-        let (weight, vs) = sample.into_continuous_grid();
+        let (weight, vs) = sample.to_continuous_grid();
         *weight = T::one();
         vs.clear();
         vs.resize(self.continuous_dimensions.len(), T::zero());

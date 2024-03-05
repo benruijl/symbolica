@@ -83,7 +83,7 @@ impl Num {
         let nv = self.to_num_view();
         let a = nv.get_coeff_view();
         let b = other.get_coeff_view();
-        let n = a.add(&b);
+        let n = a + b;
 
         self.data.truncate(1);
         n.write_packed(&mut self.data);
@@ -93,7 +93,7 @@ impl Num {
         let nv = self.to_num_view();
         let a = nv.get_coeff_view();
         let b = other.get_coeff_view();
-        let n = a.mul(&b);
+        let n = a * b;
 
         self.data.truncate(1);
         n.write_packed(&mut self.data);

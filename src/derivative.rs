@@ -1,5 +1,5 @@
 use crate::{
-    coefficient::{Coefficient, CoefficientView},
+    coefficient::Coefficient,
     domains::integer::Integer,
     representations::{AsAtomView, Atom, AtomBuilder, AtomView, Symbol},
     state::{State, Workspace},
@@ -118,10 +118,7 @@ impl<'a> AtomView<'a> {
                     if is_der {
                         for (i, x_orig) in f_orig.iter().take(f.get_nargs()).enumerate() {
                             if let AtomView::Num(nn) = x_orig {
-                                let num = nn.get_coeff_view().add(&CoefficientView::Natural(
-                                    if i == index { 1 } else { 0 },
-                                    1,
-                                ));
+                                let num = nn.get_coeff_view() + (if i == index { 1 } else { 0 });
                                 n.to_num(num);
                                 p.add_arg(n.as_view());
                             } else {
@@ -197,7 +194,7 @@ impl<'a> AtomView<'a> {
                 if let AtomView::Num(n) = exp {
                     mul.extend(exp);
 
-                    let res = n.get_coeff_view().add(&CoefficientView::Natural(-1, 1));
+                    let res = n.get_coeff_view() + -1;
                     new_exp.to_num(res);
                 } else {
                     mul.extend(exp);

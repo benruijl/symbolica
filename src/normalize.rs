@@ -297,7 +297,7 @@ impl Atom {
 
                 if let AtomView::Num(n) = &exp1 {
                     if let AtomView::Num(n2) = &exp2 {
-                        let new_exp = helper.to_num(n.get_coeff_view().add(&n2.get_coeff_view()));
+                        let new_exp = helper.to_num(n.get_coeff_view() + n2.get_coeff_view());
 
                         if new_exp.to_num_view().is_zero() {
                             self.to_num(1.into());
@@ -328,7 +328,7 @@ impl Atom {
 
             if self.as_view() == base {
                 if let AtomView::Num(n) = &exp {
-                    let new_exp = n.get_coeff_view().add(&CoefficientView::Natural(1, 1));
+                    let new_exp = n.get_coeff_view() + 1;
 
                     if new_exp.is_zero() {
                         self.to_num(1.into());
@@ -431,9 +431,9 @@ impl Atom {
                     };
 
                     let new_coeff = if let AtomView::Num(n) = &last_elem2 {
-                        num.add(&n.get_coeff_view())
+                        num + n.get_coeff_view()
                     } else {
-                        num.add(&CoefficientView::Natural(1, 1))
+                        num + 1
                     };
 
                     let len = slice.len();
@@ -478,7 +478,7 @@ impl Atom {
                 }
 
                 let new_coeff = if let AtomView::Num(n) = &last_elem {
-                    n.get_coeff_view().add(&CoefficientView::Natural(1, 1))
+                    n.get_coeff_view() + 1
                 } else {
                     return false;
                 };
@@ -506,10 +506,7 @@ impl Atom {
 
             if self.as_view() == slice.get(0) {
                 let (new_coeff, has_num) = if let AtomView::Num(n) = &last_elem {
-                    (
-                        n.get_coeff_view().add(&CoefficientView::Natural(1, 1)),
-                        true,
-                    )
+                    (n.get_coeff_view() + 1, true)
                 } else {
                     return false; // last elem is not a coefficient
                 };
@@ -849,7 +846,7 @@ impl<'a> AtomView<'a> {
                                     mul.set_normalized(true);
                                     for a in m.iter() {
                                         if let AtomView::Num(n) = a {
-                                            coeff = coeff.mul(n.get_coeff_view().to_owned());
+                                            coeff = coeff * n.get_coeff_view().to_owned();
                                         } else {
                                             mul.extend(a);
                                         }
@@ -1008,7 +1005,7 @@ impl<'a> AtomView<'a> {
                             // simplify x^2^3
                             let (p_base_base, p_base_exp) = p_base.get_base_exp();
                             if let AtomView::Num(n) = p_base_exp {
-                                let new_exp = n.get_coeff_view().mul(&exp_num);
+                                let new_exp = n.get_coeff_view() * exp_num;
 
                                 if new_exp == 1.into() {
                                     out.set_from_view(&p_base_base);

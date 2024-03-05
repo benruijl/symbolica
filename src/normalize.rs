@@ -281,7 +281,7 @@ impl Atom {
         &mut self,
         other: &mut Self,
         helper: &mut Self,
-        state: &State,
+
         workspace: &Workspace,
     ) -> bool {
         // x^a * x^b = x^(a + b)
@@ -297,8 +297,7 @@ impl Atom {
 
                 if let AtomView::Num(n) = &exp1 {
                     if let AtomView::Num(n2) = &exp2 {
-                        let new_exp =
-                            helper.to_num(n.get_coeff_view().add(&n2.get_coeff_view(), state));
+                        let new_exp = helper.to_num(n.get_coeff_view().add(&n2.get_coeff_view()));
 
                         if new_exp.to_num_view().is_zero() {
                             self.to_num(1.into());
@@ -316,7 +315,7 @@ impl Atom {
                 new_exp.extend(exp1);
                 new_exp.extend(exp2);
                 let mut helper2 = workspace.new_atom();
-                helper.as_view().normalize(workspace, state, &mut helper2);
+                helper.as_view().normalize(workspace, &mut helper2);
                 p1.set_from_base_and_exp(base2, helper2.as_view());
                 return true;
             }
@@ -329,9 +328,7 @@ impl Atom {
 
             if self.as_view() == base {
                 if let AtomView::Num(n) = &exp {
-                    let new_exp = n
-                        .get_coeff_view()
-                        .add(&CoefficientView::Natural(1, 1), state);
+                    let new_exp = n.get_coeff_view().add(&CoefficientView::Natural(1, 1));
 
                     if new_exp.is_zero() {
                         self.to_num(1.into());
@@ -348,7 +345,7 @@ impl Atom {
                     new_exp.extend(self.as_view());
                     new_exp.extend(exp);
                     let mut helper2 = workspace.new_atom();
-                    helper.as_view().normalize(workspace, state, &mut helper2);
+                    helper.as_view().normalize(workspace, &mut helper2);
                     self.to_pow(base, helper2.as_view());
                 }
 
@@ -361,7 +358,7 @@ impl Atom {
         // simplify num1 * num2
         if let Atom::Num(n1) = self {
             if let Atom::Num(n2) = other {
-                n1.mul(&n2.to_num_view(), state);
+                n1.mul(&n2.to_num_view());
                 return true;
             } else {
                 return false;
@@ -393,10 +390,10 @@ impl Atom {
     /// Merge two terms if possible. If this function returns `true`, `self`
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
-    pub fn merge_terms(&mut self, other: AtomView, helper: &mut Self, state: &State) -> bool {
+    pub fn merge_terms(&mut self, other: AtomView, helper: &mut Self) -> bool {
         if let Atom::Num(n1) = self {
             if let AtomView::Num(n2) = other {
-                n1.add(&n2, state);
+                n1.add(&n2);
                 return true;
             } else {
                 return false;
@@ -434,9 +431,9 @@ impl Atom {
                     };
 
                     let new_coeff = if let AtomView::Num(n) = &last_elem2 {
-                        num.add(&n.get_coeff_view(), state)
+                        num.add(&n.get_coeff_view())
                     } else {
-                        num.add(&CoefficientView::Natural(1, 1), state)
+                        num.add(&CoefficientView::Natural(1, 1))
                     };
 
                     let len = slice.len();
@@ -481,8 +478,7 @@ impl Atom {
                 }
 
                 let new_coeff = if let AtomView::Num(n) = &last_elem {
-                    n.get_coeff_view()
-                        .add(&CoefficientView::Natural(1, 1), state)
+                    n.get_coeff_view().add(&CoefficientView::Natural(1, 1))
                 } else {
                     return false;
                 };
@@ -511,8 +507,7 @@ impl Atom {
             if self.as_view() == slice.get(0) {
                 let (new_coeff, has_num) = if let AtomView::Num(n) = &last_elem {
                     (
-                        n.get_coeff_view()
-                            .add(&CoefficientView::Natural(1, 1), state),
+                        n.get_coeff_view().add(&CoefficientView::Natural(1, 1)),
                         true,
                     )
                 } else {
@@ -568,7 +563,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Normalize an atom.
-    pub fn normalize(&self, workspace: &Workspace, state: &State, out: &mut Atom) {
+    pub fn normalize(&self, workspace: &Workspace, out: &mut Atom) {
         if !self.needs_normalization() {
             out.set_from_view(self);
             return;
@@ -583,7 +578,7 @@ impl<'a> AtomView<'a> {
                     let new_at = handle.get_mut();
 
                     if a.needs_normalization() {
-                        a.normalize(workspace, state, new_at);
+                        a.normalize(workspace, new_at);
                     } else {
                         new_at.set_from_view(&a);
                     }
@@ -638,12 +633,10 @@ impl<'a> AtomView<'a> {
 
                     atom_test_buf.reverse();
                     while let Some(mut cur_buf) = atom_test_buf.pop() {
-                        if !last_buf.get_mut().merge_factors(
-                            cur_buf.get_mut(),
-                            helper,
-                            state,
-                            workspace,
-                        ) {
+                        if !last_buf
+                            .get_mut()
+                            .merge_factors(cur_buf.get_mut(), helper, workspace)
+                        {
                             // we are done merging
                             {
                                 let v = last_buf.as_view();
@@ -742,7 +735,7 @@ impl<'a> AtomView<'a> {
                 let mut handle = workspace.new_atom();
                 for a in f.iter() {
                     if a.needs_normalization() {
-                        a.normalize(workspace, state, &mut handle);
+                        a.normalize(workspace, &mut handle);
                         add_arg(out_f, handle.as_view());
                     } else {
                         add_arg(out_f, a);
@@ -778,7 +771,6 @@ impl<'a> AtomView<'a> {
                         return;
                     } else if let Ok(r) = arg.to_rational_polynomial(
                         workspace,
-                        state,
                         &RationalField::new(),
                         &IntegerRing::new(),
                         None, // TODO: get a compatible one from the state?
@@ -828,11 +820,11 @@ impl<'a> AtomView<'a> {
 
                         let mut h = workspace.new_atom();
                         for a in acc {
-                            a.as_view().normalize(workspace, state, &mut h);
+                            a.as_view().normalize(workspace, &mut h);
                             add.extend(h.as_view());
                         }
 
-                        add_h.as_view().normalize(workspace, state, out);
+                        add_h.as_view().normalize(workspace, out);
                         return;
                     }
 
@@ -857,7 +849,7 @@ impl<'a> AtomView<'a> {
                                     mul.set_normalized(true);
                                     for a in m.iter() {
                                         if let AtomView::Num(n) = a {
-                                            coeff = coeff.mul(n.get_coeff_view().to_owned(), state);
+                                            coeff = coeff.mul(n.get_coeff_view().to_owned());
                                         } else {
                                             mul.extend(a);
                                         }
@@ -874,12 +866,12 @@ impl<'a> AtomView<'a> {
 
                         t.extend(new_fun.as_view());
                         t.extend(workspace.new_num(coeff).as_view());
-                        t.as_view().normalize(workspace, state, out);
+                        t.as_view().normalize(workspace, out);
                         return;
                     }
                 }
 
-                if id.is_symmetric() | id.is_antisymmetric() {
+                if id.is_symmetric() || id.is_antisymmetric() {
                     let mut arg_buf: SmallVec<[(usize, _); 20]> = SmallVec::new();
 
                     for (i, a) in out_f.to_fun_view().iter().enumerate() {
@@ -942,14 +934,14 @@ impl<'a> AtomView<'a> {
                 let mut exp_handle = workspace.new_atom();
 
                 if base.needs_normalization() {
-                    base.normalize(workspace, state, &mut base_handle);
+                    base.normalize(workspace, &mut base_handle);
                 } else {
                     // TODO: prevent copy
                     base_handle.get_mut().set_from_view(&base);
                 };
 
                 if exp.needs_normalization() {
-                    exp.normalize(workspace, state, &mut exp_handle);
+                    exp.normalize(workspace, &mut exp_handle);
                 } else {
                     // TODO: prevent copy
                     exp_handle.get_mut().set_from_view(&exp);
@@ -968,8 +960,7 @@ impl<'a> AtomView<'a> {
                             break 'pow_simplify;
                         } else if let AtomView::Num(n) = base_handle.as_view() {
                             // simplify a number to a numerical power
-                            let (new_base_num, new_exp_num) =
-                                n.get_coeff_view().pow(&exp_num, state);
+                            let (new_base_num, new_exp_num) = n.get_coeff_view().pow(&exp_num);
 
                             if new_exp_num == 1.into() {
                                 out.to_num(new_base_num);
@@ -998,7 +989,7 @@ impl<'a> AtomView<'a> {
                                         let mut helper = workspace.new_atom();
                                         helper.to_num((-1).into());
                                         n.extend(helper.as_view());
-                                        new_base.as_view().normalize(workspace, state, &mut helper);
+                                        new_base.as_view().normalize(workspace, &mut helper);
                                         std::mem::swap(&mut new_base, &mut helper);
                                     }
 
@@ -1017,7 +1008,7 @@ impl<'a> AtomView<'a> {
                             // simplify x^2^3
                             let (p_base_base, p_base_exp) = p_base.get_base_exp();
                             if let AtomView::Num(n) = p_base_exp {
-                                let new_exp = n.get_coeff_view().mul(&exp_num, state);
+                                let new_exp = n.get_coeff_view().mul(&exp_num);
 
                                 if new_exp == 1.into() {
                                     out.set_from_view(&p_base_base);
@@ -1054,7 +1045,7 @@ impl<'a> AtomView<'a> {
                         let new_at = norm_arg.get_mut();
 
                         // TODO: if a is a nested addition, prevent a sort
-                        a.normalize(workspace, state, new_at);
+                        a.normalize(workspace, new_at);
 
                         new_at.as_view()
                     } else {
@@ -1102,7 +1093,7 @@ impl<'a> AtomView<'a> {
                 let mut cur_len = 0;
 
                 for cur in atom_sort_buf.iter().skip(1) {
-                    if !last_buf.merge_terms(*cur, &mut helper, state) {
+                    if !last_buf.merge_terms(*cur, &mut helper) {
                         // we are done merging
                         let v = last_buf.as_view();
                         if let AtomView::Num(n) = v {

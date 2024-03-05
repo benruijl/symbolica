@@ -2,17 +2,17 @@ use symbolica::{
     coefficient::CoefficientView,
     domains::finite_field,
     id::{Condition, Match, MatchSettings, PatternRestriction},
-    representations::{Atom, AtomView, Num},
+    representations::{Atom, AtomView},
     state::{State, Workspace},
 };
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::default();
 
     let expr = Atom::parse("f(1,2,3,4,5,6,7)", &mut state, &workspace).unwrap();
     let pat_expr = Atom::parse("f(x__,y__,z__,w__)", &mut state, &workspace).unwrap();
 
-    let pattern = pat_expr.as_view().into_pattern(&state);
+    let pattern = pat_expr.as_view().into_pattern();
 
     let x = state.get_or_insert_var("x__");
     let y = state.get_or_insert_var("y__");
@@ -57,28 +57,28 @@ fn main() {
 
     println!(
         "> Matching pattern {} : 0 <= len(x) <= 2, 0 <= len(y) <= 4, len(x) >= len(y) & is_prime(z) to {}:",
-        pat_expr.printer(&state),
-        expr.printer(&state)
+        pat_expr,
+        expr
     );
 
-    let mut it = pattern.pattern_match(expr.as_view(), &state, &conditions, &settings);
+    let mut it = pattern.pattern_match(expr.as_view(), &conditions, &settings);
     while let Some((location, used_flags, _atom, match_stack)) = it.next() {
         println!("\tMatch at location {:?} - {:?}:", location, used_flags);
         for (id, v) in match_stack {
-            print!("\t\t{} = ", state.get_name(*id));
+            print!("\t\t{} = ", State::get_name(*id));
             match v {
                 Match::Single(s) => {
-                    print!("{}", s.printer(&state))
+                    print!("{}", s)
                 }
                 Match::Multiple(slice_type, mm) => {
                     print!("{:?} ", slice_type);
                     for vv in mm {
-                        print!("{}", vv.printer(&state));
+                        print!("{}", vv);
                         print!(", ")
                     }
                 }
                 Match::FunctionName(f) => {
-                    print!("Fn {}", state.get_name(*f))
+                    print!("Fn {}", State::get_name(*f))
                 }
             }
             println!();

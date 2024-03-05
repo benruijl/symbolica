@@ -10,7 +10,7 @@ use symbolica::{
 };
 
 fn univariate() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
 
     let var_names = vec!["x".into(), "y".into()];
@@ -25,17 +25,17 @@ fn univariate() {
 
     let rat: RationalPolynomial<_, u8> = Token::parse("1/((x+1)*(x+2)(x^3+2x+1))")
         .unwrap()
-        .to_rational_polynomial(&workspace, &mut state, &field, &field, &var_map, &var_names)
+        .to_rational_polynomial(&workspace, &field, &field, &var_map, &var_names)
         .unwrap();
 
-    println!("Partial fraction {}:", rat.printer(&state));
+    println!("Partial fraction {}:", rat);
     for x in rat.apart(0) {
-        println!("\t{}", x.printer(&state));
+        println!("\t{}", x);
     }
 }
 
 fn multivariate() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
 
     let var_names = vec!["x".into(), "y".into()];
@@ -50,14 +50,12 @@ fn multivariate() {
 
     let rat: FactorizedRationalPolynomial<_, u8> = Token::parse("1/((x+y)*(x^2+x*y+1)(x+1))")
         .unwrap()
-        .to_factorized_rational_polynomial(
-            &workspace, &mut state, &field, &field, &var_map, &var_names,
-        )
+        .to_factorized_rational_polynomial(&workspace, &field, &field, &var_map, &var_names)
         .unwrap();
 
-    println!("Partial fraction {} in x:", rat.printer(&state));
+    println!("Partial fraction {} in x:", rat);
     for x in rat.apart(0) {
-        println!("\t{}", x.printer(&state));
+        println!("\t{}", x);
     }
 }
 

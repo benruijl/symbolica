@@ -7,7 +7,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace = Workspace::default();
 
     let expr = Atom::parse(
@@ -18,13 +18,7 @@ fn main() {
     .unwrap();
     let rat: RationalPolynomial<IntegerRing, u8> = expr
         .as_view()
-        .to_rational_polynomial(
-            &workspace,
-            &state,
-            &RationalField::new(),
-            &IntegerRing::new(),
-            None,
-        )
+        .to_rational_polynomial(&workspace, &RationalField::new(), &IntegerRing::new(), None)
         .unwrap();
-    println!("{}", rat.printer(&state));
+    println!("{}", rat);
 }

@@ -858,15 +858,10 @@ pub enum Variable<N: NumericalFloatLike> {
 }
 
 impl Variable<Rational> {
-    fn to_pretty_string(
-        &self,
-        var_map: &[super::Variable],
-        state: &State,
-        mode: InstructionSetMode,
-    ) -> String {
+    fn to_pretty_string(&self, var_map: &[super::Variable], mode: InstructionSetMode) -> String {
         match self {
             Variable::Var(v, index) => {
-                let mut s = var_map[*v].to_string(state);
+                let mut s = var_map[*v].to_string();
 
                 if let Some(index) = index {
                     s.push_str(&format!("[{}]", index));
@@ -1522,7 +1517,6 @@ pub enum InstructionSetMode {
 
 pub struct InstructionSetPrinter<'a> {
     pub instr: &'a InstructionListOutput<Rational>,
-    pub state: &'a State,
     pub mode: InstructionSetMode,
     pub name: String, // function name
 }
@@ -1565,7 +1559,7 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
 
                             Some(format!(
                                 "T* {}",
-                                super::Variable::Identifier(*x).to_string(self.state)
+                                super::Variable::Identifier(*x).to_string()
                             ))
                         } else {
                             None
@@ -1574,10 +1568,10 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                         if [State::E, State::I, State::PI].contains(i) {
                             None
                         } else {
-                            Some(format!("T {}", x.to_string(self.state)))
+                            Some(format!("T {}", x.to_string()))
                         }
                     } else {
-                        Some(format!("T {}", x.to_string(self.state)))
+                        Some(format!("T {}", x.to_string()))
                     })
                     .collect::<Vec<_>>()
                     .join(","),
@@ -1633,7 +1627,7 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                 Instruction::Init(x) => f.write_fmt(format_args!(
                     "\tZ{} = {};\n",
                     reg,
-                    x.to_pretty_string(&self.instr.input_map, self.state, self.mode)
+                    x.to_pretty_string(&self.instr.input_map, self.mode)
                 ))?,
             }
         }
@@ -1670,7 +1664,7 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
 }
 
 /// A computational graph with efficient output evaluation for a nesting of variable identifications (`x_n = x_{n-1} + 2*x_{n-2}`, etc).
-pub struct ExpressionEvaluator<'a> {
+pub struct ExpressionEvaluator {
     operations: Vec<(
         super::Variable,
         usize,
@@ -1678,10 +1672,9 @@ pub struct ExpressionEvaluator<'a> {
         Vec<super::Variable>,
     )>,
     input: Vec<super::Variable>,
-    state: &'a State,
 }
 
-impl<'a> ExpressionEvaluator<'a> {
+impl ExpressionEvaluator {
     /// Create a computational graph with efficient output evaluation for a nesting of variable identifications (`x_n = x_{n-1} + 2*x_{n-2}`, etc).
     /// Every level provides a list of independent vectors whose expressions only depend on variables defined in previous levels.
     /// In these expressions, the references to previous vectors are represented using functions with the vector's name whose single argument is an index into the output array of the evaluation of that vector.
@@ -1703,11 +1696,7 @@ impl<'a> ExpressionEvaluator<'a> {
     /// Each expression will be converted to a polynomial and optimized by writing it in a near-optimal Horner scheme and by performing
     /// common subexpression elimination. The number of optimization iterations can be set using `n_iter`.
     ///
-    pub fn new(
-        levels: Vec<Vec<(Identifier, Vec<Atom>)>>,
-        state: &State,
-        n_iter: usize,
-    ) -> ExpressionEvaluator {
+    pub fn new(levels: Vec<Vec<(Identifier, Vec<Atom>)>>, n_iter: usize) -> ExpressionEvaluator {
         let mut overall_ops = vec![]; // the main function that calls all levels
 
         for l in levels {
@@ -1804,12 +1793,11 @@ impl<'a> ExpressionEvaluator<'a> {
             }
         }
         let mut input = external.into_iter().cloned().collect::<Vec<_>>();
-        input.sort_by_cached_key(|f| f.to_string(state));
+        input.sort_by_cached_key(|f| f.to_string());
 
         ExpressionEvaluator {
             operations: overall_ops,
             input,
-            state,
         }
     }
 
@@ -1819,7 +1807,7 @@ impl<'a> ExpressionEvaluator<'a> {
     }
 }
 
-impl<'a> std::fmt::Display for ExpressionEvaluator<'a> {
+impl std::fmt::Display for ExpressionEvaluator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(
             "#include <cmath>
@@ -1836,8 +1824,7 @@ auto 𝑖 = 1i;\n",
                 "{}\n",
                 InstructionSetPrinter {
                     instr: &o,
-                    state: &self.state,
-                    name: id.to_string(self.state),
+                    name: id.to_string(),
                     mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {
                         write_header_and_test: false,
                         always_pass_output_array: true,
@@ -1853,14 +1840,14 @@ auto 𝑖 = 1i;\n",
             "void evaluate({}, T* {}_res) {{\n",
             self.input
                 .iter()
-                .map(|x| format!("T* {}", x.to_string(self.state)))
+                .map(|x| format!("T* {}", x.to_string()))
                 .collect::<Vec<_>>()
                 .join(", "),
-            last.to_string(self.state)
+            last.to_string()
         ))?;
 
         for (id, out_len, _, args) in &self.operations {
-            let name = id.to_string(self.state);
+            let name = id.to_string();
 
             if *id != last {
                 f.write_fmt(format_args!("\tT {}_res[{}];\n", name, out_len))?;
@@ -1870,9 +1857,9 @@ auto 𝑖 = 1i;\n",
                 .iter()
                 .map(|x| {
                     if self.operations.iter().any(|(name, _, _, _)| x == name) {
-                        x.to_string(self.state) + "_res"
+                        x.to_string() + "_res"
                     } else {
-                        x.to_string(self.state)
+                        x.to_string()
                     }
                 })
                 .collect();

@@ -157,7 +157,7 @@ impl Transformer {
     pub fn execute(
         orig_input: AtomView<'_>,
         chain: &[Transformer],
-        state: &State,
+
         workspace: &Workspace,
         out: &mut Atom,
     ) -> Result<(), TransformerError> {
@@ -172,31 +172,16 @@ impl Transformer {
                     f(input, out)?;
                 }
                 Transformer::Expand => {
-                    input.expand(workspace, state, out);
+                    input.expand(workspace, out);
                 }
                 Transformer::Derivative(x) => {
-                    input.derivative(*x, workspace, state, out);
+                    input.derivative(*x, workspace, out);
                 }
                 Transformer::TaylorSeries(x, expansion_point, depth) => {
-                    input.taylor_series(
-                        *x,
-                        expansion_point.as_view(),
-                        *depth,
-                        workspace,
-                        state,
-                        out,
-                    );
+                    input.taylor_series(*x, expansion_point.as_view(), *depth, workspace, out);
                 }
                 Transformer::ReplaceAll(pat, rhs, cond, settings) => {
-                    pat.replace_all(
-                        input,
-                        rhs,
-                        state,
-                        workspace,
-                        cond.as_ref(),
-                        settings.as_ref(),
-                        out,
-                    );
+                    pat.replace_all(input, rhs, workspace, cond.as_ref(), settings.as_ref(), out);
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = input {
@@ -208,7 +193,7 @@ impl Transformer {
                                 mul.extend(arg);
                             }
 
-                            mul_h.as_view().normalize(workspace, state, out);
+                            mul_h.as_view().normalize(workspace, out);
                             continue;
                         }
                     }
@@ -225,7 +210,7 @@ impl Transformer {
                                 add.extend(arg);
                             }
 
-                            add_h.as_view().normalize(workspace, state, out);
+                            add_h.as_view().normalize(workspace, out);
                             continue;
                         }
                     }
@@ -255,7 +240,7 @@ impl Transformer {
                             arg.add_arg(factor);
                         }
 
-                        arg_h.as_view().normalize(workspace, state, out);
+                        arg_h.as_view().normalize(workspace, out);
                         continue;
                     }
                     AtomView::Add(a) => {
@@ -266,7 +251,7 @@ impl Transformer {
                             arg.add_arg(summand);
                         }
 
-                        arg_h.as_view().normalize(workspace, state, out);
+                        arg_h.as_view().normalize(workspace, out);
                         continue;
                     }
                     _ => {
@@ -309,7 +294,7 @@ impl Transformer {
                                 sum.extend(mul_h.as_view());
                             }
 
-                            sum_h.as_view().normalize(workspace, state, out);
+                            sum_h.as_view().normalize(workspace, out);
                             continue;
                         }
                     }
@@ -329,7 +314,7 @@ impl Transformer {
                                 fun.add_arg(arg);
                             }
 
-                            fun_h.as_view().normalize(workspace, state, out);
+                            fun_h.as_view().normalize(workspace, out);
                             continue;
                         }
                     }
@@ -356,7 +341,7 @@ impl Transformer {
                                 fun.add_arg(arg);
                             }
 
-                            fun_h.as_view().normalize(workspace, state, out);
+                            fun_h.as_view().normalize(workspace, out);
                             continue;
                         }
                     }
@@ -396,7 +381,7 @@ impl Transformer {
                                 }
                             }
 
-                            sum_h.as_view().normalize(workspace, state, out);
+                            sum_h.as_view().normalize(workspace, out);
                             continue;
                         }
                     }
@@ -404,7 +389,7 @@ impl Transformer {
                     out.set_from_view(&input);
                 }
                 Transformer::Repeat(r) => loop {
-                    Self::execute(tmp.as_view(), r, state, workspace, out)?;
+                    Self::execute(tmp.as_view(), r, workspace, out)?;
 
                     if tmp.as_view() == out.as_view() {
                         break;
@@ -413,7 +398,7 @@ impl Transformer {
                     std::mem::swap(out, &mut tmp);
                 },
                 Transformer::Print(o) => {
-                    println!("{}", AtomPrinter::new_with_options(input, *o, state));
+                    println!("{}", AtomPrinter::new_with_options(input, *o));
                     out.set_from_view(&input);
                 }
                 Transformer::Stats(o, r) => {
@@ -425,7 +410,7 @@ impl Transformer {
                     let in_size = input.get_byte_size();
 
                     let t = Instant::now();
-                    Self::execute(input, r, state, workspace, out)?;
+                    Self::execute(input, r, workspace, out)?;
 
                     let out_nterms = if let AtomView::Add(a) = out.as_view() {
                         a.get_nargs()
@@ -465,7 +450,7 @@ impl Transformer {
                 Transformer::FromNumber => {
                     if let AtomView::Num(n) = input {
                         if let CoefficientView::RationalPolynomial(r) = n.get_coeff_view() {
-                            r.to_expression(workspace, state, &HashMap::default(), out);
+                            r.to_expression(workspace, &HashMap::default(), out);
                             continue;
                         }
                     }

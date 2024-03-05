@@ -5,7 +5,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace = Workspace::default();
 
     // prepare all patterns
@@ -13,7 +13,7 @@ fn main() {
     let rhs = Pattern::parse("f(x_ - 1) + f(x_ - 2)", &mut state, &workspace).unwrap();
     let lhs_zero_pat = Pattern::parse("f(0)", &mut state, &workspace).unwrap();
     let lhs_one_pat = Pattern::parse("f(1)", &mut state, &workspace).unwrap();
-    let rhs_one = Atom::new_num(1).into_pattern(&state);
+    let rhs_one = Atom::new_num(1).into_pattern();
 
     // prepare the pattern restriction `x_ > 1`
     let restrictions = (
@@ -31,7 +31,7 @@ fn main() {
 
     println!(
         "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {}:",
-        target.printer(&state),
+        target,
     );
 
     for _ in 0..9 {
@@ -39,7 +39,6 @@ fn main() {
         pattern.replace_all(
             target.as_view(),
             &rhs,
-            &state,
             &workspace,
             Some(&restrictions),
             None,
@@ -47,29 +46,13 @@ fn main() {
         );
 
         let mut out2 = workspace.new_atom();
-        out.as_view().expand(&workspace, &state, &mut out2);
+        out.as_view().expand(&workspace, &mut out2);
 
-        lhs_zero_pat.replace_all(
-            out2.as_view(),
-            &rhs_one,
-            &state,
-            &workspace,
-            None,
-            None,
-            &mut out,
-        );
+        lhs_zero_pat.replace_all(out2.as_view(), &rhs_one, &workspace, None, None, &mut out);
 
-        lhs_one_pat.replace_all(
-            out.as_view(),
-            &rhs_one,
-            &state,
-            &workspace,
-            None,
-            None,
-            &mut out2,
-        );
+        lhs_one_pat.replace_all(out.as_view(), &rhs_one, &workspace, None, None, &mut out2);
 
-        println!("\t{}", out2.printer(&state),);
+        println!("\t{}", out2,);
 
         target = out2;
     }

@@ -14,7 +14,7 @@ use symbolica::{
 };
 
 fn solve() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::default();
 
     let x = state.get_or_insert_var("x");
@@ -28,15 +28,15 @@ fn solve() {
         .collect();
     let system: Vec<_> = atoms.iter().map(|x| x.as_view()).collect();
 
-    let sol = AtomView::solve_linear_system::<u8>(&system, &[x, y, z], &workspace, &state).unwrap();
+    let sol = AtomView::solve_linear_system::<u8>(&system, &[x, y, z], &workspace).unwrap();
 
     for (v, s) in ["x", "y", "z"].iter().zip(&sol) {
-        println!("{} = {}", v, s.printer(&state));
+        println!("{} = {}", v, s);
     }
 }
 
 fn solve_from_matrix() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::default();
 
     let system = [["c", "c+1", "c^2+5"], ["1", "c", "c+1"], ["c-1", "-1", "c"]];
@@ -60,7 +60,6 @@ fn solve_from_matrix() {
                 .as_view()
                 .to_rational_polynomial(
                     &workspace,
-                    &state,
                     &RationalField::new(),
                     &IntegerRing::new(),
                     Some(&var_map),
@@ -79,7 +78,6 @@ fn solve_from_matrix() {
                 .as_view()
                 .to_rational_polynomial(
                     &workspace,
-                    &state,
                     &RationalField::new(),
                     &IntegerRing::new(),
                     Some(&var_map),
@@ -105,7 +103,7 @@ fn solve_from_matrix() {
                 "x\u{20D7} = {{{}}}",
                 sol.data
                     .iter()
-                    .map(|r| format!("{}", r.printer(&state)))
+                    .map(|r| format!("{}", r))
                     .collect::<Vec<_>>()
                     .join(", ")
             )

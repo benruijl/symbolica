@@ -5,7 +5,7 @@ use rayon::prelude::*;
 use crate::{
     coefficient::Coefficient,
     representations::{Atom, AtomView},
-    state::{ResettableBuffer, State, Workspace},
+    state::{ResettableBuffer, Workspace},
 };
 
 thread_local!(static WORKSPACE: Workspace = Workspace::new());
@@ -46,7 +46,7 @@ impl TermOutputStream {
     }
 
     /// Sort all the terms.
-    fn sort(&mut self, workspace: &Workspace, state: &State) {
+    fn sort(&mut self, workspace: &Workspace) {
         self.mem_buf
             .par_sort_by(|a, b| a.as_view().cmp_terms(&b.as_view()));
 
@@ -60,7 +60,7 @@ impl TermOutputStream {
             let mut cur_len = 0;
 
             for cur_buf in self.mem_buf.drain(..) {
-                if !last_buf.merge_terms(cur_buf.as_view(), helper, state) {
+                if !last_buf.merge_terms(cur_buf.as_view(), helper) {
                     // we are done merging
                     {
                         let v = last_buf.as_view();
@@ -88,8 +88,8 @@ impl TermOutputStream {
         self.mem_buf = out;
     }
 
-    fn to_expression(&mut self, workspace: &Workspace, state: &State) -> Atom {
-        self.sort(workspace, state);
+    fn to_expression(&mut self, workspace: &Workspace) -> Atom {
+        self.sort(workspace);
 
         if self.mem_buf.is_empty() {
             let mut out = Atom::new();
@@ -178,7 +178,7 @@ where
     }
 
     /// Convert the term stream into an expression. This may exceed the available memory.
-    pub fn to_expression(&mut self, workspace: &Workspace, state: &State) -> Atom {
-        self.exp_out.to_expression(workspace, state)
+    pub fn to_expression(&mut self, workspace: &Workspace) -> Atom {
+        self.exp_out.to_expression(workspace)
     }
 }

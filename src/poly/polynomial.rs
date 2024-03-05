@@ -13,7 +13,6 @@ use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::RationalField;
 use crate::domains::{EuclideanDomain, Field, Ring, RingPrinter};
 use crate::printer::{PolynomialPrinter, PrintOptions};
-use crate::state::State;
 
 use super::gcd::PolynomialGCD;
 use super::{Exponent, LexOrder, MonomialOrder, Variable, INLINED_EXPONENTS};
@@ -136,8 +135,8 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     }
 
     /// Constuct a pretty-printer for the polynomial.
-    pub fn printer<'a, 'b>(&'a self, state: &'b State) -> PolynomialPrinter<'a, 'b, F, E, O> {
-        PolynomialPrinter::new(self, state)
+    pub fn printer<'a>(&'a self) -> PolynomialPrinter<'a, F, E, O> {
+        PolynomialPrinter::new(self)
     }
 
     /// Get the ith monomial
@@ -528,7 +527,6 @@ impl<F: Ring + Display, E: Exponent, O: MonomialOrder> Display for MultivariateP
                 if is_first_term {
                     self.field.fmt_display(
                         monomial.coefficient,
-                        None,
                         &PrintOptions::default(),
                         true,
                         f,
@@ -540,7 +538,6 @@ impl<F: Ring + Display, E: Exponent, O: MonomialOrder> Display for MultivariateP
                         RingPrinter {
                             ring: &self.field,
                             element: monomial.coefficient,
-                            state: None,
                             opts: &PrintOptions::default(),
                             in_product: true
                         }

@@ -4,7 +4,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
 
     let x = state.get_or_insert_var("x");
@@ -14,7 +14,7 @@ fn main() {
 
     let mut out = workspace.new_atom();
     a.as_view()
-        .taylor_series(x, point.as_view(), 3, &workspace, &state, &mut out);
+        .taylor_series(x, point.as_view(), 3, &workspace, &mut out);
 
-    println!("{}", out.printer(&state));
+    println!("{}", out);
 }

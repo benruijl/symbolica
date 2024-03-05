@@ -9,7 +9,7 @@ use rug::{
     Rational as MultiPrecisionRational,
 };
 
-use crate::{poly::gcd::LARGE_U32_PRIMES, printer::PrintOptions, state::State, utils};
+use crate::{poly::gcd::LARGE_U32_PRIMES, printer::PrintOptions, utils};
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
@@ -628,7 +628,6 @@ impl Ring for RationalField {
     fn fmt_display(
         &self,
         element: &Self::Element,
-        _state: Option<&State>,
         _opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,

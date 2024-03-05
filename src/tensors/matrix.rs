@@ -7,7 +7,6 @@ use std::{
 use crate::{
     domains::{EuclideanDomain, Field, Ring},
     printer::{MatrixPrinter, PrintOptions},
-    state::State,
 };
 
 /// A matrix with entries that are elements of a ring `F`.
@@ -131,8 +130,8 @@ impl<F: Ring> Matrix<F> {
         &self.field
     }
 
-    pub fn printer<'a, 'b>(&'a self, state: &'b State) -> MatrixPrinter<'a, 'b, F> {
-        MatrixPrinter::new(self, state)
+    pub fn printer<'a, 'b>(&'a self) -> MatrixPrinter<'a, F> {
+        MatrixPrinter::new(self)
     }
 
     /// Return an iterator over the rows of the matrix.
@@ -243,7 +242,7 @@ impl<F: Ring> Display for Matrix<F> {
             f.write_char('{')?;
             for (ci, c) in r.iter().enumerate() {
                 self.field
-                    .fmt_display(c, None, &PrintOptions::default(), true, f)?;
+                    .fmt_display(c, &PrintOptions::default(), true, f)?;
                 if ci + 1 < self.ncols as usize {
                     f.write_char(',')?;
                 }

@@ -13,7 +13,6 @@ use crate::{
         Variable,
     },
     printer::{FactorizedRationalPolynomialPrinter, PrintOptions},
-    state::State,
 };
 
 use super::{
@@ -120,11 +119,8 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
     }
 
     /// Constuct a pretty-printer for the rational polynomial.
-    pub fn printer<'a, 'b>(
-        &'a self,
-        state: &'b State,
-    ) -> FactorizedRationalPolynomialPrinter<'a, 'b, R, E> {
-        FactorizedRationalPolynomialPrinter::new(self, state)
+    pub fn printer<'a, 'b>(&'a self) -> FactorizedRationalPolynomialPrinter<'a, R, E> {
+        FactorizedRationalPolynomialPrinter::new(self)
     }
 
     /// Convert the coefficient from the current field to a finite field.
@@ -517,7 +513,6 @@ impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomial<R, E> {
                 RingPrinter {
                     ring: &self.numerator.field,
                     element: &self.numer_coeff,
-                    state: None,
                     opts: &PrintOptions::default(),
                     in_product: false,
                 }
@@ -543,7 +538,6 @@ impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomial<R, E> {
                     RingPrinter {
                         ring: &self.numerator.field,
                         element: &self.denom_coeff,
-                        state: None,
                         opts: &PrintOptions::default(),
                         in_product: false,
                     }
@@ -694,7 +688,6 @@ where
     fn fmt_display(
         &self,
         element: &Self::Element,
-        state: Option<&State>,
         opts: &PrintOptions,
         in_product: bool,
         f: &mut Formatter<'_>,
@@ -703,21 +696,14 @@ where
             f.write_char('+')?;
         }
 
-        if let Some(state) = state {
-            f.write_fmt(format_args!(
-                "{}",
-                FactorizedRationalPolynomialPrinter {
-                    poly: element,
-                    state,
-                    opts: *opts,
-                    add_parentheses: in_product
-                },
-            ))
-        } else if in_product {
-            f.write_fmt(format_args!("({})", element))
-        } else {
-            f.write_fmt(format_args!("{}", element))
-        }
+        f.write_fmt(format_args!(
+            "{}",
+            FactorizedRationalPolynomialPrinter {
+                poly: element,
+                opts: *opts,
+                add_parentheses: in_product
+            },
+        ))
     }
 }
 

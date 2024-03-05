@@ -5,17 +5,17 @@ use crate::{
     combinatorics::CombinationWithReplacementIterator,
     domains::integer::Integer,
     representations::{Atom, AtomView},
-    state::{BufferHandle, State, Workspace},
+    state::{BufferHandle, Workspace},
 };
 
 impl<'a> AtomView<'a> {
     /// Expand an expression.
-    pub fn expand(&self, workspace: &Workspace, state: &State, out: &mut Atom) -> bool {
-        let changed = self.expand_no_norm(workspace, state, out);
+    pub fn expand(&self, workspace: &Workspace, out: &mut Atom) -> bool {
+        let changed = self.expand_no_norm(workspace, out);
 
         if changed {
             let mut a = workspace.new_atom();
-            out.as_view().normalize(workspace, state, &mut a);
+            out.as_view().normalize(workspace, &mut a);
             std::mem::swap(out, &mut a);
         }
 
@@ -23,16 +23,16 @@ impl<'a> AtomView<'a> {
     }
 
     /// Expand an expression, but do not normalize the result.
-    fn expand_no_norm(&self, workspace: &Workspace, state: &State, out: &mut Atom) -> bool {
+    fn expand_no_norm(&self, workspace: &Workspace, out: &mut Atom) -> bool {
         match self {
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 let mut new_base = workspace.new_atom();
-                let mut changed = base.expand(workspace, state, new_base.get_mut());
+                let mut changed = base.expand(workspace, new_base.get_mut());
 
                 let mut new_exp = workspace.new_atom();
-                changed |= exp.expand(workspace, state, new_exp.get_mut());
+                changed |= exp.expand(workspace, new_exp.get_mut());
 
                 let (negative, num) = 'get_num: {
                     if let AtomView::Num(n) = new_exp.as_view() {
@@ -48,7 +48,7 @@ impl<'a> AtomView<'a> {
                         .get_mut()
                         .to_pow(new_base.as_view(), new_exp.as_view());
                     pow.set_normalized(!changed);
-                    pow_h.as_view().normalize(workspace, state, out);
+                    pow_h.as_view().normalize(workspace, out);
                     return changed;
                 };
 
@@ -80,14 +80,12 @@ impl<'a> AtomView<'a> {
 
                         let mut normalized_child = workspace.new_atom();
                         hh.as_view()
-                            .normalize(workspace, state, normalized_child.get_mut());
+                            .normalize(workspace, normalized_child.get_mut());
 
                         let mut expanded_child = workspace.new_atom();
-                        normalized_child.as_view().expand(
-                            workspace,
-                            state,
-                            expanded_child.get_mut(),
-                        );
+                        normalized_child
+                            .as_view()
+                            .expand(workspace, expanded_child.get_mut());
 
                         let coeff_f = Integer::multinom(new_term);
                         if coeff_f != Integer::one() {
@@ -116,9 +114,9 @@ impl<'a> AtomView<'a> {
                         let mut pow_h = workspace.new_atom();
                         pow_h.to_pow(add_h.as_view(), num_h.as_view());
 
-                        pow_h.as_view().normalize(workspace, state, out);
+                        pow_h.as_view().normalize(workspace, out);
                     } else {
-                        add_h.as_view().normalize(workspace, state, out);
+                        add_h.as_view().normalize(workspace, out);
                     }
 
                     true
@@ -141,9 +139,9 @@ impl<'a> AtomView<'a> {
 
                         let mut pow_h = workspace.new_atom();
                         pow_h.to_pow(mul_h.as_view(), num_h.as_view());
-                        pow_h.as_view().normalize(workspace, state, out);
+                        pow_h.as_view().normalize(workspace, out);
                     } else {
-                        mul_h.as_view().normalize(workspace, state, out);
+                        mul_h.as_view().normalize(workspace, out);
                     }
                     true
                 } else {
@@ -152,7 +150,7 @@ impl<'a> AtomView<'a> {
                         .get_mut()
                         .to_pow(new_base.as_view(), new_exp.as_view());
                     pow.set_normalized(!changed);
-                    pow_h.as_view().normalize(workspace, state, out);
+                    pow_h.as_view().normalize(workspace, out);
                     changed
                 }
             }
@@ -164,7 +162,7 @@ impl<'a> AtomView<'a> {
 
                 for arg in m.iter() {
                     let mut new_arg = workspace.new_atom();
-                    changed |= arg.expand(workspace, state, new_arg.get_mut());
+                    changed |= arg.expand(workspace, new_arg.get_mut());
 
                     // expand (1+x)*y
                     if let AtomView::Add(a) = new_arg.as_view() {
@@ -221,7 +219,7 @@ impl<'a> AtomView<'a> {
                 debug_assert!(!sum.is_empty());
 
                 if sum.len() == 1 {
-                    sum[0].as_view().normalize(workspace, state, out);
+                    sum[0].as_view().normalize(workspace, out);
                 } else {
                     let add = out.to_add();
                     for x in sum {
@@ -238,7 +236,7 @@ impl<'a> AtomView<'a> {
 
                 let mut new_arg = workspace.new_atom();
                 for arg in a.iter() {
-                    changed |= arg.expand_no_norm(workspace, state, new_arg.get_mut());
+                    changed |= arg.expand_no_norm(workspace, new_arg.get_mut());
                     add.extend(new_arg.as_view());
                 }
 

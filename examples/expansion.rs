@@ -4,17 +4,13 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::default();
 
     let input = Atom::parse("(1+x)^3", &mut state, &workspace).unwrap();
 
     let mut o = Atom::new();
-    input.as_view().expand(&workspace, &state, &mut o);
+    input.as_view().expand(&workspace, &mut o);
 
-    println!(
-        "> Expansion of {}: {}",
-        input.printer(&state),
-        o.printer(&state)
-    );
+    println!("> Expansion of {}: {}", input, o);
 }

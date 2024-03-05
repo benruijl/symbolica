@@ -9,13 +9,7 @@ impl<'a> AtomView<'a> {
     /// Take a derivative of the expression with respect to `x` and
     /// write the result in `out`.
     /// Returns `true` if the derivative is non-zero.
-    pub fn derivative(
-        &self,
-        x: Identifier,
-        workspace: &Workspace,
-        state: &State,
-        out: &mut Atom,
-    ) -> bool {
+    pub fn derivative(&self, x: Identifier, workspace: &Workspace, out: &mut Atom) -> bool {
         match self {
             AtomView::Num(_) => {
                 out.to_num(Coefficient::zero());
@@ -53,7 +47,7 @@ impl<'a> AtomView<'a> {
                 let mut args_der = Vec::with_capacity(f.get_nargs());
                 for (i, arg) in f.iter().enumerate() {
                     let mut arg_der = workspace.new_atom();
-                    if arg.derivative(x, workspace, state, &mut arg_der) {
+                    if arg.derivative(x, workspace, &mut arg_der) {
                         args_der.push((i, arg_der));
                     }
                 }
@@ -100,13 +94,13 @@ impl<'a> AtomView<'a> {
                     let (_, mut arg_der) = args_der.pop().unwrap();
                     if let Atom::Mul(m) = arg_der.get_mut() {
                         m.extend(fn_der.as_view());
-                        arg_der.as_view().normalize(workspace, state, out);
+                        arg_der.as_view().normalize(workspace, out);
                     } else {
                         let mut mul = workspace.new_atom();
                         let m = mul.to_mul();
                         m.extend(fn_der.as_view());
                         m.extend(arg_der.as_view());
-                        mul.as_view().normalize(workspace, state, out);
+                        mul.as_view().normalize(workspace, out);
                     }
 
                     return true;
@@ -124,10 +118,10 @@ impl<'a> AtomView<'a> {
                     if is_der {
                         for (i, x_orig) in f_orig.iter().take(f.get_nargs()).enumerate() {
                             if let AtomView::Num(nn) = x_orig {
-                                let num = nn.get_coeff_view().add(
-                                    &CoefficientView::Natural(if i == index { 1 } else { 0 }, 1),
-                                    state,
-                                );
+                                let num = nn.get_coeff_view().add(&CoefficientView::Natural(
+                                    if i == index { 1 } else { 0 },
+                                    1,
+                                ));
                                 n.to_num(num);
                                 p.add_arg(n.as_view());
                             } else {
@@ -146,22 +140,22 @@ impl<'a> AtomView<'a> {
                     let m = mul.to_mul();
                     m.extend(fn_der.as_view());
                     m.extend(arg_der.as_view());
-                    mul.as_view().normalize(workspace, state, out);
+                    mul.as_view().normalize(workspace, out);
 
                     a.extend(mul.as_view());
                 }
 
-                add.as_view().normalize(workspace, state, out);
+                add.as_view().normalize(workspace, out);
                 true
             }
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
                 let mut exp_der = workspace.new_atom();
-                let exp_der_non_zero = exp.derivative(x, workspace, state, &mut exp_der);
+                let exp_der_non_zero = exp.derivative(x, workspace, &mut exp_der);
 
                 let mut base_der = workspace.new_atom();
-                let base_der_non_zero = base.derivative(x, workspace, state, &mut base_der);
+                let base_der_non_zero = base.derivative(x, workspace, &mut base_der);
 
                 if !exp_der_non_zero && !base_der_non_zero {
                     out.to_num(0.into());
@@ -179,17 +173,14 @@ impl<'a> AtomView<'a> {
                     if let Atom::Mul(m) = exp_der.get_mut() {
                         m.extend(*self);
                         m.extend(log_base.as_view());
-                        exp_der
-                            .as_view()
-                            .normalize(workspace, state, &mut exp_der_contrib);
+                        exp_der.as_view().normalize(workspace, &mut exp_der_contrib);
                     } else {
                         let mut mul = workspace.new_atom();
                         let m = mul.to_mul();
                         m.extend(*self);
                         m.extend(exp_der.as_view());
                         m.extend(log_base.as_view());
-                        mul.as_view()
-                            .normalize(workspace, state, &mut exp_der_contrib);
+                        mul.as_view().normalize(workspace, &mut exp_der_contrib);
                     }
 
                     if !base_der_non_zero {
@@ -206,9 +197,7 @@ impl<'a> AtomView<'a> {
                 if let AtomView::Num(n) = exp {
                     mul.extend(exp);
 
-                    let res = n
-                        .get_coeff_view()
-                        .add(&CoefficientView::Natural(-1, 1), state);
+                    let res = n.get_coeff_view().add(&CoefficientView::Natural(-1, 1));
                     new_exp.to_num(res);
                 } else {
                     mul.extend(exp);
@@ -234,9 +223,9 @@ impl<'a> AtomView<'a> {
                     a.extend(mul_h.as_view());
                     a.extend(exp_der_contrib.as_view());
 
-                    add.as_view().normalize(workspace, state, out);
+                    add.as_view().normalize(workspace, out);
                 } else {
-                    mul_h.as_view().normalize(workspace, state, out);
+                    mul_h.as_view().normalize(workspace, out);
                 }
 
                 true
@@ -248,7 +237,7 @@ impl<'a> AtomView<'a> {
                 let mut non_zero = false;
                 for arg in args.iter() {
                     let mut arg_der = workspace.new_atom();
-                    if arg.derivative(x, workspace, state, &mut arg_der) {
+                    if arg.derivative(x, workspace, &mut arg_der) {
                         if let Atom::Mul(mm) = arg_der.get_mut() {
                             for other_arg in args.iter() {
                                 if other_arg != arg {
@@ -273,7 +262,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 if non_zero {
-                    add_h.as_view().normalize(workspace, state, out);
+                    add_h.as_view().normalize(workspace, out);
                     true
                 } else {
                     out.to_num(0.into());
@@ -286,14 +275,14 @@ impl<'a> AtomView<'a> {
                 let mut arg_der = workspace.new_atom();
                 let mut non_zero = false;
                 for arg in args.iter() {
-                    if arg.derivative(x, workspace, state, &mut arg_der) {
+                    if arg.derivative(x, workspace, &mut arg_der) {
                         add.extend(arg_der.as_view());
                         non_zero = true;
                     }
                 }
 
                 if non_zero {
-                    add_h.as_view().normalize(workspace, state, out);
+                    add_h.as_view().normalize(workspace, out);
                     true
                 } else {
                     out.to_num(0.into());
@@ -310,7 +299,7 @@ impl<'a> AtomView<'a> {
         expansion_point: AtomView,
         depth: u32,
         workspace: &Workspace,
-        state: &State,
+
         out: &mut Atom,
     ) -> bool {
         let mut current_order = workspace.new_atom();
@@ -319,12 +308,12 @@ impl<'a> AtomView<'a> {
         let mut next_order = workspace.new_atom();
 
         let var = workspace.new_var(x);
-        let var_pat = var.into_pattern(state);
-        let expansion_point_pat = expansion_point.into_pattern(state);
+        let var_pat = var.into_pattern();
+        let expansion_point_pat = expansion_point.into_pattern();
 
         // construct x - expansion_point
         // TODO: check that expansion_point does not involve `x`
-        let mut dist = AtomBuilder::new(var.as_view(), state, workspace, workspace.new_atom());
+        let mut dist = AtomBuilder::new(var.as_view(), workspace, workspace.new_atom());
         dist = dist - expansion_point;
 
         let mut series = workspace.new_atom();
@@ -337,7 +326,6 @@ impl<'a> AtomView<'a> {
             var_pat.replace_all(
                 current_order.as_view(),
                 &expansion_point_pat,
-                state,
                 workspace,
                 None,
                 None,
@@ -368,7 +356,7 @@ impl<'a> AtomView<'a> {
             if d < depth
                 && current_order
                     .as_view()
-                    .derivative(x, workspace, state, &mut next_order)
+                    .derivative(x, workspace, &mut next_order)
             {
                 std::mem::swap(&mut current_order, &mut next_order);
             } else {
@@ -381,7 +369,7 @@ impl<'a> AtomView<'a> {
             }
         }
 
-        series.as_view().normalize(workspace, state, out);
+        series.as_view().normalize(workspace, out);
 
         true
     }

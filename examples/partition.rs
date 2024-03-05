@@ -6,7 +6,7 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::new();
+    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::default();
 
     let input = Atom::parse("f(1,3,2,3,1)", &mut state, &workspace).unwrap();
@@ -26,12 +26,11 @@ fn main() {
                     false,
                 )],
             ))),
-            &state,
             &workspace,
             None,
             None,
             &mut o,
         );
 
-    println!("> {}", o.printer(&state));
+    println!("> {}", o);
 }

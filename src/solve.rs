@@ -11,7 +11,7 @@ use crate::{
     },
     poly::{Exponent, Variable},
     representations::{Atom, AtomView, Identifier},
-    state::{ResettableBuffer, State, Workspace},
+    state::{ResettableBuffer, Workspace},
 };
 
 impl<'a> AtomView<'a> {
@@ -21,7 +21,6 @@ impl<'a> AtomView<'a> {
         system: &[AtomView],
         vars: &[Identifier],
         workspace: &Workspace,
-        state: &State,
     ) -> Result<Vec<Atom>, String> {
         let vars: Vec<_> = vars.iter().map(|v| Variable::Identifier(*v)).collect();
         let mut map = HashMap::default();
@@ -33,7 +32,6 @@ impl<'a> AtomView<'a> {
         for (si, a) in system.iter().enumerate() {
             let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial_with_map(
                 workspace,
-                state,
                 &RationalField::new(),
                 &IntegerRing::new(),
                 &mut map,
@@ -106,7 +104,7 @@ impl<'a> AtomView<'a> {
         let inv_map = map.iter().map(|(k, v)| (v.clone(), k.as_view())).collect();
         for (s, v) in sol.data.iter().zip(&vars) {
             let mut a = Atom::new();
-            s.to_expression(workspace, state, &inv_map, &mut a);
+            s.to_expression(workspace, &inv_map, &mut a);
             let Variable::Identifier(_) = *v else {
                 panic!("Temp var left");
             };

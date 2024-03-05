@@ -716,7 +716,7 @@ impl<'a> AtomView<'a> {
                 }
             }
             AtomView::Var(v) => {
-                let id = v.get_id();
+                let id = v.get_symbol();
                 if vars.contains(&id.into()) {
                     // change variable into coefficient
                     let mut poly = MultivariatePolynomial::new(

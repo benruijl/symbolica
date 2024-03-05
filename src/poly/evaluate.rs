@@ -17,7 +17,7 @@ use crate::{
         rational::{Rational, RationalField},
         EuclideanDomain,
     },
-    representations::Identifier,
+    representations::Symbol,
 };
 
 use super::{polynomial::MultivariatePolynomial, Exponent};
@@ -1557,14 +1557,11 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                         if !seen_arrays.contains(x) {
                             seen_arrays.push(*x);
 
-                            Some(format!(
-                                "T* {}",
-                                super::Variable::Identifier(*x).to_string()
-                            ))
+                            Some(format!("T* {}", super::Variable::Symbol(*x).to_string()))
                         } else {
                             None
                         }
-                    } else if let super::Variable::Identifier(i) = x {
+                    } else if let super::Variable::Symbol(i) = x {
                         if [State::E, State::I, State::PI].contains(i) {
                             None
                         } else {
@@ -1696,7 +1693,7 @@ impl ExpressionEvaluator {
     /// Each expression will be converted to a polynomial and optimized by writing it in a near-optimal Horner scheme and by performing
     /// common subexpression elimination. The number of optimization iterations can be set using `n_iter`.
     ///
-    pub fn new(levels: Vec<Vec<(Identifier, Vec<Atom>)>>, n_iter: usize) -> ExpressionEvaluator {
+    pub fn new(levels: Vec<Vec<(Symbol, Vec<Atom>)>>, n_iter: usize) -> ExpressionEvaluator {
         let mut overall_ops = vec![]; // the main function that calls all levels
 
         for l in levels {
@@ -1720,7 +1717,7 @@ impl ExpressionEvaluator {
 
                 let var_map = first.var_map.clone().unwrap();
 
-                let poly_ref = polys.iter().map(|x| x).collect::<Vec<_>>();
+                let poly_ref = polys.iter().collect::<Vec<_>>();
 
                 let (h, _score, _scheme) = HornerScheme::optimize_multiple(&poly_ref, n_iter);
 
@@ -1741,7 +1738,7 @@ impl ExpressionEvaluator {
                     .iter()
                     .filter_map(|(a, r)| {
                         if let AtomView::Fun(f) = a {
-                            Some((r.clone(), State::get_name(f.get_id()).to_string()))
+                            Some((r.clone(), State::get_name(f.get_symbol()).to_string()))
                         } else {
                             None
                         }
@@ -1763,11 +1760,11 @@ impl ExpressionEvaluator {
                             if !seen_arrays.contains(x) {
                                 seen_arrays.push(*x);
 
-                                Some(super::Variable::Identifier(*x))
+                                Some(super::Variable::Symbol(*x))
                             } else {
                                 None
                             }
-                        } else if let super::Variable::Identifier(i) = x {
+                        } else if let super::Variable::Symbol(i) = x {
                             if [State::E, State::I, State::PI].contains(i) {
                                 None
                             } else {
@@ -1779,7 +1776,7 @@ impl ExpressionEvaluator {
                     })
                     .collect::<Vec<_>>();
 
-                overall_ops.push((super::Variable::Identifier(id), h.len(), o, call_args));
+                overall_ops.push((super::Variable::Symbol(id), h.len(), o, call_args));
             }
         }
 
@@ -1823,7 +1820,7 @@ auto 𝑖 = 1i;\n",
             f.write_fmt(format_args!(
                 "{}\n",
                 InstructionSetPrinter {
-                    instr: &o,
+                    instr: o,
                     name: id.to_string(),
                     mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {
                         write_header_and_test: false,

@@ -47,7 +47,7 @@ fn solve_from_matrix() {
         println!("\t ({}).x\u{20D7} = {}", r.join(","), v);
     }
 
-    let var_map = Arc::new(vec![Variable::Identifier(state.get_or_insert_var("c"))]);
+    let var_map = Arc::new(vec![Variable::Symbol(state.get_or_insert_var("c"))]);
 
     let system_rat: Vec<RationalPolynomial<IntegerRing, u8>> = system
         .iter()

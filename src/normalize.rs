@@ -6,7 +6,7 @@ use crate::{
     coefficient::{Coefficient, CoefficientView},
     domains::{integer::IntegerRing, rational::RationalField},
     poly::Variable,
-    representations::{Atom, AtomView, Fun, Identifier},
+    representations::{Atom, AtomView, Fun, Symbol},
     state::{BufferHandle, State, Workspace},
 };
 
@@ -22,7 +22,7 @@ impl<'a> AtomView<'a> {
             (AtomView::Num(n1), AtomView::Num(n2)) => n1.get_coeff_view().cmp(&n2.get_coeff_view()),
             (AtomView::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_id().cmp(&v2.get_id()),
+            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_symbol().cmp(&v2.get_symbol()),
             (AtomView::Var(_), _) => Ordering::Less,
             (_, AtomView::Var(_)) => Ordering::Greater,
             (AtomView::Pow(p1), AtomView::Pow(p2)) => {
@@ -74,7 +74,7 @@ impl<'a> AtomView<'a> {
             (_, AtomView::Add(_)) => Ordering::Greater,
 
             (AtomView::Fun(f1), AtomView::Fun(f2)) => {
-                let name_comp = f1.get_id().cmp(&f2.get_id());
+                let name_comp = f1.get_symbol().cmp(&f2.get_symbol());
                 if name_comp != Ordering::Equal {
                     return name_comp;
                 }
@@ -107,7 +107,7 @@ impl<'a> AtomView<'a> {
             (AtomView::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,
 
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_id().cmp(&v2.get_id()),
+            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_symbol().cmp(&v2.get_symbol()),
             (AtomView::Pow(p1), AtomView::Pow(p2)) => {
                 // TODO: inline partial_cmp call by creating an inlined version
                 p1.get_base().cmp(&p2.get_base())
@@ -148,7 +148,7 @@ impl<'a> AtomView<'a> {
             (_, AtomView::Add(_)) => Ordering::Greater,
 
             (AtomView::Fun(f1), AtomView::Fun(f2)) => {
-                let name_comp = f1.get_id().cmp(&f2.get_id());
+                let name_comp = f1.get_symbol().cmp(&f2.get_symbol());
                 if name_comp != Ordering::Equal {
                     return name_comp;
                 }
@@ -183,7 +183,7 @@ impl<'a> AtomView<'a> {
             (AtomView::Num(_), _) => Ordering::Greater,
             (_, AtomView::Num(_)) => Ordering::Less,
 
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_id().cmp(&v2.get_id()),
+            (AtomView::Var(v1), AtomView::Var(v2)) => v1.get_symbol().cmp(&v2.get_symbol()),
             (AtomView::Pow(p1), AtomView::Pow(p2)) => {
                 let (b1, e1) = p1.get_base_exp();
                 let (b2, e2) = p2.get_base_exp();
@@ -245,7 +245,7 @@ impl<'a> AtomView<'a> {
             (AtomView::Pow(_), _) => Ordering::Less,
 
             (AtomView::Fun(f1), AtomView::Fun(f2)) => {
-                let name_comp = f1.get_id().cmp(&f2.get_id());
+                let name_comp = f1.get_symbol().cmp(&f2.get_symbol());
                 if name_comp != Ordering::Equal {
                     return name_comp;
                 }
@@ -368,7 +368,7 @@ impl Atom {
         // x * x => x^2
         if self.as_view() == other.as_view() {
             if let AtomView::Var(v) = self.as_view() {
-                if v.get_id() == State::I {
+                if v.get_symbol() == State::I {
                     self.to_num((-1).into());
                     return true;
                 }
@@ -685,7 +685,7 @@ impl<'a> AtomView<'a> {
                 self.clone_into(out);
             }
             AtomView::Fun(f) => {
-                let id = f.get_id();
+                let id = f.get_symbol();
                 let out_f = out.to_fun(id);
                 out_f.set_normalized(true);
 
@@ -693,7 +693,7 @@ impl<'a> AtomView<'a> {
                 #[inline(always)]
                 fn add_arg(f: &mut Fun, a: AtomView) {
                     if let AtomView::Fun(fa) = a {
-                        if fa.get_id() == State::ARG {
+                        if fa.get_symbol() == State::ARG {
                             // flatten f(arg(...)) = f(...)
                             for aa in fa.iter() {
                                 f.add_arg(aa);
@@ -711,7 +711,7 @@ impl<'a> AtomView<'a> {
                 fn cartesian_product<'a, 'b>(
                     workspace: &'a Workspace,
                     list: &[Vec<AtomView<'b>>],
-                    fun_name: Identifier,
+                    fun_name: Symbol,
                     cur: &mut Vec<AtomView<'b>>,
                     acc: &mut Vec<BufferHandle<'a, Atom>>,
                 ) {
@@ -742,20 +742,20 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                if [State::COS, State::SIN, State::EXP, State::LOG].contains(&id) {
-                    if out_f.to_fun_view().get_nargs() == 1 {
-                        let arg = out_f.to_fun_view().iter().next().unwrap();
-                        if let AtomView::Num(n) = arg {
-                            if n.is_zero() && id != State::LOG || n.is_one() && id == State::LOG {
-                                if id == State::COS || id == State::EXP {
-                                    let buffer = workspace.new_num(Coefficient::one());
-                                    out.set_from_view(&buffer.as_view());
-                                    return;
-                                } else if id == State::SIN || id == State::LOG {
-                                    let buffer = workspace.new_num(Coefficient::zero());
-                                    out.set_from_view(&buffer.as_view());
-                                    return;
-                                }
+                if [State::COS, State::SIN, State::EXP, State::LOG].contains(&id)
+                    && out_f.to_fun_view().get_nargs() == 1
+                {
+                    let arg = out_f.to_fun_view().iter().next().unwrap();
+                    if let AtomView::Num(n) = arg {
+                        if n.is_zero() && id != State::LOG || n.is_one() && id == State::LOG {
+                            if id == State::COS || id == State::EXP {
+                                let buffer = workspace.new_num(Coefficient::one());
+                                out.set_from_view(&buffer.as_view());
+                                return;
+                            } else if id == State::SIN || id == State::LOG {
+                                let buffer = workspace.new_num(Coefficient::zero());
+                                out.set_from_view(&buffer.as_view());
+                                return;
                             }
                         }
                     }
@@ -778,7 +778,7 @@ impl<'a> AtomView<'a> {
                         // disallow wildcards in the variable map
                         if let Some(v) = r.numerator.var_map.as_ref() {
                             if v.iter().all(|v| {
-                                if let Variable::Identifier(v) = v {
+                                if let Variable::Symbol(v) = v {
                                     v.get_wildcard_level() == 0
                                 } else {
                                     false
@@ -970,7 +970,7 @@ impl<'a> AtomView<'a> {
                             base_handle.get_mut().to_num(new_base_num);
                             exp_handle.get_mut().to_num(new_exp_num);
                         } else if let AtomView::Var(v) = base_handle.as_view() {
-                            if v.get_id() == State::I {
+                            if v.get_symbol() == State::I {
                                 if let CoefficientView::Natural(n, d) = exp_num {
                                     let mut new_base = workspace.new_atom();
 
@@ -1077,7 +1077,7 @@ impl<'a> AtomView<'a> {
                     atom_sort_buf.push(x);
                 }
 
-                atom_sort_buf.sort_by(|a, b| a.cmp_terms(&b));
+                atom_sort_buf.sort_by(|a, b| a.cmp_terms(b));
 
                 if atom_sort_buf.is_empty() {
                     out.to_num(Coefficient::zero());

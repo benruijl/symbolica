@@ -53,7 +53,7 @@ fn main() {
             })),
         )
         & (w, PatternRestriction::Length(0, None));
-    let settings = MatchSettings::default().into();
+    let settings = MatchSettings::default();
 
     println!(
         "> Matching pattern {} : 0 <= len(x) <= 2, 0 <= len(y) <= 4, len(x) >= len(y) & is_prime(z) to {}:",

@@ -1,7 +1,7 @@
 use dyn_clone::DynClone;
 
 use crate::{
-    representations::{default::ListSlice, Atom, AtomView, Identifier, Num, SliceType},
+    representations::{default::ListSlice, Atom, AtomView, Num, SliceType, Symbol},
     state::{ResettableBuffer, State, Workspace},
     transformer::{Transformer, TransformerError},
 };
@@ -9,8 +9,8 @@ use crate::{
 #[derive(Clone)]
 pub enum Pattern {
     Literal(Atom),
-    Wildcard(Identifier),
-    Fn(Identifier, Vec<Pattern>),
+    Wildcard(Symbol),
+    Fn(Symbol, Vec<Pattern>),
     Pow(Box<[Pattern; 2]>),
     Mul(Vec<Pattern>),
     Add(Vec<Pattern>),
@@ -195,7 +195,7 @@ impl Pattern {
     pub fn could_match(&self, target: AtomView) -> bool {
         match (self, target) {
             (Pattern::Fn(f1, _), AtomView::Fun(f2)) => {
-                f1.get_wildcard_level() > 0 || *f1 == f2.get_id()
+                f1.get_wildcard_level() > 0 || *f1 == f2.get_symbol()
             }
             (Pattern::Mul(_), AtomView::Mul(_)) => true,
             (Pattern::Add(_), AtomView::Add(_)) => true,
@@ -213,7 +213,7 @@ impl Pattern {
             AtomView::Num(_) => false,
             AtomView::Var(v) => v.get_wildcard_level() > 0,
             AtomView::Fun(f) => {
-                if f.get_id().get_wildcard_level() > 0 {
+                if f.get_symbol().get_wildcard_level() > 0 {
                     return true;
                 }
 
@@ -255,9 +255,9 @@ impl Pattern {
             || is_top_layer && matches!(atom, AtomView::Mul(_) | AtomView::Add(_))
         {
             match atom {
-                AtomView::Var(v) => Pattern::Wildcard(v.get_id()),
+                AtomView::Var(v) => Pattern::Wildcard(v.get_symbol()),
                 AtomView::Fun(f) => {
-                    let name = f.get_id();
+                    let name = f.get_symbol();
 
                     let mut args = Vec::with_capacity(f.get_nargs());
                     for arg in f.iter() {
@@ -517,9 +517,9 @@ impl Pattern {
 
     /// Replace all occurrences of the pattern in the target.
     /// For every matched atom, the first canonical match is used and then the atom is skipped.
-    pub fn replace_all<'a>(
+    pub fn replace_all(
         &self,
-        target: AtomView<'a>,
+        target: AtomView<'_>,
         rhs: &Pattern,
         workspace: &Workspace,
         conditions: Option<&Condition<WildcardAndRestriction>>,
@@ -546,9 +546,9 @@ impl Pattern {
     }
 
     /// Replace all occurrences of the pattern in the target, without normalizing the output.
-    fn replace_all_no_norm<'a>(
+    fn replace_all_no_norm(
         &self,
-        target: AtomView<'a>,
+        target: AtomView<'_>,
         rhs: &Pattern,
         workspace: &Workspace,
         conditions: &Condition<WildcardAndRestriction>,
@@ -607,7 +607,7 @@ impl Pattern {
         // no match found at this level, so check the children
         let submatch = match target {
             AtomView::Fun(f) => {
-                let out = out.to_fun(f.get_id());
+                let out = out.to_fun(f.get_symbol());
 
                 let mut submatch = false;
 
@@ -737,21 +737,22 @@ pub enum AtomType {
 pub enum PatternRestriction {
     Length(usize, Option<usize>), // min-max range
     IsAtomType(AtomType),
-    IsLiteralWildcard(Identifier),
+    IsLiteralWildcard(Symbol),
     Filter(Box<dyn FilterFn>),
-    Cmp(Identifier, Box<dyn CmpFn>),
+    Cmp(Symbol, Box<dyn CmpFn>),
     NotGreedy,
 }
 
-pub type WildcardAndRestriction = (Identifier, PatternRestriction);
+pub type WildcardAndRestriction = (Symbol, PatternRestriction);
 
 /// A logical expression.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum Condition<T> {
     And(Box<(Condition<T>, Condition<T>)>),
     Or(Box<(Condition<T>, Condition<T>)>),
     Not(Box<Condition<T>>),
     Yield(T),
+    #[default]
     True,
     False,
 }
@@ -783,12 +784,6 @@ impl<T> std::ops::Not for Condition<T> {
 
     fn not(self) -> Self::Output {
         Condition::Not(Box::new(self))
-    }
-}
-
-impl<T> Default for Condition<T> {
-    fn default() -> Self {
-        Condition::True
     }
 }
 
@@ -849,12 +844,7 @@ impl From<bool> for ConditionResult {
 
 impl Condition<WildcardAndRestriction> {
     /// Check if the conditions on `var` are met
-    fn check_possible(
-        &self,
-        var: Identifier,
-        value: &Match,
-        stack: &MatchStack,
-    ) -> ConditionResult {
+    fn check_possible(&self, var: Symbol, value: &Match, stack: &MatchStack) -> ConditionResult {
         match self {
             Condition::And(a) => {
                 a.0.check_possible(var, value, stack) & a.1.check_possible(var, value, stack)
@@ -902,7 +892,7 @@ impl Condition<WildcardAndRestriction> {
                     }
                     PatternRestriction::IsLiteralWildcard(wc) => {
                         if let Match::Single(AtomView::Var(v)) = value {
-                            (wc == &v.get_id()).into()
+                            (wc == &v.get_symbol()).into()
                         } else {
                             false.into()
                         }
@@ -915,16 +905,16 @@ impl Condition<WildcardAndRestriction> {
                             && max.map(|m| m >= slice.len()).unwrap_or(true))
                         .into(),
                     },
-                    PatternRestriction::Filter(f) => f(&value).into(),
+                    PatternRestriction::Filter(f) => f(value).into(),
                     PatternRestriction::Cmp(v2, f) => {
                         if *v == var {
                             if let Some((_, value2)) = stack.stack.iter().find(|(k, _)| k == v2) {
-                                f(&value, value2).into()
+                                f(value, value2).into()
                             } else {
                                 ConditionResult::Inconclusive
                             }
                         } else if let Some((_, value2)) = stack.stack.iter().find(|(k, _)| k == v) {
-                            f(&value2, value).into()
+                            f(value2, value).into()
                         } else {
                             ConditionResult::Inconclusive
                         }
@@ -935,7 +925,7 @@ impl Condition<WildcardAndRestriction> {
         }
     }
 
-    fn get_range_hint(&self, var: Identifier) -> (Option<usize>, Option<usize>) {
+    fn get_range_hint(&self, var: Symbol) -> (Option<usize>, Option<usize>) {
         match self {
             Condition::And(a) => {
                 let (min1, max1) = a.0.get_range_hint(var);
@@ -986,7 +976,7 @@ impl Condition<WildcardAndRestriction> {
                 }
 
                 match r {
-                    PatternRestriction::Length(min, max) => (Some(*min), max.clone()),
+                    PatternRestriction::Length(min, max) => (Some(*min), *max),
                     PatternRestriction::IsAtomType(
                         AtomType::Var | AtomType::Num | AtomType::Fun,
                     )
@@ -1030,7 +1020,7 @@ impl std::fmt::Debug for PatternRestriction {
 pub enum Match<'a> {
     Single(AtomView<'a>),
     Multiple(SliceType, Vec<AtomView<'a>>),
-    FunctionName(Identifier),
+    FunctionName(Symbol),
 }
 
 impl<'a> std::fmt::Debug for Match<'a> {
@@ -1099,14 +1089,14 @@ impl<'a> Match<'a> {
 
 #[derive(Default, Clone)]
 pub struct MatchSettings {
-    pub non_greedy_wildcards: Vec<Identifier>,
+    pub non_greedy_wildcards: Vec<Symbol>,
 }
 
 /// An insertion-ordered map of wildcard identifiers to a subexpressions.
 /// It keeps track of all conditions on wildcards and will check them
 /// before inserting.
 pub struct MatchStack<'a, 'b> {
-    stack: Vec<(Identifier, Match<'a>)>,
+    stack: Vec<(Symbol, Match<'a>)>,
     conditions: &'b Condition<WildcardAndRestriction>,
     settings: &'b MatchSettings,
 }
@@ -1135,7 +1125,7 @@ impl<'a, 'b> MatchStack<'a, 'b> {
     /// Add a new map of identifier `key` to value `value` to the stack and return the size the stack had before inserting this new entry.
     /// If the entry `(key, value)` already exists, it is not inserted again and therefore the returned size is the actual size.
     /// If the `key` exists in the map, but the `value` is different, the insertion is ignored and `None` is returned.
-    pub fn insert(&mut self, key: Identifier, value: Match<'a>) -> Option<usize> {
+    pub fn insert(&mut self, key: Symbol, value: Match<'a>) -> Option<usize> {
         for (rk, rv) in self.stack.iter() {
             if rk == &key {
                 if rv == &value {
@@ -1157,7 +1147,7 @@ impl<'a, 'b> MatchStack<'a, 'b> {
     }
 
     /// Get the mapped value for the wildcard `key`.
-    pub fn get(&self, key: Identifier) -> Option<&Match<'a>> {
+    pub fn get(&self, key: Symbol) -> Option<&Match<'a>> {
         for (rk, rv) in self.stack.iter() {
             if rk == &key {
                 return Some(rv);
@@ -1180,7 +1170,7 @@ impl<'a, 'b> MatchStack<'a, 'b> {
 
     /// Get the range of an identifier based on previous matches and based
     /// on conditions.
-    pub fn get_range(&self, identifier: Identifier) -> (usize, Option<usize>) {
+    pub fn get_range(&self, identifier: Symbol) -> (usize, Option<usize>) {
         if identifier.get_wildcard_level() == 0 {
             return (1, Some(1));
         }
@@ -1218,17 +1208,17 @@ impl<'a, 'b> MatchStack<'a, 'b> {
 }
 
 impl<'a, 'b, 'c> IntoIterator for &'c MatchStack<'a, 'b> {
-    type Item = &'c (Identifier, Match<'a>);
-    type IntoIter = std::slice::Iter<'c, (Identifier, Match<'a>)>;
+    type Item = &'c (Symbol, Match<'a>);
+    type IntoIter = std::slice::Iter<'c, (Symbol, Match<'a>)>;
 
     fn into_iter(self) -> Self::IntoIter {
-        (&self.stack).into_iter()
+        self.stack.iter()
     }
 }
 
 struct WildcardIter {
     initialized: bool,
-    name: Identifier,
+    name: Symbol,
     indices: Vec<u32>,
     size_target: u32,
     min_size: u32,
@@ -1241,7 +1231,7 @@ enum PatternIter<'a, 'b> {
     Wildcard(WildcardIter),
     Fn(
         Option<usize>,
-        Identifier,
+        Symbol,
         &'b [Pattern],
         Box<Option<SubSliceIterator<'a, 'b>>>,
     ), // index first
@@ -1759,7 +1749,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                         tried_first_option = true;
 
                         if let AtomView::Fun(f) = self.target.get(ii) {
-                            let target_name = f.get_id();
+                            let target_name = f.get_symbol();
                             let name_match = if name.get_wildcard_level() > 0 {
                                 if let Some(new_stack_len) =
                                     match_stack.insert(*name, Match::FunctionName(target_name))
@@ -1771,7 +1761,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                     continue;
                                 }
                             } else {
-                                f.get_id() == *name
+                                f.get_symbol() == *name
                             };
 
                             let ordered = !name.is_antisymmetric() && !name.is_symmetric();
@@ -1999,7 +1989,7 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
             if let Some(ct) = self.current_target {
                 if let Some(it) = self.pattern_iter.as_mut() {
                     if let Some((_, used_flags)) = it.next(&mut self.match_stack) {
-                        let a = used_flags.iter().cloned().collect();
+                        let a = used_flags.to_vec();
 
                         self.first_match = true;
                         return Some((&self.tree_pos, a, ct, &self.match_stack));
@@ -2067,7 +2057,7 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                 AtomView::Fun(f) => {
                     let slice = f.to_slice();
 
-                    let out = out.to_fun(f.get_id());
+                    let out = out.to_fun(f.get_symbol());
 
                     for (index, arg) in slice.iter().enumerate() {
                         if index == *first {

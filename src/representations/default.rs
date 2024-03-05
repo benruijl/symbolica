@@ -6,7 +6,7 @@ use crate::coefficient::{Coefficient, CoefficientView};
 
 use super::{
     coefficient::{PackedRationalNumberReader, PackedRationalNumberWriter},
-    AtomView, Identifier, SliceType,
+    AtomView, SliceType, Symbol,
 };
 
 const NUM_ID: u8 = 1;
@@ -122,32 +122,32 @@ pub struct Var {
 
 impl Var {
     #[inline]
-    pub fn new(id: Identifier) -> Var {
+    pub fn new(symbol: Symbol) -> Var {
         let mut buffer = Vec::new();
 
-        match id.wildcard_level {
+        match symbol.wildcard_level {
             0 => buffer.put_u8(VAR_ID),
             1 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_1),
             2 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_2),
             _ => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_3),
         }
 
-        (id.id as u64, 1).write_packed(&mut buffer);
+        (symbol.id as u64, 1).write_packed(&mut buffer);
         Var { data: buffer }
     }
 
     #[inline]
-    pub fn new_into(id: Identifier, mut buffer: RawAtom) -> Var {
+    pub fn new_into(symbol: Symbol, mut buffer: RawAtom) -> Var {
         buffer.clear();
 
-        match id.wildcard_level {
+        match symbol.wildcard_level {
             0 => buffer.put_u8(VAR_ID),
             1 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_1),
             2 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_2),
             _ => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_3),
         }
 
-        (id.id as u64, 1).write_packed(&mut buffer);
+        (symbol.id as u64, 1).write_packed(&mut buffer);
         Var { data: buffer }
     }
 
@@ -159,7 +159,7 @@ impl Var {
     }
 
     #[inline]
-    pub fn set_from_id(&mut self, id: Identifier) {
+    pub fn set_from_symbol(&mut self, id: Symbol) {
         self.data.clear();
 
         match id.wildcard_level {
@@ -201,18 +201,18 @@ pub struct Fun {
 
 impl Fun {
     #[inline]
-    pub fn new(id: Identifier) -> Fun {
+    pub fn new(symbol: Symbol) -> Fun {
         let mut f = Fun {
             data: RawAtom::new(),
         };
-        f.set_from_id(id);
+        f.set_from_symbol(symbol);
         f
     }
 
     #[inline]
-    pub fn new_into(id: Identifier, buffer: RawAtom) -> Fun {
+    pub fn new_into(id: Symbol, buffer: RawAtom) -> Fun {
         let mut f = Fun { data: buffer };
-        f.set_from_id(id);
+        f.set_from_symbol(id);
         f
     }
 
@@ -224,21 +224,21 @@ impl Fun {
     }
 
     #[inline]
-    pub fn set_from_id(&mut self, id: Identifier) {
+    pub fn set_from_symbol(&mut self, symbol: Symbol) {
         self.data.clear();
 
         let mut flags = FUN_ID | NOT_NORMALIZED;
-        match id.wildcard_level {
+        match symbol.wildcard_level {
             0 => {}
             1 => flags |= VAR_WILDCARD_LEVEL_1,
             2 => flags |= VAR_WILDCARD_LEVEL_2,
             _ => flags |= VAR_WILDCARD_LEVEL_3,
         }
 
-        if id.is_symmetric {
+        if symbol.is_symmetric {
             flags |= FUN_SYMMETRIC_FLAG;
         }
-        if id.is_linear {
+        if symbol.is_linear {
             flags |= FUN_LINEAR_FLAG;
         }
 
@@ -248,10 +248,10 @@ impl Fun {
 
         let buf_pos = self.data.len();
 
-        let id = if id.is_antisymmetric {
-            id.id as u64 | FUN_ANTISYMMETRIC_FLAG
+        let id = if symbol.is_antisymmetric {
+            symbol.id as u64 | FUN_ANTISYMMETRIC_FLAG
         } else {
-            id.id as u64
+            symbol.id as u64
         };
 
         (id, 0).write_packed(&mut self.data);
@@ -407,6 +407,12 @@ impl Pow {
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Mul {
     data: RawAtom,
+}
+
+impl Default for Mul {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Mul {
@@ -572,6 +578,12 @@ pub struct Add {
     data: RawAtom,
 }
 
+impl Default for Add {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Add {
     #[inline]
     pub fn new() -> Add {
@@ -699,8 +711,8 @@ impl<'a> VarView<'a> {
     }
 
     #[inline(always)]
-    pub fn get_id(&self) -> Identifier {
-        Identifier::init_var(
+    pub fn get_symbol(&self) -> Symbol {
+        Symbol::init_var(
             self.data[1..].get_frac_i64().0 as u32,
             self.get_wildcard_level(),
         )
@@ -765,10 +777,10 @@ impl<'a> FunView<'a> {
     }
 
     #[inline(always)]
-    pub fn get_id(&self) -> Identifier {
+    pub fn get_symbol(&self) -> Symbol {
         let id = self.data[1 + 4..].get_frac_u64().0;
 
-        Identifier::init_fn(
+        Symbol::init_fn(
             id as u32,
             self.get_wildcard_level(),
             self.is_symmetric(),

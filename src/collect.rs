@@ -1,7 +1,7 @@
 use ahash::HashMap;
 
 use crate::{
-    representations::{Add, AsAtomView, Atom, AtomView, Identifier},
+    representations::{Add, AsAtomView, Atom, AtomView, Symbol},
     state::Workspace,
 };
 
@@ -16,7 +16,7 @@ impl<'a> AtomView<'a> {
     /// `key_map` and `coeff_map` respectively.
     pub fn collect(
         &self,
-        x: Identifier,
+        x: Symbol,
         workspace: &Workspace,
 
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
@@ -80,7 +80,7 @@ impl<'a> AtomView<'a> {
     /// Return the list of key-coefficient pairs and the remainder that matched no key.
     pub fn coefficient_list(
         &self,
-        x: Identifier,
+        x: Symbol,
         workspace: &Workspace,
     ) -> (Vec<(AtomView<'a>, Atom)>, Atom) {
         let mut h = HashMap::default();
@@ -99,15 +99,15 @@ impl<'a> AtomView<'a> {
     }
 
     /// Check if a factor contains `x` at the ground level.
-    fn has_key(&self, x: Identifier) -> bool {
+    fn has_key(&self, x: Symbol) -> bool {
         match self {
-            AtomView::Var(v) => v.get_id() == x,
-            AtomView::Fun(f) => f.get_id() == x,
+            AtomView::Var(v) => v.get_symbol() == x,
+            AtomView::Fun(f) => f.get_symbol() == x,
             AtomView::Pow(p) => {
                 let (base, _) = p.get_base_exp();
                 match base {
-                    AtomView::Var(v) => v.get_id() == x,
-                    AtomView::Fun(f) => f.get_id() == x,
+                    AtomView::Var(v) => v.get_symbol() == x,
+                    AtomView::Fun(f) => f.get_symbol() == x,
                     _ => false,
                 }
             }
@@ -118,7 +118,7 @@ impl<'a> AtomView<'a> {
 
     fn collect_factor(
         &self,
-        x: Identifier,
+        x: Symbol,
         workspace: &Workspace,
 
         h: &mut HashMap<AtomView<'a>, Atom>,

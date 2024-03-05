@@ -935,7 +935,7 @@ where
 
         let mut lcoeff_square_free = self.one();
         for (f, _) in &sqf {
-            lcoeff_square_free = lcoeff_square_free * &f;
+            lcoeff_square_free = lcoeff_square_free * f;
         }
 
         let sorted_main_factors = Self::canonical_sort(bivariate_factors, order[1], sample_points);
@@ -2966,7 +2966,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 })
                 .collect();
 
-            let mut sorted_biv_factors_ff: Vec<_> = sorted_biv_factors
+            let sorted_biv_factors_ff: Vec<_> = sorted_biv_factors
                 .into_iter()
                 .map(|f| {
                     f.map_coeff(
@@ -3002,7 +3002,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 .collect();
 
             let factorization_ff = poly_ff.multivariate_hensel_lifting(
-                &mut sorted_biv_factors_ff,
+                &sorted_biv_factors_ff,
                 &mut uni_f,
                 &delta_f,
                 &sample_points,

@@ -10,7 +10,7 @@ use crate::{
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::{Exponent, Variable},
-    representations::{Atom, AtomView, Identifier},
+    representations::{Atom, AtomView, Symbol},
     state::{ResettableBuffer, Workspace},
 };
 
@@ -19,10 +19,10 @@ impl<'a> AtomView<'a> {
     /// Each expression in `system` is understood to yield 0.
     pub fn solve_linear_system<E: Exponent>(
         system: &[AtomView],
-        vars: &[Identifier],
+        vars: &[Symbol],
         workspace: &Workspace,
     ) -> Result<Vec<Atom>, String> {
-        let vars: Vec<_> = vars.iter().map(|v| Variable::Identifier(*v)).collect();
+        let vars: Vec<_> = vars.iter().map(|v| Variable::Symbol(*v)).collect();
         let mut map = HashMap::default();
 
         let mut mat = Vec::with_capacity(system.len() * vars.len());
@@ -90,7 +90,7 @@ impl<'a> AtomView<'a> {
         let b = Matrix {
             shape: (rhs.len() as u32, 1),
             data: rhs.into(),
-            field: field,
+            field,
         };
 
         let sol = match m.solve(&b) {
@@ -105,7 +105,7 @@ impl<'a> AtomView<'a> {
         for (s, v) in sol.data.iter().zip(&vars) {
             let mut a = Atom::new();
             s.to_expression(workspace, &inv_map, &mut a);
-            let Variable::Identifier(_) = *v else {
+            let Variable::Symbol(_) = *v else {
                 panic!("Temp var left");
             };
 

@@ -3,7 +3,7 @@ use ahash::HashMap;
 use crate::{
     coefficient::CoefficientView,
     domains::{float::Real, rational::Rational},
-    representations::{AtomView, Identifier},
+    representations::{AtomView, Symbol},
     state::State,
 };
 
@@ -11,7 +11,7 @@ type EvalFnType<T> = Box<
     dyn Fn(
         &[T],
         &HashMap<AtomView<'_>, T>,
-        &HashMap<Identifier, EvaluationFn<T>>,
+        &HashMap<Symbol, EvaluationFn<T>>,
         &mut HashMap<AtomView<'_>, T>,
     ) -> T,
 >;
@@ -38,7 +38,7 @@ impl<'a> AtomView<'a> {
     pub fn evaluate<T: Real + for<'b> From<&'b Rational>>(
         &self,
         const_map: &HashMap<AtomView<'a>, T>,
-        function_map: &HashMap<Identifier, EvaluationFn<T>>,
+        function_map: &HashMap<Symbol, EvaluationFn<T>>,
         cache: &mut HashMap<AtomView<'a>, T>,
     ) -> T {
         if let Some(c) = const_map.get(self) {
@@ -56,15 +56,15 @@ impl<'a> AtomView<'a> {
                     "Rational polynomial coefficient not yet supported for evaluation"
                 ),
             },
-            AtomView::Var(v) => panic!("Variable id {:?} not in constant map", v.get_id()),
+            AtomView::Var(v) => panic!("Variable id {:?} not in constant map", v.get_symbol()),
             AtomView::Fun(f) => {
-                let name = f.get_id();
+                let name = f.get_symbol();
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
                     let arg_eval = arg.evaluate(const_map, function_map, cache);
 
-                    return match f.get_id() {
+                    return match f.get_symbol() {
                         State::EXP => arg_eval.exp(),
                         State::LOG => arg_eval.log(),
                         State::SIN => arg_eval.sin(),
@@ -83,8 +83,8 @@ impl<'a> AtomView<'a> {
                     args.push(arg.evaluate(const_map, function_map, cache));
                 }
 
-                let Some(fun) = function_map.get(&f.get_id()) else {
-                    panic!("Missing function with id {:?}", f.get_id()); // TODO: use state to get name
+                let Some(fun) = function_map.get(&f.get_symbol()) else {
+                    panic!("Missing function with id {:?}", f.get_symbol()); // TODO: use state to get name
                 };
                 let eval = fun.get()(&args, const_map, function_map, cache);
 

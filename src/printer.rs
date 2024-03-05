@@ -198,7 +198,7 @@ impl<'a> FormattedPrintVar for VarView<'a> {
             }
         }
 
-        let id = self.get_id();
+        let id = self.get_symbol();
         let name = State::get_name(id);
         if name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))
@@ -210,7 +210,7 @@ impl<'a> FormattedPrintVar for VarView<'a> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!("v_{}", self.get_id().get_id()))
+        f.write_fmt(format_args!("v_{}", self.get_symbol().get_id()))
     }
 }
 
@@ -457,7 +457,7 @@ impl<'a> FormattedPrintFn for FunView<'a> {
             }
         }
 
-        let id = self.get_id();
+        let id = self.get_symbol();
         let name = State::get_name(id);
         if name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))?;
@@ -496,7 +496,7 @@ impl<'a> FormattedPrintFn for FunView<'a> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!("f_{}(", self.get_id().get_id()))?;
+        f.write_fmt(format_args!("f_{}(", self.get_symbol().get_id()))?;
 
         let mut first = true;
         for x in self.iter() {

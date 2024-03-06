@@ -1,16 +1,11 @@
-use symbolica::{
-    representations::Atom,
-    state::{ResettableBuffer, State, Workspace},
-};
+use symbolica::{representations::Atom, state::State};
 
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace: Workspace = Workspace::default();
 
-    let input = Atom::parse("(1+x)^3", &mut state, &workspace).unwrap();
+    let input = Atom::parse("(1+x)^3", &mut state).unwrap();
 
-    let mut o = Atom::new();
-    input.as_view().expand(&workspace, &mut o);
+    let o = input.expand();
 
     println!("> Expansion of {}: {}", input, o);
 }

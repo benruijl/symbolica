@@ -9,7 +9,7 @@ use std::cmp::Ordering::{self, Equal};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::iter::Sum;
-use std::ops::{Add as OpAdd, AddAssign, Div, Mul as OpMul, Neg, Rem, Sub};
+use std::ops::{Add as OpAdd, AddAssign, DerefMut, Div, Mul as OpMul, Neg, Rem, Sub};
 use std::sync::Arc;
 
 use ahash::HashMap;
@@ -25,7 +25,7 @@ use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalP
 use crate::domains::{EuclideanDomain, Ring};
 use crate::parser::{Operator, Token};
 use crate::representations::{Atom, AtomView, Symbol};
-use crate::state::{BufferHandle, State, Workspace};
+use crate::state::{RecycledAtom, State, Workspace};
 use crate::utils;
 
 use self::factor::Factorize;
@@ -637,7 +637,7 @@ impl<'a> AtomView<'a> {
 
                         if nn != -1 {
                             let mut h = workspace.new_atom();
-                            if !self.expand(workspace, h.get_mut()) {
+                            if !self.expand_with_ws_into(workspace, &mut h) {
                                 // expansion did not change the input, so we are in a case of x^-3 or x^3
                                 let r = base
                                     .to_rational_polynomial(workspace, field, out_field, var_map)?;
@@ -649,8 +649,7 @@ impl<'a> AtomView<'a> {
                                     Ok(r.pow(nn as u64))
                                 }
                             } else {
-                                h.get()
-                                    .as_view()
+                                h.as_view()
                                     .to_rational_polynomial(workspace, field, out_field, var_map)
                             }
                         } else if nn < 0 {
@@ -737,7 +736,7 @@ impl<'a> AtomView<'a> {
 
                         if nn != -1 {
                             let mut h = workspace.new_atom();
-                            if !self.expand(workspace, h.get_mut()) {
+                            if !self.expand_with_ws_into(workspace, &mut h) {
                                 // expansion did not change the input, so we are in a case of x^-3 or x^3
                                 let r = base.to_factorized_rational_polynomial(
                                     workspace, field, out_field, var_map,
@@ -750,7 +749,7 @@ impl<'a> AtomView<'a> {
                                     Ok(r.pow(nn as u64))
                                 }
                             } else {
-                                h.get().as_view().to_factorized_rational_polynomial(
+                                h.as_view().to_factorized_rational_polynomial(
                                     workspace, field, out_field, var_map,
                                 )
                             }
@@ -1020,7 +1019,7 @@ impl<'a> AtomView<'a> {
         workspace: &'b Workspace,
         field: &R,
         out_field: &RO,
-        map: &mut HashMap<BufferHandle<'b, Atom>, Variable>,
+        map: &mut HashMap<RecycledAtom, Variable>,
     ) -> RationalPolynomial<RO, E>
     where
         RationalPolynomial<RO, E>:
@@ -1081,7 +1080,7 @@ impl<'a> AtomView<'a> {
                             }
                         } else if nn != -1 {
                             let mut h = workspace.new_atom();
-                            if !self.expand(workspace, h.get_mut()) {
+                            if !self.expand_with_ws_into(workspace, &mut h) {
                                 // expansion did not change the input, so we are in a case of x^-3 or x^3
                                 let r = base.to_rational_polynomial_with_map(
                                     workspace, field, out_field, map,
@@ -1225,7 +1224,7 @@ impl<'a> AtomView<'a> {
                                     .as_view(),
                             );
 
-                            let id = Variable::Other(Arc::new(pow_h.to_owned()));
+                            let id = Variable::Other(Arc::new(pow_h.as_view().to_owned()));
 
                             let mut p = MultivariatePolynomial::new(
                                 1,
@@ -1248,7 +1247,7 @@ impl<'a> AtomView<'a> {
                             }
                         } else if nn != -1 {
                             let mut h = workspace.new_atom();
-                            if !self.expand(workspace, h.get_mut()) {
+                            if !self.expand_with_ws_into(workspace, &mut h) {
                                 // expansion did not change the input, so we are in a case of x^-3 or x^3
                                 let r = base.to_rational_polynomial_with_conversion(
                                     workspace, field, out_field,
@@ -1378,22 +1377,22 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                     if pow > E::one() {
                         num_h.to_num((pow.to_u32() as i64).into());
                         pow_h.to_pow(var_h.as_view(), num_h.as_view());
-                        mul.extend(pow_h.get().as_view());
+                        mul.extend(pow_h.as_view());
                     } else {
-                        mul.extend(var_h.get().as_view());
+                        mul.extend(var_h.as_view());
                     }
                 }
             }
 
             let number = monomial.coefficient.clone().into();
             num_h.to_num(number);
-            mul.extend(num_h.get().as_view());
-            add.extend(mul_h.get().as_view());
+            mul.extend(num_h.as_view());
+            add.extend(mul_h.as_view());
         }
 
         let mut norm = workspace.new_atom();
         out.as_view().normalize(workspace, &mut norm);
-        std::mem::swap(norm.get_mut(), out);
+        std::mem::swap(norm.deref_mut(), out);
     }
 }
 
@@ -1427,7 +1426,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
 
         let mut norm = workspace.new_atom();
         out.as_view().normalize(workspace, &mut norm);
-        std::mem::swap(norm.get_mut(), out);
+        std::mem::swap(norm.deref_mut(), out);
     }
 }
 

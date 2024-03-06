@@ -11,7 +11,7 @@ use crate::{
     },
     poly::{Exponent, Variable},
     representations::{Atom, AtomView, Symbol},
-    state::{ResettableBuffer, Workspace},
+    state::Workspace,
 };
 
 impl<'a> AtomView<'a> {
@@ -103,7 +103,7 @@ impl<'a> AtomView<'a> {
 
         let inv_map = map.iter().map(|(k, v)| (v.clone(), k.as_view())).collect();
         for (s, v) in sol.data.iter().zip(&vars) {
-            let mut a = Atom::new();
+            let mut a = Atom::default();
             s.to_expression(workspace, &inv_map, &mut a);
             let Variable::Symbol(_) = *v else {
                 panic!("Temp var left");

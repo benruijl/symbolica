@@ -1,18 +1,17 @@
 use symbolica::{
     id::{Match, Pattern, PatternRestriction},
     representations::{Atom, AtomView},
-    state::{State, Workspace},
+    state::{RecycledAtom, State},
 };
 
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace = Workspace::default();
 
     // prepare all patterns
-    let pattern = Pattern::parse("f(x_)", &mut state, &workspace).unwrap();
-    let rhs = Pattern::parse("f(x_ - 1) + f(x_ - 2)", &mut state, &workspace).unwrap();
-    let lhs_zero_pat = Pattern::parse("f(0)", &mut state, &workspace).unwrap();
-    let lhs_one_pat = Pattern::parse("f(1)", &mut state, &workspace).unwrap();
+    let pattern = Pattern::parse("f(x_)", &mut state).unwrap();
+    let rhs = Pattern::parse("f(x_ - 1) + f(x_ - 2)", &mut state).unwrap();
+    let lhs_zero_pat = Pattern::parse("f(0)", &mut state).unwrap();
+    let lhs_one_pat = Pattern::parse("f(1)", &mut state).unwrap();
     let rhs_one = Atom::new_num(1).into_pattern();
 
     // prepare the pattern restriction `x_ > 1`
@@ -25,9 +24,8 @@ fn main() {
     )
         .into();
 
-    let input = Atom::parse("f(10)", &mut state, &workspace).unwrap();
-    let mut target = workspace.new_atom();
-    target.set_from_view(&input.as_view());
+    let input = Atom::parse("f(10)", &mut state).unwrap();
+    let mut target: RecycledAtom = input.clone().into();
 
     println!(
         "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {}:",
@@ -35,24 +33,17 @@ fn main() {
     );
 
     for _ in 0..9 {
-        let mut out = workspace.new_atom();
-        pattern.replace_all(
-            target.as_view(),
-            &rhs,
-            &workspace,
-            Some(&restrictions),
-            None,
-            &mut out,
-        );
+        let mut out = RecycledAtom::new();
+        pattern.replace_all_into(target.as_view(), &rhs, Some(&restrictions), None, &mut out);
 
-        let mut out2 = workspace.new_atom();
-        out.as_view().expand(&workspace, &mut out2);
+        let mut out2 = RecycledAtom::new();
+        out.expand_into(&mut out2);
 
-        lhs_zero_pat.replace_all(out2.as_view(), &rhs_one, &workspace, None, None, &mut out);
+        lhs_zero_pat.replace_all_into(out2.as_view(), &rhs_one, None, None, &mut out);
 
-        lhs_one_pat.replace_all(out.as_view(), &rhs_one, &workspace, None, None, &mut out2);
+        lhs_one_pat.replace_all_into(out.as_view(), &rhs_one, None, None, &mut out2);
 
-        println!("\t{}", out2,);
+        println!("\t{}", out2);
 
         target = out2;
     }

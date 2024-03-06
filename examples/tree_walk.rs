@@ -1,14 +1,9 @@
-use symbolica::{
-    id::AtomTreeIterator,
-    representations::Atom,
-    state::{State, Workspace},
-};
+use symbolica::{id::AtomTreeIterator, representations::Atom, state::State};
 
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace = Workspace::new();
 
-    let expr: Atom = Atom::parse("f(z)*f(f(x),z)*f(y)", &mut state, &workspace).unwrap();
+    let expr: Atom = Atom::parse("f(z)*f(f(x),z)*f(y)", &mut state).unwrap();
 
     println!("> Tree walk of {}:", expr);
 

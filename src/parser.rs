@@ -11,7 +11,7 @@ use crate::{
     domains::Ring,
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
     representations::Atom,
-    state::{ResettableBuffer, State, Workspace},
+    state::{State, Workspace},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -275,7 +275,7 @@ impl Token {
 
     /// Parse the token into an atom.
     pub fn to_atom(&self, state: &mut State, workspace: &Workspace) -> Result<Atom, String> {
-        let mut atom = Atom::new();
+        let mut atom = Atom::default();
         self.to_atom_with_output(state, workspace, &mut atom)?;
         Ok(atom)
     }

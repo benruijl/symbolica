@@ -24,7 +24,7 @@ use crate::{
     },
     poly::{polynomial::MultivariatePolynomial, Variable, INLINED_EXPONENTS},
     representations::{Atom, AtomView},
-    state::{FiniteFieldIndex, ResettableBuffer, State, Workspace},
+    state::{FiniteFieldIndex, State, Workspace},
 };
 
 pub trait ConvertToRing: Ring {
@@ -703,8 +703,22 @@ impl Add<i64> for CoefficientView<'_> {
     }
 }
 
+impl Atom {
+    pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
+        self.as_view().set_coefficient_ring(vars)
+    }
+}
+
 impl<'a> AtomView<'a> {
-    pub fn set_coefficient_ring(
+    pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut out = ws.new_atom();
+            self.set_coefficient_ring_with_ws_into(vars, &ws, &mut out);
+            out.into_inner()
+        })
+    }
+
+    pub fn set_coefficient_ring_with_ws_into(
         &self,
         vars: &Arc<Vec<Variable>>,
         workspace: &Workspace,
@@ -735,16 +749,22 @@ impl<'a> AtomView<'a> {
                                 .to_expression(workspace, &HashMap::default(), &mut n1);
 
                             let mut n1_conv = workspace.new_atom();
-                            n1.as_view()
-                                .set_coefficient_ring(vars, workspace, &mut n1_conv);
+                            n1.as_view().set_coefficient_ring_with_ws_into(
+                                vars,
+                                workspace,
+                                &mut n1_conv,
+                            );
 
                             let mut n2 = workspace.new_atom();
                             r.denominator
                                 .to_expression(workspace, &HashMap::default(), &mut n2);
 
                             let mut n2_conv = workspace.new_atom();
-                            n2.as_view()
-                                .set_coefficient_ring(vars, workspace, &mut n2_conv);
+                            n2.as_view().set_coefficient_ring_with_ws_into(
+                                vars,
+                                workspace,
+                                &mut n2_conv,
+                            );
 
                             // create n1/n2
                             let mut n3 = workspace.new_atom();
@@ -797,7 +817,7 @@ impl<'a> AtomView<'a> {
                 let (base, exp) = p.get_base_exp();
 
                 let mut nb = workspace.new_atom();
-                if base.set_coefficient_ring(vars, workspace, &mut nb) {
+                if base.set_coefficient_ring_with_ws_into(vars, workspace, &mut nb) {
                     let mut o = workspace.new_atom();
                     o.to_pow(nb.as_view(), exp);
 
@@ -816,9 +836,7 @@ impl<'a> AtomView<'a> {
 
                 let mut arg_o = workspace.new_atom();
                 for arg in m.iter() {
-                    arg_o.reset();
-
-                    changed |= arg.set_coefficient_ring(vars, workspace, &mut arg_o);
+                    changed |= arg.set_coefficient_ring_with_ws_into(vars, workspace, &mut arg_o);
                     mul.extend(arg_o.as_view());
                 }
 
@@ -840,9 +858,7 @@ impl<'a> AtomView<'a> {
 
                 let mut arg_o = workspace.new_atom();
                 for arg in a.iter() {
-                    arg_o.reset();
-
-                    changed |= arg.set_coefficient_ring(vars, workspace, &mut arg_o);
+                    changed |= arg.set_coefficient_ring_with_ws_into(vars, workspace, &mut arg_o);
                     mul.extend(arg_o.as_view());
                 }
 

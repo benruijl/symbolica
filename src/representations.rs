@@ -5,7 +5,7 @@ use crate::{
     coefficient::Coefficient,
     parser::Token,
     printer::AtomPrinter,
-    state::{BufferHandle, ResettableBuffer, State, Workspace},
+    state::{RecycledAtom, State, Workspace},
 };
 use std::{cmp::Ordering, hash::Hash, ops::DerefMut};
 
@@ -199,32 +199,6 @@ impl<'a> From<AddView<'a>> for AtomView<'a> {
 /// converted to an `AtomView`.
 pub trait AsAtomView<'a>: Sized {
     fn as_atom_view(self) -> AtomView<'a>;
-
-    /// Create a builder of an atom. Can be used for easy
-    /// construction of terms.
-    fn builder(self, workspace: &Workspace) -> AtomBuilder<'_, BufferHandle<'_, Atom>> {
-        AtomBuilder::new(self, workspace, workspace.new_atom())
-    }
-
-    fn add<'b, T: AsAtomView<'b>>(self, workspace: &Workspace, rhs: T, out: &mut Atom) {
-        AtomView::add(&self.as_atom_view(), workspace, rhs.as_atom_view(), out)
-    }
-
-    fn mul<'b, T: AsAtomView<'b>>(self, workspace: &Workspace, rhs: T, out: &mut Atom) {
-        AtomView::mul(&self.as_atom_view(), workspace, rhs.as_atom_view(), out)
-    }
-
-    fn div<'b, T: AsAtomView<'b>>(self, workspace: &Workspace, rhs: T, out: &mut Atom) {
-        AtomView::div(&self.as_atom_view(), workspace, rhs.as_atom_view(), out)
-    }
-
-    fn pow<'b, T: AsAtomView<'b>>(self, workspace: &Workspace, rhs: T, out: &mut Atom) {
-        AtomView::pow(&self.as_atom_view(), workspace, rhs.as_atom_view(), out)
-    }
-
-    fn neg(self, workspace: &Workspace, out: &mut Atom) {
-        AtomView::neg(&self.as_atom_view(), workspace, out)
-    }
 }
 
 impl<'a> AsAtomView<'a> for AtomView<'a> {
@@ -233,15 +207,21 @@ impl<'a> AsAtomView<'a> for AtomView<'a> {
     }
 }
 
-impl<'a> AsAtomView<'a> for &'a Atom {
+impl<'a, T: AsRef<Atom>> AsAtomView<'a> for &'a T {
     fn as_atom_view(self) -> AtomView<'a> {
-        self.as_view()
+        self.as_ref().as_view()
+    }
+}
+
+impl AsRef<Atom> for Atom {
+    fn as_ref(&self) -> &Atom {
+        self
     }
 }
 
 impl<'a> AtomView<'a> {
     pub fn to_owned(&self) -> Atom {
-        let mut a = Atom::new();
+        let mut a = Atom::default();
         a.set_from_view(self);
         a
     }
@@ -251,11 +231,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Add two atoms and return the buffer that contains the unnormalized result.
-    fn add_no_norm<'b>(
-        &self,
-        workspace: &'b Workspace,
-        rhs: AtomView<'_>,
-    ) -> BufferHandle<'b, Atom> {
+    fn add_no_norm<'b>(&self, workspace: &'b Workspace, rhs: AtomView<'_>) -> RecycledAtom {
         let mut e = workspace.new_atom();
         let a = e.to_add();
 
@@ -266,26 +242,18 @@ impl<'a> AtomView<'a> {
     }
 
     /// Subtract two atoms and return the buffer that contains the unnormalized result.
-    fn sub_no_norm<'b>(
-        &self,
-        workspace: &'b Workspace,
-        rhs: AtomView<'_>,
-    ) -> BufferHandle<'b, Atom> {
+    fn sub_no_norm<'b>(&self, workspace: &'b Workspace, rhs: AtomView<'_>) -> RecycledAtom {
         let mut e = workspace.new_atom();
         let a = e.to_add();
 
         // TODO: check if self or rhs is add
         a.extend(*self);
-        a.extend(rhs.neg_no_norm(workspace).as_atom_view());
+        a.extend(rhs.neg_no_norm(workspace).as_view());
         e
     }
 
     /// Multiply two atoms and return the buffer that contains the unnormalized result.
-    fn mul_no_norm<'b>(
-        &self,
-        workspace: &'b Workspace,
-        rhs: AtomView<'_>,
-    ) -> BufferHandle<'b, Atom> {
+    fn mul_no_norm<'b>(&self, workspace: &'b Workspace, rhs: AtomView<'_>) -> RecycledAtom {
         let mut e = workspace.new_atom();
         let a = e.to_mul();
 
@@ -296,22 +264,14 @@ impl<'a> AtomView<'a> {
     }
 
     /// Construct `self^exp` and return the buffer that contains the unnormalized result.
-    fn pow_no_norm<'b>(
-        &self,
-        workspace: &'b Workspace,
-        exp: AtomView<'_>,
-    ) -> BufferHandle<'b, Atom> {
+    fn pow_no_norm<'b>(&self, workspace: &'b Workspace, exp: AtomView<'_>) -> RecycledAtom {
         let mut e = workspace.new_atom();
         e.to_pow(*self, exp);
         e
     }
 
     /// Divide `self` by `div` and return the buffer that contains the unnormalized result.
-    fn div_no_norm<'b>(
-        &self,
-        workspace: &'b Workspace,
-        div: AtomView<'_>,
-    ) -> BufferHandle<'b, Atom> {
+    fn div_no_norm<'b>(&self, workspace: &'b Workspace, div: AtomView<'_>) -> RecycledAtom {
         self.mul_no_norm(
             workspace,
             div.pow_no_norm(workspace, workspace.new_num(-1).as_view())
@@ -320,13 +280,20 @@ impl<'a> AtomView<'a> {
     }
 
     /// Negate `self` and return the buffer that contains the unnormalized result.
-    fn neg_no_norm<'b>(&self, workspace: &'b Workspace) -> BufferHandle<'b, Atom> {
+    fn neg_no_norm<'b>(&self, workspace: &'b Workspace) -> RecycledAtom {
         self.mul_no_norm(workspace, workspace.new_num(-1).as_view())
     }
 
     /// Add `self` and `rhs`, writing the result in `out`.
     pub fn add(&self, workspace: &Workspace, rhs: AtomView<'_>, out: &mut Atom) {
         self.add_no_norm(workspace, rhs)
+            .as_view()
+            .normalize(workspace, out);
+    }
+
+    /// Subtract `rhs` from `self, writing the result in `out`.
+    pub fn sub(&self, workspace: &Workspace, rhs: AtomView<'_>, out: &mut Atom) {
+        self.sub_no_norm(workspace, rhs)
             .as_view()
             .normalize(workspace, out);
     }
@@ -379,10 +346,11 @@ pub enum Atom {
     Pow(Pow),
     Mul(Mul),
     Add(Add),
-    Empty, // for internal use, TODO: deprecate
+    Empty, // for internal use
 }
 
 impl Default for Atom {
+    /// Create an atom that represents the number 0.
     #[inline]
     fn default() -> Self {
         Num::zero(RawAtom::new()).into()
@@ -398,18 +366,6 @@ impl std::fmt::Display for Atom {
 impl std::fmt::Debug for Atom {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.as_view().fmt(fmt)
-    }
-}
-
-impl ResettableBuffer for Atom {
-    #[inline]
-    fn new() -> Self {
-        Atom::default()
-    }
-
-    #[inline(always)]
-    fn reset(&mut self) {
-        *self = Num::zero(std::mem::replace(self, Atom::Empty).into_raw()).into();
     }
 }
 
@@ -444,9 +400,14 @@ impl From<Fun> for Atom {
 }
 
 impl Atom {
+    /// Create an atom that represents the number 0.
+    pub fn new() -> Atom {
+        Atom::default()
+    }
+
     /// Parse and atom from a string.
-    pub fn parse(input: &str, state: &mut State, workspace: &Workspace) -> Result<Atom, String> {
-        Token::parse(input)?.to_atom(state, workspace)
+    pub fn parse(input: &str, state: &mut State) -> Result<Atom, String> {
+        Workspace::get_local().with(|ws| Token::parse(input)?.to_atom(state, ws))
     }
 
     #[inline]
@@ -583,224 +544,208 @@ impl Atom {
 /// For example:
 /// ```
 /// # use symbolica::{
-/// #     representations::{AsAtomView, FunctionBuilder},
-/// #     state::{FunctionAttribute, State, Workspace},
+/// #     representations::{Atom, AsAtomView, FunctionBuilder},
+/// #     state::{FunctionAttribute, State},
 /// # };
 /// # fn main() {
-/// let mut state = State::new();
-/// let ws: Workspace = Workspace::new();
+/// let mut state = State::get_global_state().write().unwrap();
 ///
-/// let f_id = state.get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric]));
-/// let fb = FunctionBuilder::new(f_id, &ws);
+/// let f_id = state.get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric])).unwrap();
+/// let fb = FunctionBuilder::new(f_id);
 /// let a = fb
-///     .add_arg(&ws.new_num(3))
-///     .add_arg(&ws.new_num(2))
-///     .add_arg(&ws.new_num(1))
+///     .add_arg(&Atom::new_num(3))
+///     .add_arg(&Atom::new_num(2))
+///     .add_arg(&Atom::new_num(1))
 ///     .finish();
 ///
-/// println!("{}", a.as_atom_view());
+/// println!("{}", a);
 /// # }
 /// ```
-pub struct FunctionBuilder<'a> {
-    workspace: &'a Workspace,
-    handle: BufferHandle<'a, Atom>,
+pub struct FunctionBuilder {
+    handle: RecycledAtom,
 }
 
-impl<'a> FunctionBuilder<'a> {
+impl FunctionBuilder {
     /// Create a new `FunctionBuilder`.
-    pub fn new(name: Symbol, workspace: &'a Workspace) -> FunctionBuilder<'a> {
-        let mut a = workspace.new_atom();
+    pub fn new(name: Symbol) -> FunctionBuilder {
+        let mut a = RecycledAtom::new();
         a.to_fun(name);
-        FunctionBuilder {
-            workspace,
-            handle: a,
-        }
+        FunctionBuilder { handle: a }
     }
 
     /// Add an argument to the function.
-    pub fn add_arg<'b, T: AsAtomView<'b>>(mut self, arg: T) -> FunctionBuilder<'a> {
-        if let Atom::Fun(f) = self.handle.get_mut() {
+    pub fn add_arg<'b, T: AsAtomView<'b>>(mut self, arg: T) -> FunctionBuilder {
+        if let Atom::Fun(f) = self.handle.deref_mut() {
             f.add_arg(arg.as_atom_view());
         }
 
         self
     }
 
-    /// Finish the function construction and return an `AtomBuilder`.
-    pub fn finish(self) -> AtomBuilder<'a, BufferHandle<'a, Atom>> {
-        let mut out = self.workspace.new_atom();
-        self.handle.as_view().normalize(self.workspace, &mut out);
-
-        AtomBuilder {
-            workspace: self.workspace,
-            out,
-        }
+    /// Finish the function construction and return an `AtomB`.
+    pub fn finish(self) -> Atom {
+        self.handle.into_inner()
     }
 }
 
-/// A wrapper around an atom, the state and workspace
-/// that contains all the necessary information to do
-/// arithmetic. To construct a function, see [`FunctionBuilder`].
-///
-/// For example:
-/// ```
-/// # use symbolica::{
-/// # representations::{AsAtomView, Atom},
-/// # state::{State, Workspace},
-/// # };
-/// # fn main() {
-/// let mut state = State::new();
-/// let ws: Workspace = Workspace::new();
-///
-/// let x = Atom::parse("x", &mut state, &ws).unwrap();
-/// let y = Atom::parse("y", &mut state, &ws).unwrap();
-///
-/// let mut xb = x.builder(&ws);
-/// xb = (-(xb + &y + &x) * &y * &ws.new_num(6)).pow(&ws.new_num(5)) / &y;
-///
-/// println!("{}", xb.as_atom_view());
-/// # }
-/// ```
-pub struct AtomBuilder<'a, A: DerefMut<Target = Atom>> {
-    workspace: &'a Workspace,
-    out: A,
-}
-
-impl<'a, A: DerefMut<Target = Atom>> AtomBuilder<'a, A> {
-    /// Create a new `AtomBuilder`.
-    pub fn new<'b, T: AsAtomView<'b>>(
-        atom: T,
-        workspace: &'a Workspace,
-        mut out: A,
-    ) -> AtomBuilder<'a, A> {
-        out.set_from_view(&atom.as_atom_view());
-        AtomBuilder { workspace, out }
-    }
-
-    /// Yield the mutable reference to the output atom.
-    pub fn as_atom_mut(&mut self) -> &mut Atom {
-        &mut self.out
-    }
-
+impl Atom {
     /// Take the `self` to the power `exp`. Use [`AtomBuilder:rpow()`] for the reverse operation.
-    pub fn pow<'b, T: AsAtomView<'b>>(mut self, exp: T) -> AtomBuilder<'a, A> {
-        self.out
-            .as_view()
-            .pow_no_norm(self.workspace, exp.as_atom_view())
-            .as_view()
-            .normalize(self.workspace, &mut self.out);
-        self
+    pub fn pow<'a, T: AsAtomView<'a>>(&self, exp: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view()
+                .pow_no_norm(ws, exp.as_atom_view())
+                .as_view()
+                .normalize(ws, &mut t);
+            t.into_inner()
+        })
     }
 
     /// Take base` to the power `self`.
-    pub fn rpow<'b, T: AsAtomView<'b>>(mut self, base: T) -> AtomBuilder<'a, A> {
-        base.as_atom_view()
-            .pow_no_norm(self.workspace, self.out.as_view())
-            .as_view()
-            .normalize(self.workspace, &mut self.out);
+    pub fn rpow<'a, T: AsAtomView<'a>>(&self, base: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            base.as_atom_view()
+                .pow_no_norm(ws, self.as_view())
+                .as_view()
+                .normalize(ws, &mut t);
+            t.into_inner()
+        })
+    }
+}
+
+impl<'a, T: AsAtomView<'a>> std::ops::Add<T> for &Atom {
+    type Output = Atom;
+
+    fn add(self, rhs: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().add(ws, rhs.as_atom_view(), &mut t);
+            t.into_inner()
+        })
+    }
+}
+
+impl<'a, T: AsAtomView<'a>> std::ops::Sub<T> for &Atom {
+    type Output = Atom;
+
+    fn sub(self, rhs: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view()
+                .sub_no_norm(ws, rhs.as_atom_view())
+                .as_view()
+                .normalize(ws, &mut t);
+            t.into_inner()
+        })
+    }
+}
+
+impl<'a, T: AsAtomView<'a>> std::ops::Mul<T> for &Atom {
+    type Output = Atom;
+
+    fn mul(self, rhs: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().mul(ws, rhs.as_atom_view(), &mut t);
+            t.into_inner()
+        })
+    }
+}
+
+impl<'a, T: AsAtomView<'a>> std::ops::Div<T> for &Atom {
+    type Output = Atom;
+
+    fn div(self, rhs: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().div(ws, rhs.as_atom_view(), &mut t);
+            t.into_inner()
+        })
+    }
+}
+
+impl std::ops::Neg for &Atom {
+    type Output = Atom;
+
+    fn neg(self) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().neg(ws, &mut t);
+            t.into_inner()
+        })
+    }
+}
+
+impl<'a, T: AsAtomView<'a>> std::ops::Add<T> for Atom {
+    type Output = Atom;
+
+    fn add(mut self, rhs: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().add(ws, rhs.as_atom_view(), &mut t);
+            std::mem::swap(&mut self, &mut t);
+        });
+
         self
     }
 }
 
-impl<'a, A: DerefMut<Target = Atom>> From<&AtomBuilder<'a, A>>
-    for AtomBuilder<'a, BufferHandle<'a, Atom>>
-{
-    fn from(value: &AtomBuilder<'a, A>) -> Self {
-        let mut h = value.workspace.new_atom();
-        h.set_from_view(&value.as_atom_view());
-        AtomBuilder {
-            workspace: value.workspace,
-            out: h,
-        }
-    }
-}
+impl<'a, T: AsAtomView<'a>> std::ops::Sub<T> for Atom {
+    type Output = Atom;
 
-impl<'a> Clone for AtomBuilder<'a, BufferHandle<'a, Atom>> {
-    fn clone(&self) -> Self {
-        let mut h = self.workspace.new_atom();
-        h.set_from_view(&self.as_atom_view());
-        AtomBuilder {
-            workspace: self.workspace,
-            out: h,
-        }
-    }
-}
+    fn sub(mut self, rhs: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view()
+                .sub_no_norm(ws, rhs.as_atom_view())
+                .as_view()
+                .normalize(ws, &mut t);
+            std::mem::swap(&mut self, &mut t);
+        });
 
-impl<'a, 'b, T: AsAtomView<'b>, A: DerefMut<Target = Atom>> std::ops::Add<T>
-    for AtomBuilder<'a, A>
-{
-    type Output = AtomBuilder<'a, A>;
-
-    fn add(mut self, rhs: T) -> Self::Output {
-        self.out
-            .as_view()
-            .add_no_norm(self.workspace, rhs.as_atom_view())
-            .as_view()
-            .normalize(self.workspace, &mut self.out);
         self
     }
 }
 
-impl<'a, 'b, T: AsAtomView<'b>, A: DerefMut<Target = Atom>> std::ops::Sub<T>
-    for AtomBuilder<'a, A>
-{
-    type Output = AtomBuilder<'a, A>;
+impl<'a, T: AsAtomView<'a>> std::ops::Mul<T> for Atom {
+    type Output = Atom;
 
-    fn sub(mut self, rhs: T) -> Self::Output {
-        self.out
-            .as_view()
-            .sub_no_norm(self.workspace, rhs.as_atom_view())
-            .as_view()
-            .normalize(self.workspace, &mut self.out);
+    fn mul(mut self, rhs: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().mul(ws, rhs.as_atom_view(), &mut t);
+            std::mem::swap(&mut self, &mut t);
+        });
+
         self
     }
 }
 
-impl<'a, 'b, T: AsAtomView<'b>, A: DerefMut<Target = Atom>> std::ops::Mul<T>
-    for AtomBuilder<'a, A>
-{
-    type Output = AtomBuilder<'a, A>;
+impl<'a, T: AsAtomView<'a>> std::ops::Div<T> for Atom {
+    type Output = Atom;
 
-    fn mul(mut self, rhs: T) -> Self::Output {
-        self.out
-            .as_view()
-            .mul_no_norm(self.workspace, rhs.as_atom_view())
-            .as_view()
-            .normalize(self.workspace, &mut self.out);
+    fn div(mut self, rhs: T) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().div(ws, rhs.as_atom_view(), &mut t);
+            std::mem::swap(&mut self, &mut t);
+        });
+
         self
     }
 }
 
-impl<'a, 'b, T: AsAtomView<'b>, A: DerefMut<Target = Atom>> std::ops::Div<T>
-    for AtomBuilder<'a, A>
-{
-    type Output = AtomBuilder<'a, A>;
+impl std::ops::Neg for Atom {
+    type Output = Atom;
 
-    fn div(mut self, rhs: T) -> Self::Output {
-        self.out
-            .as_view()
-            .div_no_norm(self.workspace, rhs.as_atom_view())
-            .as_view()
-            .normalize(self.workspace, &mut self.out);
+    fn neg(mut self) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().neg(ws, &mut t);
+            std::mem::swap(&mut self, &mut t);
+        });
+
         self
-    }
-}
-
-impl<'a, A: DerefMut<Target = Atom>> std::ops::Neg for AtomBuilder<'a, A> {
-    type Output = AtomBuilder<'a, A>;
-
-    fn neg(mut self) -> Self::Output {
-        self.out
-            .as_view()
-            .neg_no_norm(self.workspace)
-            .as_view()
-            .normalize(self.workspace, &mut self.out);
-        self
-    }
-}
-
-impl<'a, 'b, A: DerefMut<Target = Atom>> AsAtomView<'b> for &'b AtomBuilder<'a, A> {
-    fn as_atom_view(self) -> AtomView<'b> {
-        self.out.as_atom_view()
     }
 }

@@ -2,7 +2,7 @@ use symbolica::{
     domains::rational::{Rational, RationalField},
     poly::evaluate::{HornerScheme, InstructionSetPrinter},
     representations::Atom,
-    state::{State, Workspace},
+    state::State,
 };
 
 use symbolica::poly::polynomial::MultivariatePolynomial;
@@ -11,9 +11,8 @@ const SIGMA: &str = "+32*amel2^3*zk^2*xcp3 +32*amel2^3*zk^2*xcp1 -48*amel2^3*zk^
 
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace = Workspace::default();
 
-    let poly: MultivariatePolynomial<_, u8> = Atom::parse(SIGMA, &mut state, &workspace)
+    let poly: MultivariatePolynomial<_, u8> = Atom::parse(SIGMA, &mut state)
         .unwrap()
         .as_view()
         .to_polynomial(&RationalField::new(), None)

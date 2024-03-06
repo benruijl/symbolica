@@ -2,7 +2,7 @@ use dyn_clone::DynClone;
 
 use crate::{
     representations::{default::ListSlice, Atom, AtomView, Num, SliceType, Symbol},
-    state::{ResettableBuffer, State, Workspace},
+    state::{State, Workspace},
     transformer::{Transformer, TransformerError},
 };
 
@@ -30,9 +30,9 @@ impl<'a> AtomView<'a> {
 }
 
 impl Pattern {
-    pub fn parse(input: &str, state: &mut State, workspace: &Workspace) -> Result<Pattern, String> {
+    pub fn parse(input: &str, state: &mut State) -> Result<Pattern, String> {
         // TODO: use workspace instead of owned atom
-        Ok(Atom::parse(input, state, workspace)?.into_pattern())
+        Ok(Atom::parse(input, state)?.into_pattern())
     }
 
     pub fn add(&self, rhs: &Self, workspace: &Workspace) -> Self {
@@ -45,8 +45,8 @@ impl Pattern {
                 a.extend(l1.as_view());
                 a.extend(l2.as_view());
 
-                let mut b = Atom::new();
-                e.get().as_view().normalize(workspace, &mut b);
+                let mut b = Atom::default();
+                e.as_view().normalize(workspace, &mut b);
 
                 return Pattern::Literal(b);
             }
@@ -77,8 +77,8 @@ impl Pattern {
                 a.extend(l1.as_view());
                 a.extend(l2.as_view());
 
-                let mut b = Atom::new();
-                e.get().as_view().normalize(workspace, &mut b);
+                let mut b = Atom::default();
+                e.as_view().normalize(workspace, &mut b);
 
                 return Pattern::Literal(b);
             }
@@ -108,7 +108,7 @@ impl Pattern {
             let mut e = workspace.new_atom();
             e.to_pow(l2.as_view(), pow.as_view());
 
-            let mut b = Atom::new();
+            let mut b = Atom::default();
             e.as_view().normalize(workspace, &mut b);
 
             match self {
@@ -124,8 +124,8 @@ impl Pattern {
                     md.extend(l1.as_view());
                     md.extend(b.as_view());
 
-                    let mut b = Atom::new();
-                    m.get().as_view().normalize(workspace, &mut b);
+                    let mut b = Atom::default();
+                    m.as_view().normalize(workspace, &mut b);
                     Pattern::Literal(b)
                 }
                 _ => Pattern::Mul(vec![self.clone(), Pattern::Literal(b)]),
@@ -155,8 +155,8 @@ impl Pattern {
                 let mut e = workspace.new_atom();
                 e.to_pow(l1.as_view(), l2.as_view());
 
-                let mut b = Atom::new();
-                e.get().as_view().normalize(workspace, &mut b);
+                let mut b = Atom::default();
+                e.as_view().normalize(workspace, &mut b);
 
                 return Pattern::Literal(b);
             }
@@ -176,8 +176,8 @@ impl Pattern {
             a.extend(l1.as_view());
             a.extend(sign.as_view());
 
-            let mut b = Atom::new();
-            e.get().as_view().normalize(workspace, &mut b);
+            let mut b = Atom::default();
+            e.as_view().normalize(workspace, &mut b);
 
             Pattern::Literal(b)
         } else {
@@ -294,7 +294,7 @@ impl Pattern {
                 AtomView::Num(_) => unreachable!("Number cannot have wildcard"),
             }
         } else {
-            let mut oa = Atom::new();
+            let mut oa = Atom::default();
             oa.set_from_view(&atom);
             Pattern::Literal(oa)
         }
@@ -345,9 +345,8 @@ impl Pattern {
                                     }
                                     _ => {
                                         let mut handle = workspace.new_atom();
-                                        let oa = handle.get_mut();
-                                        w.to_atom(oa);
-                                        func.add_arg(oa.as_view())
+                                        w.to_atom(&mut handle);
+                                        func.add_arg(handle.as_view())
                                     }
                                 },
                                 Match::FunctionName(_) => {
@@ -371,7 +370,7 @@ impl Pattern {
             Pattern::Pow(base_and_exp) => {
                 let mut base = workspace.new_atom();
                 let mut exp = workspace.new_atom();
-                let mut oas = [base.get_mut(), exp.get_mut()];
+                let mut oas = [&mut base, &mut exp];
 
                 for (out, arg) in oas.iter_mut().zip(base_and_exp.iter()) {
                     if let Pattern::Wildcard(w) = arg {
@@ -380,9 +379,8 @@ impl Pattern {
                                 Match::Single(s) => out.set_from_view(s),
                                 Match::Multiple(_, _) => {
                                     let mut handle = workspace.new_atom();
-                                    let oa = handle.get_mut();
-                                    w.to_atom(oa);
-                                    out.set_from_view(&oa.as_view())
+                                    w.to_atom(&mut handle);
+                                    out.set_from_view(&handle.as_view())
                                 }
                                 Match::FunctionName(_) => {
                                     unreachable!("Wildcard cannot be function name")
@@ -459,9 +457,8 @@ impl Pattern {
                                     }
                                     _ => {
                                         let mut handle = workspace.new_atom();
-                                        let oa = handle.get_mut();
-                                        w.to_atom(oa);
-                                        add.extend(oa.as_view())
+                                        w.to_atom(&mut handle);
+                                        add.extend(handle.as_view())
                                     }
                                 },
                                 Match::FunctionName(_) => {
@@ -476,9 +473,8 @@ impl Pattern {
                     }
 
                     let mut handle = workspace.new_atom();
-                    let oa = handle.get_mut();
-                    arg.substitute_wildcards(workspace, oa, match_stack)?;
-                    add.extend(oa.as_view());
+                    arg.substitute_wildcards(workspace, &mut handle, match_stack)?;
+                    add.extend(handle.as_view());
                 }
                 add_h.as_view().normalize(workspace, out);
             }
@@ -515,9 +511,39 @@ impl Pattern {
         ReplaceIterator::new(self, target, rhs, conditions, settings)
     }
 
-    /// Replace all occurrences of the pattern in the target.
+    /// Replace all occurrences of the pattern in the target
     /// For every matched atom, the first canonical match is used and then the atom is skipped.
     pub fn replace_all(
+        &self,
+        target: AtomView<'_>,
+        rhs: &Pattern,
+        conditions: Option<&Condition<WildcardAndRestriction>>,
+        settings: Option<&MatchSettings>,
+    ) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut out = ws.new_atom();
+            self.replace_all_with_ws_into(target, rhs, ws, conditions, settings, &mut out);
+            out.into_inner()
+        })
+    }
+
+    /// Replace all occurrences of the pattern in the target, returning `true` iff a match was found.
+    /// For every matched atom, the first canonical match is used and then the atom is skipped.
+    pub fn replace_all_into(
+        &self,
+        target: AtomView<'_>,
+        rhs: &Pattern,
+        conditions: Option<&Condition<WildcardAndRestriction>>,
+        settings: Option<&MatchSettings>,
+        out: &mut Atom,
+    ) -> bool {
+        Workspace::get_local()
+            .with(|ws| self.replace_all_with_ws_into(target, rhs, &ws, conditions, settings, out))
+    }
+
+    /// Replace all occurrences of the pattern in the target, returning `true` iff a match was found.
+    /// For every matched atom, the first canonical match is used and then the atom is skipped.
+    pub fn replace_all_with_ws_into(
         &self,
         target: AtomView<'_>,
         rhs: &Pattern,
@@ -536,10 +562,9 @@ impl Pattern {
         );
 
         if matched {
-            let mut handle_norm = workspace.new_atom();
-            let norm = handle_norm.get_mut();
-            out.as_view().normalize(workspace, norm);
-            std::mem::swap(out, norm);
+            let mut norm = workspace.new_atom();
+            out.as_view().normalize(workspace, &mut norm);
+            std::mem::swap(out, &mut norm);
         }
 
         matched
@@ -561,9 +586,8 @@ impl Pattern {
             let mut it = AtomMatchIterator::new(self, target);
             //let mut it = SubSliceIterator::new(self, target, &match_stack, true);
             if let Some((_, used_flags)) = it.next(&mut match_stack) {
-                let mut handle = workspace.new_atom();
-                let rhs_subs = handle.get_mut();
-                rhs.substitute_wildcards(workspace, rhs_subs, &match_stack)
+                let mut rhs_subs = workspace.new_atom();
+                rhs.substitute_wildcards(workspace, &mut rhs_subs, &match_stack)
                     .unwrap(); // TODO: escalate?
 
                 if used_flags.iter().all(|x| *x) {
@@ -612,11 +636,15 @@ impl Pattern {
                 let mut submatch = false;
 
                 for child in f.iter() {
-                    let mut child_handle = workspace.new_atom();
-                    let child_buf = child_handle.get_mut();
+                    let mut child_buf = workspace.new_atom();
 
                     submatch |= self.replace_all_no_norm(
-                        child, rhs, workspace, conditions, settings, child_buf,
+                        child,
+                        rhs,
+                        workspace,
+                        conditions,
+                        settings,
+                        &mut child_buf,
                     );
 
                     out.add_arg(child_buf.as_view());
@@ -628,15 +656,25 @@ impl Pattern {
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
-                let mut base_handle = workspace.new_atom();
-                let base_out = base_handle.get_mut();
-                let mut submatch =
-                    self.replace_all_no_norm(base, rhs, workspace, conditions, settings, base_out);
+                let mut base_out = workspace.new_atom();
+                let mut submatch = self.replace_all_no_norm(
+                    base,
+                    rhs,
+                    workspace,
+                    conditions,
+                    settings,
+                    &mut base_out,
+                );
 
-                let mut exp_handle = workspace.new_atom();
-                let exp_out = exp_handle.get_mut();
-                submatch |=
-                    self.replace_all_no_norm(exp, rhs, workspace, conditions, settings, exp_out);
+                let mut exp_out = workspace.new_atom();
+                submatch |= self.replace_all_no_norm(
+                    exp,
+                    rhs,
+                    workspace,
+                    conditions,
+                    settings,
+                    &mut exp_out,
+                );
 
                 let out = out.to_pow(base_out.as_view(), exp_out.as_view());
                 out.set_normalized(!submatch && p.is_normalized());
@@ -647,11 +685,15 @@ impl Pattern {
 
                 let mut submatch = false;
                 for child in m.iter() {
-                    let mut child_handle = workspace.new_atom();
-                    let child_buf = child_handle.get_mut();
+                    let mut child_buf = workspace.new_atom();
 
                     submatch |= self.replace_all_no_norm(
-                        child, rhs, workspace, conditions, settings, child_buf,
+                        child,
+                        rhs,
+                        workspace,
+                        conditions,
+                        settings,
+                        &mut child_buf,
                     );
 
                     mul.extend(child_buf.as_view());
@@ -665,11 +707,15 @@ impl Pattern {
                 let out = out.to_add();
                 let mut submatch = false;
                 for child in a.iter() {
-                    let mut child_handle = workspace.new_atom();
-                    let child_buf = child_handle.get_mut();
+                    let mut child_buf = workspace.new_atom();
 
                     submatch |= self.replace_all_no_norm(
-                        child, rhs, workspace, conditions, settings, child_buf,
+                        child,
+                        rhs,
+                        workspace,
+                        conditions,
+                        settings,
+                        &mut child_buf,
                     );
 
                     out.extend(child_buf.as_view());
@@ -2061,9 +2107,8 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 
                     for (index, arg) in slice.iter().enumerate() {
                         if index == *first {
-                            let mut handle = workspace.new_atom();
-                            let oa = handle.get_mut();
-                            Self::copy_and_replace(oa, rest, used_flags, arg, rhs, workspace);
+                            let mut oa = workspace.new_atom();
+                            Self::copy_and_replace(&mut oa, rest, used_flags, arg, rhs, workspace);
                             out.add_arg(oa.as_view());
                         } else {
                             out.add_arg(arg);
@@ -2074,14 +2119,26 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                     let slice = p.to_slice();
 
                     if *first == 0 {
-                        let mut handle = workspace.new_atom();
-                        let oa = handle.get_mut();
-                        Self::copy_and_replace(oa, rest, used_flags, slice.get(0), rhs, workspace);
+                        let mut oa = workspace.new_atom();
+                        Self::copy_and_replace(
+                            &mut oa,
+                            rest,
+                            used_flags,
+                            slice.get(0),
+                            rhs,
+                            workspace,
+                        );
                         out.to_pow(oa.as_view(), slice.get(1));
                     } else {
-                        let mut handle = workspace.new_atom();
-                        let oa = handle.get_mut();
-                        Self::copy_and_replace(oa, rest, used_flags, slice.get(1), rhs, workspace);
+                        let mut oa = workspace.new_atom();
+                        Self::copy_and_replace(
+                            &mut oa,
+                            rest,
+                            used_flags,
+                            slice.get(1),
+                            rhs,
+                            workspace,
+                        );
                         out.to_pow(slice.get(0), oa.as_view());
                     }
                 }
@@ -2092,9 +2149,8 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 
                     for (index, arg) in slice.iter().enumerate() {
                         if index == *first {
-                            let mut handle = workspace.new_atom();
-                            let oa = handle.get_mut();
-                            Self::copy_and_replace(oa, rest, used_flags, arg, rhs, workspace);
+                            let mut oa = workspace.new_atom();
+                            Self::copy_and_replace(&mut oa, rest, used_flags, arg, rhs, workspace);
 
                             // TODO: do type check or just extend? could be that we get x*y*z -> x*(w*u)*z
                             out.extend(oa.as_view());
@@ -2110,9 +2166,8 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 
                     for (index, arg) in slice.iter().enumerate() {
                         if index == *first {
-                            let mut handle = workspace.new_atom();
-                            let oa = handle.get_mut();
-                            Self::copy_and_replace(oa, rest, used_flags, arg, rhs, workspace);
+                            let mut oa = workspace.new_atom();
+                            Self::copy_and_replace(&mut oa, rest, used_flags, arg, rhs, workspace);
 
                             out.extend(oa.as_view());
                         } else {
@@ -2158,11 +2213,10 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
         if let Some((position, used_flags, _target, match_stack)) =
             self.pattern_tree_iterator.next()
         {
-            let mut rhs_handle = workspace.new_atom();
-            let new_rhs = rhs_handle.get_mut();
+            let mut new_rhs = workspace.new_atom();
 
             self.rhs
-                .substitute_wildcards(workspace, new_rhs, match_stack)
+                .substitute_wildcards(workspace, &mut new_rhs, match_stack)
                 .unwrap(); // TODO: escalate?
 
             ReplaceIterator::copy_and_replace(

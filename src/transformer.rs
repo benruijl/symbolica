@@ -164,7 +164,7 @@ impl Transformer {
         out.set_from_view(&orig_input);
         let mut tmp = workspace.new_atom();
         for t in chain {
-            std::mem::swap(out, tmp.get_mut());
+            std::mem::swap(out, &mut tmp);
             let input = tmp.as_view();
 
             match t {
@@ -172,16 +172,29 @@ impl Transformer {
                     f(input, out)?;
                 }
                 Transformer::Expand => {
-                    input.expand(workspace, out);
+                    input.expand_with_ws_into(workspace, out);
                 }
                 Transformer::Derivative(x) => {
-                    input.derivative(*x, workspace, out);
+                    input.derivative_with_ws_into(*x, workspace, out);
                 }
                 Transformer::TaylorSeries(x, expansion_point, depth) => {
-                    input.taylor_series(*x, expansion_point.as_view(), *depth, workspace, out);
+                    input.taylor_series_with_ws_into(
+                        *x,
+                        expansion_point.as_view(),
+                        *depth,
+                        workspace,
+                        out,
+                    );
                 }
                 Transformer::ReplaceAll(pat, rhs, cond, settings) => {
-                    pat.replace_all(input, rhs, workspace, cond.as_ref(), settings.as_ref(), out);
+                    pat.replace_all_with_ws_into(
+                        input,
+                        rhs,
+                        workspace,
+                        cond.as_ref(),
+                        settings.as_ref(),
+                        out,
+                    );
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = input {

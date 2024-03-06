@@ -15,7 +15,7 @@ use symbolica::{
 
 fn solve() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace: Workspace = Workspace::default();
+    let workspace: Workspace = Workspace::new();
 
     let x = state.get_or_insert_var("x");
     let y = state.get_or_insert_var("y");
@@ -24,7 +24,7 @@ fn solve() {
 
     let atoms: Vec<_> = eqs
         .iter()
-        .map(|e| Atom::parse(e, &mut state, &workspace).unwrap())
+        .map(|e| Atom::parse(e, &mut state).unwrap())
         .collect();
     let system: Vec<_> = atoms.iter().map(|x| x.as_view()).collect();
 
@@ -37,7 +37,7 @@ fn solve() {
 
 fn solve_from_matrix() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace: Workspace = Workspace::default();
+    let workspace: Workspace = Workspace::new();
 
     let system = [["c", "c+1", "c^2+5"], ["1", "c", "c+1"], ["c-1", "-1", "c"]];
     let rhs = ["1", "2", "-1"];

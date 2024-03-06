@@ -1,12 +1,9 @@
-use symbolica::{
-    representations::Atom,
-    state::{ResettableBuffer, State, Workspace},
-};
+use symbolica::{representations::Atom, state::State};
 
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace: Workspace = Workspace::default();
 
+    let x = state.get_or_insert_var("x");
     let inputs = [
         "(1+2*x)^(5+x)",
         "log(2*x) + exp(3*x) + sin(4*x) + cos(y*x)",
@@ -15,12 +12,9 @@ fn main() {
     ];
 
     for input in inputs {
-        let input = Atom::parse(input, &mut state, &workspace).unwrap();
+        let input = Atom::parse(input, &mut state).unwrap();
 
-        let mut a = Atom::new();
-        input
-            .as_view()
-            .derivative(state.get_or_insert_var("x"), &workspace, &mut a);
+        let a = input.derivative(x);
 
         println!("d({})/dx = {}:", input, a);
     }

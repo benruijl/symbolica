@@ -1,23 +1,14 @@
-use symbolica::{
-    representations::Atom,
-    state::{ResettableBuffer, State, Workspace},
-};
+use symbolica::{representations::Atom, state::State};
 
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace: Workspace = Workspace::default();
 
-    let input = Atom::parse(
-        "x*(1+a)+x*5*y+f(5,x)+2+y^2+x^2 + x^3",
-        &mut state,
-        &workspace,
-    )
-    .unwrap();
+    let input = Atom::parse("x*(1+a)+x*5*y+f(5,x)+2+y^2+x^2 + x^3", &mut state).unwrap();
     let x = state.get_or_insert_var("x");
     let key = state.get_or_insert_var("key");
     let coeff = state.get_or_insert_var("coeff");
 
-    let (r, rest) = input.as_view().coefficient_list(x, &workspace);
+    let (r, rest) = input.coefficient_list(x);
 
     println!("> Coefficient list:");
     for (key, val) in r {
@@ -26,23 +17,18 @@ fn main() {
     println!("\t1 {}", rest);
 
     println!("> Collect in x:");
-    let mut out = Atom::new();
-    input.as_view().collect(
+    let out = input.collect(
         x,
-        &workspace,
         Some(Box::new(|x, out| {
             out.set_from_view(&x);
         })),
         None,
-        &mut out,
     );
     println!("\t{}", out);
 
     println!("> Collect in x with wrapping:");
-    let mut out = Atom::new();
-    input.as_view().collect(
+    let out = input.collect(
         x,
-        &workspace,
         Some(Box::new(move |a, out| {
             let f = out.to_fun(key);
             f.add_arg(a);
@@ -51,7 +37,6 @@ fn main() {
             let f = out.to_fun(coeff);
             f.add_arg(a);
         })),
-        &mut out,
     );
     println!("\t{}", out);
 }

@@ -39,7 +39,7 @@ fn main() {
     }
 
     let mut state = State::get_global_state().write().unwrap();
-    let workspace = Workspace::default();
+    let workspace = Workspace::new();
     let vars: Arc<Vec<_>> = Arc::new(
         var_names
             .iter()

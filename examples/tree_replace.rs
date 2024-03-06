@@ -1,15 +1,14 @@
 use symbolica::{
     id::{Condition, Match, MatchSettings, PatternAtomTreeIterator},
     representations::Atom,
-    state::{State, Workspace},
+    state::State,
 };
 
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace = Workspace::default();
 
-    let expr = Atom::parse("f(z)*f(f(x))*f(y)", &mut state, &workspace).unwrap();
-    let pat_expr = Atom::parse("f(x_)", &mut state, &workspace).unwrap();
+    let expr = Atom::parse("f(z)*f(f(x))*f(y)", &mut state).unwrap();
+    let pat_expr = Atom::parse("f(x_)", &mut state).unwrap();
 
     let pattern = pat_expr.as_view().into_pattern();
     let restrictions = Condition::default();

@@ -3,12 +3,9 @@ use std::sync::Mutex;
 use rayon::prelude::*;
 
 use crate::{
-    coefficient::Coefficient,
     representations::{Atom, AtomView},
-    state::{ResettableBuffer, Workspace},
+    state::{RecycledAtom, Workspace},
 };
-
-thread_local!(static WORKSPACE: Workspace = Workspace::new());
 
 struct TermInputStream {
     mem_buf: Vec<Atom>,
@@ -33,20 +30,17 @@ struct TermOutputStream {
 impl TermOutputStream {
     /// Add terms to the buffer.
     fn push(&mut self, a: Atom) {
-        match a {
-            Atom::Add(aa) => {
-                for arg in aa.to_add_view().iter() {
-                    self.mem_buf.push(arg.to_owned());
-                }
+        if let AtomView::Add(aa) = a.as_view() {
+            for arg in aa.iter() {
+                self.mem_buf.push(arg.to_owned());
             }
-            _ => {
-                self.mem_buf.push(a);
-            }
+        } else {
+            self.mem_buf.push(a);
         }
     }
 
     /// Sort all the terms.
-    fn sort(&mut self, workspace: &Workspace) {
+    fn sort(&mut self) {
         self.mem_buf
             .par_sort_by(|a, b| a.as_view().cmp_terms(&b.as_view()));
 
@@ -55,12 +49,11 @@ impl TermOutputStream {
         if !self.mem_buf.is_empty() {
             let mut last_buf = self.mem_buf.remove(0);
 
-            let mut handle = workspace.new_atom();
-            let helper = handle.get_mut();
+            let mut handle: RecycledAtom = Atom::new().into();
             let mut cur_len = 0;
 
             for cur_buf in self.mem_buf.drain(..) {
-                if !last_buf.merge_terms(cur_buf.as_view(), helper) {
+                if !last_buf.merge_terms(cur_buf.as_view(), &mut handle) {
                     // we are done merging
                     {
                         let v = last_buf.as_view();
@@ -88,17 +81,15 @@ impl TermOutputStream {
         self.mem_buf = out;
     }
 
-    fn to_expression(&mut self, workspace: &Workspace) -> Atom {
-        self.sort(workspace);
+    fn to_expression(&mut self) -> Atom {
+        self.sort();
 
         if self.mem_buf.is_empty() {
-            let mut out = Atom::new();
-            out.to_num(Coefficient::zero());
-            out
+            Atom::new_num(0)
         } else if self.mem_buf.len() == 1 {
             self.mem_buf.pop().unwrap()
         } else {
-            let mut out = Atom::new();
+            let mut out = Atom::default();
             let add = out.to_add();
             for x in self.mem_buf.drain(..) {
                 add.extend(x.as_view());
@@ -166,7 +157,7 @@ where
         let out_wrap = Mutex::new(self.exp_out);
 
         self.exp_in.par_bridge().for_each(|x| {
-            WORKSPACE.with(|workspace| {
+            Workspace::get_local().with(|workspace| {
                 out_wrap.lock().unwrap().push(f(workspace, x));
             })
         });
@@ -178,7 +169,7 @@ where
     }
 
     /// Convert the term stream into an expression. This may exceed the available memory.
-    pub fn to_expression(&mut self, workspace: &Workspace) -> Atom {
-        self.exp_out.to_expression(workspace)
+    pub fn to_expression(&mut self) -> Atom {
+        self.exp_out.to_expression()
     }
 }

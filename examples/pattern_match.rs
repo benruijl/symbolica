@@ -1,16 +1,15 @@
 use symbolica::{
     id::{Match, MatchSettings, PatternRestriction},
     representations::Atom,
-    state::{State, Workspace},
+    state::State,
 };
 
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace = Workspace::default();
 
-    let expr = Atom::parse("x*y*w*z*f(x,y,x*y,z)", &mut state, &workspace).unwrap();
+    let expr = Atom::parse("x*y*w*z*f(x,y,x*y,z)", &mut state).unwrap();
 
-    let pat_expr = Atom::parse("z*x_*y_*g_(z_,x_,w_)", &mut state, &workspace).unwrap();
+    let pat_expr = Atom::parse("z*x_*y_*g_(z_,x_,w_)", &mut state).unwrap();
 
     let pattern = pat_expr.as_view().into_pattern();
     let restrictions = (

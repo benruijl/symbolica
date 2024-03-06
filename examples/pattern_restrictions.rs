@@ -3,14 +3,13 @@ use symbolica::{
     domains::finite_field,
     id::{Condition, Match, MatchSettings, PatternRestriction},
     representations::{Atom, AtomView},
-    state::{State, Workspace},
+    state::State,
 };
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace: Workspace = Workspace::default();
 
-    let expr = Atom::parse("f(1,2,3,4,5,6,7)", &mut state, &workspace).unwrap();
-    let pat_expr = Atom::parse("f(x__,y__,z__,w__)", &mut state, &workspace).unwrap();
+    let expr = Atom::parse("f(1,2,3,4,5,6,7)", &mut state).unwrap();
+    let pat_expr = Atom::parse("f(x__,y__,z__,w__)", &mut state).unwrap();
 
     let pattern = pat_expr.as_view().into_pattern();
 

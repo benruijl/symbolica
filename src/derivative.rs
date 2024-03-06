@@ -1,15 +1,70 @@
+use std::ops::DerefMut;
+
 use crate::{
     coefficient::Coefficient,
     domains::integer::Integer,
-    representations::{AsAtomView, Atom, AtomBuilder, AtomView, Symbol},
+    representations::{Atom, AtomView, Symbol},
     state::{State, Workspace},
 };
 
-impl<'a> AtomView<'a> {
+impl Atom {
+    /// Take a derivative of the expression with respect to `x`.
+    pub fn derivative(&self, x: Symbol) -> Atom {
+        self.as_view().derivative(x)
+    }
+
     /// Take a derivative of the expression with respect to `x` and
     /// write the result in `out`.
     /// Returns `true` if the derivative is non-zero.
-    pub fn derivative(&self, x: Symbol, workspace: &Workspace, out: &mut Atom) -> bool {
+    pub fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
+        self.as_view().derivative_into(x, out)
+    }
+
+    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
+    pub fn taylor_series(&self, x: Symbol, expansion_point: AtomView, depth: u32) -> Atom {
+        self.as_view().taylor_series(x, expansion_point, depth)
+    }
+
+    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
+    /// Returns `true` iff the result is non-zero.
+    pub fn taylor_series_into(
+        &self,
+        x: Symbol,
+        expansion_point: AtomView,
+        depth: u32,
+        out: &mut Atom,
+    ) -> bool {
+        self.as_view()
+            .taylor_series_into(x, expansion_point, depth, out)
+    }
+}
+
+impl<'a> AtomView<'a> {
+    /// Take a derivative of the expression with respect to `x`.
+    pub fn derivative(&self, x: Symbol) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut out = ws.new_atom();
+            self.derivative_with_ws_into(x, &ws, &mut out);
+            out.into_inner()
+        })
+    }
+
+    /// Take a derivative of the expression with respect to `x` and
+    /// write the result in `out`.
+    /// Returns `true` if the derivative is non-zero.
+    pub fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
+        Workspace::get_local().with(|ws| self.derivative_with_ws_into(x, &ws, out))
+    }
+
+    /// Take a derivative of the expression with respect to `x` and
+    /// write the result in `out`.
+    /// Returns `true` if the derivative is non-zero.
+    pub fn derivative_with_ws_into(
+        &self,
+        x: Symbol,
+        workspace: &Workspace,
+        out: &mut Atom,
+    ) -> bool {
         match self {
             AtomView::Num(_) => {
                 out.to_num(Coefficient::zero());
@@ -47,7 +102,7 @@ impl<'a> AtomView<'a> {
                 let mut args_der = Vec::with_capacity(f.get_nargs());
                 for (i, arg) in f.iter().enumerate() {
                     let mut arg_der = workspace.new_atom();
-                    if arg.derivative(x, workspace, &mut arg_der) {
+                    if arg.derivative_with_ws_into(x, workspace, &mut arg_der) {
                         args_der.push((i, arg_der));
                     }
                 }
@@ -92,7 +147,7 @@ impl<'a> AtomView<'a> {
                     }
 
                     let (_, mut arg_der) = args_der.pop().unwrap();
-                    if let Atom::Mul(m) = arg_der.get_mut() {
+                    if let Atom::Mul(m) = arg_der.deref_mut() {
                         m.extend(fn_der.as_view());
                         arg_der.as_view().normalize(workspace, out);
                     } else {
@@ -149,10 +204,10 @@ impl<'a> AtomView<'a> {
                 let (base, exp) = p.get_base_exp();
 
                 let mut exp_der = workspace.new_atom();
-                let exp_der_non_zero = exp.derivative(x, workspace, &mut exp_der);
+                let exp_der_non_zero = exp.derivative_with_ws_into(x, workspace, &mut exp_der);
 
                 let mut base_der = workspace.new_atom();
-                let base_der_non_zero = base.derivative(x, workspace, &mut base_der);
+                let base_der_non_zero = base.derivative_with_ws_into(x, workspace, &mut base_der);
 
                 if !exp_der_non_zero && !base_der_non_zero {
                     out.to_num(0.into());
@@ -167,7 +222,7 @@ impl<'a> AtomView<'a> {
                     let lb = log_base.to_fun(State::LOG);
                     lb.add_arg(base);
 
-                    if let Atom::Mul(m) = exp_der.get_mut() {
+                    if let Atom::Mul(m) = exp_der.deref_mut() {
                         m.extend(*self);
                         m.extend(log_base.as_view());
                         exp_der.as_view().normalize(workspace, &mut exp_der_contrib);
@@ -234,8 +289,8 @@ impl<'a> AtomView<'a> {
                 let mut non_zero = false;
                 for arg in args.iter() {
                     let mut arg_der = workspace.new_atom();
-                    if arg.derivative(x, workspace, &mut arg_der) {
-                        if let Atom::Mul(mm) = arg_der.get_mut() {
+                    if arg.derivative_with_ws_into(x, workspace, &mut arg_der) {
+                        if let Atom::Mul(mm) = arg_der.deref_mut() {
                             for other_arg in args.iter() {
                                 if other_arg != arg {
                                     mm.extend(other_arg);
@@ -272,7 +327,7 @@ impl<'a> AtomView<'a> {
                 let mut arg_der = workspace.new_atom();
                 let mut non_zero = false;
                 for arg in args.iter() {
-                    if arg.derivative(x, workspace, &mut arg_der) {
+                    if arg.derivative_with_ws_into(x, workspace, &mut arg_der) {
                         add.extend(arg_der.as_view());
                         non_zero = true;
                     }
@@ -290,13 +345,35 @@ impl<'a> AtomView<'a> {
     }
 
     /// Taylor expand in `x` around `expansion_point` to depth `depth`.
-    pub fn taylor_series(
+    pub fn taylor_series(&self, x: Symbol, expansion_point: AtomView, depth: u32) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut out = ws.new_atom();
+            self.taylor_series_with_ws_into(x, expansion_point, depth, &ws, &mut out);
+            out.into_inner()
+        })
+    }
+
+    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
+    /// Returns `true` iff the result is non-zero.
+    pub fn taylor_series_into(
+        &self,
+        x: Symbol,
+        expansion_point: AtomView,
+        depth: u32,
+        out: &mut Atom,
+    ) -> bool {
+        Workspace::get_local()
+            .with(|ws| self.taylor_series_with_ws_into(x, expansion_point, depth, &ws, out))
+    }
+
+    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
+    /// Returns `true` iff the result is non-zero.
+    pub fn taylor_series_with_ws_into(
         &self,
         x: Symbol,
         expansion_point: AtomView,
         depth: u32,
         workspace: &Workspace,
-
         out: &mut Atom,
     ) -> bool {
         let mut current_order = workspace.new_atom();
@@ -310,8 +387,9 @@ impl<'a> AtomView<'a> {
 
         // construct x - expansion_point
         // TODO: check that expansion_point does not involve `x`
-        let mut dist = AtomBuilder::new(var.as_view(), workspace, workspace.new_atom());
-        dist = dist - expansion_point;
+
+        let mut dist = workspace.new_atom();
+        var.as_view().sub(workspace, expansion_point, &mut dist);
 
         let mut series = workspace.new_atom();
         let series_sum = series.to_add();
@@ -320,7 +398,7 @@ impl<'a> AtomView<'a> {
 
         for d in 0..=depth {
             // replace x by expansion_point
-            var_pat.replace_all(
+            var_pat.replace_all_with_ws_into(
                 current_order.as_view(),
                 &expansion_point_pat,
                 workspace,
@@ -334,16 +412,16 @@ impl<'a> AtomView<'a> {
                 m.extend(next_order.as_view());
                 if d > 1 {
                     let mut exp = workspace.new_atom();
-                    exp.to_pow(dist.as_atom_view(), workspace.new_num(d as i64).as_view());
-                    m.extend(exp.as_atom_view());
+                    exp.to_pow(dist.as_view(), workspace.new_num(d as i64).as_view());
+                    m.extend(exp.as_view());
                 } else if d == 1 {
-                    m.extend(dist.as_atom_view());
+                    m.extend(dist.as_view());
                 }
 
                 let mut fact = workspace.new_atom();
                 fact.to_num((Integer::one(), Integer::factorial(d)).into());
 
-                m.extend(fact.as_atom_view());
+                m.extend(fact.as_view());
 
                 series_sum.extend(series_contrib.as_view());
             } else {
@@ -353,7 +431,7 @@ impl<'a> AtomView<'a> {
             if d < depth
                 && current_order
                     .as_view()
-                    .derivative(x, workspace, &mut next_order)
+                    .derivative_with_ws_into(x, workspace, &mut next_order)
             {
                 std::mem::swap(&mut current_order, &mut next_order);
             } else {

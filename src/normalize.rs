@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::DerefMut};
 
 use smallvec::SmallVec;
 
@@ -7,7 +7,7 @@ use crate::{
     domains::{integer::IntegerRing, rational::RationalField},
     poly::Variable,
     representations::{Atom, AtomView, Fun, Symbol},
-    state::{BufferHandle, State, Workspace},
+    state::{RecycledAtom, State, Workspace},
 };
 
 impl<'a> AtomView<'a> {
@@ -572,20 +572,18 @@ impl<'a> AtomView<'a> {
 
                 for a in t.iter() {
                     let mut handle = workspace.new_atom();
-                    let new_at = handle.get_mut();
 
                     if a.needs_normalization() {
-                        a.normalize(workspace, new_at);
+                        a.normalize(workspace, &mut handle);
                     } else {
-                        new_at.set_from_view(&a);
+                        handle.set_from_view(&a);
                     }
 
-                    if let Atom::Mul(mul) = new_at {
+                    if let Atom::Mul(mul) = handle.deref_mut() {
                         for c in mul.to_mul_view().iter() {
                             // TODO: remove this copy
                             let mut handle = workspace.new_atom();
-                            let child_copy = handle.get_mut();
-                            child_copy.set_from_view(&c);
+                            handle.set_from_view(&c);
 
                             if let AtomView::Num(n) = c {
                                 if n.is_one() {
@@ -624,16 +622,12 @@ impl<'a> AtomView<'a> {
 
                     let mut last_buf = atom_test_buf.remove(0);
 
-                    let mut handle = workspace.new_atom();
-                    let helper = handle.get_mut();
+                    let mut tmp = workspace.new_atom();
                     let mut cur_len = 0;
 
                     atom_test_buf.reverse();
                     while let Some(mut cur_buf) = atom_test_buf.pop() {
-                        if !last_buf
-                            .get_mut()
-                            .merge_factors(cur_buf.get_mut(), helper, workspace)
-                        {
+                        if !last_buf.merge_factors(&mut cur_buf, &mut tmp, workspace) {
                             // we are done merging
                             {
                                 let v = last_buf.as_view();
@@ -710,7 +704,7 @@ impl<'a> AtomView<'a> {
                     list: &[Vec<AtomView<'b>>],
                     fun_name: Symbol,
                     cur: &mut Vec<AtomView<'b>>,
-                    acc: &mut Vec<BufferHandle<'a, Atom>>,
+                    acc: &mut Vec<RecycledAtom>,
                 ) {
                     if list.is_empty() {
                         let mut h = workspace.new_atom();
@@ -934,14 +928,14 @@ impl<'a> AtomView<'a> {
                     base.normalize(workspace, &mut base_handle);
                 } else {
                     // TODO: prevent copy
-                    base_handle.get_mut().set_from_view(&base);
+                    base_handle.set_from_view(&base);
                 };
 
                 if exp.needs_normalization() {
                     exp.normalize(workspace, &mut exp_handle);
                 } else {
                     // TODO: prevent copy
-                    exp_handle.get_mut().set_from_view(&exp);
+                    exp_handle.set_from_view(&exp);
                 };
 
                 'pow_simplify: {
@@ -964,8 +958,8 @@ impl<'a> AtomView<'a> {
                                 break 'pow_simplify;
                             }
 
-                            base_handle.get_mut().to_num(new_base_num);
-                            exp_handle.get_mut().to_num(new_exp_num);
+                            base_handle.to_num(new_base_num);
+                            exp_handle.to_num(new_exp_num);
                         } else if let AtomView::Var(v) = base_handle.as_view() {
                             if v.get_symbol() == State::I {
                                 if let CoefficientView::Natural(n, d) = exp_num {
@@ -1012,7 +1006,7 @@ impl<'a> AtomView<'a> {
                                     break 'pow_simplify;
                                 }
 
-                                exp_handle.get_mut().to_num(new_exp);
+                                exp_handle.to_num(new_exp);
 
                                 let p = out.to_pow(p_base_base, exp_handle.as_view());
                                 p.set_normalized(true);
@@ -1039,12 +1033,9 @@ impl<'a> AtomView<'a> {
                 let mut norm_arg = workspace.new_atom();
                 for a in a.iter() {
                     let r = if a.needs_normalization() {
-                        let new_at = norm_arg.get_mut();
-
                         // TODO: if a is a nested addition, prevent a sort
-                        a.normalize(workspace, new_at);
-
-                        new_at.as_view()
+                        a.normalize(workspace, &mut norm_arg);
+                        norm_arg.as_view()
                     } else {
                         a
                     };

@@ -2,12 +2,11 @@ use symbolica::{
     domains::finite_field::{FiniteField, FiniteFieldCore},
     poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
     representations::Atom,
-    state::{State, Workspace},
+    state::State,
 };
 
 fn main() {
     let mut state = State::get_global_state().write().unwrap();
-    let workspace: Workspace = Workspace::new();
 
     for x in 'a'..='z' {
         state.get_or_insert_var(x.to_string());
@@ -24,10 +23,8 @@ fn main() {
     let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
         .iter()
         .map(|x| {
-            let a = Atom::parse(x, &mut state, &workspace).unwrap();
-            let mut res = workspace.new_atom();
-            a.as_view().expand(&workspace, &mut res);
-            res.as_view()
+            let a = Atom::parse(x, &mut state).unwrap().expand();
+            a.as_view()
                 .to_polynomial(&FiniteField::<u32>::new(13), None)
                 .unwrap()
         })

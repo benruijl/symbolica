@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use smallvec::SmallVec;
 
 use crate::{
@@ -5,12 +7,38 @@ use crate::{
     combinatorics::CombinationWithReplacementIterator,
     domains::integer::Integer,
     representations::{Atom, AtomView},
-    state::{BufferHandle, Workspace},
+    state::{RecycledAtom, Workspace},
 };
+
+impl Atom {
+    /// Expand an expression.
+    pub fn expand(&self) -> Atom {
+        self.as_view().expand()
+    }
+
+    /// Expand an expression, returning `true` iff the expression changed.
+    pub fn expand_into(&self, out: &mut Atom) -> bool {
+        self.as_view().expand_into(out)
+    }
+}
 
 impl<'a> AtomView<'a> {
     /// Expand an expression.
-    pub fn expand(&self, workspace: &Workspace, out: &mut Atom) -> bool {
+    pub fn expand(&self) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut a = ws.new_atom();
+            self.expand_with_ws_into(ws, &mut a);
+            a.into_inner()
+        })
+    }
+
+    /// Expand an expression, returning `true` iff the expression changed.
+    pub fn expand_into(&self, out: &mut Atom) -> bool {
+        Workspace::get_local().with(|ws| self.expand_with_ws_into(ws, out))
+    }
+
+    /// Expand an expression, returning `true` iff the expression changed.
+    pub fn expand_with_ws_into(&self, workspace: &Workspace, out: &mut Atom) -> bool {
         let changed = self.expand_no_norm(workspace, out);
 
         if changed {
@@ -29,10 +57,10 @@ impl<'a> AtomView<'a> {
                 let (base, exp) = p.get_base_exp();
 
                 let mut new_base = workspace.new_atom();
-                let mut changed = base.expand(workspace, new_base.get_mut());
+                let mut changed = base.expand_with_ws_into(workspace, &mut new_base);
 
                 let mut new_exp = workspace.new_atom();
-                changed |= exp.expand(workspace, new_exp.get_mut());
+                changed |= exp.expand_with_ws_into(workspace, &mut new_exp);
 
                 let (negative, num) = 'get_num: {
                     if let AtomView::Num(n) = new_exp.as_view() {
@@ -44,9 +72,7 @@ impl<'a> AtomView<'a> {
                     }
 
                     let mut pow_h = workspace.new_atom();
-                    let pow = pow_h
-                        .get_mut()
-                        .to_pow(new_base.as_view(), new_exp.as_view());
+                    let pow = pow_h.to_pow(new_base.as_view(), new_exp.as_view());
                     pow.set_normalized(!changed);
                     pow_h.as_view().normalize(workspace, out);
                     return changed;
@@ -79,20 +105,19 @@ impl<'a> AtomView<'a> {
                         }
 
                         let mut normalized_child = workspace.new_atom();
-                        hh.as_view()
-                            .normalize(workspace, normalized_child.get_mut());
+                        hh.as_view().normalize(workspace, &mut normalized_child);
 
                         let mut expanded_child = workspace.new_atom();
                         normalized_child
                             .as_view()
-                            .expand(workspace, expanded_child.get_mut());
+                            .expand_with_ws_into(workspace, &mut expanded_child);
 
                         let coeff_f = Integer::multinom(new_term);
                         if coeff_f != Integer::one() {
                             let mut coeff_h = workspace.new_atom();
                             coeff_h.to_num(coeff_f.into());
 
-                            if let Atom::Mul(m) = expanded_child.get_mut() {
+                            if let Atom::Mul(m) = expanded_child.deref_mut() {
                                 m.extend(coeff_h.as_view());
                                 add.extend(expanded_child.as_view());
                             } else {
@@ -146,9 +171,7 @@ impl<'a> AtomView<'a> {
                     true
                 } else {
                     let mut pow_h = workspace.new_atom();
-                    let pow = pow_h
-                        .get_mut()
-                        .to_pow(new_base.as_view(), new_exp.as_view());
+                    let pow = pow_h.to_pow(new_base.as_view(), new_exp.as_view());
                     pow.set_normalized(!changed);
                     pow_h.as_view().normalize(workspace, out);
                     changed
@@ -157,12 +180,12 @@ impl<'a> AtomView<'a> {
             AtomView::Mul(m) => {
                 let mut changed = false;
 
-                let mut sum: SmallVec<[BufferHandle<Atom>; 10]> = SmallVec::new();
-                let mut new_sum: SmallVec<[BufferHandle<Atom>; 10]> = SmallVec::new();
+                let mut sum: SmallVec<[RecycledAtom; 10]> = SmallVec::new();
+                let mut new_sum: SmallVec<[RecycledAtom; 10]> = SmallVec::new();
 
                 for arg in m.iter() {
                     let mut new_arg = workspace.new_atom();
-                    changed |= arg.expand(workspace, new_arg.get_mut());
+                    changed |= arg.expand_with_ws_into(workspace, &mut new_arg);
 
                     // expand (1+x)*y
                     if let AtomView::Add(a) = new_arg.as_view() {
@@ -173,7 +196,7 @@ impl<'a> AtomView<'a> {
                                 let mut b = workspace.new_atom();
                                 b.set_from_view(&s.as_view());
 
-                                if let Atom::Mul(m) = b.get_mut() {
+                                if let Atom::Mul(m) = b.deref_mut() {
                                     m.extend(child);
                                     new_sum.push(b);
                                 } else {
@@ -198,7 +221,7 @@ impl<'a> AtomView<'a> {
                         sum.push(new_arg);
                     } else {
                         for summand in &mut sum {
-                            if let Atom::Mul(m) = summand.get_mut() {
+                            if let Atom::Mul(m) = summand.deref_mut() {
                                 m.extend(new_arg.as_view());
                             } else {
                                 let mut mul_h = workspace.new_atom();
@@ -236,7 +259,7 @@ impl<'a> AtomView<'a> {
 
                 let mut new_arg = workspace.new_atom();
                 for arg in a.iter() {
-                    changed |= arg.expand_no_norm(workspace, new_arg.get_mut());
+                    changed |= arg.expand_no_norm(workspace, &mut new_arg);
                     add.extend(new_arg.as_view());
                 }
 

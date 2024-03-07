@@ -699,8 +699,8 @@ impl Pattern {
                     mul.extend(child_buf.as_view());
                 }
 
-                mul.set_normalized(!submatch && m.is_normalized());
                 mul.set_has_coefficient(m.has_coefficient());
+                mul.set_normalized(!submatch && m.is_normalized());
                 submatch
             }
             AtomView::Add(a) => {

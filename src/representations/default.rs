@@ -273,6 +273,8 @@ impl Fun {
     }
 
     pub fn add_arg(&mut self, other: AtomView) {
+        self.data[0] |= NOT_NORMALIZED;
+
         // may increase size of the num of args
         let mut c = &self.data[1 + 4..];
 
@@ -456,6 +458,8 @@ impl Mul {
     }
 
     pub fn extend(&mut self, other: AtomView<'_>) {
+        self.data[0] |= NOT_NORMALIZED;
+
         // may increase size of the num of args
         let mut c = &self.data[1 + 4..];
 
@@ -619,6 +623,8 @@ impl Add {
     }
 
     pub fn extend(&mut self, other: AtomView<'_>) {
+        self.data[0] |= NOT_NORMALIZED;
+
         // may increase size of the num of args
         let mut c = &self.data[1 + 4..];
 

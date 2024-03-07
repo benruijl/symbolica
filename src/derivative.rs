@@ -389,7 +389,8 @@ impl<'a> AtomView<'a> {
         // TODO: check that expansion_point does not involve `x`
 
         let mut dist = workspace.new_atom();
-        var.as_view().sub(workspace, expansion_point, &mut dist);
+        var.as_view()
+            .sub_with_ws_into(workspace, expansion_point, &mut dist);
 
         let mut series = workspace.new_atom();
         let series_sum = series.to_add();

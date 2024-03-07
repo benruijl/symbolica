@@ -1,6 +1,7 @@
 use symbolica::{
+    fun,
     representations::{Atom, FunctionBuilder},
-    state::{FunctionAttribute, RecycledAtom, State},
+    state::State,
 };
 
 fn main() {
@@ -8,16 +9,11 @@ fn main() {
 
     let x = Atom::parse("x", &mut state).unwrap();
     let y = Atom::parse("y", &mut state).unwrap();
-    let f_id = state
-        .get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric]))
-        .unwrap();
-    let f = FunctionBuilder::new(f_id)
-        .add_arg(&RecycledAtom::new_num(6))
-        .add_arg(&x)
-        .finish();
+    let f_id = state.get_or_insert_fn("f", None).unwrap();
 
-    let mut xb = x.clone();
-    xb = (-(xb + &y + &x) * &y * &RecycledAtom::new_num(6)).pow(&Atom::new_num(5)) / &y * &f;
+    let f = fun!(f_id, x, y, Atom::new_num(2));
+
+    let xb = (-(&y + &x + 2) * &y * 6).npow(5) / &y * &f / 4;
 
     println!("{}", xb);
 }

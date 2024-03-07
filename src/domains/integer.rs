@@ -50,6 +50,13 @@ pub enum Integer {
     Large(MultiPrecisionInteger),
 }
 
+impl From<i32> for Integer {
+    #[inline]
+    fn from(value: i32) -> Self {
+        Integer::Natural(value as i64)
+    }
+}
+
 impl From<i64> for Integer {
     #[inline]
     fn from(value: i64) -> Self {

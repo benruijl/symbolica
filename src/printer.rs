@@ -210,28 +210,13 @@ impl<'a> FormattedPrintVar for VarView<'a> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!("v_{}", self.get_symbol().get_id()))
+        <Self as std::fmt::Debug>::fmt(self, f)
     }
 }
 
 impl<'a> FormattedPrintNum for NumView<'a> {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let d = self.get_coeff_view();
-
-        match d {
-            CoefficientView::Natural(num, den) => {
-                if den != 1 {
-                    f.write_fmt(format_args!("{}/{}", num, den))
-                } else {
-                    f.write_fmt(format_args!("{}", num))
-                }
-            }
-            CoefficientView::Large(r) => f.write_fmt(format_args!("{}", r.to_rat())),
-            CoefficientView::FiniteField(num, fi) => {
-                f.write_fmt(format_args!("[m_{}%f_{}]", num.0, fi.0))
-            }
-            CoefficientView::RationalPolynomial(p) => f.write_fmt(format_args!("{}", p,)),
-        }
+        <Self as std::fmt::Debug>::fmt(self, f)
     }
 
     fn fmt_output(
@@ -363,22 +348,7 @@ impl<'a> FormattedPrintNum for NumView<'a> {
 
 impl<'a> FormattedPrintMul for MulView<'a> {
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut first = true;
-        for x in self.iter() {
-            if !first {
-                f.write_char('*')?;
-            }
-            first = false;
-
-            if let AtomView::Add(_) = x {
-                f.write_char('(')?;
-                x.fmt_debug(f)?;
-                f.write_char(')')?;
-            } else {
-                x.fmt_debug(f)?;
-            }
-        }
-        Ok(())
+        <Self as std::fmt::Debug>::fmt(self, f)
     }
 
     fn fmt_output(
@@ -496,19 +466,7 @@ impl<'a> FormattedPrintFn for FunView<'a> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_fmt(format_args!("f_{}(", self.get_symbol().get_id()))?;
-
-        let mut first = true;
-        for x in self.iter() {
-            if !first {
-                f.write_char(',')?;
-            }
-            first = false;
-
-            x.fmt_debug(f)?;
-        }
-
-        f.write_char(')')
+        <Self as std::fmt::Debug>::fmt(self, f)
     }
 }
 
@@ -593,25 +551,7 @@ impl<'a> FormattedPrintPow for PowView<'a> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let b = self.get_base();
-        if let AtomView::Add(_) | AtomView::Mul(_) | AtomView::Pow(_) = b {
-            f.write_char('(')?;
-            b.fmt_debug(f)?;
-            f.write_char(')')?;
-        } else {
-            b.fmt_debug(f)?;
-        }
-
-        f.write_char('^')?;
-
-        let e = self.get_exp();
-        if let AtomView::Add(_) | AtomView::Mul(_) = e {
-            f.write_char('(')?;
-            e.fmt_debug(f)?;
-            f.write_char(')')
-        } else {
-            e.fmt_debug(f)
-        }
+        <Self as std::fmt::Debug>::fmt(self, f)
     }
 }
 
@@ -639,16 +579,7 @@ impl<'a> FormattedPrintAdd for AddView<'a> {
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut first = true;
-        for x in self.iter() {
-            if !first {
-                f.write_char('+')?;
-            }
-            first = false;
-
-            x.fmt_debug(f)?;
-        }
-        Ok(())
+        <Self as std::fmt::Debug>::fmt(self, f)
     }
 }
 

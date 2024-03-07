@@ -54,6 +54,12 @@ impl From<i64> for Coefficient {
     }
 }
 
+impl From<i32> for Coefficient {
+    fn from(value: i32) -> Self {
+        Coefficient::Rational(value.into())
+    }
+}
+
 impl From<(i64, i64)> for Coefficient {
     #[inline]
     fn from(r: (i64, i64)) -> Self {

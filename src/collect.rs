@@ -236,7 +236,8 @@ impl<'a> AtomView<'a> {
                     h.entry(bracket.unwrap())
                         .and_modify(|e| {
                             let mut res = workspace.new_atom();
-                            e.as_view().add(workspace, col_n.as_view(), &mut res);
+                            e.as_view()
+                                .add_with_ws_into(workspace, col_n.as_view(), &mut res);
                             std::mem::swap(e, &mut res);
                         })
                         .or_insert(col_n.as_view().to_owned());
@@ -251,7 +252,8 @@ impl<'a> AtomView<'a> {
                     h.entry(*self)
                         .and_modify(|e| {
                             let mut res = workspace.new_atom();
-                            e.as_view().add(workspace, col_n.as_view(), &mut res);
+                            e.as_view()
+                                .add_with_ws_into(workspace, col_n.as_view(), &mut res);
                             std::mem::swap(e, &mut res);
                         })
                         .or_insert(col_n.as_view().to_owned());
@@ -262,7 +264,8 @@ impl<'a> AtomView<'a> {
         }
 
         let mut new_atom = workspace.new_atom();
-        rest.as_view().add(workspace, *self, &mut new_atom);
+        rest.as_view()
+            .add_with_ws_into(workspace, *self, &mut new_atom);
         std::mem::swap(rest, &mut new_atom);
     }
 }

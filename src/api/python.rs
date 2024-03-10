@@ -1506,7 +1506,7 @@ impl PythonExpression {
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
         Ok(PythonExpression {
-            expr: Arc::new(self.expr.as_ref() + &rhs.expr),
+            expr: Arc::new(self.expr.as_ref() + rhs.expr.as_ref()),
         })
     }
 
@@ -1530,7 +1530,7 @@ impl PythonExpression {
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
         Ok(PythonExpression {
-            expr: Arc::new(self.expr.as_ref() * &rhs.expr),
+            expr: Arc::new(self.expr.as_ref() * rhs.expr.as_ref()),
         })
     }
 
@@ -1543,7 +1543,7 @@ impl PythonExpression {
     pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
         Ok(PythonExpression {
-            expr: Arc::new(self.expr.as_ref() / &rhs.expr),
+            expr: Arc::new(self.expr.as_ref() / rhs.expr.as_ref()),
         })
     }
 

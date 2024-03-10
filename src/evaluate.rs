@@ -3,7 +3,7 @@ use ahash::HashMap;
 use crate::{
     coefficient::CoefficientView,
     domains::{float::Real, rational::Rational},
-    representations::{AtomView, Symbol},
+    representations::{Atom, AtomView, Symbol},
     state::State,
 };
 
@@ -29,6 +29,22 @@ impl<T> EvaluationFn<T> {
     }
 }
 
+impl Atom {
+    /// Evaluate an expression using a constant map and a function map.
+    /// The constant map can map any literal expression to a value, for example
+    /// a variable or a function with fixed arguments.
+    ///
+    /// All variables and all user functions in the expression must occur in the map.
+    pub fn evaluate<'b, T: Real + for<'a> From<&'a Rational>>(
+        &'b self,
+        const_map: &HashMap<AtomView<'_>, T>,
+        function_map: &HashMap<Symbol, EvaluationFn<T>>,
+        cache: &mut HashMap<AtomView<'b>, T>,
+    ) -> T {
+        self.as_view().evaluate(const_map, function_map, cache)
+    }
+}
+
 impl<'a> AtomView<'a> {
     /// Evaluate an expression using a constant map and a function map.
     /// The constant map can map any literal expression to a value, for example
@@ -37,7 +53,7 @@ impl<'a> AtomView<'a> {
     /// All variables and all user functions in the expression must occur in the map.
     pub fn evaluate<T: Real + for<'b> From<&'b Rational>>(
         &self,
-        const_map: &HashMap<AtomView<'a>, T>,
+        const_map: &HashMap<AtomView<'_>, T>,
         function_map: &HashMap<Symbol, EvaluationFn<T>>,
         cache: &mut HashMap<AtomView<'a>, T>,
     ) -> T {

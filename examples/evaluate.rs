@@ -15,7 +15,7 @@ fn main() {
     let mut fn_map: HashMap<_, EvaluationFn<_>> = HashMap::default();
     let mut cache = HashMap::default();
 
-    // x = 6.
+    // x = 6 and p(0) = 7
     let v = Atom::new_var(x);
     const_map.insert(v.as_view(), 6.);
     const_map.insert(p0.as_view(), 7.);
@@ -38,6 +38,6 @@ fn main() {
 
     println!(
         "Result for x = 6.: {}",
-        a.as_view().evaluate::<f64>(&const_map, &fn_map, &mut cache)
+        a.evaluate::<f64>(&const_map, &fn_map, &mut cache)
     );
 }

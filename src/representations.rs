@@ -582,9 +582,13 @@ impl FunctionBuilder {
         self
     }
 
-    /// Finish the function construction and return an `AtomB`.
+    /// Finish the function construction and return an `Atom`.
     pub fn finish(self) -> Atom {
-        self.handle.into_inner()
+        Workspace::get_local().with(|ws| {
+            let mut f = ws.new_atom();
+            self.handle.as_view().normalize(ws, &mut f);
+            f.into_inner()
+        })
     }
 }
 

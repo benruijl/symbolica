@@ -44,7 +44,7 @@ impl<'a> AtomView<'a> {
     pub fn derivative(&self, x: Symbol) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut out = ws.new_atom();
-            self.derivative_with_ws_into(x, &ws, &mut out);
+            self.derivative_with_ws_into(x, ws, &mut out);
             out.into_inner()
         })
     }
@@ -53,7 +53,7 @@ impl<'a> AtomView<'a> {
     /// write the result in `out`.
     /// Returns `true` if the derivative is non-zero.
     pub fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
-        Workspace::get_local().with(|ws| self.derivative_with_ws_into(x, &ws, out))
+        Workspace::get_local().with(|ws| self.derivative_with_ws_into(x, ws, out))
     }
 
     /// Take a derivative of the expression with respect to `x` and
@@ -348,7 +348,7 @@ impl<'a> AtomView<'a> {
     pub fn taylor_series(&self, x: Symbol, expansion_point: AtomView, depth: u32) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut out = ws.new_atom();
-            self.taylor_series_with_ws_into(x, expansion_point, depth, &ws, &mut out);
+            self.taylor_series_with_ws_into(x, expansion_point, depth, ws, &mut out);
             out.into_inner()
         })
     }
@@ -363,7 +363,7 @@ impl<'a> AtomView<'a> {
         out: &mut Atom,
     ) -> bool {
         Workspace::get_local()
-            .with(|ws| self.taylor_series_with_ws_into(x, expansion_point, depth, &ws, out))
+            .with(|ws| self.taylor_series_with_ws_into(x, expansion_point, depth, ws, out))
     }
 
     /// Taylor expand in `x` around `expansion_point` to depth `depth`.

@@ -699,8 +699,8 @@ impl<'a> AtomView<'a> {
 
                 /// Take Cartesian product of arguments
                 #[inline(always)]
-                fn cartesian_product<'a, 'b>(
-                    workspace: &'a Workspace,
+                fn cartesian_product<'b>(
+                    workspace: &Workspace,
                     list: &[Vec<AtomView<'b>>],
                     fun_name: Symbol,
                     cur: &mut Vec<AtomView<'b>>,

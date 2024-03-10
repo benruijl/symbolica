@@ -274,14 +274,17 @@ impl Token {
     }
 
     /// Parse the token into an atom.
-    pub fn to_atom(&self, state: &mut State, workspace: &Workspace) -> Result<Atom, String> {
+    pub fn to_atom(&self, workspace: &Workspace) -> Result<Atom, String> {
         let mut atom = Atom::default();
-        self.to_atom_with_output(state, workspace, &mut atom)?;
+
+        let mut state = State::get_global_state().write().unwrap();
+        self.to_atom_with_output(&mut state, workspace, &mut atom)?;
+
         Ok(atom)
     }
 
     /// Parse the token into the atom `out`.
-    pub fn to_atom_with_output(
+    fn to_atom_with_output(
         &self,
         state: &mut State,
         workspace: &Workspace,
@@ -301,7 +304,7 @@ impl Token {
                 }
             }
             Token::ID(x) => {
-                out.to_var(state.get_or_insert_var(x));
+                out.to_var(state.get_or_insert_var_impl(x));
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -374,7 +377,7 @@ impl Token {
                 };
 
                 let mut fun_h = workspace.new_atom();
-                let fun = fun_h.to_fun(state.get_or_insert_fn(name, None)?);
+                let fun = fun_h.to_fun(state.get_or_insert_fn_impl(name, None)?);
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
                     a.to_atom_with_output(state, workspace, &mut atom)?;

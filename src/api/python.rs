@@ -1,5 +1,5 @@
 use std::{
-    borrow::{Borrow, BorrowMut},
+    borrow::Borrow,
     hash::{Hash, Hasher},
     ops::Neg,
     sync::Arc,
@@ -57,16 +57,6 @@ use crate::{
     transformer::{StatsOptions, Transformer, TransformerError},
     LicenseManager,
 };
-
-macro_rules! get_state_mut {
-    () => {
-        State::get_global_state().write().map_err(|_| {
-            exceptions::PyRuntimeError::new_err(
-                "A critical error has occurred earlier in Symbolica: the Python interpreter must be restarted.",
-            )
-        })
-    };
-}
 
 #[pymodule]
 fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
@@ -1221,10 +1211,8 @@ impl PythonExpression {
     ///
     #[classmethod]
     pub fn var(_cls: &PyType, name: &str) -> PyResult<PythonExpression> {
-        let mut guard = get_state_mut!()?;
-        let state = guard.borrow_mut();
         // TODO: check if the name meets the requirements
-        let id = state.get_or_insert_var(name);
+        let id = State::get_or_insert_var(name);
         let var = Atom::new_var(id);
 
         Ok(PythonExpression {
@@ -1236,14 +1224,12 @@ impl PythonExpression {
     #[pyo3(signature = (*args,))]
     #[classmethod]
     pub fn vars(_cls: &PyType, args: &PyTuple) -> PyResult<Vec<PythonExpression>> {
-        let mut guard = get_state_mut!()?;
-        let state = guard.borrow_mut();
         let mut result = Vec::with_capacity(args.len());
 
         for a in args {
             // TODO: check if the name meets the requirements
             let name = a.extract::<&str>()?;
-            let id = state.get_or_insert_var(name);
+            let id = State::get_or_insert_var(name);
             let var = Atom::new_var(id);
 
             result.push(PythonExpression {
@@ -1371,8 +1357,7 @@ impl PythonExpression {
     ///
     #[classmethod]
     pub fn parse(_cls: &PyType, arg: &str) -> PyResult<PythonExpression> {
-        let e = Atom::parse(arg, &mut &mut get_state_mut!()?)
-            .map_err(exceptions::PyValueError::new_err)?;
+        let e = Atom::parse(arg).map_err(exceptions::PyValueError::new_err)?;
 
         Ok(PythonExpression { expr: Arc::new(e) })
     }
@@ -2670,7 +2655,6 @@ impl PythonExpression {
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
         let rhs = &rhs.to_pattern()?.expr;
-        let mut out = Atom::default();
 
         let settings = if let Some(ngw) = non_greedy_wildcards {
             Some(MatchSettings {
@@ -2933,9 +2917,7 @@ impl PythonFunction {
             None => {}
         }
 
-        let id = get_state_mut!()?
-            .borrow_mut()
-            .get_or_insert_fn(name, opts)
+        let id = State::get_or_insert_fn(name, opts)
             .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
         Ok(PythonFunction { id })
@@ -3213,13 +3195,10 @@ impl PythonPolynomial {
         let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
             SmallVec::new();
 
-        {
-            let mut state = get_state_mut!()?;
-            for v in vars {
-                let id = state.get_or_insert_var(v);
-                var_map.push(id.into());
-                var_name_map.push(v.into());
-            }
+        for v in vars {
+            let id = State::get_or_insert_var(v);
+            var_map.push(id.into());
+            var_name_map.push(v.into());
         }
 
         let e = Token::parse(arg)
@@ -3428,13 +3407,10 @@ impl PythonIntegerPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
-        {
-            let mut state = get_state_mut!()?;
-            for v in vars {
-                let id = state.get_or_insert_var(v);
-                var_map.push(id.into());
-                var_name_map.push(v.into());
-            }
+        for v in vars {
+            let id = State::get_or_insert_var(v);
+            var_map.push(id.into());
+            var_name_map.push(v.into());
         }
 
         let e = Token::parse(arg)
@@ -3496,13 +3472,10 @@ impl PythonFiniteFieldPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
-        {
-            let mut state = get_state_mut!()?;
-            for v in vars {
-                let id = state.get_or_insert_var(v);
-                var_map.push(id.into());
-                var_name_map.push(v.into());
-            }
+        for v in vars {
+            let id = State::get_or_insert_var(v);
+            var_map.push(id.into());
+            var_name_map.push(v.into());
         }
 
         let e = Token::parse(arg)
@@ -4071,9 +4044,8 @@ macro_rules! generate_rat_parse {
                 let mut var_map = vec![];
                 let mut var_name_map = vec![];
 
-                let mut state = get_state_mut!()?;
                 for v in vars {
-                    let id = state.get_or_insert_var(v);
+                    let id = State::get_or_insert_var(v);
                     var_map.push(id.into());
                     var_name_map.push(v.into());
                 }
@@ -4149,9 +4121,8 @@ impl PythonFiniteFieldRationalPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
-        let mut state = get_state_mut!()?;
         for v in vars {
-            let id = state.get_or_insert_var(v);
+            let id = State::get_or_insert_var(v);
             var_map.push(id.into());
             var_name_map.push(v.into());
         }

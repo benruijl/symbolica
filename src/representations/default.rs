@@ -201,16 +201,7 @@ pub struct Fun {
 
 impl Fun {
     #[inline]
-    pub fn new(symbol: Symbol) -> Fun {
-        let mut f = Fun {
-            data: RawAtom::new(),
-        };
-        f.set_from_symbol(symbol);
-        f
-    }
-
-    #[inline]
-    pub fn new_into(id: Symbol, buffer: RawAtom) -> Fun {
+    pub(crate) fn new_into(id: Symbol, buffer: RawAtom) -> Fun {
         let mut f = Fun { data: buffer };
         f.set_from_symbol(id);
         f
@@ -224,7 +215,7 @@ impl Fun {
     }
 
     #[inline]
-    pub fn set_from_symbol(&mut self, symbol: Symbol) {
+    pub(crate) fn set_from_symbol(&mut self, symbol: Symbol) {
         self.data.clear();
 
         let mut flags = FUN_ID | NOT_NORMALIZED;
@@ -272,7 +263,7 @@ impl Fun {
         }
     }
 
-    pub fn add_arg(&mut self, other: AtomView) {
+    pub(crate) fn add_arg(&mut self, other: AtomView) {
         self.data[0] |= NOT_NORMALIZED;
 
         // may increase size of the num of args
@@ -345,16 +336,7 @@ pub struct Pow {
 
 impl Pow {
     #[inline]
-    pub fn new(base: AtomView, exp: AtomView) -> Pow {
-        let mut f = Pow {
-            data: RawAtom::new(),
-        };
-        f.set_from_base_and_exp(base, exp);
-        f
-    }
-
-    #[inline]
-    pub fn new_into(base: AtomView, exp: AtomView, buffer: RawAtom) -> Pow {
+    pub(crate) fn new_into(base: AtomView, exp: AtomView, buffer: RawAtom) -> Pow {
         let mut f = Pow { data: buffer };
         f.set_from_base_and_exp(base, exp);
         f
@@ -368,7 +350,7 @@ impl Pow {
     }
 
     #[inline]
-    pub fn set_from_base_and_exp(&mut self, base: AtomView, exp: AtomView) {
+    pub(crate) fn set_from_base_and_exp(&mut self, base: AtomView, exp: AtomView) {
         self.data.clear();
         self.data.put_u8(POW_ID | NOT_NORMALIZED);
         self.data.extend(base.get_data());
@@ -419,12 +401,12 @@ impl Default for Mul {
 
 impl Mul {
     #[inline]
-    pub fn new() -> Mul {
+    pub(crate) fn new() -> Mul {
         Self::new_into(RawAtom::new())
     }
 
     #[inline]
-    pub fn new_into(mut buffer: RawAtom) -> Mul {
+    pub(crate) fn new_into(mut buffer: RawAtom) -> Mul {
         buffer.clear();
         buffer.put_u8(MUL_ID | NOT_NORMALIZED);
         buffer.put_u32_le(0_u32);
@@ -457,7 +439,7 @@ impl Mul {
         self.data.extend(view.data);
     }
 
-    pub fn extend(&mut self, other: AtomView<'_>) {
+    pub(crate) fn extend(&mut self, other: AtomView<'_>) {
         self.data[0] |= NOT_NORMALIZED;
 
         // may increase size of the num of args
@@ -590,12 +572,12 @@ impl Default for Add {
 
 impl Add {
     #[inline]
-    pub fn new() -> Add {
+    pub(crate) fn new() -> Add {
         Self::new_into(RawAtom::new())
     }
 
     #[inline]
-    pub fn new_into(mut buffer: RawAtom) -> Add {
+    pub(crate) fn new_into(mut buffer: RawAtom) -> Add {
         buffer.clear();
         buffer.put_u8(ADD_ID | NOT_NORMALIZED);
         buffer.put_u32_le(0_u32);
@@ -622,7 +604,7 @@ impl Add {
         }
     }
 
-    pub fn extend(&mut self, other: AtomView<'_>) {
+    pub(crate) fn extend(&mut self, other: AtomView<'_>) {
         self.data[0] |= NOT_NORMALIZED;
 
         // may increase size of the num of args

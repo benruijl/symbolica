@@ -5,7 +5,7 @@ use crate::{
     coefficient::Coefficient,
     parser::Token,
     printer::AtomPrinter,
-    state::{RecycledAtom, State, Workspace},
+    state::{RecycledAtom, Workspace},
 };
 use std::{cmp::Ordering, hash::Hash, ops::DerefMut};
 
@@ -231,7 +231,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Add two atoms and return the buffer that contains the unnormalized result.
-    fn add_no_norm<'b>(&self, workspace: &'b Workspace, rhs: AtomView<'_>) -> RecycledAtom {
+    fn add_no_norm(&self, workspace: &Workspace, rhs: AtomView<'_>) -> RecycledAtom {
         let mut e = workspace.new_atom();
         let a = e.to_add();
 
@@ -242,7 +242,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Subtract two atoms and return the buffer that contains the unnormalized result.
-    fn sub_no_norm<'b>(&self, workspace: &'b Workspace, rhs: AtomView<'_>) -> RecycledAtom {
+    fn sub_no_norm(&self, workspace: &Workspace, rhs: AtomView<'_>) -> RecycledAtom {
         let mut e = workspace.new_atom();
         let a = e.to_add();
 
@@ -253,7 +253,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Multiply two atoms and return the buffer that contains the unnormalized result.
-    fn mul_no_norm<'b>(&self, workspace: &'b Workspace, rhs: AtomView<'_>) -> RecycledAtom {
+    fn mul_no_norm(&self, workspace: &Workspace, rhs: AtomView<'_>) -> RecycledAtom {
         let mut e = workspace.new_atom();
         let a = e.to_mul();
 
@@ -264,14 +264,14 @@ impl<'a> AtomView<'a> {
     }
 
     /// Construct `self^exp` and return the buffer that contains the unnormalized result.
-    fn pow_no_norm<'b>(&self, workspace: &'b Workspace, exp: AtomView<'_>) -> RecycledAtom {
+    fn pow_no_norm(&self, workspace: &Workspace, exp: AtomView<'_>) -> RecycledAtom {
         let mut e = workspace.new_atom();
         e.to_pow(*self, exp);
         e
     }
 
     /// Divide `self` by `div` and return the buffer that contains the unnormalized result.
-    fn div_no_norm<'b>(&self, workspace: &'b Workspace, div: AtomView<'_>) -> RecycledAtom {
+    fn div_no_norm(&self, workspace: &Workspace, div: AtomView<'_>) -> RecycledAtom {
         self.mul_no_norm(
             workspace,
             div.pow_no_norm(workspace, workspace.new_num(-1).as_view())
@@ -280,7 +280,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Negate `self` and return the buffer that contains the unnormalized result.
-    fn neg_no_norm<'b>(&self, workspace: &'b Workspace) -> RecycledAtom {
+    fn neg_no_norm(&self, workspace: &Workspace) -> RecycledAtom {
         self.mul_no_norm(workspace, workspace.new_num(-1).as_view())
     }
 
@@ -406,8 +406,8 @@ impl Atom {
     }
 
     /// Parse and atom from a string.
-    pub fn parse(input: &str, state: &mut State) -> Result<Atom, String> {
-        Workspace::get_local().with(|ws| Token::parse(input)?.to_atom(state, ws))
+    pub fn parse(input: &str) -> Result<Atom, String> {
+        Workspace::get_local().with(|ws| Token::parse(input)?.to_atom(ws))
     }
 
     #[inline]
@@ -548,9 +548,8 @@ impl Atom {
 /// #     state::{FunctionAttribute, State},
 /// # };
 /// # fn main() {
-/// let mut state = State::get_global_state().write().unwrap();
-///
-/// let f_id = state.get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric])).unwrap();
+/// ///
+/// let f_id = State::get_or_insert_fn("f", Some(vec![FunctionAttribute::Symmetric])).unwrap();
 /// let fb = FunctionBuilder::new(f_id);
 /// let a = fb
 ///     .add_arg(&Atom::new_num(3))

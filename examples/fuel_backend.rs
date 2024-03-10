@@ -38,12 +38,11 @@ fn main() {
         );
     }
 
-    let mut state = State::get_global_state().write().unwrap();
     let workspace = Workspace::new();
     let vars: Arc<Vec<_>> = Arc::new(
         var_names
             .iter()
-            .map(|v| state.get_or_insert_var(v).into())
+            .map(|v| State::get_or_insert_var(v).into())
             .collect(),
     );
 

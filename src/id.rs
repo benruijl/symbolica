@@ -30,9 +30,9 @@ impl<'a> AtomView<'a> {
 }
 
 impl Pattern {
-    pub fn parse(input: &str, state: &mut State) -> Result<Pattern, String> {
+    pub fn parse(input: &str) -> Result<Pattern, String> {
         // TODO: use workspace instead of owned atom
-        Ok(Atom::parse(input, state)?.into_pattern())
+        Ok(Atom::parse(input)?.into_pattern())
     }
 
     pub fn add(&self, rhs: &Self, workspace: &Workspace) -> Self {
@@ -538,7 +538,7 @@ impl Pattern {
         out: &mut Atom,
     ) -> bool {
         Workspace::get_local()
-            .with(|ws| self.replace_all_with_ws_into(target, rhs, &ws, conditions, settings, out))
+            .with(|ws| self.replace_all_with_ws_into(target, rhs, ws, conditions, settings, out))
     }
 
     /// Replace all occurrences of the pattern in the target, returning `true` iff a match was found.

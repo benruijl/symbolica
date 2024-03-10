@@ -6,17 +6,15 @@ use symbolica::{
     state::State,
 };
 fn main() {
-    let mut state = State::get_global_state().write().unwrap();
-
-    let expr = Atom::parse("f(1,2,3,4,5,6,7)", &mut state).unwrap();
-    let pat_expr = Atom::parse("f(x__,y__,z__,w__)", &mut state).unwrap();
+    let expr = Atom::parse("f(1,2,3,4,5,6,7)").unwrap();
+    let pat_expr = Atom::parse("f(x__,y__,z__,w__)").unwrap();
 
     let pattern = pat_expr.as_view().into_pattern();
 
-    let x = state.get_or_insert_var("x__");
-    let y = state.get_or_insert_var("y__");
-    let z = state.get_or_insert_var("z__");
-    let w = state.get_or_insert_var("w__");
+    let x = State::get_or_insert_var("x__");
+    let y = State::get_or_insert_var("y__");
+    let z = State::get_or_insert_var("z__");
+    let w = State::get_or_insert_var("w__");
 
     let conditions = Condition::from((x, PatternRestriction::Length(0, Some(2))))
         & (y, PatternRestriction::Length(0, Some(4)))

@@ -5,18 +5,16 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::get_global_state().write().unwrap();
-
     // prepare all patterns
-    let pattern = Pattern::parse("f(x_)", &mut state).unwrap();
-    let rhs = Pattern::parse("f(x_ - 1) + f(x_ - 2)", &mut state).unwrap();
-    let lhs_zero_pat = Pattern::parse("f(0)", &mut state).unwrap();
-    let lhs_one_pat = Pattern::parse("f(1)", &mut state).unwrap();
+    let pattern = Pattern::parse("f(x_)").unwrap();
+    let rhs = Pattern::parse("f(x_ - 1) + f(x_ - 2)").unwrap();
+    let lhs_zero_pat = Pattern::parse("f(0)").unwrap();
+    let lhs_one_pat = Pattern::parse("f(1)").unwrap();
     let rhs_one = Atom::new_num(1).into_pattern();
 
     // prepare the pattern restriction `x_ > 1`
     let restrictions = (
-        state.get_or_insert_var("x_"),
+        State::get_or_insert_var("x_"),
         PatternRestriction::Filter(Box::new(|v: &Match| match v {
             Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
             _ => false,
@@ -24,7 +22,7 @@ fn main() {
     )
         .into();
 
-    let input = Atom::parse("f(10)", &mut state).unwrap();
+    let input = Atom::parse("f(10)").unwrap();
     let mut target: RecycledAtom = input.clone().into();
 
     println!(

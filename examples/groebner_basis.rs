@@ -6,10 +6,8 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::get_global_state().write().unwrap();
-
     for x in 'a'..='z' {
-        state.get_or_insert_var(x.to_string());
+        State::get_or_insert_var(x.to_string());
     }
 
     // cyclic-4
@@ -23,7 +21,7 @@ fn main() {
     let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
         .iter()
         .map(|x| {
-            let a = Atom::parse(x, &mut state).unwrap().expand();
+            let a = Atom::parse(x).unwrap().expand();
             a.as_view()
                 .to_polynomial(&FiniteField::<u32>::new(13), None)
                 .unwrap()

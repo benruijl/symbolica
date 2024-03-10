@@ -10,14 +10,13 @@ use symbolica::{
 };
 
 fn univariate() {
-    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
 
     let var_names = vec!["x".into(), "y".into()];
     let var_map = Arc::new(
         var_names
             .iter()
-            .map(|n| state.get_or_insert_var(n).into())
+            .map(|n| State::get_or_insert_var(n).into())
             .collect(),
     );
 
@@ -35,14 +34,13 @@ fn univariate() {
 }
 
 fn multivariate() {
-    let mut state = State::get_global_state().write().unwrap();
     let workspace: Workspace = Workspace::new();
 
     let var_names = vec!["x".into(), "y".into()];
     let var_map = Arc::new(
         var_names
             .iter()
-            .map(|n| state.get_or_insert_var(n).into())
+            .map(|n| State::get_or_insert_var(n).into())
             .collect(),
     );
 

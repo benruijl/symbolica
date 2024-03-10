@@ -134,10 +134,8 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
 
     let mut var_map = vec![];
 
-    let mut state = State::get_global_state().write().unwrap();
-
     for var in cstr.split(',') {
-        var_map.push(Variable::Symbol(state.get_or_insert_var(var)));
+        var_map.push(Variable::Symbol(State::get_or_insert_var(var)));
         symbolica.local_state.var_name_map.push(var.into());
     }
 

@@ -1011,13 +1011,12 @@ impl<'a> AtomView<'a> {
     /// Convert an expression to a rational polynomial, creating new temporary variables for
     /// all non-rational subexpressions. These are stored in `map`.
     pub fn to_rational_polynomial_with_map<
-        'b,
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
-        workspace: &'b Workspace,
+        workspace: &Workspace,
         field: &R,
         out_field: &RO,
         map: &mut HashMap<RecycledAtom, Variable>,

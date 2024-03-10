@@ -719,7 +719,7 @@ impl<'a> AtomView<'a> {
     pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut out = ws.new_atom();
-            self.set_coefficient_ring_with_ws_into(vars, &ws, &mut out);
+            self.set_coefficient_ring_with_ws_into(vars, ws, &mut out);
             out.into_inner()
         })
     }

@@ -78,7 +78,7 @@ impl State {
         };
 
         for x in Self::BUILTIN_VAR_LIST {
-            state.get_or_insert_var(x);
+            state.get_or_insert_var_impl(x);
         }
 
         state
@@ -86,7 +86,7 @@ impl State {
 
     /// Get the global state.
     #[inline]
-    pub fn get_global_state() -> &'static RwLock<State> {
+    pub(crate) fn get_global_state() -> &'static RwLock<State> {
         &STATE
     }
 
@@ -102,8 +102,12 @@ impl State {
 
     /// Get the id for a certain name if the name is already registered,
     /// else register it and return a new id.
-    pub fn get_or_insert_var<S: AsRef<str>>(&mut self, name: S) -> Symbol {
-        match self.str_to_id.entry(name.as_ref().into()) {
+    pub fn get_or_insert_var<S: AsRef<str>>(name: S) -> Symbol {
+        STATE.write().unwrap().get_or_insert_var_impl(name.as_ref())
+    }
+
+    pub(crate) fn get_or_insert_var_impl(&mut self, name: &str) -> Symbol {
+        match self.str_to_id.entry(name.into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
                 if ID_TO_STR.len() == u32::MAX as usize - 1 {
@@ -111,7 +115,7 @@ impl State {
                 }
 
                 let mut wildcard_level = 0;
-                for x in name.as_ref().chars().rev() {
+                for x in name.chars().rev() {
                     if x != '_' {
                         break;
                     }
@@ -120,7 +124,7 @@ impl State {
 
                 // there is no synchronization issue since only one thread can insert at a time
                 // as the state itself is behind a mutex
-                let new_index = ID_TO_STR.push(name.as_ref().into());
+                let new_index = ID_TO_STR.push(name.into());
 
                 let new_id = Symbol::init_var(new_index as u32, wildcard_level);
                 v.insert(new_id);
@@ -135,11 +139,21 @@ impl State {
     /// Providing an attribute `None` means that the attributes will be fetched from
     /// the state if the function exists, or the attribute list will be empty if not.
     pub fn get_or_insert_fn<S: AsRef<str>>(
-        &mut self,
         name: S,
         attributes: Option<Vec<FunctionAttribute>>,
     ) -> Result<Symbol, String> {
-        match self.str_to_id.entry(name.as_ref().into()) {
+        STATE
+            .write()
+            .unwrap()
+            .get_or_insert_fn_impl(name.as_ref(), attributes)
+    }
+
+    pub(crate) fn get_or_insert_fn_impl(
+        &mut self,
+        name: &str,
+        attributes: Option<Vec<FunctionAttribute>>,
+    ) -> Result<Symbol, String> {
+        match self.str_to_id.entry(name.into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
                 if let Some(attributes) = attributes {
@@ -154,10 +168,7 @@ impl State {
                     if r == new_id {
                         Ok(r)
                     } else {
-                        Err(
-                            format!("Function {} redefined with new attributes", name.as_ref())
-                                .into(),
-                        )
+                        Err(format!("Function {} redefined with new attributes", name).into())
                     }
                 } else {
                     Ok(r)
@@ -170,10 +181,10 @@ impl State {
 
                 // there is no synchronization issue since only one thread can insert at a time
                 // as the state itself is behind a mutex
-                let new_index = ID_TO_STR.push(name.as_ref().into());
+                let new_index = ID_TO_STR.push(name.into());
 
                 let mut wildcard_level = 0;
-                for x in name.as_ref().chars().rev() {
+                for x in name.chars().rev() {
                     if x != '_' {
                         break;
                     }
@@ -208,7 +219,14 @@ impl State {
         &FINITE_FIELDS[fi.0]
     }
 
-    pub fn get_or_insert_finite_field(&mut self, f: FiniteField<u64>) -> FiniteFieldIndex {
+    pub fn get_or_insert_finite_field(f: FiniteField<u64>) -> FiniteFieldIndex {
+        STATE.write().unwrap().get_or_insert_finite_field_impl(f)
+    }
+
+    pub(crate) fn get_or_insert_finite_field_impl(
+        &mut self,
+        f: FiniteField<u64>,
+    ) -> FiniteFieldIndex {
         for (i, f2) in FINITE_FIELDS.iter().enumerate() {
             if f.get_prime() == f2.get_prime() {
                 return FiniteFieldIndex(i);
@@ -291,6 +309,12 @@ impl From<Atom> for RecycledAtom {
 impl std::fmt::Display for RecycledAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl Default for RecycledAtom {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

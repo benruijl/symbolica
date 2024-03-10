@@ -5,15 +5,13 @@ use symbolica::{
 };
 
 fn main() {
-    let mut state = State::get_global_state().write().unwrap();
+    let expr = Atom::parse("x*y*w*z*f(x,y,x*y,z)").unwrap();
 
-    let expr = Atom::parse("x*y*w*z*f(x,y,x*y,z)", &mut state).unwrap();
-
-    let pat_expr = Atom::parse("z*x_*y_*g_(z_,x_,w_)", &mut state).unwrap();
+    let pat_expr = Atom::parse("z*x_*y_*g_(z_,x_,w_)").unwrap();
 
     let pattern = pat_expr.as_view().into_pattern();
     let restrictions = (
-        state.get_or_insert_var("x_"),
+        State::get_or_insert_var("x_"),
         PatternRestriction::Length(1, Some(100)),
     )
         .into();

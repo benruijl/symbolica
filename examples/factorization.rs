@@ -11,8 +11,7 @@ use symbolica::{
 };
 
 fn factor_ff_univariate() {
-    let mut state = State::get_global_state().write().unwrap();
-    let exp = Atom::parse("x^100-1", &mut state).unwrap().expand();
+    let exp = Atom::parse("x^100-1").unwrap().expand();
 
     let field = FiniteField::<u32>::new(17);
     let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
@@ -26,15 +25,14 @@ fn factor_ff_univariate() {
 }
 
 fn factor_ff_bivariate() {
-    let mut state = State::get_global_state().write().unwrap();
     let order = Arc::new(vec![
-        Variable::Symbol(state.get_or_insert_var("x")),
-        Variable::Symbol(state.get_or_insert_var("y")),
+        Variable::Symbol(State::get_or_insert_var("x")),
+        Variable::Symbol(State::get_or_insert_var("y")),
     ]);
 
     let input = "((y+1)*x^2+x*y+1)*((y^2+2)*x^2+y+1)";
 
-    let exp = Atom::parse(input, &mut state).unwrap().as_view().expand();
+    let exp = Atom::parse(input).unwrap().as_view().expand();
 
     let field = FiniteField::<u32>::new(17);
     let poly: MultivariatePolynomial<FiniteField<u32>, u8> =
@@ -47,10 +45,7 @@ fn factor_ff_bivariate() {
 }
 
 fn factor_ff_square_free() {
-    let mut state = State::get_global_state().write().unwrap();
-    let exp = Atom::parse("(1+x)*(1+x^2)^2*(x^4+1)^3", &mut state)
-        .unwrap()
-        .expand();
+    let exp = Atom::parse("(1+x)*(1+x^2)^2*(x^4+1)^3").unwrap().expand();
 
     let field = FiniteField::<u32>::new(3);
     let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
@@ -64,8 +59,7 @@ fn factor_ff_square_free() {
 }
 
 fn factor_square_free() {
-    let mut state = State::get_global_state().write().unwrap();
-    let exp = Atom::parse("3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)", &mut state)
+    let exp = Atom::parse("3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)")
         .unwrap()
         .expand();
 
@@ -83,13 +77,9 @@ fn factor_square_free() {
 }
 
 fn factor_univariate_1() {
-    let mut state = State::get_global_state().write().unwrap();
-    let exp = Atom::parse(
-        "2*(4 + 3*x)*(3 + 2*x + 3*x^2)*(3 + 8*x^2)*(4 + x + x^16)",
-        &mut state,
-    )
-    .unwrap()
-    .expand();
+    let exp = Atom::parse("2*(4 + 3*x)*(3 + 2*x + 3*x^2)*(3 + 8*x^2)*(4 + x + x^16)")
+        .unwrap()
+        .expand();
 
     let poly: MultivariatePolynomial<_, u8> = exp
         .as_view()
@@ -105,13 +95,9 @@ fn factor_univariate_1() {
 }
 
 fn factor_univariate_2() {
-    let mut state = State::get_global_state().write().unwrap();
-    let exp = Atom::parse(
-        "(x+1)(x+2)(x+3)^3(x+4)(x+5)(x^2+6)(x^3+7)(x+8)^2(x^4+9)(x^5+x+10)",
-        &mut state,
-    )
-    .unwrap()
-    .expand();
+    let exp = Atom::parse("(x+1)(x+2)(x+3)^3(x+4)(x+5)(x^2+6)(x^3+7)(x+8)^2(x^4+9)(x^5+x+10)")
+        .unwrap()
+        .expand();
 
     let poly: MultivariatePolynomial<_, u8> = exp
         .as_view()
@@ -127,15 +113,14 @@ fn factor_univariate_2() {
 }
 
 fn factor_bivariate() {
-    let mut state = State::get_global_state().write().unwrap();
     let order = Arc::new(vec![
-        Variable::Symbol(state.get_or_insert_var("x")),
-        Variable::Symbol(state.get_or_insert_var("y")),
+        Variable::Symbol(State::get_or_insert_var("x")),
+        Variable::Symbol(State::get_or_insert_var("y")),
     ]);
 
     let input = "(x^2+y+x+1)(3*x+y^2+4)*(6*x*(y+1)+y+5)*(7*x*y+4)";
 
-    let exp = Atom::parse(input, &mut state).unwrap().as_view().expand();
+    let exp = Atom::parse(input).unwrap().as_view().expand();
 
     let field = IntegerRing::new();
     let poly: MultivariatePolynomial<_, u8> =
@@ -148,17 +133,16 @@ fn factor_bivariate() {
 }
 
 fn factor_multivariate() {
-    let mut state = State::get_global_state().write().unwrap();
     let order = Arc::new(vec![
-        Variable::Symbol(state.get_or_insert_var("x")),
-        Variable::Symbol(state.get_or_insert_var("y")),
-        Variable::Symbol(state.get_or_insert_var("z")),
-        Variable::Symbol(state.get_or_insert_var("w")),
+        Variable::Symbol(State::get_or_insert_var("x")),
+        Variable::Symbol(State::get_or_insert_var("y")),
+        Variable::Symbol(State::get_or_insert_var("z")),
+        Variable::Symbol(State::get_or_insert_var("w")),
     ]);
 
     let input = "(x*(2+2*y+2*z)+1)*(x*(4+z^2)+y+3)*(x*(w+w^2+4+y)+w+5)";
 
-    let exp = Atom::parse(input, &mut state).unwrap().as_view().expand();
+    let exp = Atom::parse(input).unwrap().as_view().expand();
 
     let field = IntegerRing::new();
     let poly: MultivariatePolynomial<_, u8> =

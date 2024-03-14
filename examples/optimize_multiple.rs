@@ -62,6 +62,6 @@ fn main() {
     println!("Final number of operations={}", op_count);
     println!(
         "Evaluation = {:?}",
-        evaluator.evaluate(&(0..poly.nvars).map(|x| x as f64 + 1.).collect::<Vec<_>>())
+        evaluator.evaluate_with_input(&(0..poly.nvars).map(|x| x as f64 + 1.).collect::<Vec<_>>())
     );
 }

@@ -63,7 +63,8 @@ fn main() {
     println!("Final number of operations={}", op_count);
     println!(
         "Evaluation = {}",
-        evaluator.evaluate(&(0..poly.nvars).map(|x| x as f64 + 1.).collect::<Vec<_>>())[0]
+        evaluator.evaluate_with_input(&(0..poly.nvars).map(|x| x as f64 + 1.).collect::<Vec<_>>())
+            [0]
     );
 
     // evaluate with simd
@@ -72,7 +73,7 @@ fn main() {
 
     println!(
         "Evaluation with simd = {:?}",
-        evaluator.evaluate(
+        evaluator.evaluate_with_input(
             &(0..poly.nvars)
                 .map(|x| f64x4::new([x as f64 + 1., x as f64 + 2., x as f64 + 3., x as f64 + 4.]))
                 .collect::<Vec<_>>()

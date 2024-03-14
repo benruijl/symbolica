@@ -3375,7 +3375,10 @@ impl PythonInstructionEvaluator {
     fn evaluate(&self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
         let mut eval = (*self.instr).clone();
 
-        inputs.iter().map(|s| eval.evaluate(s)[0]).collect()
+        inputs
+            .iter()
+            .map(|s| eval.evaluate_with_input(s)[0])
+            .collect()
     }
 }
 

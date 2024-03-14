@@ -7,17 +7,19 @@ use ahash::{AHasher, HashMap, HashSet, HashSetExt};
 use rand::{thread_rng, Rng};
 
 use crate::{
-    domains::Ring,
-    representations::{Atom, AtomView},
-    state::State,
-};
-use crate::{
     domains::{
         float::NumericalFloatLike,
         rational::{Rational, RationalField},
         EuclideanDomain,
     },
-    representations::Symbol,
+    representations::{FunctionBuilder, Symbol},
+    state::Workspace,
+};
+use crate::{
+    domains::{float::Real, Ring},
+    evaluate::EvaluationFn,
+    representations::{Atom, AtomView},
+    state::State,
 };
 
 use super::{polynomial::MultivariatePolynomial, Exponent};
@@ -1300,13 +1302,14 @@ enum InstructionRange {
 /// be done efficiently.
 #[derive(Clone)]
 pub struct InstructionEvaluator<N: NumericalFloatLike> {
+    input_map: Vec<super::Variable>,
     instr: Vec<InstructionRange>,
     indices: Vec<usize>,
     eval: Vec<N>, // evaluation buffer
     out: Vec<N>,  // output buffer
 }
 
-impl<N: NumericalFloatLike> InstructionEvaluator<N> {
+impl<'a, N: NumericalFloatLike> InstructionEvaluator<N> {
     pub fn output_len(&self) -> usize {
         let mut len = 0;
         for x in &self.instr {
@@ -1323,16 +1326,20 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
     /// The user must ensure that `samples` has the
     /// same length as the number of variables in the
     /// polynomials (including non-occurring ones).
-    pub fn evaluate(&mut self, samples: &[N]) -> &[N] {
+    pub fn evaluate_with_input(&mut self, samples: &[N]) -> &[N] {
+        // write the sample point into the evaluation buffer
+        // all constant numbers are still in the evaluation buffer
+        self.eval[..samples.len()].clone_from_slice(samples);
+
+        self.evaluate_impl()
+    }
+
+    fn evaluate_impl(&mut self) -> &[N] {
         macro_rules! get_eval {
             ($i:expr) => {
                 unsafe { self.eval.get_unchecked(*self.indices.get_unchecked($i)) }
             };
         }
-
-        // write the sample point into the evaluation buffer
-        // all constant numbers are still in the evaluation buffer
-        self.eval[..samples.len()].clone_from_slice(samples);
 
         let mut out_counter = 0;
 
@@ -1388,6 +1395,43 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
         }
 
         &self.out
+    }
+}
+
+impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
+    /// Evaluate all instructions, using a constant map and a function map for the input variables.
+    /// The constant map can map any literal expression to a value, for example
+    /// a variable or a function with fixed arguments.
+    ///
+    /// All variables and all user functions in the expression must occur in the map.
+    pub fn evaluate<'b>(
+        &'b mut self,
+        const_map: &HashMap<AtomView<'_>, N>,
+        function_map: &HashMap<Symbol, EvaluationFn<N>>,
+    ) -> &[N] {
+        Workspace::get_local().with(|ws| {
+            for (input, expr) in self.eval.iter_mut().zip(&self.input_map) {
+                match expr {
+                    super::Variable::Symbol(s) => {
+                        *input = *const_map
+                            .get(&ws.new_var(*s).as_view())
+                            .expect("Variable not found");
+                    }
+                    super::Variable::Array(s, index) => {
+                        *input = FunctionBuilder::new(*s)
+                            .add_arg(&ws.new_num(*index as i64))
+                            .finish()
+                            .evaluate(const_map, function_map, &mut HashMap::default());
+                    }
+                    super::Variable::Function(_, o) | super::Variable::Other(o) => {
+                        *input = o.evaluate(const_map, function_map, &mut HashMap::default());
+                    }
+                    super::Variable::Temporary(_) => panic!("Temporary variable in input"),
+                }
+            }
+        });
+
+        self.evaluate_impl()
     }
 }
 
@@ -1449,6 +1493,7 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
         }
 
         InstructionEvaluator {
+            input_map: self.input_map.clone(),
             instr: simple_instr,
             indices,
             eval,

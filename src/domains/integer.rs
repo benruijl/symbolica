@@ -717,12 +717,10 @@ impl Ring for IntegerRing {
                     // since the conversion is much faster than for the decimal representation
                     if r.is_negative() {
                         write!(f, "-#{:X}", r.as_abs())
+                    } else if f.sign_plus() {
+                        write!(f, "+#{:X}", r)
                     } else {
-                        if f.sign_plus() {
-                            write!(f, "+#{:X}", r)
-                        } else {
-                            write!(f, "#{:X}", r)
-                        }
+                        write!(f, "#{:X}", r)
                     }
                 }
             }

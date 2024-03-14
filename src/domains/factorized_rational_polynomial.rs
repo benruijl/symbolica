@@ -248,7 +248,7 @@ impl<E: Exponent> FromNumeratorAndFactorizedDenominator<IntegerRing, IntegerRing
 
         if do_factor {
             for (d, _) in &mut dens {
-                let gcd = MultivariatePolynomial::gcd(&num, d);
+                let gcd = num.gcd(d);
 
                 if !gcd.is_one() {
                     num = num / &gcd;
@@ -346,7 +346,7 @@ where
 
         if do_factor {
             for (d, _) in &mut dens {
-                let gcd = MultivariatePolynomial::gcd(&num, d);
+                let gcd = num.gcd(d);
 
                 if !gcd.is_one() {
                     num = num / &gcd;
@@ -449,7 +449,7 @@ where
     }
 
     pub fn gcd(&self, other: &Self) -> Self {
-        let gcd_num = MultivariatePolynomial::gcd(&self.numerator, &other.numerator);
+        let gcd_num = self.numerator.gcd(&other.numerator);
 
         let mut disjoint_factors = vec![];
 

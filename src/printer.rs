@@ -137,7 +137,7 @@ impl<'a> AtomPrinter<'a> {
     }
 }
 
-impl<'a, 'b> fmt::Display for AtomPrinter<'a> {
+impl<'a> fmt::Display for AtomPrinter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let print_state = PrintState {
             level: 0,
@@ -337,7 +337,6 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                 "[{}]",
                 RationalPolynomialPrinter {
                     poly: p,
-
                     opts: *opts,
                     add_parentheses: false,
                 }
@@ -595,7 +594,6 @@ impl<'a, R: Ring, E: Exponent> FactorizedRationalPolynomialPrinter<'a, R, E> {
     ) -> FactorizedRationalPolynomialPrinter<'a, R, E> {
         FactorizedRationalPolynomialPrinter {
             poly,
-
             opts: PrintOptions::default(),
             add_parentheses: false,
         }
@@ -607,7 +605,6 @@ impl<'a, R: Ring, E: Exponent> FactorizedRationalPolynomialPrinter<'a, R, E> {
     ) -> FactorizedRationalPolynomialPrinter<'a, R, E> {
         FactorizedRationalPolynomialPrinter {
             poly,
-
             opts,
             add_parentheses: false,
         }
@@ -957,12 +954,10 @@ impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
                     "[{},{}]",
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
-
                         opts: self.opts,
                     },
                     PolynomialPrinter {
                         poly: &self.poly.denominator,
-
                         opts: self.opts,
                     }
                 ))?;
@@ -977,7 +972,6 @@ impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
                     "{}",
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
-
                         opts: self.opts,
                     }
                 ))
@@ -986,7 +980,6 @@ impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
                     "({})",
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
-
                         opts: self.opts,
                     }
                 ))
@@ -997,12 +990,10 @@ impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
                     "\\frac{{{}}}{{{}}}",
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
-
                         opts: self.opts,
                     },
                     PolynomialPrinter {
                         poly: &self.poly.denominator,
-
                         opts: self.opts,
                     }
                 ));
@@ -1013,7 +1004,6 @@ impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
                     "{}",
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
-
                         opts: self.opts,
                     }
                 ))?;
@@ -1022,7 +1012,6 @@ impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
                     "({})",
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
-
                         opts: self.opts,
                     }
                 ))?;
@@ -1049,7 +1038,6 @@ impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
                         "/{}",
                         PolynomialPrinter {
                             poly: &self.poly.denominator,
-
                             opts: self.opts,
                         }
                     ));
@@ -1098,9 +1086,7 @@ impl<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
 
         let var_map: Vec<String> = match self.poly.var_map.as_ref() {
             Some(v) => v.iter().map(|v| v.to_string()).collect(),
-            None => {
-                return write!(f, "{}", self.poly);
-            }
+            None => (0..self.poly.nvars).map(|i| format!("x{}", i)).collect(),
         };
 
         let mut is_first_term = true;
@@ -1145,7 +1131,7 @@ impl<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
                     write!(f, "*")?;
                 }
 
-                f.write_str(&var_id)?;
+                f.write_str(var_id)?;
 
                 if e.to_u32() != 1 {
                     if self.opts.latex {

@@ -178,7 +178,7 @@ impl Var {
     }
 
     #[inline]
-    pub fn set_from_view<'a>(&mut self, view: &VarView) {
+    pub fn set_from_view(&mut self, view: &VarView) {
         self.data.clear();
         self.data.extend(view.data);
     }

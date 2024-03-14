@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::RationalField;
 use crate::domains::{EuclideanDomain, Field, Ring};
-use crate::printer::PolynomialPrinter;
+use crate::printer::{PolynomialPrinter, PrintOptions};
 
 use super::gcd::PolynomialGCD;
 use super::{Exponent, LexOrder, MonomialOrder, Variable, INLINED_EXPONENTS};
@@ -19,6 +19,165 @@ use smallvec::{smallvec, SmallVec};
 
 const MAX_DENSE_MUL_BUFFER_SIZE: usize = 1 << 24;
 thread_local! { static DENSE_MUL_BUFFER: Cell<Vec<u32>> = const { Cell::new(Vec::new()) }; }
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct PolynomialRing<R: Ring, E: Exponent> {
+    ring: R,
+    nvars: usize,
+    var_map: Option<Arc<Vec<Variable>>>,
+    _phantom_exp: PhantomData<E>,
+}
+
+impl<R: Ring, E: Exponent> PolynomialRing<R, E> {
+    pub fn new(
+        coeff_ring: R,
+        nvars: usize,
+        var_map: Option<Arc<Vec<Variable>>>,
+    ) -> PolynomialRing<R, E> {
+        PolynomialRing {
+            ring: coeff_ring,
+            nvars,
+            var_map,
+            _phantom_exp: PhantomData,
+        }
+    }
+
+    pub fn new_from_poly(poly: &MultivariatePolynomial<R, E>) -> PolynomialRing<R, E> {
+        PolynomialRing {
+            ring: poly.field.clone(),
+            nvars: poly.nvars,
+            var_map: poly.var_map.clone(),
+            _phantom_exp: PhantomData,
+        }
+    }
+}
+
+impl<R: Ring, E: Exponent> std::fmt::Display for PolynomialRing<R, E> {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
+    type Element = MultivariatePolynomial<R, E>;
+
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a + b
+    }
+
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a - b
+    }
+
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a * b
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = std::mem::replace(a, b.zero()) + b.clone();
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = std::mem::replace(a, b.zero()) - b.clone();
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = std::mem::replace(a, b.zero()) * b;
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        *a = std::mem::replace(a, b.zero()) + b * c
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        *a = std::mem::replace(a, b.zero()) - b * c
+    }
+
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        a.clone().neg()
+    }
+
+    fn zero(&self) -> Self::Element {
+        MultivariatePolynomial::new(self.nvars, &self.ring, None, self.var_map.clone())
+    }
+
+    fn one(&self) -> Self::Element {
+        self.zero().one()
+    }
+
+    fn nth(&self, n: u64) -> Self::Element {
+        self.zero().constant(self.ring.nth(n))
+    }
+
+    fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
+        b.pow(e as usize)
+    }
+
+    fn is_zero(a: &Self::Element) -> bool {
+        a.is_zero()
+    }
+
+    fn is_one(&self, a: &Self::Element) -> bool {
+        a.is_one()
+    }
+
+    fn one_is_gcd_unit() -> bool {
+        false
+    }
+
+    fn is_characteristic_zero(&self) -> bool {
+        self.ring.is_characteristic_zero()
+    }
+
+    fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
+        todo!("Sampling a polynomial is not possible yet")
+    }
+
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        opts: &PrintOptions,
+        in_product: bool,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> Result<(), std::fmt::Error> {
+        if f.sign_plus() {
+            f.write_str("+")?;
+        }
+
+        if in_product {
+            f.write_str("(")?;
+        }
+
+        write!(
+            f,
+            "{}",
+            PolynomialPrinter {
+                poly: element,
+                opts: *opts,
+            }
+        )?;
+
+        if in_product {
+            f.write_str(")")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> EuclideanDomain for PolynomialRing<R, E> {
+    fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.rem(b)
+    }
+
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        a.quot_rem(b, false)
+    }
+
+    fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.gcd(b)
+    }
+}
 
 /// Multivariate polynomial with a sparse degree and variable dense representation.
 // TODO: implement EuclideanDomain for MultivariatePolynomial
@@ -543,6 +702,17 @@ impl<F: Ring + PartialEq, E: Exponent, O: MonomialOrder> PartialEq
 }
 
 impl<F: Ring + Eq, E: Exponent, O: MonomialOrder> Eq for MultivariatePolynomial<F, E, O> {}
+
+impl<R: Ring, E: Exponent, O: MonomialOrder> PartialOrd for MultivariatePolynomial<R, E, O> {
+    /// An ordering of polynomials that has no intuitive meaning.
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.exponents.cmp(&other.exponents).then_with(|| {
+            self.coefficients
+                .partial_cmp(&other.coefficients)
+                .unwrap_or(Ordering::Equal)
+        }))
+    }
+}
 
 impl<F: Ring, E: Exponent, O: MonomialOrder> Add for MultivariatePolynomial<F, E, O> {
     type Output = Self;
@@ -1444,7 +1614,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         fn from_uni_var<E: Exponent>(mut p: u32, max_degs_rev: &[usize], exp: &mut [E]) {
             for (ee, &x) in exp.iter_mut().rev().zip(max_degs_rev) {
                 *ee = E::from_u32(p % x as u32);
-                p = p / x as u32;
+                p /= x as u32;
             }
         }
 
@@ -1466,7 +1636,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         // check if we need to use a dense indexing array to save memory
         if total < 1000 {
-            let mut coeffs = vec![self.field.zero(); total as usize];
+            let mut coeffs = vec![self.field.zero(); total];
 
             for (c1, e1) in self.coefficients.iter().zip(&uni_exp_self) {
                 for (c2, e2) in rhs.coefficients.iter().zip(&uni_exp_rhs) {
@@ -1489,7 +1659,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let mut coeff_index = DENSE_MUL_BUFFER.take();
 
             if coeff_index.len() < total {
-                coeff_index.resize(total as usize, 0u32);
+                coeff_index.resize(total, 0u32);
             }
 
             for (c1, e1) in self.coefficients.iter().zip(&uni_exp_self) {
@@ -2818,7 +2988,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         // TODO: normalize denominator?
-        let r = MultivariatePolynomial::gcd(&w0, &w1);
+        let r = w0.gcd(&w1);
 
         Some((w0 / &r, w1 / &r))
     }

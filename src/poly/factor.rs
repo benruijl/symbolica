@@ -85,7 +85,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             .0;
 
         let b = self.derivative(lowest_rank_var);
-        let c = MultivariatePolynomial::gcd(self, &b);
+        let c = self.gcd(&b);
 
         if c.is_one() {
             return vec![(self.clone(), 1)];
@@ -99,7 +99,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         let mut i = 1;
         while !w.is_constant() {
             let z = y - w.derivative(lowest_rank_var);
-            let g = MultivariatePolynomial::gcd(&w, &z);
+            let g = w.gcd(&z);
             w = w / &g;
             y = z / &g;
 
@@ -491,7 +491,7 @@ where
         for (mut k, n) in sub_factors {
             for (powh, hi) in &mut h {
                 if *powh < p {
-                    let g = MultivariatePolynomial::gcd(&k, hi);
+                    let g = k.gcd(hi);
                     if !g.is_constant() {
                         k = k / &g;
                         *hi = &*hi / &g;
@@ -517,7 +517,7 @@ where
     /// A modified version of Yun's square free factorization algorithm.
     fn square_free_factorization_ff_yun(&self, var: usize) -> (Self, Vec<(Self, usize)>) {
         let b = self.derivative(var);
-        let mut c = MultivariatePolynomial::gcd(self, &b);
+        let mut c = self.gcd(&b);
         let mut w = self / &c;
         let mut v = &b / &c;
 
@@ -526,7 +526,7 @@ where
         let mut i = 1;
         while !w.is_constant() && i < self.field.get_prime().to_u64() as usize {
             let z = v - w.derivative(var);
-            let g = MultivariatePolynomial::gcd(&w, &z);
+            let g = w.gcd(&z);
             w = w / &g;
             v = z / &g;
             c = c / &w;
@@ -560,7 +560,7 @@ where
 
             h = h.exp_mod_univariate(self.field.get_prime().to_u64().into(), &mut f);
 
-            let mut g = MultivariatePolynomial::gcd(&(&h - &x), &f);
+            let mut g = f.gcd(&(&h - &x));
 
             if !g.is_one() {
                 f = f.quot_rem_univariate(&mut g).0;
@@ -631,7 +631,7 @@ where
                 }
             }
 
-            let g = MultivariatePolynomial::gcd(&random_poly, &s);
+            let g = random_poly.gcd(&s);
 
             if !g.is_one() {
                 break g;
@@ -643,7 +643,7 @@ where
                 .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
                 - self.one();
 
-            let g = MultivariatePolynomial::gcd(&b, &s);
+            let g = b.gcd(&s);
 
             if !g.is_one() && g != s {
                 break g;
@@ -775,7 +775,7 @@ where
             return self.bivariate_factorization(interpolation_var, main_var);
         }
 
-        let g = MultivariatePolynomial::gcd(self, &der);
+        let g = self.gcd(&der);
         if !g.is_constant() {
             let mut factors = g.bivariate_factorization(main_var, interpolation_var);
             factors.extend((self / &g).bivariate_factorization(main_var, interpolation_var));
@@ -788,7 +788,7 @@ where
         let mut i = 0;
         loop {
             if self.degree(main_var) == uni_f.degree(main_var)
-                && MultivariatePolynomial::gcd(&uni_f, &uni_f.derivative(main_var)).is_constant()
+                && uni_f.gcd(&uni_f.derivative(main_var)).is_constant()
             {
                 break;
             }
@@ -886,7 +886,7 @@ where
         for x in coeffs {
             let d = x.rational_approximant_univariate(deg_n, deg_d).unwrap().1;
             if !d.is_one() {
-                let g = MultivariatePolynomial::gcd(&d, &lcoeff);
+                let g = d.gcd(&lcoeff);
                 lcoeff = lcoeff * &(d / &g);
             }
         }
@@ -1062,7 +1062,7 @@ where
                     }
                 }
 
-                let g = MultivariatePolynomial::gcd(&contrib, l);
+                let g = contrib.gcd(l);
                 let mut new = contrib / &g;
 
                 // make sure the new part keeps the desired image coeff intact
@@ -1204,7 +1204,7 @@ where
             );
         }
 
-        let g = MultivariatePolynomial::gcd(self, &der);
+        let g = self.gcd(&der);
         if !g.is_constant() {
             let mut factors =
                 g.multivariate_factorization(order, coefficient_upper_bound, max_bivariate_factors);
@@ -1258,8 +1258,8 @@ where
 
             if degree == biv_f.degree(order[0])
                 && degree == uni_f.degree(order[0])
-                && MultivariatePolynomial::gcd(&biv_f, &biv_df).is_constant()
-                && MultivariatePolynomial::gcd(&uni_f, &uni_df).is_constant()
+                && biv_f.gcd(&biv_df).is_constant()
+                && uni_f.gcd(&uni_df).is_constant()
             {
                 if !biv_f.univariate_content(order[0]).is_one() {
                     content_fail_count += 1;
@@ -1864,7 +1864,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             let df_p = f_p.derivative(var);
 
             // check is f_p remains square-free
-            if MultivariatePolynomial::gcd(&f_p, &df_p).is_one() {
+            if f_p.gcd(&df_p).is_one() {
                 break;
             }
         }
@@ -2079,7 +2079,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             uni_f = self.replace(interpolation_var, &sample_point);
 
             if self.degree(main_var) == uni_f.degree(main_var)
-                && MultivariatePolynomial::gcd(&uni_f, &uni_f.derivative(main_var)).is_constant()
+                && uni_f.gcd(&uni_f.derivative(main_var)).is_constant()
             {
                 break;
             }
@@ -2128,7 +2128,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             for (j, f) in fs_p.iter().enumerate() {
                 for g in &fs_p[j + 1..] {
-                    if !MultivariatePolynomial::gcd(f, g).is_one() {
+                    if !f.gcd(g).is_one() {
                         continue 'new_prime;
                     }
                 }
@@ -2535,7 +2535,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     }
                 }
 
-                let g = MultivariatePolynomial::gcd(&contrib, l);
+                let g = contrib.gcd(l);
                 let new = (contrib / &g).make_primitive();
 
                 *l = (&*l * &new).make_primitive();
@@ -2744,8 +2744,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             if degree == cur_biv_f.degree(order[0])
                 && degree == cur_uni_f.degree(order[0])
-                && MultivariatePolynomial::gcd(&cur_biv_f, &biv_df).is_constant()
-                && MultivariatePolynomial::gcd(&cur_uni_f, &uni_df).is_constant()
+                && cur_biv_f.gcd(&biv_df).is_constant()
+                && cur_uni_f.gcd(&uni_df).is_constant()
             {
                 if !cur_biv_f.univariate_content(order[0]).is_one() {
                     content_fail_count += 1;
@@ -2883,7 +2883,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             for (j, f) in fs_p.iter().enumerate() {
                 for g in &fs_p[j + 1..] {
-                    if !MultivariatePolynomial::gcd(f, g).is_one() {
+                    if !f.gcd(g).is_one() {
                         continue 'new_prime;
                     }
                 }

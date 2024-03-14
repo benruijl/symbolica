@@ -222,7 +222,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
             }
         } else {
             if do_gcd {
-                let gcd = MultivariatePolynomial::gcd(&num, &den);
+                let gcd = num.gcd(&den);
 
                 if !gcd.is_one() {
                     num = num / &gcd;
@@ -266,7 +266,7 @@ where
             }
         } else {
             if do_gcd {
-                let gcd = MultivariatePolynomial::gcd(&num, &den);
+                let gcd = num.gcd(&den);
 
                 if !gcd.is_one() {
                     num = num / &gcd;
@@ -322,8 +322,8 @@ where
     }
 
     pub fn gcd(&self, other: &Self) -> Self {
-        let gcd_num = MultivariatePolynomial::gcd(&self.numerator, &other.numerator);
-        let gcd_den = MultivariatePolynomial::gcd(&self.denominator, &other.denominator);
+        let gcd_num = self.numerator.gcd(&other.numerator);
+        let gcd_den = self.denominator.gcd(&other.denominator);
 
         RationalPolynomial {
             numerator: gcd_num,
@@ -600,7 +600,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
     type Output = RationalPolynomial<R, E>;
 
     fn add(self, other: &'a RationalPolynomial<R, E>) -> Self::Output {
-        let denom_gcd = MultivariatePolynomial::gcd(&self.denominator, &other.denominator);
+        let denom_gcd = self.denominator.gcd(&other.denominator);
 
         let mut a_denom_red = Cow::Borrowed(&self.denominator);
         let mut b_denom_red = Cow::Borrowed(&other.denominator);
@@ -623,7 +623,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
             a_denom_red.as_ref() * &other.denominator
         };
 
-        let g = MultivariatePolynomial::gcd(&num, &denom_gcd);
+        let g = num.gcd(&denom_gcd);
 
         if !g.is_one() {
             num = num / &g;
@@ -671,8 +671,8 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Mul<&'a Rationa
     type Output = RationalPolynomial<R, E>;
 
     fn mul(self, other: &'a RationalPolynomial<R, E>) -> Self::Output {
-        let gcd1 = MultivariatePolynomial::gcd(&self.numerator, &other.denominator);
-        let gcd2 = MultivariatePolynomial::gcd(&self.denominator, &other.numerator);
+        let gcd1 = self.numerator.gcd(&other.denominator);
+        let gcd2 = self.denominator.gcd(&other.numerator);
 
         if gcd1.is_one() {
             if gcd2.is_one() {

@@ -50,7 +50,7 @@ use crate::{
     printer::{
         AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
     },
-    representations::{Atom, AtomView, Fun, ListIterator, Symbol},
+    representations::{Atom, AtomView, FunctionBuilder, ListIterator, Symbol},
     state::{FunctionAttribute, RecycledAtom, State, Workspace},
     streaming::TermStreamer,
     tensors::matrix::Matrix,
@@ -3675,13 +3675,11 @@ macro_rules! generate_methods {
                             });
                         }
                         Variable::Array(x, arg) => {
-                            let mut f = Atom::Fun(Fun::new(*x));
-                            if let Atom::Fun(f) = &mut f {
-                                f.add_arg(Atom::new_num(Integer::from(*arg as u64)).as_view());
-                            }
+                            let mut f = FunctionBuilder::new(*x);
+                            f = f.add_arg(Atom::new_num(Integer::from(*arg as u64)).as_view());
 
                             var_list.push(PythonExpression {
-                                expr: Arc::new(f),
+                                expr: Arc::new(f.finish()),
                             });
                         }
                         Variable::Temporary(_) => {
@@ -3787,14 +3785,14 @@ macro_rules! generate_methods {
             pub fn gcd(&self, rhs: Self) -> Self {
                 if self.poly.get_var_map() == rhs.poly.get_var_map() {
                     Self {
-                        poly: Arc::new(MultivariatePolynomial::gcd(&self.poly, &rhs.poly)),
+                        poly: Arc::new(self.poly.gcd(&rhs.poly)),
                     }
                 } else {
                     let mut new_self = (*self.poly).clone();
                     let mut new_rhs = (*rhs.poly).clone();
                     new_self.unify_var_map(&mut new_rhs);
                     Self {
-                        poly: Arc::new(MultivariatePolynomial::gcd(&new_self, &new_rhs)),
+                        poly: Arc::new(new_self.gcd(&new_rhs)),
                     }
                 }
             }
@@ -4197,13 +4195,11 @@ macro_rules! generate_rat_methods {
                             });
                         }
                         Variable::Array(x, arg) => {
-                            let mut f = Atom::Fun(Fun::new(*x));
-                            if let Atom::Fun(f) = &mut f {
-                                f.add_arg(Atom::new_num(Integer::from(*arg as u64)).as_view());
-                            }
+                            let mut f = FunctionBuilder::new(*x);
+                            f = f.add_arg(Atom::new_num(Integer::from(*arg as u64)).as_view());
 
                             var_list.push(PythonExpression {
-                                expr: Arc::new(f),
+                                expr: Arc::new(f.finish()),
                             });
                         }
                         Variable::Temporary(_) => {

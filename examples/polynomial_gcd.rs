@@ -24,7 +24,7 @@ fn gcd_integer_poly() {
     b.append_monomial(Integer::Natural(-3), &[0, 2]);
 
     println!("> Polynomial gcd of {} and {} =", a, b);
-    println!("\t{}", MultivariatePolynomial::gcd(&a, &b));
+    println!("\t{}", a.gcd(&b));
 }
 
 fn gcd_rat_poly() {
@@ -48,7 +48,7 @@ fn gcd_rat_poly() {
     b.append_monomial(Rational::Natural(-1, 1), &[0, 0, 2]);
 
     println!("> Polynomial gcd of {} and {} =", a, b);
-    println!("\t{}", MultivariatePolynomial::gcd(&a, &b));
+    println!("\t{}", a.gcd(&b));
 }
 
 fn main() {

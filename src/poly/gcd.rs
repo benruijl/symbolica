@@ -989,17 +989,17 @@ where
     <FiniteField<UField> as Ring>::Element: Copy,
 {
     /// Compute the univariate GCD using Euclid's algorithm. The result is normalized to 1.
-    fn univariate_gcd(a: &Self, b: &Self) -> Self {
-        if a.is_zero() {
+    fn univariate_gcd(&self, b: &Self) -> Self {
+        if self.is_zero() {
             return b.clone();
         }
         if b.is_zero() {
-            return a.clone();
+            return self.clone();
         }
 
-        let mut c = a.clone();
+        let mut c = self.clone();
         let mut d = b.clone();
-        if a.ldegree_max() < b.ldegree_max() {
+        if self.ldegree_max() < b.ldegree_max() {
             mem::swap(&mut c, &mut d);
         }
 
@@ -1015,7 +1015,7 @@ where
         // normalize the gcd
         let l = *d.coefficients.last().unwrap();
         for x in &mut d.coefficients {
-            a.field.div_assign(x, &l);
+            self.field.div_assign(x, &l);
         }
 
         d
@@ -1499,14 +1499,14 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         PolynomialGCD::gcd_multiple(f)
     }
 
-    /// Get the content of a multivariate polynomial viewed as a
-    /// multivariate polynomial in all variables except `x`.
+    /// Get the GCD of the contents of a polynomial and another one,
+    /// viewed as a multivariate polynomial in all variables except `x`.
     pub fn multivariate_content_gcd(
-        a: &MultivariatePolynomial<R, E>,
+        &self,
         b: &MultivariatePolynomial<R, E>,
         x: usize,
     ) -> MultivariatePolynomial<R, E> {
-        let af = a.to_multivariate_polynomial_list(&[x], false);
+        let af = self.to_multivariate_polynomial_list(&[x], false);
         let bf = b.to_multivariate_polynomial_list(&[x], false);
 
         let f = af.into_values().chain(bf.into_values()).collect();
@@ -1522,7 +1522,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         }
 
         if f.len() == 2 {
-            return MultivariatePolynomial::gcd(&f[0], &f[1]);
+            return f[0].gcd(&f[1]);
         }
 
         f.sort_unstable_by_key(|p| p.nterms());
@@ -1533,7 +1533,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 return gcd;
             }
 
-            gcd = MultivariatePolynomial::gcd(&gcd, &p);
+            gcd = gcd.gcd(&p);
         }
         gcd
     }
@@ -1555,7 +1555,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     continue;
                 }
 
-                let g = MultivariatePolynomial::gcd(&polys[i], &polys[j]);
+                let g = polys[i].gcd(&polys[j]);
                 if !g.is_one() {
                     polys[i] = &polys[i] / &g;
                     polys[j] = &polys[j] / &g;
@@ -1574,49 +1574,46 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
     /// Compute the GCD for simple cases.
     #[inline(always)]
-    fn simple_gcd(
-        a: &MultivariatePolynomial<R, E>,
-        b: &MultivariatePolynomial<R, E>,
-    ) -> Option<MultivariatePolynomial<R, E>> {
-        if a == b {
-            return Some(a.clone());
+    fn simple_gcd(&self, b: &MultivariatePolynomial<R, E>) -> Option<MultivariatePolynomial<R, E>> {
+        if self == b {
+            return Some(self.clone());
         }
 
-        if a.is_zero() {
+        if self.is_zero() {
             return Some(b.clone());
         }
         if b.is_zero() {
-            return Some(a.clone());
+            return Some(self.clone());
         }
 
-        if a.is_one() {
-            return Some(a.clone());
+        if self.is_one() {
+            return Some(self.clone());
         }
 
         if b.is_one() {
             return Some(b.clone());
         }
 
-        if a.is_constant() {
-            let mut gcd = a.coefficients[0].clone();
+        if self.is_constant() {
+            let mut gcd = self.coefficients[0].clone();
             for c in &b.coefficients {
-                gcd = a.field.gcd(&gcd, c);
-                if R::one_is_gcd_unit() && a.field.is_one(&gcd) {
+                gcd = self.field.gcd(&gcd, c);
+                if R::one_is_gcd_unit() && self.field.is_one(&gcd) {
                     break;
                 }
             }
-            return Some(a.constant(gcd));
+            return Some(self.constant(gcd));
         }
 
         if b.is_constant() {
             let mut gcd = b.coefficients[0].clone();
-            for c in &a.coefficients {
-                gcd = a.field.gcd(&gcd, c);
-                if R::one_is_gcd_unit() && a.field.is_one(&gcd) {
+            for c in &self.coefficients {
+                gcd = self.field.gcd(&gcd, c);
+                if R::one_is_gcd_unit() && self.field.is_one(&gcd) {
                     break;
                 }
             }
-            return Some(a.constant(gcd));
+            return Some(self.constant(gcd));
         }
 
         None
@@ -1624,20 +1621,17 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
     /// Compute the gcd of two multivariate polynomials.
     #[instrument(skip_all)]
-    pub fn gcd(
-        a: &MultivariatePolynomial<R, E>,
-        b: &MultivariatePolynomial<R, E>,
-    ) -> MultivariatePolynomial<R, E> {
-        debug_assert_eq!(a.nvars, b.nvars);
-        debug!("gcd of {} and {}", a, b);
+    pub fn gcd(&self, b: &MultivariatePolynomial<R, E>) -> MultivariatePolynomial<R, E> {
+        debug_assert_eq!(self.nvars, b.nvars);
+        debug!("gcd of {} and {}", self, b);
 
-        if let Some(g) = MultivariatePolynomial::simple_gcd(a, b) {
+        if let Some(g) = self.simple_gcd(b) {
             debug!("Simple {} ", g);
             return g;
         }
 
         // a and b are only copied when needed
-        let mut a = Cow::Borrowed(a);
+        let mut a = Cow::Borrowed(self);
         let mut b = Cow::Borrowed(b);
 
         // determine the maximum shared power of every variable
@@ -1818,7 +1812,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
                 if !cont.is_one() || !R::one_is_gcd_unit() {
                     let cont_p2 = p2.univariate_content(var);
-                    cont = MultivariatePolynomial::gcd(&cont, &cont_p2);
+                    cont = cont.gcd(&cont_p2);
                 }
 
                 if p2.divides(&p1_prim).is_some() {
@@ -2122,7 +2116,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             }
 
             if f.len() == 2 {
-                return MultivariatePolynomial::gcd(&f[0], &f[1]);
+                return f[0].gcd(&f[1]);
             }
 
             // check if any entry is a number, as the gcd is then the gcd of the contents
@@ -2166,8 +2160,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 b = b + p.clone().mul_coeff(k);
             }
 
-            let mut gcd = MultivariatePolynomial::gcd(&a, &b);
-
+            let mut gcd = a.gcd(&b);
             if gcd.is_one() {
                 return gcd;
             }
@@ -2215,7 +2208,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
     /// TODO: provide a parallel implementation?
     #[instrument(level = "debug", skip_all)]
     fn gcd_zippel<UField: LargePrimes + FiniteFieldWorkspace + 'static>(
-        a: &Self,
+        &self,
         b: &Self,
         vars: &[usize], // variables
         bounds: &mut [E],
@@ -2226,17 +2219,17 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
         <FiniteField<UField> as Ring>::Element: Copy,
         Integer: ToFiniteField<UField> + FromFiniteField<UField>,
     {
-        debug!("Zippel gcd of {} and {}", a, b);
+        debug!("Zippel gcd of {} and {}", self, b);
         #[cfg(debug_assertions)]
         {
-            a.check_consistency();
+            self.check_consistency();
             b.check_consistency();
         }
 
         // compute scaling factor in Z
-        let gamma = a
+        let gamma = self
             .field
-            .gcd(&a.lcoeff_varorder(vars), &b.lcoeff_varorder(vars));
+            .gcd(&self.lcoeff_varorder(vars), &b.lcoeff_varorder(vars));
         debug!("gamma {}", gamma);
 
         let mut pi = 0;
@@ -2246,11 +2239,11 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             pi += 1;
 
             if pi == primes.len() {
-                a.check_consistency();
+                self.check_consistency();
                 b.check_consistency();
                 panic!(
                     "Ran out of primes for gcd reconstruction.\ngcd({},{})",
-                    a, b
+                    self, b
                 );
             }
 
@@ -2262,7 +2255,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 continue 'newfirstprime;
             }
 
-            let ap = a.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
+            let ap = self.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
             let bp = b.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
 
             debug!("New first image: gcd({},{}) mod {}", ap, bp, p);
@@ -2319,7 +2312,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             let lcoeff_factor = gp.field.div(&gammap, &gpc);
 
             // construct the gcd suggestion in Z
-            let mut gm = a.zero_with_capacity(gp.nterms());
+            let mut gm = self.zero_with_capacity(gp.nterms());
             gm.exponents = gp.exponents.clone();
             gm.coefficients = gp
                 .coefficients
@@ -2331,7 +2324,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
             debug!("GCD suggestion with gamma: {} mod {} ", gm, p);
 
-            let mut old_gm = a.zero();
+            let mut old_gm = self.zero();
 
             // add new primes until we can reconstruct the full gcd
             'newprime: loop {
@@ -2341,7 +2334,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                     let gc = gm.clone().div_coeff(&gmc);
 
                     debug!("Final suggested gcd: {}", gc);
-                    if gc.is_one() || (a.divides(&gc).is_some() && b.divides(&gc).is_some()) {
+                    if gc.is_one() || (self.divides(&gc).is_some() && b.divides(&gc).is_some()) {
                         return gc;
                     }
 
@@ -2355,11 +2348,11 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                     pi += 1;
 
                     if pi == LARGE_U32_PRIMES.len() {
-                        a.check_consistency();
+                        self.check_consistency();
                         b.check_consistency();
                         panic!(
                             "Ran out of primes for gcd images.\ngcd({},{})\nAttempt: {}\n vars: {:?}, bounds: {:?}; {:?}",
-                            a, b, gm, vars, bounds, tight_bounds
+                            self, b, gm, vars, bounds, tight_bounds
                         );
                     }
 
@@ -2373,7 +2366,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                     }
                 }
 
-                let ap = a.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
+                let ap = self.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
                 let bp = b.map_coeff(|c| c.to_finite_field(&finite_field), finite_field.clone());
                 debug!("New image: gcd({},{})", ap, bp);
 
@@ -2454,7 +2447,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                     let gmc = &mut gm.coefficients[t];
                     let coeff = if gmc.is_negative() {
-                        a.field.add(gmc, &m)
+                        self.field.add(gmc, &m)
                     } else {
                         gmc.clone()
                     };
@@ -2467,7 +2460,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                     );
                 }
 
-                a.field.mul_assign(&mut m, &Integer::from_prime(&gp.field));
+                self.field
+                    .mul_assign(&mut m, &Integer::from_prime(&gp.field));
 
                 debug!("gm: {} from ring {}", gm, m);
             }

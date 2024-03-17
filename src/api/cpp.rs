@@ -15,7 +15,7 @@ use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
     domains::rational_polynomial::RationalPolynomial,
     printer::{FactorizedRationalPolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
-    state::{State, Workspace},
+    state::State,
 };
 
 struct LocalState {
@@ -27,7 +27,6 @@ struct LocalState {
 }
 
 struct Symbolica {
-    workspace: Workspace,
     local_state: LocalState,
 }
 
@@ -98,7 +97,6 @@ unsafe extern "C" fn get_offline_license_key(key: *mut c_char) -> bool {
 #[no_mangle]
 unsafe extern "C" fn init() -> *mut Symbolica {
     let s = Symbolica {
-        workspace: Workspace::new(),
         local_state: LocalState {
             buffer: String::with_capacity(2048),
             var_map: Arc::new(vec![]),
@@ -177,7 +175,6 @@ unsafe extern "C" fn simplify(
             if prime == 0 {
                 let r: RationalPolynomial<IntegerRing, $exp_size> = token
                     .to_rational_polynomial(
-                        &symbolica.workspace,
                         &<$in_field>::new(),
                         &IntegerRing::new(),
                         &symbolica.local_state.var_map,
@@ -200,7 +197,6 @@ unsafe extern "C" fn simplify(
                 let field = FiniteField::<u32>::new(prime as u32);
                 let rf: RationalPolynomial<FiniteField<u32>, $exp_size> = token
                     .to_rational_polynomial(
-                        &symbolica.workspace,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -223,7 +219,6 @@ unsafe extern "C" fn simplify(
                 let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
                 let rf: RationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
                     .to_rational_polynomial(
-                        &symbolica.workspace,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -246,7 +241,6 @@ unsafe extern "C" fn simplify(
                 let field = FiniteField::<u64>::new(prime as u64);
                 let rf: RationalPolynomial<FiniteField<u64>, $exp_size> = token
                     .to_rational_polynomial(
-                        &symbolica.workspace,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -317,7 +311,6 @@ unsafe extern "C" fn simplify_factorized(
             if prime == 0 {
                 let r: FactorizedRationalPolynomial<IntegerRing, $exp_size> = token
                     .to_factorized_rational_polynomial(
-                        &symbolica.workspace,
                         &<$in_field>::new(),
                         &IntegerRing::new(),
                         &symbolica.local_state.var_map,
@@ -340,7 +333,6 @@ unsafe extern "C" fn simplify_factorized(
                 let field = FiniteField::<u32>::new(prime as u32);
                 let rf: FactorizedRationalPolynomial<FiniteField<u32>, $exp_size> = token
                     .to_factorized_rational_polynomial(
-                        &symbolica.workspace,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -363,7 +355,6 @@ unsafe extern "C" fn simplify_factorized(
                 let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
                 let rf: FactorizedRationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
                     .to_factorized_rational_polynomial(
-                        &symbolica.workspace,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -386,7 +377,6 @@ unsafe extern "C" fn simplify_factorized(
                 let field = FiniteField::<u64>::new(prime as u64);
                 let rf: FactorizedRationalPolynomial<FiniteField<u64>, $exp_size> = token
                     .to_factorized_rational_polynomial(
-                        &symbolica.workspace,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,

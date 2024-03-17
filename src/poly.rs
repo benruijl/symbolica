@@ -1588,7 +1588,6 @@ impl Token {
         E: Exponent,
     >(
         &self,
-        workspace: &Workspace,
         field: &R,
         out_field: &RO,
         var_map: &Arc<Vec<Variable>>,
@@ -1630,13 +1629,7 @@ impl Token {
             }
             Token::Op(_, _, Operator::Inv, args) => {
                 assert!(args.len() == 1);
-                let r = args[0].to_rational_polynomial(
-                    workspace,
-                    field,
-                    out_field,
-                    var_map,
-                    var_name_map,
-                )?;
+                let r = args[0].to_rational_polynomial(field, out_field, var_map, var_name_map)?;
                 Ok(r.inv())
             }
             Token::Op(_, _, Operator::Pow, args) => {
@@ -1644,41 +1637,24 @@ impl Token {
                 // if the exponent is not -1, we pass the subexpression to
                 // the general routine
                 if Token::Number("-1".into()) == args[1] {
-                    let r = args[0].to_rational_polynomial(
-                        workspace,
-                        field,
-                        out_field,
-                        var_map,
-                        var_name_map,
-                    )?;
+                    let r =
+                        args[0].to_rational_polynomial(field, out_field, var_map, var_name_map)?;
                     Ok(r.inv())
                 } else {
-                    let mut atom = workspace.new_atom();
-                    self.to_atom_with_output_and_var_map(
-                        workspace,
-                        var_map,
-                        var_name_map,
-                        &mut atom,
-                    )?;
-                    atom.as_view().to_rational_polynomial(
-                        workspace,
-                        field,
-                        out_field,
-                        Some(var_map),
-                    )
+                    Workspace::get_local().with(|ws| {
+                        let mut atom = ws.new_atom();
+                        self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
+                        atom.as_view()
+                            .to_rational_polynomial(ws, field, out_field, Some(var_map))
+                    })
                 }
             }
             Token::Op(_, _, Operator::Mul, args) => {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map.clone()));
                 r.numerator = r.numerator.add_monomial(out_field.one());
                 for arg in args {
-                    let mut arg_r = arg.to_rational_polynomial(
-                        workspace,
-                        field,
-                        out_field,
-                        var_map,
-                        var_name_map,
-                    )?;
+                    let mut arg_r =
+                        arg.to_rational_polynomial(field, out_field, var_map, var_name_map)?;
                     r.unify_var_map(&mut arg_r);
                     r = &r * &arg_r;
                 }
@@ -1687,35 +1663,24 @@ impl Token {
             Token::Op(_, _, Operator::Add, args) => {
                 let mut r = RationalPolynomial::new(out_field, Some(var_map.clone()));
                 for arg in args {
-                    let mut arg_r = arg.to_rational_polynomial(
-                        workspace,
-                        field,
-                        out_field,
-                        var_map,
-                        var_name_map,
-                    )?;
+                    let mut arg_r =
+                        arg.to_rational_polynomial(field, out_field, var_map, var_name_map)?;
                     r.unify_var_map(&mut arg_r);
                     r = &r + &arg_r;
                 }
                 Ok(r)
             }
             Token::Op(_, _, Operator::Neg, args) => {
-                let r = args[0].to_rational_polynomial(
-                    workspace,
-                    field,
-                    out_field,
-                    var_map,
-                    var_name_map,
-                )?;
+                let r = args[0].to_rational_polynomial(field, out_field, var_map, var_name_map)?;
 
                 Ok(r.neg())
             }
-            _ => {
-                let mut atom = workspace.new_atom();
-                self.to_atom_with_output_and_var_map(workspace, var_map, var_name_map, &mut atom)?;
+            _ => Workspace::get_local().with(|ws| {
+                let mut atom = ws.new_atom();
+                self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                 atom.as_view()
-                    .to_rational_polynomial(workspace, field, out_field, Some(var_map))
-            }
+                    .to_rational_polynomial(ws, field, out_field, Some(var_map))
+            }),
         }
     }
 
@@ -1729,7 +1694,6 @@ impl Token {
         E: Exponent,
     >(
         &self,
-        workspace: &Workspace,
         field: &R,
         out_field: &RO,
         var_map: &Arc<Vec<Variable>>,
@@ -1806,7 +1770,6 @@ impl Token {
             Token::Op(_, _, Operator::Inv, args) => {
                 assert!(args.len() == 1);
                 let r = args[0].to_factorized_rational_polynomial(
-                    workspace,
                     field,
                     out_field,
                     var_map,
@@ -1820,7 +1783,6 @@ impl Token {
                 // the general routine
                 if Token::Number("-1".into()) == args[1] {
                     let r = args[0].to_factorized_rational_polynomial(
-                        workspace,
                         field,
                         out_field,
                         var_map,
@@ -1828,19 +1790,16 @@ impl Token {
                     )?;
                     Ok(r.inv())
                 } else {
-                    let mut atom = workspace.new_atom();
-                    self.to_atom_with_output_and_var_map(
-                        workspace,
-                        var_map,
-                        var_name_map,
-                        &mut atom,
-                    )?;
-                    atom.as_view().to_factorized_rational_polynomial(
-                        workspace,
-                        field,
-                        out_field,
-                        Some(var_map),
-                    )
+                    Workspace::get_local().with(|ws| {
+                        let mut atom = ws.new_atom();
+                        self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
+                        atom.as_view().to_factorized_rational_polynomial(
+                            ws,
+                            field,
+                            out_field,
+                            Some(var_map),
+                        )
+                    })
                 }
             }
             Token::Op(_, _, Operator::Mul, args) => {
@@ -1851,7 +1810,6 @@ impl Token {
                     if let Token::Op(_, _, Operator::Inv, inv_args) = arg {
                         debug_assert!(inv_args.len() == 1);
                         let mut arg_r = inv_args[0].to_factorized_rational_polynomial(
-                            workspace,
                             field,
                             out_field,
                             var_map,
@@ -1862,7 +1820,6 @@ impl Token {
                         r = &r / &arg_r;
                     } else {
                         let mut arg_r = arg.to_factorized_rational_polynomial(
-                            workspace,
                             field,
                             out_field,
                             var_map,
@@ -1882,7 +1839,6 @@ impl Token {
                     .iter()
                     .map(|arg| {
                         arg.to_factorized_rational_polynomial(
-                            workspace,
                             field,
                             out_field,
                             var_map,
@@ -1907,7 +1863,6 @@ impl Token {
             }
             Token::Op(_, _, Operator::Neg, args) => {
                 let r = args[0].to_factorized_rational_polynomial(
-                    workspace,
                     field,
                     out_field,
                     var_map,
@@ -1916,16 +1871,16 @@ impl Token {
 
                 Ok(r.neg())
             }
-            _ => {
-                let mut atom = workspace.new_atom();
-                self.to_atom_with_output_and_var_map(workspace, var_map, var_name_map, &mut atom)?;
+            _ => Workspace::get_local().with(|ws| {
+                let mut atom = ws.new_atom();
+                self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                 atom.as_view().to_factorized_rational_polynomial(
-                    workspace,
+                    ws,
                     field,
                     out_field,
                     Some(var_map),
                 )
-            }
+            }),
         }
     }
 }

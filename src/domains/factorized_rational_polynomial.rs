@@ -230,7 +230,7 @@ impl<E: Exponent> FromNumeratorAndFactorizedDenominator<IntegerRing, IntegerRing
             let g = num.content();
             if !g.is_one() {
                 num = num.div_coeff(&g);
-                num_const = &num_const * &g;
+                num_const = g;
             }
 
             if num.lcoeff().is_negative() {
@@ -701,6 +701,8 @@ where
 
 impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Exponent>
     Add<&'a FactorizedRationalPolynomial<R, E>> for &'b FactorizedRationalPolynomial<R, E>
+where
+    FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
 {
     type Output = FactorizedRationalPolynomial<R, E>;
 
@@ -778,29 +780,28 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Expone
 
         den.retain(|(_, p)| *p > 0);
 
-        let mut new_numer = num.content();
-        if !num.field.is_one(&new_numer) {
-            num = num.div_coeff(&new_numer);
-        }
-        num.field.mul_assign(&mut new_numer, &num_gcd);
+        // make sure the numerator is properly normalized
+        let mut r =
+            FactorizedRationalPolynomial::from_num_den(num, vec![], &self.numerator.field, false);
 
-        let g = num.field.gcd(&new_numer, &new_denom);
-        if !num.field.is_one(&g) {
-            new_numer = num.field.quot_rem(&new_numer, &g).0;
-            new_denom = num.field.quot_rem(&new_denom, &g).0;
+        let field = &r.numerator.field;
+        field.mul_assign(&mut r.numer_coeff, &num_gcd);
+        let g = r.numerator.field.gcd(&r.numer_coeff, &new_denom);
+        if !field.is_one(&g) {
+            r.numer_coeff = field.quot_rem(&r.numer_coeff, &g).0;
+            new_denom = field.quot_rem(&new_denom, &g).0;
         }
 
-        FactorizedRationalPolynomial {
-            numerator: num,
-            numer_coeff: new_numer,
-            denom_coeff: new_denom,
-            denominators: den,
-        }
+        r.denom_coeff = new_denom;
+        r.denominators = den;
+
+        r
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub
-    for FactorizedRationalPolynomial<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub for FactorizedRationalPolynomial<R, E>
+where
+    FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
 {
     type Output = Self;
 
@@ -811,6 +812,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub
 
 impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
     Sub<&'a FactorizedRationalPolynomial<R, E>> for &'b FactorizedRationalPolynomial<R, E>
+where
+    FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
 {
     type Output = FactorizedRationalPolynomial<R, E>;
 
@@ -819,8 +822,9 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg
-    for FactorizedRationalPolynomial<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg for FactorizedRationalPolynomial<R, E>
+where
+    FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
 {
     type Output = Self;
     fn neg(self) -> Self::Output {

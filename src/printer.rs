@@ -622,7 +622,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     RingPrinter {
                         ring: &self.poly.numerator.field,
                         element: &self.poly.numer_coeff,
-                        opts: &self.opts,
+                        opts: self.opts,
                         in_product: false
                     }
                 ))?;
@@ -658,7 +658,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                         RingPrinter {
                             ring: &self.poly.numerator.field,
                             element: &self.poly.denom_coeff,
-                            opts: &self.opts,
+                            opts: self.opts,
                             in_product: false
                         },
                     ))?;
@@ -695,7 +695,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     RingPrinter {
                         ring: &self.poly.numerator.field,
                         element: &self.poly.numer_coeff,
-                        opts: &self.opts,
+                        opts: self.opts,
                         in_product: false
                     }
                 ))?;
@@ -746,7 +746,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                         RingPrinter {
                             ring: &self.poly.numerator.field,
                             element: &self.poly.numer_coeff,
-                            opts: &self.opts,
+                            opts: self.opts,
                             in_product: false
                         }
                     ))?;
@@ -767,7 +767,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                         RingPrinter {
                             ring: &self.poly.numerator.field,
                             element: &self.poly.denom_coeff,
-                            opts: &self.opts,
+                            opts: self.opts,
                             in_product: false
                         }
                     ))?;
@@ -805,7 +805,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     RingPrinter {
                         ring: &self.poly.numerator.field,
                         element: &self.poly.numer_coeff,
-                        opts: &self.opts,
+                        opts: self.opts,
                         in_product: false
                     }
                 ))?;
@@ -839,7 +839,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     RingPrinter {
                         ring: &self.poly.numerator.field,
                         element: &self.poly.denom_coeff,
-                        opts: &self.opts,
+                        opts: self.opts,
                         in_product: true
                     }
                 ));
@@ -873,7 +873,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     RingPrinter {
                         ring: &self.poly.numerator.field,
                         element: &self.poly.denom_coeff,
-                        opts: &self.opts,
+                        opts: self.opts,
                         in_product: true
                     }
                 ))?;
@@ -1113,7 +1113,7 @@ impl<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
                         RingPrinter {
                             ring: &self.poly.field,
                             element: monomial.coefficient,
-                            opts: &self.opts,
+                            opts: self.opts,
                             in_product: true
                         }
                     )?;
@@ -1188,7 +1188,7 @@ impl<'a, F: Ring + Display> Display for MatrixPrinter<'a, F> {
                         RingPrinter {
                             ring: &self.matrix.field,
                             element: c,
-                            opts: &self.opts,
+                            opts: self.opts,
                             in_product: false,
                         },
                     ))?;
@@ -1213,7 +1213,7 @@ impl<'a, F: Ring + Display> Display for MatrixPrinter<'a, F> {
                         RingPrinter {
                             ring: &self.matrix.field,
                             element: c,
-                            opts: &self.opts,
+                            opts: self.opts,
                             in_product: false,
                         },
                     ))?;

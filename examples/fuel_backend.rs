@@ -10,7 +10,7 @@ use symbolica::{
     },
     parser::Token,
     printer::{PrintOptions, RationalPolynomialPrinter},
-    state::{State, Workspace},
+    state::State,
 };
 
 fn main() {
@@ -38,7 +38,6 @@ fn main() {
         );
     }
 
-    let workspace = Workspace::new();
     let vars: Arc<Vec<_>> = Arc::new(
         var_names
             .iter()
@@ -69,7 +68,6 @@ fn main() {
         let r: RationalPolynomial<IntegerRing, u16> = Token::parse(&buffer)
             .unwrap()
             .to_rational_polynomial(
-                &workspace,
                 &RationalField::new(),
                 &IntegerRing::new(),
                 &vars,

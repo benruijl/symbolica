@@ -41,6 +41,10 @@ pub trait Ring: Clone + PartialEq + Debug + Display {
         in_product: bool, // can be used to add parentheses
         f: &mut Formatter<'_>,
     ) -> Result<(), Error>;
+
+    fn printer<'a>(&'a self, element: &'a Self::Element) -> RingPrinter<'a, Self> {
+        RingPrinter::new(self, element)
+    }
 }
 
 pub trait EuclideanDomain: Ring {
@@ -58,13 +62,24 @@ pub trait Field: EuclideanDomain {
 pub struct RingPrinter<'a, R: Ring> {
     pub ring: &'a R,
     pub element: &'a R::Element,
-    pub opts: &'a PrintOptions,
+    pub opts: PrintOptions,
     pub in_product: bool,
+}
+
+impl<'a, R: Ring> RingPrinter<'a, R> {
+    pub fn new(ring: &'a R, element: &'a R::Element) -> RingPrinter<'a, R> {
+        RingPrinter {
+            ring,
+            element,
+            opts: PrintOptions::default(),
+            in_product: false,
+        }
+    }
 }
 
 impl<'a, R: Ring> Display for RingPrinter<'a, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.ring
-            .fmt_display(self.element, self.opts, self.in_product, f)
+            .fmt_display(self.element, &self.opts, self.in_product, f)
     }
 }

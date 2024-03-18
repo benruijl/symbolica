@@ -85,6 +85,8 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(request_sublicense, m)?)?;
     m.add_function(wrap_pyfunction!(get_offline_license_key, m)?)?;
 
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+
     Ok(())
 }
 

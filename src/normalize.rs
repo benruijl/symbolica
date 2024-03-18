@@ -848,8 +848,6 @@ impl<'a> AtomView<'a> {
                                         }
                                     }
 
-                                    mul.set_has_coefficient(false);
-                                    mul.set_normalized(true);
                                     nf.add_arg(stripped.as_view());
                                 } else {
                                     nf.add_arg(a);

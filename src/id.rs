@@ -2209,24 +2209,26 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
     }
 
     /// Return the next replacement.
-    pub fn next(&mut self, workspace: &Workspace, out: &mut Atom) -> Option<()> {
+    pub fn next(&mut self, out: &mut Atom) -> Option<()> {
         if let Some((position, used_flags, _target, match_stack)) =
             self.pattern_tree_iterator.next()
         {
-            let mut new_rhs = workspace.new_atom();
+            Workspace::get_local().with(|ws| {
+                let mut new_rhs = ws.new_atom();
 
-            self.rhs
-                .substitute_wildcards(workspace, &mut new_rhs, match_stack)
-                .unwrap(); // TODO: escalate?
+                self.rhs
+                    .substitute_wildcards(ws, &mut new_rhs, match_stack)
+                    .unwrap(); // TODO: escalate?
 
-            ReplaceIterator::copy_and_replace(
-                out,
-                position,
-                &used_flags,
-                self.target,
-                new_rhs.as_view(),
-                workspace,
-            );
+                ReplaceIterator::copy_and_replace(
+                    out,
+                    position,
+                    &used_flags,
+                    self.target,
+                    new_rhs.as_view(),
+                    ws,
+                );
+            });
 
             Some(())
         } else {

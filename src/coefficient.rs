@@ -751,8 +751,11 @@ impl<'a> AtomView<'a> {
                             true
                         } else {
                             let mut n1 = workspace.new_atom();
-                            r.numerator
-                                .to_expression(workspace, &HashMap::default(), &mut n1);
+                            r.numerator.to_expression_with_map(
+                                workspace,
+                                &HashMap::default(),
+                                &mut n1,
+                            );
 
                             let mut n1_conv = workspace.new_atom();
                             n1.as_view().set_coefficient_ring_with_ws_into(
@@ -762,8 +765,11 @@ impl<'a> AtomView<'a> {
                             );
 
                             let mut n2 = workspace.new_atom();
-                            r.denominator
-                                .to_expression(workspace, &HashMap::default(), &mut n2);
+                            r.denominator.to_expression_with_map(
+                                workspace,
+                                &HashMap::default(),
+                                &mut n2,
+                            );
 
                             let mut n2_conv = workspace.new_atom();
                             n2.as_view().set_coefficient_ring_with_ws_into(

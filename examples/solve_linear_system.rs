@@ -9,12 +9,10 @@ use symbolica::{
     },
     poly::Variable,
     representations::{Atom, AtomView},
-    state::{State, Workspace},
+    state::State,
 };
 
 fn solve() {
-    let workspace: Workspace = Workspace::new();
-
     let x = State::get_or_insert_var("x");
     let y = State::get_or_insert_var("y");
     let z = State::get_or_insert_var("z");
@@ -23,7 +21,7 @@ fn solve() {
     let atoms: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
     let system: Vec<_> = atoms.iter().map(|x| x.as_view()).collect();
 
-    let sol = AtomView::solve_linear_system::<u8>(&system, &[x, y, z], &workspace).unwrap();
+    let sol = AtomView::solve_linear_system::<u8>(&system, &[x, y, z]).unwrap();
 
     for (v, s) in ["x", "y", "z"].iter().zip(&sol) {
         println!("{} = {}", v, s);
@@ -31,8 +29,6 @@ fn solve() {
 }
 
 fn solve_from_matrix() {
-    let workspace: Workspace = Workspace::new();
-
     let system = [["c", "c+1", "c^2+5"], ["1", "c", "c+1"], ["c-1", "-1", "c"]];
     let rhs = ["1", "2", "-1"];
 
@@ -50,12 +46,7 @@ fn solve_from_matrix() {
             Atom::parse(s)
                 .unwrap()
                 .as_view()
-                .to_rational_polynomial(
-                    &workspace,
-                    &RationalField::new(),
-                    &IntegerRing::new(),
-                    Some(&var_map),
-                )
+                .to_rational_polynomial(&RationalField::new(), &IntegerRing::new(), Some(&var_map))
                 .unwrap()
         })
         .collect();
@@ -66,12 +57,7 @@ fn solve_from_matrix() {
             Atom::parse(s)
                 .unwrap()
                 .as_view()
-                .to_rational_polynomial(
-                    &workspace,
-                    &RationalField::new(),
-                    &IntegerRing::new(),
-                    Some(&var_map),
-                )
+                .to_rational_polynomial(&RationalField::new(), &IntegerRing::new(), Some(&var_map))
                 .unwrap()
         })
         .collect();

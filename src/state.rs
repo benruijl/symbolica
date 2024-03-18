@@ -247,8 +247,8 @@ pub struct Workspace {
 impl Workspace {
     const ATOM_BUFFER_MAX: usize = 25;
 
-    /// Create a new workspace. It is advised to use `Workspace::get_local()` instead.
-    pub const fn new() -> Self {
+    /// Create a new workspace.
+    const fn new() -> Self {
         Workspace {
             atom_buffer: RefCell::new(Vec::new()),
         }

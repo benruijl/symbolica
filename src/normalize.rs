@@ -762,7 +762,7 @@ impl<'a> AtomView<'a> {
                         buffer.set_from_view(&arg);
                         out.set_from_view(&buffer.as_view());
                         return;
-                    } else if let Ok(r) = arg.to_rational_polynomial(
+                    } else if let Ok(r) = arg.to_rational_polynomial_with_ws(
                         workspace,
                         &RationalField::new(),
                         &IntegerRing::new(),

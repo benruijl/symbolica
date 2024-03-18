@@ -1,12 +1,9 @@
 use symbolica::{
     id::{Condition, MatchSettings},
     representations::Atom,
-    state::Workspace,
 };
 
 fn main() {
-    let workspace = Workspace::new();
-
     let expr = Atom::parse("f(z)*f(f(x))*f(y)").unwrap();
     let pat_expr = Atom::parse("f(x_)").unwrap();
 
@@ -27,7 +24,7 @@ fn main() {
     let mut replaced = Atom::new();
 
     let mut it = pattern.replace_iter(expr.as_view(), &rhs, &restrictions, &settings);
-    while let Some(()) = it.next(&workspace, &mut replaced) {
+    while let Some(()) = it.next(&mut replaced) {
         println!("\t{}", replaced);
     }
 }

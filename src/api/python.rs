@@ -2475,23 +2475,16 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        Workspace::get_local().with(|workspace| {
-            self.expr
-                .as_view()
-                .to_rational_polynomial(
-                    workspace,
-                    &RationalField::new(),
-                    &IntegerRing::new(),
-                    var_map.as_ref(),
-                )
-                .map(|x| PythonRationalPolynomial { poly: Arc::new(x) })
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!(
-                        "Could not convert to polynomial: {:?}",
-                        e
-                    ))
-                })
-        })
+        self.expr
+            .as_view()
+            .to_rational_polynomial(&RationalField::new(), &IntegerRing::new(), var_map.as_ref())
+            .map(|x| PythonRationalPolynomial { poly: Arc::new(x) })
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!(
+                    "Could not convert to polynomial: {:?}",
+                    e
+                ))
+            })
     }
 
     /// Similar to [PythonExpression::to_rational_polynomial()], but the power of each variable limited to 255.
@@ -2520,35 +2513,25 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        Workspace::get_local().with(|workspace| {
-            self.expr
-                .as_view()
-                .to_rational_polynomial(
-                    workspace,
-                    &RationalField::new(),
-                    &IntegerRing::new(),
-                    var_map.as_ref(),
-                )
-                .map(|x| PythonRationalPolynomialSmallExponent { poly: Arc::new(x) })
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!(
-                        "Could not convert to polynomial: {:?}",
-                        e
-                    ))
-                })
-        })
+        self.expr
+            .as_view()
+            .to_rational_polynomial(&RationalField::new(), &IntegerRing::new(), var_map.as_ref())
+            .map(|x| PythonRationalPolynomialSmallExponent { poly: Arc::new(x) })
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!(
+                    "Could not convert to polynomial: {:?}",
+                    e
+                ))
+            })
     }
 
     /// Convert the expression to a rational polynomial, converting all non-polynomial elements to
     /// new independent variables.
     pub fn to_rational_polynomial_with_conversion(&self) -> PyResult<PythonRationalPolynomial> {
-        let p = Workspace::get_local().with(|workspace| {
-            self.expr.as_view().to_rational_polynomial_with_conversion(
-                workspace,
-                &RationalField::new(),
-                &IntegerRing::new(),
-            )
-        });
+        let p = self
+            .expr
+            .as_view()
+            .to_rational_polynomial_with_conversion(&RationalField::new(), &IntegerRing::new());
 
         Ok(PythonRationalPolynomial { poly: Arc::new(p) })
     }
@@ -2736,11 +2719,9 @@ impl PythonExpression {
             }
         }
 
-        let res = Workspace::get_local()
-            .with(|workspace| AtomView::solve_linear_system::<u16>(&system_b, &vars, workspace))
-            .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not solve system: {:?}", e))
-            })?;
+        let res = AtomView::solve_linear_system::<u16>(&system_b, &vars).map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Could not solve system: {:?}", e))
+        })?;
 
         Ok(res
             .into_iter()
@@ -3151,17 +3132,15 @@ impl PythonReplaceIterator {
     /// Return the next replacement.
     fn __next__(&mut self) -> PyResult<Option<PythonExpression>> {
         self.with_dependent_mut(|_, i| {
-            Workspace::get_local().with(|workspace| {
-                let mut out = Atom::default();
+            let mut out = Atom::default();
 
-                if i.next(workspace, &mut out).is_none() {
-                    Ok(None)
-                } else {
-                    Ok::<_, PyErr>(Some(PythonExpression {
-                        expr: Arc::new(out),
-                    }))
-                }
-            })
+            if i.next(&mut out).is_none() {
+                Ok(None)
+            } else {
+                Ok::<_, PyErr>(Some(PythonExpression {
+                    expr: Arc::new(out),
+                }))
+            }
         })
     }
 }
@@ -3351,14 +3330,8 @@ impl PythonPolynomial {
     /// >>> p = e.to_polynomial()
     /// >>> print(e - p.to_expression())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
-        let mut atom = Atom::default();
-        Workspace::get_local().with(|workspace| {
-            self.poly
-                .to_expression(workspace, &HashMap::default(), &mut atom)
-        });
-
         Ok(PythonExpression {
-            expr: Arc::new(atom),
+            expr: Arc::new(self.poly.to_expression()),
         })
     }
 }
@@ -3434,14 +3407,8 @@ impl PythonIntegerPolynomial {
     /// >>> p = e.to_polynomial()
     /// >>> print((e - p.to_expression()).expand())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
-        let mut atom = Atom::default();
-        Workspace::get_local().with(|workspace| {
-            self.poly
-                .to_expression(workspace, &HashMap::default(), &mut atom)
-        });
-
         Ok(PythonExpression {
-            expr: Arc::new(atom),
+            expr: Arc::new(self.poly.to_expression()),
         })
     }
 }
@@ -4051,18 +4018,15 @@ macro_rules! generate_rat_parse {
                     var_name_map.push(v.into());
                 }
 
-                let e = Workspace::get_local().with(|workspace| {
-                    Token::parse(arg)
-                        .map_err(exceptions::PyValueError::new_err)?
-                        .to_rational_polynomial(
-                            workspace,
-                            &RationalField::new(),
-                            &IntegerRing::new(),
-                            &Arc::new(var_map),
-                            &var_name_map,
-                        )
-                        .map_err(exceptions::PyValueError::new_err)
-                })?;
+                let e = Token::parse(arg)
+                    .map_err(exceptions::PyValueError::new_err)?
+                    .to_rational_polynomial(
+                        &RationalField::new(),
+                        &IntegerRing::new(),
+                        &Arc::new(var_map),
+                        &var_name_map,
+                    )
+                    .map_err(exceptions::PyValueError::new_err)?;
 
                 Ok(Self { poly: Arc::new(e) })
             }
@@ -4077,14 +4041,8 @@ macro_rules! generate_rat_parse {
             /// >>> p = e.to_rational_polynomial()
             /// >>> print((e - p.to_expression()).expand())
             pub fn to_expression(&self) -> PyResult<PythonExpression> {
-                let mut atom = Atom::default();
-                Workspace::get_local().with(|workspace| {
-                    self.poly
-                        .to_expression(workspace, &HashMap::default(), &mut atom)
-                });
-
                 Ok(PythonExpression {
-                    expr: Arc::new(atom),
+                    expr: Arc::new(self.poly.to_expression()),
                 })
             }
         }
@@ -4129,18 +4087,10 @@ impl PythonFiniteFieldRationalPolynomial {
         }
 
         let field = FiniteField::<u32>::new(prime);
-        let e = Workspace::get_local().with(|workspace| {
-            Token::parse(arg)
-                .map_err(exceptions::PyValueError::new_err)?
-                .to_rational_polynomial(
-                    workspace,
-                    &field,
-                    &field,
-                    &Arc::new(var_map),
-                    &var_name_map,
-                )
-                .map_err(exceptions::PyValueError::new_err)
-        })?;
+        let e = Token::parse(arg)
+            .map_err(exceptions::PyValueError::new_err)?
+            .to_rational_polynomial(&field, &field, &Arc::new(var_map), &var_name_map)
+            .map_err(exceptions::PyValueError::new_err)?;
 
         Ok(Self { poly: Arc::new(e) })
     }
@@ -4387,13 +4337,10 @@ impl ConvertibleToRationalPolynomial {
             Self::Expression(e) => {
                 let expr = &e.to_expression().expr;
 
-                let poly = Workspace::get_local().with(|workspace| {
-                    expr.as_view().to_rational_polynomial_with_conversion(
-                        workspace,
-                        &RationalField::new(),
-                        &IntegerRing::new(),
-                    )
-                });
+                let poly = expr.as_view().to_rational_polynomial_with_conversion(
+                    &RationalField::new(),
+                    &IntegerRing::new(),
+                );
 
                 Ok(PythonRationalPolynomial {
                     poly: Arc::new(poly),

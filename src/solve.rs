@@ -20,7 +20,6 @@ impl<'a> AtomView<'a> {
     pub fn solve_linear_system<E: Exponent>(
         system: &[AtomView],
         vars: &[Symbol],
-        workspace: &Workspace,
     ) -> Result<Vec<Atom>, String> {
         let vars: Vec<_> = vars.iter().map(|v| Variable::Symbol(*v)).collect();
         let mut map = HashMap::default();
@@ -30,12 +29,14 @@ impl<'a> AtomView<'a> {
         let mut rhs = vec![RationalPolynomial::<_, E>::new(&IntegerRing::new(), None); vars.len()];
 
         for (si, a) in system.iter().enumerate() {
-            let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial_with_map(
-                workspace,
-                &RationalField::new(),
-                &IntegerRing::new(),
-                &mut map,
-            );
+            let rat: RationalPolynomial<IntegerRing, E> = Workspace::get_local().with(|ws| {
+                a.to_rational_polynomial_with_map(
+                    ws,
+                    &RationalField::new(),
+                    &IntegerRing::new(),
+                    &mut map,
+                )
+            });
 
             let poly = rat.to_polynomial(&vars, true).unwrap();
 
@@ -104,7 +105,7 @@ impl<'a> AtomView<'a> {
         let inv_map = map.iter().map(|(k, v)| (v.clone(), k.as_view())).collect();
         for (s, v) in sol.data.iter().zip(&vars) {
             let mut a = Atom::default();
-            s.to_expression(workspace, &inv_map, &mut a);
+            Workspace::get_local().with(|ws| s.to_expression_with_map(ws, &inv_map, &mut a));
             let Variable::Symbol(_) = *v else {
                 panic!("Temp var left");
             };

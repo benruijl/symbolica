@@ -9,7 +9,9 @@ use crate::{
         finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
     },
     poly::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder},
-    representations::{default::FunView, AddView, AtomView, MulView, NumView, PowView, VarView},
+    representations::{
+        default::FunView, AddView, AtomView, MulView, NumView, PowView, Symbol, VarView,
+    },
     state::State,
     tensors::matrix::Matrix,
 };
@@ -145,6 +147,12 @@ impl<'a> fmt::Display for AtomPrinter<'a> {
             superscript: false,
         };
         self.atom.fmt_output(f, &self.print_opts, print_state)
+    }
+}
+
+impl std::fmt::Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&State::get_name(*self))
     }
 }
 

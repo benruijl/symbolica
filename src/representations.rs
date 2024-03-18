@@ -17,7 +17,7 @@ use self::default::{FunView, RawAtom};
 
 /// A symbol, for example the name of a variable or the name of a function,
 /// together with its properties.
-/// Should be created using `get_or_insert` of `State`.
+/// Should be created using `get_symbol` of `State`.
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Symbol {
     id: u32,

@@ -1479,12 +1479,8 @@ impl PythonExpression {
     /// is a variable or function.
     pub fn get_name(&self) -> PyResult<Option<String>> {
         match self.expr.as_ref() {
-            Atom::Var(v) => Ok(Some(
-                State::get_name(v.to_var_view().get_symbol()).to_string(),
-            )),
-            Atom::Fun(f) => Ok(Some(
-                State::get_name(f.to_fun_view().get_symbol()).to_string(),
-            )),
+            Atom::Var(v) => Ok(Some(State::get_name(v.get_symbol()).to_string())),
+            Atom::Fun(f) => Ok(Some(State::get_name(f.get_symbol()).to_string())),
             _ => Ok(None),
         }
     }
@@ -1615,6 +1611,7 @@ impl PythonExpression {
             AtomView::Add(a) => a.to_slice(),
             AtomView::Mul(m) => m.to_slice(),
             AtomView::Fun(f) => f.to_slice(),
+            AtomView::Pow(p) => p.to_slice(),
             _ => Err(PyIndexError::new_err("Cannot access child of leaf node"))?,
         };
 
@@ -2096,7 +2093,7 @@ impl PythonExpression {
     /// Create an iterator over all atoms in the expression.
     fn __iter__(&self) -> PyResult<PythonAtomIterator> {
         match self.expr.as_view() {
-            AtomView::Add(_) | AtomView::Mul(_) | AtomView::Fun(_) => {}
+            AtomView::Add(_) | AtomView::Mul(_) | AtomView::Fun(_) | AtomView::Pow(_) => {}
             x => {
                 return Err(exceptions::PyValueError::new_err(format!(
                     "Non-iterable type: {}",

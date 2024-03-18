@@ -14,7 +14,7 @@ fn main() {
 
     // prepare the pattern restriction `x_ > 1`
     let restrictions = (
-        State::get_or_insert_var("x_"),
+        State::get_symbol("x_"),
         PatternRestriction::Filter(Box::new(|v: &Match| match v {
             Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
             _ => false,

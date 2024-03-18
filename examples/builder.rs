@@ -7,7 +7,7 @@ use symbolica::{
 fn main() {
     let x = Atom::parse("x").unwrap();
     let y = Atom::parse("y").unwrap();
-    let f_id = State::get_or_insert_fn("f", None).unwrap();
+    let f_id = State::get_symbol("f");
 
     let f = fun!(f_id, x, y, Atom::new_num(2));
 

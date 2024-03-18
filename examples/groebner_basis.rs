@@ -7,7 +7,7 @@ use symbolica::{
 
 fn main() {
     for x in 'a'..='z' {
-        State::get_or_insert_var(x.to_string());
+        State::get_symbol(x.to_string());
     }
 
     // cyclic-4

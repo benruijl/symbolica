@@ -188,6 +188,11 @@ impl Var {
         AtomView::Var(self.to_var_view())
     }
 
+    #[inline]
+    pub fn get_symbol(&self) -> Symbol {
+        self.to_var_view().get_symbol()
+    }
+
     #[inline(always)]
     pub fn into_raw(self) -> RawAtom {
         self.data
@@ -321,6 +326,16 @@ impl Fun {
     #[inline(always)]
     pub fn as_view(&self) -> AtomView {
         AtomView::Fun(self.to_fun_view())
+    }
+
+    #[inline(always)]
+    pub fn get_symbol(&self) -> Symbol {
+        self.to_fun_view().get_symbol()
+    }
+
+    #[inline(always)]
+    pub fn get_nargs(&self) -> usize {
+        self.to_fun_view().get_nargs()
     }
 
     #[inline(always)]
@@ -554,6 +569,11 @@ impl Mul {
     }
 
     #[inline(always)]
+    pub fn get_nargs(&self) -> usize {
+        self.to_mul_view().get_nargs()
+    }
+
+    #[inline(always)]
     pub fn into_raw(self) -> RawAtom {
         self.data
     }
@@ -672,6 +692,11 @@ impl Add {
     #[inline(always)]
     pub fn as_view(&self) -> AtomView {
         AtomView::Add(self.to_add_view())
+    }
+
+    #[inline(always)]
+    pub fn get_nargs(&self) -> usize {
+        self.to_add_view().get_nargs()
     }
 
     #[inline(always)]

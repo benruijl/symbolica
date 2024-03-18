@@ -1214,7 +1214,7 @@ impl PythonExpression {
     #[classmethod]
     pub fn var(_cls: &PyType, name: &str) -> PyResult<PythonExpression> {
         // TODO: check if the name meets the requirements
-        let id = State::get_or_insert_var(name);
+        let id = State::get_symbol(name);
         let var = Atom::new_var(id);
 
         Ok(PythonExpression {
@@ -1231,7 +1231,7 @@ impl PythonExpression {
         for a in args {
             // TODO: check if the name meets the requirements
             let name = a.extract::<&str>()?;
-            let id = State::get_or_insert_var(name);
+            let id = State::get_symbol(name);
             let var = Atom::new_var(id);
 
             result.push(PythonExpression {
@@ -2865,33 +2865,33 @@ impl PythonFunction {
         is_antisymmetric: Option<bool>,
         is_linear: Option<bool>,
     ) -> PyResult<Self> {
-        let mut opts = match (is_symmetric, is_antisymmetric) {
-            (Some(true), Some(true)) => Err(exceptions::PyValueError::new_err(
-                "Function cannot be both symmetric and antisymmetric",
-            ))?,
-            (Some(true), _) => Some(vec![FunctionAttribute::Symmetric]),
-            (_, Some(true)) => Some(vec![FunctionAttribute::Antisymmetric]),
-            (Some(false), _) | (_, Some(false)) => Some(vec![]),
-            (None, None) => None,
-        };
-
-        match is_linear {
-            Some(true) => {
-                if let Some(opts) = &mut opts {
-                    opts.push(FunctionAttribute::Linear);
-                } else {
-                    opts = Some(vec![FunctionAttribute::Linear]);
-                }
-            }
-            Some(false) => {
-                if opts.is_none() {
-                    opts = Some(vec![]);
-                }
-            }
-            None => {}
+        if is_symmetric.is_none() && is_antisymmetric.is_none() && is_linear.is_none() {
+            return Ok(PythonFunction {
+                id: State::get_symbol(name),
+            });
         }
 
-        let id = State::get_or_insert_fn(name, opts)
+        if is_symmetric == Some(true) && is_antisymmetric == Some(true) {
+            Err(exceptions::PyValueError::new_err(
+                "Function cannot be both symmetric and antisymmetric",
+            ))?;
+        }
+
+        let mut opts = vec![];
+
+        if let Some(true) = is_symmetric {
+            opts.push(FunctionAttribute::Symmetric);
+        }
+
+        if let Some(true) = is_antisymmetric {
+            opts.push(FunctionAttribute::Antisymmetric);
+        }
+
+        if let Some(true) = is_linear {
+            opts.push(FunctionAttribute::Linear);
+        }
+
+        let id = State::get_symbol_with_attributes(name, opts)
             .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
         Ok(PythonFunction { id })
@@ -3168,7 +3168,7 @@ impl PythonPolynomial {
             SmallVec::new();
 
         for v in vars {
-            let id = State::get_or_insert_var(v);
+            let id = State::get_symbol(v);
             var_map.push(id.into());
             var_name_map.push(v.into());
         }
@@ -3377,7 +3377,7 @@ impl PythonIntegerPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_or_insert_var(v);
+            let id = State::get_symbol(v);
             var_map.push(id.into());
             var_name_map.push(v.into());
         }
@@ -3436,7 +3436,7 @@ impl PythonFiniteFieldPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_or_insert_var(v);
+            let id = State::get_symbol(v);
             var_map.push(id.into());
             var_name_map.push(v.into());
         }
@@ -4006,7 +4006,7 @@ macro_rules! generate_rat_parse {
                 let mut var_name_map = vec![];
 
                 for v in vars {
-                    let id = State::get_or_insert_var(v);
+                    let id = State::get_symbol(v);
                     var_map.push(id.into());
                     var_name_map.push(v.into());
                 }
@@ -4074,7 +4074,7 @@ impl PythonFiniteFieldRationalPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_or_insert_var(v);
+            let id = State::get_symbol(v);
             var_map.push(id.into());
             var_name_map.push(v.into());
         }

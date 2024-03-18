@@ -11,7 +11,7 @@ fn main() {
 
     let pattern = pat_expr.as_view().into_pattern();
     let restrictions = (
-        State::get_or_insert_var("x_"),
+        State::get_symbol("x_"),
         PatternRestriction::Length(1, Some(100)),
     )
         .into();

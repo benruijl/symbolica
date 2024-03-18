@@ -2,8 +2,8 @@ use symbolica::{id::Pattern, representations::Atom, state::State, transformer::T
 
 fn main() {
     let input = Atom::parse("f(1,3,2,3,1)").unwrap();
-    let f = State::get_or_insert_fn("f", None).unwrap();
-    let g = State::get_or_insert_fn("g", None).unwrap();
+    let f = State::get_symbol("f");
+    let g = State::get_symbol("g");
 
     let o = Pattern::parse("f(x__)").unwrap().replace_all(
         input.as_view(),

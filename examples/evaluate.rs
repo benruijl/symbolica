@@ -3,9 +3,9 @@ use symbolica::evaluate::EvaluationFn;
 use symbolica::{representations::Atom, state::State};
 
 fn main() {
-    let x = State::get_or_insert_var("x");
-    let f = State::get_or_insert_var("f");
-    let g = State::get_or_insert_var("g");
+    let x = State::get_symbol("x");
+    let f = State::get_symbol("f");
+    let g = State::get_symbol("g");
     let p0 = Atom::parse("p(0)").unwrap();
     let a = Atom::parse("x*cos(x) + f(x, 1)^2 + g(g(x)) + p(0)").unwrap();
 

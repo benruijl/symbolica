@@ -1,7 +1,7 @@
 use symbolica::{representations::Atom, state::State};
 
 fn main() {
-    let x = State::get_or_insert_var("x");
+    let x = State::get_symbol("x");
     let inputs = [
         "(1+2*x)^(5+x)",
         "log(2*x) + exp(3*x) + sin(4*x) + cos(y*x)",

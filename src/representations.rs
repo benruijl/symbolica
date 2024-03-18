@@ -326,6 +326,16 @@ impl<'a> AtomView<'a> {
             .normalize(workspace, out);
     }
 
+    /// Get the symbol of a variable or function.
+    #[inline(always)]
+    pub fn get_symbol(&self) -> Option<Symbol> {
+        match self {
+            AtomView::Var(v) => Some(v.get_symbol()),
+            AtomView::Fun(f) => Some(f.get_symbol()),
+            _ => None,
+        }
+    }
+
     pub fn get_byte_size(&self) -> usize {
         match self {
             AtomView::Num(n) => n.get_byte_size(),
@@ -525,8 +535,18 @@ impl Atom {
         }
     }
 
+    /// Get the symbol of a variable or function.
     #[inline(always)]
-    pub fn set_normalized(&mut self, normalized: bool) {
+    pub fn get_symbol(&self) -> Option<Symbol> {
+        match self {
+            Atom::Var(v) => Some(v.get_symbol()),
+            Atom::Fun(f) => Some(f.get_symbol()),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_normalized(&mut self, normalized: bool) {
         match self {
             Atom::Num(_) => {}
             Atom::Var(_) => {}

@@ -348,7 +348,7 @@ impl Token {
                 Err(e) => return Err(format!("Could not parse number: {}", e)),
             },
             Token::ID(x) => {
-                out.to_var(state.get_or_insert_var_impl(x));
+                out.to_var(state.get_symbol_impl(x));
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -421,7 +421,7 @@ impl Token {
                 };
 
                 let mut fun_h = workspace.new_atom();
-                let fun = fun_h.to_fun(state.get_or_insert_fn_impl(name, None)?);
+                let fun = fun_h.to_fun(state.get_symbol_impl(name));
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
                     a.to_atom_with_output(state, workspace, &mut atom)?;

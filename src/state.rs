@@ -78,7 +78,7 @@ impl State {
         };
 
         for x in Self::BUILTIN_VAR_LIST {
-            state.get_or_insert_var_impl(x);
+            state.get_symbol_impl(x);
         }
 
         state
@@ -100,13 +100,15 @@ impl State {
         id.get_id() < Self::BUILTIN_VAR_LIST.len() as u32
     }
 
-    /// Get the id for a certain name if the name is already registered,
-    /// else register it and return a new id.
-    pub fn get_or_insert_var<S: AsRef<str>>(name: S) -> Symbol {
-        STATE.write().unwrap().get_or_insert_var_impl(name.as_ref())
+    /// Get the symbol for a certain name if the name is already registered,
+    /// else register it and return a new symbol without attributes.
+    ///
+    /// To register a symbol with attributes, use [`State::get_symbol_with_attributes`].
+    pub fn get_symbol<S: AsRef<str>>(name: S) -> Symbol {
+        STATE.write().unwrap().get_symbol_impl(name.as_ref())
     }
 
-    pub(crate) fn get_or_insert_var_impl(&mut self, name: &str) -> Symbol {
+    pub(crate) fn get_symbol_impl(&mut self, name: &str) -> Symbol {
         match self.str_to_id.entry(name.into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
@@ -133,45 +135,42 @@ impl State {
         }
     }
 
-    /// Get the id of a certain function name if the name is already registered,
-    /// else register it and return a new id.
+    /// Get the symbol for a certain name if the name is already registered,
+    /// else register it and return a new symbol with the given attributes.
     ///
-    /// Providing an attribute `None` means that the attributes will be fetched from
-    /// the state if the function exists, or the attribute list will be empty if not.
-    pub fn get_or_insert_fn<S: AsRef<str>>(
+    /// This function will return an error when an existing symbol is redefined
+    /// with different attributes.
+    pub fn get_symbol_with_attributes<S: AsRef<str>>(
         name: S,
-        attributes: Option<Vec<FunctionAttribute>>,
+        attributes: Vec<FunctionAttribute>,
     ) -> Result<Symbol, String> {
         STATE
             .write()
             .unwrap()
-            .get_or_insert_fn_impl(name.as_ref(), attributes)
+            .get_symbol_with_attributes_impl(name.as_ref(), attributes)
     }
 
-    pub(crate) fn get_or_insert_fn_impl(
+    pub(crate) fn get_symbol_with_attributes_impl(
         &mut self,
         name: &str,
-        attributes: Option<Vec<FunctionAttribute>>,
+        attributes: Vec<FunctionAttribute>,
     ) -> Result<Symbol, String> {
         match self.str_to_id.entry(name.into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
-                if let Some(attributes) = attributes {
-                    let new_id = Symbol::init_fn(
-                        r.get_id(),
-                        r.get_wildcard_level(),
-                        attributes.contains(&FunctionAttribute::Symmetric),
-                        attributes.contains(&FunctionAttribute::Antisymmetric),
-                        attributes.contains(&FunctionAttribute::Linear),
-                    );
 
-                    if r == new_id {
-                        Ok(r)
-                    } else {
-                        Err(format!("Function {} redefined with new attributes", name).into())
-                    }
-                } else {
+                let new_id = Symbol::init_fn(
+                    r.get_id(),
+                    r.get_wildcard_level(),
+                    attributes.contains(&FunctionAttribute::Symmetric),
+                    attributes.contains(&FunctionAttribute::Antisymmetric),
+                    attributes.contains(&FunctionAttribute::Linear),
+                );
+
+                if r == new_id {
                     Ok(r)
+                } else {
+                    Err(format!("Function {} redefined with new attributes", name).into())
                 }
             }
             Entry::Vacant(v) => {
@@ -191,17 +190,13 @@ impl State {
                     wildcard_level += 1;
                 }
 
-                let new_id = if let Some(attributes) = attributes {
-                    Symbol::init_fn(
-                        new_index as u32,
-                        wildcard_level,
-                        attributes.contains(&FunctionAttribute::Symmetric),
-                        attributes.contains(&FunctionAttribute::Antisymmetric),
-                        attributes.contains(&FunctionAttribute::Linear),
-                    )
-                } else {
-                    Symbol::init_fn(new_index as u32, wildcard_level, false, false, false)
-                };
+                let new_id = Symbol::init_fn(
+                    new_index as u32,
+                    wildcard_level,
+                    attributes.contains(&FunctionAttribute::Symmetric),
+                    attributes.contains(&FunctionAttribute::Antisymmetric),
+                    attributes.contains(&FunctionAttribute::Linear),
+                );
 
                 v.insert(new_id);
 

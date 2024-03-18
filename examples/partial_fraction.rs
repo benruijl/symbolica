@@ -14,7 +14,7 @@ fn univariate() {
     let var_map = Arc::new(
         var_names
             .iter()
-            .map(|n| State::get_or_insert_var(n).into())
+            .map(|n| State::get_symbol(n).into())
             .collect(),
     );
 
@@ -36,7 +36,7 @@ fn multivariate() {
     let var_map = Arc::new(
         var_names
             .iter()
-            .map(|n| State::get_or_insert_var(n).into())
+            .map(|n| State::get_symbol(n).into())
             .collect(),
     );
 

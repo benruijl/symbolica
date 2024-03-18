@@ -11,10 +11,10 @@ fn main() {
 
     let pattern = pat_expr.as_view().into_pattern();
 
-    let x = State::get_or_insert_var("x__");
-    let y = State::get_or_insert_var("y__");
-    let z = State::get_or_insert_var("z__");
-    let w = State::get_or_insert_var("w__");
+    let x = State::get_symbol("x__");
+    let y = State::get_symbol("y__");
+    let z = State::get_symbol("z__");
+    let w = State::get_symbol("w__");
 
     let conditions = Condition::from((x, PatternRestriction::Length(0, Some(2))))
         & (y, PatternRestriction::Length(0, Some(4)))

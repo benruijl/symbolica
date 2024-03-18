@@ -7,14 +7,13 @@ fn main() {
     println!("> In: {}", expr);
 
     let expr_yz = expr.set_coefficient_ring(&Arc::new(vec![
-        State::get_or_insert_var("y").into(),
-        State::get_or_insert_var("z").into(),
+        State::get_symbol("y").into(),
+        State::get_symbol("z").into(),
     ]));
     println!("> Coefficient ring y,z: {}", expr_yz);
 
     // the coefficient must downgrade from y,z to y
-    let expr_y =
-        expr_yz.set_coefficient_ring(&Arc::new(vec![State::get_or_insert_var("y").into()]));
+    let expr_y = expr_yz.set_coefficient_ring(&Arc::new(vec![State::get_symbol("y").into()]));
     println!("> Coefficient ring y: {}", expr_y);
 
     // the coefficient must downgrade from y,z to y

@@ -13,9 +13,9 @@ use symbolica::{
 };
 
 fn solve() {
-    let x = State::get_or_insert_var("x");
-    let y = State::get_or_insert_var("y");
-    let z = State::get_or_insert_var("z");
+    let x = State::get_symbol("x");
+    let y = State::get_symbol("y");
+    let z = State::get_symbol("z");
     let eqs = ["c*x + f(c)*y + z - 1", "x + c*y + z/c - 2", "(c-1)x + c*z"];
 
     let atoms: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
@@ -37,7 +37,7 @@ fn solve_from_matrix() {
         println!("\t ({}).x\u{20D7} = {}", r.join(","), v);
     }
 
-    let var_map = Arc::new(vec![Variable::Symbol(State::get_or_insert_var("c"))]);
+    let var_map = Arc::new(vec![Variable::Symbol(State::get_symbol("c"))]);
 
     let system_rat: Vec<RationalPolynomial<IntegerRing, u8>> = system
         .iter()

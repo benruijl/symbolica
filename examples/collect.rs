@@ -6,9 +6,9 @@ use symbolica::{
 
 fn main() {
     let input = Atom::parse("x*(1+a)+x*5*y+f(5,x)+2+y^2+x^2 + x^3").unwrap();
-    let x = State::get_or_insert_var("x");
-    let key = State::get_or_insert_var("key");
-    let coeff = State::get_or_insert_var("coeff");
+    let x = State::get_symbol("x");
+    let key = State::get_symbol("key");
+    let coeff = State::get_symbol("coeff");
 
     let (r, rest) = input.coefficient_list(x);
 

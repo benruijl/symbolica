@@ -41,7 +41,7 @@ fn main() {
     let vars: Arc<Vec<_>> = Arc::new(
         var_names
             .iter()
-            .map(|v| State::get_or_insert_var(v).into())
+            .map(|v| State::get_symbol(v).into())
             .collect(),
     );
 

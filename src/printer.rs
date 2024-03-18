@@ -208,7 +208,15 @@ impl<'a> FormattedPrintVar for VarView<'a> {
 
         let id = self.get_symbol();
         let name = State::get_name(id);
-        if name.ends_with('_') {
+
+        if opts.latex {
+            match id {
+                State::E => f.write_char('e'),
+                State::PI => f.write_str("\\pi"),
+                State::I => f.write_char('i'),
+                _ => f.write_str(name),
+            }
+        } else if name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))
         } else if opts.color_builtin_functions && State::is_builtin(id) {
             f.write_fmt(format_args!("{}", name.as_str().purple()))
@@ -408,9 +416,17 @@ impl<'a> FormattedPrintMul for MulView<'a> {
             first = false;
 
             if let AtomView::Add(_) = x {
-                f.write_char('(')?;
+                if opts.latex {
+                    f.write_str("\\left(")?;
+                } else {
+                    f.write_char('(')?;
+                }
                 x.fmt_output(f, opts, print_state)?;
-                f.write_char(')')?;
+                if opts.latex {
+                    f.write_str("\\right)")?;
+                } else {
+                    f.write_char(')')?;
+                }
             } else {
                 x.fmt_output(f, opts, print_state)?;
             }
@@ -436,21 +452,30 @@ impl<'a> FormattedPrintFn for FunView<'a> {
 
         let id = self.get_symbol();
         let name = State::get_name(id);
-        if name.ends_with('_') {
-            f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))?;
-        } else {
-            // check if the function name is built in
-            if opts.color_builtin_functions && State::is_builtin(id) {
-                f.write_fmt(format_args!("{}", name.as_str().purple()))?;
-            } else {
-                f.write_str(name)?;
-            }
-        }
 
-        if opts.square_brackets_for_function {
-            f.write_char('[')?;
+        if opts.latex {
+            if name == "cos" || name == "sin" || name == "exp" || name == "log" {
+                f.write_fmt(format_args!("\\{}\\!\\left(", name))?;
+            } else {
+                f.write_fmt(format_args!("{}\\!\\left(", name))?;
+            }
         } else {
-            f.write_char('(')?;
+            if name.ends_with('_') {
+                f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))?;
+            } else {
+                // check if the function name is built in
+                if opts.color_builtin_functions && State::is_builtin(id) {
+                    f.write_fmt(format_args!("{}", name.as_str().purple()))?;
+                } else {
+                    f.write_str(name)?;
+                }
+            }
+
+            if opts.square_brackets_for_function {
+                f.write_char('[')?;
+            } else {
+                f.write_char('(')?;
+            }
         }
 
         print_state.level += 1;
@@ -465,7 +490,9 @@ impl<'a> FormattedPrintFn for FunView<'a> {
             x.fmt_output(f, opts, print_state)?;
         }
 
-        if opts.square_brackets_for_function {
+        if opts.latex {
+            f.write_str("\\right)")
+        } else if opts.square_brackets_for_function {
             f.write_char(']')
         } else {
             f.write_char(')')
@@ -523,9 +550,17 @@ impl<'a> FormattedPrintPow for PowView<'a> {
                 };
 
         if base_needs_parentheses {
-            f.write_char('(')?;
+            if opts.latex {
+                f.write_str("\\left(")?;
+            } else {
+                f.write_char('(')?;
+            }
             b.fmt_output(f, opts, print_state)?;
-            f.write_char(')')?;
+            if opts.latex {
+                f.write_str("\\right)")?;
+            } else {
+                f.write_char(')')?;
+            }
         } else {
             b.fmt_output(f, opts, print_state)?;
         }

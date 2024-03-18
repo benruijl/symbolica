@@ -61,7 +61,7 @@ If you want to use Symbolica as a library in Rust, simply include it in the `Car
 
 ```toml
 [dependencies]
-symbolica = "0.2"
+symbolica = "0.3"
 ```
 
 # Examples

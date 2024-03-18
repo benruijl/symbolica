@@ -1043,7 +1043,7 @@ impl<'a> FromPyObject<'a> for Symbol {
             match a.expr.as_view() {
                 AtomView::Var(v) => Ok(v.get_symbol()),
                 e => Err(exceptions::PyValueError::new_err(format!(
-                    "Expected variable instead of {:?}",
+                    "Expected variable instead of {}",
                     e
                 ))),
             }
@@ -2097,7 +2097,7 @@ impl PythonExpression {
             AtomView::Add(_) | AtomView::Mul(_) | AtomView::Fun(_) => {}
             x => {
                 return Err(exceptions::PyValueError::new_err(format!(
-                    "Non-iterable type: {:?}",
+                    "Non-iterable type: {}",
                     x
                 )));
             }
@@ -2172,7 +2172,7 @@ impl PythonExpression {
                 AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {:?}",
+                        "Expected variable instead of {}",
                         e
                     )))?;
                 }
@@ -2404,7 +2404,7 @@ impl PythonExpression {
                     AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {:?}",
+                            "Expected variable instead of {}",
                             e
                         )))?;
                     }
@@ -2423,10 +2423,7 @@ impl PythonExpression {
             .to_polynomial(&RationalField::new(), var_map.as_ref())
             .map(|x| PythonPolynomial { poly: Arc::new(x) })
             .map_err(|e| {
-                exceptions::PyValueError::new_err(format!(
-                    "Could not convert to polynomial: {:?}",
-                    e
-                ))
+                exceptions::PyValueError::new_err(format!("Could not convert to polynomial: {}", e))
             })
     }
 
@@ -2461,7 +2458,7 @@ impl PythonExpression {
                     AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {:?}",
+                            "Expected variable instead of {}",
                             e
                         )))?;
                     }
@@ -2480,10 +2477,7 @@ impl PythonExpression {
             .to_rational_polynomial(&RationalField::new(), &IntegerRing::new(), var_map.as_ref())
             .map(|x| PythonRationalPolynomial { poly: Arc::new(x) })
             .map_err(|e| {
-                exceptions::PyValueError::new_err(format!(
-                    "Could not convert to polynomial: {:?}",
-                    e
-                ))
+                exceptions::PyValueError::new_err(format!("Could not convert to polynomial: {}", e))
             })
     }
 
@@ -2499,7 +2493,7 @@ impl PythonExpression {
                     AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {:?}",
+                            "Expected variable instead of {}",
                             e
                         )))?;
                     }
@@ -2518,10 +2512,7 @@ impl PythonExpression {
             .to_rational_polynomial(&RationalField::new(), &IntegerRing::new(), var_map.as_ref())
             .map(|x| PythonRationalPolynomialSmallExponent { poly: Arc::new(x) })
             .map_err(|e| {
-                exceptions::PyValueError::new_err(format!(
-                    "Could not convert to polynomial: {:?}",
-                    e
-                ))
+                exceptions::PyValueError::new_err(format!("Could not convert to polynomial: {}", e))
             })
     }
 
@@ -2712,7 +2703,7 @@ impl PythonExpression {
                 AtomView::Var(v) => vars.push(v.get_symbol().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {:?}",
+                        "Expected variable instead of {}",
                         e
                     )))?;
                 }
@@ -2720,7 +2711,7 @@ impl PythonExpression {
         }
 
         let res = AtomView::solve_linear_system::<u16>(&system_b, &vars).map_err(|e| {
-            exceptions::PyValueError::new_err(format!("Could not solve system: {:?}", e))
+            exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
         })?;
 
         Ok(res
@@ -2742,7 +2733,7 @@ impl PythonExpression {
     pub fn evaluate(
         &self,
         constants: HashMap<PythonExpression, f64>,
-        functions: HashMap<PythonExpression, PyObject>,
+        functions: HashMap<Variable, PyObject>,
     ) -> PyResult<f64> {
         let mut cache = HashMap::default();
 
@@ -2754,12 +2745,12 @@ impl PythonExpression {
         let functions = functions
             .into_iter()
             .map(|(k, v)| {
-                let id = if let AtomView::Var(v) = k.expr.as_view() {
-                    v.get_symbol()
+                let id = if let Variable::Symbol(v) = k {
+                    v
                 } else {
                     Err(exceptions::PyValueError::new_err(format!(
                         "Expected function name instead of {:?}",
-                        k.expr
+                        k
                     )))?
                 };
 
@@ -2796,7 +2787,7 @@ impl PythonExpression {
         &self,
         py: Python<'py>,
         constants: HashMap<PythonExpression, Complex<f64>>,
-        functions: HashMap<PythonExpression, PyObject>,
+        functions: HashMap<Variable, PyObject>,
     ) -> PyResult<&'py PyComplex> {
         let mut cache = HashMap::default();
 
@@ -2808,12 +2799,12 @@ impl PythonExpression {
         let functions = functions
             .into_iter()
             .map(|(k, v)| {
-                let id = if let AtomView::Var(v) = k.expr.as_view() {
-                    v.get_symbol()
+                let id = if let Variable::Symbol(v) = k {
+                    v
                 } else {
                     Err(exceptions::PyValueError::new_err(format!(
                         "Expected function name instead of {:?}",
-                        k.expr
+                        k
                     )))?
                 };
 

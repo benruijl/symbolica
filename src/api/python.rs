@@ -707,6 +707,9 @@ impl PythonPattern {
     /// Restrictions on pattern can be supplied through `cond`. The settings `non_greedy_wildcards` can be used to specify
     /// wildcards that try to match as little as possible.
     ///
+    /// The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+    /// The first level is 0 and the level is increased when going one level deeper in the expression tree.
+    ///
     /// Examples
     /// --------
     ///
@@ -721,37 +724,40 @@ impl PythonPattern {
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
+        level_range: Option<(usize, Option<usize>)>,
     ) -> PyResult<PythonPattern> {
-        let settings = if let Some(ngw) = non_greedy_wildcards {
-            Some(MatchSettings {
-                non_greedy_wildcards: ngw
-                    .iter()
-                    .map(|x| match x.expr.as_view() {
-                        AtomView::Var(v) => {
-                            let name = v.get_symbol();
-                            if v.get_wildcard_level() == 0 {
-                                return Err(exceptions::PyTypeError::new_err(
-                                    "Only wildcards can be restricted.",
-                                ));
-                            }
-                            Ok(name)
+        let mut settings = MatchSettings::default();
+
+        if let Some(ngw) = non_greedy_wildcards {
+            settings.non_greedy_wildcards = ngw
+                .iter()
+                .map(|x| match x.expr.as_view() {
+                    AtomView::Var(v) => {
+                        let name = v.get_symbol();
+                        if v.get_wildcard_level() == 0 {
+                            return Err(exceptions::PyTypeError::new_err(
+                                "Only wildcards can be restricted.",
+                            ));
                         }
-                        _ => Err(exceptions::PyTypeError::new_err(
-                            "Only wildcards can be restricted.",
-                        )),
-                    })
-                    .collect::<Result<_, _>>()?,
-            })
-        } else {
-            None
-        };
+                        Ok(name)
+                    }
+                    _ => Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    )),
+                })
+                .collect::<Result<_, _>>()?;
+        }
+        if let Some(level_range) = level_range {
+            settings.level_range = level_range;
+        }
 
         return append_transformer!(
             self,
             Transformer::ReplaceAll(
                 (*lhs.to_pattern()?.expr).clone(),
                 (*rhs.to_pattern()?.expr).clone(),
-                cond.map(|r| r.condition.as_ref().clone()),
+                cond.map(|r| r.condition.as_ref().clone())
+                    .unwrap_or_default(),
                 settings,
             )
         );
@@ -2543,11 +2549,15 @@ impl PythonExpression {
         &self,
         lhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
+        level_range: Option<(usize, Option<usize>)>,
     ) -> PyResult<PythonMatchIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
             .unwrap_or(Arc::new(Condition::default()));
-        let settings = Arc::new(MatchSettings::default());
+        let settings = Arc::new(MatchSettings {
+            level_range: level_range.unwrap_or((0, None)),
+            ..MatchSettings::default()
+        });
         Ok(PythonMatchIterator::new(
             (
                 lhs.to_pattern()?.expr,
@@ -2563,6 +2573,9 @@ impl PythonExpression {
 
     /// Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
+    ///
+    /// The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+    /// The first level is 0 and the level is increased when going one level deeper in the expression tree.
     ///
     /// Examples
     /// --------
@@ -2585,11 +2598,15 @@ impl PythonExpression {
         lhs: ConvertibleToPattern,
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
+        level_range: Option<(usize, Option<usize>)>,
     ) -> PyResult<PythonReplaceIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
             .unwrap_or(Arc::new(Condition::default()));
-        let settings = Arc::new(MatchSettings::default());
+        let settings = Arc::new(MatchSettings {
+            level_range: level_range.unwrap_or((0, None)),
+            ..MatchSettings::default()
+        });
 
         Ok(PythonReplaceIterator::new(
             (
@@ -2608,6 +2625,9 @@ impl PythonExpression {
     /// Replace all atoms matching the pattern `pattern` by the right-hand side `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
+    /// The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+    /// The first level is 0 and the level is increased when going one level deeper in the expression tree.
+    ///
     /// The entire operation can be repeated until there are no more matches using `repeat=True`.
     ///
     /// Examples
@@ -2624,34 +2644,36 @@ impl PythonExpression {
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
+        level_range: Option<(usize, Option<usize>)>,
         repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
         let rhs = &rhs.to_pattern()?.expr;
 
-        let settings = if let Some(ngw) = non_greedy_wildcards {
-            Some(MatchSettings {
-                non_greedy_wildcards: ngw
-                    .iter()
-                    .map(|x| match x.expr.as_view() {
-                        AtomView::Var(v) => {
-                            let name = v.get_symbol();
-                            if v.get_wildcard_level() == 0 {
-                                return Err(exceptions::PyTypeError::new_err(
-                                    "Only wildcards can be restricted.",
-                                ));
-                            }
-                            Ok(name)
+        let mut settings = MatchSettings::default();
+
+        if let Some(ngw) = non_greedy_wildcards {
+            settings.non_greedy_wildcards = ngw
+                .iter()
+                .map(|x| match x.expr.as_view() {
+                    AtomView::Var(v) => {
+                        let name = v.get_symbol();
+                        if v.get_wildcard_level() == 0 {
+                            return Err(exceptions::PyTypeError::new_err(
+                                "Only wildcards can be restricted.",
+                            ));
                         }
-                        _ => Err(exceptions::PyTypeError::new_err(
-                            "Only wildcards can be restricted.",
-                        )),
-                    })
-                    .collect::<Result<_, _>>()?,
-            })
-        } else {
-            None
-        };
+                        Ok(name)
+                    }
+                    _ => Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    )),
+                })
+                .collect::<Result<_, _>>()?;
+        }
+        if let Some(level_range) = level_range {
+            settings.level_range = level_range;
+        }
 
         let mut expr_ref = self.expr.as_view();
 
@@ -2661,7 +2683,7 @@ impl PythonExpression {
             expr_ref,
             rhs,
             cond.as_ref().map(|r| r.condition.as_ref()),
-            settings.as_ref(),
+            Some(&settings),
             &mut out,
         ) {
             if !repeat.unwrap_or(false) {

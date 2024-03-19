@@ -303,7 +303,6 @@ impl Pattern {
     /// Substitute the wildcards in the pattern with the values in the match stack.
     pub fn substitute_wildcards(
         &self,
-
         workspace: &Workspace,
         out: &mut Atom,
         match_stack: &MatchStack,
@@ -504,7 +503,6 @@ impl Pattern {
         &'a self,
         target: AtomView<'a>,
         rhs: &'a Pattern,
-
         conditions: &'a Condition<WildcardAndRestriction>,
         settings: &'a MatchSettings,
     ) -> ReplaceIterator<'a, 'a> {
@@ -558,6 +556,7 @@ impl Pattern {
             workspace,
             conditions.unwrap_or(&Condition::default()),
             settings.unwrap_or(&MatchSettings::default()),
+            0,
             out,
         );
 
@@ -578,11 +577,19 @@ impl Pattern {
         workspace: &Workspace,
         conditions: &Condition<WildcardAndRestriction>,
         settings: &MatchSettings,
+        level: usize,
         out: &mut Atom,
     ) -> bool {
-        let mut match_stack = MatchStack::new(conditions, settings);
+        if let Some(max_level) = settings.level_range.1 {
+            if level >= max_level {
+                out.set_from_view(&target);
+                return false;
+            }
+        }
 
-        if self.could_match(target) {
+        if level >= settings.level_range.0 && self.could_match(target) {
+            let mut match_stack = MatchStack::new(conditions, settings);
+
             let mut it = AtomMatchIterator::new(self, target);
             //let mut it = SubSliceIterator::new(self, target, &match_stack, true);
             if let Some((_, used_flags)) = it.next(&mut match_stack) {
@@ -644,6 +651,7 @@ impl Pattern {
                         workspace,
                         conditions,
                         settings,
+                        level + 1,
                         &mut child_buf,
                     );
 
@@ -663,6 +671,7 @@ impl Pattern {
                     workspace,
                     conditions,
                     settings,
+                    level + 1,
                     &mut base_out,
                 );
 
@@ -673,6 +682,7 @@ impl Pattern {
                     workspace,
                     conditions,
                     settings,
+                    level + 1,
                     &mut exp_out,
                 );
 
@@ -693,6 +703,7 @@ impl Pattern {
                         workspace,
                         conditions,
                         settings,
+                        level + 1,
                         &mut child_buf,
                     );
 
@@ -715,6 +726,7 @@ impl Pattern {
                         workspace,
                         conditions,
                         settings,
+                        level + 1,
                         &mut child_buf,
                     );
 
@@ -735,7 +747,6 @@ impl Pattern {
     pub fn pattern_match<'a>(
         &'a self,
         target: AtomView<'a>,
-
         conditions: &'a Condition<WildcardAndRestriction>,
         settings: &'a MatchSettings,
     ) -> PatternAtomTreeIterator<'a, 'a> {
@@ -1133,9 +1144,14 @@ impl<'a> Match<'a> {
     }
 }
 
+/// Settings related to pattern matching.
 #[derive(Default, Clone)]
 pub struct MatchSettings {
+    /// Specifies wildcards that try to match as little as possible.
     pub non_greedy_wildcards: Vec<Symbol>,
+    /// Specifies the `[min,max)` level at which the pattern is allowed to match.
+    /// The first level is 0 and the level is increased when going one level deeper in the expression tree.
+    pub level_range: (usize, Option<usize>),
 }
 
 /// An insertion-ordered map of wildcard identifiers to a subexpressions.
@@ -1949,12 +1965,14 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
 /// Iterator over the atoms of an expression tree.
 pub struct AtomTreeIterator<'a> {
     stack: Vec<(Option<usize>, AtomView<'a>)>,
+    level_range: (usize, Option<usize>),
 }
 
 impl<'a> AtomTreeIterator<'a> {
-    pub fn new(target: AtomView<'a>) -> AtomTreeIterator<'a> {
+    pub fn new(target: AtomView<'a>, level_range: (usize, Option<usize>)) -> AtomTreeIterator<'a> {
         AtomTreeIterator {
             stack: vec![(None, target)],
+            level_range,
         }
     }
 }
@@ -1966,6 +1984,12 @@ impl<'a> Iterator for AtomTreeIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((ind, atom)) = self.stack.pop() {
             if let Some(ind) = ind {
+                if let Some(max_level) = self.level_range.1 {
+                    if self.stack.len() + 1 >= max_level {
+                        continue;
+                    }
+                }
+
                 let slice = match atom {
                     AtomView::Fun(f) => f.to_slice(),
                     AtomView::Pow(p) => p.to_slice(),
@@ -1990,7 +2014,10 @@ impl<'a> Iterator for AtomTreeIterator<'a> {
                     .map(|(ind, _)| ind.unwrap() - 1)
                     .collect::<Vec<_>>();
                 self.stack.push((Some(0), atom));
-                return Some((location, atom));
+
+                if self.stack.len() > self.level_range.0 {
+                    return Some((location, atom));
+                }
             }
         }
 
@@ -2004,7 +2031,6 @@ pub struct PatternAtomTreeIterator<'a, 'b> {
     atom_tree_iterator: AtomTreeIterator<'a>,
     current_target: Option<AtomView<'a>>,
     pattern_iter: Option<AtomMatchIterator<'a, 'b>>,
-
     match_stack: MatchStack<'a, 'b>,
     tree_pos: Vec<usize>,
     first_match: bool,
@@ -2014,16 +2040,14 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
     pub fn new(
         pattern: &'b Pattern,
         target: AtomView<'a>,
-
         conditions: &'a Condition<WildcardAndRestriction>,
         settings: &'a MatchSettings,
     ) -> PatternAtomTreeIterator<'a, 'b> {
         PatternAtomTreeIterator {
             pattern,
-            atom_tree_iterator: AtomTreeIterator::new(target),
+            atom_tree_iterator: AtomTreeIterator::new(target, settings.level_range),
             current_target: None,
             pattern_iter: None,
-
             match_stack: MatchStack::new(conditions, settings),
             tree_pos: Vec::new(),
             first_match: false,
@@ -2077,7 +2101,6 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
         pattern: &'b Pattern,
         target: AtomView<'a>,
         rhs: &'b Pattern,
-
         conditions: &'a Condition<WildcardAndRestriction>,
         settings: &'a MatchSettings,
     ) -> ReplaceIterator<'a, 'b> {

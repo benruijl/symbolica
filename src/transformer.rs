@@ -70,8 +70,8 @@ pub enum Transformer {
     ReplaceAll(
         Pattern,
         Pattern,
-        Option<Condition<WildcardAndRestriction>>,
-        Option<MatchSettings>,
+        Condition<WildcardAndRestriction>,
+        MatchSettings,
     ),
     /// Take the product of a list of arguments in the rhs.
     Product,
@@ -191,8 +191,8 @@ impl Transformer {
                         input,
                         rhs,
                         workspace,
-                        cond.as_ref(),
-                        settings.as_ref(),
+                        cond.into(),
+                        settings.into(),
                         out,
                     );
                 }

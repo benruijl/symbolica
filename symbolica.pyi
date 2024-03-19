@@ -701,10 +701,14 @@ class Expression:
         self,
         lhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
     ) -> MatchIterator:
         """
         Return an iterator over the pattern `self` matching to `lhs`.
         Restrictions on pattern can be supplied through `cond`.
+
+        The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+        The first level is 0 and the level is increased when going one level deeper in the expression tree.
 
         Examples
         --------
@@ -722,10 +726,14 @@ class Expression:
         lhs: Transformer | Expression | int,
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
     ) -> ReplaceIterator:
         """
         Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
         Restrictions on pattern can be supplied through `cond`.
+
+        The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+        The first level is 0 and the level is increased when going one level deeper in the expression tree.
 
         Examples
         --------
@@ -751,13 +759,17 @@ class Expression:
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
         repeat: Optional[bool] = False,
     ) -> Expression:
         """
         Replace all atoms matching the pattern `pattern` by the right-hand side `rhs`.
         Restrictions on pattern can be supplied through `cond`.
-        The settings `non_greedy_wildcards` can be used to specify
+        The setting `non_greedy_wildcards` can be used to specify
         wildcards that try to match as little as possible.
+
+        The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+        The first level is 0 and the level is increased when going one level deeper in the expression tree.
 
         The entire operation can be repeated until there are no more matches using `repeat=True`.
 
@@ -1152,12 +1164,16 @@ class Transformer:
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
     ) -> Transformer:
         """
         Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
         Restrictions on pattern can be supplied through `cond`.
         The settings `non_greedy_wildcards` can be used to specify
         wildcards that try to match as little as possible.
+
+        The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+        The first level is 0 and the level is increased when going one level deeper in the expression tree.
 
         Examples
         --------

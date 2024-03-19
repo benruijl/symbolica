@@ -64,6 +64,20 @@ impl From<i64> for Integer {
     }
 }
 
+impl From<i128> for Integer {
+    #[inline]
+    fn from(value: i128) -> Self {
+        Integer::from_double(value)
+    }
+}
+
+impl From<u32> for Integer {
+    #[inline]
+    fn from(value: u32) -> Self {
+        Integer::Natural(value as i64)
+    }
+}
+
 impl From<u64> for Integer {
     #[inline]
     fn from(value: u64) -> Self {
@@ -71,6 +85,17 @@ impl From<u64> for Integer {
             Integer::Natural(value as i64)
         } else {
             Integer::Double(value as i128)
+        }
+    }
+}
+
+impl From<u128> for Integer {
+    #[inline]
+    fn from(value: u128) -> Self {
+        if value <= i128::MAX as u128 {
+            Integer::from_double(value as i128)
+        } else {
+            Integer::Large(value.into())
         }
     }
 }

@@ -60,6 +60,13 @@ impl From<i64> for Rational {
     }
 }
 
+impl From<f64> for Rational {
+    #[inline]
+    fn from(value: f64) -> Self {
+        Rational::from_f64(value)
+    }
+}
+
 impl From<u64> for Rational {
     #[inline]
     fn from(value: u64) -> Self {
@@ -308,6 +315,84 @@ impl Rational {
                 }
             }
             Rational::Large(r) => Rational::from_large(r.neg().into()),
+        }
+    }
+
+    /// Convert a floating point number to its exact rational number equivalent.
+    /// Use [`Rational::truncate_denominator`] to get an approximation with a smaller denominator.
+    pub fn from_f64(f: f64) -> Rational {
+        assert!(f.is_finite());
+
+        // taken from num-traits
+        let bits: u64 = f.to_bits();
+        let sign: i8 = if bits >> 63 == 0 { 1 } else { -1 };
+        let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
+        let mantissa = if exponent == 0 {
+            (bits & 0xfffffffffffff) << 1
+        } else {
+            (bits & 0xfffffffffffff) | 0x10000000000000
+        };
+        // Exponent bias + mantissa shift
+        exponent -= 1023 + 52;
+
+        // superfluous factors of 2 will be divided out in the conversion to rational
+        if exponent < 0 {
+            (
+                (sign as i64 * mantissa as i64).into(),
+                Integer::from(2).pow(-exponent as u64),
+            )
+                .into()
+        } else {
+            (
+                &Integer::from(sign as i64 * mantissa as i64)
+                    * &Integer::from(2).pow(exponent as u64),
+                1.into(),
+            )
+                .into()
+        }
+    }
+
+    /// Return a best approximation of the rational number where the denominator
+    /// is less than or equal to `max_denominator`.
+    pub fn truncate_denominator(&self, max_denominator: &Integer) -> Rational {
+        assert!(!max_denominator.is_zero() && !max_denominator.is_negative());
+
+        if &self.denominator() < max_denominator {
+            return self.clone();
+        }
+
+        let (mut p0, mut q0, mut p1, mut q1) = (
+            Integer::zero(),
+            Integer::one(),
+            Integer::one(),
+            Integer::zero(),
+        );
+
+        let (mut n, mut d) = (self.numerator().abs(), self.denominator());
+        loop {
+            let a = &n / &d;
+            let q2 = &q0 + &(&a * &q1);
+            if &q2 > max_denominator {
+                break;
+            }
+            (p1, p0, q0, q1) = (p0 + &(&a * &p1), p1, q1, q2);
+            (d, n) = (&n - &a * &d, d);
+        }
+
+        let k = &(max_denominator - &q0) / &q1;
+        let bound1 = (p0 + &(&k * &p1), &q0 + &(&k * &q1)).into();
+        let bound2 = (p1, q1).into();
+
+        let res = if (&bound2 - self).abs() <= (&bound1 - self).abs() {
+            bound2
+        } else {
+            bound1
+        };
+
+        if self.is_negative() {
+            res.neg()
+        } else {
+            res
         }
     }
 

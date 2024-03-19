@@ -147,14 +147,21 @@ class Expression:
         """
 
     @classmethod
-    def num(_cls, num: int) -> Expression:
-        """Create a new Symbolica number.
+    def num(_cls, num: int | float, max_denom: Optional[int] = None) -> Expression:
+        """Create a new Symbolica number from an int or a float.
+        A floating point number is converted to its rational number equivalent,
+        but it can also be truncated by specifying the maximal denominator value.
 
         Examples
         --------
         >>> e = Expression.num(1) / 2
         >>> print(e)
         1/2
+
+        >>> print(Expression.num(0.33))
+        >>> print(Expression.num(0.33, 5))
+        5944751508129055/18014398509481984
+        1/3
         """
 
     @classmethod

@@ -24,7 +24,7 @@ use crate::{
         finite_field::{FiniteField, FiniteFieldCore, ToFiniteField},
         float::Complex,
         integer::{Integer, IntegerRing},
-        rational::RationalField,
+        rational::{Rational, RationalField},
         rational_polynomial::{
             FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
         },
@@ -1292,22 +1292,49 @@ impl PythonExpression {
         Ok(result)
     }
 
-    /// Create a new Symbolica number.
+    /// Create a new Symbolica number from an int or a float.
+    /// A floating point number is converted to its rational number equivalent,
+    /// but it can also be truncated by specifying the maximal denominator value.
     ///
     /// Examples
     /// --------
     /// >>> e = Expression.num(1) / 2
     /// >>> print(e)
     /// 1/2
+    ///
+    /// >>> print(Expression.num(0.33))
+    /// >>> print(Expression.num(0.33, 5))
+    /// 5944751508129055/18014398509481984
+    /// 1/3
     #[classmethod]
-    pub fn num(_cls: &PyType, num: &PyLong) -> PyResult<PythonExpression> {
-        if let Ok(num) = num.extract::<i64>() {
+    pub fn num(
+        _cls: &PyType,
+        py: Python,
+        num: PyObject,
+        max_denom: Option<usize>,
+    ) -> PyResult<PythonExpression> {
+        if let Ok(num) = num.extract::<i64>(py) {
             Ok(PythonExpression {
                 expr: Arc::new(Atom::new_num(num)),
             })
-        } else {
+        } else if let Ok(num) = num.extract::<&PyLong>(py) {
             let a = format!("{}", num);
             PythonExpression::parse(_cls, &a)
+        } else if let Ok(f) = num.extract::<f64>(py) {
+            if !f.is_finite() {
+                return Err(exceptions::PyValueError::new_err("Number must be finite"));
+            }
+
+            let mut r: Rational = f.into();
+            if let Some(max_denom) = max_denom {
+                r = r.truncate_denominator(&(max_denom as u64).into())
+            }
+
+            Ok(PythonExpression {
+                expr: Arc::new(Atom::new_num(r)),
+            })
+        } else {
+            Err(exceptions::PyValueError::new_err("Not a valid number"))
         }
     }
 

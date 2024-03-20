@@ -581,7 +581,7 @@ impl Pattern {
         out: &mut Atom,
     ) -> bool {
         if let Some(max_level) = settings.level_range.1 {
-            if level >= max_level {
+            if level > max_level {
                 out.set_from_view(&target);
                 return false;
             }
@@ -1165,7 +1165,7 @@ impl<'a> Match<'a> {
 pub struct MatchSettings {
     /// Specifies wildcards that try to match as little as possible.
     pub non_greedy_wildcards: Vec<Symbol>,
-    /// Specifies the `[min,max)` level at which the pattern is allowed to match.
+    /// Specifies the `[min,max]` level at which the pattern is allowed to match.
     /// The first level is 0 and the level is increased when entering a function, or going one level deeper in the expression tree,
     /// depending on `level_is_tree_depth`.
     pub level_range: (usize, Option<usize>),
@@ -2003,7 +2003,7 @@ impl<'a> Iterator for AtomTreeIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((ind, level, atom)) = self.stack.pop() {
             if let Some(max_level) = self.settings.level_range.1 {
-                if level >= max_level {
+                if level > max_level {
                     continue;
                 }
             }

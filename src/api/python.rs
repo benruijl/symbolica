@@ -707,7 +707,7 @@ impl PythonPattern {
     /// Restrictions on pattern can be supplied through `cond`. The settings `non_greedy_wildcards` can be used to specify
     /// wildcards that try to match as little as possible.
     ///
-    /// The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+    /// The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
     /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
     /// depending on `level_is_tree_depth`.
     ///
@@ -2608,7 +2608,7 @@ impl PythonExpression {
     /// Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
-    /// The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+    /// The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
     /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
     /// depending on `level_is_tree_depth`.
     ///
@@ -2662,7 +2662,7 @@ impl PythonExpression {
     /// Replace all atoms matching the pattern `pattern` by the right-hand side `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
-    /// The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+    /// The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
     /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
     /// depending on `level_is_tree_depth`.
     ///

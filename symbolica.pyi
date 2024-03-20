@@ -715,7 +715,7 @@ class Expression:
         Return an iterator over the pattern `self` matching to `lhs`.
         Restrictions on pattern can be supplied through `cond`.
 
-        The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+        The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
         The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
         depending on `level_is_tree_depth`.
 
@@ -742,7 +742,7 @@ class Expression:
         Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
         Restrictions on pattern can be supplied through `cond`.
 
-        The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+        The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
         The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
         depending on `level_is_tree_depth`.
 
@@ -780,7 +780,7 @@ class Expression:
         The setting `non_greedy_wildcards` can be used to specify
         wildcards that try to match as little as possible.
 
-        The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+        The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
         The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
         depending on `level_is_tree_depth`.
 
@@ -1186,7 +1186,7 @@ class Transformer:
         The settings `non_greedy_wildcards` can be used to specify
         wildcards that try to match as little as possible.
 
-        The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
+        The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
         The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
         depending on `level_is_tree_depth`.
 

@@ -671,7 +671,11 @@ impl Pattern {
                     workspace,
                     conditions,
                     settings,
-                    level + 1,
+                    if settings.level_is_tree_depth {
+                        level + 1
+                    } else {
+                        level
+                    },
                     &mut base_out,
                 );
 
@@ -682,7 +686,11 @@ impl Pattern {
                     workspace,
                     conditions,
                     settings,
-                    level + 1,
+                    if settings.level_is_tree_depth {
+                        level + 1
+                    } else {
+                        level
+                    },
                     &mut exp_out,
                 );
 
@@ -703,7 +711,11 @@ impl Pattern {
                         workspace,
                         conditions,
                         settings,
-                        level + 1,
+                        if settings.level_is_tree_depth {
+                            level + 1
+                        } else {
+                            level
+                        },
                         &mut child_buf,
                     );
 
@@ -726,7 +738,11 @@ impl Pattern {
                         workspace,
                         conditions,
                         settings,
-                        level + 1,
+                        if settings.level_is_tree_depth {
+                            level + 1
+                        } else {
+                            level
+                        },
                         &mut child_buf,
                     );
 
@@ -1150,8 +1166,11 @@ pub struct MatchSettings {
     /// Specifies wildcards that try to match as little as possible.
     pub non_greedy_wildcards: Vec<Symbol>,
     /// Specifies the `[min,max)` level at which the pattern is allowed to match.
-    /// The first level is 0 and the level is increased when going one level deeper in the expression tree.
+    /// The first level is 0 and the level is increased when entering a function, or going one level deeper in the expression tree,
+    /// depending on `level_is_tree_depth`.
     pub level_range: (usize, Option<usize>),
+    /// Determine whether a level reflects the expression tree depth or the function depth.
+    pub level_is_tree_depth: bool,
 }
 
 /// An insertion-ordered map of wildcard identifiers to a subexpressions.
@@ -1964,15 +1983,15 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
 
 /// Iterator over the atoms of an expression tree.
 pub struct AtomTreeIterator<'a> {
-    stack: Vec<(Option<usize>, AtomView<'a>)>,
-    level_range: (usize, Option<usize>),
+    stack: Vec<(Option<usize>, usize, AtomView<'a>)>,
+    settings: MatchSettings,
 }
 
 impl<'a> AtomTreeIterator<'a> {
-    pub fn new(target: AtomView<'a>, level_range: (usize, Option<usize>)) -> AtomTreeIterator<'a> {
+    pub fn new(target: AtomView<'a>, settings: MatchSettings) -> AtomTreeIterator<'a> {
         AtomTreeIterator {
-            stack: vec![(None, target)],
-            level_range,
+            stack: vec![(None, 0, target)],
+            settings,
         }
     }
 }
@@ -1982,14 +2001,14 @@ impl<'a> Iterator for AtomTreeIterator<'a> {
 
     /// Return the next position and atom in the tree.
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((ind, atom)) = self.stack.pop() {
-            if let Some(ind) = ind {
-                if let Some(max_level) = self.level_range.1 {
-                    if self.stack.len() + 1 >= max_level {
-                        continue;
-                    }
+        while let Some((ind, level, atom)) = self.stack.pop() {
+            if let Some(max_level) = self.settings.level_range.1 {
+                if level >= max_level {
+                    continue;
                 }
+            }
 
+            if let Some(ind) = ind {
                 let slice = match atom {
                     AtomView::Fun(f) => f.to_slice(),
                     AtomView::Pow(p) => p.to_slice(),
@@ -2003,19 +2022,28 @@ impl<'a> Iterator for AtomTreeIterator<'a> {
                 if ind < slice.len() {
                     let new_atom = slice.get(ind);
 
-                    self.stack.push((Some(ind + 1), atom));
-                    self.stack.push((None, new_atom)); // push the new element on the stack
+                    self.stack.push((Some(ind + 1), level, atom));
+                    self.stack.push((None, level, new_atom)); // push the new element on the stack
                 }
             } else {
                 // return full match and set the position to the first sub element
                 let location = self
                     .stack
                     .iter()
-                    .map(|(ind, _)| ind.unwrap() - 1)
+                    .map(|(ind, _, _)| ind.unwrap() - 1)
                     .collect::<Vec<_>>();
-                self.stack.push((Some(0), atom));
 
-                if self.stack.len() > self.level_range.0 {
+                let new_level = if let AtomView::Fun(_) = atom {
+                    level + 1
+                } else if self.settings.level_is_tree_depth {
+                    level + 1
+                } else {
+                    level
+                };
+
+                self.stack.push((Some(0), new_level, atom));
+
+                if level >= self.settings.level_range.0 {
                     return Some((location, atom));
                 }
             }
@@ -2045,7 +2073,7 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
     ) -> PatternAtomTreeIterator<'a, 'b> {
         PatternAtomTreeIterator {
             pattern,
-            atom_tree_iterator: AtomTreeIterator::new(target, settings.level_range),
+            atom_tree_iterator: AtomTreeIterator::new(target, settings.clone()),
             current_target: None,
             pattern_iter: None,
             match_stack: MatchStack::new(conditions, settings),

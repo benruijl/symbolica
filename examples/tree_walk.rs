@@ -5,7 +5,14 @@ fn main() {
 
     println!("> Tree walk of {}:", expr);
 
-    for (loc, view) in AtomTreeIterator::new(expr.as_view(), (0, None)) {
+    for (loc, view) in AtomTreeIterator::new(
+        expr.as_view(),
+        MatchSettings {
+            level_range: (1, Some(3)),
+            level_is_tree_depth: false,
+            ..Default::default()
+        },
+    ) {
         println!("\tAtom at location {:?}: {}", loc, view);
     }
 }

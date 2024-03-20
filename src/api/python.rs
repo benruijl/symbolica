@@ -708,7 +708,8 @@ impl PythonPattern {
     /// wildcards that try to match as little as possible.
     ///
     /// The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
-    /// The first level is 0 and the level is increased when going one level deeper in the expression tree.
+    /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+    /// depending on `level_is_tree_depth`.
     ///
     /// Examples
     /// --------
@@ -725,6 +726,7 @@ impl PythonPattern {
         cond: Option<PythonPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
     ) -> PyResult<PythonPattern> {
         let mut settings = MatchSettings::default();
 
@@ -749,6 +751,9 @@ impl PythonPattern {
         }
         if let Some(level_range) = level_range {
             settings.level_range = level_range;
+        }
+        if let Some(level_is_tree_depth) = level_is_tree_depth {
+            settings.level_is_tree_depth = level_is_tree_depth;
         }
 
         return append_transformer!(
@@ -2577,12 +2582,14 @@ impl PythonExpression {
         lhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
         level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
     ) -> PyResult<PythonMatchIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
             .unwrap_or(Arc::new(Condition::default()));
         let settings = Arc::new(MatchSettings {
             level_range: level_range.unwrap_or((0, None)),
+            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
             ..MatchSettings::default()
         });
         Ok(PythonMatchIterator::new(
@@ -2602,7 +2609,8 @@ impl PythonExpression {
     /// Restrictions on pattern can be supplied through `cond`.
     ///
     /// The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
-    /// The first level is 0 and the level is increased when going one level deeper in the expression tree.
+    /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+    /// depending on `level_is_tree_depth`.
     ///
     /// Examples
     /// --------
@@ -2626,12 +2634,14 @@ impl PythonExpression {
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
         level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
     ) -> PyResult<PythonReplaceIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
             .unwrap_or(Arc::new(Condition::default()));
         let settings = Arc::new(MatchSettings {
             level_range: level_range.unwrap_or((0, None)),
+            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
             ..MatchSettings::default()
         });
 
@@ -2653,7 +2663,8 @@ impl PythonExpression {
     /// Restrictions on pattern can be supplied through `cond`.
     ///
     /// The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
-    /// The first level is 0 and the level is increased when going one level deeper in the expression tree.
+    /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+    /// depending on `level_is_tree_depth`.
     ///
     /// The entire operation can be repeated until there are no more matches using `repeat=True`.
     ///
@@ -2672,6 +2683,7 @@ impl PythonExpression {
         cond: Option<PythonPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
         repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
@@ -2700,6 +2712,9 @@ impl PythonExpression {
         }
         if let Some(level_range) = level_range {
             settings.level_range = level_range;
+        }
+        if let Some(level_is_tree_depth) = level_is_tree_depth {
+            settings.level_is_tree_depth = level_is_tree_depth;
         }
 
         let mut expr_ref = self.expr.as_view();

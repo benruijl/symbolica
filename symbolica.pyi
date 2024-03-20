@@ -709,13 +709,15 @@ class Expression:
         lhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
     ) -> MatchIterator:
         """
         Return an iterator over the pattern `self` matching to `lhs`.
         Restrictions on pattern can be supplied through `cond`.
 
         The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
-        The first level is 0 and the level is increased when going one level deeper in the expression tree.
+        The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+        depending on `level_is_tree_depth`.
 
         Examples
         --------
@@ -734,13 +736,15 @@ class Expression:
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
     ) -> ReplaceIterator:
         """
         Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
         Restrictions on pattern can be supplied through `cond`.
 
         The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
-        The first level is 0 and the level is increased when going one level deeper in the expression tree.
+        The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+        depending on `level_is_tree_depth`.
 
         Examples
         --------
@@ -767,6 +771,7 @@ class Expression:
         cond: Optional[PatternRestriction] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
         repeat: Optional[bool] = False,
     ) -> Expression:
         """
@@ -776,7 +781,8 @@ class Expression:
         wildcards that try to match as little as possible.
 
         The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
-        The first level is 0 and the level is increased when going one level deeper in the expression tree.
+        The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+        depending on `level_is_tree_depth`.
 
         The entire operation can be repeated until there are no more matches using `repeat=True`.
 
@@ -1172,6 +1178,7 @@ class Transformer:
         cond: Optional[PatternRestriction] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
     ) -> Transformer:
         """
         Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
@@ -1180,7 +1187,8 @@ class Transformer:
         wildcards that try to match as little as possible.
 
         The `level_range` specifies the `[min,max)` level at which the pattern is allowed to match.
-        The first level is 0 and the level is increased when going one level deeper in the expression tree.
+        The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+        depending on `level_is_tree_depth`.
 
         Examples
         --------

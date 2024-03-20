@@ -17,12 +17,12 @@ use crate::{
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
-    integer::IntegerRing,
+    integer::{IntegerRing, Z},
     rational::RationalField,
     EuclideanDomain, Field, Ring,
 };
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FactorizedRationalPolynomialField<R: Ring, E: Exponent> {
     ring: R,
     nvars: usize,
@@ -67,7 +67,7 @@ pub trait FromNumeratorAndFactorizedDenominator<R: Ring, OR: Ring, E: Exponent> 
     ) -> FactorizedRationalPolynomial<OR, E>;
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FactorizedRationalPolynomial<R: Ring, E: Exponent> {
     pub numerator: MultivariatePolynomial<R, E>,
     pub numer_coeff: R::Element,
@@ -175,24 +175,18 @@ impl<E: Exponent> FromNumeratorAndFactorizedDenominator<RationalField, IntegerRi
 
         let (num_int, dens_int) = if num.field.is_one(&content) {
             (
-                num.map_coeff(|c| c.numerator(), IntegerRing::new()),
+                num.map_coeff(|c| c.numerator(), Z),
                 dens.iter()
-                    .map(|(d, p)| (d.map_coeff(|c| c.numerator(), IntegerRing::new()), *p))
+                    .map(|(d, p)| (d.map_coeff(|c| c.numerator(), Z), *p))
                     .collect(),
             )
         } else {
             (
-                num.map_coeff(
-                    |c| num.field.div(c, &content).numerator(),
-                    IntegerRing::new(),
-                ),
+                num.map_coeff(|c| num.field.div(c, &content).numerator(), Z),
                 dens.iter()
                     .map(|(d, p)| {
                         (
-                            d.map_coeff(
-                                |c| num.field.div(c, &content).numerator(),
-                                IntegerRing::new(),
-                            ),
+                            d.map_coeff(|c| num.field.div(c, &content).numerator(), Z),
                             *p,
                         )
                     })

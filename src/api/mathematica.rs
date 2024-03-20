@@ -72,7 +72,7 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                         token.to_rational_polynomial(
                             &workspace,
                             &<$in_field>::new(),
-                            &IntegerRing::new(),
+                            &Z,
                             &symbolica.var_map,
                             &symbolica.var_name_map,
                         )
@@ -101,19 +101,18 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                 )
             } else {
                 if prime >= 0 && prime <= u32::MAX as i64 {
-                    let field = FiniteField::<u32>::new(prime as u32);
-                    let rf: RationalPolynomial<FiniteField<u32>, $exp_size> =
-                        Workspace::get_local()
-                            .with(|workspace| {
-                                token.to_rational_polynomial(
-                                    &workspace,
-                                    &field,
-                                    &field,
-                                    &symbolica.var_map,
-                                    &symbolica.var_name_map,
-                                )
-                            })
-                            .unwrap();
+                    let field = Zp::new(prime as u32);
+                    let rf: RationalPolynomial<Zp, $exp_size> = Workspace::get_local()
+                        .with(|workspace| {
+                            token.to_rational_polynomial(
+                                &workspace,
+                                &field,
+                                &field,
+                                &symbolica.var_map,
+                                &symbolica.var_name_map,
+                            )
+                        })
+                        .unwrap();
 
                     symbolica.buffer.clear();
                     format!(
@@ -137,19 +136,18 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                         }
                     )
                 } else {
-                    let field = FiniteField::<u64>::new(prime as u64);
-                    let rf: RationalPolynomial<FiniteField<u64>, $exp_size> =
-                        Workspace::get_local()
-                            .with(|workspace| {
-                                token.to_rational_polynomial(
-                                    &workspace,
-                                    &field,
-                                    &field,
-                                    &symbolica.var_map,
-                                    &symbolica.var_name_map,
-                                )
-                            })
-                            .unwrap();
+                    let field = Zp64::new(prime as u64);
+                    let rf: RationalPolynomial<Zp64, $exp_size> = Workspace::get_local()
+                        .with(|workspace| {
+                            token.to_rational_polynomial(
+                                &workspace,
+                                &field,
+                                &field,
+                                &symbolica.var_map,
+                                &symbolica.var_name_map,
+                            )
+                        })
+                        .unwrap();
 
                     symbolica.buffer.clear();
                     format!(

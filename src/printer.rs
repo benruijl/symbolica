@@ -152,7 +152,7 @@ impl<'a> fmt::Display for AtomPrinter<'a> {
 
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&State::get_name(*self))
+        f.write_str(State::get_name(*self))
     }
 }
 

@@ -9,7 +9,7 @@ use rand::{thread_rng, Rng};
 use crate::{
     domains::{
         float::NumericalFloatLike,
-        rational::{Rational, RationalField},
+        rational::{Rational, RationalField, Q},
         EuclideanDomain,
     },
     representations::{FunctionBuilder, Symbol},
@@ -224,29 +224,21 @@ impl HornerScheme<RationalField> {
     /// Evaluate a polynomial written in a Horner scheme. For faster
     /// evaluation, convert the Horner scheme into an `InstructionList`.
     pub fn evaluate(&self, samples: &[Rational]) -> Rational {
-        let field = RationalField::new();
         match self {
             HornerScheme::Node(n) => {
                 let e = match &n.content_rest.0 {
                     Some(s) => match &n.content_rest.1 {
-                        Some(s1) => field.add(
-                            &field.mul(
-                                &field.pow(&samples[n.var], n.pow as u64),
-                                &s.evaluate(samples),
-                            ),
+                        Some(s1) => Q.add(
+                            &Q.mul(&Q.pow(&samples[n.var], n.pow as u64), &s.evaluate(samples)),
                             &s1.evaluate(samples),
                         ),
-                        None => field.mul(
-                            &field.pow(&samples[n.var], n.pow as u64),
-                            &s.evaluate(samples),
-                        ),
+                        None => Q.mul(&Q.pow(&samples[n.var], n.pow as u64), &s.evaluate(samples)),
                     },
                     None => match &n.content_rest.1 {
-                        Some(s1) => field.add(
-                            &field.pow(&samples[n.var], n.pow as u64),
-                            &s1.evaluate(samples),
-                        ),
-                        None => field.pow(&samples[n.var], n.pow as u64),
+                        Some(s1) => {
+                            Q.add(&Q.pow(&samples[n.var], n.pow as u64), &s1.evaluate(samples))
+                        }
+                        None => Q.pow(&samples[n.var], n.pow as u64),
                     },
                 };
                 &e * &n.gcd
@@ -440,7 +432,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
             }
         };
 
-        gcd = RationalField::new().gcd(
+        gcd = Q.gcd(
             &gcd,
             match &rest {
                 HornerScheme::Node(n) => &n.gcd,
@@ -1404,8 +1396,8 @@ impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
     /// a variable or a function with fixed arguments.
     ///
     /// All variables and all user functions in the expression must occur in the map.
-    pub fn evaluate<'b>(
-        &'b mut self,
+    pub fn evaluate(
+        &mut self,
         const_map: &HashMap<AtomView<'_>, N>,
         function_map: &HashMap<Symbol, EvaluationFn<N>>,
     ) -> &[N] {
@@ -1746,10 +1738,7 @@ impl ExpressionEvaluator {
                 let mut map = HashMap::default();
                 let mut polys: Vec<MultivariatePolynomial<_, u16>> = joint
                     .iter()
-                    .map(|a| {
-                        a.as_view()
-                            .to_polynomial_with_map(&RationalField::new(), &mut map)
-                    })
+                    .map(|a| a.as_view().to_polynomial_with_map(&Q, &mut map))
                     .collect();
 
                 // fuse the variable maps

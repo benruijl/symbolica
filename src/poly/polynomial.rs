@@ -20,7 +20,7 @@ use smallvec::{smallvec, SmallVec};
 const MAX_DENSE_MUL_BUFFER_SIZE: usize = 1 << 24;
 thread_local! { static DENSE_MUL_BUFFER: Cell<Vec<u32>> = const { Cell::new(Vec::new()) }; }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PolynomialRing<R: Ring, E: Exponent> {
     ring: R,
     nvars: usize,
@@ -667,9 +667,7 @@ impl<F: Ring + Display, E: Exponent, O: MonomialOrder> Display for MultivariateP
     }
 }
 
-impl<F: Ring + PartialEq, E: Exponent, O: MonomialOrder> PartialEq
-    for MultivariatePolynomial<F, E, O>
-{
+impl<F: Ring, E: Exponent, O: MonomialOrder> PartialEq for MultivariatePolynomial<F, E, O> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         if self.nvars != other.nvars {
@@ -701,7 +699,15 @@ impl<F: Ring + PartialEq, E: Exponent, O: MonomialOrder> PartialEq
     }
 }
 
-impl<F: Ring + Eq, E: Exponent, O: MonomialOrder> Eq for MultivariatePolynomial<F, E, O> {}
+impl<F: Ring, E: Exponent, O: MonomialOrder> std::hash::Hash for MultivariatePolynomial<F, E, O> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.coefficients.hash(state);
+        self.exponents.hash(state);
+        self.var_map.hash(state);
+    }
+}
+
+impl<F: Ring, E: Exponent, O: MonomialOrder> Eq for MultivariatePolynomial<F, E, O> {}
 
 impl<R: Ring, E: Exponent, O: MonomialOrder> PartialOrd for MultivariatePolynomial<R, E, O> {
     /// An ordering of polynomials that has no intuitive meaning.

@@ -9,9 +9,10 @@ use crate::{
     domains::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldWorkspace, PrimeIteratorU64, ToFiniteField,
+            Zp, Zp64,
         },
-        integer::{Integer, IntegerRing},
-        rational::RationalField,
+        integer::{Integer, IntegerRing, Z},
+        rational::{RationalField, Q},
         EuclideanDomain, Field, Ring,
     },
     poly::gcd::LARGE_U32_PRIMES,
@@ -298,14 +299,14 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
                 debug_assert!(coeff.is_integer());
                 coeff.numerator()
             },
-            IntegerRing::new(),
+            Z,
         );
 
         let fs = stripped.square_free_factorization();
 
         let mut factors: Vec<_> = fs
             .into_iter()
-            .map(|(f, e)| (f.map_coeff(|coeff| coeff.into(), RationalField::new()), e))
+            .map(|(f, e)| (f.map_coeff(|coeff| coeff.into(), Q), e))
             .collect();
 
         if !c.is_one() {
@@ -324,13 +325,13 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
                 debug_assert!(coeff.is_integer());
                 coeff.numerator()
             },
-            IntegerRing::new(),
+            Z,
         );
 
         let mut factors: Vec<_> = stripped
             .factor()
             .into_iter()
-            .map(|(ff, p)| (ff.map_coeff(|coeff| coeff.into(), RationalField::new()), p))
+            .map(|(ff, p)| (ff.map_coeff(|coeff| coeff.into(), Q), p))
             .collect();
 
         if !c.is_one() {
@@ -1740,8 +1741,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         debug_assert!((&s * &u + &t * &w).is_one());
 
-        let mut u_i = u.map_coeff(|c| field.to_symmetric_integer(c), IntegerRing::new());
-        let mut w_i = w.map_coeff(|c| field.to_symmetric_integer(c), IntegerRing::new());
+        let mut u_i = u.map_coeff(|c| field.to_symmetric_integer(c), Z);
+        let mut w_i = w.map_coeff(|c| field.to_symmetric_integer(c), Z);
 
         // only replace the leading coefficient
         *u_i.coefficients.last_mut().unwrap() = gamma.clone();
@@ -1758,10 +1759,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             u_i = u_i
                 + tau
-                    .map_coeff(|c| field.to_symmetric_integer(c), IntegerRing::new())
+                    .map_coeff(|c| field.to_symmetric_integer(c), Z)
                     .mul_coeff(m.clone());
             w_i = w_i
-                + r.map_coeff(|c| field.to_symmetric_integer(c), IntegerRing::new())
+                + r.map_coeff(|c| field.to_symmetric_integer(c), Z)
                     .mul_coeff(m.clone());
             e = &a - &(&u_i * &w_i);
 
@@ -1783,12 +1784,12 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         } else {
             if !u_i.lcoeff().is_one() {
                 let inv = u_i.lcoeff().mod_inverse(&m);
-                u_i = u_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), IntegerRing::new());
+                u_i = u_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), Z);
             }
 
             if !w_i.lcoeff().is_one() {
                 let inv = w_i.lcoeff().mod_inverse(&m);
-                w_i = w_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), IntegerRing::new());
+                w_i = w_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), Z);
             }
 
             Err((u_i, w_i))
@@ -1798,7 +1799,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
     /// Lift multiple factors by creating a binary tree and lifting each product.
     fn multi_factor_hensel_lift(
         &self,
-        hs: &[MultivariatePolynomial<FiniteField<u32>, E, LexOrder>],
+        hs: &[MultivariatePolynomial<Zp, E, LexOrder>],
         max_p: &Integer,
     ) -> Vec<Self> {
         if hs.len() == 1 {
@@ -1806,7 +1807,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 return vec![self.clone()];
             } else {
                 let inv = self.lcoeff().mod_inverse(max_p);
-                let r = self.map_coeff(|c| (c * &inv).symmetric_mod(max_p), IntegerRing::new());
+                let r = self.map_coeff(|c| (c * &inv).symmetric_mod(max_p), Z);
                 return vec![r];
             }
         }
@@ -1859,7 +1860,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 continue;
             }
 
-            field = FiniteField::<u32>::new(p);
+            field = Zp::new(p);
             f_p = self.map_coeff(|f| f.to_finite_field(&field), field.clone());
             let df_p = f_p.derivative(var);
 
@@ -1927,7 +1928,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 let mut g = rest.constant(rest.lcoeff());
                 for (i, f) in factors.iter().enumerate() {
                     if cs.contains(&i) {
-                        g = (&g * f).map_coeff(|i| i.symmetric_mod(&max_p), IntegerRing::new());
+                        g = (&g * f).map_coeff(|i| i.symmetric_mod(&max_p), Z);
                     }
                 }
                 let c = g.content();
@@ -1970,7 +1971,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         p: u32,
         k: usize,
     ) -> Vec<MultivariatePolynomial<FiniteField<Integer>, E, LexOrder>> {
-        let finite_field = FiniteField::<u32>::new(p);
+        let finite_field = Zp::new(p);
 
         // add the leading coefficient as a first factor
         let mut factors = vec![lcoeff.replace(interpolation_var, &poly.field.zero())];
@@ -2118,7 +2119,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 continue;
             }
 
-            field = FiniteField::<u32>::new(p);
+            field = Zp::new(p);
 
             // make sure the factors stay coprime
             let fs_p: Vec<_> = uni_fs
@@ -2143,7 +2144,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             self.clone()
         };
 
-        // TODO: if bound is less than u64, we may also use FiniteField<u64> for the computation
+        // TODO: if bound is less than u64, we may also use Zp64 for the computation
         let bound = shifted_poly.coefficient_bound();
 
         let p = Integer::from(field.get_prime().to_u64());
@@ -2201,8 +2202,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 }
 
                 // convert to integer
-                let mut g_int =
-                    g.map_coeff(|c| mod_field.to_symmetric_integer(c), IntegerRing::new());
+                let mut g_int = g.map_coeff(|c| mod_field.to_symmetric_integer(c), Z);
 
                 let content = g_int.univariate_content(main_var);
                 g_int = &g_int / &content;
@@ -2247,7 +2247,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         p: u32,
         k: usize,
     ) -> Vec<MultivariatePolynomial<FiniteField<Integer>, E, LexOrder>> {
-        let field = FiniteField::<u32>::new(p);
+        let field = Zp::new(p);
         let prime: Integer = (p as u64).into();
 
         let mut f_p: Vec<_> = factors
@@ -2258,9 +2258,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         // TODO: recycle from finite field computation that must have happened earlier
         let mut delta =
-            MultivariatePolynomial::<FiniteField<u32>, E, LexOrder>::diophantine_univariate(
-                &mut f_p, &rhs_p,
-            );
+            MultivariatePolynomial::<Zp, E, LexOrder>::diophantine_univariate(&mut f_p, &rhs_p);
 
         let mut deltas: Vec<_> = delta
             .iter()
@@ -2579,7 +2577,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             }
             let f_lc = f_eval.lcoeff();
 
-            let (q, r) = IntegerRing::new().quot_rem(&b_lc, &f_lc);
+            let (q, r) = Z.quot_rem(&b_lc, &f_lc);
             assert!(
                 r.is_zero(),
                 "Problem with bivariate factor scaling in factorization of {}: order={:?}, samples={:?}",
@@ -2640,7 +2638,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             return h
                 .into_iter()
-                .map(|f| f.map_coeff(|c| modulus.to_symmetric_integer(c), IntegerRing::new()))
+                .map(|f| f.map_coeff(|c| modulus.to_symmetric_integer(c), Z))
                 .collect();
         }
 
@@ -2684,7 +2682,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         h.into_iter()
             .map(|f| {
-                let f_i = f.map_coeff(|c| modulus.to_symmetric_integer(c), IntegerRing::new());
+                let f_i = f.map_coeff(|c| modulus.to_symmetric_integer(c), Z);
                 let c = f_i.univariate_content(order[0]);
                 f_i / &c
             })
@@ -2873,7 +2871,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 continue;
             }
 
-            field = FiniteField::<u32>::new(p);
+            field = Zp::new(p);
 
             // make sure the bivariate factors stay coprime
             let fs_p: Vec<_> = bivariate_factors
@@ -2949,7 +2947,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 Integer::Double(b) => b as u64,
                 Integer::Large(b) => b.to_u64().unwrap(),
             };
-            let small_field_mod = FiniteField::<u64>::new(prime);
+            let small_field_mod = Zp64::new(prime);
 
             let poly_ff = self.map_coeff(
                 |c| c.to_finite_field(&small_field_mod),
@@ -3012,12 +3010,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             );
             factorization_ff
                 .into_iter()
-                .map(|f| {
-                    f.map_coeff(
-                        |c| small_field_mod.to_symmetric_integer(c),
-                        IntegerRing::new(),
-                    )
-                })
+                .map(|f| f.map_coeff(|c| small_field_mod.to_symmetric_integer(c), Z))
                 .collect()
         } else {
             let field_mod = FiniteField::<Integer>::new(max_p.clone());
@@ -3040,7 +3033,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             );
             factorization_ff
                 .into_iter()
-                .map(|f| f.map_coeff(|c| field_mod.to_symmetric_integer(c), IntegerRing::new()))
+                .map(|f| f.map_coeff(|c| field_mod.to_symmetric_integer(c), Z))
                 .collect()
         };
 

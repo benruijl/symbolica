@@ -19,12 +19,12 @@ use crate::{
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
-    integer::IntegerRing,
+    integer::{IntegerRing, Z},
     rational::RationalField,
     EuclideanDomain, Field, Ring,
 };
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RationalPolynomialField<R: Ring, E: Exponent> {
     ring: R,
     nvars: usize,
@@ -65,7 +65,7 @@ pub trait FromNumeratorAndDenominator<R: Ring, OR: Ring, E: Exponent> {
     ) -> RationalPolynomial<OR, E>;
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RationalPolynomial<R: Ring, E: Exponent> {
     pub numerator: MultivariatePolynomial<R, E>,
     pub denominator: MultivariatePolynomial<R, E>,
@@ -160,16 +160,11 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
     ) -> RationalPolynomial<IntegerRing, E> {
         let content = num.field.gcd(&num.content(), &den.content());
 
-        let mut num_int =
-            MultivariatePolynomial::new(num.nvars, &IntegerRing::new(), None, num.var_map);
+        let mut num_int = MultivariatePolynomial::new(num.nvars, &Z, None, num.var_map);
         num_int.exponents = num.exponents;
 
-        let mut den_int = MultivariatePolynomial::new(
-            den.nvars,
-            &IntegerRing::new(),
-            Some(den.nterms()),
-            den.var_map,
-        );
+        let mut den_int =
+            MultivariatePolynomial::new(den.nvars, &Z, Some(den.nterms()), den.var_map);
         den_int.exponents = den.exponents;
 
         if num.field.is_one(&content) {

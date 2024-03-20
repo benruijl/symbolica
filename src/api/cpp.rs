@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use smartstring::{LazyCompact, SmartString};
 
-use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64};
-use crate::domains::integer::IntegerRing;
+use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64};
+use crate::domains::integer::{IntegerRing, Z};
 use crate::domains::rational::RationalField;
 use crate::parser::Token;
 use crate::poly::Variable;
@@ -176,7 +176,7 @@ unsafe extern "C" fn simplify(
                 let r: RationalPolynomial<IntegerRing, $exp_size> = token
                     .to_rational_polynomial(
                         &<$in_field>::new(),
-                        &IntegerRing::new(),
+                        &Z,
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
                     )
@@ -194,8 +194,8 @@ unsafe extern "C" fn simplify(
                 )
                 .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
-                let field = FiniteField::<u32>::new(prime as u32);
-                let rf: RationalPolynomial<FiniteField<u32>, $exp_size> = token
+                let field = Zp::new(prime as u32);
+                let rf: RationalPolynomial<Zp, $exp_size> = token
                     .to_rational_polynomial(
                         &field,
                         &field,
@@ -238,8 +238,8 @@ unsafe extern "C" fn simplify(
                 )
                 .unwrap();
             } else {
-                let field = FiniteField::<u64>::new(prime as u64);
-                let rf: RationalPolynomial<FiniteField<u64>, $exp_size> = token
+                let field = Zp64::new(prime as u64);
+                let rf: RationalPolynomial<Zp64, $exp_size> = token
                     .to_rational_polynomial(
                         &field,
                         &field,
@@ -312,7 +312,7 @@ unsafe extern "C" fn simplify_factorized(
                 let r: FactorizedRationalPolynomial<IntegerRing, $exp_size> = token
                     .to_factorized_rational_polynomial(
                         &<$in_field>::new(),
-                        &IntegerRing::new(),
+                        &Z,
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
                     )
@@ -330,8 +330,8 @@ unsafe extern "C" fn simplify_factorized(
                 )
                 .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
-                let field = FiniteField::<u32>::new(prime as u32);
-                let rf: FactorizedRationalPolynomial<FiniteField<u32>, $exp_size> = token
+                let field = Zp::new(prime as u32);
+                let rf: FactorizedRationalPolynomial<Zp, $exp_size> = token
                     .to_factorized_rational_polynomial(
                         &field,
                         &field,
@@ -374,8 +374,8 @@ unsafe extern "C" fn simplify_factorized(
                 )
                 .unwrap();
             } else {
-                let field = FiniteField::<u64>::new(prime as u64);
-                let rf: FactorizedRationalPolynomial<FiniteField<u64>, $exp_size> = token
+                let field = Zp64::new(prime as u64);
+                let rf: FactorizedRationalPolynomial<Zp64, $exp_size> = token
                     .to_factorized_rational_polynomial(
                         &field,
                         &field,

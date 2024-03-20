@@ -797,6 +797,7 @@ class Expression:
 
         Parameters
         ----------
+        self: The expression to match and replace on.
         pattern: The pattern to match.
         rhs: The right-hand side to replace the matched subexpression with.
         cond: Conditions on the pattern.

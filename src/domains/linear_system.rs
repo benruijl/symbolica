@@ -267,12 +267,12 @@ impl<F: Field> Matrix<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domains::finite_field::{FiniteField, FiniteFieldCore};
-    use crate::domains::rational::{Rational, RationalField};
+    use crate::domains::finite_field::{FiniteFieldCore, Zp};
+    use crate::domains::rational::{Rational, Q};
 
     #[test]
     fn test_solve_trivial() {
-        let field = FiniteField::<u32>::new(17);
+        let field = Zp::new(17);
         let a = Matrix {
             shape: (1, 1),
             data: [12].into_iter().map(|n| field.to_element(n)).collect(),
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn test_solve_easy() {
-        let field = FiniteField::<u32>::new(17);
+        let field = Zp::new(17);
         let a = Matrix {
             shape: (2, 2),
             data: [1, 0, 0, 1]
@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_solve() {
-        let field = FiniteField::<u32>::new(17);
+        let field = Zp::new(17);
         let a = Matrix {
             shape: (3, 3),
             data: [1, 1, 2, 3, 4, 3, 16, 5, 5]
@@ -352,7 +352,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_solve_bad_shape() {
-        let field = FiniteField::<u32>::new(17);
+        let field = Zp::new(17);
         let a = Matrix {
             shape: (3, 3),
             data: [1, 1, 2, 3, 4, 3, 16, 5, 5]
@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_solve_underdetermined1() {
-        let field = FiniteField::<u32>::new(17);
+        let field = Zp::new(17);
         let a = Matrix {
             shape: (2, 3),
             data: [1, 1, 2, 3, 4, 3]
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn test_solve_underdetermined2() {
-        let field = FiniteField::<u32>::new(17);
+        let field = Zp::new(17);
         let a = Matrix {
             shape: (4, 4),
             data: [1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 2]
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_solve_underdetermined3() {
-        let field = FiniteField::<u32>::new(17);
+        let field = Zp::new(17);
         let a = Matrix {
             shape: (3, 3),
             data: [1, 1, 2, 3, 4, 3, 10, 7, 12]
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_solve_overdetermined() {
-        let field = FiniteField::<u32>::new(17);
+        let field = Zp::new(17);
         let a = Matrix {
             shape: (5, 3),
             data: [1, 1, 2, 3, 4, 3, 9, 0, 11, 1, 1, 7, 2, 3, 8]
@@ -490,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_solve_inconsistent() {
-        let field = FiniteField::<u32>::new(17);
+        let field = Zp::new(17);
         let a = Matrix {
             shape: (4, 3),
             data: [1, 1, 2, 3, 4, 3, 16, 5, 5, 14, 2, 4]
@@ -513,7 +513,7 @@ mod tests {
 
     #[test]
     fn test_solve_rational() {
-        let field = RationalField::new();
+        let field = Q;
         let a = Matrix {
             shape: (3, 3),
             data: [1, 1, 2, 3, 4, 3, 16, 5, 5]

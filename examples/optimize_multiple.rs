@@ -1,5 +1,5 @@
 use symbolica::{
-    domains::rational::{Rational, RationalField},
+    domains::rational::{Rational, Q},
     poly::evaluate::{HornerScheme, InstructionSetPrinter},
     representations::Atom,
 };
@@ -12,7 +12,7 @@ fn main() {
     let poly: MultivariatePolynomial<_, u8> = Atom::parse(SIGMA)
         .unwrap()
         .as_view()
-        .to_polynomial(&RationalField::new(), None)
+        .to_polynomial(&Q, None)
         .unwrap();
 
     // optimize SIGMA and SIGMA + 5 at the same time

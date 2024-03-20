@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use symbolica::{
     domains::{
-        integer::IntegerRing,
+        integer::Z,
         linear_system::Matrix,
-        rational::RationalField,
+        rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::Variable,
@@ -39,25 +39,25 @@ fn solve_from_matrix() {
 
     let var_map = Arc::new(vec![Variable::Symbol(State::get_symbol("c"))]);
 
-    let system_rat: Vec<RationalPolynomial<IntegerRing, u8>> = system
+    let system_rat: Vec<RationalPolynomial<_, u8>> = system
         .iter()
         .flatten()
         .map(|s| {
             Atom::parse(s)
                 .unwrap()
                 .as_view()
-                .to_rational_polynomial(&RationalField::new(), &IntegerRing::new(), Some(&var_map))
+                .to_rational_polynomial(&Q, &Z, Some(&var_map))
                 .unwrap()
         })
         .collect();
 
-    let rhs_rat: Vec<RationalPolynomial<IntegerRing, u8>> = rhs
+    let rhs_rat: Vec<RationalPolynomial<_, u8>> = rhs
         .iter()
         .map(|s| {
             Atom::parse(s)
                 .unwrap()
                 .as_view()
-                .to_rational_polynomial(&RationalField::new(), &IntegerRing::new(), Some(&var_map))
+                .to_rational_polynomial(&Q, &Z, Some(&var_map))
                 .unwrap()
         })
         .collect();

@@ -17,7 +17,7 @@ use crate::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
         },
-        integer::{Integer, IntegerRing},
+        integer::{Integer, IntegerRing, Z},
         rational::{Rational, RationalField},
         rational_polynomial::RationalPolynomial,
         EuclideanDomain, Field, Ring,
@@ -202,8 +202,8 @@ impl Mul for Coefficient {
             }
             (Coefficient::Rational(r), Coefficient::RationalPolynomial(mut rp))
             | (Coefficient::RationalPolynomial(mut rp), Coefficient::Rational(r)) => {
-                let gcd1 = IntegerRing::new().gcd(&r.numerator(), &rp.denominator.content());
-                let gcd2 = IntegerRing::new().gcd(&r.denominator(), &rp.numerator.content());
+                let gcd1 = Z.gcd(&r.numerator(), &rp.denominator.content());
+                let gcd2 = Z.gcd(&r.denominator(), &rp.numerator.content());
                 rp.numerator = rp
                     .numerator
                     .div_coeff(&gcd2)
@@ -646,8 +646,8 @@ impl Mul for CoefficientView<'_> {
                 let mut r = (*p).clone();
                 let (n, d) = (Integer::Natural(n), Integer::Natural(d));
 
-                let gcd1 = IntegerRing::new().gcd(&n, &r.denominator.content());
-                let gcd2 = IntegerRing::new().gcd(&d, &r.numerator.content());
+                let gcd1 = Z.gcd(&n, &r.denominator.content());
+                let gcd2 = Z.gcd(&d, &r.numerator.content());
                 r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
                 r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
                 Coefficient::RationalPolynomial(r)
@@ -658,8 +658,8 @@ impl Mul for CoefficientView<'_> {
                 let (n, d) = l.to_rat().into_numer_denom();
                 let (n, d) = (Integer::from_large(n), Integer::from_large(d));
 
-                let gcd1 = IntegerRing::new().gcd(&n, &r.denominator.content());
-                let gcd2 = IntegerRing::new().gcd(&d, &r.numerator.content());
+                let gcd1 = Z.gcd(&n, &r.denominator.content());
+                let gcd2 = Z.gcd(&d, &r.numerator.content());
                 r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
                 r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
                 Coefficient::RationalPolynomial(r)
@@ -804,12 +804,8 @@ impl<'a> AtomView<'a> {
                 let id = v.get_symbol();
                 if vars.contains(&id.into()) {
                     // change variable into coefficient
-                    let mut poly = MultivariatePolynomial::new(
-                        vars.len(),
-                        &IntegerRing::new(),
-                        None,
-                        Some(vars.clone()),
-                    );
+                    let mut poly =
+                        MultivariatePolynomial::new(vars.len(), &Z, None, Some(vars.clone()));
                     let mut e: SmallVec<[u16; INLINED_EXPONENTS]> = smallvec![0; vars.len()];
                     e[vars.iter().position(|x| *x == id.into()).unwrap()] = 1;
                     poly.append_monomial(Integer::one(), &e);

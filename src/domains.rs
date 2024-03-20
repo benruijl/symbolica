@@ -7,11 +7,12 @@ pub mod rational;
 pub mod rational_polynomial;
 
 use std::fmt::{Debug, Display, Error, Formatter};
+use std::hash::Hash;
 
 use crate::printer::PrintOptions;
 
-pub trait Ring: Clone + PartialEq + Debug + Display {
-    type Element: Clone + PartialEq + PartialOrd + Debug;
+pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
+    type Element: Clone + PartialEq + Eq + Hash + PartialOrd + Debug;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;

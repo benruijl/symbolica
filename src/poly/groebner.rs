@@ -3,7 +3,7 @@ use std::{cmp::Ordering, rc::Rc};
 use ahash::HashMap;
 
 use crate::domains::{
-    finite_field::{FiniteField, FiniteFieldCore, Mersenne64},
+    finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64},
     rational::RationalField,
     Field, Ring,
 };
@@ -585,18 +585,18 @@ pub trait Echelonize: Field {
     );
 }
 
-impl Echelonize for FiniteField<u32> {
+impl Echelonize for Zp {
     type LargerField = i64;
 
     /// Specialized 32-bit finite field echelonization based on
     /// "A Compact Parallel Implementation of F4" by Monagan and Pearce.
     fn echelonize<E: Exponent, O: MonomialOrder>(
         matrix: &mut Vec<Vec<(i64, usize)>>,
-        selected_polys: &mut Vec<Rc<MultivariatePolynomial<FiniteField<u32>, E, O>>>,
+        selected_polys: &mut Vec<Rc<MultivariatePolynomial<Zp, E, O>>>,
         nvars: usize,
         all_monomials: &HashMap<Vec<E>, MonomialData>,
         sorted_monomial_indices: &[usize],
-        field: &FiniteField<u32>,
+        field: &Zp,
         buffer: &mut Vec<i64>,
         pivots: &mut Vec<Option<usize>>,
         print_stats: bool,
@@ -931,6 +931,6 @@ macro_rules! echelonize_impl {
     };
 }
 
-echelonize_impl!(FiniteField<u64>);
+echelonize_impl!(Zp64);
 echelonize_impl!(FiniteField<Mersenne64>);
 echelonize_impl!(RationalField);

@@ -1242,7 +1242,7 @@ impl<'a> AtomView<'a> {
             FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
         Workspace::get_local()
-            .with(|ws| self.to_rational_polynomial_with_conversion_impl(&ws, field, out_field))
+            .with(|ws| self.to_rational_polynomial_with_conversion_impl(ws, field, out_field))
     }
 
     /// Convert an expression to a rational polynomial, converting all non-rational subexpressions

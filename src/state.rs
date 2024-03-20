@@ -13,9 +13,10 @@ use append_only_vec::AppendOnlyVec;
 use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
+use crate::domains::finite_field::Zp64;
 use crate::{
     coefficient::Coefficient,
-    domains::finite_field::{FiniteField, FiniteFieldCore},
+    domains::finite_field::FiniteFieldCore,
     representations::{Atom, Symbol},
     LicenseManager, LICENSE_MANAGER,
 };
@@ -32,7 +33,7 @@ pub enum FunctionAttribute {
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
 static ID_TO_STR: AppendOnlyVec<String> = AppendOnlyVec::<String>::new();
-static FINITE_FIELDS: AppendOnlyVec<FiniteField<u64>> = AppendOnlyVec::<FiniteField<u64>>::new();
+static FINITE_FIELDS: AppendOnlyVec<Zp64> = AppendOnlyVec::<Zp64>::new();
 
 thread_local!(
     /// A thread-local workspace, that stores recyclable atoms. By making it const and
@@ -210,18 +211,15 @@ impl State {
         &ID_TO_STR[id.get_id() as usize]
     }
 
-    pub fn get_finite_field<'a>(fi: FiniteFieldIndex) -> &'a FiniteField<u64> {
+    pub fn get_finite_field<'a>(fi: FiniteFieldIndex) -> &'a Zp64 {
         &FINITE_FIELDS[fi.0]
     }
 
-    pub fn get_or_insert_finite_field(f: FiniteField<u64>) -> FiniteFieldIndex {
+    pub fn get_or_insert_finite_field(f: Zp64) -> FiniteFieldIndex {
         STATE.write().unwrap().get_or_insert_finite_field_impl(f)
     }
 
-    pub(crate) fn get_or_insert_finite_field_impl(
-        &mut self,
-        f: FiniteField<u64>,
-    ) -> FiniteFieldIndex {
+    pub(crate) fn get_or_insert_finite_field_impl(&mut self, f: Zp64) -> FiniteFieldIndex {
         for (i, f2) in FINITE_FIELDS.iter().enumerate() {
             if f.get_prime() == f2.get_prime() {
                 return FiniteFieldIndex(i);

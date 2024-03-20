@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use symbolica::{
-    domains::{
-        finite_field::{FiniteField, FiniteFieldCore},
-        integer::IntegerRing,
-    },
+    domains::{finite_field::Zp, integer::Z},
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Variable},
     representations::Atom,
     state::State,
@@ -13,7 +10,7 @@ use symbolica::{
 fn factor_ff_univariate() {
     let exp = Atom::parse("x^100-1").unwrap().expand();
 
-    let field = FiniteField::<u32>::new(17);
+    let field = Zp::new(17);
     let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
 
     let factors = poly.square_free_factorization();
@@ -34,8 +31,8 @@ fn factor_ff_bivariate() {
 
     let exp = Atom::parse(input).unwrap().as_view().expand();
 
-    let field = FiniteField::<u32>::new(17);
-    let poly: MultivariatePolynomial<FiniteField<u32>, u8> =
+    let field = Zp::new(17);
+    let poly: MultivariatePolynomial<Zp, u8> =
         exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
 
     println!("Factorization of {}:", poly);
@@ -47,7 +44,7 @@ fn factor_ff_bivariate() {
 fn factor_ff_square_free() {
     let exp = Atom::parse("(1+x)*(1+x^2)^2*(x^4+1)^3").unwrap().expand();
 
-    let field = FiniteField::<u32>::new(3);
+    let field = Zp::new(3);
     let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
 
     let factors = poly.square_free_factorization();
@@ -63,10 +60,7 @@ fn factor_square_free() {
         .unwrap()
         .expand();
 
-    let poly: MultivariatePolynomial<_, u8> = exp
-        .as_view()
-        .to_polynomial(&IntegerRing::new(), None)
-        .unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&Z, None).unwrap();
 
     let factors = poly.square_free_factorization();
 
@@ -81,10 +75,7 @@ fn factor_univariate_1() {
         .unwrap()
         .expand();
 
-    let poly: MultivariatePolynomial<_, u8> = exp
-        .as_view()
-        .to_polynomial(&IntegerRing::new(), None)
-        .unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&Z, None).unwrap();
 
     let fs = poly.factor();
 
@@ -99,10 +90,7 @@ fn factor_univariate_2() {
         .unwrap()
         .expand();
 
-    let poly: MultivariatePolynomial<_, u8> = exp
-        .as_view()
-        .to_polynomial(&IntegerRing::new(), None)
-        .unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&Z, None).unwrap();
 
     let fs = poly.factor();
 
@@ -122,9 +110,8 @@ fn factor_bivariate() {
 
     let exp = Atom::parse(input).unwrap().as_view().expand();
 
-    let field = IntegerRing::new();
     let poly: MultivariatePolynomial<_, u8> =
-        exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
+        exp.as_view().to_polynomial(&Z, Some(&order)).unwrap();
 
     println!("Factorization of {}:", poly);
     for (f, pow) in poly.factor() {
@@ -144,9 +131,8 @@ fn factor_multivariate() {
 
     let exp = Atom::parse(input).unwrap().as_view().expand();
 
-    let field = IntegerRing::new();
     let poly: MultivariatePolynomial<_, u8> =
-        exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
+        exp.as_view().to_polynomial(&Z, Some(&order)).unwrap();
 
     println!("Factorization of {}:", poly);
     for (f, p) in poly.factor() {

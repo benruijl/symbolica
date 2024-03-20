@@ -5,9 +5,7 @@ use std::{
 
 use smartstring::{LazyCompact, SmartString};
 use symbolica::{
-    domains::{
-        integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
-    },
+    domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial},
     parser::Token,
     printer::{PrintOptions, RationalPolynomialPrinter},
     state::State,
@@ -65,14 +63,9 @@ fn main() {
             break;
         }
 
-        let r: RationalPolynomial<IntegerRing, u16> = Token::parse(&buffer)
+        let r: RationalPolynomial<_, u16> = Token::parse(&buffer)
             .unwrap()
-            .to_rational_polynomial(
-                &RationalField::new(),
-                &IntegerRing::new(),
-                &vars,
-                &var_names,
-            )
+            .to_rational_polynomial(&Q, &Z, &vars, &var_names)
             .unwrap();
 
         let out_str = format!(

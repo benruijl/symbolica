@@ -1,5 +1,5 @@
 use symbolica::{
-    domains::finite_field::{FiniteField, FiniteFieldCore},
+    domains::finite_field::Zp,
     poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
     representations::Atom,
     state::State,
@@ -22,9 +22,7 @@ fn main() {
         .iter()
         .map(|x| {
             let a = Atom::parse(x).unwrap().expand();
-            a.as_view()
-                .to_polynomial(&FiniteField::<u32>::new(13), None)
-                .unwrap()
+            a.as_view().to_polynomial(&Zp::new(13), None).unwrap()
         })
         .collect();
 

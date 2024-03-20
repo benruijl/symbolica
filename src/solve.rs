@@ -4,9 +4,9 @@ use ahash::HashMap;
 
 use crate::{
     domains::{
-        integer::IntegerRing,
+        integer::{IntegerRing, Z},
         linear_system::Matrix,
-        rational::RationalField,
+        rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::{Exponent, Variable},
@@ -25,23 +25,17 @@ impl<'a> AtomView<'a> {
         let mut map = HashMap::default();
 
         let mut mat = Vec::with_capacity(system.len() * vars.len());
-        let mut row = vec![RationalPolynomial::<_, E>::new(&IntegerRing::new(), None); vars.len()];
-        let mut rhs = vec![RationalPolynomial::<_, E>::new(&IntegerRing::new(), None); vars.len()];
+        let mut row = vec![RationalPolynomial::<_, E>::new(&Z, None); vars.len()];
+        let mut rhs = vec![RationalPolynomial::<_, E>::new(&Z, None); vars.len()];
 
         for (si, a) in system.iter().enumerate() {
-            let rat: RationalPolynomial<IntegerRing, E> = Workspace::get_local().with(|ws| {
-                a.to_rational_polynomial_with_map(
-                    ws,
-                    &RationalField::new(),
-                    &IntegerRing::new(),
-                    &mut map,
-                )
-            });
+            let rat: RationalPolynomial<IntegerRing, E> = Workspace::get_local()
+                .with(|ws| a.to_rational_polynomial_with_map(ws, &Q, &Z, &mut map));
 
             let poly = rat.to_polynomial(&vars, true).unwrap();
 
             for e in &mut row {
-                *e = RationalPolynomial::<_, E>::new(&IntegerRing::new(), None);
+                *e = RationalPolynomial::<_, E>::new(&Z, None);
             }
 
             // get linear coefficients
@@ -78,7 +72,7 @@ impl<'a> AtomView<'a> {
         }
 
         let field = RationalPolynomialField::new(
-            IntegerRing::new(),
+            Z,
             rhs[0].numerator.nvars,
             rhs[0].numerator.var_map.clone(),
         );

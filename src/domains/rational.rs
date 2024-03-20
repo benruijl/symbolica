@@ -12,12 +12,18 @@ use rug::{
 use crate::{poly::gcd::LARGE_U32_PRIMES, printer::PrintOptions, utils};
 
 use super::{
-    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
-    integer::{Integer, IntegerRing},
+    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Zp},
+    integer::{Integer, Z},
     EuclideanDomain, Field, Ring,
 };
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+/// The field of rational numbers.
+pub type Q = RationalField;
+/// The field of rational numbers.
+pub const Q: RationalField = RationalField::new();
+
+/// The field of rational numbers.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct RationalField;
 
 impl Default for RationalField {
@@ -27,7 +33,7 @@ impl Default for RationalField {
 }
 
 impl RationalField {
-    pub fn new() -> RationalField {
+    pub const fn new() -> RationalField {
         RationalField
     }
 }
@@ -150,7 +156,7 @@ impl From<MultiPrecisionRational> for Rational {
 }
 
 impl ToFiniteField<u32> for Rational {
-    fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
+    fn to_finite_field(&self, field: &Zp) -> <Zp as Ring>::Element {
         match self {
             &Rational::Natural(n, d) => {
                 let mut ff = field.to_element(n.rem_euclid(field.get_prime() as i64) as u32);
@@ -209,10 +215,7 @@ impl Rational {
         Rational::Large(r)
     }
 
-    pub fn from_finite_field_u32(
-        field: FiniteField<u32>,
-        element: &<FiniteField<u32> as Ring>::Element,
-    ) -> Rational {
+    pub fn from_finite_field_u32(field: Zp, element: &<Zp as Ring>::Element) -> Rational {
         Rational::Natural(field.from_element(element) as i64, 1)
     }
 
@@ -453,7 +456,7 @@ impl Rational {
             (t, old_t) = (&old_t - &(&q * &t), t);
         }
 
-        if d.is_zero() || !IntegerRing::new().gcd(&n, &d).is_one() {
+        if d.is_zero() || !Z.gcd(&n, &d).is_one() {
             return Err("Reconstruction failed");
         }
         if d < Integer::zero() {
@@ -470,10 +473,7 @@ impl Rational {
     /// The procedure can be repeated with a different starting prime, by setting `prime_start`
     /// to a non-zero value.
     pub fn rational_reconstruction<
-        F: Fn(
-            &FiniteField<u32>,
-            &[<FiniteField<u32> as Ring>::Element],
-        ) -> <FiniteField<u32> as Ring>::Element,
+        F: Fn(&Zp, &[<Zp as Ring>::Element]) -> <Zp as Ring>::Element,
         R: Ring,
     >(
         f: F,
@@ -481,7 +481,7 @@ impl Rational {
         prime_start: Option<usize>,
     ) -> Result<Rational, &'static str>
     where
-        FiniteField<u32>: FiniteFieldCore<u32>,
+        Zp: FiniteFieldCore<u32>,
         R::Element: ToFiniteField<u32>,
     {
         let mut cur_result = Integer::one();
@@ -810,7 +810,7 @@ impl Add<Rational> for Rational {
     type Output = Rational;
 
     fn add(self, other: Rational) -> Self::Output {
-        RationalField::new().add(&self, &other)
+        Q.add(&self, &other)
     }
 }
 
@@ -826,7 +826,7 @@ impl Mul<Rational> for Rational {
     type Output = Rational;
 
     fn mul(self, other: Rational) -> Self::Output {
-        RationalField::new().mul(&self, &other)
+        Q.mul(&self, &other)
     }
 }
 
@@ -834,7 +834,7 @@ impl Div<Rational> for Rational {
     type Output = Rational;
 
     fn div(self, other: Rational) -> Self::Output {
-        RationalField::new().div(&self, &other)
+        Q.div(&self, &other)
     }
 }
 
@@ -842,7 +842,7 @@ impl<'a> Add<&'a Rational> for Rational {
     type Output = Rational;
 
     fn add(self, other: &'a Rational) -> Self::Output {
-        RationalField::new().add(&self, other)
+        Q.add(&self, other)
     }
 }
 
@@ -858,7 +858,7 @@ impl<'a> Mul<&'a Rational> for Rational {
     type Output = Rational;
 
     fn mul(self, other: &'a Rational) -> Self::Output {
-        RationalField::new().mul(&self, other)
+        Q.mul(&self, other)
     }
 }
 
@@ -866,7 +866,7 @@ impl<'a> Div<&'a Rational> for Rational {
     type Output = Rational;
 
     fn div(self, other: &'a Rational) -> Self::Output {
-        RationalField::new().div(&self, other)
+        Q.div(&self, other)
     }
 }
 
@@ -874,7 +874,7 @@ impl<'a, 'b> Add<&'a Rational> for &'b Rational {
     type Output = Rational;
 
     fn add(self, other: &'a Rational) -> Self::Output {
-        RationalField::new().add(self, other)
+        Q.add(self, other)
     }
 }
 
@@ -889,7 +889,7 @@ impl<'a, 'b> Sub<&'a Rational> for &'b Rational {
 impl Neg for Rational {
     type Output = Self;
     fn neg(self) -> Self::Output {
-        RationalField::new().neg(&self)
+        Q.neg(&self)
     }
 }
 
@@ -897,7 +897,7 @@ impl<'a, 'b> Mul<&'a Rational> for &'b Rational {
     type Output = Rational;
 
     fn mul(self, other: &'a Rational) -> Self::Output {
-        RationalField::new().mul(self, other)
+        Q.mul(self, other)
     }
 }
 
@@ -905,13 +905,13 @@ impl<'a, 'b> Div<&'a Rational> for &'b Rational {
     type Output = Rational;
 
     fn div(self, other: &'a Rational) -> Self::Output {
-        RationalField::new().div(self, other)
+        Q.div(self, other)
     }
 }
 
 impl<'a> AddAssign<&'a Rational> for Rational {
     fn add_assign(&mut self, other: &'a Rational) {
-        RationalField::new().add_assign(self, other)
+        Q.add_assign(self, other)
     }
 }
 
@@ -923,19 +923,19 @@ impl<'a> SubAssign<&'a Rational> for Rational {
 
 impl<'a> MulAssign<&'a Rational> for Rational {
     fn mul_assign(&mut self, other: &'a Rational) {
-        RationalField::new().mul_assign(self, other)
+        Q.mul_assign(self, other)
     }
 }
 
 impl<'a> DivAssign<&'a Rational> for Rational {
     fn div_assign(&mut self, other: &'a Rational) {
-        RationalField::new().div_assign(self, other)
+        Q.div_assign(self, other)
     }
 }
 
 impl AddAssign<Rational> for Rational {
     fn add_assign(&mut self, other: Rational) {
-        RationalField::new().add_assign(self, &other)
+        Q.add_assign(self, &other)
     }
 }
 
@@ -947,13 +947,13 @@ impl SubAssign<Rational> for Rational {
 
 impl MulAssign<Rational> for Rational {
     fn mul_assign(&mut self, other: Rational) {
-        RationalField::new().mul_assign(self, &other)
+        Q.mul_assign(self, &other)
     }
 }
 
 impl DivAssign<Rational> for Rational {
     fn div_assign(&mut self, other: Rational) {
-        RationalField::new().div_assign(self, &other)
+        Q.div_assign(self, &other)
     }
 }
 

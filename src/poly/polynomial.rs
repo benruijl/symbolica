@@ -8,6 +8,7 @@ use std::mem;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::Arc;
 
+use crate::domains::algebraic_number::AlgebraicNumberRing;
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::RationalField;
 use crate::domains::{EuclideanDomain, Field, Ring};
@@ -1504,6 +1505,50 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         tm
+    }
+
+    /// Convert the polynomial to one in a number field, where the variable
+    /// of the number field is moved into the coefficient.
+    pub fn to_number_field(
+        &self,
+        field: &AlgebraicNumberRing<F>,
+    ) -> MultivariatePolynomial<AlgebraicNumberRing<F>, E> {
+        let var = &field.poly().get_var_map().unwrap()[0];
+        let Some(var_index) = self.get_var_map().unwrap().iter().position(|x| x == var) else {
+            return self.map_coeff(
+                |c| field.to_element(field.poly().constant(c.clone())),
+                field.clone(),
+            );
+        };
+
+        let polys = self.to_multivariate_polynomial_list(&[var_index], false);
+
+        // TODO: remove the variable from the variable map?
+        let mut poly = MultivariatePolynomial::new(
+            self.nvars,
+            field,
+            Some(self.nterms()),
+            self.var_map.clone(),
+        );
+        for (e, c) in polys {
+            let mut c2 = MultivariatePolynomial::new(
+                1,
+                &self.field,
+                Some(c.nterms()),
+                Some(Arc::new(vec![
+                    self.var_map.as_ref().unwrap()[var_index].clone()
+                ])),
+            );
+            c2.coefficients = c.coefficients;
+            c2.exponents = c
+                .exponents
+                .chunks(c.nvars)
+                .map(|x| x[var_index].to_u32() as u8)
+                .collect();
+
+            poly.append_monomial(field.to_element(c2), &e);
+        }
+        poly
     }
 
     pub fn mul_univariate_dense(&self, rhs: &Self, max_pow: Option<usize>) -> Self {
@@ -3041,6 +3086,41 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             }
 
             self.field.mul_assign(&mut accum_inv, &sample_point_inv);
+        }
+
+        poly
+    }
+}
+
+impl<R: Ring, E: Exponent> MultivariatePolynomial<AlgebraicNumberRing<R>, E> {
+    /// Convert the polynomial to a multivariate polynomial that contains the
+    /// variable in the number field.
+    pub fn from_number_field(&self) -> MultivariatePolynomial<R, E> {
+        let var = &self.field.poly().get_var_map().unwrap()[0];
+
+        let var_map = if !self.get_var_map().unwrap().contains(var) {
+            let mut v = self.get_var_map().unwrap().as_ref().clone();
+            v.push(var.clone());
+            Arc::new(v)
+        } else {
+            self.var_map.as_ref().unwrap().clone()
+        };
+
+        let var_index = var_map.iter().position(|x| x == var).unwrap();
+
+        let mut poly = MultivariatePolynomial::new(
+            var_map.len(),
+            &self.field.poly().field,
+            Some(self.nterms()),
+            Some(var_map),
+        );
+        let mut exp = vec![E::zero(); poly.nvars];
+        for t in self {
+            exp[..self.nvars].copy_from_slice(t.exponents);
+            for t2 in &t.coefficient.poly {
+                exp[var_index] = E::from_u32(t2.exponents[0].to_u32());
+                poly.append_monomial(t2.coefficient.clone(), &exp);
+            }
         }
 
         poly

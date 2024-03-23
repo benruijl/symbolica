@@ -443,9 +443,9 @@ impl Rational {
         let mut n = Integer::zero();
         let mut d = Integer::zero();
         let (mut t, mut old_t) = (Integer::one(), Integer::zero());
-        let (mut r, mut old_r) = (v.clone(), p.clone());
+        let (mut r, mut old_r) = (if v.is_negative() { v + p } else { v.clone() }, p.clone());
 
-        while !r.is_one() && old_r > acceptance_scale {
+        while !r.is_zero() && old_r > acceptance_scale {
             let q = &old_r / &r;
             if q > acceptance_scale {
                 n = r.clone();

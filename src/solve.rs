@@ -1,9 +1,10 @@
-use std::ops::Neg;
+use std::{ops::Neg, sync::Arc};
 
 use crate::{
     domains::{
         integer::{IntegerRing, Z},
         linear_system::Matrix,
+        rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::{Exponent, Variable},
@@ -20,16 +21,16 @@ impl<'a> AtomView<'a> {
         let vars: Vec<_> = vars.iter().map(|v| Variable::Symbol(*v)).collect();
 
         let mut mat = Vec::with_capacity(system.len() * vars.len());
-        let mut row = vec![RationalPolynomial::<_, E>::new(&Z, None); vars.len()];
-        let mut rhs = vec![RationalPolynomial::<_, E>::new(&Z, None); vars.len()];
+        let mut row = vec![RationalPolynomial::<_, E>::new(&Z, Arc::new(vec![])); vars.len()];
+        let mut rhs = vec![RationalPolynomial::<_, E>::new(&Z, Arc::new(vec![])); vars.len()];
 
         for (si, a) in system.iter().enumerate() {
-            let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial(&Z, None);
+            let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial(&Q, &Z, None);
 
             let poly = rat.to_polynomial(&vars, true).unwrap();
 
             for e in &mut row {
-                *e = RationalPolynomial::<_, E>::new(&Z, None);
+                *e = RationalPolynomial::<_, E>::new(&Z, poly.variables.clone());
             }
 
             // get linear coefficients
@@ -58,18 +59,14 @@ impl<'a> AtomView<'a> {
 
         for _ in 0..2 {
             for x in &mut *rest {
-                first.unify_var_map(x);
+                first.unify_variables(x);
             }
             for x in &mut rhs {
-                first.unify_var_map(x);
+                first.unify_variables(x);
             }
         }
 
-        let field = RationalPolynomialField::new(
-            Z,
-            rhs[0].numerator.nvars,
-            rhs[0].numerator.var_map.clone(),
-        );
+        let field = RationalPolynomialField::new(Z, rhs[0].numerator.get_vars().into());
 
         let m = Matrix {
             shape: ((mat.len() / rhs.len()) as u32, rhs.len() as u32),

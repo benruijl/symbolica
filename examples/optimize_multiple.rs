@@ -17,7 +17,7 @@ fn main() {
 
     let (h, score, scheme) = HornerScheme::optimize_multiple(&[&poly, &poly2], 1000);
 
-    let mut i = HornerScheme::to_instr_multiple(&h, poly.nvars);
+    let mut i = HornerScheme::to_instr_multiple(&h, poly.nvars());
 
     println!("Number of operations={}, with scheme={:?}", score, scheme,);
 
@@ -31,7 +31,7 @@ fn main() {
     }
 
     let op_count = i.op_count();
-    let o = i.to_output(poly.var_map.as_ref().unwrap().to_vec(), true);
+    let o = i.to_output(poly.variables.as_ref().to_vec(), true);
     let o_f64 = o.convert::<f64>();
 
     println!("Writing output to evaluate_multiple.cpp");
@@ -58,6 +58,7 @@ fn main() {
     println!("Final number of operations={}", op_count);
     println!(
         "Evaluation = {:?}",
-        evaluator.evaluate_with_input(&(0..poly.nvars).map(|x| x as f64 + 1.).collect::<Vec<_>>())
+        evaluator
+            .evaluate_with_input(&(0..poly.nvars()).map(|x| x as f64 + 1.).collect::<Vec<_>>())
     );
 }

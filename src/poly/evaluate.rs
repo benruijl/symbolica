@@ -319,7 +319,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
     /// defined in `order`.
     pub fn to_horner_scheme(&self, order: &[usize]) -> HornerScheme<RationalField> {
         let mut indices: Vec<_> = (0..self.nterms()).collect();
-        let mut power_sub = vec![E::zero(); self.nvars];
+        let mut power_sub = vec![E::zero(); self.nvars()];
         let mut horner_boxes = vec![];
 
         self.to_horner_scheme_impl(order, &mut indices, 0, &mut power_sub, &mut horner_boxes)
@@ -525,13 +525,13 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
     /// Optimize an expression for evaluation, given `num_iter` tries.
     pub fn optimize(&self, num_iter: usize) -> InstructionListOutput<Rational> {
         let (h, _ops, _scheme) = self.optimize_horner_scheme(num_iter);
-        let mut i = h.to_instr(self.nvars);
+        let mut i = h.to_instr(self.nvars());
         i.fuse_operations();
         while i.common_pair_elimination() {
             i.fuse_operations();
         }
 
-        i.to_output(self.var_map.as_ref().unwrap().to_vec(), true)
+        i.to_output(self.variables.as_ref().to_vec(), true)
     }
 }
 
@@ -547,13 +547,13 @@ impl HornerScheme<RationalField> {
         assert!(
             polys
                 .windows(2)
-                .all(|r| r[0].var_map == r[1].var_map && r[0].nvars == r[1].nvars),
+                .all(|r| r[0].variables == r[1].variables && r[0].nvars() == r[1].nvars()),
             "Variable maps of all polynomials must be the same"
         );
 
         // the starting scheme is the descending order of occurrence of variables
-        let mut occurrence: Vec<_> = (0..polys[0].nvars).map(|x| (x, 0)).collect();
-        for es in polys[0].exponents.chunks(polys[0].nvars) {
+        let mut occurrence: Vec<_> = (0..polys[0].nvars()).map(|x| (x, 0)).collect();
+        for es in polys[0].exponents.chunks(polys[0].nvars()) {
             for ((_, o), e) in occurrence.iter_mut().zip(es) {
                 if *e > E::zero() {
                     *o += 1;
@@ -565,7 +565,7 @@ impl HornerScheme<RationalField> {
         let mut scheme: Vec<_> = occurrence.into_iter().map(|(v, _)| v).collect();
 
         let mut indices: Vec<_> = vec![];
-        let mut power_sub = vec![E::zero(); polys[0].nvars];
+        let mut power_sub = vec![E::zero(); polys[0].nvars()];
 
         let mut horner_boxes = vec![];
 
@@ -593,8 +593,8 @@ impl HornerScheme<RationalField> {
 
         // TODO: for few variables, test all permutations
         for i in 0..num_tries {
-            let a = rng.gen_range(0..polys[0].nvars);
-            let b = rng.gen_range(0..polys[0].nvars);
+            let a = rng.gen_range(0..polys[0].nvars());
+            let b = rng.gen_range(0..polys[0].nvars());
             scheme.swap(a, b);
 
             let mut new_oc = 0;
@@ -1739,9 +1739,9 @@ impl ExpressionEvaluator {
                     joint.iter().map(|a| a.to_polynomial(&Q, None)).collect();
 
                 // fuse the variable maps
-                MultivariatePolynomial::unify_var_maps(&mut polys);
+                MultivariatePolynomial::unify_variables_list(&mut polys);
 
-                let var_map = polys[0].var_map.clone().unwrap();
+                let var_map = polys[0].variables.clone();
 
                 let poly_ref = polys.iter().collect::<Vec<_>>();
 
@@ -1763,7 +1763,6 @@ impl ExpressionEvaluator {
 
                 let mut seen_arrays = vec![];
                 let call_args = var_map
-                    .as_ref()
                     .iter()
                     .filter_map(|x| {
                         if let super::Variable::Array(x, _) = x {

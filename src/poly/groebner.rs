@@ -83,7 +83,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
         print_stats: bool,
     ) -> GroebnerBasis<R, E, O> {
         let mut ideal = ideal.to_vec();
-        MultivariatePolynomial::unify_var_maps(&mut ideal);
+        MultivariatePolynomial::unify_variables_list(&mut ideal);
 
         let mut b = GroebnerBasis {
             system: ideal,
@@ -119,7 +119,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
     /// Adapted from [A new efficient algorithm for computing Gröbner bases (F4)](https://doi.org/10.1016/S0022-4049(99)00005-5) by Jean-Charles Faugére.
     ///
     fn f4(&mut self) {
-        let nvars = self.system[0].nvars;
+        let nvars = self.system[0].nvars();
         let field = self.system[0].field.clone();
 
         let mut simplifications = vec![];
@@ -213,7 +213,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
             new_polys.clear();
             let mut i = 0;
             while i < selected_polys.len() {
-                for monom in selected_polys[i].exponents.chunks(nvars) {
+                for monom in selected_polys[i].exponents_iter() {
                     if let Some(m) = all_monomials.get_mut(monom) {
                         if m.present {
                             continue;
@@ -298,7 +298,6 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
             R::echelonize(
                 &mut matrix,
                 &mut selected_polys,
-                nvars,
                 &all_monomials,
                 &sorted_monomial_indices,
                 &field,
@@ -436,7 +435,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         let mut rest_coeff = vec![];
         let mut rest_exponents = vec![];
 
-        let mut monom = vec![E::zero(); p.nvars];
+        let mut monom = vec![E::zero(); p.nvars()];
 
         'term: while !r.is_zero() {
             // find a divisor that has the least amount of terms
@@ -470,7 +469,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         // append in sorted order
         while let Some(c) = rest_coeff.pop() {
             let l = rest_coeff.len();
-            q.append_monomial(c, &rest_exponents[l * p.nvars..(l + 1) * p.nvars]);
+            q.append_monomial(c, &rest_exponents[l * p.nvars()..(l + 1) * p.nvars()]);
         }
 
         q
@@ -570,7 +569,6 @@ pub trait Echelonize: Field {
     fn echelonize<E: Exponent, O: MonomialOrder>(
         matrix: &mut Vec<Vec<(Self::LargerField, usize)>>,
         selected_polys: &mut Vec<Rc<MultivariatePolynomial<Self, E, O>>>,
-        nvars: usize,
         all_monomials: &HashMap<Vec<E>, MonomialData>,
         sorted_monomial_indices: &[usize],
         field: &Self,
@@ -588,7 +586,6 @@ impl Echelonize for Zp {
     fn echelonize<E: Exponent, O: MonomialOrder>(
         matrix: &mut Vec<Vec<(i64, usize)>>,
         selected_polys: &mut Vec<Rc<MultivariatePolynomial<Zp, E, O>>>,
-        nvars: usize,
         all_monomials: &HashMap<Vec<E>, MonomialData>,
         sorted_monomial_indices: &[usize],
         field: &Zp,
@@ -626,7 +623,7 @@ impl Echelonize for Zp {
         for (row, p) in matrix.iter_mut().zip(selected_polys) {
             row.clear();
 
-            for (coeff, exp) in p.coefficients.iter().zip(p.exponents.chunks(nvars)).rev() {
+            for (coeff, exp) in p.coefficients.iter().zip(p.exponents_iter()).rev() {
                 row.push((
                     field.from_element(coeff) as i64,
                     all_monomials.get(exp).unwrap().column,
@@ -796,7 +793,6 @@ macro_rules! echelonize_impl {
             fn echelonize<E: Exponent, O: MonomialOrder>(
                 matrix: &mut Vec<Vec<(Self::Element, usize)>>,
                 selected_polys: &mut Vec<Rc<MultivariatePolynomial<Self, E, O>>>,
-                nvars: usize,
                 all_monomials: &HashMap<Vec<E>, MonomialData>,
                 sorted_monomial_indices: &[usize],
                 field: &Self,
@@ -808,7 +804,7 @@ macro_rules! echelonize_impl {
                 for (row, p) in matrix.iter_mut().zip(selected_polys) {
                     row.clear();
 
-                    for (coeff, exp) in p.coefficients.iter().zip(p.exponents.chunks(nvars)).rev() {
+                    for (coeff, exp) in p.coefficients.iter().zip(p.exponents_iter()).rev() {
                         row.push((coeff.clone(), all_monomials.get(exp).unwrap().column));
                     }
                 }

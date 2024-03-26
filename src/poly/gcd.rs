@@ -161,7 +161,7 @@ impl<R: Ring, E: Exponent> MultivariatePolynomial<R, E> {
     ) {
         out.clear();
         let mut c = self.field.zero();
-        let mut new_exp = vec![E::zero(); self.nvars];
+        let mut new_exp = vec![E::zero(); self.nvars()];
         for (aa, e) in self.into_iter().zip(exp_evals) {
             if aa.exponents[main_var] != new_exp[main_var] {
                 if !R::is_zero(&c) {
@@ -251,7 +251,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         let mut res = self.zero();
-        let mut e = vec![E::zero(); self.nvars];
+        let mut e = vec![E::zero(); self.nvars()];
         for (k, c) in tm.drain() {
             if !F::is_zero(&c) {
                 e[v] = k;
@@ -296,7 +296,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
 
         // TODO: add bounds estimate
         let mut res = self.zero();
-        let mut e = vec![E::zero(); self.nvars];
+        let mut e = vec![E::zero(); self.nvars()];
         for (k, c) in tm.iter_mut().enumerate() {
             if !F::is_zero(c) {
                 e[v] = E::from_u32(k as u32);
@@ -317,7 +317,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         let mut rng = rand::thread_rng();
 
         // store a table for variables raised to a certain power
-        let mut cache = (0..ap.nvars)
+        let mut cache = (0..ap.nvars())
             .map(|i| {
                 vec![
                     ap.field.zero();
@@ -463,7 +463,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         }
 
         // convert to standard form
-        let mut e = vec![E::zero(); u[0].nvars];
+        let mut e = vec![E::zero(); u[0].nvars()];
         e[x] = E::one();
         let xp = u[0].monomial(field.one(), e);
         let mut u = v[v.len() - 1].clone();
@@ -530,7 +530,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         let mut failure_count = 0;
 
         // store a table for variables raised to a certain power
-        let mut cache = (0..a.nvars)
+        let mut cache = (0..a.nvars())
             .map(|i| {
                 vec![
                     a.field.zero();
@@ -742,7 +742,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         let mut failure_count = 0;
 
         // store a table for variables raised to a certain power
-        let mut cache = (0..a.nvars)
+        let mut cache = (0..a.nvars())
             .map(|i| {
                 vec![
                     a.field.zero();
@@ -1329,7 +1329,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
             // do a probabilistic division test
             let (g1, a1, b1) = loop {
                 // store a table for variables raised to a certain power
-                let mut cache = (0..a.nvars)
+                let mut cache = (0..a.nvars())
                     .map(|i| {
                         vec![
                             a.field.zero();
@@ -1529,7 +1529,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
     /// Compute the gcd of two multivariate polynomials.
     #[instrument(skip_all)]
     pub fn gcd(&self, b: &MultivariatePolynomial<R, E>) -> MultivariatePolynomial<R, E> {
-        debug_assert_eq!(self.nvars, b.nvars);
+        debug_assert_eq!(self.nvars(), b.nvars());
         debug!("gcd of {} and {}", self, b);
 
         if let Some(g) = self.simple_gcd(b) {
@@ -1544,7 +1544,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         // determine the maximum shared power of every variable
         let mut shared_degree: SmallVec<[E; INLINED_EXPONENTS]> = a.exponents(0).into();
         for p in [&a, &b] {
-            for e in p.exponents.chunks(p.nvars) {
+            for e in p.exponents_iter() {
                 for (md, v) in shared_degree.iter_mut().zip(e) {
                     *md = (*md).min(*v);
                 }
@@ -1554,21 +1554,21 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         // divide out the common factors
         if shared_degree.iter().any(|d| *d != E::zero()) {
             let aa = a.to_mut();
-            for e in aa.exponents.chunks_mut(aa.nvars) {
+            for e in aa.exponents_iter_mut() {
                 for (v, d) in e.iter_mut().zip(&shared_degree) {
                     *v = *v - *d;
                 }
             }
 
             let bb = b.to_mut();
-            for e in bb.exponents.chunks_mut(bb.nvars) {
+            for e in bb.exponents_iter_mut() {
                 for (v, d) in e.iter_mut().zip(&shared_degree) {
                     *v = *v - *d;
                 }
             }
         };
 
-        let mut base_degree: SmallVec<[Option<E>; INLINED_EXPONENTS]> = smallvec![None; a.nvars];
+        let mut base_degree: SmallVec<[Option<E>; INLINED_EXPONENTS]> = smallvec![None; a.nvars()];
 
         if let Some(g) = MultivariatePolynomial::simple_gcd(&a, &b) {
             return rescale_gcd(g, &shared_degree, &base_degree, &a.constant(a.field.one()));
@@ -1597,7 +1597,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             .any(|d| d.is_some() && d.unwrap() > E::one())
         {
             let aa = a.to_mut();
-            for e in aa.exponents.chunks_mut(aa.nvars) {
+            for e in aa.exponents_iter_mut() {
                 for (v, d) in e.iter_mut().zip(&base_degree) {
                     if let Some(d) = d {
                         *v = *v / *d;
@@ -1606,7 +1606,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             }
 
             let bb = b.to_mut();
-            for e in bb.exponents.chunks_mut(bb.nvars) {
+            for e in bb.exponents_iter_mut() {
                 for (v, d) in e.iter_mut().zip(&base_degree) {
                     if let Some(d) = d {
                         *v = *v / *d;
@@ -1632,7 +1632,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                     .iter()
                     .any(|d| d.map(|bd| bd > E::one()).unwrap_or(false))
             {
-                for e in g.exponents.chunks_mut(g.nvars) {
+                for e in g.exponents_iter_mut() {
                     for ((v, d), s) in e.iter_mut().zip(base_degree).zip(shared_degree) {
                         if let Some(d) = d {
                             *v = *v * *d;
@@ -1657,7 +1657,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         }
 
         // store which variables appear in which expression
-        let mut scratch: SmallVec<[i32; INLINED_EXPONENTS]> = smallvec![0i32; a.nvars];
+        let mut scratch: SmallVec<[i32; INLINED_EXPONENTS]> = smallvec![0i32; a.nvars()];
         for (p, inc) in [(&a, 1), (&b, 2)] {
             for t in p.into_iter() {
                 for (e, ee) in scratch.iter_mut().zip(t.exponents) {
@@ -1712,7 +1712,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         // check if the polynomial is linear in a variable and compute the gcd using the univariate content
         for (p1, p2) in [(&a, &b), (&b, &a)] {
-            if let Some(var) = (0..p1.nvars).find(|v| p1.degree(*v) == E::one()) {
+            if let Some(var) = (0..p1.nvars()).find(|v| p1.degree(*v) == E::one()) {
                 let mut cont = p1.univariate_content(var);
 
                 let p1_prim = p1.as_ref() / &cont;
@@ -1742,7 +1742,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             .collect();
 
         // determine safe bounds for variables in the gcd
-        let mut bounds: SmallVec<[_; INLINED_EXPONENTS]> = (0..a.nvars)
+        let mut bounds: SmallVec<[_; INLINED_EXPONENTS]> = (0..a.nvars())
             .map(|i| {
                 let da = a.degree(i);
                 let db = b.degree(i);
@@ -1878,7 +1878,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                 // multiply with var^i
                 let mut g_i_2 = g_i.clone();
-                for x in g_i_2.exponents.chunks_mut(g_i_2.nvars) {
+                let nvars = g_i_2.nvars();
+                for x in g_i_2.exponents.chunks_mut(nvars) {
                     x[var] = E::from_u32(i);
                 }
 
@@ -1908,7 +1909,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
         debug!("a_red={}; b_red={}", a, b);
 
         if let Some(var) =
-            (0..a.nvars).find(|x| a.degree(*x) > E::zero() && b.degree(*x) > E::zero())
+            (0..a.nvars()).find(|x| a.degree(*x) > E::zero() && b.degree(*x) > E::zero())
         {
             let max_a = a
                 .coefficients
@@ -2417,7 +2418,7 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
     )> {
         // estimate if the heuristic gcd will overflow
         let mut max_deg_a = 0;
-        let mut contains_a: SmallVec<[bool; INLINED_EXPONENTS]> = smallvec![false; a.nvars];
+        let mut contains_a: SmallVec<[bool; INLINED_EXPONENTS]> = smallvec![false; a.nvars()];
         for t in a {
             let mut deg = 1;
             for (var, e) in t.exponents.iter().enumerate() {
@@ -2434,7 +2435,7 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
         }
 
         let mut max_deg_b = 0;
-        let mut contains_b: SmallVec<[bool; INLINED_EXPONENTS]> = smallvec![false; b.nvars];
+        let mut contains_b: SmallVec<[bool; INLINED_EXPONENTS]> = smallvec![false; b.nvars()];
         for t in b {
             let mut deg = 1;
             for (var, e) in t.exponents.iter().enumerate() {
@@ -2774,10 +2775,9 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicNumberRing<RationalField> {
             // we use rational reconstruction to recover it
             let mut gm: MultivariatePolynomial<AlgebraicNumberRing<IntegerRing>, E> =
                 MultivariatePolynomial::new(
-                    a.nvars,
                     &a_integer,
-                    Some(gp.nterms()),
-                    a.var_map.clone(),
+                    gp.nterms().into(),
+                    a.variables.clone().into(),
                 );
             gm.exponents = gp.exponents.clone();
             gm.coefficients = gp

@@ -25,20 +25,17 @@ use super::{
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FactorizedRationalPolynomialField<R: Ring, E: Exponent> {
     ring: R,
-    nvars: usize,
-    var_map: Option<Arc<Vec<Variable>>>,
+    var_map: Arc<Vec<Variable>>,
     _phantom_exp: PhantomData<E>,
 }
 
 impl<R: Ring, E: Exponent> FactorizedRationalPolynomialField<R, E> {
     pub fn new(
         coeff_ring: R,
-        nvars: usize,
-        var_map: Option<Arc<Vec<Variable>>>,
+        var_map: Arc<Vec<Variable>>,
     ) -> FactorizedRationalPolynomialField<R, E> {
         FactorizedRationalPolynomialField {
             ring: coeff_ring,
-            nvars,
             var_map,
             _phantom_exp: PhantomData,
         }
@@ -49,8 +46,7 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomialField<R, E> {
     ) -> FactorizedRationalPolynomialField<R, E> {
         FactorizedRationalPolynomialField {
             ring: poly.field.clone(),
-            nvars: poly.nvars,
-            var_map: poly.var_map.clone(),
+            var_map: poly.variables.clone(),
             _phantom_exp: PhantomData,
         }
     }
@@ -83,16 +79,8 @@ impl<R: Ring, E: Exponent> PartialOrd for FactorizedRationalPolynomial<R, E> {
 }
 
 impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
-    pub fn new(
-        field: &R,
-        var_map: Option<Arc<Vec<Variable>>>,
-    ) -> FactorizedRationalPolynomial<R, E> {
-        let num = MultivariatePolynomial::new(
-            var_map.as_ref().map(|x| x.len()).unwrap_or(0),
-            field,
-            None,
-            var_map,
-        );
+    pub fn new(field: &R, var_map: Arc<Vec<Variable>>) -> FactorizedRationalPolynomial<R, E> {
+        let num = MultivariatePolynomial::new(field, None, var_map);
 
         FactorizedRationalPolynomial {
             numerator: num,
@@ -102,15 +90,15 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
         }
     }
 
-    pub fn get_var_map(&self) -> Option<&[Variable]> {
-        self.numerator.var_map.as_ref().map(|x| x.as_slice())
+    pub fn get_variables(&self) -> &[Variable] {
+        self.numerator.get_vars_ref()
     }
 
-    pub fn unify_var_map(&mut self, other: &mut Self) {
-        self.numerator.unify_var_map(&mut other.numerator);
+    pub fn unify_variables(&mut self, other: &mut Self) {
+        self.numerator.unify_variables(&mut other.numerator);
 
         for d in &mut self.denominators {
-            d.0.unify_var_map(&mut other.numerator);
+            d.0.unify_variables(&mut other.numerator);
         }
     }
 
@@ -213,7 +201,7 @@ impl<E: Exponent> FromNumeratorAndFactorizedDenominator<IntegerRing, IntegerRing
     ) -> Self {
         for _ in 0..2 {
             for (d, _) in &mut dens {
-                num.unify_var_map(d);
+                num.unify_variables(d);
             }
         }
 
@@ -323,7 +311,7 @@ where
     ) -> Self {
         for _ in 0..2 {
             for (d, _) in &mut dens {
-                num.unify_var_map(d);
+                num.unify_variables(d);
             }
         }
 
@@ -553,12 +541,7 @@ where
 
     fn zero(&self) -> Self::Element {
         FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::new(
-                self.nvars,
-                &self.ring,
-                None,
-                self.var_map.clone(),
-            ),
+            numerator: MultivariatePolynomial::new(&self.ring, None, self.var_map.clone().into()),
             numer_coeff: self.ring.zero(),
             denom_coeff: self.ring.one(),
             denominators: vec![],
@@ -567,13 +550,8 @@ where
 
     fn one(&self) -> Self::Element {
         FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::new(
-                self.nvars,
-                &self.ring,
-                None,
-                self.var_map.clone(),
-            )
-            .one(),
+            numerator: MultivariatePolynomial::new(&self.ring, None, self.var_map.clone().into())
+                .one(),
             numer_coeff: self.ring.one(),
             denom_coeff: self.ring.one(),
             denominators: vec![],
@@ -1040,13 +1018,12 @@ where
 
             let l = f.to_univariate_polynomial_list(var);
             let mut res: MultivariatePolynomial<_, E> = MultivariatePolynomial::new(
-                self.numerator.nvars,
                 &rat_field,
                 Some(l.len()),
-                self.numerator.var_map.clone(),
+                self.numerator.variables.clone().into(),
             );
 
-            let mut exp = vec![E::zero(); self.numerator.nvars];
+            let mut exp = vec![E::zero(); self.numerator.nvars()];
             for (p, e) in l {
                 exp[var] = e;
                 res.append_monomial(
@@ -1071,7 +1048,7 @@ where
             for (c, e) in d
                 .coefficients
                 .into_iter()
-                .zip(d.exponents.chunks(self.numerator.nvars))
+                .zip(d.exponents.chunks(self.numerator.nvars()))
             {
                 unfold = &unfold
                     + &(&c

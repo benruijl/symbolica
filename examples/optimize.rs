@@ -14,7 +14,7 @@ fn main() {
     let poly: MultivariatePolynomial<_, u8> = Atom::parse(SIGMA).unwrap().to_polynomial(&Q, None);
 
     let (h, _ops, scheme) = poly.optimize_horner_scheme(4000);
-    let mut i = h.to_instr(poly.nvars);
+    let mut i = h.to_instr(poly.nvars());
 
     println!(
         "Number of operations={}, with scheme={:?}",
@@ -32,7 +32,7 @@ fn main() {
     }
 
     let op_count = i.op_count();
-    let o = i.to_output(poly.var_map.as_ref().unwrap().to_vec(), true);
+    let o = i.to_output(poly.variables.as_ref().to_vec(), true);
     let o_f64 = o.convert::<f64>();
 
     println!("Writing output to evaluate.cpp");
@@ -59,8 +59,8 @@ fn main() {
     println!("Final number of operations={}", op_count);
     println!(
         "Evaluation = {}",
-        evaluator.evaluate_with_input(&(0..poly.nvars).map(|x| x as f64 + 1.).collect::<Vec<_>>())
-            [0]
+        evaluator
+            .evaluate_with_input(&(0..poly.nvars()).map(|x| x as f64 + 1.).collect::<Vec<_>>())[0]
     );
 
     // evaluate with simd
@@ -70,7 +70,7 @@ fn main() {
     println!(
         "Evaluation with simd = {:?}",
         evaluator.evaluate_with_input(
-            &(0..poly.nvars)
+            &(0..poly.nvars())
                 .map(|x| f64x4::new([x as f64 + 1., x as f64 + 2., x as f64 + 3., x as f64 + 4.]))
                 .collect::<Vec<_>>()
         )[0]

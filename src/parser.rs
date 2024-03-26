@@ -938,8 +938,7 @@ impl Token {
         field: &R,
     ) -> (&'a [u8], MultivariatePolynomial<R, E>) {
         let mut exponents = vec![E::zero(); var_name_map.len()];
-        let mut poly =
-            MultivariatePolynomial::new(var_name_map.len(), field, None, Some(var_map.clone()));
+        let mut poly = MultivariatePolynomial::new(field, None, var_map.clone());
 
         let mut last_pos = input;
         let mut c = input.get_u8();

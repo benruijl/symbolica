@@ -36,7 +36,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         let mut stripped = self.clone();
 
         let mut factors = vec![];
-        for x in 0..self.nvars {
+        for x in 0..self.nvars() {
             if self.degree(x) == E::zero() {
                 continue;
             }
@@ -72,7 +72,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         // any variable can be selected
         // select the one with the lowest degree
-        let lowest_rank_var = (0..self.nvars)
+        let lowest_rank_var = (0..self.nvars())
             .filter_map(|x| {
                 let d = self.degree(x);
                 if d > E::zero() {
@@ -153,7 +153,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             lower
         }
 
-        let vars: Vec<_> = (0..self.nvars)
+        let vars: Vec<_> = (0..self.nvars())
             .filter(|v| self.degree(*v) > E::zero())
             .collect();
 
@@ -163,7 +163,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         let points = self
             .exponents
-            .chunks(self.nvars)
+            .chunks(self.nvars())
             .map(|e| (e[vars[0]].to_u32() as isize, e[vars[1]].to_u32() as isize))
             .collect();
 
@@ -236,7 +236,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
         let sf = self.square_free_factorization();
 
         let mut factors = vec![];
-        let mut degrees = vec![0; self.nvars];
+        let mut degrees = vec![0; self.nvars()];
         for (f, p) in sf {
             debug!("SFF {} {}", f, p);
 
@@ -370,12 +370,12 @@ where
         let sf = self.square_free_factorization();
 
         let mut factors = vec![];
-        let mut degrees = vec![0; self.nvars];
+        let mut degrees = vec![0; self.nvars()];
         for (f, p) in sf {
             debug!("SFF {} {}", f, p);
 
             let mut var_count = 0;
-            for v in 0..self.nvars {
+            for v in 0..self.nvars() {
                 degrees[v] = f.degree(v).to_u32() as usize;
                 if degrees[v] > 0 {
                     var_count += 1;
@@ -450,7 +450,7 @@ where
 
         let mut h = HashMap::default();
         let mut hr;
-        for var in 0..self.nvars {
+        for var in 0..self.nvars() {
             if f.degree(var) > E::zero() {
                 (f, hr) = f.square_free_factorization_ff_yun(var);
 
@@ -469,7 +469,7 @@ where
         // since the derivative in every var is 0, all powers are divisible by p
         let p = self.field.get_prime().to_u64() as usize;
         let mut b = f.clone();
-        for es in b.exponents.chunks_mut(self.nvars) {
+        for es in b.exponents_iter_mut() {
             for e in es {
                 if e.is_zero() {
                     continue;
@@ -602,7 +602,7 @@ where
 
         let mut rng = thread_rng();
         let mut random_poly = self.zero_with_capacity(d);
-        let mut exp = vec![E::zero(); self.nvars];
+        let mut exp = vec![E::zero(); self.nvars()];
 
         let mut try_counter = 0;
 
@@ -752,7 +752,7 @@ where
             .map(|ts| {
                 let mut new_poly = self.zero_with_capacity(ts.len());
                 for (i, mut f) in ts.into_iter().enumerate() {
-                    for x in f.exponents.chunks_mut(f.nvars) {
+                    for x in f.exponents_iter_mut() {
                         x[interpolation_var] = E::from_u32(i as u32);
                     }
                     new_poly = new_poly + f;
@@ -1411,7 +1411,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         // TODO: precompute
         let mut mod_vars = Vec::with_capacity(order.len() - 2);
-        let mut exp = vec![E::zero(); error.nvars];
+        let mut exp = vec![E::zero(); error.nvars()];
         for r in order[1..order.len() - 1].iter().zip(&degrees[1..]) {
             let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
             exp[*r.0] = E::one();
@@ -1458,7 +1458,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let mut e_mod = e
                 .shift_var(last_var, shift)
                 .mod_var(last_var, E::from_u32(j as u32 + 1));
-            for e in e_mod.exponents.chunks_mut(e_mod.nvars) {
+            for e in e_mod.exponents_iter_mut() {
                 debug_assert_eq!(e[last_var], E::from_u32(j as u32));
                 e[last_var] = E::zero();
             }
@@ -1532,7 +1532,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                     bs.last_mut().unwrap().0 = lcoeff;
 
                     let mut fixed_fac = self.zero();
-                    let mut exp = vec![E::zero(); self.nvars];
+                    let mut exp = vec![E::zero(); self.nvars()];
                     for (p, e) in bs {
                         exp[order[0]] = e;
                         fixed_fac = fixed_fac + p.mul_exp(&exp);
@@ -1694,7 +1694,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             .map(|ts| {
                 let mut new_poly = self.zero_with_capacity(ts.len());
                 for (i, mut f) in ts.into_iter().enumerate() {
-                    for x in f.exponents.chunks_mut(f.nvars) {
+                    for x in f.exponents_iter_mut() {
                         debug_assert_eq!(x[last_var], E::zero());
                         x[last_var] = E::from_u32(i as u32);
                     }
@@ -1905,11 +1905,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             let mut fs = CombinationIterator::new(factors.len(), s);
             while let Some(cs) = fs.next() {
                 // check if the constant term matches
-                if rest.exponents[..rest.nvars].iter().all(|e| *e == E::zero()) {
+                if rest.exponents[..rest.nvars()]
+                    .iter()
+                    .all(|e| *e == E::zero())
+                {
                     let mut g1 = rest.lcoeff();
                     let mut h1 = rest.lcoeff();
                     for (i, f) in factors.iter().enumerate() {
-                        if f.exponents[..rest.nvars].iter().all(|x| *x == E::zero()) {
+                        if f.exponents[..rest.nvars()].iter().all(|x| *x == E::zero()) {
                             if cs.contains(&i) {
                                 g1 = (&g1 * &f.coefficients[0]).symmetric_mod(&max_p);
                             } else {
@@ -2052,7 +2055,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             .map(|ts| {
                 let mut new_poly = poly.zero_with_capacity(ts.len());
                 for (i, mut f) in ts.into_iter().enumerate() {
-                    for x in f.exponents.chunks_mut(f.nvars) {
+                    for x in f.exponents_iter_mut() {
                         x[interpolation_var] = E::from_u32(i as u32);
                     }
                     new_poly = new_poly + f;
@@ -2318,7 +2321,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let mut bound = Integer::one();
         let mut total_degree = 0;
         let mut non_zero_vars = 0;
-        for v in 0..self.nvars {
+        for v in 0..self.nvars() {
             let d = self.degree(v).to_u32() as u64;
             if d > 0 {
                 non_zero_vars += 1;

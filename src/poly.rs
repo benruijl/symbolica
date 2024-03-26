@@ -412,17 +412,21 @@ impl Atom {
     /// added to the variable map. Similarly, non-rational polynomial parts are automatically
     /// defined as a new independent variable in the rational polynomial.
     pub fn to_rational_polynomial<
-        R: EuclideanDomain + ConvertToRing + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
         field: &R,
+        out_field: &RO,
         var_map: Option<Arc<Vec<Variable>>>,
-    ) -> RationalPolynomial<R, E>
+    ) -> RationalPolynomial<RO, E>
     where
-        RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+        RationalPolynomial<RO, E>:
+            FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
-        self.as_view().to_rational_polynomial(field, var_map)
+        self.as_view()
+            .to_rational_polynomial(field, out_field, var_map)
     }
 
     /// Convert the atom to a rational polynomial with factorized denominators, optionally in the variable ordering
@@ -430,19 +434,22 @@ impl Atom {
     /// added to the variable map. Similarly, non-rational polynomial parts are automatically
     /// defined as a new independent variable in the rational polynomial.
     pub fn to_factorized_rational_polynomial<
-        R: EuclideanDomain + ConvertToRing + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
         field: &R,
+        out_field: &RO,
         var_map: Option<Arc<Vec<Variable>>>,
-    ) -> FactorizedRationalPolynomial<R, E>
+    ) -> FactorizedRationalPolynomial<RO, E>
     where
-        FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
-        MultivariatePolynomial<R, E>: Factorize,
+        FactorizedRationalPolynomial<RO, E>: FromNumeratorAndFactorizedDenominator<R, RO, E>
+            + FromNumeratorAndFactorizedDenominator<RO, RO, E>,
+        MultivariatePolynomial<RO, E>: Factorize,
     {
         self.as_view()
-            .to_factorized_rational_polynomial(field, var_map)
+            .to_factorized_rational_polynomial(field, out_field, var_map)
     }
 }
 
@@ -628,12 +635,8 @@ impl<'a> AtomView<'a> {
             poly.append_monomial(coefficient, &exponents);
         }
 
-        let mut poly = MultivariatePolynomial::<R, E>::new(
-            vars.len(),
-            field,
-            Some(n_terms),
-            Some(Arc::new(vars.clone())),
-        );
+        let mut poly =
+            MultivariatePolynomial::<R, E>::new(field, Some(n_terms), Arc::new(vars.clone()));
 
         match self {
             AtomView::Add(a) => {
@@ -698,7 +701,7 @@ impl<'a> AtomView<'a> {
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[id] = E::one();
-                    MultivariatePolynomial::new(var_map.len(), field, None, Some(var_map.clone()))
+                    MultivariatePolynomial::new(field, None, var_map.clone())
                         .monomial(field.one(), exp)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
@@ -706,7 +709,7 @@ impl<'a> AtomView<'a> {
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
-                    MultivariatePolynomial::new(var_map.len(), field, None, Some(Arc::new(var_map)))
+                    MultivariatePolynomial::new(field, None, Arc::new(var_map))
                         .monomial(field.one(), exp)
                 }
             }
@@ -726,10 +729,9 @@ impl<'a> AtomView<'a> {
                                     let mut exp = vec![E::zero(); var_map.len()];
                                     exp[id] = E::one();
                                     return MultivariatePolynomial::new(
-                                        var_map.len(),
                                         field,
                                         None,
-                                        Some(var_map.clone()),
+                                        var_map.clone(),
                                     )
                                     .monomial(field.one(), exp);
                                 } else {
@@ -739,10 +741,9 @@ impl<'a> AtomView<'a> {
                                     exp[var_map.len() - 1] = E::one();
 
                                     return MultivariatePolynomial::new(
-                                        var_map.len(),
                                         field,
                                         None,
-                                        Some(Arc::new(var_map)),
+                                        Arc::new(var_map),
                                     )
                                     .monomial(field.one(), exp);
                                 }
@@ -758,7 +759,7 @@ impl<'a> AtomView<'a> {
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[id] = E::one();
-                    MultivariatePolynomial::new(var_map.len(), field, None, Some(var_map.clone()))
+                    MultivariatePolynomial::new(field, None, var_map.clone())
                         .monomial(field.one(), exp)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
@@ -769,27 +770,25 @@ impl<'a> AtomView<'a> {
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
-                    MultivariatePolynomial::new(var_map.len(), field, None, Some(Arc::new(var_map)))
+                    MultivariatePolynomial::new(field, None, Arc::new(var_map))
                         .monomial(field.one(), exp)
                 }
             }
             AtomView::Mul(m) => {
                 let mut r =
-                    MultivariatePolynomial::new(var_map.len(), field, None, Some(var_map.clone()))
-                        .constant(field.one());
+                    MultivariatePolynomial::new(field, None, var_map.clone()).constant(field.one());
                 for arg in m.iter() {
-                    let mut arg_r = arg.to_polynomial_impl(field, r.var_map.as_ref().unwrap());
-                    r.unify_var_map(&mut arg_r);
+                    let mut arg_r = arg.to_polynomial_impl(field, &r.variables);
+                    r.unify_variables(&mut arg_r);
                     r = &r * &arg_r;
                 }
                 r
             }
             AtomView::Add(a) => {
-                let mut r =
-                    MultivariatePolynomial::new(var_map.len(), field, None, Some(var_map.clone()));
+                let mut r = MultivariatePolynomial::new(field, None, var_map.clone());
                 for arg in a.iter() {
-                    let mut arg_r = arg.to_polynomial_impl(field, r.var_map.as_ref().unwrap());
-                    r.unify_var_map(&mut arg_r);
+                    let mut arg_r = arg.to_polynomial_impl(field, &r.variables);
+                    r.unify_variables(&mut arg_r);
                     r = &r + &arg_r;
                 }
                 r
@@ -802,209 +801,48 @@ impl<'a> AtomView<'a> {
     /// added to the variable map. Similarly, non-rational polynomial parts are automatically
     /// defined as a new independent variable in the rational polynomial.
     pub fn to_rational_polynomial<
-        R: EuclideanDomain + ConvertToRing + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
         field: &R,
+        out_field: &RO,
         var_map: Option<Arc<Vec<Variable>>>,
-    ) -> RationalPolynomial<R, E>
+    ) -> RationalPolynomial<RO, E>
     where
-        RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+        RationalPolynomial<RO, E>:
+            FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
         Workspace::get_local().with(|ws| {
             self.to_rational_polynomial_impl(
                 ws,
                 field,
+                out_field,
                 var_map.as_ref().unwrap_or(&Arc::new(Vec::new())),
             )
         })
     }
 
     fn to_rational_polynomial_impl<
-        R: EuclideanDomain + ConvertToRing + PolynomialGCD<E>,
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
         E: Exponent,
     >(
         &self,
         workspace: &Workspace,
         field: &R,
+        out_field: &RO,
         var_map: &Arc<Vec<Variable>>,
-    ) -> RationalPolynomial<R, E>
+    ) -> RationalPolynomial<RO, E>
     where
-        RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+        RationalPolynomial<RO, E>:
+            FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial_expanded(field, Some(var_map), true) {
             let den = num.one();
-            return RationalPolynomial::from_num_den(num, den, field, false);
-        }
-
-        match self {
-            AtomView::Num(_) | AtomView::Var(_) => {
-                unreachable!("This case should have been handled by the fast routine")
-            }
-            AtomView::Pow(p) => {
-                let (base, exp) = p.get_base_exp();
-                if let AtomView::Num(n) = exp {
-                    let num_n = n.get_coeff_view();
-
-                    if let CoefficientView::Natural(nn, nd) = num_n {
-                        if nd == 1 {
-                            let b = base.to_rational_polynomial_impl(workspace, field, var_map);
-
-                            return if nn < 0 {
-                                let b_inv = b.inv();
-                                b_inv.pow(-nn as u64)
-                            } else {
-                                b.pow(nn as u64)
-                            };
-                        }
-                    }
-                }
-
-                // non-integer exponent, convert to new variable
-                if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Other(vv) => vv.as_view() == *self,
-                    _ => false,
-                }) {
-                    let mut exp = vec![E::zero(); var_map.len()];
-                    exp[id] = E::one();
-                    let r = MultivariatePolynomial::new(
-                        var_map.len(),
-                        field,
-                        None,
-                        Some(var_map.clone()),
-                    )
-                    .monomial(field.one(), exp);
-                    let den = r.one();
-                    RationalPolynomial::from_num_den(r, den, field, false)
-                } else {
-                    let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Other(Arc::new(self.to_owned())));
-                    let mut exp = vec![E::zero(); var_map.len()];
-                    exp[var_map.len() - 1] = E::one();
-
-                    let r = MultivariatePolynomial::new(
-                        var_map.len(),
-                        field,
-                        None,
-                        Some(Arc::new(var_map)),
-                    )
-                    .monomial(field.one(), exp);
-                    let den = r.one();
-                    RationalPolynomial::from_num_den(r, den, field, false)
-                }
-            }
-            AtomView::Fun(f) => {
-                // check if we have seen this variable before
-                if let Some(id) = var_map.iter().position(|v| match v {
-                    Variable::Function(_, vv) => vv.as_view() == *self,
-                    _ => false,
-                }) {
-                    let mut exp = vec![E::zero(); var_map.len()];
-                    exp[id] = E::one();
-                    let r = MultivariatePolynomial::new(
-                        var_map.len(),
-                        field,
-                        None,
-                        Some(var_map.clone()),
-                    )
-                    .monomial(field.one(), exp);
-                    let den = r.one();
-                    RationalPolynomial::from_num_den(r, den, field, false)
-                } else {
-                    let mut var_map = var_map.as_ref().clone();
-                    var_map.push(Variable::Function(
-                        f.get_symbol(),
-                        Arc::new(self.to_owned()),
-                    ));
-                    let mut exp = vec![E::zero(); var_map.len()];
-                    exp[var_map.len() - 1] = E::one();
-
-                    let r = MultivariatePolynomial::new(
-                        var_map.len(),
-                        field,
-                        None,
-                        Some(Arc::new(var_map)),
-                    )
-                    .monomial(field.one(), exp);
-
-                    let den = r.one();
-                    RationalPolynomial::from_num_den(r, den, field, false)
-                }
-            }
-            AtomView::Mul(m) => {
-                let mut r = RationalPolynomial::new(field, Some(var_map.clone()));
-                r.numerator = r.numerator.add_constant(field.one());
-                for arg in m.iter() {
-                    let mut arg_r = arg.to_rational_polynomial_impl(
-                        workspace,
-                        field,
-                        r.numerator.var_map.as_ref().unwrap(),
-                    );
-                    r.unify_var_map(&mut arg_r);
-                    r = &r * &arg_r;
-                }
-                r
-            }
-            AtomView::Add(a) => {
-                let mut r = RationalPolynomial::new(field, Some(var_map.clone()));
-                for arg in a.iter() {
-                    let mut arg_r = arg.to_rational_polynomial_impl(
-                        workspace,
-                        field,
-                        r.numerator.var_map.as_ref().unwrap(),
-                    );
-                    r.unify_var_map(&mut arg_r);
-                    r = &r + &arg_r;
-                }
-                r
-            }
-        }
-    }
-
-    /// Convert the atom to a rational polynomial with factorized denominators, optionally in the variable ordering
-    /// specified by `var_map`. If new variables are encountered, they are
-    /// added to the variable map. Similarly, non-rational polynomial parts are automatically
-    /// defined as a new independent variable in the rational polynomial.
-    pub fn to_factorized_rational_polynomial<
-        R: EuclideanDomain + ConvertToRing + PolynomialGCD<E>,
-        E: Exponent,
-    >(
-        &self,
-        field: &R,
-        var_map: Option<Arc<Vec<Variable>>>,
-    ) -> FactorizedRationalPolynomial<R, E>
-    where
-        FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
-        MultivariatePolynomial<R, E>: Factorize,
-    {
-        Workspace::get_local().with(|ws| {
-            self.to_factorized_rational_polynomial_impl(
-                ws,
-                field,
-                var_map.as_ref().unwrap_or(&Arc::new(Vec::new())),
-            )
-        })
-    }
-
-    pub fn to_factorized_rational_polynomial_impl<
-        R: EuclideanDomain + ConvertToRing + PolynomialGCD<E>,
-        E: Exponent,
-    >(
-        &self,
-        workspace: &Workspace,
-        field: &R,
-        var_map: &Arc<Vec<Variable>>,
-    ) -> FactorizedRationalPolynomial<R, E>
-    where
-        FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
-        MultivariatePolynomial<R, E>: Factorize,
-    {
-        // see if the current term can be cast into a polynomial using a fast routine
-        if let Ok(num) = self.to_polynomial_expanded(field, Some(var_map), true) {
-            let den = vec![(num.one(), 1)];
-            return FactorizedRationalPolynomial::from_num_den(num, den, field, false);
+            return RationalPolynomial::from_num_den(num, den, out_field, false);
         }
 
         match self {
@@ -1019,7 +857,7 @@ impl<'a> AtomView<'a> {
                     if let CoefficientView::Natural(nn, nd) = num_n {
                         if nd == 1 {
                             let b = base
-                                .to_factorized_rational_polynomial_impl(workspace, field, var_map);
+                                .to_rational_polynomial_impl(workspace, field, out_field, var_map);
 
                             return if nn < 0 {
                                 let b_inv = b.inv();
@@ -1038,28 +876,20 @@ impl<'a> AtomView<'a> {
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[id] = E::one();
-                    let r = MultivariatePolynomial::new(
-                        var_map.len(),
-                        field,
-                        None,
-                        Some(var_map.clone()),
-                    )
-                    .monomial(field.one(), exp);
-                    FactorizedRationalPolynomial::from_num_den(r, vec![], field, false)
+                    let r = MultivariatePolynomial::new(field, None, var_map.clone())
+                        .monomial(field.one(), exp);
+                    let den = r.one();
+                    RationalPolynomial::from_num_den(r, den, out_field, false)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
                     var_map.push(Variable::Other(Arc::new(self.to_owned())));
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
-                    let r = MultivariatePolynomial::new(
-                        var_map.len(),
-                        field,
-                        None,
-                        Some(Arc::new(var_map)),
-                    )
-                    .monomial(field.one(), exp);
-                    FactorizedRationalPolynomial::from_num_den(r, vec![], field, false)
+                    let r = MultivariatePolynomial::new(field, None, Arc::new(var_map))
+                        .monomial(field.one(), exp);
+                    let den = r.one();
+                    RationalPolynomial::from_num_den(r, den, out_field, false)
                 }
             }
             AtomView::Fun(f) => {
@@ -1070,14 +900,10 @@ impl<'a> AtomView<'a> {
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[id] = E::one();
-                    let r = MultivariatePolynomial::new(
-                        var_map.len(),
-                        field,
-                        None,
-                        Some(var_map.clone()),
-                    )
-                    .monomial(field.one(), exp);
-                    FactorizedRationalPolynomial::from_num_den(r, vec![], field, false)
+                    let r = MultivariatePolynomial::new(field, None, var_map.clone())
+                        .monomial(field.one(), exp);
+                    let den = r.one();
+                    RationalPolynomial::from_num_den(r, den, out_field, false)
                 } else {
                     let mut var_map = var_map.as_ref().clone();
                     var_map.push(Variable::Function(
@@ -1087,40 +913,193 @@ impl<'a> AtomView<'a> {
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[var_map.len() - 1] = E::one();
 
-                    let r = MultivariatePolynomial::new(
-                        var_map.len(),
-                        field,
-                        None,
-                        Some(Arc::new(var_map)),
-                    )
-                    .monomial(field.one(), exp);
-                    FactorizedRationalPolynomial::from_num_den(r, vec![], field, false)
+                    let r = MultivariatePolynomial::new(field, None, Arc::new(var_map))
+                        .monomial(field.one(), exp);
+
+                    let den = r.one();
+                    RationalPolynomial::from_num_den(r, den, out_field, false)
                 }
             }
             AtomView::Mul(m) => {
-                let mut r = FactorizedRationalPolynomial::new(field, Some(var_map.clone()));
-                r.numerator = r.numerator.add_constant(field.one());
-                r.numer_coeff = field.one();
+                let mut r = RationalPolynomial::new(out_field, var_map.clone());
+                r.numerator = r.numerator.add_constant(out_field.one());
                 for arg in m.iter() {
-                    let mut arg_r = arg.to_factorized_rational_polynomial_impl(
+                    let mut arg_r = arg.to_rational_polynomial_impl(
                         workspace,
                         field,
-                        r.numerator.var_map.as_ref().unwrap(),
+                        out_field,
+                        &r.numerator.variables,
                     );
-                    r.unify_var_map(&mut arg_r);
+                    r.unify_variables(&mut arg_r);
                     r = &r * &arg_r;
                 }
                 r
             }
             AtomView::Add(a) => {
-                let mut r = FactorizedRationalPolynomial::new(field, Some(var_map.clone()));
+                let mut r = RationalPolynomial::new(out_field, var_map.clone());
+                for arg in a.iter() {
+                    let mut arg_r = arg.to_rational_polynomial_impl(
+                        workspace,
+                        field,
+                        out_field,
+                        &r.numerator.variables,
+                    );
+                    r.unify_variables(&mut arg_r);
+                    r = &r + &arg_r;
+                }
+                r
+            }
+        }
+    }
+
+    /// Convert the atom to a rational polynomial with factorized denominators, optionally in the variable ordering
+    /// specified by `var_map`. If new variables are encountered, they are
+    /// added to the variable map. Similarly, non-rational polynomial parts are automatically
+    /// defined as a new independent variable in the rational polynomial.
+    pub fn to_factorized_rational_polynomial<
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
+        E: Exponent,
+    >(
+        &self,
+        field: &R,
+        out_field: &RO,
+        var_map: Option<Arc<Vec<Variable>>>,
+    ) -> FactorizedRationalPolynomial<RO, E>
+    where
+        FactorizedRationalPolynomial<RO, E>: FromNumeratorAndFactorizedDenominator<R, RO, E>
+            + FromNumeratorAndFactorizedDenominator<RO, RO, E>,
+        MultivariatePolynomial<RO, E>: Factorize,
+    {
+        Workspace::get_local().with(|ws| {
+            self.to_factorized_rational_polynomial_impl(
+                ws,
+                field,
+                out_field,
+                var_map.as_ref().unwrap_or(&Arc::new(Vec::new())),
+            )
+        })
+    }
+
+    pub fn to_factorized_rational_polynomial_impl<
+        R: EuclideanDomain + ConvertToRing,
+        RO: EuclideanDomain + PolynomialGCD<E>,
+        E: Exponent,
+    >(
+        &self,
+        workspace: &Workspace,
+        field: &R,
+        out_field: &RO,
+        var_map: &Arc<Vec<Variable>>,
+    ) -> FactorizedRationalPolynomial<RO, E>
+    where
+        FactorizedRationalPolynomial<RO, E>: FromNumeratorAndFactorizedDenominator<R, RO, E>
+            + FromNumeratorAndFactorizedDenominator<RO, RO, E>,
+        MultivariatePolynomial<RO, E>: Factorize,
+    {
+        // see if the current term can be cast into a polynomial using a fast routine
+        if let Ok(num) = self.to_polynomial_expanded(field, Some(var_map), true) {
+            let den = vec![(num.one(), 1)];
+            return FactorizedRationalPolynomial::from_num_den(num, den, out_field, false);
+        }
+
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) => {
+                unreachable!("This case should have been handled by the fast routine")
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+                if let AtomView::Num(n) = exp {
+                    let num_n = n.get_coeff_view();
+
+                    if let CoefficientView::Natural(nn, nd) = num_n {
+                        if nd == 1 {
+                            let b = base.to_factorized_rational_polynomial_impl(
+                                workspace, field, out_field, var_map,
+                            );
+
+                            return if nn < 0 {
+                                let b_inv = b.inv();
+                                b_inv.pow(-nn as u64)
+                            } else {
+                                b.pow(nn as u64)
+                            };
+                        }
+                    }
+                }
+
+                // non-integer exponent, convert to new variable
+                if let Some(id) = var_map.iter().position(|v| match v {
+                    Variable::Other(vv) => vv.as_view() == *self,
+                    _ => false,
+                }) {
+                    let mut exp = vec![E::zero(); var_map.len()];
+                    exp[id] = E::one();
+                    let r = MultivariatePolynomial::new(field, None, var_map.clone())
+                        .monomial(field.one(), exp);
+                    FactorizedRationalPolynomial::from_num_den(r, vec![], out_field, false)
+                } else {
+                    let mut var_map = var_map.as_ref().clone();
+                    var_map.push(Variable::Other(Arc::new(self.to_owned())));
+                    let mut exp = vec![E::zero(); var_map.len()];
+                    exp[var_map.len() - 1] = E::one();
+
+                    let r = MultivariatePolynomial::new(field, None, Arc::new(var_map))
+                        .monomial(field.one(), exp);
+                    FactorizedRationalPolynomial::from_num_den(r, vec![], out_field, false)
+                }
+            }
+            AtomView::Fun(f) => {
+                // check if we have seen this variable before
+                if let Some(id) = var_map.iter().position(|v| match v {
+                    Variable::Function(_, vv) => vv.as_view() == *self,
+                    _ => false,
+                }) {
+                    let mut exp = vec![E::zero(); var_map.len()];
+                    exp[id] = E::one();
+                    let r = MultivariatePolynomial::new(field, None, var_map.clone())
+                        .monomial(field.one(), exp);
+                    FactorizedRationalPolynomial::from_num_den(r, vec![], out_field, false)
+                } else {
+                    let mut var_map = var_map.as_ref().clone();
+                    var_map.push(Variable::Function(
+                        f.get_symbol(),
+                        Arc::new(self.to_owned()),
+                    ));
+                    let mut exp = vec![E::zero(); var_map.len()];
+                    exp[var_map.len() - 1] = E::one();
+
+                    let r = MultivariatePolynomial::new(field, None, Arc::new(var_map))
+                        .monomial(field.one(), exp);
+                    FactorizedRationalPolynomial::from_num_den(r, vec![], out_field, false)
+                }
+            }
+            AtomView::Mul(m) => {
+                let mut r = FactorizedRationalPolynomial::new(out_field, var_map.clone());
+                r.numerator = r.numerator.add_constant(out_field.one());
+                r.numer_coeff = out_field.one();
+                for arg in m.iter() {
+                    let mut arg_r = arg.to_factorized_rational_polynomial_impl(
+                        workspace,
+                        field,
+                        out_field,
+                        &r.numerator.variables,
+                    );
+                    r.unify_variables(&mut arg_r);
+                    r = &r * &arg_r;
+                }
+                r
+            }
+            AtomView::Add(a) => {
+                let mut r = FactorizedRationalPolynomial::new(out_field, var_map.clone());
                 for arg in a.iter() {
                     let mut arg_r = arg.to_factorized_rational_polynomial_impl(
                         workspace,
                         field,
-                        r.numerator.var_map.as_ref().unwrap(),
+                        out_field,
+                        &r.numerator.variables,
                     );
-                    r.unify_var_map(&mut arg_r);
+                    r.unify_variables(&mut arg_r);
                     r = &r + &arg_r;
                 }
                 r
@@ -1154,11 +1133,6 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
     ) where
         R::Element: Into<Coefficient>,
     {
-        let var_map = self
-            .var_map
-            .as_ref()
-            .expect("No variable map present in polynomial");
-
         if self.is_zero() {
             out.set_from_view(&workspace.new_num(0).as_view());
             return;
@@ -1174,7 +1148,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
         for monomial in self {
             let mul = mul_h.to_mul();
 
-            for (var_id, &pow) in var_map.iter().zip(monomial.exponents) {
+            for (var_id, &pow) in self.variables.iter().zip(monomial.exponents) {
                 if pow > E::zero() {
                     match var_id {
                         Variable::Symbol(v) => {
@@ -1390,12 +1364,8 @@ impl Token {
 
         match self {
             Token::Op(_, _, Operator::Add, args) => {
-                let mut poly = MultivariatePolynomial::<R, E>::new(
-                    var_map.len(),
-                    field,
-                    Some(args.len()),
-                    Some(var_map.clone()),
-                );
+                let mut poly =
+                    MultivariatePolynomial::<R, E>::new(field, Some(args.len()), var_map.clone());
 
                 for term in args {
                     parse_term(term, var_name_map, &mut poly, field)?;
@@ -1403,12 +1373,7 @@ impl Token {
                 Ok(poly)
             }
             _ => {
-                let mut poly = MultivariatePolynomial::<R, E>::new(
-                    var_map.len(),
-                    field,
-                    Some(1),
-                    Some(var_map.clone()),
-                );
+                let mut poly = MultivariatePolynomial::<R, E>::new(field, Some(1), var_map.clone());
                 parse_term(self, var_name_map, &mut poly, field)?;
                 Ok(poly)
             }
@@ -1483,27 +1448,27 @@ impl Token {
                         self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                         Ok(atom
                             .as_view()
-                            .to_rational_polynomial_impl(ws, out_field, var_map))
+                            .to_rational_polynomial_impl(ws, field, out_field, var_map))
                     })
                 }
             }
             Token::Op(_, _, Operator::Mul, args) => {
-                let mut r = RationalPolynomial::new(out_field, Some(var_map.clone()));
+                let mut r = RationalPolynomial::new(out_field, var_map.clone());
                 r.numerator = r.numerator.add_constant(out_field.one());
                 for arg in args {
                     let mut arg_r =
                         arg.to_rational_polynomial(field, out_field, var_map, var_name_map)?;
-                    r.unify_var_map(&mut arg_r);
+                    r.unify_variables(&mut arg_r);
                     r = &r * &arg_r;
                 }
                 Ok(r)
             }
             Token::Op(_, _, Operator::Add, args) => {
-                let mut r = RationalPolynomial::new(out_field, Some(var_map.clone()));
+                let mut r = RationalPolynomial::new(out_field, var_map.clone());
                 for arg in args {
                     let mut arg_r =
                         arg.to_rational_polynomial(field, out_field, var_map, var_name_map)?;
-                    r.unify_var_map(&mut arg_r);
+                    r.unify_variables(&mut arg_r);
                     r = &r + &arg_r;
                 }
                 Ok(r)
@@ -1518,7 +1483,7 @@ impl Token {
                 self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                 Ok(atom
                     .as_view()
-                    .to_rational_polynomial_impl(ws, out_field, var_map))
+                    .to_rational_polynomial_impl(ws, field, out_field, var_map))
             }),
         }
     }
@@ -1634,12 +1599,12 @@ impl Token {
                         self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                         Ok(atom
                             .as_view()
-                            .to_factorized_rational_polynomial_impl(ws, out_field, var_map))
+                            .to_factorized_rational_polynomial_impl(ws, field, out_field, var_map))
                     })
                 }
             }
             Token::Op(_, _, Operator::Mul, args) => {
-                let mut r = FactorizedRationalPolynomial::new(out_field, Some(var_map.clone()));
+                let mut r = FactorizedRationalPolynomial::new(out_field, var_map.clone());
                 r.numerator = r.numerator.add_constant(out_field.one());
                 r.numer_coeff = out_field.one();
                 for arg in args {
@@ -1652,7 +1617,7 @@ impl Token {
                             var_name_map,
                         )?;
 
-                        r.unify_var_map(&mut arg_r);
+                        r.unify_variables(&mut arg_r);
                         r = &r / &arg_r;
                     } else {
                         let mut arg_r = arg.to_factorized_rational_polynomial(
@@ -1661,14 +1626,14 @@ impl Token {
                             var_map,
                             var_name_map,
                         )?;
-                        r.unify_var_map(&mut arg_r);
+                        r.unify_variables(&mut arg_r);
                         r = &r * &arg_r;
                     }
                 }
                 Ok(r)
             }
             Token::Op(_, _, Operator::Add, args) => {
-                let mut r = FactorizedRationalPolynomial::new(out_field, Some(var_map.clone()));
+                let mut r = FactorizedRationalPolynomial::new(out_field, var_map.clone());
 
                 // sort based on length, as this may improve performance
                 let mut polys: Vec<FactorizedRationalPolynomial<_, _>> = args
@@ -1692,7 +1657,7 @@ impl Token {
                 });
 
                 for mut p in polys {
-                    r.unify_var_map(&mut p);
+                    r.unify_variables(&mut p);
                     r = &r + &p;
                 }
                 Ok(r)
@@ -1712,7 +1677,7 @@ impl Token {
                 self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                 Ok(atom
                     .as_view()
-                    .to_factorized_rational_polynomial_impl(ws, out_field, var_map))
+                    .to_factorized_rational_polynomial_impl(ws, field, out_field, var_map))
             }),
         }
     }

@@ -159,8 +159,8 @@ impl Add for Coefficient {
                 Coefficient::RationalPolynomial(&rp + &r2)
             }
             (Coefficient::RationalPolynomial(mut p1), Coefficient::RationalPolynomial(mut p2)) => {
-                if p1.get_var_map() != p2.get_var_map() {
-                    p1.unify_var_map(&mut p2);
+                if p1.get_variables() != p2.get_variables() {
+                    p1.unify_variables(&mut p2);
                 };
 
                 let r = &p1 + &p2;
@@ -215,8 +215,8 @@ impl Mul for Coefficient {
                 Coefficient::RationalPolynomial(rp)
             }
             (Coefficient::RationalPolynomial(mut p1), Coefficient::RationalPolynomial(mut p2)) => {
-                if p1.get_var_map() != p2.get_var_map() {
-                    p1.unify_var_map(&mut p2);
+                if p1.get_variables() != p2.get_variables() {
+                    p1.unify_variables(&mut p2);
                 };
 
                 let r = &p1 * &p2;
@@ -590,10 +590,10 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
                 Coefficient::RationalPolynomial(&r + &r2)
             }
             (CoefficientView::RationalPolynomial(p1), CoefficientView::RationalPolynomial(p2)) => {
-                let r = if p1.get_var_map() != p2.get_var_map() {
+                let r = if p1.get_variables() != p2.get_variables() {
                     let mut p1 = (*p1).clone();
                     let mut p2 = (*p2).clone();
-                    p1.unify_var_map(&mut p2);
+                    p1.unify_variables(&mut p2);
                     &p1 + &p2
                 } else {
                     p1 + p2
@@ -665,10 +665,10 @@ impl Mul for CoefficientView<'_> {
                 Coefficient::RationalPolynomial(r)
             }
             (CoefficientView::RationalPolynomial(p1), CoefficientView::RationalPolynomial(p2)) => {
-                let r = if p1.get_var_map() != p2.get_var_map() {
+                let r = if p1.get_variables() != p2.get_variables() {
                     let mut p1 = (*p1).clone();
                     let mut p2 = (*p2).clone();
-                    p1.unify_var_map(&mut p2);
+                    p1.unify_variables(&mut p2);
                     &p1 * &p2
                 } else {
                     p1 * p2
@@ -733,7 +733,7 @@ impl<'a> AtomView<'a> {
         match self {
             AtomView::Num(n) => {
                 if let CoefficientView::RationalPolynomial(r) = n.get_coeff_view() {
-                    let old_var_map = r.get_var_map().unwrap();
+                    let old_var_map = r.get_variables();
                     if old_var_map != vars {
                         if old_var_map.iter().all(|x| vars.contains(x)) {
                             // upgrade the polynomial if no variables got removed
@@ -745,8 +745,8 @@ impl<'a> AtomView<'a> {
 
                             r.numerator = r.numerator.rearrange_with_growth(&order);
                             r.denominator = r.denominator.rearrange_with_growth(&order);
-                            r.numerator.var_map = Some(vars.clone());
-                            r.denominator.var_map = r.numerator.var_map.clone();
+                            r.numerator.variables = vars.clone();
+                            r.denominator.variables = r.numerator.variables.clone();
                             out.to_num(Coefficient::RationalPolynomial(r));
                             true
                         } else {
@@ -804,8 +804,7 @@ impl<'a> AtomView<'a> {
                 let id = v.get_symbol();
                 if vars.contains(&id.into()) {
                     // change variable into coefficient
-                    let mut poly =
-                        MultivariatePolynomial::new(vars.len(), &Z, None, Some(vars.clone()));
+                    let mut poly = MultivariatePolynomial::new(&Z, None, vars.clone());
                     let mut e: SmallVec<[u16; INLINED_EXPONENTS]> = smallvec![0; vars.len()];
                     e[vars.iter().position(|x| *x == id.into()).unwrap()] = 1;
                     poly.append_monomial(Integer::one(), &e);

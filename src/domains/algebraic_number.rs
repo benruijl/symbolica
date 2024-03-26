@@ -46,7 +46,7 @@ impl<R: Ring> AlgebraicNumberRing<R> {
     }
 
     pub fn to_element(&self, poly: MultivariatePolynomial<R, u8>) -> AlgebraicNumber<R> {
-        assert!(poly.nvars == 1);
+        assert!(poly.nvars() == 1);
 
         if poly.degree(0) >= self.poly.degree(0) {
             AlgebraicNumber {

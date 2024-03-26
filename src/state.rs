@@ -1,5 +1,6 @@
 use std::hash::Hash;
 use std::mem::ManuallyDrop;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
 use std::thread::LocalKey;
 use std::{
@@ -34,6 +35,7 @@ pub enum FunctionAttribute {
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
 static ID_TO_STR: AppendOnlyVec<String> = AppendOnlyVec::<String>::new();
 static FINITE_FIELDS: AppendOnlyVec<Zp64> = AppendOnlyVec::<Zp64>::new();
+static SYMBOL_OFFSET: AtomicUsize = AtomicUsize::new(0);
 
 thread_local!(
     /// A thread-local workspace, that stores recyclable atoms. By making it const and
@@ -91,9 +93,32 @@ impl State {
         &STATE
     }
 
+    /// Remove all user-defined symbols from the state. This will invalidate all
+    /// currently existing atoms, and hence this function is unsafe.
+    ///
+    /// Example:
+    /// ```
+    /// State::get_symbol_with_attributes("f", vec![FunctionAttribute::Symmetric]).unwrap();
+    /// unsafe { State::reset(); }
+    /// State::get_symbol_with_attributes("f", vec![FunctionAttribute::Antisymmetric]).unwrap();
+    /// ```
+    pub unsafe fn reset() {
+        let mut state = STATE.write().unwrap();
+
+        state.str_to_id.clear();
+        SYMBOL_OFFSET.store(ID_TO_STR.len(), Ordering::Relaxed);
+
+        for x in Self::BUILTIN_VAR_LIST {
+            state.get_symbol_impl(x);
+        }
+    }
+
     /// Iterate over all defined symbols.
-    pub fn symbol_iter<'a>() -> impl Iterator<Item = &'a str> {
-        ID_TO_STR.iter().map(|s| s.as_str())
+    pub fn symbol_iter() -> impl Iterator<Item = &'static str> {
+        ID_TO_STR
+            .iter()
+            .skip(SYMBOL_OFFSET.load(Ordering::Relaxed))
+            .map(|s| s.as_str())
     }
 
     /// Returns `true` iff this identifier is defined by Symbolica.
@@ -113,7 +138,8 @@ impl State {
         match self.str_to_id.entry(name.into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
-                if ID_TO_STR.len() == u32::MAX as usize - 1 {
+                let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
+                if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
 
@@ -127,11 +153,11 @@ impl State {
 
                 // there is no synchronization issue since only one thread can insert at a time
                 // as the state itself is behind a mutex
-                let new_index = ID_TO_STR.push(name.into());
+                let id = ID_TO_STR.push(name.into()) - offset;
 
-                let new_id = Symbol::init_var(new_index as u32, wildcard_level);
-                v.insert(new_id);
-                new_id
+                let new_symbol = Symbol::init_var(id as u32, wildcard_level);
+                v.insert(new_symbol);
+                new_symbol
             }
         }
     }
@@ -175,13 +201,14 @@ impl State {
                 }
             }
             Entry::Vacant(v) => {
-                if ID_TO_STR.len() == u32::MAX as usize - 1 {
+                let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
+                if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
 
                 // there is no synchronization issue since only one thread can insert at a time
                 // as the state itself is behind a mutex
-                let new_index = ID_TO_STR.push(name.into());
+                let id = ID_TO_STR.push(name.into()) - offset;
 
                 let mut wildcard_level = 0;
                 for x in name.chars().rev() {
@@ -191,24 +218,24 @@ impl State {
                     wildcard_level += 1;
                 }
 
-                let new_id = Symbol::init_fn(
-                    new_index as u32,
+                let new_symbol = Symbol::init_fn(
+                    id as u32,
                     wildcard_level,
                     attributes.contains(&FunctionAttribute::Symmetric),
                     attributes.contains(&FunctionAttribute::Antisymmetric),
                     attributes.contains(&FunctionAttribute::Linear),
                 );
 
-                v.insert(new_id);
+                v.insert(new_symbol);
 
-                Ok(new_id)
+                Ok(new_symbol)
             }
         }
     }
 
     /// Get the name for a given symbol.
     pub fn get_name(id: Symbol) -> &'static str {
-        &ID_TO_STR[id.get_id() as usize]
+        &ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)]
     }
 
     pub fn get_finite_field(fi: FiniteFieldIndex) -> &'static Zp64 {

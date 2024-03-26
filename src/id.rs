@@ -35,6 +35,76 @@ impl Pattern {
         Ok(Atom::parse(input)?.into_pattern())
     }
 
+    /// Convert the pattern to an atom, if there are not transformers present.
+    pub fn to_atom(&self) -> Result<Atom, &'static str> {
+        Workspace::get_local().with(|ws| {
+            let mut out = Atom::new();
+            self.to_atom_impl(ws, &mut out)?;
+            Ok(out)
+        })
+    }
+
+    fn to_atom_impl(&self, ws: &Workspace, out: &mut Atom) -> Result<(), &'static str> {
+        match self {
+            Pattern::Literal(a) => {
+                out.set_from_view(&a.as_view());
+            }
+            Pattern::Wildcard(s) => {
+                out.to_var(*s);
+            }
+            Pattern::Fn(s, a) => {
+                let mut f = ws.new_atom();
+                let fun = f.to_fun(*s);
+
+                for arg in a {
+                    let mut arg_h = ws.new_atom();
+                    arg.to_atom_impl(ws, &mut arg_h)?;
+                    fun.add_arg(arg_h.as_view());
+                }
+
+                f.as_view().normalize(ws, out);
+            }
+            Pattern::Pow(p) => {
+                let mut base = ws.new_atom();
+                p[0].to_atom_impl(ws, &mut base)?;
+
+                let mut exp = ws.new_atom();
+                p[1].to_atom_impl(ws, &mut exp)?;
+
+                let mut pow_h = ws.new_atom();
+                pow_h.to_pow(base.as_view(), exp.as_view());
+                pow_h.as_view().normalize(ws, out);
+            }
+            Pattern::Mul(m) => {
+                let mut mul_h = ws.new_atom();
+                let mul = mul_h.to_mul();
+
+                for arg in m {
+                    let mut arg_h = ws.new_atom();
+                    arg.to_atom_impl(ws, &mut arg_h)?;
+                    mul.extend(arg_h.as_view());
+                }
+
+                mul_h.as_view().normalize(ws, out);
+            }
+            Pattern::Add(a) => {
+                let mut add_h = ws.new_atom();
+                let add = add_h.to_add();
+
+                for arg in a {
+                    let mut arg_h = ws.new_atom();
+                    arg.to_atom_impl(ws, &mut arg_h)?;
+                    add.extend(arg_h.as_view());
+                }
+
+                add_h.as_view().normalize(ws, out);
+            }
+            Pattern::Transformer(_) => Err("Cannot convert transformer to atom")?,
+        }
+
+        Ok(())
+    }
+
     pub fn add(&self, rhs: &Self, workspace: &Workspace) -> Self {
         if let Pattern::Literal(l1) = self {
             if let Pattern::Literal(l2) = rhs {

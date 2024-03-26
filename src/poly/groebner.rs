@@ -83,12 +83,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
         print_stats: bool,
     ) -> GroebnerBasis<R, E, O> {
         let mut ideal = ideal.to_vec();
-        for _ in 0..2 {
-            let (first, rest) = ideal.split_first_mut().unwrap();
-            for x in rest {
-                first.unify_var_map(x);
-            }
-        }
+        MultivariatePolynomial::unify_var_maps(&mut ideal);
 
         let mut b = GroebnerBasis {
             system: ideal,

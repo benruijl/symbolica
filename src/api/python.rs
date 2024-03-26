@@ -2433,6 +2433,7 @@ impl PythonExpression {
     }
 
     /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+    /// All non-polynomial elements will be converted to new independent variables.
     pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {
         let mut var_map = vec![];
         if let Some(vm) = vars {
@@ -2455,26 +2456,16 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        self.expr
-            .as_view()
-            .to_polynomial(&Q, var_map.as_ref())
-            .map(|x| PythonPolynomial { poly: Arc::new(x) })
-            .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not convert to polynomial: {}", e))
-            })
+        Ok(PythonPolynomial {
+            poly: Arc::new(self.expr.to_polynomial(&Q, var_map)),
+        })
     }
 
-    /// Convert the expression to a polynomial, converting all non-polynomial elements to
-    /// new independent variables.
-    pub fn to_polynomial_with_conversion(&self) -> PythonPolynomial {
-        PythonPolynomial {
-            poly: Arc::new(self.expr.as_view().to_polynomial_with_conversion(&Q)),
-        }
-    }
-
-    /// Convert the expression to a rational polynomial, optionally, with the variables and the ordering specified in `vars`.
+    /// Convert the expression to a rational polynomial, optionally, with the variable ordering specified in `vars`.
     /// The latter is useful if it is known in advance that more variables may be added in the future to the
     /// rational polynomial through composition with other rational polynomials.
+    ///
+    /// All non-rational polynomial parts will automatically be converted to new independent variables.
     ///
     /// Examples
     /// --------
@@ -2505,13 +2496,9 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        self.expr
-            .as_view()
-            .to_rational_polynomial(&Q, &Z, var_map.as_ref())
-            .map(|x| PythonRationalPolynomial { poly: Arc::new(x) })
-            .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not convert to polynomial: {}", e))
-            })
+        Ok(PythonRationalPolynomial {
+            poly: Arc::new(self.expr.to_rational_polynomial(&Z, var_map)),
+        })
     }
 
     /// Similar to [PythonExpression::to_rational_polynomial()], but the power of each variable limited to 255.
@@ -2540,24 +2527,9 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        self.expr
-            .as_view()
-            .to_rational_polynomial(&Q, &Z, var_map.as_ref())
-            .map(|x| PythonRationalPolynomialSmallExponent { poly: Arc::new(x) })
-            .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not convert to polynomial: {}", e))
-            })
-    }
-
-    /// Convert the expression to a rational polynomial, converting all non-polynomial elements to
-    /// new independent variables.
-    pub fn to_rational_polynomial_with_conversion(&self) -> PyResult<PythonRationalPolynomial> {
-        let p = self
-            .expr
-            .as_view()
-            .to_rational_polynomial_with_conversion(&Q, &Z);
-
-        Ok(PythonRationalPolynomial { poly: Arc::new(p) })
+        Ok(PythonRationalPolynomialSmallExponent {
+            poly: Arc::new(self.expr.to_rational_polynomial(&Z, var_map)),
+        })
     }
 
     /// Return an iterator over the pattern `self` matching to `lhs`.
@@ -4378,9 +4350,7 @@ impl ConvertibleToRationalPolynomial {
             Self::Expression(e) => {
                 let expr = &e.to_expression().expr;
 
-                let poly = expr
-                    .as_view()
-                    .to_rational_polynomial_with_conversion(&Q, &Z);
+                let poly = expr.to_rational_polynomial(&Z, None);
 
                 Ok(PythonRationalPolynomial {
                     poly: Arc::new(poly),

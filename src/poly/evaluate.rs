@@ -1735,21 +1735,13 @@ impl ExpressionEvaluator {
 
         for l in levels {
             for (id, joint) in l {
-                let mut map = HashMap::default();
-                let mut polys: Vec<MultivariatePolynomial<_, u16>> = joint
-                    .iter()
-                    .map(|a| a.as_view().to_polynomial_with_map(&Q, &mut map))
-                    .collect();
+                let mut polys: Vec<MultivariatePolynomial<_, u16>> =
+                    joint.iter().map(|a| a.to_polynomial(&Q, None)).collect();
 
                 // fuse the variable maps
-                let (first, rest) = polys.split_first_mut().unwrap();
-                for _ in 0..2 {
-                    for p in &mut *rest {
-                        first.unify_var_map(p);
-                    }
-                }
+                MultivariatePolynomial::unify_var_maps(&mut polys);
 
-                let var_map = first.var_map.clone().unwrap();
+                let var_map = polys[0].var_map.clone().unwrap();
 
                 let poly_ref = polys.iter().collect::<Vec<_>>();
 
@@ -1765,22 +1757,6 @@ impl ExpressionEvaluator {
                         break;
                     }
                     i.fuse_operations();
-                }
-
-                // convert function calls
-                let requirements: HashMap<super::Variable, String> = map
-                    .iter()
-                    .filter_map(|(a, r)| {
-                        if let AtomView::Fun(f) = a {
-                            Some((r.clone(), State::get_name(f.get_symbol()).to_string()))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                if map.len() != requirements.len() {
-                    panic!("Input contains functions that cannot be written to an array or other unsupported operations");
                 }
 
                 let o = i.to_output(var_map.as_ref().to_vec(), true);

@@ -217,9 +217,9 @@ impl<'a> FormattedPrintVar for VarView<'a> {
                 _ => f.write_str(name),
             }
         } else if name.ends_with('_') {
-            f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))
+            f.write_fmt(format_args!("{}", name.cyan().italic()))
         } else if opts.color_builtin_functions && State::is_builtin(id) {
-            f.write_fmt(format_args!("{}", name.as_str().purple()))
+            f.write_fmt(format_args!("{}", name.purple()))
         } else {
             f.write_str(name)
         }
@@ -461,11 +461,11 @@ impl<'a> FormattedPrintFn for FunView<'a> {
             }
         } else {
             if name.ends_with('_') {
-                f.write_fmt(format_args!("{}", name.as_str().cyan().italic()))?;
+                f.write_fmt(format_args!("{}", name.cyan().italic()))?;
             } else {
                 // check if the function name is built in
                 if opts.color_builtin_functions && State::is_builtin(id) {
-                    f.write_fmt(format_args!("{}", name.as_str().purple()))?;
+                    f.write_fmt(format_args!("{}", name.purple()))?;
                 } else {
                     f.write_str(name)?;
                 }

@@ -11,7 +11,7 @@ fn factor_ff_univariate() {
     let exp = Atom::parse("x^100-1").unwrap().expand();
 
     let field = Zp::new(17);
-    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&field, None);
 
     let factors = poly.square_free_factorization();
 
@@ -29,11 +29,10 @@ fn factor_ff_bivariate() {
 
     let input = "((y+1)*x^2+x*y+1)*((y^2+2)*x^2+y+1)";
 
-    let exp = Atom::parse(input).unwrap().as_view().expand();
+    let exp = Atom::parse(input).unwrap().expand();
 
     let field = Zp::new(17);
-    let poly: MultivariatePolynomial<Zp, u8> =
-        exp.as_view().to_polynomial(&field, Some(&order)).unwrap();
+    let poly: MultivariatePolynomial<Zp, u8> = exp.to_polynomial(&field, Some(order));
 
     println!("Factorization of {}:", poly);
     for (f, pow) in poly.factor() {
@@ -45,7 +44,7 @@ fn factor_ff_square_free() {
     let exp = Atom::parse("(1+x)*(1+x^2)^2*(x^4+1)^3").unwrap().expand();
 
     let field = Zp::new(3);
-    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&field, None).unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&field, None);
 
     let factors = poly.square_free_factorization();
 
@@ -60,7 +59,7 @@ fn factor_square_free() {
         .unwrap()
         .expand();
 
-    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&Z, None).unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, None);
 
     let factors = poly.square_free_factorization();
 
@@ -75,7 +74,7 @@ fn factor_univariate_1() {
         .unwrap()
         .expand();
 
-    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&Z, None).unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, None);
 
     let fs = poly.factor();
 
@@ -90,7 +89,7 @@ fn factor_univariate_2() {
         .unwrap()
         .expand();
 
-    let poly: MultivariatePolynomial<_, u8> = exp.as_view().to_polynomial(&Z, None).unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, None);
 
     let fs = poly.factor();
 
@@ -108,10 +107,9 @@ fn factor_bivariate() {
 
     let input = "(x^2+y+x+1)(3*x+y^2+4)*(6*x*(y+1)+y+5)*(7*x*y+4)";
 
-    let exp = Atom::parse(input).unwrap().as_view().expand();
+    let exp = Atom::parse(input).unwrap().expand();
 
-    let poly: MultivariatePolynomial<_, u8> =
-        exp.as_view().to_polynomial(&Z, Some(&order)).unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, Some(order));
 
     println!("Factorization of {}:", poly);
     for (f, pow) in poly.factor() {
@@ -129,10 +127,9 @@ fn factor_multivariate() {
 
     let input = "(x*(2+2*y+2*z)+1)*(x*(4+z^2)+y+3)*(x*(w+w^2+4+y)+w+5)";
 
-    let exp = Atom::parse(input).unwrap().as_view().expand();
+    let exp = Atom::parse(input).unwrap().expand();
 
-    let poly: MultivariatePolynomial<_, u8> =
-        exp.as_view().to_polynomial(&Z, Some(&order)).unwrap();
+    let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, Some(order));
 
     println!("Factorization of {}:", poly);
     for (f, p) in poly.factor() {

@@ -500,8 +500,8 @@ where
             numerator: b.numerator.zero(),
             denominator: b.denominator.zero(),
         };
-        poly.numerator = poly.numerator.add_monomial(self.ring.one());
-        poly.denominator = poly.denominator.add_monomial(self.ring.one());
+        poly.numerator = poly.numerator.add_constant(self.ring.one());
+        poly.denominator = poly.denominator.add_constant(self.ring.one());
 
         for _ in 0..e {
             poly = self.mul(&poly, b);

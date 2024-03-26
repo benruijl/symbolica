@@ -4,7 +4,6 @@ use symbolica::{
     domains::{
         integer::Z,
         linear_system::Matrix,
-        rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::Variable,
@@ -45,9 +44,7 @@ fn solve_from_matrix() {
         .map(|s| {
             Atom::parse(s)
                 .unwrap()
-                .as_view()
-                .to_rational_polynomial(&Q, &Z, Some(&var_map))
-                .unwrap()
+                .to_rational_polynomial(&Z, Some(var_map.clone()))
         })
         .collect();
 
@@ -56,9 +53,7 @@ fn solve_from_matrix() {
         .map(|s| {
             Atom::parse(s)
                 .unwrap()
-                .as_view()
-                .to_rational_polynomial(&Q, &Z, Some(&var_map))
-                .unwrap()
+                .to_rational_polynomial(&Z, Some(var_map.clone()))
         })
         .collect();
 

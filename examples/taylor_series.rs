@@ -6,7 +6,7 @@ fn main() {
 
     let point = Atom::parse("1").unwrap();
 
-    let out = a.as_view().taylor_series(x, point.as_view(), 3);
+    let out = a.taylor_series(x, point.as_view(), 3);
 
     println!("{}", out);
 }

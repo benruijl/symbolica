@@ -22,7 +22,7 @@ fn main() {
         .iter()
         .map(|x| {
             let a = Atom::parse(x).unwrap().expand();
-            a.as_view().to_polynomial(&Zp::new(13), None).unwrap()
+            a.to_polynomial(&Zp::new(13), None)
         })
         .collect();
 

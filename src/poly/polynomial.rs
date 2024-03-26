@@ -474,6 +474,20 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         *other = newother;
     }
 
+    /// Unify the variable maps of all polynomials in the slice.
+    pub fn unify_var_maps(polys: &mut [Self]) {
+        if polys.len() < 2 {
+            return;
+        }
+
+        let (first, rest) = polys.split_first_mut().unwrap();
+        for _ in 0..2 {
+            for p in &mut *rest {
+                first.unify_var_map(p);
+            }
+        }
+    }
+
     /// Reverse the monomial ordering in-place.
     fn reverse(&mut self) {
         let nterms = self.nterms();
@@ -1014,7 +1028,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     }
 
     /// Add a new monomial with coefficient `other` and exponent one.
-    pub fn add_monomial(mut self, other: F::Element) -> Self {
+    pub fn add_constant(mut self, other: F::Element) -> Self {
         let nvars = self.nvars;
         self.append_monomial(other, &vec![E::zero(); nvars]);
         self

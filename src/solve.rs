@@ -1,17 +1,13 @@
 use std::ops::Neg;
 
-use ahash::HashMap;
-
 use crate::{
     domains::{
         integer::{IntegerRing, Z},
         linear_system::Matrix,
-        rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::{Exponent, Variable},
     representations::{Atom, AtomView, Symbol},
-    state::Workspace,
 };
 
 impl<'a> AtomView<'a> {
@@ -22,15 +18,13 @@ impl<'a> AtomView<'a> {
         vars: &[Symbol],
     ) -> Result<Vec<Atom>, String> {
         let vars: Vec<_> = vars.iter().map(|v| Variable::Symbol(*v)).collect();
-        let mut map = HashMap::default();
 
         let mut mat = Vec::with_capacity(system.len() * vars.len());
         let mut row = vec![RationalPolynomial::<_, E>::new(&Z, None); vars.len()];
         let mut rhs = vec![RationalPolynomial::<_, E>::new(&Z, None); vars.len()];
 
         for (si, a) in system.iter().enumerate() {
-            let rat: RationalPolynomial<IntegerRing, E> = Workspace::get_local()
-                .with(|ws| a.to_rational_polynomial_with_map(ws, &Q, &Z, &mut map));
+            let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial(&Z, None);
 
             let poly = rat.to_polynomial(&vars, true).unwrap();
 
@@ -96,15 +90,8 @@ impl<'a> AtomView<'a> {
         // replace the temporary variables
         let mut result = Vec::with_capacity(vars.len());
 
-        let inv_map = map.iter().map(|(k, v)| (v.clone(), k.as_view())).collect();
-        for (s, v) in sol.data.iter().zip(&vars) {
-            let mut a = Atom::default();
-            Workspace::get_local().with(|ws| s.to_expression_with_map(ws, &inv_map, &mut a));
-            let Variable::Symbol(_) = *v else {
-                panic!("Temp var left");
-            };
-
-            result.push(a);
+        for s in sol.data {
+            result.push(s.to_expression());
         }
 
         Ok(result)

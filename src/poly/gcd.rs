@@ -1791,7 +1791,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 b = Cow::Owned(b.into_owned().div_coeff(&ucb));
             }
 
-            p.add_monomial(content)
+            p.add_constant(content)
         };
 
         let rearrange = vars.len() > 1 && vars.windows(2).any(|s| s[0] > s[1]);

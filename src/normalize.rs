@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 
 use crate::{
     coefficient::{Coefficient, CoefficientView},
-    domains::{integer::Z, rational::Q},
+    domains::integer::Z,
     poly::Variable,
     representations::{Atom, AtomView, Fun, Symbol},
     state::{RecycledAtom, State, Workspace},
@@ -762,9 +762,9 @@ impl<'a> AtomView<'a> {
                         buffer.set_from_view(&arg);
                         out.set_from_view(&buffer.as_view());
                         return;
-                    } else if let Ok(r) = arg.to_rational_polynomial_with_ws(
-                        workspace, &Q, &Z, None, // TODO: get a compatible one from the state?
-                    ) {
+                    } else {
+                        let r = arg.to_rational_polynomial(&Z, None);
+
                         // disallow wildcards in the variable map
                         if let Some(v) = r.numerator.var_map.as_ref() {
                             if v.iter().all(|v| {

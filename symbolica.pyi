@@ -680,19 +680,20 @@ class Expression:
         """Taylor expand in `x` around `expansion_point` to depth `depth`."""
 
     def to_polynomial(self, vars: Optional[Sequence[Expression]] = None) -> Polynomial:
-        """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`."""
-
-    def to_polynomial_with_conversion(self) -> Polynomial:
-        """Convert the expression to a polynomial, converting all non-polynomial parts to new, independent variables."""
+        """Convert the expression to a polynomial, optionally, with the variable ordering specified in `vars`.
+        All non-polynomial parts will be converted to new, independent variables.
+        """
 
     def to_rational_polynomial(
         self,
         vars: Optional[Sequence[Expression]] = None,
     ) -> RationalPolynomial:
         """
-        Convert the expression to a rational polynomial, optionally, with the variables and the ordering specified in `vars`.
+        Convert the expression to a rational polynomial, optionally, with the variable ordering specified in `vars`.
         The latter is useful if it is known in advance that more variables may be added in the future to the
         rational polynomial through composition with other rational polynomials.
+
+        All non-rational polynomial parts are converted to new, independent variables.
 
         Examples
         --------
@@ -705,9 +706,6 @@ class Expression:
         vars: Optional[Sequence[Expression]] = None,
     ) -> RationalPolynomial:
         """Similar to `to_rational_polynomial()`, but the power of each variable is limited to 255."""
-
-    def to_rational_polynomial_with_conversion(self) -> RationalPolynomial:
-        """Convert the expression to a rational polynomial, converting all non-rational polynomial parts to new, independent variables."""
 
     def match(
         self,

@@ -207,11 +207,11 @@ impl State {
     }
 
     /// Get the name for a given symbol.
-    pub fn get_name<'a>(id: Symbol) -> &'a String {
+    pub fn get_name(id: Symbol) -> &'static str {
         &ID_TO_STR[id.get_id() as usize]
     }
 
-    pub fn get_finite_field<'a>(fi: FiniteFieldIndex) -> &'a Zp64 {
+    pub fn get_finite_field(fi: FiniteFieldIndex) -> &'static Zp64 {
         &FINITE_FIELDS[fi.0]
     }
 

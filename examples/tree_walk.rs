@@ -1,4 +1,4 @@
-use symbolica::{id::AtomTreeIterator, representations::Atom};
+use symbolica::{id::{AtomTreeIterator, MatchSettings}, representations::Atom};
 
 fn main() {
     let expr: Atom = Atom::parse("f(z)*f(f(x),z)*f(y)").unwrap();

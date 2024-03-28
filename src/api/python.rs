@@ -2315,6 +2315,27 @@ impl PythonExpression {
         Ok(PythonExpression { expr: Arc::new(b) })
     }
 
+    /// Collect terms involving the literal occurrence of `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// from symbolica import Expression
+    /// >>>
+    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> e = 5*x + x * y + x**2 + y*x**2
+    /// >>> print(e.coefficient(x**2))
+    ///
+    /// yields
+    ///
+    /// ```
+    /// y + 1
+    /// ```
+    pub fn coefficient(&self, x: ConvertibleToExpression) -> PythonExpression {
+        let r = self.expr.coefficient(x.to_expression().expr.as_view());
+        PythonExpression { expr: Arc::new(r) }
+    }
+
     /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
     /// Return the list of key-coefficient pairs and the remainder that matched no key.
     ///

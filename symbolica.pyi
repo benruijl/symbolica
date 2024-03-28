@@ -653,7 +653,7 @@ class Expression:
         Examples
         --------
 
-        >>> from symbolica import Expression
+        >>> from symbolica import *
         >>> x, y = Expression.vars('x', 'y')
         >>> e = 5*x + x * y + x**2 + 5
         >>>
@@ -665,6 +665,24 @@ class Expression:
         x y+5
         x^2 1
         1 5
+        ```
+        """
+
+    def coefficient(self, x: Expression) -> Expression:
+        """Collect terms involving the literal occurrence of `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> x, y = Expression.vars('x', 'y')
+        >>> e = 5*x + x * y + x**2 + y*x**2
+        >>> print(e.coefficient(x**2))
+
+        yields
+
+        ```
+        y + 1
         ```
         """
 

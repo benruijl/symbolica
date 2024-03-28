@@ -1,7 +1,7 @@
 use ahash::HashMap;
 
 use crate::{
-    representations::{Add, Atom, AtomView, Symbol},
+    representations::{Add, AsAtomView, Atom, AtomView, Symbol},
     state::Workspace,
 };
 
@@ -45,6 +45,11 @@ impl Atom {
     /// Return the list of key-coefficient pairs and the remainder that matched no key.
     pub fn coefficient_list(&self, x: Symbol) -> (Vec<(AtomView<'_>, Atom)>, Atom) {
         Workspace::get_local().with(|ws| self.as_view().coefficient_list_with_ws(x, ws))
+    }
+
+    /// Collect terms involving the literal occurrence of `x`.
+    pub fn coefficient<'a, T: AsAtomView<'a>>(&self, x: T) -> Atom {
+        Workspace::get_local().with(|ws| self.as_view().coefficient_with_ws(x.as_atom_view(), ws))
     }
 }
 
@@ -171,21 +176,37 @@ impl<'a> AtomView<'a> {
         workspace: &Workspace,
     ) -> (Vec<(AtomView<'a>, Atom)>, Atom) {
         let mut h = HashMap::default();
-        let mut rest = workspace.new_num(0);
+        let mut rest = workspace.new_atom();
+        let mut rest_add = rest.to_add();
 
         match self {
             AtomView::Add(a) => {
                 for arg in a.iter() {
-                    arg.collect_factor(x, workspace, &mut h, &mut rest)
+                    arg.collect_factor_list(x, workspace, &mut h, &mut rest_add)
                 }
             }
-            _ => self.collect_factor(x, workspace, &mut h, &mut rest),
+            _ => self.collect_factor_list(x, workspace, &mut h, &mut rest_add),
         }
 
-        (h.into_iter().collect(), rest.as_view().to_owned())
+        let mut rest_norm = Atom::new();
+        rest.as_view().normalize(workspace, &mut rest_norm);
+
+        (
+            h.into_iter()
+                .map(|(k, v)| {
+                    (k, {
+                        let mut a = Atom::new();
+                        v.as_view().normalize(workspace, &mut a);
+                        a
+                    })
+                })
+                .collect(),
+            rest_norm,
+        )
     }
 
     /// Check if a factor contains `x` at the ground level.
+    #[inline]
     fn has_key(&self, x: Symbol) -> bool {
         match self {
             AtomView::Var(v) => v.get_symbol() == x,
@@ -203,13 +224,12 @@ impl<'a> AtomView<'a> {
         }
     }
 
-    fn collect_factor(
+    fn collect_factor_list(
         &self,
         x: Symbol,
         workspace: &Workspace,
-
-        h: &mut HashMap<AtomView<'a>, Atom>,
-        rest: &mut Atom,
+        h: &mut HashMap<AtomView<'a>, Add>,
+        rest: &mut Add,
     ) {
         match self {
             AtomView::Add(_) => {}
@@ -230,17 +250,15 @@ impl<'a> AtomView<'a> {
                         }
                     }
 
-                    let mut col_n = workspace.new_atom();
-                    collected.as_view().normalize(workspace, &mut col_n);
-
                     h.entry(bracket.unwrap())
                         .and_modify(|e| {
-                            let mut res = workspace.new_atom();
-                            e.as_view()
-                                .add_with_ws_into(workspace, col_n.as_view(), &mut res);
-                            std::mem::swap(e, &mut res);
+                            e.extend(collected.as_view());
                         })
-                        .or_insert(col_n.as_view().to_owned());
+                        .or_insert({
+                            let mut a = Add::new();
+                            a.extend(collected.as_view());
+                            a
+                        });
 
                     return;
                 }
@@ -248,24 +266,78 @@ impl<'a> AtomView<'a> {
             _ => {
                 if self.has_key(x) {
                     // add the coefficient 1
-                    let col_n = workspace.new_num(1);
+                    let collected = workspace.new_num(1);
                     h.entry(*self)
                         .and_modify(|e| {
-                            let mut res = workspace.new_atom();
-                            e.as_view()
-                                .add_with_ws_into(workspace, col_n.as_view(), &mut res);
-                            std::mem::swap(e, &mut res);
+                            e.extend(collected.as_view());
                         })
-                        .or_insert(col_n.as_view().to_owned());
-
+                        .or_insert({
+                            let mut a = Add::new();
+                            a.extend(collected.as_view());
+                            a
+                        });
                     return;
                 }
             }
         }
 
-        let mut new_atom = workspace.new_atom();
-        rest.as_view()
-            .add_with_ws_into(workspace, *self, &mut new_atom);
-        std::mem::swap(rest, &mut new_atom);
+        rest.extend(*self);
+    }
+
+    /// Collect terms involving the literal occurrence of `x`.
+    pub fn coefficient(&self, x: AtomView<'_>) -> Atom {
+        Workspace::get_local().with(|ws| self.coefficient_with_ws(x, ws))
+    }
+
+    /// Collect terms involving the literal occurrence of `x`.
+    pub fn coefficient_with_ws(&self, x: AtomView<'_>, workspace: &Workspace) -> Atom {
+        let mut coeffs = workspace.new_atom();
+        let mut coeff_add = coeffs.to_add();
+
+        match self {
+            AtomView::Add(a) => {
+                for arg in a.iter() {
+                    arg.collect_factor(x, workspace, &mut coeff_add)
+                }
+            }
+            _ => self.collect_factor(x, workspace, &mut coeff_add),
+        }
+
+        let mut rest_norm = Atom::new();
+        coeffs.as_view().normalize(workspace, &mut rest_norm);
+        rest_norm
+    }
+
+    fn collect_factor(&self, x: AtomView<'_>, workspace: &Workspace, coeff: &mut Add) {
+        match self {
+            AtomView::Add(_) => {}
+            AtomView::Mul(m) => {
+                if m.iter().any(|a| a == x) {
+                    let mut collected = workspace.new_atom();
+                    let mul = collected.to_mul();
+
+                    // we could have a double match if x*x(..)
+                    // we then only collect on the first hit
+                    let mut bracket = None;
+
+                    for a in m.iter() {
+                        if bracket.is_none() && a == x {
+                            bracket = Some(a);
+                        } else {
+                            mul.extend(a);
+                        }
+                    }
+
+                    coeff.extend(collected.as_view());
+                }
+            }
+            _ => {
+                if *self == x {
+                    // add the coefficient 1
+                    let collected = workspace.new_num(1);
+                    coeff.extend(collected.as_view());
+                }
+            }
+        }
     }
 }

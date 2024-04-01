@@ -432,7 +432,9 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         gp
     }
 
-    fn newton_interpolation(
+    /// Perform Newton interpolation in the variable `x`, by providing
+    /// a list of sample points `a` and their evaluations `u`.
+    pub fn newton_interpolation(
         a: &[F::Element],
         u: &[MultivariatePolynomial<F, E>],
         x: usize, // the variable index to extend the polynomial by
@@ -1797,8 +1799,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         let rearrange = vars.len() > 1 && vars.windows(2).any(|s| s[0] > s[1]);
         if rearrange {
             debug!("Rearranging variables with map: {:?}", vars);
-            a = Cow::Owned(a.rearrange(&vars, false));
-            b = Cow::Owned(b.rearrange(&vars, false));
+            a = Cow::Owned(a.rearrange_impl(&vars, false, false));
+            b = Cow::Owned(b.rearrange_impl(&vars, false, false));
 
             let mut newbounds: SmallVec<[_; INLINED_EXPONENTS]> =
                 smallvec![E::zero(); bounds.len()];
@@ -1828,7 +1830,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         );
 
         if rearrange {
-            g = g.rearrange(&vars, true);
+            g = g.rearrange_impl(&vars, true, false);
         }
 
         rescale_gcd(g, &shared_degree, &base_degree, &content)

@@ -15,6 +15,7 @@ use crate::domains::{EuclideanDomain, Field, Ring};
 use crate::printer::{PolynomialPrinter, PrintOptions};
 
 use super::gcd::PolynomialGCD;
+use super::univariate::UnivariatePolynomial;
 use super::{Exponent, LexOrder, MonomialOrder, Variable, INLINED_EXPONENTS};
 use smallvec::{smallvec, SmallVec};
 
@@ -55,62 +56,77 @@ impl<R: Ring, E: Exponent> std::fmt::Display for PolynomialRing<R, E> {
 impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
     type Element = MultivariatePolynomial<R, E>;
 
+    #[inline]
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a + b
     }
 
+    #[inline]
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a - b
     }
 
+    #[inline]
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a * b
     }
 
+    #[inline]
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = std::mem::replace(a, b.zero()) + b.clone();
+        *a = &*a + b;
     }
 
+    #[inline]
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = std::mem::replace(a, b.zero()) - b.clone();
+        *a = &*a - b;
     }
 
+    #[inline]
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = std::mem::replace(a, b.zero()) * b;
     }
 
+    #[inline]
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
         *a = std::mem::replace(a, b.zero()) + b * c
     }
 
+    #[inline]
     fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
         *a = std::mem::replace(a, b.zero()) - b * c
     }
 
+    #[inline]
     fn neg(&self, a: &Self::Element) -> Self::Element {
         a.clone().neg()
     }
 
+    #[inline]
     fn zero(&self) -> Self::Element {
         MultivariatePolynomial::new(&self.ring, None, self.variables.clone())
     }
 
+    #[inline]
     fn one(&self) -> Self::Element {
         self.zero().one()
     }
 
+    #[inline]
     fn nth(&self, n: u64) -> Self::Element {
         self.zero().constant(self.ring.nth(n))
     }
 
+    #[inline]
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
         b.pow(e as usize)
     }
 
+    #[inline]
     fn is_zero(a: &Self::Element) -> bool {
         a.is_zero()
     }
 
+    #[inline]
     fn is_one(&self, a: &Self::Element) -> bool {
         a.is_one()
     }
@@ -174,9 +190,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> EuclideanDomain for Pol
 }
 
 /// Multivariate polynomial with a sparse degree and variable dense representation.
-// TODO: implement EuclideanDomain for MultivariatePolynomial
 #[derive(Clone)]
-pub struct MultivariatePolynomial<F: Ring, E: Exponent, O: MonomialOrder = LexOrder> {
+pub struct MultivariatePolynomial<F: Ring, E: Exponent = u16, O: MonomialOrder = LexOrder> {
     // Data format: the i-th monomial is stored as coefficients[i] and
     // exponents[i * nvars .. (i + 1) * nvars]. Terms are always expanded and sorted by the exponents via
     // cmp_exponents().
@@ -331,7 +346,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     /// Get the constant term of the polynomial.
     #[inline]
     pub fn get_constant(&self) -> F::Element {
-        if self.is_zero() || !self.exponents.iter().all(|e| e.is_zero()) {
+        if self.is_zero() || !self.exponents(0).iter().all(|e| e.is_zero()) {
             return self.field.zero();
         }
 
@@ -362,8 +377,9 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         &self.exponents[index * self.nvars()..(index + 1) * self.nvars()]
     }
 
+    #[inline(always)]
     pub fn last_exponents(&self) -> &[E] {
-        assert!(self.nterms() > 0);
+        //assert!(self.nterms() > 0);
         &self.exponents[(self.nterms() - 1) * self.nvars()..self.nterms() * self.nvars()]
     }
 
@@ -812,8 +828,87 @@ impl<'a, 'b, F: Ring, E: Exponent, O: MonomialOrder> Add<&'a MultivariatePolynom
 {
     type Output = MultivariatePolynomial<F, E, O>;
 
-    fn add(self, other: &'a MultivariatePolynomial<F, E, O>) -> Self::Output {
-        (self.clone()).add(other.clone())
+    fn add(self, other: &MultivariatePolynomial<F, E, O>) -> Self::Output {
+        debug_assert_eq!(self.field, other.field);
+
+        if self.variables != other.variables {
+            let mut c1 = self.clone();
+            let mut c2 = other.clone();
+            c1.unify_variables(&mut c2);
+            return c1 + c2;
+        }
+
+        if self.is_zero() {
+            return other.clone();
+        }
+        if other.is_zero() {
+            return self.clone();
+        }
+
+        // Merge the two polynomials, which are assumed to be already sorted.
+        let mut new_coefficients = vec![self.field.zero(); self.nterms() + other.nterms()];
+        let mut new_exponents: Vec<E> =
+            vec![E::zero(); self.nvars() * (self.nterms() + other.nterms())];
+        let mut new_nterms = 0;
+        let mut i = 0;
+        let mut j = 0;
+
+        macro_rules! insert_monomial {
+            ($source:expr, $index:expr) => {
+                new_coefficients[new_nterms] = $source.coefficients[$index].clone();
+                new_exponents[new_nterms * $source.nvars()..(new_nterms + 1) * $source.nvars()]
+                    .clone_from_slice($source.exponents($index));
+                new_nterms += 1;
+            };
+        }
+
+        while i < self.nterms() && j < other.nterms() {
+            let c = O::cmp(self.exponents(i), other.exponents(j));
+            match c {
+                Ordering::Less => {
+                    insert_monomial!(self, i);
+                    i += 1;
+                }
+                Ordering::Greater => {
+                    insert_monomial!(other, j);
+                    j += 1;
+                }
+                Ordering::Equal => {
+                    let coeff = self
+                        .field
+                        .add(&self.coefficients[i], &other.coefficients[j]);
+                    if !F::is_zero(&coeff) {
+                        new_coefficients[new_nterms] = coeff;
+                        new_exponents[new_nterms * self.nvars()..(new_nterms + 1) * self.nvars()]
+                            .clone_from_slice(self.exponents(i));
+                        new_nterms += 1;
+                    }
+                    i += 1;
+                    j += 1;
+                }
+            }
+        }
+
+        while i < self.nterms() {
+            insert_monomial!(self, i);
+            i += 1;
+        }
+
+        while j < other.nterms() {
+            insert_monomial!(other, j);
+            j += 1;
+        }
+
+        new_coefficients.truncate(new_nterms);
+        new_exponents.truncate(self.nvars() * new_nterms);
+
+        MultivariatePolynomial {
+            coefficients: new_coefficients,
+            exponents: new_exponents,
+            field: self.field.clone(),
+            variables: self.variables.clone(),
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -831,7 +926,7 @@ impl<'a, 'b, F: Ring, E: Exponent, O: MonomialOrder> Sub<&'a MultivariatePolynom
     type Output = MultivariatePolynomial<F, E, O>;
 
     fn sub(self, other: &'a MultivariatePolynomial<F, E, O>) -> Self::Output {
-        (self.clone()).add(other.clone().neg())
+        self + &other.clone().neg() // TODO: improve
     }
 }
 
@@ -1214,12 +1309,11 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
     /// Change the order of the variables in the polynomial, using `order`.
     /// The map can also be reversed, by setting `inverse` to `true`.
-    ///
-    /// Note that the polynomial `var_map` is not updated.
-    pub fn rearrange(
+    pub(crate) fn rearrange_impl(
         &self,
         order: &[usize],
         inverse: bool,
+        update_variables: bool,
     ) -> MultivariatePolynomial<F, E, LexOrder> {
         let mut new_exp = vec![E::zero(); self.nterms() * self.nvars()];
         for (e, er) in new_exp.chunks_mut(self.nvars()).zip(self.exponents_iter()) {
@@ -1244,7 +1338,30 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             );
         }
 
+        if update_variables {
+            let mut vm = self.variables.as_ref().clone();
+            for x in 0..order.len() {
+                if !inverse {
+                    vm[x] = self.variables[order[x]].clone();
+                } else {
+                    vm[order[x]] = self.variables[x].clone();
+                }
+            }
+
+            res.variables = Arc::new(vm);
+        }
+
         res
+    }
+
+    /// Change the order of the variables in the polynomial, using `order`.
+    /// The map can also be reversed, by setting `inverse` to `true`.
+    pub fn rearrange(
+        &self,
+        order: &[usize],
+        inverse: bool,
+    ) -> MultivariatePolynomial<F, E, LexOrder> {
+        self.rearrange_impl(order, inverse, true)
     }
 
     /// Change the order of the variables in the polynomial, using `order`.
@@ -1287,6 +1404,10 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     /// Replace a variable `n` in the polynomial by an element from
     /// the ring `v`.
     pub fn replace(&self, n: usize, v: &F::Element) -> MultivariatePolynomial<F, E, LexOrder> {
+        if (n + 1..self.nvars()).all(|i| self.degree(i) == E::zero()) {
+            return self.replace_last(n, v);
+        }
+
         let mut res = self.zero_with_capacity(self.nterms());
         let mut e: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); self.nvars()];
 
@@ -1305,6 +1426,70 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             e.copy_from_slice(t.exponents);
             e[n] = E::zero();
             res.append_monomial(c, &e);
+        }
+
+        res
+    }
+
+    /// Replace the last variable `n` in the polynomial by an element from
+    /// the ring `v`.
+    pub fn replace_last(&self, n: usize, v: &F::Element) -> MultivariatePolynomial<F, E, LexOrder> {
+        let mut res = self.zero_with_capacity(self.nterms());
+        let mut e: SmallVec<[E; INLINED_EXPONENTS]> = smallvec![E::zero(); self.nvars()];
+
+        // TODO: cache power taking?
+        for t in self {
+            if t.exponents[n] == E::zero() {
+                res.append_monomial(t.coefficient.clone(), t.exponents);
+                continue;
+            }
+
+            let c = self.field.mul(
+                t.coefficient,
+                &self.field.pow(v, t.exponents[n].to_u32() as u64),
+            );
+
+            if F::is_zero(&c) {
+                continue;
+            }
+
+            e.copy_from_slice(t.exponents);
+            e[n] = E::zero();
+
+            if res.is_zero() || res.last_exponents() != e.as_slice() {
+                res.coefficients.push(c);
+                res.exponents.extend_from_slice(&e);
+            } else {
+                let l = res.coefficients.last_mut().unwrap();
+                self.field.add_assign(l, &c);
+
+                if F::is_zero(l) {
+                    res.coefficients.pop();
+                    res.exponents.truncate(res.exponents.len() - self.nvars());
+                }
+            }
+        }
+
+        res
+    }
+
+    /// Replace a variable `n` in the polynomial by an element from
+    /// the ring `v`.
+    pub fn replace_all(&self, r: &[F::Element]) -> F::Element {
+        let mut res = self.field.zero();
+
+        // TODO: cache power taking?
+        for t in self {
+            let mut c = t.coefficient.clone();
+
+            for (i, v) in r.iter().zip(t.exponents) {
+                if v != &E::zero() {
+                    self.field
+                        .mul_assign(&mut c, &self.field.pow(i, v.to_u32() as u64));
+                }
+            }
+
+            self.field.add_assign(&mut res, &c);
         }
 
         res
@@ -1386,6 +1571,10 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             return self.one();
         }
 
+        if self.is_constant() {
+            return self.constant(self.field.pow(&self.lcoeff(), pow as u64));
+        }
+
         let mut x = self.clone();
         let mut y = self.one();
         while pow != 1 {
@@ -1401,9 +1590,45 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         x * &y
     }
 
+    pub fn to_univariate(&self, var: usize) -> UnivariatePolynomial<PolynomialRing<F, E>> {
+        let c = self.to_univariate_polynomial_list(var);
+
+        let mut p = UnivariatePolynomial::new(
+            &PolynomialRing::new_from_poly(self),
+            None,
+            Arc::new(self.variables[var].clone()),
+        );
+
+        if c.is_empty() {
+            return p;
+        }
+
+        p.coefficients = vec![p.field.zero(); c.last().unwrap().1.to_u32() as usize + 1];
+        for (q, e) in c {
+            p.coefficients[e.to_u32() as usize] = q;
+        }
+
+        p
+    }
+
+    pub fn to_univariate_from_univariate(&self, var: usize) -> UnivariatePolynomial<F> {
+        let mut p =
+            UnivariatePolynomial::new(&self.field, None, Arc::new(self.variables[var].clone()));
+
+        if self.is_zero() {
+            return p;
+        }
+
+        p.coefficients = vec![p.field.zero(); self.degree(var).to_u32() as usize + 1];
+        for (q, e) in self.coefficients.iter().zip(self.exponents_iter()) {
+            p.coefficients[e[var].to_u32() as usize] = q.clone();
+        }
+
+        p
+    }
+
     /// Create a univariate polynomial coefficient list out of a multivariate polynomial.
     /// The output is sorted in the degree.
-    // TODO: allow a MultivariatePolynomial as a coefficient
     pub fn to_univariate_polynomial_list(
         &self,
         x: usize,

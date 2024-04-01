@@ -3,6 +3,8 @@ pub mod factor;
 pub mod gcd;
 pub mod groebner;
 pub mod polynomial;
+pub mod resultant;
+pub mod univariate;
 
 use std::borrow::Cow;
 use std::cmp::Ordering::{self, Equal};
@@ -361,6 +363,17 @@ impl PartialEq for Variable {
     }
 }
 
+impl std::fmt::Display for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Variable::Symbol(v) => f.write_str(State::get_name(*v)),
+            Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
+            Variable::Array(t, i) => f.write_fmt(format_args!("{}[{}]", State::get_name(*t), i)),
+            Variable::Function(_, a) | Variable::Other(a) => std::fmt::Display::fmt(a, f),
+        }
+    }
+}
+
 impl From<Symbol> for Variable {
     fn from(i: Symbol) -> Variable {
         Variable::Symbol(i)
@@ -372,15 +385,6 @@ impl Variable {
         match self {
             Variable::Symbol(s) => Some(*s),
             _ => None,
-        }
-    }
-
-    pub fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Variable::Symbol(v) => f.write_str(State::get_name(*v)),
-            Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
-            Variable::Array(t, i) => f.write_fmt(format_args!("{}[{}]", State::get_name(*t), i)),
-            Variable::Function(_, a) | Variable::Other(a) => std::fmt::Display::fmt(a, f),
         }
     }
 

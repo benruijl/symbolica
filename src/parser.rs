@@ -277,6 +277,13 @@ impl Token {
                     a.distribute_neg();
                 }
             }
+            Token::Number(n) => {
+                if n.starts_with('-') {
+                    n.remove(0);
+                } else {
+                    n.insert(0, '-');
+                }
+            }
             _ => {
                 let t = std::mem::replace(self, Token::EOF);
                 *self = Token::Op(false, false, Operator::Neg, vec![t]);
@@ -292,7 +299,15 @@ impl Token {
             *mr = false;
 
             if *o1 == Operator::Neg {
-                other.distribute_neg();
+                if let Token::Number(n) = &mut other {
+                    if n.starts_with('-') {
+                        n.remove(0);
+                    } else {
+                        n.insert(0, '-');
+                    }
+                } else {
+                    other.distribute_neg();
+                }
                 *self = other;
                 return Ok(());
             }
@@ -376,15 +391,18 @@ impl Token {
                     add_h.as_view().normalize(workspace, out);
                 }
                 Operator::Pow => {
-                    let mut base = workspace.new_atom();
-                    args[0].to_atom_with_output(state, workspace, &mut base)?;
+                    // pow is right associative
+                    args.last()
+                        .unwrap()
+                        .to_atom_with_output(state, workspace, out)?;
+                    for a in args.iter().rev().skip(1) {
+                        let mut cur_base = workspace.new_atom();
+                        a.to_atom_with_output(state, workspace, &mut cur_base)?;
 
-                    let mut exp = workspace.new_atom();
-                    args[1].to_atom_with_output(state, workspace, &mut exp)?;
-
-                    let mut pow_h = workspace.new_atom();
-                    pow_h.to_pow(base.as_view(), exp.as_view());
-                    pow_h.as_view().normalize(workspace, out);
+                        let mut pow_h = workspace.new_atom();
+                        pow_h.to_pow(cur_base.as_view(), out.as_view());
+                        pow_h.as_view().normalize(workspace, out);
+                    }
                 }
                 Operator::Argument => return Err("Unexpected argument operator".into()),
                 Operator::Neg => {
@@ -627,16 +645,8 @@ impl Token {
                 }
                 ParseState::Number => {
                     if c != '_' && c != ' ' && !c.is_ascii_digit() {
-                        // drag in the neg operator
-                        if let Some(Token::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
-                            stack.pop();
-                            id_buffer.insert(0, '-');
-                        }
-
                         state = ParseState::Any;
-
                         stack.push(Token::Number(id_buffer.as_str().into()));
-
                         id_buffer.clear();
                     } else if c != '_' && c != ' ' {
                         id_buffer.push(c);

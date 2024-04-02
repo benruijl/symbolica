@@ -7,12 +7,13 @@ use ahash::{AHasher, HashMap, HashSet, HashSetExt};
 use rand::{thread_rng, Rng};
 
 use crate::{
+    coefficient::CoefficientView,
     domains::{
         float::NumericalFloatLike,
         rational::{Rational, RationalField, Q},
         EuclideanDomain,
     },
-    representations::{FunctionBuilder, Symbol},
+    representations::Symbol,
     state::Workspace,
 };
 use crate::{
@@ -855,6 +856,23 @@ impl Variable<Rational> {
     fn to_pretty_string(&self, var_map: &[super::Variable], mode: InstructionSetMode) -> String {
         match self {
             Variable::Var(v, index) => {
+                // convert f(0) to f[0]
+                if let super::Variable::Function(_, f) = &var_map[*v] {
+                    if let AtomView::Fun(f) = f.as_view() {
+                        if f.get_nargs() == 1 {
+                            if let Some(a) = f.iter().next() {
+                                if let AtomView::Num(n) = a {
+                                    if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
+                                        if d == 1 && n >= 0 {
+                                            return format!("{}[{}]", f.get_symbol(), a);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 let mut s = var_map[*v].to_string();
 
                 if let Some(index) = index {
@@ -1409,12 +1427,6 @@ impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
                             .get(&ws.new_var(*s).as_view())
                             .expect("Variable not found");
                     }
-                    super::Variable::Array(s, index) => {
-                        *input = FunctionBuilder::new(*s)
-                            .add_arg(&ws.new_num(*index as i64))
-                            .finish()
-                            .evaluate(const_map, function_map, &mut HashMap::default());
-                    }
                     super::Variable::Function(_, o) | super::Variable::Other(o) => {
                         *input = o.evaluate(const_map, function_map, &mut HashMap::default());
                     }
@@ -1590,7 +1602,7 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                 self.instr
                     .input_map
                     .iter()
-                    .filter_map(|x| if let super::Variable::Array(x, _) = x {
+                    .filter_map(|x| if let super::Variable::Function(x, _) = x {
                         if !seen_arrays.contains(x) {
                             seen_arrays.push(*x);
 
@@ -1765,7 +1777,7 @@ impl ExpressionEvaluator {
                 let call_args = var_map
                     .iter()
                     .filter_map(|x| {
-                        if let super::Variable::Array(x, _) = x {
+                        if let super::Variable::Function(x, _) = x {
                             if !seen_arrays.contains(x) {
                                 seen_arrays.push(*x);
 

@@ -50,7 +50,7 @@ use crate::{
     printer::{
         AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
     },
-    representations::{Atom, AtomView, FunctionBuilder, ListIterator, Symbol},
+    representations::{Atom, AtomView, ListIterator, Symbol},
     state::{FunctionAttribute, RecycledAtom, State, Workspace},
     streaming::TermStreamer,
     tensors::matrix::Matrix,
@@ -776,7 +776,7 @@ impl PythonPattern {
     #[pyo3(signature =
         (terms_on_new_line = false,
             color_top_level_sum = true,
-            color_builtin_functions = true,
+            color_builtin_symbols = true,
             print_finite_field = true,
             symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
@@ -790,7 +790,7 @@ impl PythonPattern {
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
-        color_builtin_functions: bool,
+        color_builtin_symbols: bool,
         print_finite_field: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
@@ -805,7 +805,7 @@ impl PythonPattern {
             Transformer::Print(PrintOptions {
                 terms_on_new_line,
                 color_top_level_sum,
-                color_builtin_functions,
+                color_builtin_symbols,
                 print_finite_field,
                 symmetric_representation_for_finite_field,
                 explicit_rational_polynomial,
@@ -1428,7 +1428,7 @@ impl PythonExpression {
     #[pyo3(signature =
     (terms_on_new_line = false,
         color_top_level_sum = true,
-        color_builtin_functions = true,
+        color_builtin_symbols = true,
         print_finite_field = true,
         symmetric_representation_for_finite_field = false,
         explicit_rational_polynomial = false,
@@ -1442,7 +1442,7 @@ impl PythonExpression {
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
-        color_builtin_functions: bool,
+        color_builtin_symbols: bool,
         print_finite_field: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
@@ -1459,7 +1459,7 @@ impl PythonExpression {
                 PrintOptions {
                     terms_on_new_line,
                     color_top_level_sum,
-                    color_builtin_functions,
+                    color_builtin_symbols,
                     print_finite_field,
                     symmetric_representation_for_finite_field,
                     explicit_rational_polynomial,
@@ -3588,7 +3588,7 @@ macro_rules! generate_methods {
             #[pyo3(signature =
                 (terms_on_new_line = false,
                     color_top_level_sum = true,
-                    color_builtin_functions = true,
+                    color_builtin_symbols = true,
                     print_finite_field = true,
                     symmetric_representation_for_finite_field = false,
                     explicit_rational_polynomial = false,
@@ -3602,7 +3602,7 @@ macro_rules! generate_methods {
                     &self,
                     terms_on_new_line: bool,
                     color_top_level_sum: bool,
-                    color_builtin_functions: bool,
+                    color_builtin_symbols: bool,
                     print_finite_field: bool,
                     symmetric_representation_for_finite_field: bool,
                     explicit_rational_polynomial: bool,
@@ -3619,7 +3619,7 @@ macro_rules! generate_methods {
                             PrintOptions {
                                 terms_on_new_line,
                                 color_top_level_sum,
-                                color_builtin_functions,
+                                color_builtin_symbols,
                                 print_finite_field,
                                 symmetric_representation_for_finite_field,
                                 explicit_rational_polynomial,
@@ -3669,14 +3669,6 @@ macro_rules! generate_methods {
                         Variable::Symbol(x) => {
                             var_list.push(PythonExpression {
                                 expr: Arc::new(Atom::new_var(*x)),
-                            });
-                        }
-                        Variable::Array(x, arg) => {
-                            let mut f = FunctionBuilder::new(*x);
-                            f = f.add_arg(Atom::new_num(Integer::from(*arg as u64)).as_view());
-
-                            var_list.push(PythonExpression {
-                                expr: Arc::new(f.finish()),
                             });
                         }
                         Variable::Temporary(_) => {
@@ -3794,6 +3786,39 @@ macro_rules! generate_methods {
                 }
             }
 
+            /// Compute the resultant of two polynomials with respect to the variable `var`.
+            pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
+                let x = self.poly.get_vars_ref().iter().position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    _ => false,
+                }).ok_or(exceptions::PyValueError::new_err(format!(
+                    "Variable {} not found in polynomial",
+                    var.__str__()?
+                )))?;
+
+
+                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+                    let self_uni = self.poly.to_univariate(x);
+                    let rhs_uni = rhs.poly.to_univariate(x);
+
+                    Ok(Self {
+                        poly: Arc::new(self_uni.resultant_prs(&rhs_uni)),
+                    })
+                } else {
+                    let mut new_self = (*self.poly).clone();
+                    let mut new_rhs = (*rhs.poly).clone();
+                    new_self.unify_variables(&mut new_rhs);
+
+                    let self_uni = new_self.to_univariate(x);
+                    let rhs_uni = new_rhs.to_univariate(x);
+
+                    Ok(Self {
+                        poly: Arc::new(self_uni.resultant_prs(&rhs_uni)),
+                    })
+                }
+            }
+
             /// Compute the square-free factorization of the polynomial.
             ///
             /// Examples
@@ -3840,19 +3865,9 @@ macro_rules! generate_methods {
             /// >>> p = Expression.parse('x^2+2').to_polynomial()
             /// >>> print(p.derivative(x))
             pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
-                let id = match x.expr.as_view() {
-                    AtomView::Var(x) => {
-                        x.get_symbol()
-                    }
-                    _ => {
-                        return Err(exceptions::PyValueError::new_err(
-                            "Derivative must be taken wrt a variable",
-                        ))
-                    }
-                };
-
-                let x = self.poly.get_vars_ref().iter().position(|x| match x {
-                    Variable::Symbol(y) => *y == id,
+                let x = self.poly.get_vars_ref().iter().position(|v| match (v, x.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
                     _ => false,
                 }).ok_or(exceptions::PyValueError::new_err(format!(
                     "Variable {} not found in polynomial",
@@ -3884,24 +3899,14 @@ macro_rules! generate_methods {
             /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
             /// >>> for n, pp in p.coefficient_list(x):
             /// >>>     print(n, pp)
-            pub fn coefficient_list(&self, x: PythonExpression) -> PyResult<Vec<(usize, Self)>> {
-                let id = match x.expr.as_view() {
-                    AtomView::Var(x) => {
-                        x.get_symbol()
-                    }
-                    _ => {
-                        return Err(exceptions::PyValueError::new_err(
-                            "Derivative must be taken wrt a variable",
-                        ))
-                    }
-                };
-
-                let x = self.poly.get_vars_ref().iter().position(|x| match x {
-                    Variable::Symbol(y) => *y == id,
+            pub fn coefficient_list(&self, var: PythonExpression) -> PyResult<Vec<(usize, Self)>> {
+                let x = self.poly.get_vars_ref().iter().position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
                     _ => false,
                 }).ok_or(exceptions::PyValueError::new_err(format!(
                     "Variable {} not found in polynomial",
-                    x.__str__()?
+                    var.__str__()?
                 )))?;
 
                 Ok(self.poly.to_univariate_polynomial_list(x).into_iter()
@@ -4157,14 +4162,6 @@ macro_rules! generate_rat_methods {
                         Variable::Symbol(x) => {
                             var_list.push(PythonExpression {
                                 expr: Arc::new(Atom::new_var(*x)),
-                            });
-                        }
-                        Variable::Array(x, arg) => {
-                            let mut f = FunctionBuilder::new(*x);
-                            f = f.add_arg(Atom::new_num(Integer::from(*arg as u64)).as_view());
-
-                            var_list.push(PythonExpression {
-                                expr: Arc::new(f.finish()),
                             });
                         }
                         Variable::Temporary(_) => {

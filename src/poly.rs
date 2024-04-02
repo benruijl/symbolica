@@ -344,8 +344,7 @@ impl MonomialOrder for LexOrder {
 #[derive(Clone, Hash, Eq, Debug)]
 pub enum Variable {
     Symbol(Symbol),
-    Temporary(usize),     // a temporary variable, for internal use
-    Array(Symbol, usize), // an array entry, e.g. a[0]
+    Temporary(usize), // a temporary variable, for internal use
     Function(Symbol, Arc<Atom>),
     Other(Arc<Atom>), // any other non-polynomial part, for example x^-1, x^y, etc.
 }
@@ -355,7 +354,6 @@ impl PartialEq for Variable {
         match (self, other) {
             (Variable::Symbol(a), Variable::Symbol(b)) => a == b,
             (Variable::Temporary(a), Variable::Temporary(b)) => a == b,
-            (Variable::Array(a, b), Variable::Array(c, d)) => a == c && b == d,
             (Variable::Function(a, b), Variable::Function(c, d)) => a == c && b == d,
             (Variable::Other(a), Variable::Other(b)) => a == b,
             _ => false,
@@ -368,7 +366,6 @@ impl std::fmt::Display for Variable {
         match self {
             Variable::Symbol(v) => f.write_str(State::get_name(*v)),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
-            Variable::Array(t, i) => f.write_fmt(format_args!("{}[{}]", State::get_name(*t), i)),
             Variable::Function(_, a) | Variable::Other(a) => std::fmt::Display::fmt(a, f),
         }
     }
@@ -392,7 +389,6 @@ impl Variable {
         match self {
             Variable::Symbol(v) => format!("{}", State::get_name(*v)),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
-            Variable::Array(t, i) => format!("{}[{}]", State::get_name(*t), i),
             Variable::Function(_, a) | Variable::Other(a) => format!("{}", a),
         }
     }
@@ -719,42 +715,6 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Fun(f) => {
                 // TODO: make sure that this coefficient does not depend on any of the variables in var_map
-
-                // check if the argument consists of a single positive integer. If so, treat the function as an array
-                if f.get_nargs() == 1 {
-                    let arg = f.iter().next().unwrap();
-
-                    if let AtomView::Num(n) = arg {
-                        if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
-                            if n >= 0 {
-                                let id = Variable::Array(f.get_symbol(), n as usize);
-
-                                if let Some(id) = var_map.iter().position(|v| v == &id) {
-                                    let mut exp = vec![E::zero(); var_map.len()];
-                                    exp[id] = E::one();
-                                    return MultivariatePolynomial::new(
-                                        field,
-                                        None,
-                                        var_map.clone(),
-                                    )
-                                    .monomial(field.one(), exp);
-                                } else {
-                                    let mut var_map = var_map.as_ref().clone();
-                                    var_map.push(id);
-                                    let mut exp = vec![E::zero(); var_map.len()];
-                                    exp[var_map.len() - 1] = E::one();
-
-                                    return MultivariatePolynomial::new(
-                                        field,
-                                        None,
-                                        Arc::new(var_map),
-                                    )
-                                    .monomial(field.one(), exp);
-                                }
-                            }
-                        }
-                    }
-                }
 
                 // check if we have seen this variable before
                 if let Some(id) = var_map.iter().position(|v| match v {
@@ -1161,10 +1121,6 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                         Variable::Temporary(_) => {
                             let a = map.get(var_id).expect("Variable missing from map");
                             var_h.set_from_view(a);
-                        }
-                        Variable::Array(n, i) => {
-                            let fun = var_h.to_fun(*n);
-                            fun.add_arg(workspace.new_num(*i as i64).as_view());
                         }
                         Variable::Function(_, a) | Variable::Other(a) => {
                             var_h.set_from_view(&a.as_view());

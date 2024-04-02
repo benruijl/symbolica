@@ -207,7 +207,7 @@ class Expression:
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -1234,7 +1234,7 @@ class Transformer:
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -1400,7 +1400,7 @@ class Polynomial:
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -1447,6 +1447,9 @@ class Polynomial:
 
     def gcd(self, rhs: Polynomial) -> Polynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def resultant(self, rhs: Polynomial, var: Expression) -> Polynomial:
+        """Compute the resultant of two polynomials with respect to the variable `var`."""
 
     def to_integer_polynomial(self) -> IntegerPolynomial:
         """Convert the polynomial to a polynomial with integer coefficients, if possible."""
@@ -1609,7 +1612,7 @@ class IntegerPolynomial:
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -1656,6 +1659,9 @@ class IntegerPolynomial:
 
     def gcd(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def resultant(self, rhs: IntegerPolynomial, var: Expression) -> IntegerPolynomial:
+        """Compute the resultant of two polynomials with respect to the variable `var`."""
 
     def factor_square_free(self) -> list[Tuple[IntegerPolynomial, int]]:
         """Compute the square-free factorization of the polynomial.
@@ -1783,7 +1789,7 @@ class FiniteFieldPolynomial:
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -1830,6 +1836,9 @@ class FiniteFieldPolynomial:
 
     def gcd(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def resultant(self, rhs: FiniteFieldPolynomial, var: Expression) -> FiniteFieldPolynomial:
+        """Compute the resultant of two polynomials with respect to the variable `var`."""
 
     def optimize(self, iterations: int = 1000, to_file: str | None = None) -> Evaluator:
         """

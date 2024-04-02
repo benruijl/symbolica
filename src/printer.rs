@@ -20,7 +20,7 @@ use crate::{
 pub struct PrintOptions {
     pub terms_on_new_line: bool,
     pub color_top_level_sum: bool,
-    pub color_builtin_functions: bool,
+    pub color_builtin_symbols: bool,
     pub print_finite_field: bool,
     pub symmetric_representation_for_finite_field: bool,
     pub explicit_rational_polynomial: bool,
@@ -37,7 +37,7 @@ impl PrintOptions {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: false,
-            color_builtin_functions: false,
+            color_builtin_symbols: false,
             print_finite_field: true,
             symmetric_representation_for_finite_field: false,
             explicit_rational_polynomial: false,
@@ -54,7 +54,7 @@ impl PrintOptions {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: false,
-            color_builtin_functions: false,
+            color_builtin_symbols: false,
             print_finite_field: true,
             symmetric_representation_for_finite_field: false,
             explicit_rational_polynomial: false,
@@ -65,6 +65,23 @@ impl PrintOptions {
             latex: true,
         }
     }
+
+    /// Print the output suitable for a file.
+    pub fn file() -> PrintOptions {
+        Self {
+            terms_on_new_line: false,
+            color_top_level_sum: false,
+            color_builtin_symbols: false,
+            print_finite_field: false,
+            symmetric_representation_for_finite_field: false,
+            explicit_rational_polynomial: false,
+            number_thousands_separator: None,
+            multiplication_operator: '*',
+            square_brackets_for_function: false,
+            num_exp_as_superscript: false,
+            latex: false,
+        }
+    }
 }
 
 impl Default for PrintOptions {
@@ -72,7 +89,7 @@ impl Default for PrintOptions {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: true,
-            color_builtin_functions: true,
+            color_builtin_symbols: true,
             print_finite_field: true,
             symmetric_representation_for_finite_field: false,
             explicit_rational_polynomial: false,
@@ -216,9 +233,9 @@ impl<'a> FormattedPrintVar for VarView<'a> {
                 State::I => f.write_char('i'),
                 _ => f.write_str(name),
             }
-        } else if name.ends_with('_') {
+        } else if opts.color_builtin_symbols && name.ends_with('_') {
             f.write_fmt(format_args!("{}", name.cyan().italic()))
-        } else if opts.color_builtin_functions && State::is_builtin(id) {
+        } else if opts.color_builtin_symbols && State::is_builtin(id) {
             f.write_fmt(format_args!("{}", name.purple()))
         } else {
             f.write_str(name)
@@ -460,15 +477,12 @@ impl<'a> FormattedPrintFn for FunView<'a> {
                 f.write_fmt(format_args!("{}\\!\\left(", name))?;
             }
         } else {
-            if name.ends_with('_') {
+            if opts.color_builtin_symbols && name.ends_with('_') {
                 f.write_fmt(format_args!("{}", name.cyan().italic()))?;
+            } else if opts.color_builtin_symbols && State::is_builtin(id) {
+                f.write_fmt(format_args!("{}", name.purple()))?;
             } else {
-                // check if the function name is built in
-                if opts.color_builtin_functions && State::is_builtin(id) {
-                    f.write_fmt(format_args!("{}", name.purple()))?;
-                } else {
-                    f.write_str(name)?;
-                }
+                f.write_str(name)?;
             }
 
             if opts.square_brackets_for_function {

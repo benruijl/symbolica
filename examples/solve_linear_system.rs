@@ -3,13 +3,13 @@ use std::sync::Arc;
 use symbolica::{
     domains::{
         integer::Z,
-        linear_system::Matrix,
         rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::Variable,
     representations::{Atom, AtomView},
     state::State,
+    tensors::matrix::Matrix,
 };
 
 fn solve() {
@@ -58,23 +58,22 @@ fn solve_from_matrix() {
         })
         .collect();
 
-    let m = Matrix {
-        shape: (system.len() as u32, system.len() as u32),
-        data: system_rat.into(),
-        field: RationalPolynomialField::new_from_poly(&rhs_rat[0].numerator),
-    };
-    let b = Matrix {
-        shape: (rhs.len() as u32, 1),
-        field: RationalPolynomialField::new_from_poly(&rhs_rat[0].numerator),
-        data: rhs_rat.into(),
-    };
+    let field = RationalPolynomialField::new_from_poly(&rhs_rat[0].numerator);
+    let m = Matrix::from_linear(
+        system_rat,
+        system.len() as u32,
+        system.len() as u32,
+        field.clone(),
+    )
+    .unwrap();
+    let b = Matrix::new_vec(rhs_rat, field);
 
     match m.solve(&b) {
         Ok(sol) => {
             println!(
                 "x\u{20D7} = {{{}}}",
-                sol.data
-                    .iter()
+                sol.row_iter()
+                    .flatten()
                     .map(|r| format!("{}", r))
                     .collect::<Vec<_>>()
                     .join(", ")

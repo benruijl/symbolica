@@ -3,12 +3,12 @@ use std::{ops::Neg, sync::Arc};
 use crate::{
     domains::{
         integer::{IntegerRing, Z},
-        linear_system::Matrix,
         rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::{Exponent, Variable},
     representations::{Atom, AtomView, Symbol},
+    tensors::matrix::Matrix,
 };
 
 impl<'a> AtomView<'a> {
@@ -68,16 +68,9 @@ impl<'a> AtomView<'a> {
 
         let field = RationalPolynomialField::new(Z, rhs[0].numerator.get_vars().into());
 
-        let m = Matrix {
-            shape: ((mat.len() / rhs.len()) as u32, rhs.len() as u32),
-            data: mat.into(),
-            field: field.clone(),
-        };
-        let b = Matrix {
-            shape: (rhs.len() as u32, 1),
-            data: rhs.into(),
-            field,
-        };
+        let nrows = (mat.len() / rhs.len()) as u32;
+        let m = Matrix::from_linear(mat, nrows, rhs.len() as u32, field.clone()).unwrap();
+        let b = Matrix::new_vec(rhs, field);
 
         let sol = match m.solve(&b) {
             Ok(sol) => sol,

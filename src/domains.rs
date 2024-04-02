@@ -3,7 +3,6 @@ pub mod factorized_rational_polynomial;
 pub mod finite_field;
 pub mod float;
 pub mod integer;
-pub mod linear_system;
 pub mod rational;
 pub mod rational_polynomial;
 

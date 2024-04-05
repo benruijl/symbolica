@@ -3358,6 +3358,35 @@ impl PythonPolynomial {
         }
     }
 
+    /// Integrate the polynomial in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.var('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.integrate(x))
+    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: Arc::new(self.poly.integrate(x)),
+        })
+    }
+
     /// Convert the polynomial to an expression.
     ///
     /// Examples
@@ -3530,6 +3559,35 @@ impl PythonFiniteFieldPolynomial {
                 .map(|p| Self { poly: Arc::new(p) })
                 .collect()
         }
+    }
+
+    /// Integrate the polynomial in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.var('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.integrate(x))
+    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: Arc::new(self.poly.integrate(x)),
+        })
     }
 }
 

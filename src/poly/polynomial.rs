@@ -24,8 +24,8 @@ thread_local! { static DENSE_MUL_BUFFER: Cell<Vec<u32>> = const { Cell::new(Vec:
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PolynomialRing<R: Ring, E: Exponent> {
-    ring: R,
-    variables: Arc<Vec<Variable>>,
+    pub(crate) ring: R,
+    pub(crate) variables: Arc<Vec<Variable>>,
     _phantom_exp: PhantomData<E>,
 }
 
@@ -3036,6 +3036,19 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         (q, r)
     }
+
+    /// Compute the p-adic expansion of the polynomial.
+    /// It returns `[a0, a1, a2, ...]` such that `a0 + a1 * p^1 + a2 * p^2 + ... = self`.
+    pub fn p_adic_expansion(&self, p: &Self) -> Vec<Self> {
+        let mut res = vec![];
+        let mut r = self.clone();
+        while !r.is_zero() {
+            let (q, rem) = r.quot_rem(p, true);
+            res.push(rem);
+            r = q;
+        }
+        res
+    }
 }
 
 impl<F: Field, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
@@ -3048,6 +3061,30 @@ impl<F: Field, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         } else {
             self
         }
+    }
+
+    /// Integrate the polynomial w.r.t the variable `var`,
+    /// producing the antiderivative with zero constant.
+    pub fn integrate(&self, var: usize) -> Self {
+        debug_assert!(var < self.nvars());
+        if self.is_zero() {
+            return self.zero();
+        }
+
+        let mut res = self.zero_with_capacity(self.nterms());
+
+        let mut exp = vec![E::zero(); self.nvars()];
+        for x in self {
+            exp.copy_from_slice(x.exponents);
+            let pow = exp[var].to_u32() as u64;
+            exp[var] = exp[var] + E::one();
+            res.append_monomial(
+                self.field.div(x.coefficient, &self.field.nth(pow + 1)),
+                &exp,
+            );
+        }
+
+        res
     }
 }
 

@@ -11,8 +11,8 @@ use ahash::HashMap;
 
 use crate::{
     poly::{
-        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent,
-        Variable,
+        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial,
+        univariate::UnivariatePolynomial, Exponent, Variable,
     },
     printer::{PrintOptions, RationalPolynomialPrinter},
 };
@@ -85,6 +85,17 @@ impl<R: Ring, E: Exponent> PartialOrd for RationalPolynomial<R, E> {
                         .unwrap_or(Ordering::Equal)
                 }),
         )
+    }
+}
+
+impl<R: Ring, E: Exponent> From<MultivariatePolynomial<R, E>> for RationalPolynomial<R, E>
+where
+    Self: FromNumeratorAndDenominator<R, R, E>,
+{
+    fn from(poly: MultivariatePolynomial<R, E>) -> Self {
+        let d = poly.one();
+        let field = poly.field.clone();
+        Self::from_num_den(poly, d, &field, false)
     }
 }
 
@@ -396,6 +407,35 @@ where
         }
 
         Ok(poly)
+    }
+
+    // Convert from a univariate polynomial with rational polynomial coefficients to a rational polynomial.
+    pub fn from_univariate(
+        f: UnivariatePolynomial<RationalPolynomialField<R, E>>,
+    ) -> RationalPolynomial<R, E> {
+        let Some(pos) = f
+            .field
+            .var_map
+            .iter()
+            .position(|x| x == f.variable.as_ref())
+        else {
+            panic!("Variable not found in the field");
+        };
+
+        let mut res = RationalPolynomial::new(&f.field.ring, f.field.var_map.clone());
+
+        let mut exp = vec![E::zero(); f.field.var_map.len()];
+        exp[pos] = E::one();
+        let v: RationalPolynomial<R, E> = res
+            .numerator
+            .monomial(res.numerator.field.one(), exp)
+            .into();
+
+        for (p, c) in f.coefficients.into_iter().enumerate() {
+            res = &res + &(&v.pow(p as u64) * &c);
+        }
+
+        res
     }
 }
 
@@ -769,5 +809,163 @@ where
         }
 
         factors
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+    MultivariatePolynomial<R, E>: Factorize,
+{
+    /// Integrate the rational function in `var`. It returns a tuple
+    /// `(ps, ls)` where `ps` should be interpreted as the sum of the rational parts
+    /// and `ls` as a sum of logarithmic parts. Each logarithmic part is a tuple `(r, a)`
+    /// that represents `sum_(r(z) = 0) z*log(a(var, z))`.
+    pub fn integrate(&self, var: usize) -> (Vec<Self>, Vec<(MultivariatePolynomial<R, E>, Self)>) {
+        let rat_field = RationalPolynomialField::new_from_poly(&self.numerator);
+        let n = self.numerator.to_univariate(var);
+
+        if self.denominator.is_one() {
+            // map coefficients to a rational polynomial
+            let n_conv = n.map_coeff(|c| c.clone().into(), rat_field);
+            let r = Self::from_univariate(n_conv.integrate());
+            return (vec![r], vec![]);
+        }
+
+        let d = self.denominator.to_univariate(var);
+        let (q, r) = n.quot_rem(&d);
+
+        let mut v = if q.is_zero() {
+            vec![]
+        } else {
+            vec![q.integrate().to_multivariate().into()]
+        };
+
+        // partial fraction the denominator
+        let fs = self
+            .denominator
+            .square_free_factorization()
+            .into_iter()
+            .map(|(x, p)| (x.to_univariate(var), p))
+            .collect::<Vec<_>>();
+
+        let mut expanded = fs
+            .iter()
+            .map(|(f, p)| f.pow(*p).map_coeff(|c| c.clone().into(), rat_field.clone()))
+            .collect::<Vec<_>>();
+
+        let rem = r.map_coeff(|c| c.clone().into(), rat_field.clone());
+
+        // perform partial fractioning
+        let deltas = if expanded.len() > 1 {
+            UnivariatePolynomial::diophantine(&mut expanded, &rem)
+        } else {
+            vec![rem]
+        };
+
+        let fs = fs
+            .into_iter()
+            .map(|(x, _)| x.map_coeff(|c| c.clone().into(), rat_field.clone()))
+            .collect::<Vec<_>>();
+
+        let mut hs = vec![];
+        for (d, p) in deltas.into_iter().zip(&fs) {
+            let p_diff = p.derivative();
+            let (_, s, t) = p.eea(&p_diff);
+
+            let p_full = Self::from_univariate(p.clone());
+
+            let mut d_exp = d.p_adic_expansion(&p);
+            // highest degree in 1/p last
+            d_exp.reverse();
+
+            // perform Hermite reduction
+            for i in (1..d_exp.len()).rev() {
+                let dd = d_exp[i].clone();
+                let s_cor = s.clone() * &dd;
+                let t_cor = t.clone() * &dd;
+
+                d_exp[i - 1] = d_exp[i - 1].clone()
+                    + s_cor
+                    + t_cor.derivative().div_coeff(&(t_cor.field.nth(i as u64)));
+
+                let t_full = Self::from_univariate(t_cor);
+
+                v.push(-(&t_full / &(&rat_field.nth(i as u64) * &p_full.pow(i as u64))));
+            }
+
+            hs.push(d_exp.swap_remove(0));
+        }
+
+        // create new temporary variable
+        let mut t = MultivariatePolynomial::new(
+            &self.numerator.field,
+            None,
+            Arc::new(vec![Variable::Temporary(0)]),
+        )
+        .monomial(self.numerator.field.one(), vec![E::one()])
+        .into();
+
+        let mut w = vec![];
+
+        for (mut h, mut p) in hs.into_iter().zip(fs.into_iter()) {
+            for c in &mut p.coefficients {
+                c.unify_variables(&mut t);
+            }
+            for c in &mut h.coefficients {
+                c.unify_variables(&mut t);
+            }
+
+            // adding a variable changes the field
+            p.field = RationalPolynomialField::new_from_poly(&p.coefficients[0].numerator);
+            h.field = p.field.clone();
+
+            let b = h.clone() - p.derivative().mul_coeff(&t);
+
+            // TODO: use resultant_prs instead?
+            let r = p.resultant(&b);
+            assert!(r.denominator.is_constant());
+
+            let mut sqf = r.numerator.square_free_factorization();
+            sqf.retain(|(x, _)| !x.is_constant());
+
+            // perform monic euclidean algorithm and collect the remainders of the powers that appear in the factorized resultant
+            let mut r0 = p.clone().make_monic();
+
+            for (x, pp) in &sqf {
+                if r0.degree() == *pp {
+                    w.push((x.clone(), Self::from_univariate(r0.clone())));
+                    break;
+                }
+            }
+
+            let mut r1 = b.clone().make_monic();
+
+            for (x, pp) in &sqf {
+                if r1.degree() == *pp {
+                    w.push((x.clone(), Self::from_univariate(r1.clone())));
+                    break;
+                }
+            }
+
+            while !r1.is_zero() {
+                let r = r0.rem(&mut r1);
+                for (x, pp) in &sqf {
+                    if r.degree() == *pp {
+                        w.push((x.clone(), Self::from_univariate(r.clone())));
+                        break;
+                    }
+                }
+
+                if RationalPolynomialField::is_zero(&r.lcoeff()) {
+                    break;
+                }
+
+                let a = rat_field.inv(&r.lcoeff());
+                (r1, r0) = (r.mul_coeff(&a), r1);
+            }
+        }
+
+        (v, w)
     }
 }

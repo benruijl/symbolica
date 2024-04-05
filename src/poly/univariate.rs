@@ -5,11 +5,14 @@ use std::{
 };
 
 use crate::{
-    domains::{EuclideanDomain, Field, Ring, RingPrinter},
+    domains::{integer::Integer, EuclideanDomain, Field, Ring, RingPrinter},
     printer::PrintOptions,
 };
 
-use super::Variable;
+use super::{
+    polynomial::{MultivariatePolynomial, PolynomialRing},
+    Exponent, Variable,
+};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct UnivariatePolynomialRing<R: Ring> {
@@ -200,18 +203,28 @@ impl<F: Ring + std::fmt::Display> std::fmt::Display for UnivariatePolynomial<F> 
                 write!(f, "+")?;
             }
 
-            write!(
-                f,
-                "{}*{}^{}",
-                RingPrinter {
-                    element: c,
-                    ring: &self.field,
-                    opts: PrintOptions::default(),
-                    in_product: true
-                },
-                v,
-                e
-            )?;
+            let p = RingPrinter {
+                element: c,
+                ring: &self.field,
+                opts: PrintOptions::default(),
+                in_product: true,
+            };
+
+            if e == 0 {
+                write!(f, "{}", p)?;
+            } else if e == 1 {
+                if self.field.is_one(c) {
+                    write!(f, "{}", v)?;
+                } else {
+                    write!(f, "{}*{}", p, v)?;
+                }
+            } else {
+                if self.field.is_one(c) {
+                    write!(f, "{}^{}", v, e)?;
+                } else {
+                    write!(f, "{}*{}^{}", p, v, e)?;
+                }
+            }
         }
         Ok(())
     }
@@ -300,7 +313,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
 
     #[inline]
     pub fn is_one(&self) -> bool {
-        self.degree() == 1 && self.field.is_one(&self.coefficients[0])
+        self.coefficients.len() == 1 && self.field.is_one(&self.coefficients[0])
     }
 
     /// Returns true if the polynomial is constant.
@@ -391,6 +404,18 @@ impl<F: Ring> UnivariatePolynomial<F> {
         self
     }
 
+    /// Map a coefficient using the function `f`.
+    pub fn map_coeff<U: Ring, T: Fn(&F::Element) -> U::Element>(
+        &self,
+        f: T,
+        field: U,
+    ) -> UnivariatePolynomial<U> {
+        let mut r = UnivariatePolynomial::new(&field, None, self.variable.clone());
+        r.coefficients = self.coefficients.iter().map(f).collect::<Vec<_>>();
+        r.truncate();
+        r
+    }
+
     fn truncate(&mut self) {
         let d = self
             .coefficients
@@ -427,6 +452,30 @@ impl<F: Ring> UnivariatePolynomial<F> {
         } else if last_non_zero > 1 {
             let p = self.field.pow(x, last_non_zero + 1);
             self.field.mul_assign(&mut res, &p);
+        }
+
+        res
+    }
+
+    /// Take the derivative of the polynomial.
+    pub fn derivative(&self) -> Self {
+        if self.is_constant() {
+            return self.zero();
+        }
+
+        let mut res = self.zero();
+        res.coefficients
+            .resize(self.coefficients.len() - 1, self.field.zero());
+
+        for (p, (nc, oc)) in res
+            .coefficients
+            .iter_mut()
+            .zip(self.coefficients.iter().skip(1))
+            .enumerate()
+        {
+            if !F::is_zero(oc) {
+                *nc = self.field.mul(oc, &self.field.nth(p as u64 + 1));
+            }
         }
 
         res
@@ -550,14 +599,14 @@ impl<'a, 'b, F: Ring> Mul<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynom
 
     #[inline]
     fn mul(self, rhs: &'a UnivariatePolynomial<F>) -> Self::Output {
-        let n = self.degree();
-        let m = rhs.degree();
-
-        if n == 0 || m == 0 {
+        if self.is_zero() || rhs.is_zero() {
             return self.zero();
         }
 
-        if n == 1 {
+        let n = self.degree();
+        let m = rhs.degree();
+
+        if n == 0 {
             let mut r = rhs.clone();
             for c in &mut r.coefficients {
                 self.field.mul_assign(c, &self.coefficients[0]);
@@ -565,7 +614,7 @@ impl<'a, 'b, F: Ring> Mul<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynom
             return r;
         }
 
-        if m == 1 {
+        if m == 0 {
             let mut r = self.clone();
             for c in &mut r.coefficients {
                 self.field.mul_assign(c, &rhs.coefficients[0]);
@@ -729,8 +778,12 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         let mut n = self.degree();
         let m = div.degree();
 
+        if n < m {
+            return (self.zero(), self.clone());
+        }
+
         let mut q = self.zero();
-        q.coefficients = vec![self.field.zero(); n - m + 1];
+        q.coefficients = vec![self.field.zero(); n + 1 - m];
 
         let mut r = self.clone();
 
@@ -756,9 +809,142 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
 
         (q, r)
     }
+
+    /// Compute the p-adic expansion of the polynomial.
+    /// It returns `[a0, a1, a2, ...]` such that `a0 + a1 * p^1 + a2 * p^2 + ... = self`.
+    pub fn p_adic_expansion(&self, p: &Self) -> Vec<Self> {
+        let mut res = vec![];
+        let mut r = self.clone();
+        while !r.is_zero() {
+            let (q, rem) = r.quot_rem(p);
+            res.push(rem);
+            r = q;
+        }
+        res
+    }
+
+    /// Integrate the polynomial w.r.t the variable `var`,
+    /// producing the antiderivative with zero constant.
+    pub fn integrate(&self) -> Self {
+        if self.is_zero() {
+            return self.zero();
+        }
+
+        let mut res = self.zero();
+        res.coefficients
+            .resize(self.coefficients.len() + 1, self.field.zero());
+
+        for (p, (nc, oc)) in res
+            .coefficients
+            .iter_mut()
+            .skip(1)
+            .zip(&self.coefficients)
+            .enumerate()
+        {
+            if !F::is_zero(oc) {
+                let (q, r) = self.field.quot_rem(oc, &self.field.nth(p as u64 + 1));
+                if !F::is_zero(&r) {
+                    panic!("Could not compute integral since there is a remainder in the division of the exponent number.");
+                }
+                *nc = q;
+            }
+        }
+
+        res
+    }
 }
 
 impl<F: Field> UnivariatePolynomial<F> {
+    /// Make the polynomial monic, i.e., make the leading coefficient `1` by
+    /// multiplying all monomials with `1/lcoeff`.
+    pub fn make_monic(self) -> Self {
+        if self.lcoeff() != self.field.one() {
+            let ci = self.field.inv(&self.lcoeff());
+            self.mul_coeff(&ci)
+        } else {
+            self
+        }
+    }
+
+    /// Compute self^n % m where m is a polynomial
+    pub fn exp_mod(&self, mut n: Integer, m: &mut Self) -> Self {
+        if n.is_zero() {
+            return self.one();
+        }
+
+        // use binary exponentiation and mod at every stage
+        let mut x = self.rem(m);
+        let mut y = self.one();
+        while !n.is_one() {
+            if (&n % &Integer::Natural(2)).is_one() {
+                y = (&y * &x).quot_rem(m).1;
+                n -= &Integer::one();
+            }
+
+            x = (&x * &x).rem(m);
+            n /= 2;
+        }
+
+        (x * &y).rem(m)
+    }
+
+    /// Compute `(g, s, t)` where `self * s + other * t = g`
+    /// by means of the extended Euclidean algorithm.
+    pub fn eea(&self, other: &Self) -> (Self, Self, Self) {
+        let mut r0 = self.clone().make_monic();
+        let mut r1 = other.clone().make_monic();
+        let mut s0 = self.constant(self.field.inv(&self.lcoeff()));
+        let mut s1 = self.zero();
+        let mut t0 = self.zero();
+        let mut t1 = self.constant(self.field.inv(&other.lcoeff()));
+
+        while !r1.is_zero() {
+            let (q, r) = r0.quot_rem(&mut r1);
+            if F::is_zero(&r.lcoeff()) {
+                return (r1, s1, t1);
+            }
+
+            let a = self.field.inv(&r.lcoeff());
+            (r1, r0) = (r.mul_coeff(&a), r1);
+            (s1, s0) = ((s0 - &q * &s1).mul_coeff(&a), s1);
+            (t1, t0) = ((t0 - q * &t1).mul_coeff(&a), t1);
+        }
+
+        (r0, s0, t0)
+    }
+
+    /// Compute `(s1,...,n2)` where `A0 * s0 + ... + An * sn = g`
+    /// where `Ai = prod(polys[j], j != i)`
+    /// by means of the extended Euclidean algorithm.
+    ///
+    /// The `polys` must be pairwise co-prime.
+    pub fn diophantine(polys: &mut [Self], b: &Self) -> Vec<Self> {
+        if polys.len() < 2 {
+            panic!("Need at least two polynomials for the diophantine equation");
+        }
+
+        let mut cur = polys.last().unwrap().clone();
+        let mut a = vec![cur.clone()];
+        for x in polys[1..].iter().rev().skip(1) {
+            cur = cur * x;
+            a.push(cur.clone());
+        }
+        a.reverse();
+
+        let mut ss = vec![];
+        let mut cur_s = b.clone();
+        for (p, aa) in polys.iter_mut().zip(&mut a) {
+            let (g, s, t) = p.eea(aa);
+            debug_assert!(g.is_one());
+            let new_s = (t * &cur_s).rem(p);
+            ss.push(new_s);
+            cur_s = (s * &cur_s).rem(aa);
+        }
+
+        ss.push(cur_s);
+        ss
+    }
+
     /// Compute the univariate GCD using Euclid's algorithm. The result is normalized to 1.
     pub fn gcd(&self, b: &Self) -> Self {
         if self.is_zero() {
@@ -822,5 +1008,38 @@ impl<F: Field> UnivariatePolynomial<F> {
         q.truncate();
 
         (q, r)
+    }
+}
+
+impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
+    // Convert from a univariate polynomial to a polynomial.
+    pub fn to_multivariate(self) -> MultivariatePolynomial<R, E> {
+        let Some(pos) = self
+            .field
+            .variables
+            .iter()
+            .position(|x| x == self.variable.as_ref())
+        else {
+            panic!("Variable not found in the field");
+        };
+
+        let mut res = MultivariatePolynomial::new(
+            &self.field.ring,
+            self.degree().into(),
+            self.field.variables.clone(),
+        );
+
+        for (p, mut c) in self.coefficients.into_iter().enumerate() {
+            for (e, nc) in c
+                .exponents
+                .chunks_mut(self.field.variables.len())
+                .zip(c.coefficients)
+            {
+                e[pos] = E::from_u32(p as u32);
+                res.append_monomial(nc, e);
+            }
+        }
+
+        res
     }
 }

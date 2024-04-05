@@ -1439,7 +1439,7 @@ class Polynomial:
     def __truediv__(self, rhs: Polynomial) -> Polynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
 
-    def quot_rem(self, rhs: Polynomial) -> Polynomial:
+    def quot_rem(self, rhs: Polynomial) -> Tuple[Polynomial, Polynomial]:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
 
     def __neg__(self) -> Polynomial:
@@ -1501,6 +1501,18 @@ class Polynomial:
         >>> x = Expression.var('x')
         >>> p = Expression.parse('x^2+2').to_polynomial()
         >>> print(p.derivative(x))
+        """
+
+    def integrate(self, x: Expression) -> Polynomial:
+        """Integrate the polynomial in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> print(p.integrate(x))
         """
 
     def content(self) -> Polynomial:
@@ -1651,7 +1663,7 @@ class IntegerPolynomial:
     def __truediv__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
 
-    def quot_rem(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
+    def quot_rem(self, rhs: IntegerPolynomial) -> Tuple[IntegerPolynomial, IntegerPolynomial]:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
 
     def __neg__(self) -> IntegerPolynomial:
@@ -1699,7 +1711,7 @@ class IntegerPolynomial:
 
         >>> from symbolica import Expression
         >>> x = Expression.var('x')
-        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> p = Expression.parse('x^2+2').to_polynomial().to_integer_polynomial()
         >>> print(p.derivative(x))
         """
 
@@ -1710,7 +1722,7 @@ class IntegerPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+        >>> p = Expression.parse('3x^2+6x+9').to_polynomial().to_integer_polynomial()
         >>> print(p.content())
         """
 
@@ -1722,7 +1734,7 @@ class IntegerPolynomial:
 
         >>> from symbolica import Expression
         >>> x = Expression.var('x')
-        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial().to_integer_polynomial()
         >>> for n, pp in p.coefficient_list(x):
         >>>     print(n, pp)
         """
@@ -1735,7 +1747,7 @@ class IntegerPolynomial:
 
         >>> from symbolica import Expression
         >>> e = Expression.parse('x*y+2*x+x^2')
-        >>> p = e.to_polynomial()
+        >>> p = e.to_polynomial().to_integer_polynomial()
         >>> print((e - p.to_expression()).expand())
         """
 
@@ -1828,7 +1840,7 @@ class FiniteFieldPolynomial:
     def __truediv__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
 
-    def quot_rem(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+    def quot_rem(self, rhs: FiniteFieldPolynomial) -> Tuple[FiniteFieldPolynomial, FiniteFieldPolynomial]:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
 
     def __neg__(self) -> FiniteFieldPolynomial:
@@ -1886,6 +1898,18 @@ class FiniteFieldPolynomial:
         >>> x = Expression.var('x')
         >>> p = Expression.parse('x^2+2').to_polynomial()
         >>> print(p.derivative(x))
+        """
+
+    def integrate(self, x: Expression) -> FiniteFieldPolynomial:
+        """Integrate the polynomial in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> print(p.integrate(x))
         """
 
     def content(self) -> FiniteFieldPolynomial:

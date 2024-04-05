@@ -20,13 +20,16 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         while !a_new.is_constant() {
             if init {
                 psi = if deg == 0 {
+                    // can only happen on the first iteration
                     psi
                 } else if deg == 1 {
-                    self.field.pow(&neg_lc, deg)
+                    neg_lc.clone()
                 } else {
-                    let (q, r) = self.field.quot_rem(&neg_lc, &psi);
+                    let a = self.field.pow(&neg_lc, deg);
+                    let psi_old = self.field.pow(&psi, deg - 1);
+                    let (q, r) = self.field.quot_rem(&a, &psi_old);
                     debug_assert!(F::is_zero(&r));
-                    self.field.mul(&q, &neg_lc)
+                    q
                 };
 
                 deg = a.degree() as u64 - a_new.degree() as u64;

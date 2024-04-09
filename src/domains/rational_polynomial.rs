@@ -838,7 +838,10 @@ where
         let mut v = if q.is_zero() {
             vec![]
         } else {
-            vec![q.integrate().to_multivariate().into()]
+            vec![Self::from_univariate(
+                q.map_coeff(|c| c.clone().into(), rat_field.clone())
+                    .integrate(),
+            )]
         };
 
         // partial fraction the denominator

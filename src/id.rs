@@ -1,3 +1,4 @@
+use ahash::HashSet;
 use dyn_clone::DynClone;
 
 use crate::{
@@ -21,11 +22,89 @@ impl Atom {
     pub fn into_pattern(&self) -> Pattern {
         Pattern::from_view(self.as_view(), true)
     }
+
+    /// Get all symbols in the expression, optionally including function symbols.
+    pub fn get_all_symbols(&self, include_function_symbols: bool) -> HashSet<Symbol> {
+        let mut out = HashSet::default();
+        self.as_view()
+            .get_all_symbols_impl(include_function_symbols, &mut out);
+        out
+    }
+
+    /// Returns true iff `self` contains the symbol `s`.
+    pub fn contains_symbol(&self, s: Symbol) -> bool {
+        self.as_view().contains_symbol(s)
+    }
 }
 
 impl<'a> AtomView<'a> {
     pub fn into_pattern(self) -> Pattern {
         Pattern::from_view(self, true)
+    }
+
+    /// Get all symbols in the expression, optionally including function symbols.
+    pub fn get_all_symbols(&self, include_function_symbols: bool) -> HashSet<Symbol> {
+        let mut out = HashSet::default();
+        self.get_all_symbols_impl(include_function_symbols, &mut out);
+        out
+    }
+
+    fn get_all_symbols_impl(&self, include_function_symbols: bool, out: &mut HashSet<Symbol>) {
+        match self {
+            AtomView::Num(_) => {}
+            AtomView::Var(v) => {
+                out.insert(v.get_symbol());
+            }
+            AtomView::Fun(f) => {
+                if include_function_symbols {
+                    out.insert(f.get_symbol());
+                }
+                for arg in f.iter() {
+                    arg.get_all_symbols_impl(include_function_symbols, out);
+                }
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+                base.get_all_symbols_impl(include_function_symbols, out);
+                exp.get_all_symbols_impl(include_function_symbols, out);
+            }
+            AtomView::Mul(m) => {
+                for child in m.iter() {
+                    child.get_all_symbols_impl(include_function_symbols, out);
+                }
+            }
+            AtomView::Add(a) => {
+                for child in a.iter() {
+                    child.get_all_symbols_impl(include_function_symbols, out);
+                }
+            }
+        }
+    }
+
+    /// Returns true iff `self` contains the symbol `s`.
+    pub fn contains_symbol(&self, s: Symbol) -> bool {
+        match self {
+            AtomView::Num(_) => false,
+            AtomView::Var(v) => v.get_symbol() == s,
+            AtomView::Fun(f) => {
+                if f.get_symbol() == s {
+                    return true;
+                }
+
+                for arg in f.iter() {
+                    if arg.contains_symbol(s) {
+                        return true;
+                    }
+                }
+                false
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+                base.contains_symbol(s) || exp.contains_symbol(s)
+            }
+            AtomView::Mul(m) => m.iter().any(|x| x.contains_symbol(s)),
+            AtomView::Add(a) => a.iter().any(|x| x.contains_symbol(s)),
+        }
     }
 }
 
@@ -2341,14 +2420,16 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                     .substitute_wildcards(ws, &mut new_rhs, match_stack)
                     .unwrap(); // TODO: escalate?
 
+                let mut h = ws.new_atom();
                 ReplaceIterator::copy_and_replace(
-                    out,
+                    &mut h,
                     position,
                     &used_flags,
                     self.target,
                     new_rhs.as_view(),
                     ws,
                 );
+                h.as_view().normalize(&ws, out);
             });
 
             Some(())

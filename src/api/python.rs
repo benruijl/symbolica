@@ -2941,7 +2941,7 @@ impl PythonFunction {
             opts.push(FunctionAttribute::Linear);
         }
 
-        let id = State::get_symbol_with_attributes(name, opts)
+        let id = State::get_symbol_with_attributes(name, &opts)
             .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
         Ok(PythonFunction { id })

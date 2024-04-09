@@ -273,3 +273,36 @@ impl<'a> AtomView<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::representations::Atom;
+
+    #[test]
+    fn exponent() {
+        let exp = Atom::parse("(1+v1+v2)^4").unwrap().expand();
+        let res = Atom::parse("4*v1+4*v2+6*v1^2+4*v1^3+v1^4+6*v2^2+4*v2^3+v2^4+12*v1*v2+12*v1*v2^2+4*v1*v2^3+12*v1^2*v2+6*v1^2*v2^2+4*v1^3*v2+1").unwrap();
+        assert_eq!(exp, res);
+    }
+
+    #[test]
+    fn association() {
+        let exp = Atom::parse("(1+v1)*(2+v2)*(3+v1)").unwrap().expand();
+        let res = Atom::parse("8*v1+3*v2+2*v1^2+4*v1*v2+v1^2*v2+6").unwrap();
+        assert_eq!(exp, res);
+    }
+
+    #[test]
+    fn mul_pow() {
+        let exp = Atom::parse("(v1*v2*2)^3*2").unwrap().expand();
+        let res = Atom::parse("v1^3*v2^3*16").unwrap();
+        assert_eq!(exp, res);
+    }
+
+    #[test]
+    fn mul_pow_neg() {
+        let exp = Atom::parse("(v1*v2*2)^-3").unwrap().expand();
+        let res = Atom::parse("(8*v1^3*v2^3)^-1").unwrap();
+        assert_eq!(exp, res);
+    }
+}

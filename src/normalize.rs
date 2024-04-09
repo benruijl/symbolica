@@ -307,6 +307,7 @@ impl Atom {
                             p1.set_from_base_and_exp(base2, helper.as_view());
                         }
 
+                        self.set_normalized(true);
                         return true;
                     }
                 }
@@ -317,6 +318,7 @@ impl Atom {
                 let mut helper2 = workspace.new_atom();
                 helper.as_view().normalize(workspace, &mut helper2);
                 p1.set_from_base_and_exp(base2, helper2.as_view());
+                p1.set_normalized(true);
                 return true;
             }
         }
@@ -349,6 +351,7 @@ impl Atom {
                     self.to_pow(base, helper2.as_view());
                 }
 
+                self.set_normalized(true);
                 return true;
             } else {
                 return false;
@@ -377,6 +380,7 @@ impl Atom {
             // add powers
             let exp = other.to_num(2.into());
             helper.to_pow(self.as_view(), AtomView::Num(exp.to_num_view()));
+            helper.set_normalized(true);
 
             // overwrite self with the new power view
             std::mem::swap(self, helper);
@@ -470,6 +474,8 @@ impl Atom {
                         m.extend(on.to_num_view().as_view());
                     }
 
+                    m.set_has_coefficient(true);
+                    m.set_normalized(true);
                     return true;
                 }
             } else {
@@ -492,6 +498,7 @@ impl Atom {
                 let on = helper.to_num(new_coeff);
 
                 m.replace_last(on.to_num_view().as_view());
+                m.set_normalized(true);
 
                 return true;
             }
@@ -527,8 +534,11 @@ impl Atom {
                     } else {
                         m.extend(on.to_num_view().as_view());
                     }
+
+                    m.set_has_coefficient(true);
                 }
 
+                self.set_normalized(true);
                 return true;
             }
         } else if self.as_view() == other {
@@ -1048,7 +1058,7 @@ impl<'a> AtomView<'a> {
                                 }
                             }
 
-                            ns.extend(r);
+                            ns.extend(c);
                         }
                     } else {
                         if let AtomView::Num(n) = r {
@@ -1118,5 +1128,26 @@ impl<'a> AtomView<'a> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{representations::Atom, state::State};
+
+    #[test]
+    fn linear_symmetric() {
+        let res = Atom::parse("fsl1(v2+2*v3,v1+3*v2-v3)").unwrap();
+        let refr =
+            Atom::parse("fsl1(v1,v2)+2*fsl1(v1,v3)+3*fsl1(v2,v2)+5*fsl1(v2,v3)-2*fsl1(v3,v3)")
+                .unwrap();
+        assert_eq!(res, refr);
+    }
+
+    #[test]
+    fn mul_complex_i() {
+        let res = Atom::new_var(State::I) * &Atom::new_var(State::E) * &Atom::new_var(State::I);
+        let refr = -Atom::new_var(State::E);
+        assert_eq!(res, refr);
     }
 }

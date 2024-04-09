@@ -383,8 +383,8 @@ impl Rational {
         }
 
         let k = &(max_denominator - &q0) / &q1;
-        let bound1 = (p0 + &(&k * &p1), &q0 + &(&k * &q1)).into();
-        let bound2 = (p1, q1).into();
+        let bound1: Rational = (p0 + &(&k * &p1), &q0 + &(&k * &q1)).into();
+        let bound2: Rational = (p1, q1).into();
 
         let res = if (&bound2 - self).abs() <= (&bound1 - self).abs() {
             bound2

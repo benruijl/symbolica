@@ -1072,3 +1072,53 @@ impl MonteCarloRng {
         Self { state }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::f64::consts::PI;
+
+    use super::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample};
+
+    #[test]
+    fn multichannel() {
+        // Integrate x*pi + x^2 using multi-channeling:
+        // x*pi and x^2 will have their own Vegas grid
+        let fs = [|x: f64| (x * PI).sin(), |x: f64| x * x];
+
+        let mut grid = DiscreteGrid::new(
+            vec![
+                Some(Grid::Continuous(ContinuousGrid::new(
+                    1, 10, 1000, None, false,
+                ))),
+                Some(Grid::Continuous(ContinuousGrid::new(
+                    1, 10, 1000, None, false,
+                ))),
+            ],
+            0.01,
+            false,
+        );
+
+        let mut rng = MonteCarloRng::new(0, 0);
+
+        let mut sample = Sample::new();
+        for _ in 1..20 {
+            // sample 10_000 times per iteration
+            for _ in 0..10_000 {
+                grid.sample(&mut rng, &mut sample);
+
+                if let Sample::Discrete(_weight, i, cont_sample) = &sample {
+                    if let Sample::Continuous(_cont_weight, xs) =
+                        cont_sample.as_ref().unwrap().as_ref()
+                    {
+                        grid.add_training_sample(&sample, fs[*i](xs[0])).unwrap();
+                    }
+                }
+            }
+
+            grid.update(1.5);
+        }
+
+        assert_eq!(grid.accumulator.avg, 0.9713543844460519);
+        assert_eq!(grid.accumulator.err, 0.0009026050146732183)
+    }
+}

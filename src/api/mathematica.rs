@@ -5,8 +5,8 @@ use std::sync::{Arc, RwLock};
 
 use smartstring::{LazyCompact, SmartString};
 
-use crate::domains::finite_field::{FiniteField, FiniteFieldCore};
-use crate::domains::integer::IntegerRing;
+use crate::domains::finite_field::{FiniteFieldCore, Zp, Zp64};
+use crate::domains::integer::{IntegerRing, Z};
 use crate::domains::rational::RationalField;
 use crate::parser::Token;
 use crate::poly::Variable;
@@ -48,7 +48,7 @@ fn set_vars(vars: String) {
 
     let mut var_map = vec![];
     for var in vars.split(',') {
-        let v = State::get_or_insert_var(var);
+        let v = State::get_symbol(var);
         var_map.push(v.into());
         symbolica.var_name_map.push(var.into());
     }
@@ -70,7 +70,6 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                 let r: RationalPolynomial<IntegerRing, $exp_size> = Workspace::get_local()
                     .with(|workspace| {
                         token.to_rational_polynomial(
-                            &workspace,
                             &<$in_field>::new(),
                             &Z,
                             &symbolica.var_map,
@@ -86,7 +85,7 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                         opts: PrintOptions {
                             terms_on_new_line: false,
                             color_top_level_sum: false,
-                            color_builtin_functions: false,
+                            color_builtin_symbols: false,
                             print_finite_field: false,
                             explicit_rational_polynomial,
                             symmetric_representation_for_finite_field: false,
@@ -105,7 +104,6 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                     let rf: RationalPolynomial<Zp, $exp_size> = Workspace::get_local()
                         .with(|workspace| {
                             token.to_rational_polynomial(
-                                &workspace,
                                 &field,
                                 &field,
                                 &symbolica.var_map,
@@ -122,7 +120,7 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                             opts: PrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
-                                color_builtin_functions: false,
+                                color_builtin_symbols: false,
                                 print_finite_field: false,
                                 explicit_rational_polynomial,
                                 symmetric_representation_for_finite_field: false,
@@ -140,7 +138,6 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                     let rf: RationalPolynomial<Zp64, $exp_size> = Workspace::get_local()
                         .with(|workspace| {
                             token.to_rational_polynomial(
-                                &workspace,
                                 &field,
                                 &field,
                                 &symbolica.var_map,
@@ -157,7 +154,7 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                             opts: PrintOptions {
                                 terms_on_new_line: false,
                                 color_top_level_sum: false,
-                                color_builtin_functions: false,
+                                color_builtin_symbols: false,
                                 print_finite_field: false,
                                 explicit_rational_polynomial,
                                 symmetric_representation_for_finite_field: false,

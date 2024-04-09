@@ -450,3 +450,40 @@ impl<'a> AtomView<'a> {
         true
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{representations::Atom, state::State};
+
+    #[test]
+    fn derivative() {
+        let x = State::get_symbol("x");
+        let inputs = [
+            "(1+2*x)^(5+x)",
+            "log(2*x) + exp(3*x) + sin(4*x) + cos(y*x)",
+            "f(x^2,x)",
+            "der(0,1,f(x,x^3))",
+        ];
+        let r = inputs.map(|input| Atom::parse(input).unwrap().derivative(x));
+
+        let res = [
+            "(2*x+1)^(x+5)*log(2*x+1)+2*(x+5)*(2*x+1)^(x+4)",
+            "2*(2*x)^-1+3*exp(3*x)+4*cos(4*x)-y*sin(x*y)",
+            "der(0,1,f(x^2,x))+2*x*der(1,0,f(x^2,x))",
+            "der(1,1,f(x,x^3))+3*x^2*der(0,2,f(x,x^3))",
+        ];
+        let res = res.map(|input| Atom::parse(input).unwrap());
+
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn taylor_series() {
+        let x = State::get_symbol("x");
+        let input = Atom::parse("cos(x^2+1)*(x+3)").unwrap();
+        let t = input.taylor_series(x, Atom::new_num(0).as_view(), 2);
+
+        let res = Atom::parse("3*cos(1)+x*cos(1)-3*x^2*sin(1)").unwrap();
+        assert_eq!(t, res);
+    }
+}

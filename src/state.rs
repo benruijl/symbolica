@@ -84,6 +84,11 @@ impl State {
             state.get_symbol_impl(x);
         }
 
+        #[cfg(test)]
+        {
+            state.initialize_test();
+        }
+
         state
     }
 
@@ -91,6 +96,41 @@ impl State {
     #[inline]
     pub(crate) fn get_global_state() -> &'static RwLock<State> {
         &STATE
+    }
+
+    /// Initialize the global state for testing purposes by allocating
+    /// variables and functions with the names v0, ..., v29, f0, ..., f29,
+    /// that can be used in concurrently run unit tests without interference.
+    #[cfg(test)]
+    fn initialize_test(&mut self) {
+        for i in 0..30 {
+            let _ = self.get_symbol_impl(&format!("v{}", i));
+        }
+        for i in 0..30 {
+            let _ = self.get_symbol_impl(&format!("f{}", i));
+        }
+        for i in 0..5 {
+            let _ = self.get_symbol_with_attributes_impl(
+                &format!("fs{}", i),
+                &[FunctionAttribute::Symmetric],
+            );
+        }
+        for i in 0..5 {
+            let _ = self.get_symbol_with_attributes_impl(
+                &format!("fa{}", i),
+                &[FunctionAttribute::Antisymmetric],
+            );
+        }
+        for i in 0..5 {
+            let _ = self
+                .get_symbol_with_attributes_impl(&format!("fl{}", i), &[FunctionAttribute::Linear]);
+        }
+        for i in 0..5 {
+            let _ = self.get_symbol_with_attributes_impl(
+                &format!("fsl{}", i),
+                &[FunctionAttribute::Symmetric, FunctionAttribute::Linear],
+            );
+        }
     }
 
     /// Remove all user-defined symbols from the state. This will invalidate all
@@ -110,6 +150,11 @@ impl State {
 
         for x in Self::BUILTIN_VAR_LIST {
             state.get_symbol_impl(x);
+        }
+
+        #[cfg(test)]
+        {
+            state.initialize_test();
         }
     }
 
@@ -169,7 +214,7 @@ impl State {
     /// with different attributes.
     pub fn get_symbol_with_attributes<S: AsRef<str>>(
         name: S,
-        attributes: Vec<FunctionAttribute>,
+        attributes: &[FunctionAttribute],
     ) -> Result<Symbol, String> {
         STATE
             .write()
@@ -180,7 +225,7 @@ impl State {
     pub(crate) fn get_symbol_with_attributes_impl(
         &mut self,
         name: &str,
-        attributes: Vec<FunctionAttribute>,
+        attributes: &[FunctionAttribute],
     ) -> Result<Symbol, String> {
         match self.str_to_id.entry(name.into()) {
             Entry::Occupied(o) => {

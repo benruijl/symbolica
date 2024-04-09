@@ -275,3 +275,31 @@ impl<R: Field + PolynomialGCD<u8>> Field for AlgebraicNumberRing<R> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::domains::algebraic_number::AlgebraicNumberRing;
+    use crate::domains::rational::Q;
+    use crate::representations::Atom;
+
+    #[test]
+    fn gcd_number_field() -> Result<(), String> {
+        let ring = Atom::parse("a^3 + 3a^2 - 46*a + 1")?.to_polynomial(&Q, None);
+        let ring = AlgebraicNumberRing::new(ring);
+
+        let a = Atom::parse("x^3-2x^2+(-2a^2+8a+2)x-a^2+11a-1")?
+            .to_polynomial::<_, u8>(&Q, None)
+            .to_number_field(&ring);
+
+        let b = Atom::parse("x^3-2x^2-x+1")?
+            .to_polynomial(&Q, a.variables.clone().into())
+            .to_number_field(&ring);
+
+        let r = a.gcd(&b).from_number_field();
+
+        let expected =
+            Atom::parse("-50/91+x-23/91*a-1/91*a^2")?.to_polynomial(&Q, a.variables.clone().into());
+        assert_eq!(r, expected);
+        Ok(())
+    }
+}

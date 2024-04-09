@@ -925,3 +925,77 @@ macro_rules! echelonize_impl {
 echelonize_impl!(Zp64);
 echelonize_impl!(FiniteField<Mersenne64>);
 echelonize_impl!(RationalField);
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        domains::finite_field::Zp,
+        poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
+        representations::Atom,
+    };
+
+    #[test]
+    fn cyclic4() {
+        let polys = [
+            "v1 v2 v3 v4 - 1",
+            "v1 v2 v3 + v1 v2 v4 + v1 v3 v4 + v2 v3 v4",
+            "v1 v2 + v2 v3 + v1 v4 + v3 v4",
+            "v1 + v2 + v3 + v4",
+        ];
+
+        let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
+            .iter()
+            .map(|x| {
+                let a = Atom::parse(x).unwrap().expand();
+                a.to_polynomial(&Zp::new(13), None)
+            })
+            .collect();
+
+        // compute the Groebner basis with lex ordering
+        let gb = GroebnerBasis::new(&ideal, false);
+
+        let res = [
+            "v4+v3+v2+v1",
+            "v4^2+2*v2*v4+v2^2",
+            "11*v4^2+v3*v4+v3^2*v4^4-v2*v4+v2*v3",
+            "-v4+v4^5-v2+v2*v4^4",
+            "-v4-v3+v3^2*v4^3+v3^3*v4^2",
+            "1-v4^4-v3^2*v4^2+v3^2*v4^6",
+        ];
+
+        let res: Vec<MultivariatePolynomial<_, u16>> = res
+            .iter()
+            .map(|x| {
+                let a = Atom::parse(x).unwrap().expand();
+                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+            })
+            .collect();
+
+        assert_eq!(gb.system, res);
+
+        // compute the Groebner basis with grevlex ordering by converting the polynomials
+        let grevlex_ideal: Vec<_> = ideal.iter().map(|p| p.reorder::<GrevLexOrder>()).collect();
+        let gb = GroebnerBasis::new(&grevlex_ideal, false);
+
+        let res = [
+            "v4+v3+v2+v1",
+            "v4^2+2*v2*v4+v2^2",
+            "-v4^3-v2*v4^2+v3^2*v4+v2*v3^2",
+            "-1-v4^4+v3*v4^3-v2*v4^3+v3^2*v4^2+v2*v3*v4^2",
+            "-v4-v2+v4^5+v2*v4^4",
+            "-v4-v3+v3^2*v4^3+v3^3*v4^2",
+            "11*v4^2+v3*v4-v2*v4+v2*v3+v3^2*v4^4",
+        ];
+
+        let res: Vec<MultivariatePolynomial<_, u16, _>> = res
+            .iter()
+            .map(|x| {
+                let a = Atom::parse(x).unwrap().expand();
+                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+                    .reorder::<GrevLexOrder>()
+            })
+            .collect();
+
+        assert_eq!(gb.system, res);
+    }
+}

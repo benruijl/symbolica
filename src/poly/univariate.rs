@@ -1043,3 +1043,58 @@ impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
         res
     }
 }
+
+#[test]
+fn derivative_integrate() {
+    use crate::domains::rational::Q;
+    use crate::representations::Atom;
+    let a = Atom::parse("x^2+5x+x^7+3")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Q, None)
+        .to_univariate_from_univariate(0);
+
+    let r = a.integrate().derivative();
+
+    assert_eq!(a, r);
+}
+
+#[test]
+fn test_uni() {
+    use crate::domains::integer::Z;
+    use crate::representations::Atom;
+    let a = Atom::parse("x^2+5x+x^7+3")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, None)
+        .to_univariate_from_univariate(0);
+    let b = Atom::parse("x^2 + 6")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, None)
+        .to_univariate_from_univariate(0);
+
+    let a_plus_b = Atom::parse("9+5*x+2*x^2+x^7")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, None)
+        .to_univariate_from_univariate(0);
+
+    let a_mul_b = Atom::parse("18+30*x+9*x^2+5*x^3+x^4+6*x^7+x^9")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, None)
+        .to_univariate_from_univariate(0);
+
+    let a_quot_b = Atom::parse("1+36*x+-6*x^3+x^5")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, None)
+        .to_univariate_from_univariate(0);
+
+    let a_rem_b = Atom::parse("-3+-211*x")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, None)
+        .to_univariate_from_univariate(0);
+
+    assert_eq!(&a + &b, a_plus_b);
+    assert_eq!(&a * &b, a_mul_b);
+    assert_eq!(a.quot_rem(&b), (a_quot_b, a_rem_b));
+
+    let c = a.evaluate(&5.into());
+    assert_eq!(c, 78178.into());
+}

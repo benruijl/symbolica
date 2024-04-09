@@ -135,11 +135,11 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
         )
     }
 
-    fn is_zero(&self) -> bool {
+    pub fn is_zero(&self) -> bool {
         self.numerator.is_zero()
     }
 
-    fn is_one(&self) -> bool {
+    pub fn is_one(&self) -> bool {
         self.numerator.is_one()
             && self.denominators.is_empty()
             && self.numerator.field.is_one(&self.numer_coeff)

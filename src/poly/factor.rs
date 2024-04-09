@@ -3091,3 +3091,235 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<Integer>, E, LexOrder> {
         (univariate_factors, univariate_deltas)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        domains::{finite_field::Zp, integer::Z},
+        poly::factor::Factorize,
+        representations::Atom,
+    };
+
+    #[test]
+    fn factor_ff_square_free() {
+        let field = Zp::new(3);
+        let poly = Atom::parse("(1+v1)*(1+v1^2)^2*(v1^4+1)^3")
+            .unwrap()
+            .to_polynomial::<_, u8>(&field, None);
+
+        let res = [("1+v1^4", 3), ("1+v1^2", 2), ("1+v1", 1)];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&field, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.square_free_factorization();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_ff_bivariate() {
+        let field = Zp::new(17);
+        let poly = Atom::parse("((v2+1)*v1^2+v1*v2+1)*((v2^2+2)*v1^2+v2+1)")
+            .unwrap()
+            .to_polynomial::<_, u8>(&field, None);
+
+        let res = [("1+2*v1^2+v2+v2^2*v1^2", 1), ("1+v1^2+v2*v1+v2*v1^2", 1)];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&field, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_square_free() {
+        let poly = Atom::parse("3*(2*v1^2+v2)(v1^3+v2)^2(1+4*v2)^2(1+v1)")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("3", 1),
+            ("1+4*v2", 2),
+            ("1+v1", 1),
+            ("v2+2*v1^2", 1),
+            ("v2+v1^3", 2),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.square_free_factorization();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_univariate_1() {
+        let poly = Atom::parse("2*(4 + 3*v1)*(3 + 2*v1 + 3*v1^2)*(3 + 8*v1^2)*(4 + v1 + v1^16)")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("2", 1),
+            ("4+3*v1", 1),
+            ("3+2*v1+3*v1^2", 1),
+            ("3+8*v1^2", 1),
+            ("4+v1+v1^16", 1),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_univariate_2() {
+        let poly = Atom::parse(
+            "(v1+1)(v1+2)(v1+3)^3(v1+4)(v1+5)(v1^2+6)(v1^3+7)(v1+8)^2(v1^4+9)(v1^5+v1+10)",
+        )
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("5+v1", 1),
+            ("1+v1", 1),
+            ("4+v1", 1),
+            ("2+v1", 1),
+            ("7+v1^3", 1),
+            ("10+v1+v1^5", 1),
+            ("6+v1^2", 1),
+            ("9+v1^4", 1),
+            ("8+v1", 2),
+            ("3+v1", 3),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_bivariate() {
+        let input = "(v1^2+v2+v1+1)(3*v1+v2^2+4)*(6*v1*(v2+1)+v2+5)*(7*v1*v2+4)";
+        let poly = Atom::parse(input).unwrap().to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("(1+v2+v1+v1^2)", 1),
+            ("(5+v2+6*v1+6*v1*v2)", 1),
+            ("(4+v2^2+3*v1)", 1),
+            ("(4+7*v1*v2)", 1),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_multivariate() {
+        let input = "(v1*(2+2*v2+2*v3)+1)*(v1*(4+v3^2)+v2+3)*(v1*(v4+v4^2+4+v2)+v4+5)";
+        let poly = Atom::parse(input).unwrap().to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("5+v4+4*v1+v1*v4+v1*v4^2+v1*v2", 1),
+            ("1+2*v1+2*v1*v3+2*v1*v2 ", 1),
+            ("3+v2+4*v1+v1*v3^2", 1),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+}

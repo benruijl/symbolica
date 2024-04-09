@@ -392,6 +392,36 @@ impl Variable {
             Variable::Function(_, a) | Variable::Other(a) => format!("{}", a),
         }
     }
+
+    /// Check if the symbol `symbol` appears at most once in the variable map.
+    /// For example, `[x,f(x)]` is not independent in `x`, but `[x,y]` is.
+    pub fn is_independent_symbol(variables: &[Variable], symbol: Symbol) -> bool {
+        let mut seen = false;
+
+        for v in variables {
+            match v {
+                Variable::Symbol(s) => {
+                    if *s == symbol {
+                        if seen {
+                            return false;
+                        }
+                        seen = true;
+                    }
+                }
+                Variable::Function(_, f) | Variable::Other(f) => {
+                    if f.contains_symbol(symbol) {
+                        if seen {
+                            return false;
+                        }
+                        seen = true;
+                    }
+                }
+                Variable::Temporary(_) => {}
+            }
+        }
+
+        true
+    }
 }
 
 impl Atom {

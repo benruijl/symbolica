@@ -191,18 +191,19 @@ impl<'a> AtomView<'a> {
         let mut rest_norm = Atom::new();
         rest.as_view().normalize(workspace, &mut rest_norm);
 
-        (
-            h.into_iter()
-                .map(|(k, v)| {
-                    (k, {
-                        let mut a = Atom::new();
-                        v.as_view().normalize(workspace, &mut a);
-                        a
-                    })
+        let mut r: Vec<_> = h
+            .into_iter()
+            .map(|(k, v)| {
+                (k, {
+                    let mut a = Atom::new();
+                    v.as_view().normalize(workspace, &mut a);
+                    a
                 })
-                .collect(),
-            rest_norm,
-        )
+            })
+            .collect();
+        r.sort_unstable_by_key(|(a, _)| *a);
+
+        (r, rest_norm)
     }
 
     /// Check if a factor contains `x` at the ground level.
@@ -339,5 +340,78 @@ impl<'a> AtomView<'a> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        fun,
+        representations::{Atom, FunctionBuilder},
+        state::State,
+    };
+
+    #[test]
+    fn coefficient_list() {
+        let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
+        let x = State::get_symbol("v1");
+
+        let (r, rest) = input.coefficient_list(x);
+
+        let res = vec![
+            (
+                Atom::parse("v1").unwrap(),
+                Atom::parse("v3+5*v2+1").unwrap(),
+            ),
+            (Atom::parse("v1^2").unwrap(), Atom::parse("1").unwrap()),
+            (Atom::parse("v1^3").unwrap(), Atom::parse("1").unwrap()),
+        ];
+        let res_rest = Atom::parse("v2^2+f1(5,v1)+2").unwrap();
+
+        let res_ref = res
+            .iter()
+            .map(|(a, b)| (a.as_view(), b.clone()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(r, res_ref);
+        assert_eq!(rest, res_rest);
+    }
+
+    #[test]
+    fn collect() {
+        let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
+        let x = State::get_symbol("v1");
+
+        let out = input.collect(x, None, None);
+
+        let ref_out = Atom::parse("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2").unwrap();
+        assert_eq!(out, ref_out)
+    }
+
+    #[test]
+    fn collect_wrap() {
+        let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
+        let x = State::get_symbol("v1");
+        let key = State::get_symbol("f3");
+        let coeff = State::get_symbol("f4");
+        println!("> Collect in x with wrapping:");
+        let out = input.collect(
+            x,
+            Some(Box::new(move |a, out| {
+                out.set_from_view(&a);
+                *out = fun!(key, out);
+            })),
+            Some(Box::new(move |a, out| {
+                out.set_from_view(&a);
+                *out = fun!(coeff, out);
+            })),
+        );
+
+        let ref_out = Atom::parse(
+            "f3(1)*f4(v2^2+f1(5,v1)+2)+f3(v1)*f4(5*v2+v3+1)+f3(v1^2)*f4(1)+f3(v1^3)*f4(1)",
+        )
+        .unwrap();
+
+        assert_eq!(out, ref_out);
     }
 }

@@ -108,7 +108,7 @@ impl<F: Ring> Matrix<F> {
         }
 
         Ok(Matrix {
-            nrows: data.len() as u32,
+            nrows: (data.len() / cols) as u32,
             ncols: cols as u32,
             data,
             field,
@@ -753,5 +753,122 @@ impl<F: Field> Matrix<F> {
         };
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        domains::{integer::Z, rational::Q},
+        tensors::matrix::Matrix,
+    };
+
+    #[test]
+    fn basics() {
+        let a = Matrix::from_linear(
+            vec![
+                1u64.into(),
+                2u64.into(),
+                3u64.into(),
+                4u64.into(),
+                5u64.into(),
+                6u64.into(),
+            ],
+            2,
+            3,
+            Z,
+        )
+        .unwrap();
+
+        assert_eq!(
+            a.transpose().data,
+            vec![1.into(), 4.into(), 2.into(), 5.into(), 3.into(), 6.into()]
+        );
+
+        assert_eq!(
+            a.clone().into_transposed().data,
+            vec![1.into(), 4.into(), 2.into(), 5.into(), 3.into(), 6.into()]
+        );
+
+        assert_eq!(
+            (-a.clone()).data,
+            vec![
+                (-1).into(),
+                (-2).into(),
+                (-3).into(),
+                (-4).into(),
+                (-5).into(),
+                (-6).into()
+            ]
+        );
+
+        assert_eq!(
+            (&a - &a).data,
+            vec![0.into(), 0.into(), 0.into(), 0.into(), 0.into(), 0.into()]
+        );
+
+        let b = Matrix::from_nested_vec(
+            vec![
+                vec![7u64.into(), 8u64.into()],
+                vec![9u64.into(), 10u64.into()],
+                vec![11u64.into(), 12u64.into()],
+            ],
+            Z,
+        )
+        .unwrap();
+
+        let c = &a * &b;
+
+        assert_eq!(c.data, vec![58.into(), 64.into(), 139.into(), 154.into()]);
+        assert_eq!(&c[1], &[139.into(), 154.into()]);
+        assert_eq!(c[(0, 1)], 64.into());
+
+        let c_m = c.map(|x| x * &2u64.into(), Z);
+        assert_eq!(
+            c_m.data,
+            vec![116.into(), 128.into(), 278.into(), 308.into()]
+        );
+    }
+
+    #[test]
+    fn solve() {
+        let a = Matrix::from_linear(
+            vec![
+                1u64.into(),
+                2u64.into(),
+                3u64.into(),
+                4u64.into(),
+                5u64.into(),
+                16u64.into(),
+                7u64.into(),
+                8u64.into(),
+                9u64.into(),
+            ],
+            3,
+            3,
+            Q,
+        )
+        .unwrap();
+
+        assert_eq!(
+            a.inv().unwrap().data,
+            vec![
+                (-83, 60).into(),
+                (1, 10).into(),
+                (17, 60).into(),
+                (19, 15).into(),
+                (-1, 5).into(),
+                (-1, 15).into(),
+                (-1, 20).into(),
+                (1, 10).into(),
+                (-1, 20).into()
+            ]
+        );
+        assert_eq!(a.det().unwrap(), 60.into());
+
+        let b = Matrix::from_linear(vec![1u64.into(), 2u64.into(), 3u64.into()], 3, 1, Q).unwrap();
+
+        let r = a.solve(&b).unwrap();
+        assert_eq!(r.data, vec![(-1, 3).into(), (2, 3).into(), 0.into()]);
     }
 }

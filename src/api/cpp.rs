@@ -417,3 +417,76 @@ unsafe extern "C" fn simplify_factorized(
 unsafe extern "C" fn drop(symbolica: *mut Symbolica) {
     let _ = Box::from_raw(symbolica);
 }
+
+#[cfg(test)]
+mod test {
+    use std::ffi::{c_char, CStr};
+
+    use super::{drop, init};
+
+    #[test]
+    fn simplify() {
+        let symbolica = unsafe { init() };
+
+        unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
+
+        let input = "-(4096-4096*y^2)/(-3072+1024*d)*(1536-512*d)-(-8192+8192*y^2)/(2)*((-6+d)/2)-(-8192+8192*y^2)/(-2)*((-13+3*d)/2)-(-8192+8192*y^2)/(-4)*(-8+2*d)\0";
+        let result = unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, 0, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "[32768-32768*y^2-8192*d+8192*d*y^2]");
+
+        let result = unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, 0, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "32768-32768*y^2-8192*d+8192*d*y^2");
+
+        let result =
+            unsafe { super::simplify_factorized(symbolica, input.as_ptr() as *const i8, 0, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "[8192]*[4-4*y^2-d+d*y^2]");
+
+        let result =
+            unsafe { super::simplify_factorized(symbolica, input.as_ptr() as *const i8, 0, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        unsafe { drop(symbolica) };
+        assert_eq!(result, "8192*(4-4*y^2-d+d*y^2)");
+    }
+
+    #[test]
+    fn simplify_ff() {
+        let symbolica = unsafe { init() };
+
+        unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
+
+        let input = "-(4096-4096*y^2)/(-3072+1024*d)*(1536-512*d)-(-8192+8192*y^2)/(2)*((-6+d)/2)-(-8192+8192*y^2)/(-2)*((-13+3*d)/2)-(-8192+8192*y^2)/(-4)*(-8+2*d)\0";
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, 4293491017, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "[32768+4293458249*y^2+4293482825*d+8192*d*y^2]");
+
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, 4293491017, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "32768+4293458249*y^2+4293482825*d+8192*d*y^2");
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, 4293491017, true)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "[32768+4293458249*y^2+4293482825*d+8192*d*y^2]");
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, 4293491017, false)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        unsafe { drop(symbolica) };
+        assert_eq!(result, "32768+4293458249*y^2+4293482825*d+8192*d*y^2");
+    }
+}

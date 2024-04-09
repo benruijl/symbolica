@@ -348,8 +348,8 @@ where
     FiniteField<UField>: Field + PolynomialGCD<E> + FiniteFieldCore<UField>,
 {
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
-        let c = self.content();
-        let stripped = self.clone().div_coeff(&c);
+        let c = self.lcoeff();
+        let stripped = self.clone().make_monic();
 
         let mut factors = vec![];
         let fs = stripped.factor_separable();
@@ -383,7 +383,10 @@ where
             }
 
             match var_count {
-                0 | 1 => {
+                0 => {
+                    factors.push((f, p));
+                }
+                1 => {
                     for (d2, f2) in f.distinct_degree_factorization() {
                         debug!("DDF {} {}", f2, d2);
                         for f3 in f2.equal_degree_factorization(d2) {
@@ -3130,7 +3133,7 @@ mod test {
 
     #[test]
     fn factor_ff_bivariate() {
-        let field = Zp::new(17);
+        let field = Zp::new(997);
         let poly = Atom::parse("((v2+1)*v1^2+v1*v2+1)*((v2^2+2)*v1^2+v2+1)")
             .unwrap()
             .to_polynomial::<_, u8>(&field, None);

@@ -1889,3 +1889,138 @@ auto 𝑖 = 1i;\n",
         f.write_str("}")
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        domains::{float::Complex, rational::Q},
+        poly::{
+            evaluate::{BorrowedHornerScheme, InstructionSetPrinter},
+            polynomial::MultivariatePolynomial,
+        },
+        representations::Atom,
+    };
+
+    use wide::f64x4;
+
+    const RES_53: &str = "-a5^3*b0^5+a4*a5^2*b0^4*b1-a4^2*a5*b0^4*b2+a4^3*b0^4*b3-a3*a5^2*
+b0^3*b1^2+2*a3*a5^2*b0^4*b2+a3*a4*a5*b0^3*b1*b2-3*a3*a4*a5*b0^4*
+b3-a3*a4^2*b0^3*b1*b3-a3^2*a5*b0^3*b2^2+2*a3^2*a5*b0^3*b1*b3+a3^2
+*a4*b0^3*b2*b3-a3^3*b0^3*b3^2+a2*a5^2*b0^2*b1^3-3*a2*a5^2*b0^3*b1
+*b2+3*a2*a5^2*b0^4*b3-a2*a4*a5*b0^2*b1^2*b2+2*a2*a4*a5*b0^3*b2^2+
+a2*a4*a5*b0^3*b1*b3+a2*a4^2*b0^2*b1^2*b3-2*a2*a4^2*b0^3*b2*b3+a2*
+a3*a5*b0^2*b1*b2^2-2*a2*a3*a5*b0^2*b1^2*b3-a2*a3*a5*b0^3*b2*b3-a2
+*a3*a4*b0^2*b1*b2*b3+3*a2*a3*a4*b0^3*b3^2+a2*a3^2*b0^2*b1*b3^2-
+a2^2*a5*b0^2*b2^3+3*a2^2*a5*b0^2*b1*b2*b3-3*a2^2*a5*b0^3*b3^2+
+a2^2*a4*b0^2*b2^2*b3-2*a2^2*a4*b0^2*b1*b3^2-a2^2*a3*b0^2*b2*b3^2+
+a2^3*b0^2*b3^3-a1*a5^2*b0*b1^4+4*a1*a5^2*b0^2*b1^2*b2-2*a1*a5^2*
+b0^3*b2^2-4*a1*a5^2*b0^3*b1*b3+a1*a4*a5*b0*b1^3*b2-3*a1*a4*a5*
+b0^2*b1*b2^2-a1*a4*a5*b0^2*b1^2*b3+5*a1*a4*a5*b0^3*b2*b3-a1*a4^2*
+b0*b1^3*b3+3*a1*a4^2*b0^2*b1*b2*b3-3*a1*a4^2*b0^3*b3^2-a1*a3*a5*
+b0*b1^2*b2^2+2*a1*a3*a5*b0*b1^3*b3+2*a1*a3*a5*b0^2*b2^3-4*a1*a3*
+a5*b0^2*b1*b2*b3+3*a1*a3*a5*b0^3*b3^2+a1*a3*a4*b0*b1^2*b2*b3-2*a1
+*a3*a4*b0^2*b2^2*b3-a1*a3*a4*b0^2*b1*b3^2-a1*a3^2*b0*b1^2*b3^2+2*
+a1*a3^2*b0^2*b2*b3^2+a1*a2*a5*b0*b1*b2^3-3*a1*a2*a5*b0*b1^2*b2*b3
+-a1*a2*a5*b0^2*b2^2*b3+5*a1*a2*a5*b0^2*b1*b3^2-a1*a2*a4*b0*b1*
+b2^2*b3+2*a1*a2*a4*b0*b1^2*b3^2+a1*a2*a4*b0^2*b2*b3^2+a1*a2*a3*b0
+*b1*b2*b3^2-3*a1*a2*a3*b0^2*b3^3-a1*a2^2*b0*b1*b3^3-a1^2*a5*b0*
+b2^4+4*a1^2*a5*b0*b1*b2^2*b3-2*a1^2*a5*b0*b1^2*b3^2-4*a1^2*a5*
+b0^2*b2*b3^2+a1^2*a4*b0*b2^3*b3-3*a1^2*a4*b0*b1*b2*b3^2+3*a1^2*a4
+*b0^2*b3^3-a1^2*a3*b0*b2^2*b3^2+2*a1^2*a3*b0*b1*b3^3+a1^2*a2*b0*
+b2*b3^3-a1^3*b0*b3^4+a0*a5^2*b1^5-5*a0*a5^2*b0*b1^3*b2+5*a0*a5^2*
+b0^2*b1*b2^2+5*a0*a5^2*b0^2*b1^2*b3-5*a0*a5^2*b0^3*b2*b3-a0*a4*a5
+*b1^4*b2+4*a0*a4*a5*b0*b1^2*b2^2+a0*a4*a5*b0*b1^3*b3-2*a0*a4*a5*
+b0^2*b2^3-7*a0*a4*a5*b0^2*b1*b2*b3+3*a0*a4*a5*b0^3*b3^2+a0*a4^2*
+b1^4*b3-4*a0*a4^2*b0*b1^2*b2*b3+2*a0*a4^2*b0^2*b2^2*b3+4*a0*a4^2*
+b0^2*b1*b3^2+a0*a3*a5*b1^3*b2^2-2*a0*a3*a5*b1^4*b3-3*a0*a3*a5*b0*
+b1*b2^3+6*a0*a3*a5*b0*b1^2*b2*b3+3*a0*a3*a5*b0^2*b2^2*b3-7*a0*a3*
+a5*b0^2*b1*b3^2-a0*a3*a4*b1^3*b2*b3+3*a0*a3*a4*b0*b1*b2^2*b3+a0*
+a3*a4*b0*b1^2*b3^2-5*a0*a3*a4*b0^2*b2*b3^2+a0*a3^2*b1^3*b3^2-3*a0
+*a3^2*b0*b1*b2*b3^2+3*a0*a3^2*b0^2*b3^3-a0*a2*a5*b1^2*b2^3+3*a0*
+a2*a5*b1^3*b2*b3+2*a0*a2*a5*b0*b2^4-6*a0*a2*a5*b0*b1*b2^2*b3-3*a0
+*a2*a5*b0*b1^2*b3^2+7*a0*a2*a5*b0^2*b2*b3^2+a0*a2*a4*b1^2*b2^2*b3
+-2*a0*a2*a4*b1^3*b3^2-2*a0*a2*a4*b0*b2^3*b3+4*a0*a2*a4*b0*b1*b2*
+b3^2-3*a0*a2*a4*b0^2*b3^3-a0*a2*a3*b1^2*b2*b3^2+2*a0*a2*a3*b0*
+b2^2*b3^2+a0*a2*a3*b0*b1*b3^3+a0*a2^2*b1^2*b3^3-2*a0*a2^2*b0*b2*
+b3^3+a0*a1*a5*b1*b2^4-4*a0*a1*a5*b1^2*b2^2*b3+2*a0*a1*a5*b1^3*
+b3^2-a0*a1*a5*b0*b2^3*b3+7*a0*a1*a5*b0*b1*b2*b3^2-3*a0*a1*a5*b0^2
+*b3^3-a0*a1*a4*b1*b2^3*b3+3*a0*a1*a4*b1^2*b2*b3^2+a0*a1*a4*b0*
+b2^2*b3^2-5*a0*a1*a4*b0*b1*b3^3+a0*a1*a3*b1*b2^2*b3^2-2*a0*a1*a3*
+b1^2*b3^3-a0*a1*a3*b0*b2*b3^3-a0*a1*a2*b1*b2*b3^3+3*a0*a1*a2*b0*
+b3^4+a0*a1^2*b1*b3^4-a0^2*a5*b2^5+5*a0^2*a5*b1*b2^3*b3-5*a0^2*a5*
+b1^2*b2*b3^2-5*a0^2*a5*b0*b2^2*b3^2+5*a0^2*a5*b0*b1*b3^3+a0^2*a4*
+b2^4*b3-4*a0^2*a4*b1*b2^2*b3^2+2*a0^2*a4*b1^2*b3^3+4*a0^2*a4*b0*
+b2*b3^3-a0^2*a3*b2^3*b3^2+3*a0^2*a3*b1*b2*b3^3-3*a0^2*a3*b0*b3^4+
+a0^2*a2*b2^2*b3^3-2*a0^2*a2*b1*b3^4-a0^2*a1*b2*b3^4+a0^3*b3^5";
+
+    #[test]
+    fn res_53() {
+        let poly: MultivariatePolynomial<_, u8> =
+            Atom::parse(RES_53).unwrap().to_polynomial(&Q, None);
+
+        let (h, _ops, scheme) = poly.optimize_horner_scheme(1000);
+        let mut i = h.to_instr(poly.nvars());
+
+        println!(
+            "Number of operations={}, with scheme={:?}",
+            BorrowedHornerScheme::from(&h).op_count_cse(),
+            scheme,
+        );
+
+        i.fuse_operations();
+
+        for _ in 0..100_000 {
+            if !i.common_pair_elimination() {
+                break;
+            }
+            i.fuse_operations();
+        }
+
+        let o = i.to_output(poly.variables.as_ref().to_vec(), true);
+        let o_f64 = o.convert::<f64>();
+
+        let _ = format!(
+            "{}",
+            InstructionSetPrinter {
+                name: "sigma".to_string(),
+                instr: &o,
+                mode: crate::poly::evaluate::InstructionSetMode::CPP(
+                    crate::poly::evaluate::InstructionSetModeCPPSettings {
+                        write_header_and_test: true,
+                        always_pass_output_array: false,
+                    }
+                )
+            }
+        );
+
+        let mut evaluator = o_f64.evaluator();
+
+        let res = evaluator
+            .evaluate_with_input(&(0..poly.nvars()).map(|x| x as f64 + 1.).collect::<Vec<_>>())[0];
+
+        assert_eq!(res, 280944.);
+
+        // evaluate with simd
+        let o_f64x4 = o.convert::<f64x4>();
+        let mut evaluator = o_f64x4.evaluator();
+
+        let res = evaluator.evaluate_with_input(
+            &(0..poly.nvars())
+                .map(|x| f64x4::new([x as f64 + 1., x as f64 + 2., x as f64 + 3., x as f64 + 4.]))
+                .collect::<Vec<_>>(),
+        )[0];
+
+        assert_eq!(res, f64x4::new([280944.0, 645000.0, 1774950.0, 4985154.0]));
+
+        // evaluate with complex numbers
+        let mut complex_evaluator = o.convert::<Complex<f64>>().evaluator();
+        let res = complex_evaluator.evaluate_with_input(
+            &(0..poly.nvars())
+                .map(|x| Complex::new(x as f64 + 0.1, x as f64 + 2.))
+                .collect::<Vec<_>>(),
+        )[0];
+        assert!(
+            (res.re - 3230756.634848104).abs() < 1e-6 && (res.im - 2522437.0904901037).abs() < 1e-6
+        );
+    }
+}

@@ -89,12 +89,17 @@ impl TermOutputStream {
         } else if self.mem_buf.len() == 1 {
             self.mem_buf.pop().unwrap()
         } else {
-            let mut out = Atom::default();
-            let add = out.to_add();
-            for x in self.mem_buf.drain(..) {
-                add.extend(x.as_view());
-            }
-            out
+            Workspace::get_local().with(|ws| {
+                let mut a = ws.new_atom();
+                let add = a.to_add();
+                for x in self.mem_buf.drain(..) {
+                    add.extend(x.as_view());
+                }
+
+                let mut out = Atom::new();
+                a.as_view().normalize(ws, &mut out);
+                out
+            })
         }
     }
 }
@@ -171,5 +176,30 @@ where
     /// Convert the term stream into an expression. This may exceed the available memory.
     pub fn to_expression(&mut self) -> Atom {
         self.exp_out.to_expression()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{id::Pattern, representations::Atom, streaming::TermStreamer};
+
+    #[test]
+    fn main() {
+        let input = Atom::parse("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3)").unwrap();
+        let pattern = Pattern::parse("f(x_)").unwrap();
+        let rhs = Pattern::parse("f1(v1) + v1").unwrap();
+
+        let mut stream = TermStreamer::new_from(input);
+
+        // map every term in the expression
+        stream = stream.map(|workspace, x| {
+            let mut out1 = workspace.new_atom();
+            pattern.replace_all_into(x.as_view(), &rhs, None, None, &mut out1);
+            out1.expand()
+        });
+
+        let r = stream.to_expression();
+        let res = Atom::parse("v1+f1(v1)+2*f1(v2)+7*f1(v3)").unwrap();
+        assert_eq!(r, res);
     }
 }

@@ -12,6 +12,7 @@
 <a href="https://symbolica.io"><img alt="Symbolica website" src="https://img.shields.io/static/v1?label=symbolica&message=website&color=orange&style=flat-square"></a>
   <a href="https://reform.zulipchat.com"><img alt="Zulip Chat" src="https://img.shields.io/static/v1?label=zulip&message=discussions&color=blue&style=flat-square"></a>
     <a href="https://github.com/benruijl/symbolica"><img alt="Symbolica website" src="https://img.shields.io/static/v1?label=github&message=development&color=green&style=flat-square&logo=github"></a>
+    <a href="https://app.codecov.io/gh/benruijl/symbolica"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/benruijl/symbolica?token=N43MATK5XJ&style=flat-square"></a>
 </p>
 
 # Symbolica

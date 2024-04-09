@@ -892,3 +892,40 @@ impl<'a, T: Real + From<&'a Rational>> From<&'a Rational> for Complex<T> {
         Complex::new(value.into(), T::zero())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn double() {
+        let a = 5.;
+        let b = 7.;
+
+        let r = a.sqrt() + b.log() + b.sin() - a.cos() + b.tan() - 0.3.asin() + 0.5.acos()
+            - a.atan2(b)
+            + b.sinh()
+            - a.cosh()
+            + b.tanh()
+            - 0.7.asinh()
+            + b.acosh() / 0.4.atanh()
+            + b.powf(a);
+        assert_eq!(r, 17293.219725825093);
+    }
+
+    #[test]
+    fn complex() {
+        let a = Complex::new(1., 2.);
+        let b: Complex<f64> = Complex::new(3., 4.);
+
+        let r = a.sqrt() + b.log() - a.exp() + b.sin() - a.cos() + b.tan() - a.asin() + b.acos()
+            - a.atan2(&b)
+            + b.sinh()
+            - a.cosh()
+            + b.tanh()
+            - a.asinh()
+            + b.acosh() / a.atanh()
+            + b.powf(a);
+        assert_eq!(r, Complex::new(0.1924131450685842, -39.83285329561913));
+    }
+}

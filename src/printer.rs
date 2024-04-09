@@ -105,6 +105,7 @@ impl Default for PrintOptions {
 #[derive(Debug, Copy, Clone)]
 pub struct PrintState {
     pub level: usize,
+    pub top_level_add_child: bool,
     pub explicit_sign: bool,
     pub superscript: bool,
 }
@@ -160,6 +161,7 @@ impl<'a> fmt::Display for AtomPrinter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let print_state = PrintState {
             level: 0,
+            top_level_add_child: false,
             explicit_sign: false,
             superscript: false,
         };
@@ -216,7 +218,7 @@ impl<'a> FormattedPrintVar for VarView<'a> {
         print_state: PrintState,
     ) -> fmt::Result {
         if print_state.explicit_sign {
-            if print_state.level == 1 && opts.color_top_level_sum {
+            if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
@@ -301,7 +303,7 @@ impl<'a> FormattedPrintNum for NumView<'a> {
         };
 
         if is_negative {
-            if print_state.level == 1 && opts.color_top_level_sum {
+            if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "-".yellow()))?;
             } else if print_state.superscript {
                 f.write_char('⁻')?;
@@ -309,7 +311,7 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                 f.write_char('-')?;
             }
         } else if print_state.explicit_sign {
-            if print_state.level == 1 && opts.color_top_level_sum {
+            if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
@@ -395,7 +397,7 @@ impl<'a> FormattedPrintMul for MulView<'a> {
         if let Some(AtomView::Num(n)) = self.iter().last() {
             // write -1*x as -x
             if n.get_coeff_view() == CoefficientView::Natural(-1, 1) {
-                if print_state.level == 1 && opts.color_top_level_sum {
+                if print_state.top_level_add_child && opts.color_top_level_sum {
                     f.write_fmt(format_args!("{}", "-".yellow()))?;
                 } else {
                     f.write_char('-')?;
@@ -409,13 +411,14 @@ impl<'a> FormattedPrintMul for MulView<'a> {
 
             skip_num = true;
         } else if print_state.explicit_sign {
-            if print_state.level == 1 && opts.color_top_level_sum {
+            if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
             }
         }
 
+        print_state.top_level_add_child = false;
         print_state.level += 1;
         print_state.explicit_sign = false;
         for x in self.iter().take(if skip_num {
@@ -460,7 +463,7 @@ impl<'a> FormattedPrintFn for FunView<'a> {
         mut print_state: PrintState,
     ) -> fmt::Result {
         if print_state.explicit_sign {
-            if print_state.level == 1 && opts.color_top_level_sum {
+            if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
@@ -492,6 +495,7 @@ impl<'a> FormattedPrintFn for FunView<'a> {
             }
         }
 
+        print_state.top_level_add_child = false;
         print_state.level += 1;
         print_state.explicit_sign = false;
         let mut first = true;
@@ -526,7 +530,7 @@ impl<'a> FormattedPrintPow for PowView<'a> {
         mut print_state: PrintState,
     ) -> fmt::Result {
         if print_state.explicit_sign {
-            if print_state.level == 1 && opts.color_top_level_sum {
+            if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
@@ -536,6 +540,7 @@ impl<'a> FormattedPrintPow for PowView<'a> {
         let b = self.get_base();
         let e = self.get_exp();
 
+        print_state.top_level_add_child = false;
         print_state.level += 1;
         print_state.explicit_sign = false;
 
@@ -619,10 +624,11 @@ impl<'a> FormattedPrintAdd for AddView<'a> {
         mut print_state: PrintState,
     ) -> fmt::Result {
         let mut first = true;
+        print_state.top_level_add_child = print_state.level == 0;
         print_state.level += 1;
 
         for x in self.iter() {
-            if !first && print_state.level == 1 && opts.terms_on_new_line {
+            if !first && print_state.top_level_add_child && opts.terms_on_new_line {
                 f.write_char('\n')?;
                 f.write_char('\t')?;
             }
@@ -1289,5 +1295,122 @@ impl<'a, F: Ring + Display> Display for MatrixPrinter<'a, F> {
             }
             f.write_char('}')
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use colored::control::ShouldColorize;
+
+    use crate::{
+        domains::{finite_field::Zp, integer::Z},
+        printer::{AtomPrinter, PolynomialPrinter, PrintOptions},
+        representations::Atom,
+    };
+
+    #[test]
+    fn atoms() {
+        let a = Atom::parse("f(x,y^2)^(x+z)/5+3").unwrap();
+
+        if ShouldColorize::from_env().should_colorize() {
+            assert_eq!(format!("{}", a), "1/5*f(x,y^2)^(x+z)\u{1b}[33m+\u{1b}[0m3");
+        } else {
+            assert_eq!(format!("{}", a), "1/5*f(x,y^2)^(x+z)+3");
+        }
+
+        assert_eq!(
+            format!(
+                "{}",
+                AtomPrinter::new_with_options(a.as_view(), PrintOptions::latex())
+            ),
+            "\\frac{1}{5} f\\!\\left(x,y^{2}\\right)^{x+z}+3"
+        );
+
+        assert_eq!(
+            format!(
+                "{}",
+                AtomPrinter::new_with_options(a.as_view(), PrintOptions::mathematica())
+            ),
+            "1/5 f[x,y^2]^(x+z)+3"
+        );
+
+        let a = Atom::parse("8127389217 x^2").unwrap();
+        assert_eq!(
+            format!(
+                "{}",
+                AtomPrinter::new_with_options(
+                    a.as_view(),
+                    PrintOptions {
+                        terms_on_new_line: true,
+                        color_top_level_sum: false,
+                        color_builtin_symbols: false,
+                        print_finite_field: true,
+                        symmetric_representation_for_finite_field: false,
+                        explicit_rational_polynomial: false,
+                        number_thousands_separator: Some('_'),
+                        multiplication_operator: ' ',
+                        square_brackets_for_function: false,
+                        num_exp_as_superscript: true,
+                        latex: false
+                    }
+                )
+            ),
+            "812_738_921_7 x²"
+        );
+    }
+
+    #[test]
+    fn polynomials() {
+        let a = Atom::parse("15 x^2")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Zp::new(17), None);
+        assert_eq!(
+            format!(
+                "{}",
+                PolynomialPrinter::new_with_options(
+                    &a,
+                    PrintOptions {
+                        terms_on_new_line: true,
+                        color_top_level_sum: false,
+                        color_builtin_symbols: false,
+                        print_finite_field: true,
+                        symmetric_representation_for_finite_field: true,
+                        explicit_rational_polynomial: false,
+                        number_thousands_separator: Some('_'),
+                        multiplication_operator: ' ',
+                        square_brackets_for_function: false,
+                        num_exp_as_superscript: false,
+                        latex: false
+                    }
+                )
+            ),
+            "-2*x^2 % 17"
+        );
+    }
+
+    #[test]
+    fn rational_polynomials() {
+        let a = Atom::parse("15 x^2 / (1+x)")
+            .unwrap()
+            .to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        assert_eq!(format!("{}", a), "15*x^2/(1+x)");
+
+        let a = Atom::parse("(15 x^2 + 6) / (1+x)")
+            .unwrap()
+            .to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        assert_eq!(format!("{}", a), "(6+15*x^2)/(1+x)");
+    }
+
+    #[test]
+    fn factorized_rational_polynomials() {
+        let a = Atom::parse("15 x^2 / ((1+x)(x+2))")
+            .unwrap()
+            .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        assert_eq!(format!("{}", a), "15*x^2/((1+x)(2+x))");
+
+        let a = Atom::parse("(15 x^2 + 6) / ((1+x)(x+2))")
+            .unwrap()
+            .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        assert_eq!(format!("{}", a), "3*(2+5*x^2)/((1+x)(2+x))");
     }
 }

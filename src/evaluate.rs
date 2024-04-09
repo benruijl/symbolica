@@ -146,3 +146,47 @@ impl<'a> AtomView<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use ahash::HashMap;
+
+    use crate::{evaluate::EvaluationFn, representations::Atom, state::State};
+
+    #[test]
+    fn evaluate() {
+        let x = State::get_symbol("v1");
+        let f = State::get_symbol("f1");
+        let g = State::get_symbol("f2");
+        let p0 = Atom::parse("v2(0)").unwrap();
+        let a = Atom::parse("v1*cos(v1) + f1(v1, 1)^2 + f2(f2(v1)) + v2(0)").unwrap();
+
+        let mut const_map = HashMap::default();
+        let mut fn_map: HashMap<_, EvaluationFn<_>> = HashMap::default();
+        let mut cache = HashMap::default();
+
+        // x = 6 and p(0) = 7
+        let v = Atom::new_var(x);
+        const_map.insert(v.as_view(), 6.);
+        const_map.insert(p0.as_view(), 7.);
+
+        // f(x, y) = x^2 + y
+        fn_map.insert(
+            f,
+            EvaluationFn::new(Box::new(|args: &[f64], _, _, _| {
+                args[0] * args[0] + args[1]
+            })),
+        );
+
+        // g(x) = f(x, 3)
+        fn_map.insert(
+            g,
+            EvaluationFn::new(Box::new(move |args: &[f64], var_map, fn_map, cache| {
+                fn_map.get(&f).unwrap().get()(&[args[0], 3.], var_map, fn_map, cache)
+            })),
+        );
+
+        let r = a.evaluate::<f64>(&const_map, &fn_map, &mut cache);
+        assert_eq!(r, 2905.761021719902);
+    }
+}

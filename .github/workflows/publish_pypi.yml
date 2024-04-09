@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.runner[0] }}
     strategy:
       matrix:
-        runner: [[macos-13, x86_64], [macos-latest, x86_64], [macos-14, aarch64]]
+        runner: [[macos-latest, x86_64], [macos-14, aarch64]]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

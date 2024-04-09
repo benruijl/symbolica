@@ -1037,3 +1037,46 @@ impl<T: Into<Coefficient>> std::ops::Div<T> for Atom {
         self
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        fun,
+        representations::{Atom, FunctionBuilder},
+        state::State,
+    };
+
+    #[test]
+    fn debug() {
+        let x = Atom::parse("v1+f1(v2)").unwrap();
+        assert_eq!(
+            format!("{:?}", x),
+            "AddView { data: [5, 15, 0, 0, 0, 1, 2, 2, 1, 12, 3, 5, 0, 0, 0, 1, 42, 2, 1, 13] }"
+        );
+        assert_eq!(
+            x.get_all_symbols(true),
+            [
+                State::get_symbol("v1"),
+                State::get_symbol("v2"),
+                State::get_symbol("f1")
+            ]
+            .into_iter()
+            .collect(),
+        );
+        assert_eq!(x.as_view().get_byte_size(), 20);
+    }
+
+    #[test]
+    fn composition() {
+        let v1 = Atom::parse("v1").unwrap();
+        let v2 = Atom::parse("v2").unwrap();
+        let f1_id = State::get_symbol("f1");
+
+        let f1 = fun!(f1_id, v1, v2, Atom::new_num(2));
+
+        let r = (-(&v2 + &v1 + 2) * &v2 * 6).npow(5) / &v2.pow(&v1) * &f1 / 4;
+
+        let res = Atom::parse("1/4*(v2^v1)^-1*(-6*v2*(v1+v2+2))^5*f1(v1,v2,2)").unwrap();
+        assert_eq!(res, r);
+    }
+}

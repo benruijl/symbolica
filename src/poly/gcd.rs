@@ -263,51 +263,6 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         res
     }
 
-    /// Replace all variables except `v` in the polynomial by elements from
-    /// a finite field of size `p`. The exponent of `v` should be small.
-    pub fn sample_polynomial_small_exponent(
-        &self,
-        v: usize,
-        r: &[(usize, F::Element)],
-        cache: &mut [Vec<F::Element>],
-        tm: &mut [F::Element],
-    ) -> MultivariatePolynomial<F, E> {
-        for mv in self.into_iter() {
-            let mut c = mv.coefficient.clone();
-            for (n, vv) in r {
-                let exp = mv.exponents[*n].to_u32() as usize;
-                if exp > 0 {
-                    if exp < cache[*n].len() {
-                        if F::is_zero(&cache[*n][exp]) {
-                            cache[*n][exp] = self.field.pow(vv, exp as u64);
-                        }
-
-                        self.field.mul_assign(&mut c, &cache[*n][exp]);
-                    } else {
-                        self.field
-                            .mul_assign(&mut c, &self.field.pow(vv, exp as u64));
-                    }
-                }
-            }
-
-            let expv = mv.exponents[v].to_u32() as usize;
-            self.field.add_assign(&mut tm[expv], &c);
-        }
-
-        // TODO: add bounds estimate
-        let mut res = self.zero();
-        let mut e = vec![E::zero(); self.nvars()];
-        for (k, c) in tm.iter_mut().enumerate() {
-            if !F::is_zero(c) {
-                e[v] = E::from_u32(k as u32);
-                res.append_monomial_back(mem::replace(c, self.field.zero()), &e);
-                e[v] = E::zero();
-            }
-        }
-
-        res
-    }
-
     /// Find the upper bound of a variable `var` in the gcd.
     /// This is done by computing the univariate gcd by
     /// substituting all variables except `var`. This

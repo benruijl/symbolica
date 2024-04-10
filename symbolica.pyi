@@ -1115,6 +1115,18 @@ class Transformer:
         >>> print(e)
         """
 
+    def for_each(self, *transformers: Transformer) -> Transformer:
+        """Create a transformer that applies a transformer chain to every argument of the `arg()` function.
+        If the input is not `arg()`, the transformer is applied to the input.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> f = Expression.fun('f')
+        >>> e = (1+x).transform().split().for_each(Transformer().map(f)).execute()
+        """
+
     def check_interrupt(self) -> Transformer:
         """Create a transformer that checks for a Python interrupt,
         such as ctrl-c and aborts the current transformer.

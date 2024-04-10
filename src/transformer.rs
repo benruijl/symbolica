@@ -84,6 +84,9 @@ pub enum Transformer {
     ArgCount(bool),
     /// Map the rhs with a user-specified function.
     Map(Box<dyn Map>),
+    /// Apply a transformation to each argument of the `arg()` function.
+    /// If the input is not `arg()`, map the current input.
+    ForEach(Vec<Transformer>),
     /// Split a `Mul` or `Add` into a list of arguments.
     Split,
     Partition(Vec<(Symbol, usize)>, bool, bool),
@@ -108,6 +111,7 @@ impl std::fmt::Debug for Transformer {
             Transformer::Sum => f.debug_tuple("Sum").finish(),
             Transformer::ArgCount(p) => f.debug_tuple("ArgCount").field(p).finish(),
             Transformer::Map(_) => f.debug_tuple("Map").finish(),
+            Transformer::ForEach(t) => f.debug_tuple("ForEach").field(t).finish(),
             Transformer::Split => f.debug_tuple("Split").finish(),
             Transformer::Partition(g, b1, b2) => f
                 .debug_tuple("Partition")
@@ -157,7 +161,6 @@ impl Transformer {
     pub fn execute(
         orig_input: AtomView<'_>,
         chain: &[Transformer],
-
         workspace: &Workspace,
         out: &mut Atom,
     ) -> Result<(), TransformerError> {
@@ -170,6 +173,25 @@ impl Transformer {
             match t {
                 Transformer::Map(f) => {
                     f(input, out)?;
+                }
+                Transformer::ForEach(t) => {
+                    if let AtomView::Fun(f) = input {
+                        if f.get_symbol() == State::ARG {
+                            let mut ff = workspace.new_atom();
+                            let ff = ff.to_fun(State::ARG);
+
+                            let mut a = workspace.new_atom();
+                            for arg in f.iter() {
+                                Self::execute(arg, t, workspace, &mut a)?;
+                                ff.add_arg(a.as_view());
+                            }
+
+                            ff.as_view().normalize(workspace, out);
+                            continue;
+                        }
+                    }
+
+                    Self::execute(input, t, workspace, out)?;
                 }
                 Transformer::Expand => {
                     input.expand_with_ws_into(workspace, out);

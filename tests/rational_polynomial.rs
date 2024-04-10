@@ -5,7 +5,34 @@ use symbolica::{
 };
 
 #[test]
-fn large_gcd() {
+fn large_gcd_single_scale() {
+    let order = Arc::new(vec![
+        Variable::Symbol(State::get_symbol("x0")),
+        Variable::Symbol(State::get_symbol("x1")),
+        Variable::Symbol(State::get_symbol("x2")),
+        Variable::Symbol(State::get_symbol("x3")),
+        Variable::Symbol(State::get_symbol("x4")),
+    ]);
+
+    let a = Atom::parse("(x0+2*x1+x2+x3-x4^2)^10")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, Some(order.clone()));
+
+    let b = Atom::parse("(x0+2*x1+5+x2+x3-x4^2)^10")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, Some(order.clone()));
+
+    let g = Atom::parse("(-x0+3*x1+x2+5*x3-x4^2)^4")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, Some(order.clone()));
+
+    let gg = (&a * &g).gcd(&(&b * &g));
+
+    assert_eq!(gg, g);
+}
+
+#[test]
+fn large_gcd_multiple_scales() {
     let order = Arc::new(vec![
         Variable::Symbol(State::get_symbol("x0")),
         Variable::Symbol(State::get_symbol("x1")),

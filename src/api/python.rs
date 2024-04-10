@@ -264,9 +264,13 @@ macro_rules! append_transformer {
                 expr: Arc::new(Pattern::Transformer(t)),
             })
         } else {
-            return Err(exceptions::PyValueError::new_err(
-                "Pattern must be a transformer",
-            ));
+            // pattern is not a transformer yet (but may have subtransformers)
+            Ok(PythonPattern {
+                expr: Arc::new(Pattern::Transformer(Box::new((
+                    Some($self.expr.as_ref().clone()),
+                    vec![$t],
+                )))),
+            })
         }
     };
 }
@@ -524,6 +528,40 @@ impl PythonPattern {
         }));
 
         return append_transformer!(self, transformer);
+    }
+
+    /// Create a transformer that applies a transformer chain to every argument of the `arg()` function.
+    /// If the input is not `arg()`, the transformer is applied to the input.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.var('x')
+    /// >>> f = Expression.fun('f')
+    /// >>> e = (1+x).transform().split().for_each(Transformer().map(f)).execute()
+    #[pyo3(signature = (*transformers))]
+    pub fn for_each(&self, transformers: &PyTuple) -> PyResult<PythonPattern> {
+        let mut rep_chain = vec![];
+        // fuse all sub-transformers into one chain
+        for r in transformers {
+            let p = r.extract::<PythonPattern>()?;
+
+            let Pattern::Transformer(t) = p.expr.borrow() else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Argument must be a transformer",
+                ));
+            };
+
+            if t.0.is_some() {
+                return Err(exceptions::PyValueError::new_err(
+                    "Transformers in a for_each must be unbound. Use Transformer() to create it.",
+                ));
+            }
+
+            rep_chain.extend_from_slice(&t.1);
+        }
+
+        return append_transformer!(self, Transformer::ForEach(rep_chain));
     }
 
     /// Create a transformer that checks for a Python interrupt,

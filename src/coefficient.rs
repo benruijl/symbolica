@@ -887,3 +887,40 @@ impl<'a> AtomView<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use crate::{domains::rational::Rational, representations::Atom, state::State};
+
+    #[test]
+    fn coefficient_ring() {
+        let expr = Atom::parse("v1*v3+v1*(v2+2)^-1*(v2+v3+1)").unwrap();
+
+        let v2 = State::get_symbol("v2");
+        let expr_yz =
+            expr.set_coefficient_ring(&Arc::new(vec![v2.into(), State::get_symbol("v3").into()]));
+
+        let a = ((&expr_yz + &Atom::new_num(Rational::new(1, 2)))
+            * &Atom::new_num(Rational::new(3, 4)))
+            .expand();
+
+        let a = (a / &Atom::new_num(Rational::new(3, 4)) - &Atom::new_num(Rational::new(1, 2)))
+            .expand();
+
+        let a = a.set_coefficient_ring(&Arc::new(vec![]));
+
+        let expr = Atom::new_var(v2)
+            .into_pattern()
+            .replace_all(expr.as_view(), &Atom::new_num(3).into_pattern(), None, None)
+            .expand();
+
+        let a = Atom::new_var(v2)
+            .into_pattern()
+            .replace_all(a.as_view(), &Atom::new_num(3).into_pattern(), None, None)
+            .expand();
+
+        assert_eq!(a, expr);
+    }
+}

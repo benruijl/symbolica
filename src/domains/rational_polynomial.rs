@@ -820,8 +820,9 @@ where
     /// Integrate the rational function in `var`. It returns a tuple
     /// `(ps, ls)` where `ps` should be interpreted as the sum of the rational parts
     /// and `ls` as a sum of logarithmic parts. Each logarithmic part is a tuple `(r, a)`
-    /// that represents `sum_(r(z) = 0) z*log(a(var, z))`.
-    pub fn integrate(&self, var: usize) -> (Vec<Self>, Vec<(MultivariatePolynomial<R, E>, Self)>) {
+    /// that represents `sum_(r(z) = 0) z*log(a(var, z))` if `r` is dependent on `z`,
+    /// else it is `r*log(a)`.
+    pub fn integrate(&self, var: usize) -> (Vec<Self>, Vec<(Self, Self)>) {
         let rat_field = RationalPolynomialField::new_from_poly(&self.numerator);
         let n = self.numerator.to_univariate(var);
 
@@ -922,53 +923,305 @@ where
             // adding a variable changes the field
             p.field = RationalPolynomialField::new_from_poly(&p.coefficients[0].numerator);
             h.field = p.field.clone();
+            let new_var = p.coefficients[0].numerator.nvars() - 1;
 
             let b = h.clone() - p.derivative().mul_coeff(&t);
 
             // TODO: use resultant_prs instead?
             let r = p.resultant(&b);
-            assert!(r.denominator.is_constant());
 
+            // drop the denominator as it is constant in x
             let mut sqf = r.numerator.square_free_factorization();
             sqf.retain(|(x, _)| !x.is_constant());
 
+            let factors: Vec<(Vec<_>, _, _)> = sqf
+                .into_iter()
+                .map(|(s, p)| (s.factor().into_iter().map(|x| x.0).collect(), s, p))
+                .collect();
+
+            // TODO: if there is only one factor, we know there will be no merging and we can give the result
+            // in terms of a root sum of the original denominator instead of the more complicated one
+            // this requires returning 3 terms: the root to solve for, the residue and the log content
+
             // perform monic euclidean algorithm and collect the remainders of the powers that appear in the factorized resultant
-            let mut r0 = p.clone().make_monic();
-
-            for (x, pp) in &sqf {
-                if r0.degree() == *pp {
-                    w.push((x.clone(), Self::from_univariate(r0.clone())));
-                    break;
-                }
-            }
-
-            let mut r1 = b.clone().make_monic();
-
-            for (x, pp) in &sqf {
-                if r1.degree() == *pp {
-                    w.push((x.clone(), Self::from_univariate(r1.clone())));
-                    break;
-                }
-            }
-
-            while !r1.is_zero() {
-                let r = r0.rem(&mut r1);
-                for (x, pp) in &sqf {
-                    if r.degree() == *pp {
-                        w.push((x.clone(), Self::from_univariate(r.clone())));
-                        break;
-                    }
-                }
-
+            // TODO: this may be wrong, see
+            // A Note on Subresultants and the Lazard/Rioboo/Trager Formula in Rational Function Integration
+            let mut prs = vec![];
+            prs.push(p.clone().make_monic());
+            prs.push(b.clone().make_monic());
+            while !prs.last().unwrap().is_zero() {
+                let r = prs[prs.len() - 2].rem(&prs[prs.len() - 1]);
                 if RationalPolynomialField::is_zero(&r.lcoeff()) {
                     break;
                 }
+                prs.push(r.make_monic());
+            }
 
-                let a = rat_field.inv(&r.lcoeff());
-                (r1, r0) = (r.mul_coeff(&a), r1);
+            for r in &prs {
+                let Some((xs, sqf, _)) = factors.iter().find(|(_, _, pp)| r.degree() == *pp) else {
+                    continue;
+                };
+
+                // write the polynomial as a polynomial in x and t only with rational polynomial
+                // coefficients in all other variables
+                // since we will make the polynomial monic, the denominator drops out
+                let ll = RationalPolynomial::from_univariate(r.clone())
+                    .numerator
+                    .to_multivariate_polynomial_list(&[var, new_var], true);
+                let mut bivar_poly =
+                    MultivariatePolynomial::new(&p.field, Some(ll.len()), p.field.var_map.clone());
+                for (e, p) in ll {
+                    bivar_poly.append_monomial(p.into(), &e);
+                }
+
+                // convert defining polynomial to a univariate polynomial in t with rational polynomial coefficients
+                let def_uni = sqf
+                    .to_univariate(new_var)
+                    .map_coeff(|c| c.clone().into(), p.field.clone());
+
+                // write the polynomial in x and t as a polynomial in x with rational polynomial coefficients in t and
+                // all other variables and solve a diophantine equation
+                let lcoeff = bivar_poly.to_univariate(var).lcoeff();
+                let aa = lcoeff.to_univariate_from_univariate(new_var);
+                let (_, s, _) = aa.eea(&def_uni);
+
+                // convert the s to a multivariate polynomial and multiply with the bivariate polynomial
+                // and mod with the defining polynomial
+                // this is equivalent to making the bivariate polynomial monic in Q[t][x]
+                // TODO: write conversion routine
+                let mut ss = bivar_poly.zero();
+                let mut exp = vec![E::zero(); bivar_poly.nvars()];
+                for (e, p) in s.coefficients.into_iter().enumerate() {
+                    exp[new_var] = E::from_u32(e as u32);
+                    ss.append_monomial(p, &exp);
+                }
+
+                let bivar_poly_scaled = bivar_poly * &ss;
+
+                let mut def_biv = lcoeff.zero();
+                for (e, p) in def_uni.coefficients.into_iter().enumerate() {
+                    exp[new_var] = E::from_u32(e as u32);
+                    def_biv.append_monomial(p, &exp);
+                }
+
+                let monic = bivar_poly_scaled.rem(&def_biv);
+
+                // convert the result to a multivariate rational polynomial
+                let mut res = p.field.zero();
+                for t in &monic {
+                    let mut exp = vec![E::zero(); p.lcoeff().numerator.nvars()];
+                    exp.copy_from_slice(t.exponents);
+                    let mm = p.coefficients[0]
+                        .numerator
+                        .monomial(self.numerator.field.one(), exp);
+                    res = &res + &(t.coefficient * &mm.into());
+                }
+
+                for ff in xs {
+                    // solve linear equation
+                    if ff.degree(new_var) == E::one() {
+                        let a = ff.to_univariate(new_var);
+                        let sol = RationalPolynomial::from_num_den(
+                            -a.coefficients[0].clone(),
+                            a.coefficients[1].clone(),
+                            &a.coefficients[0].field,
+                            true,
+                        );
+
+                        let eval = monic.replace(new_var, &sol);
+
+                        let mut res = p.field.zero();
+                        for t in &eval {
+                            let mut exp = vec![E::zero(); p.lcoeff().numerator.nvars()];
+                            exp.copy_from_slice(t.exponents);
+                            let mm = p.coefficients[0]
+                                .numerator
+                                .monomial(self.numerator.field.one(), exp);
+                            res = &res + &(t.coefficient * &mm.into());
+                        }
+
+                        w.push((sol, res));
+                    } else {
+                        w.push((ff.clone().into(), res.clone()));
+                    }
+                }
             }
         }
 
         (v, w)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use crate::{
+        domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial},
+        state::State,
+    };
+
+    #[test]
+    fn three_factors() {
+        use crate::representations::Atom;
+        let p: RationalPolynomial<_, _> =
+            Atom::parse("(36v1^2+1167v1+3549/2)/(v1^3+23/30v1^2-2/15v1-2/15)")
+                .unwrap()
+                .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
+
+        let (r, l) = p.integrate(0);
+
+        let v = l[0].0.get_variables().clone();
+
+        assert!(r.is_empty());
+        assert_eq!(
+            l,
+            vec![
+                (
+                    Atom::parse("-8000")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    Atom::parse("(1+2*v1)/2")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                ),
+                (
+                    Atom::parse("91125/16")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    Atom::parse("(2+3*v1)/3")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                ),
+                (
+                    Atom::parse("37451/16")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    Atom::parse("(-2+5*v1)/5")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn multiple_residues() {
+        use crate::representations::Atom;
+        let p: RationalPolynomial<_, _> = Atom::parse(
+            "(7v1^13+10v1^8+4v1^7-7v1^6-4v1^3-4v1^2+3v1+3)/(v1^14-2v1^8-2v1^7-2v1^4-4v1^3-v1^2+2v1+1)",
+        )
+        .unwrap()
+        .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
+
+        let (r, mut l) = p.integrate(0);
+        let new_var = State::get_symbol("v2");
+
+        // root sum in the answer, rename the temporary variable
+        // TODO: add rename function
+        let mut v = l[0].0.get_variables().as_ref().clone();
+        *v.last_mut().unwrap() = new_var.clone().into();
+        let new_map = Arc::new(v);
+
+        l[0].0.numerator.variables = new_map.clone();
+        l[0].0.denominator.variables = new_map.clone();
+        l[0].1.numerator.variables = new_map.clone();
+        l[0].1.denominator.variables = new_map.clone();
+
+        assert!(r.is_empty());
+        assert_eq!(
+            l,
+            vec![(
+                Atom::parse("1+4*v2-4*v2^2")
+                    .unwrap()
+                    .to_rational_polynomial::<_, _, u8>(&Q, &Z, new_map.clone().into()),
+                Atom::parse("-1-2*v1*v2+v1^2-2*v1^2*v2+v1^7")
+                    .unwrap()
+                    .to_rational_polynomial::<_, _, u8>(&Q, &Z, new_map.clone().into()),
+            )]
+        );
+    }
+
+    #[test]
+    fn multi_factor() {
+        use crate::representations::Atom;
+        let p: RationalPolynomial<_, _> = Atom::parse("1/(v1^3+v1)")
+            .unwrap()
+            .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
+
+        let (r, l) = p.integrate(0);
+
+        let v = l[0].0.get_variables().clone();
+
+        assert!(r.is_empty());
+        assert_eq!(
+            l,
+            vec![
+                (
+                    Atom::parse("-1/2")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    Atom::parse("1+v1^2")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                ),
+                (
+                    Atom::parse("1")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    Atom::parse("v1")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn multiple_variables() {
+        use crate::representations::Atom;
+        let p: RationalPolynomial<_, _> = Atom::parse("(v1^4+v2+v1*v2+2*v1)/((v1-v2)(v1-2)(v1-4))")
+            .unwrap()
+            .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
+
+        let (r, l) = p.integrate(0);
+
+        let v = l[0].0.get_variables().clone();
+
+        assert_eq!(
+            r,
+            vec![Atom::parse("(12*v1+2*v1*v2+v1^2)/2")
+                .unwrap()
+                .to_rational_polynomial::<_, _, u8>(&Q, &Z, r[0].get_variables().clone().into())]
+        );
+        assert_eq!(
+            l,
+            vec![
+                (
+                    Atom::parse("(20+3*v2)/(-4+2*v2)")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    Atom::parse("-2+v1")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                ),
+                (
+                    Atom::parse("(-264-5*v2)/(-8+2*v2)")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    Atom::parse("-4+v1")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                ),
+                (
+                    Atom::parse("(3*v2+v2^2+v2^4)/(8-6*v2+v2^2)")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    Atom::parse("-v2+v1")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                )
+            ]
+        );
     }
 }

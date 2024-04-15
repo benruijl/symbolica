@@ -3406,3 +3406,77 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{atom::Atom, domains::integer::Z};
+
+    #[test]
+    fn mul_packed() {
+        let p1 = Atom::parse("v1^2+v2^3*v3*+3*v1^4+4*v2*v3")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+        let b = &p1 * &p1;
+        let r = Atom::parse(
+            "16*v2^2*v3^2+8*v1^2*v2*v3+v1^4+24*v1^4*v2^4*v3^2+6*v1^6*v2^3*v3+9*v1^8*v2^6*v3^2",
+        )
+        .unwrap();
+        assert_eq!(b.to_expression(), r)
+    }
+
+    #[test]
+    fn mul_full() {
+        let p1 = Atom::parse("v1^2+v2^3*v3*+3*v1^4+4*v2*v3+v4+v5+v6*v1*v2+v7*v5+v8+v9*v8")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+        let b = &p1 * &p1;
+
+        let r = Atom::parse(
+            "16*v2^2*v3^2+8*v1*v2^2*v3*v6+8*v1^2*v2*v3+v1^2*v2^2*v6^2+2*v1^3*v2*v6+v1^4+24*v1^4*v2^4*v3^2+6*v1^5*v2^4*v3*v6+6*v1^6*v2^3*v3+9*v1^8*v2^6*v3^2+8*v8*v2*v3+8*v8*v2*v3*v9+2*v8*v1*v2*v6+2*v8*v1*v2*v9*v6+2*v8*v1^2+2*v8*v1^2*v9+6*v8*v1^4*v2^3*v3+6*v8*v1^4*v2^3*v3*v9+v8^2+2*v8^2*v9+v8^2*v9^2+8*v5*v2*v3+8*v5*v2*v3*v7+2*v5*v1*v2*v6+2*v5*v1*v2*v7*v6+2*v5*v1^2+2*v5*v1^2*v7+6*v5*v1^4*v2^3*v3+6*v5*v1^4*v2^3*v3*v7+2*v5*v8+2*v5*v8*v9+2*v5*v8*v7+2*v5*v8*v7*v9+v5^2+2*v5^2*v7+v5^2*v7^2+8*v4*v2*v3+2*v4*v1*v2*v6+2*v4*v1^2+6*v4*v1^4*v2^3*v3+2*v4*v8+2*v4*v8*v9+2*v4*v5+2*v4*v5*v7+v4^2",
+        )
+        .unwrap();
+        assert_eq!(b.to_expression(), r)
+    }
+
+    #[test]
+    fn div_packed() {
+        let p1 = Atom::parse("(v1+v2*5+v3*v2+v1*v2*v3)(v1+v2+v3)")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+
+        let p2 = Atom::parse("v1+v2+v3+1")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, p1.variables.clone().into());
+
+        let (q, r) = p1.quot_rem(&p2, false);
+        assert_eq!(
+            q.to_expression(),
+            Atom::parse("-1+5*v2+v1+v1*v2*v3").unwrap()
+        );
+        assert_eq!(
+            r.to_expression(),
+            Atom::parse("1+v3-4*v2+v2*v3^2+v2^2*v3").unwrap()
+        );
+    }
+
+    #[test]
+    fn div_full() {
+        let p1 = Atom::parse("(v1+v2*5+v3*v2+v1*v2*v3+v4+v5+v6+v7+v8+v9*v8)(v1+v2+v3)")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+
+        let p2 = Atom::parse("v1+v2+v3+1")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, p1.variables.clone().into());
+
+        let (q, r) = p1.quot_rem(&p2, false);
+        assert_eq!(
+            q.to_expression(),
+            Atom::parse("-1+v8+v8*v9+v7+v6+v5+v4+5*v2+v1+v1*v2*v3").unwrap()
+        );
+        assert_eq!(
+            r.to_expression(),
+            Atom::parse("1-v8-v8*v9-v7-v6-v5-v4+v3-4*v2+v2*v3^2+v2^2*v3").unwrap()
+        );
+    }
+}

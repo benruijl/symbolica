@@ -1106,9 +1106,19 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial},
+        domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial, Ring},
         state::State,
     };
+
+    use super::RationalPolynomialField;
+
+    #[test]
+    fn field() {
+        let field = RationalPolynomialField::<_, u8>::new(Z, Arc::new(vec![]));
+        let one = field.one();
+        let t = format!("{}", field.printer(&one));
+        assert_eq!(t, "1");
+    }
 
     #[test]
     fn hermite_reduction() {

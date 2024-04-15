@@ -498,3 +498,153 @@ impl Transformer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        atom::{Atom, FunctionBuilder},
+        id::{Condition, Match, MatchSettings, Pattern, PatternRestriction},
+        printer::PrintOptions,
+        state::{State, Workspace},
+        transformer::StatsOptions,
+    };
+
+    use super::Transformer;
+
+    #[test]
+    fn expand_derivative() {
+        let p = Atom::parse("(1+v1)^2").unwrap();
+
+        let mut out = Atom::new();
+        Workspace::get_local().with(|ws| {
+            Transformer::execute(
+                p.as_view(),
+                &[
+                    Transformer::Expand,
+                    Transformer::Derivative(State::get_symbol("v1")),
+                ],
+                ws,
+                &mut out,
+            )
+            .unwrap()
+        });
+
+        let r = Atom::parse("2+2*v1").unwrap();
+        assert_eq!(out, r);
+    }
+
+    #[test]
+    fn split_argcount() {
+        let p = Atom::parse("v1+v2+v3").unwrap();
+
+        let mut out = Atom::new();
+        Workspace::get_local().with(|ws| {
+            Transformer::execute(
+                p.as_view(),
+                &[Transformer::Split, Transformer::ArgCount(true)],
+                ws,
+                &mut out,
+            )
+            .unwrap()
+        });
+
+        let r = Atom::parse("3").unwrap();
+        assert_eq!(out, r);
+    }
+
+    #[test]
+    fn product_series() {
+        let p = Atom::parse("arg(x,x+1,3)").unwrap();
+
+        let mut out = Atom::new();
+        Workspace::get_local().with(|ws| {
+            Transformer::execute(
+                p.as_view(),
+                &[
+                    Transformer::Product,
+                    Transformer::TaylorSeries(State::get_symbol("x"), Atom::new_num(1), 3),
+                ],
+                ws,
+                &mut out,
+            )
+            .unwrap()
+        });
+
+        let r = Atom::parse("3*(x-1)^2+9*(x-1)+6").unwrap();
+        assert_eq!(out, r);
+    }
+
+    #[test]
+    fn sort_deduplicate() {
+        let p = Atom::parse("f1(3,2,1,3)").unwrap();
+
+        let mut out = Atom::new();
+        Workspace::get_local().with(|ws| {
+            Transformer::execute(
+                p.as_view(),
+                &[
+                    Transformer::ReplaceAll(
+                        Pattern::parse("f1(x__)").unwrap(),
+                        Pattern::parse("x__").unwrap(),
+                        Condition::default(),
+                        MatchSettings::default(),
+                    ),
+                    Transformer::Sort,
+                    Transformer::Deduplicate,
+                    Transformer::Map(Box::new(|x, out| {
+                        let mut f = FunctionBuilder::new(State::get_symbol("f1"));
+                        f = f.add_arg(x);
+                        *out = f.finish();
+                        Ok(())
+                    })),
+                ],
+                ws,
+                &mut out,
+            )
+            .unwrap()
+        });
+
+        let r = Atom::parse("f1(1,2,3)").unwrap();
+        assert_eq!(out, r);
+    }
+
+    #[test]
+    fn deep_nesting() {
+        let p = Atom::parse("arg(3,2,1,3)").unwrap();
+
+        let mut out = Atom::new();
+        Workspace::get_local().with(|ws| {
+            Transformer::execute(
+                p.as_view(),
+                &[Transformer::Repeat(vec![Transformer::Stats(
+                    StatsOptions {
+                        tag: "test".to_owned(),
+                        color_medium_change_threshold: Some(10.),
+                        color_large_change_threshold: Some(100.),
+                    },
+                    vec![Transformer::ForEach(vec![
+                        Transformer::Print(PrintOptions::default()),
+                        Transformer::ReplaceAll(
+                            Pattern::parse("x_").unwrap(),
+                            Pattern::parse("x_-1").unwrap(),
+                            (
+                                State::get_symbol("x_"),
+                                PatternRestriction::Filter(Box::new(|x| {
+                                    x != &Match::Single(Atom::new_num(0).as_view())
+                                })),
+                            )
+                                .into(),
+                            MatchSettings::default(),
+                        ),
+                    ])],
+                )])],
+                ws,
+                &mut out,
+            )
+            .unwrap()
+        });
+
+        let r = Atom::parse("arg(0,0,0,0)").unwrap();
+        assert_eq!(out, r);
+    }
+}

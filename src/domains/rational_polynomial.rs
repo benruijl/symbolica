@@ -122,6 +122,10 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         self.denominator.unify_variables(&mut other.denominator);
     }
 
+    pub fn is_zero(&self) -> bool {
+        self.numerator.is_zero()
+    }
+
     pub fn is_constant(&self) -> bool {
         self.numerator.is_constant() && self.denominator.is_constant()
     }
@@ -743,72 +747,85 @@ where
 {
     /// Compute the partial fraction decomposition of the rational polynomial in `var`.
     pub fn apart(&self, var: usize) -> Vec<Self> {
-        let fs = self.denominator.factor();
-
-        if fs.len() == 1 {
+        if self.denominator.degree(var) == E::zero() {
             return vec![self.clone()];
         }
 
         let rat_field = RationalPolynomialField::new_from_poly(&self.numerator);
+        let n = self
+            .numerator
+            .to_univariate(var)
+            .map_coeff(|c| c.clone().into(), rat_field.clone());
 
-        let mut poly_univ = vec![];
-        let mut exp = vec![E::zero(); self.numerator.nvars()];
-        for (f, p) in &fs {
-            let f = f.clone().pow(*p);
+        let mut hs = vec![];
 
-            let l = f.to_univariate_polynomial_list(var);
-            let mut res: MultivariatePolynomial<_, E> = MultivariatePolynomial::new(
-                &rat_field,
-                Some(l.len()),
-                self.numerator.variables.clone().into(),
-            );
+        let rem = if self.numerator.degree(var) >= self.denominator.degree(var) {
+            let d = self
+                .denominator
+                .to_univariate(var)
+                .map_coeff(|c| c.clone().into(), rat_field.clone());
+            let (q, r) = n.quot_rem(&d);
+            if !q.is_zero() {
+                hs.push(Self::from_univariate(q));
+            }
+            r
+        } else {
+            n
+        };
 
-            for (p, e) in l {
-                exp[var] = e;
-                let one = p.one();
-                res.append_monomial(
-                    RationalPolynomial::from_num_den(p, one, &self.numerator.field, false),
-                    &exp,
+        // partial fraction the denominator
+        let mut fs = self
+            .denominator
+            .factor()
+            .into_iter()
+            .map(|(x, p)| (x.to_univariate(var), p))
+            .collect::<Vec<_>>();
+
+        let mut constant = fs[0].0.one();
+        fs.retain(|x| {
+            if x.0.is_constant() {
+                constant = &constant * &x.0.pow(x.1);
+                false
+            } else {
+                true
+            }
+        });
+
+        let constant =
+            Self::from_univariate(constant.map_coeff(|c| c.clone().into(), rat_field.clone()))
+                .inv();
+
+        assert!(!fs.is_empty());
+
+        let mut expanded = fs
+            .iter()
+            .map(|(f, p)| f.pow(*p).map_coeff(|c| c.clone().into(), rat_field.clone()))
+            .collect::<Vec<_>>();
+
+        // perform partial fractioning
+        let deltas = if expanded.len() > 1 {
+            UnivariatePolynomial::diophantine(&mut expanded, &rem)
+        } else {
+            vec![rem]
+        };
+
+        let fs = fs
+            .into_iter()
+            .map(|(x, e)| (x.map_coeff(|c| c.clone().into(), rat_field.clone()), e))
+            .collect::<Vec<_>>();
+
+        for (d, (p, p_pow)) in deltas.into_iter().zip(fs) {
+            let exp = d.p_adic_expansion(&p);
+            let p_rat = Self::from_univariate(p);
+            for (pow, d_exp) in exp.into_iter().enumerate() {
+                hs.push(
+                    &(&Self::from_univariate(d_exp) / &p_rat.pow(p_pow as u64 - pow as u64))
+                        * &constant,
                 );
             }
-            poly_univ.push(res);
         }
 
-        let rhs = poly_univ[0].one();
-        let deltas = MultivariatePolynomial::diophantine_univariate(&mut poly_univ, &rhs);
-
-        let mut factors = Vec::with_capacity(deltas.len());
-        for (d, (p, pe)) in deltas.into_iter().zip(fs.into_iter()) {
-            let mut unfold = rat_field.zero();
-            for (c, e) in d
-                .coefficients
-                .into_iter()
-                .zip(d.exponents.chunks(self.numerator.nvars()))
-            {
-                unfold = &unfold
-                    + &(&c
-                        * &RationalPolynomial::from_num_den(
-                            unfold
-                                .numerator
-                                .monomial(self.numerator.field.one(), e.to_vec()),
-                            unfold.numerator.one(),
-                            &self.numerator.field,
-                            true,
-                        ));
-            }
-
-            unfold = &unfold
-                * &RationalPolynomial::from_num_den(
-                    self.numerator.clone(),
-                    p.pow(pe),
-                    &self.numerator.field,
-                    false,
-                );
-
-            factors.push(unfold.clone());
-        }
-
-        factors
+        hs
     }
 }
 
@@ -824,34 +841,53 @@ where
     /// else it is `r*log(a)`.
     pub fn integrate(&self, var: usize) -> (Vec<Self>, Vec<(Self, Self)>) {
         let rat_field = RationalPolynomialField::new_from_poly(&self.numerator);
-        let n = self.numerator.to_univariate(var);
+        let n = self
+            .numerator
+            .to_univariate(var)
+            .map_coeff(|c| c.clone().into(), rat_field.clone());
 
-        if self.denominator.is_one() {
-            // map coefficients to a rational polynomial
-            let n_conv = n.map_coeff(|c| c.clone().into(), rat_field);
-            let r = Self::from_univariate(n_conv.integrate());
+        let d = self
+            .denominator
+            .to_univariate(var)
+            .map_coeff(|c| c.clone().into(), rat_field.clone());
+
+        if d.is_constant() {
+            let r = &Self::from_univariate(n.integrate()) / &Self::from_univariate(d);
             return (vec![r], vec![]);
         }
 
-        let d = self.denominator.to_univariate(var);
         let (q, r) = n.quot_rem(&d);
 
         let mut v = if q.is_zero() {
             vec![]
         } else {
-            vec![Self::from_univariate(
-                q.map_coeff(|c| c.clone().into(), rat_field.clone())
-                    .integrate(),
-            )]
+            let n_conv = q.map_coeff(|c| c.clone().into(), rat_field.clone());
+            vec![Self::from_univariate(n_conv.integrate())]
         };
 
         // partial fraction the denominator
-        let fs = self
+        let mut fs = self
             .denominator
             .square_free_factorization()
             .into_iter()
             .map(|(x, p)| (x.to_univariate(var), p))
             .collect::<Vec<_>>();
+
+        let mut constant = fs[0].0.one();
+        fs.retain(|x| {
+            if x.0.is_constant() {
+                constant = &constant * &x.0.pow(x.1);
+                false
+            } else {
+                true
+            }
+        });
+
+        let mut constant =
+            Self::from_univariate(constant.map_coeff(|c| c.clone().into(), rat_field.clone()))
+                .inv();
+
+        assert!(!fs.is_empty());
 
         let mut expanded = fs
             .iter()
@@ -869,17 +905,23 @@ where
 
         let fs = fs
             .into_iter()
-            .map(|(x, _)| x.map_coeff(|c| c.clone().into(), rat_field.clone()))
+            .map(|(x, e)| (x.map_coeff(|c| c.clone().into(), rat_field.clone()), e))
             .collect::<Vec<_>>();
 
         let mut hs = vec![];
-        for (d, p) in deltas.into_iter().zip(&fs) {
+        for (d, (p, p_pow)) in deltas.into_iter().zip(&fs) {
             let p_diff = p.derivative();
             let (_, s, t) = p.eea(&p_diff);
 
             let p_full = Self::from_univariate(p.clone());
 
             let mut d_exp = d.p_adic_expansion(&p);
+
+            // grow to the same level as the pow
+            if d_exp.len() < *p_pow {
+                d_exp.resize(*p_pow, d.zero());
+            }
+
             // highest degree in 1/p last
             d_exp.reverse();
 
@@ -895,10 +937,15 @@ where
 
                 let t_full = Self::from_univariate(t_cor);
 
-                v.push(-(&t_full / &(&rat_field.nth(i as u64) * &p_full.pow(i as u64))));
+                let r = -(&t_full / &(&rat_field.nth(i as u64) * &p_full.pow(i as u64)));
+                if !r.is_zero() {
+                    v.push(r);
+                }
             }
 
-            hs.push(d_exp.swap_remove(0));
+            if !d_exp[0].is_zero() {
+                hs.push(d_exp.swap_remove(0));
+            }
         }
 
         // create new temporary variable
@@ -912,13 +959,15 @@ where
 
         let mut w = vec![];
 
-        for (mut h, mut p) in hs.into_iter().zip(fs.into_iter()) {
+        for (mut h, (mut p, _)) in hs.into_iter().zip(fs.into_iter()) {
             for c in &mut p.coefficients {
                 c.unify_variables(&mut t);
             }
             for c in &mut h.coefficients {
                 c.unify_variables(&mut t);
             }
+
+            constant.unify_variables(&mut t);
 
             // adding a variable changes the field
             p.field = RationalPolynomialField::new_from_poly(&p.coefficients[0].numerator);
@@ -1040,9 +1089,9 @@ where
                             res = &res + &(t.coefficient * &mm.into());
                         }
 
-                        w.push((sol, res));
+                        w.push((&sol * &constant, res));
                     } else {
-                        w.push((ff.clone().into(), res.clone()));
+                        w.push((&ff.clone().into() * &constant, res.clone()));
                     }
                 }
             }
@@ -1060,6 +1109,91 @@ mod test {
         domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial},
         state::State,
     };
+
+    #[test]
+    fn hermite_reduction() {
+        use crate::representations::Atom;
+        let p: RationalPolynomial<_, _> = Atom::parse("1/(v1 + 1)^5")
+            .unwrap()
+            .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
+
+        let (r, l) = p.integrate(0);
+
+        assert_eq!(
+            r,
+            vec![Atom::parse("-1/(4+16*v1+24*v1^2+16*v1^3+4*v1^4)")
+                .unwrap()
+                .to_rational_polynomial::<_, _, u8>(&Q, &Z, r[0].get_variables().clone().into())]
+        );
+        assert_eq!(l, vec![]);
+    }
+
+    #[test]
+    fn constant() {
+        use crate::representations::Atom;
+        let p: RationalPolynomial<_, _> = Atom::parse("(v1^4+v2+v1*v2+2*v1)/(v2 + 1)")
+            .unwrap()
+            .to_rational_polynomial::<_, _, u8>(
+                &Q,
+                &Z,
+                Some(Arc::new(vec![
+                    State::get_symbol("v1").into(),
+                    State::get_symbol("v2").into(),
+                ])),
+            );
+
+        let (r, l) = p.integrate(0);
+        assert_eq!(
+            r,
+            vec![
+                Atom::parse("(10*v1*v2+10*v1^2+5*v1^2*v2+2*v1^5)/(10+10*v2)")
+                    .unwrap()
+                    .to_rational_polynomial::<_, _, u8>(
+                        &Q,
+                        &Z,
+                        r[0].get_variables().clone().into()
+                    )
+            ]
+        );
+        assert_eq!(l, vec![]);
+    }
+
+    #[test]
+    fn mixed_denominator() {
+        use crate::representations::Atom;
+        let p: RationalPolynomial<_, _> = Atom::parse("(v1^4+v2+v1*v2+2*v1)/(v1)/(v2 + 1)")
+            .unwrap()
+            .to_rational_polynomial::<_, _, u8>(
+                &Q,
+                &Z,
+                Some(Arc::new(vec![
+                    State::get_symbol("v1").into(),
+                    State::get_symbol("v2").into(),
+                ])),
+            );
+
+        let (r, l) = p.integrate(0);
+
+        let v = l[0].0.get_variables().clone();
+
+        assert_eq!(
+            r,
+            vec![Atom::parse("(8*v1+4*v1*v2+v1^4)/(4+4*v2)")
+                .unwrap()
+                .to_rational_polynomial::<_, _, u8>(&Q, &Z, r[0].get_variables().clone().into())]
+        );
+        assert_eq!(
+            l,
+            vec![(
+                Atom::parse("v2/(1+v2)")
+                    .unwrap()
+                    .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                Atom::parse("v1")
+                    .unwrap()
+                    .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+            ),]
+        );
+    }
 
     #[test]
     fn three_factors() {

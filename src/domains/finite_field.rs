@@ -685,13 +685,13 @@ impl Mersenne64 {
 
 impl std::fmt::Debug for Mersenne64 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}", Self::PRIME))
+        std::fmt::Debug::fmt(&self.0, f)
     }
 }
 
 impl Display for Mersenne64 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}", Self::PRIME))
+        self.0.fmt(f)
     }
 }
 

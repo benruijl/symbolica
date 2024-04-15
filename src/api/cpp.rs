@@ -422,11 +422,15 @@ unsafe extern "C" fn drop(symbolica: *mut Symbolica) {
 mod test {
     use std::ffi::{c_char, CStr};
 
-    use super::{drop, init};
+    use crate::domains::finite_field::Mersenne64;
+
+    use super::{drop, init, set_options};
 
     #[test]
     fn simplify() {
         let symbolica = unsafe { init() };
+
+        unsafe { set_options(symbolica, true, false) };
 
         unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
 
@@ -436,10 +440,14 @@ mod test {
 
         assert_eq!(result, "[32768-32768*y^2-8192*d+8192*d*y^2]");
 
+        unsafe { set_options(symbolica, true, true) };
+
         let result = unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, 0, false) };
         let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
 
         assert_eq!(result, "32768-32768*y^2-8192*d+8192*d*y^2");
+
+        unsafe { set_options(symbolica, false, false) };
 
         let result =
             unsafe { super::simplify_factorized(symbolica, input.as_ptr() as *const i8, 0, true) };
@@ -461,32 +469,132 @@ mod test {
 
         unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
 
+        let prime = 4293491017;
+
         let input = "-(4096-4096*y^2)/(-3072+1024*d)*(1536-512*d)-(-8192+8192*y^2)/(2)*((-6+d)/2)-(-8192+8192*y^2)/(-2)*((-13+3*d)/2)-(-8192+8192*y^2)/(-4)*(-8+2*d)\0";
         let result =
-            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, 4293491017, true) };
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, true) };
         let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
 
         assert_eq!(result, "[32768+4293458249*y^2+4293482825*d+8192*d*y^2]");
 
         let result =
-            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, 4293491017, false) };
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, false) };
         let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
 
         assert_eq!(result, "32768+4293458249*y^2+4293482825*d+8192*d*y^2");
 
         let result = unsafe {
-            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, 4293491017, true)
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, true)
         };
         let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
 
         assert_eq!(result, "[32768+4293458249*y^2+4293482825*d+8192*d*y^2]");
 
         let result = unsafe {
-            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, 4293491017, false)
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, false)
         };
         let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
 
         unsafe { drop(symbolica) };
         assert_eq!(result, "32768+4293458249*y^2+4293482825*d+8192*d*y^2");
+    }
+
+    #[test]
+    fn simplify_mersenne() {
+        let symbolica = unsafe { init() };
+
+        unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
+
+        let prime = Mersenne64::PRIME;
+
+        let input = "-(4096-4096*y^2)/(-3072+1024*d)*(1536-512*d)-(-8192+8192*y^2)/(2)*((-6+d)/2)-(-8192+8192*y^2)/(-2)*((-13+3*d)/2)-(-8192+8192*y^2)/(-4)*(-8+2*d)\0";
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "[32768+2305843009213661183*y^2+2305843009213685759*d+8192*d*y^2]"
+        );
+
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "32768+2305843009213661183*y^2+2305843009213685759*d+8192*d*y^2"
+        );
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, true)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "[32768+2305843009213661183*y^2+2305843009213685759*d+8192*d*y^2]"
+        );
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, false)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        unsafe { drop(symbolica) };
+        assert_eq!(
+            result,
+            "32768+2305843009213661183*y^2+2305843009213685759*d+8192*d*y^2"
+        );
+    }
+
+    #[test]
+    fn simplify_u64_prime() {
+        let symbolica = unsafe { init() };
+
+        unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
+
+        let prime = 18446744073709551163;
+
+        let input = "-(4096-4096*y^2)/(-3072+1024*d)*(1536-512*d)-(-8192+8192*y^2)/(2)*((-6+d)/2)-(-8192+8192*y^2)/(-2)*((-13+3*d)/2)-(-8192+8192*y^2)/(-4)*(-8+2*d)\0";
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "[32768+18446744073709518395*y^2+18446744073709542971*d+8192*d*y^2]"
+        );
+
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "32768+18446744073709518395*y^2+18446744073709542971*d+8192*d*y^2"
+        );
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, true)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "[32768+18446744073709518395*y^2+18446744073709542971*d+8192*d*y^2]"
+        );
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, false)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        unsafe { drop(symbolica) };
+        assert_eq!(
+            result,
+            "32768+18446744073709518395*y^2+18446744073709542971*d+8192*d*y^2"
+        );
     }
 }

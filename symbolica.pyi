@@ -697,6 +697,29 @@ class Expression:
     ) -> Expression:
         """Taylor expand in `x` around `expansion_point` to depth `depth`."""
 
+    def apart(self, x: Expression) -> Expression:
+        """Compute the partial fraction decomposition in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.var('x')
+        >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))')
+        >>> print(p.apart(x))
+        """
+
+    def together(self) -> Expression:
+        """Write the expression over a common denominator.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('v1^2/2+v1^3/v4*v2+v3/(1+v4)')
+        >>> print(p.together())
+        """
+
     def to_polynomial(self, vars: Optional[Sequence[Expression]] = None) -> Polynomial:
         """Convert the expression to a polynomial, optionally, with the variable ordering specified in `vars`.
         All non-polynomial parts will be converted to new, independent variables.

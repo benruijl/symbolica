@@ -1,6 +1,7 @@
 use ahash::HashMap;
 
 use crate::{
+    domains::{integer::Z, rational::Q},
     representations::{Add, AsAtomView, Atom, AtomView, Symbol},
     state::Workspace,
 };
@@ -50,6 +51,16 @@ impl Atom {
     /// Collect terms involving the literal occurrence of `x`.
     pub fn coefficient<'a, T: AsAtomView<'a>>(&self, x: T) -> Atom {
         Workspace::get_local().with(|ws| self.as_view().coefficient_with_ws(x.as_atom_view(), ws))
+    }
+
+    /// Write the expression over a common denominator.
+    pub fn together(&self) -> Atom {
+        self.as_view().together()
+    }
+
+    /// Write the expression as a sum of terms with minimal denominators.
+    pub fn apart(&self, x: Symbol) -> Atom {
+        self.as_view().apart(x)
     }
 }
 
@@ -341,6 +352,49 @@ impl<'a> AtomView<'a> {
             }
         }
     }
+
+    /// Write the expression over a common denominator.
+    pub fn together(&self) -> Atom {
+        let mut out = Atom::new();
+        self.together_into(&mut out);
+        out
+    }
+
+    /// Write the expression over a common denominator.
+    pub fn together_into(&self, out: &mut Atom) {
+        self.to_rational_polynomial::<_, _, u32>(&Q, &Z, None)
+            .to_expression_into(out);
+    }
+
+    /// Write the expression as a sum of terms with minimal denominators.
+    pub fn apart(&self, x: Symbol) -> Atom {
+        let mut out = Atom::new();
+
+        Workspace::get_local().with(|ws| {
+            self.apart_with_ws_into(x, ws, &mut out);
+        });
+
+        out
+    }
+
+    /// Write the expression as a sum of terms with minimal denominators.
+    pub fn apart_with_ws_into(&self, x: Symbol, ws: &Workspace, out: &mut Atom) {
+        let poly = self.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
+        if let Some(v) = poly.get_variables().iter().position(|v| v == &x.into()) {
+            let mut a = ws.new_atom();
+            let add = a.to_add();
+
+            let mut a = ws.new_atom();
+            for x in poly.apart(v) {
+                x.to_expression_into(&mut a);
+                add.extend(a.as_view());
+            }
+
+            add.as_view().normalize(ws, out);
+        } else {
+            out.set_from_view(self);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -411,6 +465,30 @@ mod test {
             "f3(1)*f4(v2^2+f1(5,v1)+2)+f3(v1)*f4(5*v2+v3+1)+f3(v1^2)*f4(1)+f3(v1^3)*f4(1)",
         )
         .unwrap();
+
+        assert_eq!(out, ref_out);
+    }
+
+    #[test]
+    fn together() {
+        let input = Atom::parse("v1^2/2+v1^3/v4*v2+v3/(1+v4)").unwrap();
+        let out = input.together();
+
+        let ref_out =
+            Atom::parse("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)")
+                .unwrap();
+
+        assert_eq!(out, ref_out);
+    }
+
+    #[test]
+    fn apart() {
+        let input =
+            Atom::parse("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)")
+                .unwrap();
+        let out = input.apart(State::get_symbol("v4"));
+
+        let ref_out = Atom::parse("1/2*v1^2+v3*(v4+1)^-1+v1^3*v2*v4^-1").unwrap();
 
         assert_eq!(out, ref_out);
     }

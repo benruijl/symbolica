@@ -2491,6 +2491,61 @@ impl PythonExpression {
         Ok(PythonExpression { expr: Arc::new(b) })
     }
 
+    /// Compute the partial fraction decomposition in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.var('x')
+    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))')
+    /// >>> print(p.apart(x))
+    pub fn apart(&self, x: PythonExpression) -> PyResult<PythonExpression> {
+        let poly = self.expr.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
+        let x = poly
+            .get_variables()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        let fs = poly.apart(x);
+
+        let mut rn = Atom::new();
+        Workspace::get_local().with(|ws| {
+            let mut res = ws.new_atom();
+            let a = res.to_add();
+            for f in fs {
+                a.extend(f.to_expression().as_view());
+            }
+
+            res.as_view().normalize(ws, &mut rn);
+        });
+
+        Ok(PythonExpression { expr: Arc::new(rn) })
+    }
+
+    /// Write the expression over a common denominator.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('v1^2/2+v1^3/v4*v2+v3/(1+v4)')
+    /// >>> print(p.together())
+    pub fn together(&self) -> PyResult<PythonExpression> {
+        let poly = self.expr.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
+        Ok(PythonExpression {
+            expr: Arc::new(poly.to_expression()),
+        })
+    }
+
     /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
     /// All non-polynomial elements will be converted to new independent variables.
     pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {

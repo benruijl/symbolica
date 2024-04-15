@@ -1,6 +1,6 @@
 use symbolica::{
+    atom::{Atom, FunctionBuilder},
     fun,
-    representations::{Atom, FunctionBuilder},
     state::State,
 };
 

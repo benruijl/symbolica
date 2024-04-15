@@ -20,6 +20,7 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    atom::{Atom, AtomView, ListIterator, Symbol},
     domains::{
         finite_field::{ToFiniteField, Zp},
         float::Complex,
@@ -50,7 +51,6 @@ use crate::{
     printer::{
         AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
     },
-    representations::{Atom, AtomView, ListIterator, Symbol},
     state::{FunctionAttribute, RecycledAtom, State, Workspace},
     streaming::TermStreamer,
     tensors::matrix::Matrix,

@@ -1,7 +1,7 @@
 use symbolica::{
+    atom::Atom,
     domains::finite_field::Zp,
     poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
-    representations::Atom,
     state::State,
 };
 

@@ -13,6 +13,7 @@ use rug::{
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
+    atom::{Atom, AtomView},
     domains::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
@@ -23,7 +24,6 @@ use crate::{
         EuclideanDomain, Field, Ring,
     },
     poly::{polynomial::MultivariatePolynomial, Variable, INLINED_EXPONENTS},
-    representations::{Atom, AtomView},
     state::{FiniteFieldIndex, State, Workspace},
 };
 
@@ -892,7 +892,7 @@ impl<'a> AtomView<'a> {
 mod test {
     use std::sync::Arc;
 
-    use crate::{domains::rational::Rational, representations::Atom, state::State};
+    use crate::{atom::Atom, domains::rational::Rational, state::State};
 
     #[test]
     fn coefficient_ring() {

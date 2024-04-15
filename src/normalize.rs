@@ -3,10 +3,10 @@ use std::{cmp::Ordering, ops::DerefMut};
 use smallvec::SmallVec;
 
 use crate::{
+    atom::{Atom, AtomView, Fun, Symbol},
     coefficient::{Coefficient, CoefficientView},
     domains::{integer::Z, rational::Q},
     poly::Variable,
-    representations::{Atom, AtomView, Fun, Symbol},
     state::{RecycledAtom, State, Workspace},
 };
 
@@ -1133,7 +1133,7 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{representations::Atom, state::State};
+    use crate::{atom::Atom, state::State};
 
     #[test]
     fn linear_symmetric() {

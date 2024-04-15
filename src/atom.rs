@@ -1,5 +1,5 @@
 mod coefficient;
-pub mod default;
+pub mod representation;
 
 use crate::{
     coefficient::Coefficient,
@@ -9,11 +9,11 @@ use crate::{
 };
 use std::{cmp::Ordering, hash::Hash, ops::DerefMut};
 
-pub use self::default::{
+pub use self::representation::{
     Add, AddView, Fun, ListIterator, ListSlice, Mul, MulView, Num, NumView, Pow, PowView, Var,
     VarView,
 };
-use self::default::{FunView, RawAtom};
+use self::representation::{FunView, RawAtom};
 
 /// A symbol, for example the name of a variable or the name of a function,
 /// together with its properties.
@@ -564,7 +564,7 @@ impl Atom {
 /// For example:
 /// ```
 /// # use symbolica::{
-/// #     representations::{Atom, AsAtomView, FunctionBuilder},
+/// #     atom::{Atom, AsAtomView, FunctionBuilder},
 /// #     state::{FunctionAttribute, State},
 /// # };
 /// # fn main() {
@@ -1040,8 +1040,8 @@ impl<T: Into<Coefficient>> std::ops::Div<T> for Atom {
 #[cfg(test)]
 mod test {
     use crate::{
+        atom::{Atom, FunctionBuilder},
         fun,
-        representations::{Atom, FunctionBuilder},
         state::State,
     };
 

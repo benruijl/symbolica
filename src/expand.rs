@@ -3,10 +3,10 @@ use std::ops::DerefMut;
 use smallvec::SmallVec;
 
 use crate::{
+    atom::{Atom, AtomView},
     coefficient::CoefficientView,
     combinatorics::CombinationWithReplacementIterator,
     domains::integer::Integer,
-    representations::{Atom, AtomView},
     state::{RecycledAtom, Workspace},
 };
 
@@ -150,7 +150,11 @@ impl<'a> AtomView<'a> {
                     let mul = mul_h.to_mul();
 
                     let mut exp_h = workspace.new_atom();
-                    exp_h.to_num((num as i64).into());
+                    if negative {
+                        exp_h.to_num((-(num as i64)).into());
+                    } else {
+                        exp_h.to_num((num as i64).into());
+                    }
 
                     for arg in m.iter() {
                         let mut pow_h = workspace.new_atom();
@@ -158,16 +162,8 @@ impl<'a> AtomView<'a> {
                         mul.extend(pow_h.as_view());
                     }
 
-                    if negative {
-                        let mut num_h = workspace.new_atom();
-                        num_h.to_num((-1).into());
+                    mul_h.as_view().normalize(workspace, out);
 
-                        let mut pow_h = workspace.new_atom();
-                        pow_h.to_pow(mul_h.as_view(), num_h.as_view());
-                        pow_h.as_view().normalize(workspace, out);
-                    } else {
-                        mul_h.as_view().normalize(workspace, out);
-                    }
                     true
                 } else {
                     let mut pow_h = workspace.new_atom();
@@ -276,7 +272,7 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::representations::Atom;
+    use crate::atom::Atom;
 
     #[test]
     fn exponent() {
@@ -302,7 +298,7 @@ mod test {
     #[test]
     fn mul_pow_neg() {
         let exp = Atom::parse("(v1*v2*2)^-3").unwrap().expand();
-        let res = Atom::parse("(8*v1^3*v2^3)^-1").unwrap();
+        let res = Atom::parse("8^-1*v1^-3*v2^-3").unwrap();
         assert_eq!(exp, res);
     }
 }

@@ -1,6 +1,6 @@
 use symbolica::{
+    atom::{Atom, AtomView},
     id::{Match, Pattern, PatternRestriction},
-    representations::{Atom, AtomView},
     state::{RecycledAtom, State},
 };
 

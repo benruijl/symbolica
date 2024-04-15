@@ -2,7 +2,7 @@ use ahash::HashSet;
 use dyn_clone::DynClone;
 
 use crate::{
-    representations::{default::ListSlice, Atom, AtomView, Num, SliceType, Symbol},
+    atom::{representation::ListSlice, Atom, AtomView, Num, SliceType, Symbol},
     state::{State, Workspace},
     transformer::{Transformer, TransformerError},
 };
@@ -2436,5 +2436,23 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::atom::Atom;
+
+    use super::Pattern;
+
+    #[test]
+    fn overlap() {
+        let a = Atom::parse("(x*(y+y^2+1)+y^2 + y)").unwrap();
+        let p = Pattern::parse("y+y^x_").unwrap();
+        let rhs = Pattern::parse("y*(1+y^(x_-1))").unwrap();
+
+        let r = p.replace_all(a.as_view(), &rhs, None, None);
+        let res = Atom::parse("x*(y+y^2+1)+y*(y+1)").unwrap();
+        assert_eq!(r, res);
     }
 }

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use symbolica::{
+    atom::Atom,
     domains::{finite_field::Zp, integer::Z},
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Variable},
-    representations::Atom,
     state::State,
 };
 

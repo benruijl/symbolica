@@ -7,10 +7,10 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    atom::Atom,
     coefficient::ConvertToRing,
     domains::{integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
-    representations::Atom,
     state::{State, Workspace},
 };
 
@@ -1165,7 +1165,7 @@ impl Token {
 mod test {
     use std::sync::Arc;
 
-    use crate::{domains::integer::Z, parser::Token, representations::Atom, state::State};
+    use crate::{atom::Atom, domains::integer::Z, parser::Token, state::State};
 
     #[test]
     fn pow() {

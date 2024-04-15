@@ -1,8 +1,8 @@
 use symbolica::{
+    atom::{Atom, AtomView},
     coefficient::CoefficientView,
     domains::finite_field,
     id::{Condition, Match, MatchSettings, PatternRestriction},
-    representations::{Atom, AtomView},
     state::State,
 };
 fn main() {

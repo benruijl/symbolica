@@ -1,4 +1,4 @@
-use symbolica::{id::Pattern, representations::Atom, streaming::TermStreamer};
+use symbolica::{atom::Atom, id::Pattern, streaming::TermStreamer};
 
 fn main() {
     let input = Atom::parse("x+ f(x) + 2*f(y) + 7*f(z)").unwrap();

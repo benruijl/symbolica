@@ -3,15 +3,15 @@ use std::fmt::{self, Display, Write};
 use colored::Colorize;
 
 use crate::{
+    atom::{
+        representation::FunView, AddView, AtomView, MulView, NumView, PowView, Symbol, VarView,
+    },
     coefficient::CoefficientView,
     domains::{
         factorized_rational_polynomial::FactorizedRationalPolynomial,
         finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
     },
     poly::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder},
-    representations::{
-        default::FunView, AddView, AtomView, MulView, NumView, PowView, Symbol, VarView,
-    },
     state::State,
     tensors::matrix::Matrix,
 };
@@ -1303,9 +1303,9 @@ mod test {
     use colored::control::ShouldColorize;
 
     use crate::{
+        atom::Atom,
         domains::{finite_field::Zp, integer::Z},
         printer::{AtomPrinter, PolynomialPrinter, PrintOptions},
-        representations::Atom,
     };
 
     #[test]

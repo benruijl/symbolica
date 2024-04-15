@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use symbolica::{
+    atom::{Atom, AtomView},
     domains::{
         integer::Z,
         rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::Variable,
-    representations::{Atom, AtomView},
     state::State,
     tensors::matrix::Matrix,
 };

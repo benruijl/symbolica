@@ -100,10 +100,10 @@ impl<F: Field> UnivariatePolynomial<F> {
 
 #[cfg(test)]
 mod test {
+    use crate::atom::Atom;
     use crate::domains::integer::Z;
     use crate::domains::rational::Q;
     use crate::poly::polynomial::MultivariatePolynomial;
-    use crate::representations::Atom;
 
     #[test]
     fn resultant() {

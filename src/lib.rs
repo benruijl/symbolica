@@ -7,7 +7,7 @@
 //! For example:
 //!
 //! ```
-//! use symbolica::{representations::Atom, state::State};
+//! use symbolica::{atom::Atom, state::State};
 //!
 //! fn main() {
 //!     let input = Atom::parse("x^2*log(2*x + y) + exp(3*x)").unwrap();
@@ -34,6 +34,7 @@ use once_cell::sync::OnceCell;
 use tinyjson::JsonValue;
 
 pub mod api;
+pub mod atom;
 pub mod coefficient;
 pub mod collect;
 pub mod combinatorics;
@@ -47,7 +48,6 @@ pub mod numerical_integration;
 pub mod parser;
 pub mod poly;
 pub mod printer;
-pub mod representations;
 pub mod solve;
 pub mod state;
 pub mod streaming;

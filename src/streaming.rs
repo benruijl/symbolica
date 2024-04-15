@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use rayon::prelude::*;
 
 use crate::{
-    representations::{Atom, AtomView},
+    atom::{Atom, AtomView},
     state::{RecycledAtom, Workspace},
 };
 
@@ -181,7 +181,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{id::Pattern, representations::Atom, streaming::TermStreamer};
+    use crate::{atom::Atom, id::Pattern, streaming::TermStreamer};
 
     #[test]
     fn main() {

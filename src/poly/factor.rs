@@ -3098,9 +3098,9 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<Integer>, E, LexOrder> {
 #[cfg(test)]
 mod test {
     use crate::{
+        atom::Atom,
         domains::{finite_field::Zp, integer::Z},
         poly::factor::Factorize,
-        representations::Atom,
     };
 
     #[test]

@@ -929,9 +929,9 @@ echelonize_impl!(RationalField);
 #[cfg(test)]
 mod test {
     use crate::{
+        atom::Atom,
         domains::finite_field::Zp,
         poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
-        representations::Atom,
     };
 
     #[test]

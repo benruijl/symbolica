@@ -1,9 +1,9 @@
 use std::ops::DerefMut;
 
 use crate::{
+    atom::{Atom, AtomView, Symbol},
     coefficient::Coefficient,
     domains::integer::Integer,
-    representations::{Atom, AtomView, Symbol},
     state::{State, Workspace},
 };
 
@@ -453,7 +453,7 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{representations::Atom, state::State};
+    use crate::{atom::Atom, state::State};
 
     #[test]
     fn derivative() {

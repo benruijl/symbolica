@@ -1,6 +1,6 @@
 use symbolica::{
+    atom::Atom,
     domains::{integer::Z, rational_polynomial::RationalPolynomial},
-    representations::Atom,
 };
 
 fn main() {

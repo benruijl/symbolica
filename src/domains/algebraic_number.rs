@@ -278,9 +278,9 @@ impl<R: Field + PolynomialGCD<u8>> Field for AlgebraicNumberRing<R> {
 
 #[cfg(test)]
 mod tests {
+    use crate::atom::Atom;
     use crate::domains::algebraic_number::AlgebraicNumberRing;
     use crate::domains::rational::Q;
-    use crate::representations::Atom;
 
     #[test]
     fn gcd_number_field() -> Result<(), String> {

@@ -1,9 +1,9 @@
 use ahash::HashMap;
 
 use crate::{
+    atom::{Atom, AtomView, Symbol},
     coefficient::CoefficientView,
     domains::{float::Real, rational::Rational},
-    representations::{Atom, AtomView, Symbol},
     state::State,
 };
 
@@ -151,7 +151,7 @@ impl<'a> AtomView<'a> {
 mod test {
     use ahash::HashMap;
 
-    use crate::{evaluate::EvaluationFn, representations::Atom, state::State};
+    use crate::{atom::Atom, evaluate::EvaluationFn, state::State};
 
     #[test]
     fn evaluate() {

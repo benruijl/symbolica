@@ -1,6 +1,6 @@
 use symbolica::{
+    atom::Atom,
     domains::{integer::Z, rational::Q},
-    representations::Atom,
 };
 use tracing_subscriber::{fmt, prelude::*, util::SubscriberInitExt, EnvFilter};
 

@@ -18,6 +18,7 @@ use ahash::HashMap;
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
+use crate::atom::{Atom, AtomView, Symbol};
 use crate::coefficient::{Coefficient, CoefficientView, ConvertToRing};
 use crate::domains::factorized_rational_polynomial::{
     FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
@@ -26,7 +27,6 @@ use crate::domains::integer::Integer;
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::domains::{EuclideanDomain, Ring};
 use crate::parser::{Operator, Token};
-use crate::representations::{Atom, AtomView, Symbol};
 use crate::state::{State, Workspace};
 use crate::utils;
 

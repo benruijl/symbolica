@@ -1,11 +1,11 @@
 use std::time::Instant;
 
 use crate::{
+    atom::{Atom, AtomView, Symbol},
     coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
     id::{Condition, MatchSettings, Pattern, WildcardAndRestriction},
     printer::{AtomPrinter, PrintOptions},
-    representations::{Atom, AtomView, Symbol},
     state::{State, Workspace},
 };
 use ahash::HashMap;

@@ -1,8 +1,8 @@
 use ahash::HashMap;
 
 use crate::{
+    atom::{Add, AsAtomView, Atom, AtomView, Symbol},
     domains::{integer::Z, rational::Q},
-    representations::{Add, AsAtomView, Atom, AtomView, Symbol},
     state::Workspace,
 };
 
@@ -400,8 +400,8 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
+        atom::{Atom, FunctionBuilder},
         fun,
-        representations::{Atom, FunctionBuilder},
         state::State,
     };
 

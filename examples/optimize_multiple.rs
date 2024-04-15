@@ -1,7 +1,7 @@
 use symbolica::{
+    atom::Atom,
     domains::rational::{Rational, Q},
     poly::evaluate::{HornerScheme, InstructionSetPrinter},
-    representations::Atom,
 };
 
 use symbolica::poly::polynomial::MultivariatePolynomial;

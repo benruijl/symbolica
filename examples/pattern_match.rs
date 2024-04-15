@@ -1,6 +1,6 @@
 use symbolica::{
+    atom::Atom,
     id::{Condition, Match, MatchSettings},
-    representations::Atom,
     state::State,
 };
 

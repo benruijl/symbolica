@@ -1,13 +1,13 @@
 use std::{ops::Neg, sync::Arc};
 
 use crate::{
+    atom::{Atom, AtomView, Symbol},
     domains::{
         integer::{IntegerRing, Z},
         rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::{Exponent, Variable},
-    representations::{Atom, AtomView, Symbol},
     tensors::matrix::Matrix,
 };
 
@@ -93,13 +93,13 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
+        atom::{Atom, AtomView},
         domains::{
             integer::Z,
             rational::Q,
             rational_polynomial::{RationalPolynomial, RationalPolynomialField},
         },
         poly::Variable,
-        representations::{Atom, AtomView},
         state::State,
         tensors::matrix::Matrix,
     };

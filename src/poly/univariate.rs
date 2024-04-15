@@ -1046,8 +1046,8 @@ impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
 
 #[test]
 fn derivative_integrate() {
+    use crate::atom::Atom;
     use crate::domains::rational::Q;
-    use crate::representations::Atom;
     let a = Atom::parse("x^2+5x+x^7+3")
         .unwrap()
         .to_polynomial::<_, u8>(&Q, None)
@@ -1060,8 +1060,8 @@ fn derivative_integrate() {
 
 #[test]
 fn test_uni() {
+    use crate::atom::Atom;
     use crate::domains::integer::Z;
-    use crate::representations::Atom;
     let a = Atom::parse("x^2+5x+x^7+3")
         .unwrap()
         .to_polynomial::<_, u8>(&Z, None)

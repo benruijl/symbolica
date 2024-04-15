@@ -1112,7 +1112,7 @@ mod test {
 
     #[test]
     fn hermite_reduction() {
-        use crate::representations::Atom;
+        use crate::atom::Atom;
         let p: RationalPolynomial<_, _> = Atom::parse("1/(v1 + 1)^5")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
@@ -1130,7 +1130,7 @@ mod test {
 
     #[test]
     fn constant() {
-        use crate::representations::Atom;
+        use crate::atom::Atom;
         let p: RationalPolynomial<_, _> = Atom::parse("(v1^4+v2+v1*v2+2*v1)/(v2 + 1)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(
@@ -1160,7 +1160,7 @@ mod test {
 
     #[test]
     fn mixed_denominator() {
-        use crate::representations::Atom;
+        use crate::atom::Atom;
         let p: RationalPolynomial<_, _> = Atom::parse("(v1^4+v2+v1*v2+2*v1)/(v1)/(v2 + 1)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(
@@ -1197,7 +1197,7 @@ mod test {
 
     #[test]
     fn three_factors() {
-        use crate::representations::Atom;
+        use crate::atom::Atom;
         let p: RationalPolynomial<_, _> =
             Atom::parse("(36v1^2+1167v1+3549/2)/(v1^3+23/30v1^2-2/15v1-2/15)")
                 .unwrap()
@@ -1241,7 +1241,7 @@ mod test {
 
     #[test]
     fn multiple_residues() {
-        use crate::representations::Atom;
+        use crate::atom::Atom;
         let p: RationalPolynomial<_, _> = Atom::parse(
             "(7v1^13+10v1^8+4v1^7-7v1^6-4v1^3-4v1^2+3v1+3)/(v1^14-2v1^8-2v1^7-2v1^4-4v1^3-v1^2+2v1+1)",
         )
@@ -1278,7 +1278,7 @@ mod test {
 
     #[test]
     fn multi_factor() {
-        use crate::representations::Atom;
+        use crate::atom::Atom;
         let p: RationalPolynomial<_, _> = Atom::parse("1/(v1^3+v1)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
@@ -1313,7 +1313,7 @@ mod test {
 
     #[test]
     fn multiple_variables() {
-        use crate::representations::Atom;
+        use crate::atom::Atom;
         let p: RationalPolynomial<_, _> = Atom::parse("(v1^4+v2+v1*v2+2*v1)/((v1-v2)(v1-2)(v1-4))")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);

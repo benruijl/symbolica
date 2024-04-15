@@ -16,9 +16,9 @@ use smartstring::alias::String;
 
 use crate::domains::finite_field::Zp64;
 use crate::{
+    atom::{Atom, Symbol},
     coefficient::Coefficient,
     domains::finite_field::FiniteFieldCore,
-    representations::{Atom, Symbol},
     LicenseManager, LICENSE_MANAGER,
 };
 

@@ -90,6 +90,16 @@ impl std::fmt::Debug for Symbol {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtomType {
+    Num,
+    Var,
+    Add,
+    Mul,
+    Pow,
+    Fun,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SliceType {
     Add,
     Mul,
@@ -356,6 +366,7 @@ pub enum Atom {
     Pow(Pow),
     Mul(Mul),
     Add(Add),
+    #[doc(hidden)]
     Empty, // for internal use
 }
 

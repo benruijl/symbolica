@@ -44,7 +44,7 @@ impl Atom {
 
     /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
     /// Return the list of key-coefficient pairs and the remainder that matched no key.
-    pub fn coefficient_list(&self, x: Symbol) -> (Vec<(AtomView<'_>, Atom)>, Atom) {
+    pub fn coefficient_list(&self, x: Symbol) -> (Vec<(Atom, Atom)>, Atom) {
         Workspace::get_local().with(|ws| self.as_view().coefficient_list_with_ws(x, ws))
     }
 
@@ -156,7 +156,7 @@ impl<'a> AtomView<'a> {
         }
 
         for (key, coeff) in h {
-            map_key_coeff(key, coeff, workspace, &key_map, &coeff_map, add);
+            map_key_coeff(key.as_view(), coeff, workspace, &key_map, &coeff_map, add);
         }
 
         if key_map.is_some() {
@@ -175,7 +175,7 @@ impl<'a> AtomView<'a> {
 
     /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
     /// Return the list of key-coefficient pairs and the remainder that matched no key.
-    pub fn coefficient_list(&self, x: Symbol) -> (Vec<(AtomView<'a>, Atom)>, Atom) {
+    pub fn coefficient_list(&self, x: Symbol) -> (Vec<(Atom, Atom)>, Atom) {
         Workspace::get_local().with(|ws| self.coefficient_list_with_ws(x, ws))
     }
 
@@ -185,18 +185,23 @@ impl<'a> AtomView<'a> {
         &self,
         x: Symbol,
         workspace: &Workspace,
-    ) -> (Vec<(AtomView<'a>, Atom)>, Atom) {
+    ) -> (Vec<(Atom, Atom)>, Atom) {
         let mut h = HashMap::default();
         let mut rest = workspace.new_atom();
         let mut rest_add = rest.to_add();
 
-        match self {
+        let mut expanded = workspace.new_atom();
+        self.expand_with_ws_into(workspace, Some(x), &mut expanded);
+
+        match expanded.as_view() {
             AtomView::Add(a) => {
                 for arg in a.iter() {
                     arg.collect_factor_list(x, workspace, &mut h, &mut rest_add)
                 }
             }
-            _ => self.collect_factor_list(x, workspace, &mut h, &mut rest_add),
+            _ => expanded
+                .as_view()
+                .collect_factor_list(x, workspace, &mut h, &mut rest_add),
         }
 
         let mut rest_norm = Atom::new();
@@ -205,14 +210,21 @@ impl<'a> AtomView<'a> {
         let mut r: Vec<_> = h
             .into_iter()
             .map(|(k, v)| {
-                (k, {
-                    let mut a = Atom::new();
-                    v.as_view().normalize(workspace, &mut a);
-                    a
-                })
+                (
+                    {
+                        let mut a = Atom::new();
+                        a.set_from_view(&k);
+                        a
+                    },
+                    {
+                        let mut a = Atom::new();
+                        v.as_view().normalize(workspace, &mut a);
+                        a
+                    },
+                )
             })
             .collect();
-        r.sort_unstable_by_key(|(a, _)| *a);
+        r.sort_unstable_by(|(a, _), (b, _)| a.as_view().cmp(&b.as_view()));
 
         (r, rest_norm)
     }
@@ -424,7 +436,7 @@ mod test {
 
         let res_ref = res
             .iter()
-            .map(|(a, b)| (a.as_view(), b.clone()))
+            .map(|(a, b)| (a.clone(), b.clone()))
             .collect::<Vec<_>>();
 
         assert_eq!(r, res_ref);
@@ -439,6 +451,17 @@ mod test {
         let out = input.collect(x, None, None);
 
         let ref_out = Atom::parse("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2").unwrap();
+        assert_eq!(out, ref_out)
+    }
+
+    #[test]
+    fn collect_nested() {
+        let input = Atom::parse("(1+v1)^2*v1+(1+v2)^100").unwrap();
+        let x = State::get_symbol("v1");
+
+        let out = input.collect(x, None, None);
+
+        let ref_out = Atom::parse("v1+2*v1^2+v1^3+(v2+1)^100").unwrap();
         assert_eq!(out, ref_out)
     }
 

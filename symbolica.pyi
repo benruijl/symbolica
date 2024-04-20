@@ -601,9 +601,9 @@ class Expression:
                 A list of variables
         """
 
-    def expand(self) -> Expression:
+    def expand(self, var: Optional[Expression] = None) -> Expression:
         """
-        Expand the expression.
+        Expand the expression. Optionally, expand in `var` only.
         """
 
     def collect(
@@ -976,7 +976,7 @@ class Transformer:
     def __new__(_cls) -> Transformer:
         """Create a new transformer for a term provided by `Expression.map`."""
 
-    def expand(self) -> Transformer:
+    def expand(self, var: Optional[Expression] = None) -> Transformer:
         """Create a transformer that expands products and powers.
 
         Examples
@@ -1219,7 +1219,7 @@ class Transformer:
     ) -> Expression:
         """Create a transformer that Taylor expands in `x` around `expansion_point` to depth `depth`.
 
-        Example
+        Examples
         -------
         >>> from symbolica import Expression
         >>> x, y = Expression.vars('x', 'y')

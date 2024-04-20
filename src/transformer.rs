@@ -61,7 +61,7 @@ pub enum TransformerError {
 #[derive(Clone)]
 pub enum Transformer {
     /// Expand the rhs.
-    Expand,
+    Expand(Option<Symbol>),
     /// Derive the rhs w.r.t a variable.
     Derivative(Symbol),
     /// Derive the rhs w.r.t a variable.
@@ -102,7 +102,7 @@ pub enum Transformer {
 impl std::fmt::Debug for Transformer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Transformer::Expand => f.debug_tuple("Expand").finish(),
+            Transformer::Expand(s) => f.debug_tuple("Expand").field(s).finish(),
             Transformer::Derivative(x) => f.debug_tuple("Derivative").field(x).finish(),
             Transformer::ReplaceAll(pat, rhs, ..) => {
                 f.debug_tuple("ReplaceAll").field(pat).field(rhs).finish()
@@ -193,8 +193,8 @@ impl Transformer {
 
                     Self::execute(input, t, workspace, out)?;
                 }
-                Transformer::Expand => {
-                    input.expand_with_ws_into(workspace, out);
+                Transformer::Expand(s) => {
+                    input.expand_with_ws_into(workspace, *s, out);
                 }
                 Transformer::Derivative(x) => {
                     input.derivative_with_ws_into(*x, workspace, out);
@@ -520,7 +520,7 @@ mod test {
             Transformer::execute(
                 p.as_view(),
                 &[
-                    Transformer::Expand,
+                    Transformer::Expand(Some(State::get_symbol("v1"))),
                     Transformer::Derivative(State::get_symbol("v1")),
                 ],
                 ws,

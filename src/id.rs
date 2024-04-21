@@ -2,7 +2,7 @@ use ahash::HashSet;
 use dyn_clone::DynClone;
 
 use crate::{
-    atom::{representation::ListSlice, Atom, AtomView, Num, SliceType, Symbol},
+    atom::{representation::ListSlice, Atom, AtomType, AtomView, Num, SliceType, Symbol},
     state::{State, Workspace},
     transformer::{Transformer, TransformerError},
 };
@@ -940,16 +940,6 @@ impl<T: Clone + Send + Sync + for<'a, 'b> Fn(&'a Match<'b>) -> bool> FilterFn fo
 pub trait CmpFn: for<'a, 'b> Fn(&Match<'_>, &Match<'_>) -> bool + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(CmpFn);
 impl<T: Clone + Send + Sync + for<'a, 'b> Fn(&Match<'_>, &Match<'_>) -> bool> CmpFn for T {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AtomType {
-    Num,
-    Var,
-    Add,
-    Mul,
-    Pow,
-    Fun,
-}
 
 /// Restrictions for a wildcard. Note that a length restriction
 /// applies at any level and therefore

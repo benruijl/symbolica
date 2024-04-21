@@ -1379,6 +1379,36 @@ class Transformer:
         """
 
 
+class TermStreamer:
+    def __new__(_cls, path: Optional[str] = None,
+                max_mem_bytes: Optional[int] = None,
+                n_cores: Optional[int] = None) -> TermStreamer:
+        """Create a new term streamer with a given path for its files,
+           the maximum size of the memory buffer and the number of cores.
+        """
+
+    def __add__(self, other: TermStreamer) -> TermStreamer:
+        """Add two term streamers together, returning the result."""
+
+    def __iadd__(self, other: TermStreamer):
+        """Add another term streamer to this one."""
+
+    def get_byte_size(self) -> int:
+        """Get the byte size of the term streamer."""
+
+    def push(self, expr: Expression):
+        """Push an expresssion to the term streamer."""
+
+    def normalize(self):
+        """Sort and fuse all terms in the streamer."""
+
+    def to_expression(self) -> Expression:
+        """Convert the term stream into an expression. This may exceed the available memory."""
+
+    def map(self, f: Transformer) -> TermStreamer:
+        """Apply a transformer to all terms in the streamer."""
+
+
 class MatchIterator:
     """An iterator over matches."""
 

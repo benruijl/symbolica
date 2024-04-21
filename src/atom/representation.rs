@@ -1,12 +1,15 @@
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    io::{Read, Write},
+};
 
 use crate::coefficient::{Coefficient, CoefficientView};
 
 use super::{
     coefficient::{PackedRationalNumberReader, PackedRationalNumberWriter},
-    AtomView, SliceType, Symbol,
+    Atom, AtomView, SliceType, Symbol,
 };
 
 const NUM_ID: u8 = 1;
@@ -27,6 +30,39 @@ const FUN_ANTISYMMETRIC_FLAG: u64 = 1 << 32; // stored in the function id
 const MUL_HAS_COEFF_FLAG: u8 = 0b01000000;
 
 pub type RawAtom = Vec<u8>;
+
+impl Atom {
+    /// Read from a binary stream. The format is the byte-length first
+    /// followed by the data.
+    pub unsafe fn read<R: Read>(&mut self, mut source: R) -> Result<(), std::io::Error> {
+        let mut dest = std::mem::replace(self, Atom::Empty).into_raw();
+
+        // should also set whether rat poly coefficient needs to be converted
+        let mut flags_buf = [0; 1];
+        let mut size_buf = [0; 8];
+
+        source.read_exact(&mut flags_buf)?;
+        source.read_exact(&mut size_buf)?;
+
+        let n_size = u64::from_le_bytes(size_buf);
+
+        dest.extend(size_buf);
+        dest.resize(n_size as usize, 0);
+        source.read_exact(&mut dest)?;
+
+        match dest[0] & TYPE_MASK {
+            NUM_ID => *self = Atom::Num(Num::from_raw(dest)),
+            VAR_ID => *self = Atom::Var(Var::from_raw(dest)),
+            FUN_ID => *self = Atom::Fun(Fun::from_raw(dest)),
+            MUL_ID => *self = Atom::Mul(Mul::from_raw(dest)),
+            ADD_ID => *self = Atom::Add(Add::from_raw(dest)),
+            POW_ID => *self = Atom::Pow(Pow::from_raw(dest)),
+            _ => unreachable!("Unknown type {}", dest[0]),
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Num {
@@ -113,6 +149,11 @@ impl Num {
     pub fn into_raw(self) -> RawAtom {
         self.data
     }
+
+    #[inline(always)]
+    pub(crate) unsafe fn from_raw(raw: RawAtom) -> Num {
+        Num { data: raw }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -196,6 +237,11 @@ impl Var {
     #[inline(always)]
     pub fn into_raw(self) -> RawAtom {
         self.data
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn from_raw(raw: RawAtom) -> Var {
+        Var { data: raw }
     }
 }
 
@@ -342,6 +388,11 @@ impl Fun {
     pub fn into_raw(self) -> RawAtom {
         self.data
     }
+
+    #[inline(always)]
+    pub(crate) unsafe fn from_raw(raw: RawAtom) -> Fun {
+        Fun { data: raw }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -400,6 +451,11 @@ impl Pow {
     #[inline(always)]
     pub fn into_raw(self) -> RawAtom {
         self.data
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn from_raw(raw: RawAtom) -> Pow {
+        Pow { data: raw }
     }
 }
 
@@ -577,6 +633,11 @@ impl Mul {
     pub fn into_raw(self) -> RawAtom {
         self.data
     }
+
+    #[inline(always)]
+    pub(crate) unsafe fn from_raw(raw: RawAtom) -> Mul {
+        Mul { data: raw }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -702,6 +763,11 @@ impl Add {
     #[inline(always)]
     pub fn into_raw(self) -> RawAtom {
         self.data
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn from_raw(raw: RawAtom) -> Add {
+        Add { data: raw }
     }
 }
 
@@ -1195,6 +1261,16 @@ impl<'a> AtomView<'a> {
             AtomView::Mul(t) => t.data,
             AtomView::Add(e) => e.data,
         }
+    }
+
+    /// Write the expression to a binary stream. The format is the byte-length first
+    /// followed by the data.
+    #[inline(always)]
+    pub fn write<W: Write>(&self, mut dest: W) -> Result<(), std::io::Error> {
+        let d = self.get_data();
+        dest.write_u8(0)?;
+        dest.write_u64::<LittleEndian>(d.len() as u64)?;
+        dest.write_all(d)
     }
 }
 

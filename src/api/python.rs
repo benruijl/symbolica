@@ -1,11 +1,14 @@
 use std::{
     borrow::Borrow,
+    fs::File,
     hash::{Hash, Hasher},
+    io::BufWriter,
     ops::Neg,
     sync::Arc,
 };
 
 use ahash::HashMap;
+use brotli::CompressorWriter;
 use pyo3::{
     exceptions::{self, PyIndexError},
     pyclass,
@@ -20,7 +23,7 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    atom::{Atom, AtomView, ListIterator, Symbol},
+    atom::{Atom, AtomType, AtomView, ListIterator, Symbol},
     domains::{
         finite_field::{ToFiniteField, Zp},
         float::Complex,
@@ -33,7 +36,7 @@ use crate::{
     },
     evaluate::EvaluationFn,
     id::{
-        AtomType, Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
+        Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
         PatternRestriction, ReplaceIterator, WildcardAndRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
@@ -52,7 +55,7 @@ use crate::{
         AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
     },
     state::{FunctionAttribute, RecycledAtom, State, Workspace},
-    streaming::TermStreamer,
+    streaming::{TermStreamer, TermStreamerConfig},
     tensors::matrix::Matrix,
     transformer::{StatsOptions, Transformer, TransformerError},
     LicenseManager,
@@ -77,6 +80,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonInstructionEvaluator>()?;
     m.add_class::<PythonRandomNumberGenerator>()?;
     m.add_class::<PythonPatternRestriction>()?;
+    m.add_class::<PythonTermStreamer>()?;
 
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_function(wrap_pyfunction!(is_licensed, m)?)?;
@@ -2205,17 +2209,18 @@ impl PythonExpression {
     /// Map the transformations to every term in the expression.
     /// The execution happen in parallel.
     ///
-    /// No new functions or variables can be defined and no new
-    /// expressions can be parsed inside the map. Doing so will
-    /// result in a deadlock.
-    ///
     /// Examples
     /// --------
     /// >>> x, x_ = Expression.vars('x', 'x_')
     /// >>> e = (1+x)**2
     /// >>> r = e.map(Transformer().expand().replace_all(x, 6))
     /// >>> print(r)
-    pub fn map(&self, op: PythonPattern, py: Python) -> PyResult<PythonExpression> {
+    pub fn map(
+        &self,
+        op: PythonPattern,
+        py: Python,
+        n_cores: Option<usize>,
+    ) -> PyResult<PythonExpression> {
         let t = match op.expr.as_ref() {
             Pattern::Transformer(t) => {
                 if t.0.is_some() {
@@ -2237,12 +2242,19 @@ impl PythonExpression {
         // within the term mapper
         let mut stream = py.allow_threads(move || {
             // map every term in the expression
-            let stream = TermStreamer::new_from((*self.expr).clone());
-            let m = stream.map(|workspace, x| {
+            let mut stream = TermStreamer::<CompressorWriter<_>>::new(TermStreamerConfig {
+                n_cores: n_cores.unwrap_or(1),
+                ..Default::default()
+            });
+            stream.push((*self.expr).clone());
+
+            let m = stream.map(|x| {
                 let mut out = Atom::default();
-                // TODO: capture and abort the parallel run
-                Transformer::execute(x.as_view(), &t, workspace, &mut out).unwrap_or_else(|e| {
-                    panic!("Transformer failed during parallel execution: {:?}", e)
+                Workspace::get_local().with(|ws| {
+                    Transformer::execute(x.as_view(), &t, ws, &mut out).unwrap_or_else(|e| {
+                        // TODO: capture and abort the parallel run
+                        panic!("Transformer failed during parallel execution: {:?}", e)
+                    });
                 });
                 out
             });
@@ -2293,8 +2305,8 @@ impl PythonExpression {
             let b = self.expr.as_view().expand_in(id);
             Ok(PythonExpression { expr: Arc::new(b) })
         } else {
-        let b = self.expr.as_view().expand();
-        Ok(PythonExpression { expr: Arc::new(b) })
+            let b = self.expr.as_view().expand();
+            Ok(PythonExpression { expr: Arc::new(b) })
         }
     }
 
@@ -3210,6 +3222,104 @@ impl PythonFunction {
             let p = Pattern::Fn(self.id, transformer_args);
             Ok(PythonPattern { expr: Arc::new(p) }.into_py(py))
         }
+    }
+}
+
+/// A Symbolica term streamer.
+#[pyclass(name = "TermStreamer", module = "symbolica")]
+pub struct PythonTermStreamer {
+    pub stream: TermStreamer<CompressorWriter<BufWriter<File>>>,
+}
+
+#[pymethods]
+impl PythonTermStreamer {
+    /// Create a new term streamer with a given path for its files,
+    /// the maximum size of the memory buffer and the number of cores.
+    #[new]
+    pub fn __new__(
+        path: Option<&str>,
+        max_mem_bytes: Option<usize>,
+        n_cores: Option<usize>,
+    ) -> PyResult<Self> {
+        let d = TermStreamerConfig::default();
+
+        Ok(PythonTermStreamer {
+            stream: TermStreamer::new(TermStreamerConfig {
+                n_cores: n_cores.unwrap_or(d.n_cores),
+                max_mem_bytes: max_mem_bytes.unwrap_or(d.max_mem_bytes),
+                path: path.map(|x| x.into()).unwrap_or(d.path),
+            }),
+        })
+    }
+
+    /// Add this expression to `other`, returning the result.
+    pub fn __add__(&mut self, rhs: &mut Self) -> PyResult<Self> {
+        Ok(Self {
+            stream: &mut self.stream + &mut rhs.stream,
+        })
+    }
+
+    pub fn __iadd__(&mut self, rhs: &mut Self) {
+        self.stream += &mut rhs.stream;
+    }
+
+    pub fn get_byte_size(&self) -> usize {
+        self.stream.get_byte_size()
+    }
+
+    /// Add an expression to the term streamer.
+    pub fn push(&mut self, expr: PythonExpression) {
+        self.stream.push((*expr.expr).clone());
+    }
+
+    /// Sort and fuse all terms in the streamer.
+    pub fn normalize(&mut self) {
+        self.stream.normalize();
+    }
+
+    /// Convert the term stream into an expression. This may exceed the available memory.
+    pub fn to_expression(&mut self) -> PythonExpression {
+        PythonExpression {
+            expr: Arc::new(self.stream.to_expression()),
+        }
+    }
+
+    /// Map the transformations to every term in the streamer.
+    pub fn map(&mut self, op: PythonPattern, py: Python) -> PyResult<Self> {
+        let t = match op.expr.as_ref() {
+            Pattern::Transformer(t) => {
+                if t.0.is_some() {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Transformer is bound to expression. Use Transformer() instead."
+                            .to_string(),
+                    ));
+                }
+                &t.1
+            }
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Operation must of a transformer".to_string(),
+                ));
+            }
+        };
+
+        // release the GIL as Python functions may be called from
+        // within the term mapper
+        py.allow_threads(move || {
+            // map every term in the expression
+            let m = self.stream.map(|x| {
+                let mut out = Atom::default();
+                Workspace::get_local().with(|ws| {
+                    Transformer::execute(x.as_view(), &t, ws, &mut out).unwrap_or_else(|e| {
+                        // TODO: capture and abort the parallel run
+                        panic!("Transformer failed during parallel execution: {:?}", e)
+                    });
+                });
+                out
+            });
+            Ok::<_, PyErr>(m)
+        })
+        .map(|x| PythonTermStreamer { stream: x })
     }
 }
 

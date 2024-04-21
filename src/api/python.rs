@@ -3,7 +3,7 @@ use std::{
     fs::File,
     hash::{Hash, Hasher},
     io::BufWriter,
-    ops::Neg,
+    ops::{Deref, Neg},
     sync::Arc,
 };
 
@@ -245,9 +245,7 @@ pub enum ConvertibleToPattern {
 impl ConvertibleToPattern {
     pub fn to_pattern(self) -> PyResult<PythonPattern> {
         match self {
-            Self::Literal(l) => Ok(PythonPattern {
-                expr: Arc::new(l.to_expression().expr.as_view().into_pattern()),
-            }),
+            Self::Literal(l) => Ok(l.to_expression().expr.as_view().into_pattern().into()),
             Self::Pattern(e) => Ok(e),
         }
     }
@@ -257,7 +255,13 @@ impl ConvertibleToPattern {
 #[pyclass(name = "Transformer", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonPattern {
-    pub expr: Arc<Pattern>,
+    pub expr: Pattern,
+}
+
+impl From<Pattern> for PythonPattern {
+    fn from(expr: Pattern) -> Self {
+        PythonPattern { expr }
+    }
 }
 
 macro_rules! append_transformer {
@@ -265,17 +269,10 @@ macro_rules! append_transformer {
         if let Pattern::Transformer(b) = $self.expr.borrow() {
             let mut t = b.clone();
             t.1.push($t);
-            Ok(PythonPattern {
-                expr: Arc::new(Pattern::Transformer(t)),
-            })
+            Ok(Pattern::Transformer(t).into())
         } else {
             // pattern is not a transformer yet (but may have subtransformers)
-            Ok(PythonPattern {
-                expr: Arc::new(Pattern::Transformer(Box::new((
-                    Some($self.expr.as_ref().clone()),
-                    vec![$t],
-                )))),
-            })
+            Ok(Pattern::Transformer(Box::new((Some($self.expr.clone()), vec![$t]))).into())
         }
     };
 }
@@ -285,9 +282,7 @@ impl PythonPattern {
     /// Create a new transformer for a term provided by `Expression.map`.
     #[new]
     pub fn new() -> PythonPattern {
-        PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new((None, vec![])))),
-        }
+        Pattern::Transformer(Box::new((None, vec![]))).into()
     }
 
     /// Create a transformer that expands products and powers.
@@ -446,7 +441,7 @@ impl PythonPattern {
         let mut conv_bins = vec![];
 
         for (x, len) in bins {
-            let id = match &*x.to_pattern()?.expr {
+            let id = match &x.to_pattern()?.expr {
                 Pattern::Literal(x) => {
                     if let AtomView::Var(x) = x.as_view() {
                         x.get_symbol()
@@ -485,7 +480,7 @@ impl PythonPattern {
     /// 4*f(1,1,2,2)+4*f(1,2,1,2)+4*f(1,2,2,1)+4*f(2,1,1,2)+4*f(2,1,2,1)+4*f(2,2,1,1)
     /// ```
     pub fn permutations(&self, function_name: ConvertibleToPattern) -> PyResult<PythonPattern> {
-        let id = match &*function_name.to_pattern()?.expr {
+        let id = match &function_name.to_pattern()?.expr {
             Pattern::Literal(x) => {
                 if let AtomView::Var(x) = x.as_view() {
                     x.get_symbol()
@@ -518,7 +513,7 @@ impl PythonPattern {
     pub fn map(&self, f: PyObject) -> PyResult<PythonPattern> {
         let transformer = Transformer::Map(Box::new(move |expr, out| {
             let expr = PythonExpression {
-                expr: Arc::new(expr.to_owned()),
+                expr: expr.to_owned(),
             };
 
             let res = Python::with_gil(|py| {
@@ -673,9 +668,7 @@ impl PythonPattern {
                 ts.1.extend_from_slice(&t.1);
             }
 
-            Ok(PythonPattern {
-                expr: Arc::new(Pattern::Transformer(ts)),
-            })
+            Ok(Pattern::Transformer(ts).into())
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Pattern must be a transformer",
@@ -709,14 +702,12 @@ impl PythonPattern {
                 TransformerError::ValueError(v) => exceptions::PyValueError::new_err(v),
             })?;
 
-        Ok(PythonExpression {
-            expr: Arc::new(out),
-        })
+        Ok(out.into())
     }
 
     /// Create a transformer that derives `self` w.r.t the variable `x`.
     pub fn derivative(&self, x: ConvertibleToPattern) -> PyResult<PythonPattern> {
-        let id = match &*x.to_pattern()?.expr {
+        let id = match &x.to_pattern()?.expr {
             Pattern::Literal(x) => {
                 if let AtomView::Var(x) = x.as_view() {
                     x.get_symbol()
@@ -754,7 +745,7 @@ impl PythonPattern {
 
         return append_transformer!(
             self,
-            Transformer::TaylorSeries(id, (*expansion_point.to_expression().expr).clone(), depth,)
+            Transformer::TaylorSeries(id, expansion_point.to_expression().expr.clone(), depth,)
         );
     }
 
@@ -814,10 +805,9 @@ impl PythonPattern {
         return append_transformer!(
             self,
             Transformer::ReplaceAll(
-                (*lhs.to_pattern()?.expr).clone(),
-                (*rhs.to_pattern()?.expr).clone(),
-                cond.map(|r| r.condition.as_ref().clone())
-                    .unwrap_or_default(),
+                lhs.to_pattern()?.expr.clone(),
+                rhs.to_pattern()?.expr.clone(),
+                cond.map(|r| r.condition.clone()).unwrap_or_default(),
                 settings,
             )
         );
@@ -927,9 +917,7 @@ impl PythonPattern {
             Ok::<Pattern, PyErr>(self.expr.add(&rhs.to_pattern()?.expr, workspace))
         })?;
 
-        Ok(PythonPattern {
-            expr: Arc::new(res),
-        })
+        Ok(res.into())
     }
 
     /// Add this transformer to `other`, returning the result.
@@ -954,9 +942,7 @@ impl PythonPattern {
             Ok::<Pattern, PyErr>(self.expr.mul(&rhs.to_pattern()?.expr, workspace))
         });
 
-        Ok(PythonPattern {
-            expr: Arc::new(res?),
-        })
+        Ok(res?.into())
     }
 
     /// Add this transformer to `other`, returning the result.
@@ -970,9 +956,7 @@ impl PythonPattern {
             Ok::<Pattern, PyErr>(self.expr.div(&rhs.to_pattern()?.expr, workspace))
         });
 
-        Ok(PythonPattern {
-            expr: Arc::new(res?),
-        })
+        Ok(res?.into())
     }
 
     /// Divide `other` by this transformer, returning the result.
@@ -996,9 +980,7 @@ impl PythonPattern {
         let res = Workspace::get_local()
             .with(|workspace| Ok::<_, PyErr>(self.expr.pow(&rhs.to_pattern()?.expr, workspace)));
 
-        Ok(PythonPattern {
-            expr: Arc::new(res?),
-        })
+        Ok(res?.into())
     }
 
     /// Take `base` to power `self`, returning the result.
@@ -1030,9 +1012,7 @@ impl PythonPattern {
         let res =
             Workspace::get_local().with(|workspace| Ok::<Pattern, PyErr>(self.expr.neg(workspace)));
 
-        Ok(PythonPattern {
-            expr: Arc::new(res?),
-        })
+        Ok(res?.into())
     }
 }
 
@@ -1058,37 +1038,51 @@ impl PythonPattern {
 #[pyclass(name = "Expression", module = "symbolica")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonExpression {
-    pub expr: Arc<Atom>,
+    pub expr: Atom,
+}
+
+impl From<Atom> for PythonExpression {
+    fn from(expr: Atom) -> Self {
+        PythonExpression { expr }
+    }
+}
+
+impl Deref for PythonExpression {
+    type Target = Atom;
+
+    fn deref(&self) -> &Self::Target {
+        &self.expr
+    }
 }
 
 /// A restriction on wildcards.
 #[pyclass(name = "PatternRestriction", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonPatternRestriction {
-    pub condition: Arc<Condition<WildcardAndRestriction>>,
+    pub condition: Condition<WildcardAndRestriction>,
+}
+
+impl From<Condition<WildcardAndRestriction>> for PythonPatternRestriction {
+    fn from(condition: Condition<WildcardAndRestriction>) -> Self {
+        PythonPatternRestriction { condition }
+    }
 }
 
 #[pymethods]
 impl PythonPatternRestriction {
     /// Create a new pattern restriction that is the logical 'and' operation between two restrictions (i.e., both should hold).
     pub fn __and__(&self, other: Self) -> PythonPatternRestriction {
-        PythonPatternRestriction {
-            condition: Arc::new(self.condition.as_ref().clone() & other.condition.as_ref().clone()),
-        }
+        (self.condition.clone() & other.condition.clone()).into()
     }
 
     /// Create a new pattern restriction that is the logical 'or' operation between two restrictions (i.e., one of the two should hold).
     pub fn __or__(&self, other: Self) -> PythonPatternRestriction {
-        PythonPatternRestriction {
-            condition: Arc::new(self.condition.as_ref().clone() | other.condition.as_ref().clone()),
-        }
+        (self.condition.clone() | other.condition.clone()).into()
     }
 
     /// Create a new pattern restriction that takes the logical 'not' of the current restriction.
     pub fn __invert__(&self) -> PythonPatternRestriction {
-        PythonPatternRestriction {
-            condition: Arc::new(!self.condition.as_ref().clone()),
-        }
+        (!self.condition.clone()).into()
     }
 }
 
@@ -1097,15 +1091,11 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
         if let Ok(a) = ob.extract::<PythonExpression>() {
             Ok(ConvertibleToExpression(a))
         } else if let Ok(num) = ob.extract::<i64>() {
-            Ok(ConvertibleToExpression(PythonExpression {
-                expr: Arc::new(Atom::new_num(num)),
-            }))
+            Ok(ConvertibleToExpression(Atom::new_num(num).into()))
         } else if let Ok(num) = ob.extract::<&PyLong>() {
             let a = format!("{}", num);
             let i = Integer::from_large(rug::Integer::parse(&a).unwrap().complete());
-            Ok(ConvertibleToExpression(PythonExpression {
-                expr: Arc::new(Atom::new_num(i)),
-            }))
+            Ok(ConvertibleToExpression(Atom::new_num(i).into()))
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Cannot convert to expression",
@@ -1180,27 +1170,25 @@ macro_rules! req_cmp {
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: Arc::new(
-                        (
-                            name,
-                            PatternRestriction::Filter(Box::new(move |v: &Match| {
-                                let k = num.expr.as_view();
+                    condition: (
+                        name,
+                        PatternRestriction::Filter(Box::new(move |v: &Match| {
+                            let k = num.expr.as_view();
 
-                                if let Match::Single(m) = v {
-                                    if !$cmp_any_atom {
-                                        if let AtomView::Num(_) = m {
-                                            return m.cmp(&k).$c();
-                                        }
-                                    } else {
+                            if let Match::Single(m) = v {
+                                if !$cmp_any_atom {
+                                    if let AtomView::Num(_) = m {
                                         return m.cmp(&k).$c();
                                     }
+                                } else {
+                                    return m.cmp(&k).$c();
                                 }
+                            }
 
-                                false
-                            })),
-                        )
-                            .into(),
-                    ),
+                            false
+                        })),
+                    )
+                        .into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1247,31 +1235,29 @@ macro_rules! req_wc_cmp {
         };
 
         Ok(PythonPatternRestriction {
-            condition: Arc::new(
-                (
-                    id,
-                    PatternRestriction::Cmp(
-                        other_id,
-                        Box::new(move |m1: &Match, m2: &Match| {
-                            if let Match::Single(a1) = m1 {
-                                if let Match::Single(a2) = m2 {
-                                    if !$cmp_any_atom {
-                                        if let AtomView::Num(_) = a1 {
-                                            if let AtomView::Num(_) = a2 {
-                                                return a1.cmp(a2).$c();
-                                            }
+            condition: (
+                id,
+                PatternRestriction::Cmp(
+                    other_id,
+                    Box::new(move |m1: &Match, m2: &Match| {
+                        if let Match::Single(a1) = m1 {
+                            if let Match::Single(a2) = m2 {
+                                if !$cmp_any_atom {
+                                    if let AtomView::Num(_) = a1 {
+                                        if let AtomView::Num(_) = a2 {
+                                            return a1.cmp(a2).$c();
                                         }
-                                    } else {
-                                        return a1.cmp(a2).$c();
                                     }
+                                } else {
+                                    return a1.cmp(a2).$c();
                                 }
                             }
-                            false
-                        }),
-                    ),
-                )
-                    .into(),
-            ),
+                        }
+                        false
+                    }),
+                ),
+            )
+                .into(),
         })
     }};
 }
@@ -1292,9 +1278,7 @@ impl PythonExpression {
         let id = State::get_symbol(name);
         let var = Atom::new_var(id);
 
-        Ok(PythonExpression {
-            expr: Arc::new(var),
-        })
+        Ok(var.into())
     }
 
     /// Create a Symbolica variable for every name in `*names`.
@@ -1309,9 +1293,7 @@ impl PythonExpression {
             let id = State::get_symbol(name);
             let var = Atom::new_var(id);
 
-            result.push(PythonExpression {
-                expr: Arc::new(var),
-            });
+            result.push(var.into());
         }
 
         Ok(result)
@@ -1383,9 +1365,7 @@ impl PythonExpression {
         max_denom: Option<usize>,
     ) -> PyResult<PythonExpression> {
         if let Ok(num) = num.extract::<i64>(py) {
-            Ok(PythonExpression {
-                expr: Arc::new(Atom::new_num(num)),
-            })
+            Ok(Atom::new_num(num).into())
         } else if let Ok(num) = num.extract::<&PyLong>(py) {
             let a = format!("{}", num);
             PythonExpression::parse(_cls, &a)
@@ -1399,9 +1379,7 @@ impl PythonExpression {
                 r = r.truncate_denominator(&(max_denom as u64).into())
             }
 
-            Ok(PythonExpression {
-                expr: Arc::new(Atom::new_num(r)),
-            })
+            Ok(Atom::new_num(r).into())
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid number"))
         }
@@ -1411,18 +1389,14 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "E")]
     pub fn e() -> PythonExpression {
-        PythonExpression {
-            expr: Arc::new(Atom::new_var(State::E)),
-        }
+        Atom::new_var(State::E).into()
     }
 
     /// The mathematical constant `π`.
     #[classattr]
     #[pyo3(name = "PI")]
     pub fn pi() -> PythonExpression {
-        PythonExpression {
-            expr: Arc::new(Atom::new_var(State::PI)),
-        }
+        Atom::new_var(State::PI).into()
     }
 
     /// The mathematical constant `i`, where
@@ -1430,9 +1404,7 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "I")]
     pub fn i() -> PythonExpression {
-        PythonExpression {
-            expr: Arc::new(Atom::new_var(State::I)),
-        }
+        Atom::new_var(State::I).into()
     }
 
     /// Return all defined symbol names (function names and variables).
@@ -1461,15 +1433,12 @@ impl PythonExpression {
     #[classmethod]
     pub fn parse(_cls: &PyType, input: &str) -> PyResult<PythonExpression> {
         let e = Atom::parse(input).map_err(exceptions::PyValueError::new_err)?;
-
-        Ok(PythonExpression { expr: Arc::new(e) })
+        Ok(e.into())
     }
 
     /// Copy the expression.
     pub fn __copy__(&self) -> PythonExpression {
-        PythonExpression {
-            expr: Arc::new((*self.expr).clone()),
-        }
+        self.expr.clone().into()
     }
 
     /// Convert the expression into a human-readable string.
@@ -1589,9 +1558,7 @@ impl PythonExpression {
     /// Add this expression to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
-        Ok(PythonExpression {
-            expr: Arc::new(self.expr.as_ref() + rhs.expr.as_ref()),
-        })
+        Ok((self.expr.as_ref() + rhs.expr.as_ref()).into())
     }
 
     /// Add this expression to `other`, returning the result.
@@ -1613,9 +1580,7 @@ impl PythonExpression {
     /// Add this expression to `other`, returning the result.
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
-        Ok(PythonExpression {
-            expr: Arc::new(self.expr.as_ref() * rhs.expr.as_ref()),
-        })
+        Ok((self.expr.as_ref() * rhs.expr.as_ref()).into())
     }
 
     /// Add this expression to `other`, returning the result.
@@ -1626,9 +1591,7 @@ impl PythonExpression {
     /// Divide this expression by `other`, returning the result.
     pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
-        Ok(PythonExpression {
-            expr: Arc::new(self.expr.as_ref() / rhs.expr.as_ref()),
-        })
+        Ok((self.expr.as_ref() / rhs.expr.as_ref()).into())
     }
 
     /// Divide `other` by this expression, returning the result.
@@ -1650,9 +1613,7 @@ impl PythonExpression {
         }
 
         let rhs = rhs.to_expression();
-        Ok(PythonExpression {
-            expr: Arc::new(self.expr.pow(&rhs.expr)),
-        })
+        Ok(self.expr.pow(&rhs.expr).into())
     }
 
     /// Take `base` to power `self`, returning the result.
@@ -1681,9 +1642,7 @@ impl PythonExpression {
 
     /// Negate the current expression, returning the result.
     pub fn __neg__(&self) -> PyResult<PythonExpression> {
-        Ok(PythonExpression {
-            expr: Arc::new(-self.expr.as_ref()),
-        })
+        Ok((-self.expr.as_ref()).into())
     }
 
     /// Return the length of the atom.
@@ -1698,12 +1657,7 @@ impl PythonExpression {
 
     /// Convert the input to a transformer, on which subsequent transformations can be applied.
     pub fn transform(&self) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new((
-                Some(self.expr.into_pattern()),
-                vec![],
-            )))),
-        })
+        Ok(Pattern::Transformer(Box::new((Some(self.expr.into_pattern()), vec![]))).into())
     }
 
     /// Get the `idx`th component of the expression.
@@ -1717,12 +1671,13 @@ impl PythonExpression {
         };
 
         if idx.unsigned_abs() < slice.len() {
-            Ok(PythonExpression {
-                expr: Arc::new(if idx < 0 {
-                    slice.get(slice.len() - idx.abs() as usize).to_owned()
-                } else {
-                    slice.get(idx as usize).to_owned()
-                }),
+            Ok(if idx < 0 {
+                slice
+                    .get(slice.len() - idx.abs() as usize)
+                    .to_owned()
+                    .into()
+            } else {
+                slice.get(idx as usize).to_owned().into()
             })
         } else {
             Err(PyIndexError::new_err(format!(
@@ -1749,9 +1704,7 @@ impl PythonExpression {
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: Arc::new(
-                        (name, PatternRestriction::Length(min_length, max_length)).into(),
-                    ),
+                    condition: (name, PatternRestriction::Length(min_length, max_length)).into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1783,20 +1736,18 @@ impl PythonExpression {
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: Arc::new(
-                        (
-                            name,
-                            PatternRestriction::IsAtomType(match atom_type {
-                                PythonAtomType::Num => AtomType::Num,
-                                PythonAtomType::Var => AtomType::Var,
-                                PythonAtomType::Add => AtomType::Add,
-                                PythonAtomType::Mul => AtomType::Mul,
-                                PythonAtomType::Pow => AtomType::Pow,
-                                PythonAtomType::Fn => AtomType::Fun,
-                            }),
-                        )
-                            .into(),
-                    ),
+                    condition: (
+                        name,
+                        PatternRestriction::IsAtomType(match atom_type {
+                            PythonAtomType::Num => AtomType::Num,
+                            PythonAtomType::Var => AtomType::Var,
+                            PythonAtomType::Add => AtomType::Add,
+                            PythonAtomType::Mul => AtomType::Mul,
+                            PythonAtomType::Pow => AtomType::Pow,
+                            PythonAtomType::Fn => AtomType::Fun,
+                        }),
+                    )
+                        .into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1818,7 +1769,7 @@ impl PythonExpression {
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: Arc::new((name, PatternRestriction::IsLiteralWildcard(name)).into()),
+                    condition: (name, PatternRestriction::IsLiteralWildcard(name)).into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1986,29 +1937,23 @@ impl PythonExpression {
         };
 
         Ok(PythonPatternRestriction {
-            condition: Arc::new(
-                (
-                    id,
-                    PatternRestriction::Filter(Box::new(move |m| {
-                        let data = PythonExpression {
-                            expr: Arc::new({
-                                let mut a = Atom::default();
-                                m.to_atom(&mut a);
-                                a
-                            }),
-                        };
+            condition: (
+                id,
+                PatternRestriction::Filter(Box::new(move |m| {
+                    let mut a = Atom::default();
+                    m.to_atom(&mut a);
+                    let data: PythonExpression = a.into();
 
-                        Python::with_gil(|py| {
-                            filter_fn
-                                .call(py, (data,), None)
-                                .expect("Bad callback function")
-                                .extract::<bool>(py)
-                                .expect("Pattern filter does not return a boolean")
-                        })
-                    })),
-                )
-                    .into(),
-            ),
+                    Python::with_gil(|py| {
+                        filter_fn
+                            .call(py, (data,), None)
+                            .expect("Bad callback function")
+                            .extract::<bool>(py)
+                            .expect("Pattern filter does not return a boolean")
+                    })
+                })),
+            )
+                .into(),
         })
     }
 
@@ -2154,40 +2099,29 @@ impl PythonExpression {
         };
 
         Ok(PythonPatternRestriction {
-            condition: Arc::new(
-                (
-                    id,
-                    PatternRestriction::Cmp(
-                        other_id,
-                        Box::new(move |m1, m2| {
-                            let data1 = PythonExpression {
-                                expr: Arc::new({
-                                    let mut a = Atom::default();
-                                    m1.to_atom(&mut a);
-                                    a
-                                }),
-                            };
+            condition: (
+                id,
+                PatternRestriction::Cmp(
+                    other_id,
+                    Box::new(move |m1, m2| {
+                        let mut a = Atom::default();
+                        m1.to_atom(&mut a);
+                        let data1: PythonExpression = a.clone().into();
 
-                            let data2 = PythonExpression {
-                                expr: Arc::new({
-                                    let mut a = Atom::default();
-                                    m2.to_atom(&mut a);
-                                    a
-                                }),
-                            };
+                        m2.to_atom(&mut a);
+                        let data2: PythonExpression = a.into();
 
-                            Python::with_gil(|py| {
-                                cmp_fn
-                                    .call(py, (data1, data2), None)
-                                    .expect("Bad callback function")
-                                    .extract::<bool>(py)
-                                    .expect("Pattern comparison does not return a boolean")
-                            })
-                        }),
-                    ),
-                )
-                    .into(),
-            ),
+                        Python::with_gil(|py| {
+                            cmp_fn
+                                .call(py, (data1, data2), None)
+                                .expect("Bad callback function")
+                                .extract::<bool>(py)
+                                .expect("Pattern comparison does not return a boolean")
+                        })
+                    }),
+                ),
+            )
+                .into(),
         })
     }
 
@@ -2221,7 +2155,7 @@ impl PythonExpression {
         py: Python,
         n_cores: Option<usize>,
     ) -> PyResult<PythonExpression> {
-        let t = match op.expr.as_ref() {
+        let t = match &op.expr {
             Pattern::Transformer(t) => {
                 if t.0.is_some() {
                     return Err(exceptions::PyValueError::new_err(
@@ -2246,7 +2180,7 @@ impl PythonExpression {
                 n_cores: n_cores.unwrap_or(1),
                 ..Default::default()
             });
-            stream.push((*self.expr).clone());
+            stream.push(self.expr.clone());
 
             let m = stream.map(|x| {
                 let mut out = Atom::default();
@@ -2263,7 +2197,7 @@ impl PythonExpression {
 
         let b = stream.to_expression();
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(b.into())
     }
 
     /// Set the coefficient ring to contain the variables in the `vars` list.
@@ -2288,7 +2222,7 @@ impl PythonExpression {
 
         let b = self.expr.as_view().set_coefficient_ring(&Arc::new(var_map));
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(b.into())
     }
 
     /// Expand the expression. Optionally, expand in `var` only.
@@ -2303,10 +2237,10 @@ impl PythonExpression {
             };
 
             let b = self.expr.as_view().expand_in(id);
-            Ok(PythonExpression { expr: Arc::new(b) })
+            Ok(b.into())
         } else {
             let b = self.expr.as_view().expand();
-            Ok(PythonExpression { expr: Arc::new(b) })
+            Ok(b.into())
         }
     }
 
@@ -2354,9 +2288,7 @@ impl PythonExpression {
             if let Some(key_map) = key_map {
                 Some(Box::new(move |key, out| {
                     Python::with_gil(|py| {
-                        let key = PythonExpression {
-                            expr: Arc::new(key.to_owned()),
-                        };
+                        let key: PythonExpression = key.to_owned().into();
 
                         out.set_from_view(
                             &key_map
@@ -2375,9 +2307,7 @@ impl PythonExpression {
             if let Some(coeff_map) = coeff_map {
                 Some(Box::new(move |coeff, out| {
                     Python::with_gil(|py| {
-                        let coeff = PythonExpression {
-                            expr: Arc::new(coeff.to_owned()),
-                        };
+                        let coeff: PythonExpression = coeff.to_owned().into();
 
                         out.set_from_view(
                             &coeff_map
@@ -2395,7 +2325,7 @@ impl PythonExpression {
             },
         );
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(b.into())
     }
 
     /// Collect terms involving the literal occurrence of `x`.
@@ -2416,7 +2346,7 @@ impl PythonExpression {
     /// ```
     pub fn coefficient(&self, x: ConvertibleToExpression) -> PythonExpression {
         let r = self.expr.coefficient(x.to_expression().expr.as_view());
-        PythonExpression { expr: Arc::new(r) }
+        r.into()
     }
 
     /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
@@ -2456,16 +2386,7 @@ impl PythonExpression {
 
         let mut py_list: Vec<_> = list
             .into_iter()
-            .map(|e| {
-                (
-                    PythonExpression {
-                        expr: Arc::new(e.0.to_owned()),
-                    },
-                    PythonExpression {
-                        expr: Arc::new(e.1),
-                    },
-                )
-            })
+            .map(|e| (e.0.to_owned().into(), e.1.into()))
             .collect();
 
         if let Atom::Num(n) = &rest {
@@ -2474,14 +2395,7 @@ impl PythonExpression {
             }
         }
 
-        py_list.push((
-            PythonExpression {
-                expr: Arc::new(Atom::new_num(1)),
-            },
-            PythonExpression {
-                expr: Arc::new(rest),
-            },
-        ));
+        py_list.push((Atom::new_num(1).into(), rest.into()));
 
         Ok(py_list)
     }
@@ -2498,7 +2412,7 @@ impl PythonExpression {
 
         let b = self.expr.derivative(id);
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(b.into())
     }
 
     /// Taylor expand in `x` around `expansion_point` to depth `depth`.
@@ -2533,7 +2447,7 @@ impl PythonExpression {
             .expr
             .taylor_series(id, expansion_point.to_expression().expr.as_view(), depth);
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(b.into())
     }
 
     /// Compute the partial fraction decomposition in `x`.
@@ -2573,7 +2487,7 @@ impl PythonExpression {
             res.as_view().normalize(ws, &mut rn);
         });
 
-        Ok(PythonExpression { expr: Arc::new(rn) })
+        Ok(rn.into())
     }
 
     /// Write the expression over a common denominator.
@@ -2586,9 +2500,7 @@ impl PythonExpression {
     /// >>> print(p.together())
     pub fn together(&self) -> PyResult<PythonExpression> {
         let poly = self.expr.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
-        Ok(PythonExpression {
-            expr: Arc::new(poly.to_expression()),
-        })
+        Ok(poly.to_expression().into())
     }
 
     /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
@@ -2616,7 +2528,7 @@ impl PythonExpression {
         };
 
         Ok(PythonPolynomial {
-            poly: Arc::new(self.expr.to_polynomial(&Q, var_map)),
+            poly: self.expr.to_polynomial(&Q, var_map),
         })
     }
 
@@ -2656,7 +2568,7 @@ impl PythonExpression {
         };
 
         Ok(PythonRationalPolynomial {
-            poly: Arc::new(self.expr.to_rational_polynomial(&Q, &Z, var_map)),
+            poly: self.expr.to_rational_polynomial(&Q, &Z, var_map),
         })
     }
 
@@ -2687,7 +2599,7 @@ impl PythonExpression {
         };
 
         Ok(PythonRationalPolynomialSmallExponent {
-            poly: Arc::new(self.expr.to_rational_polynomial(&Q, &Z, var_map)),
+            poly: self.expr.to_rational_polynomial(&Q, &Z, var_map),
         })
     }
 
@@ -2713,12 +2625,12 @@ impl PythonExpression {
     ) -> PyResult<PythonMatchIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
-            .unwrap_or(Arc::new(Condition::default()));
-        let settings = Arc::new(MatchSettings {
+            .unwrap_or(Condition::default());
+        let settings = MatchSettings {
             level_range: level_range.unwrap_or((0, None)),
             level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
             ..MatchSettings::default()
-        });
+        };
         Ok(PythonMatchIterator::new(
             (
                 lhs.to_pattern()?.expr,
@@ -2765,12 +2677,12 @@ impl PythonExpression {
     ) -> PyResult<PythonReplaceIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
-            .unwrap_or(Arc::new(Condition::default()));
-        let settings = Arc::new(MatchSettings {
+            .unwrap_or(Condition::default());
+        let settings = MatchSettings {
             level_range: level_range.unwrap_or((0, None)),
             level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
             ..MatchSettings::default()
-        });
+        };
 
         Ok(PythonReplaceIterator::new(
             (
@@ -2866,7 +2778,7 @@ impl PythonExpression {
         while pattern.replace_all_into(
             expr_ref,
             rhs,
-            cond.as_ref().map(|r| r.condition.as_ref()),
+            cond.as_ref().map(|r| &r.condition),
             Some(&settings),
             &mut out,
         ) {
@@ -2878,9 +2790,7 @@ impl PythonExpression {
             expr_ref = out2.as_view();
         }
 
-        Ok(PythonExpression {
-            expr: Arc::new(out.into_inner()),
-        })
+        Ok(out.into_inner().into())
     }
 
     /// Solve a linear system in the variables `variables`, where each expression
@@ -2919,10 +2829,7 @@ impl PythonExpression {
             exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
         })?;
 
-        Ok(res
-            .into_iter()
-            .map(|x| PythonExpression { expr: Arc::new(x) })
-            .collect())
+        Ok(res.into_iter().map(|x| x.into()).collect())
     }
 
     /// Evaluate the expression, using a map of all the constants and
@@ -3200,10 +3107,7 @@ impl PythonFunction {
                 let mut out = Atom::default();
                 fun_b.as_view().normalize(workspace, &mut out);
 
-                Ok(PythonExpression {
-                    expr: Arc::new(out),
-                }
-                .into_py(py))
+                Ok(PythonExpression::from(out).into_py(py))
             })
         } else {
             // convert all wildcards back from literals
@@ -3211,7 +3115,7 @@ impl PythonFunction {
             for arg in fn_args {
                 match arg {
                     ExpressionOrTransformer::Transformer(t) => {
-                        transformer_args.push(t.to_pattern()?.expr.as_ref().clone());
+                        transformer_args.push(t.to_pattern()?.expr.clone());
                     }
                     ExpressionOrTransformer::Expression(a) => {
                         transformer_args.push(a.expr.as_view().into_pattern().clone());
@@ -3220,7 +3124,7 @@ impl PythonFunction {
             }
 
             let p = Pattern::Fn(self.id, transformer_args);
-            Ok(PythonPattern { expr: Arc::new(p) }.into_py(py))
+            Ok(PythonPattern::from(p).into_py(py))
         }
     }
 }
@@ -3269,7 +3173,7 @@ impl PythonTermStreamer {
 
     /// Add an expression to the term streamer.
     pub fn push(&mut self, expr: PythonExpression) {
-        self.stream.push((*expr.expr).clone());
+        self.stream.push(expr.expr.clone());
     }
 
     /// Sort and fuse all terms in the streamer.
@@ -3279,14 +3183,12 @@ impl PythonTermStreamer {
 
     /// Convert the term stream into an expression. This may exceed the available memory.
     pub fn to_expression(&mut self) -> PythonExpression {
-        PythonExpression {
-            expr: Arc::new(self.stream.to_expression()),
-        }
+        self.stream.to_expression().into()
     }
 
     /// Map the transformations to every term in the streamer.
     pub fn map(&mut self, op: PythonPattern, py: Python) -> PyResult<Self> {
-        let t = match op.expr.as_ref() {
+        let t = match &op.expr {
             Pattern::Transformer(t) => {
                 if t.0.is_some() {
                     return Err(exceptions::PyValueError::new_err(
@@ -3326,7 +3228,7 @@ impl PythonTermStreamer {
 self_cell!(
     #[pyclass(module = "symbolica")]
     pub struct PythonAtomIterator {
-        owner: Arc<Atom>,
+        owner: Atom,
         #[covariant]
         dependent: ListIterator,
     }
@@ -3335,7 +3237,7 @@ self_cell!(
 impl PythonAtomIterator {
     /// Create a self-referential structure for the iterator.
     pub fn from_expr(expr: PythonExpression) -> PythonAtomIterator {
-        PythonAtomIterator::new(expr.expr, |expr| match expr.as_view() {
+        PythonAtomIterator::new(expr.expr.clone(), |expr| match expr.as_view() {
             AtomView::Add(a) => a.iter(),
             AtomView::Mul(m) => m.iter(),
             AtomView::Fun(f) => f.iter(),
@@ -3348,22 +3250,20 @@ impl PythonAtomIterator {
 impl PythonAtomIterator {
     fn __next__(&mut self) -> Option<PythonExpression> {
         self.with_dependent_mut(|_, i| {
-            i.next().map(|e| PythonExpression {
-                expr: Arc::new({
-                    let mut owned = Atom::default();
-                    owned.set_from_view(&e);
-                    owned
-                }),
+            i.next().map(|e| {
+                let mut owned = Atom::default();
+                owned.set_from_view(&e);
+                owned.into()
             })
         })
     }
 }
 
 type OwnedMatch = (
-    Arc<Pattern>,
-    Arc<Atom>,
-    Arc<Condition<WildcardAndRestriction>>,
-    Arc<MatchSettings>,
+    Pattern,
+    Atom,
+    Condition<WildcardAndRestriction>,
+    MatchSettings,
 );
 type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a>;
 
@@ -3391,18 +3291,11 @@ impl PythonMatchIterator {
                 matches
                     .into_iter()
                     .map(|m| {
-                        (
-                            PythonExpression {
-                                expr: Arc::new(Atom::new_var(m.0)),
-                            },
-                            PythonExpression {
-                                expr: Arc::new({
-                                    let mut a = Atom::default();
-                                    m.1.to_atom(&mut a);
-                                    a
-                                }),
-                            },
-                        )
+                        (Atom::new_var(m.0).into(), {
+                            let mut a = Atom::default();
+                            m.1.to_atom(&mut a);
+                            a.into()
+                        })
                     })
                     .collect()
             })
@@ -3411,11 +3304,11 @@ impl PythonMatchIterator {
 }
 
 type OwnedReplace = (
-    Arc<Pattern>,
-    Arc<Atom>,
-    Arc<Pattern>,
-    Arc<Condition<WildcardAndRestriction>>,
-    Arc<MatchSettings>,
+    Pattern,
+    Atom,
+    Pattern,
+    Condition<WildcardAndRestriction>,
+    MatchSettings,
 );
 type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a>;
 
@@ -3444,9 +3337,7 @@ impl PythonReplaceIterator {
             if i.next(&mut out).is_none() {
                 Ok(None)
             } else {
-                Ok::<_, PyErr>(Some(PythonExpression {
-                    expr: Arc::new(out),
-                }))
+                Ok::<_, PyErr>(Some(out.into()))
             }
         })
     }
@@ -3455,7 +3346,7 @@ impl PythonReplaceIterator {
 #[pyclass(name = "Polynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonPolynomial {
-    pub poly: Arc<MultivariatePolynomial<RationalField, u16>>,
+    pub poly: MultivariatePolynomial<RationalField, u16>,
 }
 
 #[pymethods]
@@ -3492,7 +3383,7 @@ impl PythonPolynomial {
             .to_polynomial(&Q, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
-        Ok(Self { poly: Arc::new(e) })
+        Ok(Self { poly: e })
     }
 
     /// Convert the polynomial to a polynomial with integer coefficients, if possible.
@@ -3524,16 +3415,14 @@ impl PythonPolynomial {
             poly_int.append_monomial(t.coefficient.numerator(), &new_exponent);
         }
 
-        Ok(PythonIntegerPolynomial {
-            poly: Arc::new(poly_int),
-        })
+        Ok(PythonIntegerPolynomial { poly: poly_int })
     }
 
     /// Convert the coefficients of the polynomial to a finite field with prime `prime`.
     pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldPolynomial {
         let f = Zp::new(prime);
         PythonFiniteFieldPolynomial {
-            poly: Arc::new(self.poly.map_coeff(|c| c.to_finite_field(&f), f.clone())),
+            poly: self.poly.map_coeff(|c| c.to_finite_field(&f), f.clone()),
         }
     }
 
@@ -3568,7 +3457,7 @@ impl PythonPolynomial {
 
         let o_f64 = o.convert::<f64>();
         Ok(PythonInstructionEvaluator {
-            instr: Arc::new(o_f64.evaluator()),
+            instr: o_f64.evaluator(),
         })
     }
 
@@ -3609,16 +3498,13 @@ impl PythonPolynomial {
             gb.system
                 .into_iter()
                 .map(|p| Self {
-                    poly: Arc::new(p.reorder::<LexOrder>()),
+                    poly: p.reorder::<LexOrder>(),
                 })
                 .collect()
         } else {
-            let ideal: Vec<_> = system.iter().map(|p| p.poly.as_ref().clone()).collect();
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
             let gb = GroebnerBasis::new(&ideal, print_stats);
-            gb.system
-                .into_iter()
-                .map(|p| Self { poly: Arc::new(p) })
-                .collect()
+            gb.system.into_iter().map(|p| Self { poly: p }).collect()
         }
     }
 
@@ -3647,7 +3533,7 @@ impl PythonPolynomial {
             )))?;
 
         Ok(Self {
-            poly: Arc::new(self.poly.integrate(x)),
+            poly: self.poly.integrate(x),
         })
     }
 
@@ -3662,23 +3548,21 @@ impl PythonPolynomial {
     /// >>> p = e.to_polynomial()
     /// >>> print(e - p.to_expression())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
-        Ok(PythonExpression {
-            expr: Arc::new(self.poly.to_expression()),
-        })
+        Ok(self.poly.to_expression().into())
     }
 }
 
 #[pyclass(name = "Evaluator", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonInstructionEvaluator {
-    pub instr: Arc<InstructionEvaluator<f64>>,
+    pub instr: InstructionEvaluator<f64>,
 }
 
 #[pymethods]
 impl PythonInstructionEvaluator {
     /// Evaluate the polynomial for multiple inputs and return the result.
     fn evaluate(&self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
-        let mut eval = (*self.instr).clone();
+        let mut eval = self.instr.clone();
 
         inputs
             .iter()
@@ -3690,7 +3574,7 @@ impl PythonInstructionEvaluator {
 #[pyclass(name = "IntegerPolynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonIntegerPolynomial {
-    pub poly: Arc<MultivariatePolynomial<IntegerRing, u8>>,
+    pub poly: MultivariatePolynomial<IntegerRing, u8>,
 }
 
 #[pymethods]
@@ -3726,7 +3610,7 @@ impl PythonIntegerPolynomial {
             .to_polynomial(&Z, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
-        Ok(Self { poly: Arc::new(e) })
+        Ok(Self { poly: e })
     }
 
     /// Convert the polynomial to an expression.
@@ -3739,9 +3623,7 @@ impl PythonIntegerPolynomial {
     /// >>> p = e.to_polynomial()
     /// >>> print((e - p.to_expression()).expand())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
-        Ok(PythonExpression {
-            expr: Arc::new(self.poly.to_expression()),
-        })
+        Ok(self.poly.to_expression().into())
     }
 }
 
@@ -3749,7 +3631,7 @@ impl PythonIntegerPolynomial {
 #[pyclass(name = "FiniteFieldPolynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonFiniteFieldPolynomial {
-    pub poly: Arc<MultivariatePolynomial<Zp, u16>>,
+    pub poly: MultivariatePolynomial<Zp, u16>,
 }
 
 #[pymethods]
@@ -3785,7 +3667,7 @@ impl PythonFiniteFieldPolynomial {
             .to_polynomial(&Zp::new(prime), &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
-        Ok(Self { poly: Arc::new(e) })
+        Ok(Self { poly: e })
     }
 
     /// Compute the Groebner basis of a polynomial system.
@@ -3812,16 +3694,13 @@ impl PythonFiniteFieldPolynomial {
             gb.system
                 .into_iter()
                 .map(|p| Self {
-                    poly: Arc::new(p.reorder::<LexOrder>()),
+                    poly: p.reorder::<LexOrder>(),
                 })
                 .collect()
         } else {
-            let ideal: Vec<_> = system.iter().map(|p| p.poly.as_ref().clone()).collect();
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
             let gb = GroebnerBasis::new(&ideal, print_stats);
-            gb.system
-                .into_iter()
-                .map(|p| Self { poly: Arc::new(p) })
-                .collect()
+            gb.system.into_iter().map(|p| Self { poly: p }).collect()
         }
     }
 
@@ -3850,7 +3729,7 @@ impl PythonFiniteFieldPolynomial {
             )))?;
 
         Ok(Self {
-            poly: Arc::new(self.poly.integrate(x)),
+            poly: self.poly.integrate(x),
         })
     }
 }
@@ -3897,7 +3776,7 @@ macro_rules! generate_methods {
             /// Copy the polynomial.
             pub fn __copy__(&self) -> Self {
                 Self {
-                    poly: Arc::new((*self.poly).clone()),
+                    poly: self.poly.clone(),
                 }
             }
 
@@ -3989,9 +3868,7 @@ macro_rules! generate_methods {
                 for x in self.poly.get_vars_ref() {
                     match x {
                         Variable::Symbol(x) => {
-                            var_list.push(PythonExpression {
-                                expr: Arc::new(Atom::new_var(*x)),
-                            });
+                            var_list.push(Atom::new_var(*x).into());
                         }
                         Variable::Temporary(_) => {
                             Err(exceptions::PyValueError::new_err(format!(
@@ -3999,9 +3876,7 @@ macro_rules! generate_methods {
                             )))?;
                         }
                         Variable::Function(_, a) | Variable::Other(a) => {
-                            var_list.push(PythonExpression {
-                                expr: a.clone(),
-                            });
+                            var_list.push(a.as_ref().clone().into());
                         }
                     }
                 }
@@ -4013,14 +3888,14 @@ macro_rules! generate_methods {
             pub fn __add__(&self, rhs: Self) -> Self {
                 if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     Self {
-                        poly: Arc::new((*self.poly).clone() + (*rhs.poly).clone()),
+                        poly: self.poly.clone() + rhs.poly.clone(),
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(new_self + new_rhs),
+                        poly: new_self + new_rhs,
                     }
                 }
             }
@@ -4034,14 +3909,14 @@ macro_rules! generate_methods {
             pub fn __mul__(&self, rhs: Self) -> Self {
                 if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     Self {
-                        poly: Arc::new(&*self.poly * &*rhs.poly),
+                        poly: &self.poly * &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(new_self * &new_rhs),
+                        poly: new_self * &new_rhs,
                     }
                 }
             }
@@ -4051,15 +3926,15 @@ macro_rules! generate_methods {
                 let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     self.poly.quot_rem(&rhs.poly, false)
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
 
                     new_self.quot_rem(&new_rhs, false)
                 };
 
                 if r.is_zero() {
-                    Ok(Self { poly: Arc::new(q) })
+                    Ok(Self { poly: q })
                 } else {
                     Err(exceptions::PyValueError::new_err(format!(
                         "The division has a remainder: {}",
@@ -4073,22 +3948,22 @@ macro_rules! generate_methods {
                 if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
-                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                    (Self { poly: q }, Self { poly: r })
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
 
                     let (q, r) = new_self.quot_rem(&new_rhs, false);
 
-                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                    (Self { poly: q }, Self { poly: r })
                 }
             }
 
             /// Negate the polynomial.
             pub fn __neg__(&self) -> Self {
                 Self {
-                    poly: Arc::new((*self.poly).clone().neg()),
+                    poly: self.poly.clone().neg(),
                 }
             }
 
@@ -4096,14 +3971,14 @@ macro_rules! generate_methods {
             pub fn gcd(&self, rhs: Self) -> Self {
                 if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     Self {
-                        poly: Arc::new(self.poly.gcd(&rhs.poly)),
+                        poly: self.poly.gcd(&rhs.poly),
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(new_self.gcd(&new_rhs)),
+                        poly: new_self.gcd(&new_rhs),
                     }
                 }
             }
@@ -4125,18 +4000,18 @@ macro_rules! generate_methods {
                     let rhs_uni = rhs.poly.to_univariate(x);
 
                     Ok(Self {
-                        poly: Arc::new(self_uni.resultant_prs(&rhs_uni)),
+                        poly: self_uni.resultant_prs(&rhs_uni),
                     })
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
 
                     let self_uni = new_self.to_univariate(x);
                     let rhs_uni = new_rhs.to_univariate(x);
 
                     Ok(Self {
-                        poly: Arc::new(self_uni.resultant_prs(&rhs_uni)),
+                        poly: self_uni.resultant_prs(&rhs_uni),
                     })
                 }
             }
@@ -4155,7 +4030,7 @@ macro_rules! generate_methods {
                 self.poly
                     .square_free_factorization()
                     .into_iter()
-                    .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
+                    .map(|(f, p)| (Self { poly: f }, p))
                     .collect()
             }
 
@@ -4173,7 +4048,7 @@ macro_rules! generate_methods {
                 self.poly
                     .factor()
                     .into_iter()
-                    .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
+                    .map(|(f, p)| (Self { poly: f }, p))
                     .collect()
             }
 
@@ -4196,7 +4071,7 @@ macro_rules! generate_methods {
                     x.__str__()?
                 )))?;
 
-                Ok(Self { poly: Arc::new(self.poly.derivative(x))})
+                Ok(Self { poly: self.poly.derivative(x)})
             }
 
             /// Get the content, i.e., the GCD of the coefficients.
@@ -4208,7 +4083,7 @@ macro_rules! generate_methods {
             /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
             /// >>> print(p.content())
             pub fn content(&self) -> PyResult<Self> {
-                Ok(Self { poly: Arc::new(self.poly.constant(self.poly.content()))})
+                Ok(Self { poly: self.poly.constant(self.poly.content())})
             }
 
             /// Get the coefficient list in `x`.
@@ -4232,7 +4107,7 @@ macro_rules! generate_methods {
                 )))?;
 
                 Ok(self.poly.to_univariate_polynomial_list(x).into_iter()
-                    .map(|(f, p)| (p as usize, Self { poly: Arc::new(f) })).collect())
+                    .map(|(f, p)| (p as usize, Self { poly: f })).collect())
             }
 
             /// Replace the variable `x` with a polynomial `v`.
@@ -4267,14 +4142,14 @@ macro_rules! generate_methods {
 
                 if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
                     Ok(Self {
-                        poly: Arc::new(self.poly.replace_with_poly(x, &v.poly))
+                        poly: self.poly.replace_with_poly(x, &v.poly)
                     })
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*v.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = v.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
                     Ok(Self {
-                        poly: Arc::new(new_self.replace_with_poly(x, &new_rhs))
+                        poly: new_self.replace_with_poly(x, &new_rhs)
                     })
                 }
             }
@@ -4290,7 +4165,7 @@ generate_methods!(PythonFiniteFieldPolynomial, u16);
 #[pyclass(name = "RationalPolynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomial {
-    pub poly: Arc<RationalPolynomial<IntegerRing, u16>>,
+    pub poly: RationalPolynomial<IntegerRing, u16>,
 }
 
 #[pymethods]
@@ -4299,33 +4174,28 @@ impl PythonRationalPolynomial {
     #[new]
     pub fn __new__(num: &PythonPolynomial, den: &PythonPolynomial) -> Self {
         Self {
-            poly: Arc::new(RationalPolynomial::from_num_den(
-                (*num.poly).clone(),
-                (*den.poly).clone(),
-                &Z,
-                true,
-            )),
+            poly: RationalPolynomial::from_num_den(num.poly.clone(), den.poly.clone(), &Z, true),
         }
     }
 
     /// Convert the coefficients to finite fields with prime `prime`.
     pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldRationalPolynomial {
         PythonFiniteFieldRationalPolynomial {
-            poly: Arc::new(self.poly.to_finite_field(&Zp::new(prime))),
+            poly: self.poly.to_finite_field(&Zp::new(prime)),
         }
     }
 
     /// Get the numerator.
     pub fn numerator(&self) -> PythonPolynomial {
         PythonPolynomial {
-            poly: Arc::new((&self.poly.numerator).into()),
+            poly: (&self.poly.numerator).into(),
         }
     }
 
     /// Get the denominator.
     pub fn denominator(&self) -> PythonPolynomial {
         PythonPolynomial {
-            poly: Arc::new((&self.poly.denominator).into()),
+            poly: (&self.poly.denominator).into(),
         }
     }
 }
@@ -4334,7 +4204,7 @@ impl PythonRationalPolynomial {
 #[pyclass(name = "RationalPolynomialSmallExponent", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomialSmallExponent {
-    pub poly: Arc<RationalPolynomial<IntegerRing, u8>>,
+    pub poly: RationalPolynomial<IntegerRing, u8>,
 }
 
 macro_rules! generate_rat_parse {
@@ -4371,7 +4241,7 @@ macro_rules! generate_rat_parse {
                     .to_rational_polynomial(&Q, &Z, &Arc::new(var_map), &var_name_map)
                     .map_err(exceptions::PyValueError::new_err)?;
 
-                Ok(Self { poly: Arc::new(e) })
+                Ok(Self { poly: e })
             }
 
             /// Convert the rational polynomial to an expression.
@@ -4384,9 +4254,7 @@ macro_rules! generate_rat_parse {
             /// >>> p = e.to_rational_polynomial()
             /// >>> print((e - p.to_expression()).expand())
             pub fn to_expression(&self) -> PyResult<PythonExpression> {
-                Ok(PythonExpression {
-                    expr: Arc::new(self.poly.to_expression()),
-                })
+                Ok(self.poly.to_expression().into())
             }
         }
     };
@@ -4399,7 +4267,7 @@ generate_rat_parse!(PythonRationalPolynomialSmallExponent);
 #[pyclass(name = "FiniteFieldRationalPolynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonFiniteFieldRationalPolynomial {
-    pub poly: Arc<RationalPolynomial<Zp, u16>>,
+    pub poly: RationalPolynomial<Zp, u16>,
 }
 
 #[pymethods]
@@ -4435,7 +4303,7 @@ impl PythonFiniteFieldRationalPolynomial {
             .to_rational_polynomial(&field, &field, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
-        Ok(Self { poly: Arc::new(e) })
+        Ok(Self { poly: e })
     }
 }
 
@@ -4447,7 +4315,7 @@ macro_rules! generate_rat_methods {
             /// Copy the rational polynomial.
             pub fn __copy__(&self) -> Self {
                 Self {
-                    poly: Arc::new((*self.poly).clone()),
+                    poly: self.poly.clone(),
                 }
             }
 
@@ -4482,9 +4350,7 @@ macro_rules! generate_rat_methods {
                 for x in self.poly.get_variables().iter() {
                     match x {
                         Variable::Symbol(x) => {
-                            var_list.push(PythonExpression {
-                                expr: Arc::new(Atom::new_var(*x)),
-                            });
+                            var_list.push(Atom::new_var(*x).into());
                         }
                         Variable::Temporary(_) => {
                             Err(exceptions::PyValueError::new_err(format!(
@@ -4492,9 +4358,7 @@ macro_rules! generate_rat_methods {
                             )))?;
                         }
                         Variable::Function(_, a) | Variable::Other(a) => {
-                            var_list.push(PythonExpression {
-                                expr: a.clone(),
-                            });
+                            var_list.push(a.as_ref().clone().into());
                         }
                     }
                 }
@@ -4529,14 +4393,14 @@ macro_rules! generate_rat_methods {
             pub fn __add__(&self, rhs: Self) -> Self {
                 if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(&*self.poly + &*rhs.poly),
+                        poly: &self.poly + &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(&new_self + &new_rhs),
+                        poly: &new_self + &new_rhs,
                     }
                 }
             }
@@ -4545,14 +4409,14 @@ macro_rules! generate_rat_methods {
             pub fn __sub__(&self, rhs: Self) -> Self {
                 if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(&*self.poly - &*rhs.poly),
+                        poly: &self.poly - &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(&new_self - &new_rhs),
+                        poly: &new_self - &new_rhs,
                     }
                 }
             }
@@ -4561,14 +4425,14 @@ macro_rules! generate_rat_methods {
             pub fn __mul__(&self, rhs: Self) -> Self {
                 if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(&*self.poly * &*rhs.poly),
+                        poly: &self.poly * &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(&new_self * &new_rhs),
+                        poly: &new_self * &new_rhs,
                     }
                 }
             }
@@ -4577,14 +4441,14 @@ macro_rules! generate_rat_methods {
             pub fn __truediv__(&self, rhs: Self) -> Self {
                 if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(&*self.poly * &*rhs.poly),
+                        poly: &self.poly * &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(&new_self / &new_rhs),
+                        poly: &new_self / &new_rhs,
                     }
                 }
             }
@@ -4592,7 +4456,7 @@ macro_rules! generate_rat_methods {
             /// Negate the rational polynomial.
             pub fn __neg__(&self) -> Self {
                 Self {
-                    poly: Arc::new((*self.poly).clone().neg()),
+                    poly: self.poly.clone().neg(),
                 }
             }
 
@@ -4600,14 +4464,14 @@ macro_rules! generate_rat_methods {
             pub fn gcd(&self, rhs: Self) -> Self {
                 if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(self.poly.gcd(&rhs.poly)),
+                        poly: self.poly.gcd(&rhs.poly),
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
                     new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(new_self.gcd(&new_rhs)),
+                        poly: new_self.gcd(&new_rhs),
                     }
                 }
             }
@@ -4643,7 +4507,7 @@ macro_rules! generate_rat_methods {
                 )))?;
 
                 Ok(self.poly.apart(x).into_iter()
-                    .map(|f| Self { poly: Arc::new(f) }).collect())
+                    .map(|f| Self { poly: f }).collect())
             }
         }
     };
@@ -4668,9 +4532,7 @@ impl ConvertibleToRationalPolynomial {
 
                 let poly = expr.to_rational_polynomial(&Q, &Z, None);
 
-                Ok(PythonRationalPolynomial {
-                    poly: Arc::new(poly),
-                })
+                Ok(PythonRationalPolynomial { poly })
             }
         }
     }
@@ -4686,7 +4548,7 @@ pub enum ScalarOrMatrix {
 #[pyclass(name = "Matrix", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonMatrix {
-    pub matrix: Arc<Matrix<RationalPolynomialField<IntegerRing, u16>>>,
+    pub matrix: Matrix<RationalPolynomialField<IntegerRing, u16>>,
 }
 
 impl PythonMatrix {
@@ -4695,8 +4557,8 @@ impl PythonMatrix {
             return (self.clone(), rhs.clone());
         }
 
-        let mut new_self = self.matrix.as_ref().clone();
-        let mut new_rhs = rhs.matrix.as_ref().clone();
+        let mut new_self = self.matrix.clone();
+        let mut new_rhs = rhs.matrix.clone();
 
         let mut zero = self.matrix.field.zero();
 
@@ -4713,12 +4575,8 @@ impl PythonMatrix {
         }
 
         (
-            PythonMatrix {
-                matrix: Arc::new(new_self),
-            },
-            PythonMatrix {
-                matrix: Arc::new(new_rhs),
-            },
+            PythonMatrix { matrix: new_self },
+            PythonMatrix { matrix: new_rhs },
         )
     }
 
@@ -4730,8 +4588,8 @@ impl PythonMatrix {
             return (self.clone(), rhs.clone());
         }
 
-        let mut new_self = self.matrix.as_ref().clone();
-        let mut new_rhs = rhs.poly.as_ref().clone();
+        let mut new_self = self.matrix.clone();
+        let mut new_rhs = rhs.poly.clone();
 
         let mut zero = self.matrix.field.zero();
 
@@ -4744,12 +4602,8 @@ impl PythonMatrix {
         }
 
         (
-            PythonMatrix {
-                matrix: Arc::new(new_self),
-            },
-            PythonRationalPolynomial {
-                poly: Arc::new(new_rhs),
-            },
+            PythonMatrix { matrix: new_self },
+            PythonRationalPolynomial { poly: new_rhs },
         )
     }
 }
@@ -4766,11 +4620,11 @@ impl PythonMatrix {
         }
 
         Ok(PythonMatrix {
-            matrix: Arc::new(Matrix::new(
+            matrix: Matrix::new(
                 nrows,
                 ncols,
                 RationalPolynomialField::new(Z, Arc::new(vec![])),
-            )),
+            ),
         })
     }
 
@@ -4784,10 +4638,7 @@ impl PythonMatrix {
         }
 
         Ok(PythonMatrix {
-            matrix: Arc::new(Matrix::identity(
-                nrows,
-                RationalPolynomialField::new(Z, Arc::new(vec![])),
-            )),
+            matrix: Matrix::identity(nrows, RationalPolynomialField::new(Z, Arc::new(vec![]))),
         })
     }
 
@@ -4805,7 +4656,7 @@ impl PythonMatrix {
 
         let mut diag: Vec<_> = diag
             .into_iter()
-            .map(|x| Ok(x.to_rational_polynomial()?.poly.as_ref().clone()))
+            .map(|x| Ok(x.to_rational_polynomial()?.poly.clone()))
             .collect::<PyResult<_>>()?;
 
         // unify the entries
@@ -4819,7 +4670,7 @@ impl PythonMatrix {
         let field = RationalPolynomialField::new(Z, first.numerator.get_vars());
 
         Ok(PythonMatrix {
-            matrix: Arc::new(Matrix::eye(&diag, field)),
+            matrix: Matrix::eye(&diag, field),
         })
     }
 
@@ -4837,7 +4688,7 @@ impl PythonMatrix {
 
         let mut entries: Vec<_> = entries
             .into_iter()
-            .map(|x| Ok(x.to_rational_polynomial()?.poly.as_ref().clone()))
+            .map(|x| Ok(x.to_rational_polynomial()?.poly.clone()))
             .collect::<PyResult<_>>()?;
 
         // unify the entries
@@ -4851,7 +4702,7 @@ impl PythonMatrix {
         let field = RationalPolynomialField::new(Z, first.numerator.get_vars());
 
         Ok(PythonMatrix {
-            matrix: Arc::new(Matrix::new_vec(entries, field)),
+            matrix: Matrix::new_vec(entries, field),
         })
     }
 
@@ -4871,7 +4722,7 @@ impl PythonMatrix {
 
         let mut entries: Vec<_> = entries
             .into_iter()
-            .map(|x| Ok(x.to_rational_polynomial()?.poly.as_ref().clone()))
+            .map(|x| Ok(x.to_rational_polynomial()?.poly.clone()))
             .collect::<PyResult<_>>()?;
 
         // unify the entries
@@ -4885,11 +4736,8 @@ impl PythonMatrix {
         let field = RationalPolynomialField::new(Z, first.numerator.get_vars());
 
         Ok(PythonMatrix {
-            matrix: Arc::new(
-                Matrix::from_linear(entries, nrows, ncols, field).map_err(|e| {
-                    exceptions::PyValueError::new_err(format!("Invalid matrix: {}", e))
-                })?,
-            ),
+            matrix: Matrix::from_linear(entries, nrows, ncols, field)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("Invalid matrix: {}", e)))?,
         })
     }
 
@@ -4942,29 +4790,27 @@ impl PythonMatrix {
     /// Return the transpose of the matrix.
     pub fn transpose(&self) -> PythonMatrix {
         PythonMatrix {
-            matrix: Arc::new(self.matrix.transpose()),
+            matrix: self.matrix.transpose(),
         }
     }
 
     /// Return the inverse of the matrix, if it exists.
     pub fn inv(&self) -> PyResult<PythonMatrix> {
         Ok(PythonMatrix {
-            matrix: Arc::new(
-                self.matrix
-                    .inv()
-                    .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
-            ),
+            matrix: self
+                .matrix
+                .inv()
+                .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
         })
     }
 
     /// Return the determinant of the matrix.
     pub fn det(&self) -> PyResult<PythonRationalPolynomial> {
         Ok(PythonRationalPolynomial {
-            poly: Arc::new(
-                self.matrix
-                    .det()
-                    .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
-            ),
+            poly: self
+                .matrix
+                .det()
+                .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
         })
     }
 
@@ -4972,26 +4818,24 @@ impl PythonMatrix {
     pub fn solve(&self, b: PythonMatrix) -> PyResult<PythonMatrix> {
         let (new_self, new_rhs) = self.unify(&b);
         Ok(PythonMatrix {
-            matrix: Arc::new(
-                new_self
-                    .matrix
-                    .solve(&new_rhs.matrix)
-                    .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
-            ),
+            matrix: new_self
+                .matrix
+                .solve(&new_rhs.matrix)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
         })
     }
 
     /// Get the content of the matrix, i.e. the gcd of all entries.
     pub fn content(&self) -> PythonRationalPolynomial {
         PythonRationalPolynomial {
-            poly: Arc::new(self.matrix.content()),
+            poly: self.matrix.content(),
         }
     }
 
     /// Construct the same matrix, but with the content removed.
     pub fn primitive_part(&self) -> PythonMatrix {
         PythonMatrix {
-            matrix: Arc::new(self.matrix.primitive_part()),
+            matrix: self.matrix.primitive_part(),
         }
     }
 
@@ -5002,9 +4846,7 @@ impl PythonMatrix {
             .data
             .iter()
             .map(|x| {
-                let expr = PythonRationalPolynomial {
-                    poly: Arc::new(x.clone()),
-                };
+                let expr = PythonRationalPolynomial { poly: x.clone() };
 
                 Python::with_gil(|py| {
                     Ok(f.call1(py, (expr,))
@@ -5012,22 +4854,19 @@ impl PythonMatrix {
                         .extract::<ConvertibleToRationalPolynomial>(py)?
                         .to_rational_polynomial()?
                         .poly
-                        .as_ref()
                         .clone())
                 })
             })
             .collect::<PyResult<_>>()?;
 
         Ok(PythonMatrix {
-            matrix: Arc::new(
-                Matrix::from_linear(
-                    data,
-                    self.matrix.nrows,
-                    self.matrix.ncols,
-                    self.matrix.field.clone(),
-                )
-                .unwrap(),
-            ),
+            matrix: Matrix::from_linear(
+                data,
+                self.matrix.nrows,
+                self.matrix.ncols,
+                self.matrix.field.clone(),
+            )
+            .unwrap(),
         })
     }
 
@@ -5044,7 +4883,7 @@ impl PythonMatrix {
         }
 
         Ok(PythonRationalPolynomial {
-            poly: Arc::new(self.matrix[(idx.0 as u32, idx.1 as u32)].clone()),
+            poly: self.matrix[(idx.0 as u32, idx.1 as u32)].clone(),
         })
     }
 
@@ -5070,7 +4909,7 @@ impl PythonMatrix {
     /// Copy the matrix.
     pub fn __copy__(&self) -> Self {
         Self {
-            matrix: Arc::new((*self.matrix).clone()),
+            matrix: self.matrix.clone(),
         }
     }
 
@@ -5083,7 +4922,7 @@ impl PythonMatrix {
     pub fn __add__(&self, rhs: PythonMatrix) -> PythonMatrix {
         let (new_self, new_rhs) = self.unify(&rhs);
         PythonMatrix {
-            matrix: Arc::new(&*new_self.matrix + &*new_rhs.matrix),
+            matrix: &new_self.matrix + &new_rhs.matrix,
         }
     }
 
@@ -5099,13 +4938,13 @@ impl PythonMatrix {
                 let (new_self, new_rhs) = self.unify_scalar(&s.to_rational_polynomial()?);
 
                 Ok(Self {
-                    matrix: Arc::new(new_self.matrix.mul_scalar(&new_rhs.poly)),
+                    matrix: new_self.matrix.mul_scalar(&new_rhs.poly),
                 })
             }
             ScalarOrMatrix::Matrix(m) => {
                 let (new_self, new_rhs) = self.unify(&m);
                 Ok(PythonMatrix {
-                    matrix: Arc::new(&*new_self.matrix * &*new_rhs.matrix),
+                    matrix: &new_self.matrix * &new_rhs.matrix,
                 })
             }
         }
@@ -5119,7 +4958,7 @@ impl PythonMatrix {
     /// Divide the matrix by the scalar, returning the result.
     pub fn __truediv__(&self, rhs: ConvertibleToRationalPolynomial) -> PyResult<PythonMatrix> {
         Ok(PythonMatrix {
-            matrix: Arc::new(self.matrix.div_scalar(&rhs.to_rational_polynomial()?.poly)),
+            matrix: self.matrix.div_scalar(&rhs.to_rational_polynomial()?.poly),
         })
     }
 
@@ -5140,7 +4979,7 @@ impl PythonMatrix {
     /// Negate the matrix, returning the result.
     pub fn __neg__(&self) -> PythonMatrix {
         PythonMatrix {
-            matrix: Arc::new(-self.matrix.as_ref().clone()),
+            matrix: -self.matrix.clone(),
         }
     }
 }

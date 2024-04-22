@@ -941,6 +941,9 @@ class Function:
     def is_symmetric(self) -> bool:
         """Returns `True` iff this function is symmetric."""
 
+    def get_symbol(self) -> Expression:
+        """Get the symbol of the function."""
+
     @overload
     def __call__(self, *args: Expression | int) -> Expression:
         """

@@ -3060,6 +3060,11 @@ impl PythonFunction {
         self.id.is_symmetric()
     }
 
+    /// Get the symbol of the function.
+    pub fn get_symbol(&self) -> PythonExpression {
+        Atom::new_var(self.id).into()
+    }
+
     /// Create a Symbolica expression or transformer by calling the function with appropriate arguments.
     ///
     /// Examples

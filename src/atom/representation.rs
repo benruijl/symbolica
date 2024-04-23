@@ -26,6 +26,7 @@ const VAR_WILDCARD_LEVEL_2: u8 = 0b00010000;
 const VAR_WILDCARD_LEVEL_3: u8 = 0b00011000;
 const FUN_SYMMETRIC_FLAG: u8 = 0b00100000;
 const FUN_LINEAR_FLAG: u8 = 0b01000000;
+const VAR_ANTISYMMETRIC_FLAG: u8 = 0b10000000;
 const FUN_ANTISYMMETRIC_FLAG: u64 = 1 << 32; // stored in the function id
 const MUL_HAS_COEFF_FLAG: u8 = 0b01000000;
 
@@ -164,32 +165,14 @@ pub struct Var {
 impl Var {
     #[inline]
     pub fn new(symbol: Symbol) -> Var {
-        let mut buffer = Vec::new();
-
-        match symbol.wildcard_level {
-            0 => buffer.put_u8(VAR_ID),
-            1 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_1),
-            2 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_2),
-            _ => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_3),
-        }
-
-        (symbol.id as u64, 1).write_packed(&mut buffer);
-        Var { data: buffer }
+        Self::new_into(symbol, RawAtom::new())
     }
 
     #[inline]
-    pub fn new_into(symbol: Symbol, mut buffer: RawAtom) -> Var {
-        buffer.clear();
-
-        match symbol.wildcard_level {
-            0 => buffer.put_u8(VAR_ID),
-            1 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_1),
-            2 => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_2),
-            _ => buffer.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_3),
-        }
-
-        (symbol.id as u64, 1).write_packed(&mut buffer);
-        Var { data: buffer }
+    pub fn new_into(symbol: Symbol, buffer: RawAtom) -> Var {
+        let mut f = Var { data: buffer };
+        f.set_from_symbol(symbol);
+        f
     }
 
     #[inline]
@@ -200,17 +183,30 @@ impl Var {
     }
 
     #[inline]
-    pub fn set_from_symbol(&mut self, id: Symbol) {
+    pub fn set_from_symbol(&mut self, symbol: Symbol) {
         self.data.clear();
 
-        match id.wildcard_level {
-            0 => self.data.put_u8(VAR_ID),
-            1 => self.data.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_1),
-            2 => self.data.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_2),
-            _ => self.data.put_u8(VAR_ID | VAR_WILDCARD_LEVEL_3),
+        let mut flags = VAR_ID;
+        match symbol.wildcard_level {
+            0 => {}
+            1 => flags |= VAR_WILDCARD_LEVEL_1,
+            2 => flags |= VAR_WILDCARD_LEVEL_2,
+            _ => flags |= VAR_WILDCARD_LEVEL_3,
         }
 
-        (id.id as u64, 1).write_packed(&mut self.data);
+        if symbol.is_symmetric {
+            flags |= FUN_SYMMETRIC_FLAG;
+        }
+        if symbol.is_linear {
+            flags |= FUN_LINEAR_FLAG;
+        }
+        if symbol.is_antisymmetric {
+            flags |= VAR_ANTISYMMETRIC_FLAG;
+        }
+
+        self.data.put_u8(flags);
+
+        (symbol.id as u64, 1).write_packed(&mut self.data);
     }
 
     #[inline]
@@ -791,9 +787,12 @@ impl<'a> VarView<'a> {
 
     #[inline(always)]
     pub fn get_symbol(&self) -> Symbol {
-        Symbol::init_var(
+        Symbol::init_fn(
             self.data[1..].get_frac_i64().0 as u32,
             self.get_wildcard_level(),
+            self.data[0] & FUN_SYMMETRIC_FLAG != 0,
+            self.data[0] & VAR_ANTISYMMETRIC_FLAG != 0,
+            self.data[0] & FUN_LINEAR_FLAG != 0,
         )
     }
 

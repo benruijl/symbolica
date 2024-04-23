@@ -1,4 +1,8 @@
-use std::{cmp::Ordering, ops::Div, sync::Arc};
+use std::{
+    cmp::Ordering,
+    ops::{Add, Div, Mul},
+    sync::Arc,
+};
 
 use ahash::HashMap;
 use rug::{
@@ -9,20 +13,18 @@ use rug::{
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
+    atom::{Atom, AtomView},
     domains::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
         },
-        integer::{Integer, IntegerRing},
+        integer::{Integer, IntegerRing, Z},
         rational::{Rational, RationalField},
         rational_polynomial::RationalPolynomial,
         EuclideanDomain, Field, Ring,
     },
     poly::{polynomial::MultivariatePolynomial, Variable, INLINED_EXPONENTS},
-    representations::{
-        Add, Atom, AtomSet, AtomView, Mul, Num, OwnedAdd, OwnedMul, OwnedNum, OwnedPow, Pow, Var,
-    },
-    state::{FiniteFieldIndex, ResettableBuffer, State, Workspace},
+    state::{FiniteFieldIndex, State, Workspace},
 };
 
 pub trait ConvertToRing: Ring {
@@ -48,6 +50,12 @@ pub enum Coefficient {
 
 impl From<i64> for Coefficient {
     fn from(value: i64) -> Self {
+        Coefficient::Rational(value.into())
+    }
+}
+
+impl From<i32> for Coefficient {
+    fn from(value: i32) -> Self {
         Coefficient::Rational(value.into())
     }
 }
@@ -115,9 +123,13 @@ impl Coefficient {
             Coefficient::RationalPolynomial(r) => r.numerator.is_zero(),
         }
     }
+}
 
-    pub fn add(self, other: Coefficient, state: &State) -> Coefficient {
-        match (self, other) {
+impl Add for Coefficient {
+    type Output = Coefficient;
+
+    fn add(self, rhs: Coefficient) -> Coefficient {
+        match (self, rhs) {
             (Coefficient::Rational(r1), Coefficient::Rational(r2)) => {
                 Coefficient::Rational(r1 + r2)
             }
@@ -125,11 +137,11 @@ impl Coefficient {
                 if i1 != i2 {
                     panic!(
                         "Cannot add numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(i1).get_prime(),
-                        state.get_finite_field(i2).get_prime()
+                        State::get_finite_field(i1).get_prime(),
+                        State::get_finite_field(i2).get_prime()
                     );
                 }
-                let f = state.get_finite_field(i1);
+                let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.add(&n1, &n2), i1)
             }
             (Coefficient::FiniteField(_, _), _) => {
@@ -147,8 +159,8 @@ impl Coefficient {
                 Coefficient::RationalPolynomial(&rp + &r2)
             }
             (Coefficient::RationalPolynomial(mut p1), Coefficient::RationalPolynomial(mut p2)) => {
-                if p1.get_var_map() != p2.get_var_map() {
-                    p1.unify_var_map(&mut p2);
+                if p1.get_variables() != p2.get_variables() {
+                    p1.unify_variables(&mut p2);
                 };
 
                 let r = &p1 + &p2;
@@ -161,9 +173,13 @@ impl Coefficient {
             }
         }
     }
+}
 
-    pub fn mul(self, other: Coefficient, state: &State) -> Coefficient {
-        match (self, other) {
+impl Mul for Coefficient {
+    type Output = Coefficient;
+
+    fn mul(self, rhs: Coefficient) -> Self::Output {
+        match (self, rhs) {
             (Coefficient::Rational(r1), Coefficient::Rational(r2)) => {
                 Coefficient::Rational(r1 * r2)
             }
@@ -171,11 +187,11 @@ impl Coefficient {
                 if i1 != i2 {
                     panic!(
                         "Cannot multiply numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(i1).get_prime(),
-                        state.get_finite_field(i2).get_prime()
+                        State::get_finite_field(i1).get_prime(),
+                        State::get_finite_field(i2).get_prime()
                     );
                 }
-                let f = state.get_finite_field(i1);
+                let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.mul(&n1, &n2), i1)
             }
             (Coefficient::FiniteField(_, _), _) => {
@@ -186,8 +202,8 @@ impl Coefficient {
             }
             (Coefficient::Rational(r), Coefficient::RationalPolynomial(mut rp))
             | (Coefficient::RationalPolynomial(mut rp), Coefficient::Rational(r)) => {
-                let gcd1 = IntegerRing::new().gcd(&r.numerator(), &rp.denominator.content());
-                let gcd2 = IntegerRing::new().gcd(&r.denominator(), &rp.numerator.content());
+                let gcd1 = Z.gcd(&r.numerator(), &rp.denominator.content());
+                let gcd2 = Z.gcd(&r.denominator(), &rp.numerator.content());
                 rp.numerator = rp
                     .numerator
                     .div_coeff(&gcd2)
@@ -199,8 +215,8 @@ impl Coefficient {
                 Coefficient::RationalPolynomial(rp)
             }
             (Coefficient::RationalPolynomial(mut p1), Coefficient::RationalPolynomial(mut p2)) => {
-                if p1.get_var_map() != p2.get_var_map() {
-                    p1.unify_var_map(&mut p2);
+                if p1.get_variables() != p2.get_variables() {
+                    p1.unify_variables(&mut p2);
                 };
 
                 let r = &p1 * &p2;
@@ -239,7 +255,7 @@ impl<'a> SerializedRational<'a> {
 }
 
 /// A view of a coefficient that keeps GMP rationals serialized.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CoefficientView<'a> {
     Natural(i64, i64),
     Large(SerializedRational<'a>),
@@ -397,145 +413,7 @@ impl CoefficientView<'_> {
         }
     }
 
-    pub fn add(&self, other: &CoefficientView<'_>, state: &State) -> Coefficient {
-        match (self, other) {
-            (CoefficientView::Natural(n1, d1), CoefficientView::Natural(n2, d2)) => {
-                Coefficient::Rational(Rational::Natural(*n1, *d1) + &Rational::Natural(*n2, *d2))
-            }
-            (CoefficientView::Natural(n1, d1), CoefficientView::Large(r2))
-            | (CoefficientView::Large(r2), CoefficientView::Natural(n1, d1)) => {
-                Coefficient::Rational(Rational::Natural(*n1, *d1) + &Rational::Large(r2.to_rat()))
-            }
-            (CoefficientView::Large(r1), CoefficientView::Large(r2)) => {
-                (r1.to_rat() + r2.to_rat()).into()
-            }
-            (CoefficientView::FiniteField(n1, i1), CoefficientView::FiniteField(n2, i2)) => {
-                if i1 != i2 {
-                    panic!(
-                        "Cannot add numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(*i1).get_prime(),
-                        state.get_finite_field(*i2).get_prime()
-                    );
-                }
-                let f = state.get_finite_field(*i1);
-                Coefficient::FiniteField(f.add(n1, n2), *i1)
-            }
-            (CoefficientView::FiniteField(_, _), _) => {
-                panic!("Cannot add finite field to non-finite number. Convert other number first?");
-            }
-            (_, CoefficientView::FiniteField(_, _)) => {
-                panic!("Cannot add finite field to non-finite number. Convert other number first?");
-            }
-            (CoefficientView::Natural(n, d), CoefficientView::RationalPolynomial(p))
-            | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d)) => {
-                let r = (*p).clone();
-                let r2 = RationalPolynomial {
-                    numerator: p.numerator.constant(Integer::Natural(*n)),
-                    denominator: p.denominator.constant(Integer::Natural(*d)),
-                };
-                Coefficient::RationalPolynomial(&r + &r2)
-            }
-            (CoefficientView::Large(l), CoefficientView::RationalPolynomial(p))
-            | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l)) => {
-                let r = (*p).clone();
-                let (n, d) = l.to_rat().into_numer_denom();
-                let r2 = RationalPolynomial {
-                    numerator: p.numerator.constant(Integer::from_large(n)),
-                    denominator: p.denominator.constant(Integer::from_large(d)),
-                };
-                Coefficient::RationalPolynomial(&r + &r2)
-            }
-            (CoefficientView::RationalPolynomial(p1), CoefficientView::RationalPolynomial(p2)) => {
-                let r = if p1.get_var_map() != p2.get_var_map() {
-                    let mut p1 = (*p1).clone();
-                    let mut p2 = (*p2).clone();
-                    p1.unify_var_map(&mut p2);
-                    &p1 + &p2
-                } else {
-                    *p1 + *p2
-                };
-
-                if r.is_constant() {
-                    (r.numerator.lcoeff(), r.denominator.lcoeff()).into()
-                } else {
-                    Coefficient::RationalPolynomial(r)
-                }
-            }
-        }
-    }
-
-    pub fn mul(&self, other: &CoefficientView<'_>, state: &State) -> Coefficient {
-        match (self, other) {
-            (CoefficientView::Natural(n1, d1), CoefficientView::Natural(n2, d2)) => {
-                Coefficient::Rational(Rational::Natural(*n1, *d1) * &Rational::Natural(*n2, *d2))
-            }
-            (CoefficientView::Natural(n1, d1), CoefficientView::Large(r2))
-            | (CoefficientView::Large(r2), CoefficientView::Natural(n1, d1)) => {
-                Coefficient::Rational(Rational::Natural(*n1, *d1) * &Rational::Large(r2.to_rat()))
-            }
-            (CoefficientView::Large(r1), CoefficientView::Large(r2)) => {
-                (r1.to_rat() * r2.to_rat()).into()
-            }
-            (CoefficientView::FiniteField(n1, i1), CoefficientView::FiniteField(n2, i2)) => {
-                if i1 != i2 {
-                    panic!(
-                        "Cannot multiply numbers from different finite fields: p1={}, p2={}",
-                        state.get_finite_field(*i1).get_prime(),
-                        state.get_finite_field(*i2).get_prime()
-                    );
-                }
-                let f = state.get_finite_field(*i1);
-                Coefficient::FiniteField(f.mul(n1, n2), *i1)
-            }
-            (CoefficientView::FiniteField(_, _), _) => {
-                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
-            }
-            (_, CoefficientView::FiniteField(_, _)) => {
-                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
-            }
-            (CoefficientView::Natural(n, d), CoefficientView::RationalPolynomial(p))
-            | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d)) => {
-                let mut r = (*p).clone();
-                let (n, d) = (Integer::Natural(*n), Integer::Natural(*d));
-
-                let gcd1 = IntegerRing::new().gcd(&n, &r.denominator.content());
-                let gcd2 = IntegerRing::new().gcd(&d, &r.numerator.content());
-                r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
-                r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
-                Coefficient::RationalPolynomial(r)
-            }
-            (CoefficientView::Large(l), CoefficientView::RationalPolynomial(p))
-            | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l)) => {
-                let mut r = (*p).clone();
-                let (n, d) = l.to_rat().into_numer_denom();
-                let (n, d) = (Integer::from_large(n), Integer::from_large(d));
-
-                let gcd1 = IntegerRing::new().gcd(&n, &r.denominator.content());
-                let gcd2 = IntegerRing::new().gcd(&d, &r.numerator.content());
-                r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
-                r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
-                Coefficient::RationalPolynomial(r)
-            }
-            (CoefficientView::RationalPolynomial(p1), CoefficientView::RationalPolynomial(p2)) => {
-                let r = if p1.get_var_map() != p2.get_var_map() {
-                    let mut p1 = (*p1).clone();
-                    let mut p2 = (*p2).clone();
-                    p1.unify_var_map(&mut p2);
-                    &p1 * &p2
-                } else {
-                    *p1 * *p2
-                };
-
-                if r.is_constant() {
-                    (r.numerator.lcoeff(), r.denominator.lcoeff()).into()
-                } else {
-                    Coefficient::RationalPolynomial(r)
-                }
-            }
-        }
-    }
-
-    pub fn pow(&self, other: &CoefficientView<'_>, _state: &State) -> (Coefficient, Coefficient) {
+    pub fn pow(&self, other: &CoefficientView<'_>) -> (Coefficient, Coefficient) {
         // TODO: normalize 4^1/3 to 2^(2/3)?
         match (self, other) {
             (&CoefficientView::Natural(mut n1, mut d1), &CoefficientView::Natural(mut n2, d2)) => {
@@ -604,7 +482,24 @@ impl CoefficientView<'_> {
         }
     }
 
-    pub fn cmp(&self, other: &CoefficientView) -> Ordering {
+    pub fn is_integer(&self) -> bool {
+        match self {
+            CoefficientView::Natural(_, d) => *d == 1,
+            CoefficientView::Large(r) => r.to_rat().is_integer(),
+            CoefficientView::FiniteField(_, _) => true,
+            CoefficientView::RationalPolynomial(_) => false,
+        }
+    }
+}
+
+impl PartialOrd for CoefficientView<'_> {
+    fn partial_cmp(&self, other: &CoefficientView) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CoefficientView<'_> {
+    fn cmp(&self, other: &CoefficientView) -> Ordering {
         match (self, other) {
             (&CoefficientView::Natural(n1, d1), &CoefficientView::Natural(n2, d2)) => {
                 // TODO: improve
@@ -641,29 +536,204 @@ impl CoefficientView<'_> {
             _ => unreachable!(),
         }
     }
+}
 
-    pub fn is_integer(&self) -> bool {
-        match self {
-            CoefficientView::Natural(_, d) => *d == 1,
-            CoefficientView::Large(r) => r.to_rat().is_integer(),
-            CoefficientView::FiniteField(_, _) => true,
-            CoefficientView::RationalPolynomial(_) => false,
+impl Add<CoefficientView<'_>> for CoefficientView<'_> {
+    type Output = Coefficient;
+
+    fn add(self, other: CoefficientView<'_>) -> Coefficient {
+        match (self, other) {
+            (CoefficientView::Natural(n1, d1), CoefficientView::Natural(n2, d2)) => {
+                Coefficient::Rational(Rational::Natural(n1, d1) + &Rational::Natural(n2, d2))
+            }
+            (CoefficientView::Natural(n1, d1), CoefficientView::Large(r2))
+            | (CoefficientView::Large(r2), CoefficientView::Natural(n1, d1)) => {
+                Coefficient::Rational(Rational::Natural(n1, d1) + &Rational::Large(r2.to_rat()))
+            }
+            (CoefficientView::Large(r1), CoefficientView::Large(r2)) => {
+                (r1.to_rat() + r2.to_rat()).into()
+            }
+            (CoefficientView::FiniteField(n1, i1), CoefficientView::FiniteField(n2, i2)) => {
+                if i1 != i2 {
+                    panic!(
+                        "Cannot add numbers from different finite fields: p1={}, p2={}",
+                        State::get_finite_field(i1).get_prime(),
+                        State::get_finite_field(i2).get_prime()
+                    );
+                }
+                let f = State::get_finite_field(i1);
+                Coefficient::FiniteField(f.add(&n1, &n2), i1)
+            }
+            (CoefficientView::FiniteField(_, _), _) => {
+                panic!("Cannot add finite field to non-finite number. Convert other number first?");
+            }
+            (_, CoefficientView::FiniteField(_, _)) => {
+                panic!("Cannot add finite field to non-finite number. Convert other number first?");
+            }
+            (CoefficientView::Natural(n, d), CoefficientView::RationalPolynomial(p))
+            | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d)) => {
+                let r = (*p).clone();
+                let r2 = RationalPolynomial {
+                    numerator: p.numerator.constant(Integer::Natural(n)),
+                    denominator: p.denominator.constant(Integer::Natural(d)),
+                };
+                Coefficient::RationalPolynomial(&r + &r2)
+            }
+            (CoefficientView::Large(l), CoefficientView::RationalPolynomial(p))
+            | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l)) => {
+                let r = (*p).clone();
+                let (n, d) = l.to_rat().into_numer_denom();
+                let r2 = RationalPolynomial {
+                    numerator: p.numerator.constant(Integer::from_large(n)),
+                    denominator: p.denominator.constant(Integer::from_large(d)),
+                };
+                Coefficient::RationalPolynomial(&r + &r2)
+            }
+            (CoefficientView::RationalPolynomial(p1), CoefficientView::RationalPolynomial(p2)) => {
+                let r = if p1.get_variables() != p2.get_variables() {
+                    let mut p1 = (*p1).clone();
+                    let mut p2 = (*p2).clone();
+                    p1.unify_variables(&mut p2);
+                    &p1 + &p2
+                } else {
+                    p1 + p2
+                };
+
+                if r.is_constant() {
+                    (r.numerator.lcoeff(), r.denominator.lcoeff()).into()
+                } else {
+                    Coefficient::RationalPolynomial(r)
+                }
+            }
         }
     }
 }
 
-impl<'a, P: AtomSet> AtomView<'a, P> {
-    pub fn set_coefficient_ring(
+impl Mul for CoefficientView<'_> {
+    type Output = Coefficient;
+
+    fn mul(self, other: CoefficientView<'_>) -> Coefficient {
+        match (self, other) {
+            (CoefficientView::Natural(n1, d1), CoefficientView::Natural(n2, d2)) => {
+                Coefficient::Rational(Rational::Natural(n1, d1) * &Rational::Natural(n2, d2))
+            }
+            (CoefficientView::Natural(n1, d1), CoefficientView::Large(r2))
+            | (CoefficientView::Large(r2), CoefficientView::Natural(n1, d1)) => {
+                Coefficient::Rational(Rational::Natural(n1, d1) * &Rational::Large(r2.to_rat()))
+            }
+            (CoefficientView::Large(r1), CoefficientView::Large(r2)) => {
+                (r1.to_rat() * r2.to_rat()).into()
+            }
+            (CoefficientView::FiniteField(n1, i1), CoefficientView::FiniteField(n2, i2)) => {
+                if i1 != i2 {
+                    panic!(
+                        "Cannot multiply numbers from different finite fields: p1={}, p2={}",
+                        State::get_finite_field(i1).get_prime(),
+                        State::get_finite_field(i2).get_prime()
+                    );
+                }
+                let f = State::get_finite_field(i1);
+                Coefficient::FiniteField(f.mul(&n1, &n2), i1)
+            }
+            (CoefficientView::FiniteField(_, _), _) => {
+                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+            }
+            (_, CoefficientView::FiniteField(_, _)) => {
+                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+            }
+            (CoefficientView::Natural(n, d), CoefficientView::RationalPolynomial(p))
+            | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d)) => {
+                let mut r = (*p).clone();
+                let (n, d) = (Integer::Natural(n), Integer::Natural(d));
+
+                let gcd1 = Z.gcd(&n, &r.denominator.content());
+                let gcd2 = Z.gcd(&d, &r.numerator.content());
+                r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
+                r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
+                Coefficient::RationalPolynomial(r)
+            }
+            (CoefficientView::Large(l), CoefficientView::RationalPolynomial(p))
+            | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l)) => {
+                let mut r = (*p).clone();
+                let (n, d) = l.to_rat().into_numer_denom();
+                let (n, d) = (Integer::from_large(n), Integer::from_large(d));
+
+                let gcd1 = Z.gcd(&n, &r.denominator.content());
+                let gcd2 = Z.gcd(&d, &r.numerator.content());
+                r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
+                r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
+                Coefficient::RationalPolynomial(r)
+            }
+            (CoefficientView::RationalPolynomial(p1), CoefficientView::RationalPolynomial(p2)) => {
+                let r = if p1.get_variables() != p2.get_variables() {
+                    let mut p1 = (*p1).clone();
+                    let mut p2 = (*p2).clone();
+                    p1.unify_variables(&mut p2);
+                    &p1 * &p2
+                } else {
+                    p1 * p2
+                };
+
+                if r.is_constant() {
+                    (r.numerator.lcoeff(), r.denominator.lcoeff()).into()
+                } else {
+                    Coefficient::RationalPolynomial(r)
+                }
+            }
+        }
+    }
+}
+
+impl Add<i64> for CoefficientView<'_> {
+    type Output = Coefficient;
+
+    fn add(self, other: i64) -> Coefficient {
+        match self {
+            CoefficientView::Natural(n1, d1) => {
+                Coefficient::Rational(Rational::Natural(n1, d1) + &other.into())
+            }
+            CoefficientView::Large(r1) => (r1.to_rat() + other).into(),
+            CoefficientView::FiniteField(n1, i1) => {
+                let f = State::get_finite_field(i1);
+                Coefficient::FiniteField(f.add(&n1, &f.element_from_coefficient(other.into())), i1)
+            }
+            CoefficientView::RationalPolynomial(p) => {
+                let a = RationalPolynomial {
+                    numerator: p.numerator.constant(Integer::Natural(other)),
+                    denominator: p.denominator.constant(Integer::Natural(1)),
+                };
+
+                Coefficient::RationalPolynomial(p + &a)
+            }
+        }
+    }
+}
+
+impl Atom {
+    pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
+        self.as_view().set_coefficient_ring(vars)
+    }
+}
+
+impl<'a> AtomView<'a> {
+    pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut out = ws.new_atom();
+            self.set_coefficient_ring_with_ws_into(vars, ws, &mut out);
+            out.into_inner()
+        })
+    }
+
+    pub fn set_coefficient_ring_with_ws_into(
         &self,
         vars: &Arc<Vec<Variable>>,
-        state: &State,
-        workspace: &Workspace<P>,
-        out: &mut Atom<P>,
+        workspace: &Workspace,
+        out: &mut Atom,
     ) -> bool {
         match self {
             AtomView::Num(n) => {
                 if let CoefficientView::RationalPolynomial(r) = n.get_coeff_view() {
-                    let old_var_map = r.get_var_map().unwrap();
+                    let old_var_map = r.get_variables();
                     if old_var_map != vars {
                         if old_var_map.iter().all(|x| vars.contains(x)) {
                             // upgrade the polynomial if no variables got removed
@@ -675,51 +745,50 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                             r.numerator = r.numerator.rearrange_with_growth(&order);
                             r.denominator = r.denominator.rearrange_with_growth(&order);
-                            r.numerator.var_map = Some(vars.clone());
-                            r.denominator.var_map = r.numerator.var_map.clone();
-                            out.to_num()
-                                .set_from_coeff(Coefficient::RationalPolynomial(r));
+                            r.numerator.variables = vars.clone();
+                            r.denominator.variables = r.numerator.variables.clone();
+                            out.to_num(Coefficient::RationalPolynomial(r));
                             true
                         } else {
                             let mut n1 = workspace.new_atom();
-                            r.numerator.to_expression(
+                            r.numerator.to_expression_with_map(
                                 workspace,
-                                state,
                                 &HashMap::default(),
                                 &mut n1,
                             );
 
                             let mut n1_conv = workspace.new_atom();
-                            n1.as_view()
-                                .set_coefficient_ring(vars, state, workspace, &mut n1_conv);
+                            n1.as_view().set_coefficient_ring_with_ws_into(
+                                vars,
+                                workspace,
+                                &mut n1_conv,
+                            );
 
                             let mut n2 = workspace.new_atom();
-                            r.denominator.to_expression(
+                            r.denominator.to_expression_with_map(
                                 workspace,
-                                state,
                                 &HashMap::default(),
                                 &mut n2,
                             );
 
                             let mut n2_conv = workspace.new_atom();
-                            n2.as_view()
-                                .set_coefficient_ring(vars, state, workspace, &mut n2_conv);
+                            n2.as_view().set_coefficient_ring_with_ws_into(
+                                vars,
+                                workspace,
+                                &mut n2_conv,
+                            );
 
                             // create n1/n2
                             let mut n3 = workspace.new_atom();
                             let mut exp = workspace.new_atom();
-                            exp.to_num()
-                                .set_from_coeff(Coefficient::Rational((-1i64).into()));
-                            let n3p = n3.to_pow();
-                            n3p.set_from_base_and_exp(n2_conv.as_view(), exp.as_view());
-                            n3p.set_dirty(true);
+                            exp.to_num(Coefficient::Rational((-1i64).into()));
+                            n3.to_pow(n2_conv.as_view(), exp.as_view());
 
                             let mut m = workspace.new_atom();
                             let mm = m.to_mul();
                             mm.extend(n1_conv.as_view());
                             mm.extend(n3.as_view());
-                            mm.set_dirty(true);
-                            m.as_view().normalize(workspace, state, out);
+                            m.as_view().normalize(workspace, out);
                             true
                         }
                     } else {
@@ -732,26 +801,19 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 }
             }
             AtomView::Var(v) => {
-                let id = v.get_name();
+                let id = v.get_symbol();
                 if vars.contains(&id.into()) {
                     // change variable into coefficient
-                    let mut poly = MultivariatePolynomial::new(
-                        vars.len(),
-                        &IntegerRing::new(),
-                        None,
-                        Some(vars.clone()),
-                    );
+                    let mut poly = MultivariatePolynomial::new(&Z, None, vars.clone());
                     let mut e: SmallVec<[u16; INLINED_EXPONENTS]> = smallvec![0; vars.len()];
                     e[vars.iter().position(|x| *x == id.into()).unwrap()] = 1;
                     poly.append_monomial(Integer::one(), &e);
                     let den = poly.one();
 
-                    out.to_num().set_from_coeff(Coefficient::RationalPolynomial(
-                        RationalPolynomial {
-                            numerator: poly,
-                            denominator: den,
-                        },
-                    ));
+                    out.to_num(Coefficient::RationalPolynomial(RationalPolynomial {
+                        numerator: poly,
+                        denominator: den,
+                    }));
                     true
                 } else {
                     out.set_from_view(self);
@@ -762,13 +824,11 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 let (base, exp) = p.get_base_exp();
 
                 let mut nb = workspace.new_atom();
-                if base.set_coefficient_ring(vars, state, workspace, &mut nb) {
+                if base.set_coefficient_ring_with_ws_into(vars, workspace, &mut nb) {
                     let mut o = workspace.new_atom();
-                    let pow = o.to_pow();
-                    pow.set_from_base_and_exp(nb.as_view(), exp);
-                    pow.set_dirty(true);
+                    o.to_pow(nb.as_view(), exp);
 
-                    o.as_view().normalize(workspace, state, out);
+                    o.as_view().normalize(workspace, out);
                     true
                 } else {
                     out.set_from_view(self);
@@ -783,19 +843,17 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 let mut arg_o = workspace.new_atom();
                 for arg in m.iter() {
-                    arg_o.reset();
-
-                    changed |= arg.set_coefficient_ring(vars, state, workspace, &mut arg_o);
+                    changed |= arg.set_coefficient_ring_with_ws_into(vars, workspace, &mut arg_o);
                     mul.extend(arg_o.as_view());
                 }
 
-                mul.set_dirty(changed);
+                mul.set_normalized(!changed);
 
                 if !changed {
                     std::mem::swap(out, &mut o);
                     false
                 } else {
-                    o.as_view().normalize(workspace, state, out);
+                    o.as_view().normalize(workspace, out);
                     true
                 }
             }
@@ -807,19 +865,17 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
                 let mut arg_o = workspace.new_atom();
                 for arg in a.iter() {
-                    arg_o.reset();
-
-                    changed |= arg.set_coefficient_ring(vars, state, workspace, &mut arg_o);
+                    changed |= arg.set_coefficient_ring_with_ws_into(vars, workspace, &mut arg_o);
                     mul.extend(arg_o.as_view());
                 }
 
-                mul.set_dirty(changed);
+                mul.set_normalized(!changed);
 
                 if !changed {
                     std::mem::swap(out, &mut o);
                     false
                 } else {
-                    o.as_view().normalize(workspace, state, out);
+                    o.as_view().normalize(workspace, out);
                     true
                 }
             }
@@ -829,5 +885,42 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
                 false
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use crate::{atom::Atom, domains::rational::Rational, state::State};
+
+    #[test]
+    fn coefficient_ring() {
+        let expr = Atom::parse("v1*v3+v1*(v2+2)^-1*(v2+v3+1)").unwrap();
+
+        let v2 = State::get_symbol("v2");
+        let expr_yz =
+            expr.set_coefficient_ring(&Arc::new(vec![v2.into(), State::get_symbol("v3").into()]));
+
+        let a = ((&expr_yz + &Atom::new_num(Rational::new(1, 2)))
+            * &Atom::new_num(Rational::new(3, 4)))
+            .expand();
+
+        let a = (a / &Atom::new_num(Rational::new(3, 4)) - &Atom::new_num(Rational::new(1, 2)))
+            .expand();
+
+        let a = a.set_coefficient_ring(&Arc::new(vec![]));
+
+        let expr = Atom::new_var(v2)
+            .into_pattern()
+            .replace_all(expr.as_view(), &Atom::new_num(3).into_pattern(), None, None)
+            .expand();
+
+        let a = Atom::new_var(v2)
+            .into_pattern()
+            .replace_all(a.as_view(), &Atom::new_num(3).into_pattern(), None, None)
+            .expand();
+
+        assert_eq!(a, expr);
     }
 }

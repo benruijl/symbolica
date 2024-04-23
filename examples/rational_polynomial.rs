@@ -1,30 +1,10 @@
 use symbolica::{
-    domains::{
-        integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
-    },
-    representations::Atom,
-    state::{State, Workspace},
+    atom::Atom,
+    domains::{integer::Z, rational_polynomial::RationalPolynomial},
 };
 
 fn main() {
-    let mut state = State::new();
-    let workspace = Workspace::default();
-
-    let expr = Atom::parse(
-        "(x*y^2*5+5)^2/(2*x+5)+(x+4)/(6*x^2+1)",
-        &mut state,
-        &workspace,
-    )
-    .unwrap();
-    let rat: RationalPolynomial<IntegerRing, u8> = expr
-        .as_view()
-        .to_rational_polynomial(
-            &workspace,
-            &state,
-            &RationalField::new(),
-            &IntegerRing::new(),
-            None,
-        )
-        .unwrap();
-    println!("{}", rat.printer(&state));
+    let expr = Atom::parse("(x*y^2*5+5)^2/(2*x+5)+(x+4)/(6*x^2+1)").unwrap();
+    let rat: RationalPolynomial<_, u8> = expr.to_rational_polynomial(&Z, &Z, None);
+    println!("{}", rat);
 }

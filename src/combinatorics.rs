@@ -56,14 +56,6 @@ impl CombinationIterator {
     }
 }
 
-#[test]
-fn test() {
-    let mut c = CombinationIterator::new(10, 5);
-    while let Some(a) = c.next() {
-        println!("{:?}", a);
-    }
-}
-
 /// An iterator for combinations with replacement.
 pub struct CombinationWithReplacementIterator {
     indices: SmallVec<[u32; 10]>,
@@ -361,4 +353,57 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
     }
 
     res
+}
+
+#[cfg(test)]
+mod test {
+    use super::{partitions, CombinationIterator};
+
+    #[test]
+    fn combinations() {
+        let mut c = CombinationIterator::new(4, 3);
+        let mut combinations = vec![];
+        while let Some(a) = c.next() {
+            combinations.push(a.to_vec());
+        }
+
+        let ans = vec![[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]];
+
+        assert_eq!(combinations, ans);
+    }
+
+    #[test]
+    fn partitions_no_fill() {
+        let p = partitions(
+            &[1, 1, 1, 2, 2],
+            &[('f', 2), ('g', 2), ('f', 1)],
+            false,
+            false,
+        );
+
+        let res = vec![
+            (
+                3.into(),
+                vec![('f', vec![1]), ('f', vec![1, 1]), ('g', vec![2, 2])],
+            ),
+            (
+                12.into(),
+                vec![('f', vec![1]), ('f', vec![1, 2]), ('g', vec![1, 2])],
+            ),
+            (
+                3.into(),
+                vec![('f', vec![1]), ('f', vec![2, 2]), ('g', vec![1, 1])],
+            ),
+            (
+                6.into(),
+                vec![('f', vec![2]), ('f', vec![1, 1]), ('g', vec![1, 2])],
+            ),
+            (
+                6.into(),
+                vec![('f', vec![2]), ('f', vec![1, 2]), ('g', vec![1, 1])],
+            ),
+        ];
+
+        assert_eq!(p, res);
+    }
 }

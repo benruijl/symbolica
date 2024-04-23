@@ -1,198 +1,521 @@
-use std::{sync::Mutex, thread::LocalKey};
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter, Read, Write},
+    ops::{Add, AddAssign},
+    sync::{Arc, Mutex},
+};
 
+use brotli::{CompressorWriter, Decompressor};
+use rand::{thread_rng, Rng};
 use rayon::prelude::*;
 
 use crate::{
-    coefficient::Coefficient,
-    representations::{default::Linear, Add, Atom, AtomSet, AtomView, Num, OwnedAdd, OwnedNum},
-    state::{ResettableBuffer, State, Workspace},
+    atom::{Atom, AtomView},
+    state::RecycledAtom,
 };
 
-thread_local!(static WORKSPACE: Workspace<Linear> = Workspace::new());
-
-pub trait GetLocalWorkspace: AtomSet + Sized {
-    /// Get a reference to a thread-local workspace.
-    fn get_local_workspace<'a>() -> &'a LocalKey<Workspace<Self>>;
+pub trait ReadableNamedStream: Read + Send {
+    fn open(name: &str) -> Self;
 }
 
-impl GetLocalWorkspace for Linear {
-    fn get_local_workspace<'a>() -> &'a LocalKey<Workspace<Self>> {
-        &WORKSPACE
+impl ReadableNamedStream for BufReader<File> {
+    fn open(name: &str) -> Self {
+        BufReader::new(File::open(name).unwrap())
     }
 }
 
-struct TermInputStream<P: AtomSet> {
-    mem_buf: Vec<Atom<P>>,
+impl ReadableNamedStream for Decompressor<BufReader<File>> {
+    fn open(name: &str) -> Self {
+        brotli::Decompressor::new(BufReader::new(File::open(name).unwrap()), 4096)
+    }
 }
 
-impl<P: AtomSet> Iterator for TermInputStream<P> {
-    type Item = Atom<P>;
+pub trait WriteableNamedStream: Write + Send {
+    type Reader: ReadableNamedStream;
+
+    fn create(name: &str) -> Self;
+}
+
+impl WriteableNamedStream for BufWriter<File> {
+    type Reader = BufReader<File>;
+
+    fn create(name: &str) -> Self {
+        BufWriter::new(File::create(name).unwrap())
+    }
+}
+
+impl WriteableNamedStream for CompressorWriter<BufWriter<File>> {
+    type Reader = Decompressor<BufReader<File>>;
+
+    fn create(name: &str) -> Self {
+        CompressorWriter::new(BufWriter::new(File::create(name).unwrap()), 4096, 6, 22)
+    }
+}
+
+#[derive(Clone)]
+pub struct TermStreamerConfig {
+    pub n_cores: usize,
+    pub path: String,
+    pub max_mem_bytes: usize,
+}
+
+impl Default for TermStreamerConfig {
+    fn default() -> Self {
+        Self {
+            n_cores: 4,
+            path: ".".to_owned(),
+            max_mem_bytes: 1073741824, // 1 GB
+        }
+    }
+}
+
+struct TermInputStream<'a, R: ReadableNamedStream> {
+    mem_buf: &'a [Atom],
+    file_buf: Vec<R>,
+    pos: usize,
+    mem_pos: usize,
+}
+
+impl<'a, R: ReadableNamedStream> Iterator for TermInputStream<'a, R> {
+    type Item = Atom;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(v) = self.mem_buf.pop() {
-            return Some(v);
+        if self.pos == 0 {
+            if self.mem_pos < self.mem_buf.len() {
+                self.mem_pos += 1;
+                return Some(self.mem_buf[self.mem_pos - 1].clone());
+            }
+
+            self.pos += 1;
+        }
+
+        while self.pos <= self.file_buf.len() {
+            let mut a = Atom::new();
+            if let Ok(()) = unsafe { a.read(&mut self.file_buf[self.pos - 1]) } {
+                return Some(a);
+            }
+
+            self.pos += 1;
         }
 
         None
     }
 }
 
-struct TermOutputStream<P: AtomSet> {
-    mem_buf: Vec<Atom<P>>,
+/// A term streamer that has terms partly in memory and partly on another storage device.
+pub struct TermStreamer<W: WriteableNamedStream> {
+    mem_buf: Vec<Atom>,
+    mem_size: usize,
+    total_size: usize,
+    file_buf: Vec<W>,
+    config: TermStreamerConfig,
+    filename: String,
+    thread_pool: Arc<rayon::ThreadPool>,
+    generation: usize,
 }
 
-impl<P: AtomSet> TermOutputStream<P> {
-    /// Add terms to the buffer.
-    fn push(&mut self, a: Atom<P>) {
-        match a {
-            Atom::Add(aa) => {
-                for arg in aa.to_add_view().iter() {
-                    self.mem_buf.push(Atom::new_from_view(&arg));
-                }
+impl<W: WriteableNamedStream> Drop for TermStreamer<W> {
+    fn drop(&mut self) {
+        for x in &mut (0..self.file_buf.len()) {
+            std::fs::remove_file(&format!("{}_{}_{}", self.filename, self.generation, x)).unwrap();
+        }
+    }
+}
+
+impl<W: WriteableNamedStream> Default for TermStreamer<W>
+where
+    for<'a> AtomView<'a>: Send,
+    Atom: Send,
+{
+    fn default() -> Self {
+        Self::new(TermStreamerConfig::default())
+    }
+}
+
+impl<W: WriteableNamedStream> Add<&mut TermStreamer<W>> for &mut TermStreamer<W> {
+    type Output = TermStreamer<W>;
+
+    fn add(self, rhs: &mut TermStreamer<W>) -> Self::Output {
+        let mut n = self.next_generation();
+        let r1 = self.reader();
+        let r2 = rhs.reader();
+
+        for a in r1.chain(r2) {
+            n.push(a);
+        }
+
+        n
+    }
+}
+
+impl<W: WriteableNamedStream> AddAssign<&mut TermStreamer<W>> for TermStreamer<W> {
+    fn add_assign(&mut self, rhs: &mut TermStreamer<W>) {
+        for a in rhs.reader() {
+            self.push(a);
+        }
+    }
+}
+
+impl<W: WriteableNamedStream> Add<Atom> for TermStreamer<W> {
+    type Output = TermStreamer<W>;
+
+    fn add(mut self, rhs: Atom) -> Self::Output {
+        self.push(rhs);
+        self
+    }
+}
+
+impl<W: WriteableNamedStream> TermStreamer<W> {
+    /// Create a new term streamer.
+    pub fn new(config: TermStreamerConfig) -> Self {
+        let filename = loop {
+            let name = format!("{}/{:x}", config.path, thread_rng().gen::<u64>());
+            if !std::path::Path::new(&name).exists() {
+                break name;
             }
-            _ => {
-                self.mem_buf.push(a);
+        };
+
+        Self {
+            mem_buf: vec![],
+            mem_size: 0,
+            total_size: 0,
+            file_buf: vec![],
+            filename,
+            thread_pool: Arc::new(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(config.n_cores)
+                    .build()
+                    .unwrap(),
+            ),
+            config,
+            generation: 0,
+        }
+    }
+
+    fn next_generation(&self) -> Self {
+        Self {
+            mem_buf: vec![],
+            mem_size: 0,
+            total_size: 0,
+            file_buf: vec![],
+            filename: self.filename.clone(),
+            config: self.config.clone(),
+            thread_pool: self.thread_pool.clone(),
+            generation: self.generation + 1,
+        }
+    }
+
+    /// Add terms to the buffer.
+    pub fn push(&mut self, a: Atom) {
+        if let AtomView::Add(aa) = a.as_view() {
+            for arg in aa.iter() {
+                self.push_sorted_impl(arg.to_owned());
+            }
+        } else {
+            self.push_sorted_impl(a);
+        }
+    }
+
+    fn push_sorted_impl(&mut self, a: Atom) {
+        let size = a.as_view().get_byte_size();
+        self.mem_buf.push(a);
+        self.mem_size += size;
+        self.total_size += size;
+
+        if self.mem_size >= self.config.max_mem_bytes {
+            self.sort();
+
+            if self.mem_size * 2 > self.config.max_mem_bytes {
+                self.file_buf.push(W::create(&format!(
+                    "{}_{}_{}",
+                    self.filename,
+                    self.generation,
+                    self.file_buf.len()
+                )));
+
+                let f = self.file_buf.last_mut().unwrap();
+                for x in self.mem_buf.drain(..) {
+                    x.as_view().write(&mut *f).unwrap();
+                }
+                self.mem_size = 0;
             }
         }
     }
 
-    /// Sort all the terms.
-    fn sort(&mut self, workspace: &Workspace<P>, state: &State) {
+    /// Sort all the terms in the memory buffer.
+    fn sort(&mut self) {
         self.mem_buf
             .par_sort_by(|a, b| a.as_view().cmp_terms(&b.as_view()));
 
         let mut out = Vec::with_capacity(self.mem_buf.len());
+        let mut new_size = 0;
 
         if !self.mem_buf.is_empty() {
             let mut last_buf = self.mem_buf.remove(0);
 
-            let mut handle = workspace.new_atom();
-            let helper = handle.get_mut();
-            let mut cur_len = 0;
+            let mut handle: RecycledAtom = Atom::new().into();
 
-            for mut cur_buf in self.mem_buf.drain(..) {
-                if !last_buf.merge_terms(&mut cur_buf, helper, state) {
+            for cur_buf in self.mem_buf.drain(..) {
+                if !last_buf.merge_terms(cur_buf.as_view(), &mut handle) {
                     // we are done merging
                     {
                         let v = last_buf.as_view();
                         if let AtomView::Num(n) = v {
                             if !n.is_zero() {
+                                new_size += v.get_byte_size();
                                 out.push(last_buf);
-                                cur_len += 1;
                             }
                         } else {
+                            new_size += v.get_byte_size();
                             out.push(last_buf);
-                            cur_len += 1;
                         }
                     }
                     last_buf = cur_buf;
                 }
             }
 
-            if cur_len == 0 {
-                out.push(last_buf);
+            if let AtomView::Num(n) = last_buf.as_view() {
+                if !n.is_zero() {
+                    new_size += last_buf.as_view().get_byte_size();
+                    out.push(last_buf);
+                }
             } else {
+                new_size += last_buf.as_view().get_byte_size();
                 out.push(last_buf);
             }
         }
 
         self.mem_buf = out;
+        self.total_size += new_size;
+        self.total_size -= self.mem_size;
+        self.mem_size = new_size;
     }
 
-    fn to_expression(&mut self, workspace: &Workspace<P>, state: &State) -> Atom<P> {
-        self.sort(workspace, state);
+    /// Fuse sorted streams into one sorted stream.
+    pub fn normalize(&mut self) {
+        self.sort();
 
-        if self.mem_buf.is_empty() {
-            let mut out = Atom::<P>::new();
-            out.to_num().set_from_coeff(Coefficient::zero());
-            out
-        } else if self.mem_buf.len() == 1 {
-            self.mem_buf.pop().unwrap()
-        } else {
-            let mut out = Atom::<P>::new();
-            let add = out.to_add();
-            for x in self.mem_buf.drain(..) {
-                add.extend(x.as_view());
+        self.mem_buf.reverse();
+
+        let mut head = vec![self.mem_buf.pop()];
+
+        let n_files = self.file_buf.len();
+
+        for b in &mut self.file_buf {
+            b.flush().unwrap();
+        }
+
+        let mut files: Vec<_> = (0..n_files)
+            .map(|i| W::Reader::open(&format!("{}_{}_{}", self.filename, self.generation, i)))
+            .collect();
+
+        for ff in &mut files {
+            let mut a = Atom::new();
+            if let Ok(()) = unsafe { a.read(ff) } {
+                head.push(Some(a));
+            } else {
+                head.push(None);
             }
-            out
         }
-    }
-}
 
-/// A term streamer that allows for mapping
-pub struct TermStreamer<P: AtomSet> {
-    exp_in: TermInputStream<P>,
-    exp_out: TermOutputStream<P>,
-}
+        let mut new_stream = self.next_generation();
 
-impl<P: AtomSet + GetLocalWorkspace + Send + 'static> Default for TermStreamer<P>
-where
-    for<'a> AtomView<'a, P>: Send,
-    Atom<P>: Send,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
+        let mut last = Atom::new();
 
-impl<P: AtomSet + GetLocalWorkspace + Send + 'static> TermStreamer<P>
-where
-    for<'a> AtomView<'a, P>: Send,
-    Atom<P>: Send,
-{
-    /// Create a new term streamer.
-    pub fn new() -> TermStreamer<P> {
-        TermStreamer {
-            exp_in: TermInputStream { mem_buf: vec![] },
-            exp_out: TermOutputStream { mem_buf: vec![] },
+        let mut smallest = (0..head.len()).collect::<Vec<_>>();
+        let mut helper = Atom::new();
+        loop {
+            // find minimal element
+            smallest.sort_unstable_by(|a, b| {
+                if let Some(aa) = &head[*a] {
+                    if let Some(bb) = &head[*b] {
+                        aa.as_view().cmp_terms(&bb.as_view())
+                    } else {
+                        std::cmp::Ordering::Less
+                    }
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            });
+
+            let Some(c) = head[smallest[0]].take() else {
+                // all None
+                break;
+            };
+
+            // load the next element
+            if smallest[0] == 0 {
+                head[0] = self.mem_buf.pop();
+            } else {
+                let mut a = Atom::new();
+                if let Ok(()) = unsafe { a.read(&mut files[smallest[0] - 1]) } {
+                    head[smallest[0]] = Some(a);
+                }
+            }
+
+            if !last.merge_terms(c.as_view(), &mut helper) {
+                if let AtomView::Num(n) = last.as_view() {
+                    if !n.is_zero() {
+                        new_stream.push_sorted_impl(last.clone());
+                    }
+                } else {
+                    new_stream.push_sorted_impl(last.clone());
+                }
+
+                last.set_from_view(&c.as_view());
+            }
         }
+
+        if let AtomView::Num(n) = last.as_view() {
+            if !n.is_zero() {
+                new_stream.push_sorted_impl(last.clone());
+            }
+        } else {
+            new_stream.push_sorted_impl(last.clone());
+        }
+
+        *self = new_stream;
     }
 
-    /// Create a new term streamer that contains the
-    /// terms in atom `a`. More terms can be added using `self.push`.
-    pub fn new_from(a: Atom<P>) -> TermStreamer<P> {
-        let mut s = TermStreamer {
-            exp_in: TermInputStream { mem_buf: vec![] },
-            exp_out: TermOutputStream { mem_buf: vec![] },
-        };
+    /// Convert the term stream into an expression. This may exceed the available memory.
+    pub fn to_expression(&mut self) -> Atom {
+        self.normalize();
 
-        s.push(a);
-        s
+        let mut a = Atom::new();
+        let add = a.to_add();
+
+        for x in self.reader() {
+            add.extend(x.as_view());
+        }
+
+        add.set_normalized(true);
+        a
     }
 
-    /// Add terms to the streamer.
-    pub fn push(&mut self, a: Atom<P>) {
-        self.exp_out.push(a);
-    }
+    fn reader(&mut self) -> TermInputStream<W::Reader> {
+        let num_files = self.file_buf.len();
 
-    fn move_out_to_in(&mut self) {
-        std::mem::swap(&mut self.exp_in.mem_buf, &mut self.exp_out.mem_buf);
+        for x in &mut self.file_buf {
+            x.flush().unwrap();
+        }
+
+        TermInputStream {
+            mem_buf: &self.mem_buf,
+            file_buf: (0..num_files)
+                .map(|i| W::Reader::open(&format!("{}_{}_{}", self.filename, self.generation, i)))
+                .collect(),
+            pos: 0,
+            mem_pos: 0,
+        }
     }
 
     /// Map every term in the stream using the function `f`. The resulting terms
     /// are a stream as well, which is returned by this function.
-    pub fn map(
-        mut self,
-        f: impl Fn(&Workspace<P>, Atom<P>) -> Atom<P> + Send + Sync,
-    ) -> TermStreamer<P> {
-        self.move_out_to_in();
+    pub fn map(&mut self, f: impl Fn(Atom) -> Atom + Send + Sync) -> Self {
+        let t = self.thread_pool.clone();
 
-        let out_wrap = Mutex::new(self.exp_out);
+        let new_out = self.next_generation();
 
-        self.exp_in.par_bridge().for_each(|x| {
-            P::get_local_workspace().with(|workspace| {
-                out_wrap.lock().unwrap().push(f(workspace, x));
-            })
-        });
+        let reader = self.reader();
 
-        TermStreamer {
-            exp_in: TermInputStream { mem_buf: vec![] },
-            exp_out: out_wrap.into_inner().unwrap(),
-        }
+        let out_wrap = Mutex::new(new_out);
+
+        t.install(
+            #[inline(always)]
+            || {
+                reader.par_bridge().for_each(|x| {
+                    out_wrap.lock().unwrap().push(f(x));
+                });
+            },
+        );
+
+        out_wrap.into_inner().unwrap()
     }
 
-    /// Convert the term stream into an expression. This may exceed the available memory.
-    pub fn to_expression(&mut self, workspace: &Workspace<P>, state: &State) -> Atom<P> {
-        self.exp_out.to_expression(workspace, state)
+    /// Map every term in the stream using the function `f` using a single core. The resulting terms
+    /// are a stream as well, which is returned by this function.
+    pub fn map_single_core(mut self, f: impl Fn(Atom) -> Atom) -> Self {
+        let mut new_out = self.next_generation();
+
+        let reader = self.reader();
+
+        for x in reader {
+            new_out.push(f(x));
+        }
+
+        new_out
+    }
+
+    pub fn eq(&mut self, other: &mut Self) -> bool {
+        self.normalize();
+        other.normalize();
+
+        self.reader().eq(other.reader())
+    }
+
+    pub fn get_byte_size(&self) -> usize {
+        self.total_size
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{fs::File, io::BufWriter};
+
+    use brotli::CompressorWriter;
+
+    use crate::{
+        atom::Atom,
+        id::Pattern,
+        streaming::{TermStreamer, TermStreamerConfig},
+    };
+
+    #[test]
+    fn file_stream() {
+        let mut streamer =
+            TermStreamer::<CompressorWriter<BufWriter<File>>>::new(TermStreamerConfig {
+                n_cores: 4,
+                path: ".".to_owned(),
+                max_mem_bytes: 20,
+            });
+
+        let input = Atom::parse("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3) + v2 + v3 + v4").unwrap();
+        streamer.push(input);
+
+        let _ = streamer.reader();
+
+        streamer = streamer + Atom::parse("f1(v1)").unwrap();
+
+        streamer = streamer.map(|f| f);
+
+        let pattern = Pattern::parse("f1(x_)").unwrap();
+        let rhs = Pattern::parse("f1(v1) + v1").unwrap();
+
+        streamer = streamer.map(|x| pattern.replace_all(x.as_view(), &rhs, None, None).expand());
+
+        streamer.normalize();
+
+        let r = streamer.to_expression();
+
+        let res = Atom::parse("12*v1+v2+v3+v4+11*f1(v1)").unwrap();
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn memory_stream() {
+        let input = Atom::parse("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3)").unwrap();
+        let pattern = Pattern::parse("f1(x_)").unwrap();
+        let rhs = Pattern::parse("f1(v1) + v1").unwrap();
+
+        let mut stream = TermStreamer::<BufWriter<File>>::new(TermStreamerConfig::default());
+        stream.push(input);
+
+        // map every term in the expression
+        stream = stream.map(|x| pattern.replace_all(x.as_view(), &rhs, None, None).expand());
+
+        let r = stream.to_expression();
+
+        let res = Atom::parse("11*v1+10*f1(v1)").unwrap();
+        assert_eq!(r, res);
     }
 }

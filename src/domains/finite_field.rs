@@ -3,10 +3,10 @@ use std::fmt::{Display, Error, Formatter};
 use std::hash::Hash;
 use std::ops::Neg;
 
-use crate::domains::integer::{Integer, IntegerRing};
+use crate::domains::integer::Integer;
 use crate::printer::PrintOptions;
-use crate::state::State;
 
+use super::integer::Z;
 use super::{EuclideanDomain, Field, Ring};
 
 const HENSEL_LIFTING_MASK: [u8; 128] = [
@@ -18,6 +18,11 @@ const HENSEL_LIFTING_MASK: [u8; 128] = [
     207, 165, 131, 25, 151, 173, 139, 225, 223, 53, 19, 41, 167, 61, 27, 241, 239, 197, 163, 57,
     183, 205, 171, 1,
 ];
+
+/// A 32-bit integer finite field.
+pub type Zp = FiniteField<u32>;
+/// A 64-bit integer finite field.
+pub type Zp64 = FiniteField<u64>;
 
 pub trait ToFiniteField<UField: FiniteFieldWorkspace>
 where
@@ -52,21 +57,32 @@ pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
 /// The modular ring `Z / mZ`, where `m` can be any positive integer. In most cases,
 /// `m` will be a prime, and the domain will be a field.
 ///
-/// `FiniteField<u32>` and `FiniteField<u64>` use Montgomery modular arithmetic
+/// `Zp` and `Zp64` use Montgomery modular arithmetic
 /// to increase the performance of the multiplication operator.
 ///
 /// For `m` larger than `2^64`, use `FiniteField<Integer>`.
 ///
 /// The special field `FiniteField<Mersenne64>` can be used to have even faster arithmetic
 /// for a field with Mersenne prime `2^61-1`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FiniteField<UField> {
     p: UField,
     m: UField,
     one: FiniteFieldElement<UField>,
 }
 
-impl FiniteField<u32> {
+impl Zp {
+    /// Create a new finite field. `n` must be a prime larger than 2.
+    pub fn new(p: u32) -> Zp {
+        assert!(p % 2 != 0);
+
+        FiniteField {
+            p,
+            m: Self::inv_2_32(p),
+            one: FiniteFieldElement(Self::get_one(p)),
+        }
+    }
+
     /// Returns the unit element in Montgomory form, ie.e 1 + 2^32 mod a.
     fn get_one(a: u32) -> u32 {
         if a as u64 <= 1u64 << 31 {
@@ -97,16 +113,10 @@ impl FiniteFieldWorkspace for u32 {
     }
 }
 
-impl FiniteFieldCore<u32> for FiniteField<u32> {
+impl FiniteFieldCore<u32> for Zp {
     /// Create a new finite field. `n` must be a prime larger than 2.
-    fn new(p: u32) -> FiniteField<u32> {
-        assert!(p % 2 != 0);
-
-        FiniteField {
-            p,
-            m: Self::inv_2_32(p),
-            one: FiniteFieldElement(Self::get_one(p)),
-        }
+    fn new(p: u32) -> Zp {
+        Self::new(p)
     }
 
     fn get_prime(&self) -> u32 {
@@ -139,7 +149,7 @@ impl FiniteFieldCore<u32> for FiniteField<u32> {
     }
 }
 
-impl Ring for FiniteField<u32> {
+impl Ring for Zp {
     type Element = FiniteFieldElement<u32>;
 
     /// Add two numbers in Montgomory form.
@@ -278,7 +288,6 @@ impl Ring for FiniteField<u32> {
     fn fmt_display(
         &self,
         element: &Self::Element,
-        _state: Option<&State>,
         opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
@@ -291,7 +300,7 @@ impl Ring for FiniteField<u32> {
     }
 }
 
-impl EuclideanDomain for FiniteField<u32> {
+impl EuclideanDomain for Zp {
     #[inline]
     fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
         FiniteFieldElement(0)
@@ -308,7 +317,7 @@ impl EuclideanDomain for FiniteField<u32> {
     }
 }
 
-impl Field for FiniteField<u32> {
+impl Field for Zp {
     #[inline]
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.mul(a, &self.inv(b))
@@ -363,7 +372,18 @@ impl FiniteFieldWorkspace for u64 {
     }
 }
 
-impl FiniteField<u64> {
+impl Zp64 {
+    /// Create a new finite field. `n` must be a prime larger than 2.
+    fn new(p: u64) -> Zp64 {
+        assert!(p % 2 != 0);
+
+        FiniteField {
+            p,
+            m: Self::inv_2_64(p),
+            one: FiniteFieldElement(Self::get_one(p)),
+        }
+    }
+
     /// Returns the unit element in Montgomory form, ie.e 1 + 2^64 mod a.
     fn get_one(a: u64) -> u64 {
         if a as u128 <= 1u128 << 63 {
@@ -389,16 +409,10 @@ impl FiniteField<u64> {
     }
 }
 
-impl FiniteFieldCore<u64> for FiniteField<u64> {
+impl FiniteFieldCore<u64> for Zp64 {
     /// Create a new finite field. `n` must be a prime larger than 2.
-    fn new(p: u64) -> FiniteField<u64> {
-        assert!(p % 2 != 0);
-
-        FiniteField {
-            p,
-            m: Self::inv_2_64(p),
-            one: FiniteFieldElement(Self::get_one(p)),
-        }
+    fn new(p: u64) -> Zp64 {
+        Self::new(p)
     }
 
     fn get_prime(&self) -> u64 {
@@ -437,7 +451,7 @@ impl<UField: Display> Display for FiniteField<UField> {
     }
 }
 
-impl Ring for FiniteField<u64> {
+impl Ring for Zp64 {
     type Element = FiniteFieldElement<u64>;
     /// Add two numbers in Montgomory form.
     #[inline(always)]
@@ -570,7 +584,6 @@ impl Ring for FiniteField<u64> {
     fn fmt_display(
         &self,
         element: &Self::Element,
-        _state: Option<&State>,
         opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
@@ -583,7 +596,7 @@ impl Ring for FiniteField<u64> {
     }
 }
 
-impl EuclideanDomain for FiniteField<u64> {
+impl EuclideanDomain for Zp64 {
     #[inline]
     fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
         FiniteFieldElement(0)
@@ -600,7 +613,7 @@ impl EuclideanDomain for FiniteField<u64> {
     }
 }
 
-impl Field for FiniteField<u64> {
+impl Field for Zp64 {
     #[inline]
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.mul(a, &self.inv(b))
@@ -672,13 +685,13 @@ impl Mersenne64 {
 
 impl std::fmt::Debug for Mersenne64 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}", Self::PRIME))
+        std::fmt::Debug::fmt(&self.0, f)
     }
 }
 
 impl Display for Mersenne64 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}", Self::PRIME))
+        self.0.fmt(f)
     }
 }
 
@@ -848,7 +861,6 @@ impl Ring for FiniteField<Mersenne64> {
     fn fmt_display(
         &self,
         element: &Self::Element,
-        _state: Option<&State>,
         opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
@@ -1039,13 +1051,12 @@ impl Ring for FiniteField<Integer> {
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
-        IntegerRing::new().sample(rng, range).symmetric_mod(&self.p)
+        Z.sample(rng, range).symmetric_mod(&self.p)
     }
 
     fn fmt_display(
         &self,
         element: &Self::Element,
-        _state: Option<&State>,
         opts: &PrintOptions,
         _in_product: bool,
         f: &mut Formatter<'_>,
@@ -1095,7 +1106,7 @@ impl Field for FiniteField<Integer> {
         let mut even_iter: bool = true;
 
         while !v3.is_zero() {
-            let (q, t3) = IntegerRing::new().quot_rem(&u3, &v3);
+            let (q, t3) = Z.quot_rem(&u3, &v3);
             let t1 = &u1 + &(&q * &v1);
             u1 = v1;
             v1 = t1;
@@ -1136,7 +1147,7 @@ pub fn is_prime_u64(n: u64) -> bool {
         s += 1;
     }
 
-    let f = FiniteField::<u64>::new(n);
+    let f = Zp64::new(n);
     let neg_one = FiniteFieldElement(n.wrapping_sub(f.one().0));
 
     'test: for a in witnesses {

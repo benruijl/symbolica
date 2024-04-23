@@ -3,7 +3,7 @@ use std::{cmp::Ordering, rc::Rc};
 use ahash::HashMap;
 
 use crate::domains::{
-    finite_field::{FiniteField, FiniteFieldCore, Mersenne64},
+    finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64},
     rational::RationalField,
     Field, Ring,
 };
@@ -83,12 +83,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
         print_stats: bool,
     ) -> GroebnerBasis<R, E, O> {
         let mut ideal = ideal.to_vec();
-        for _ in 0..2 {
-            let (first, rest) = ideal.split_first_mut().unwrap();
-            for x in rest {
-                first.unify_var_map(x);
-            }
-        }
+        MultivariatePolynomial::unify_variables_list(&mut ideal);
 
         let mut b = GroebnerBasis {
             system: ideal,
@@ -124,7 +119,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
     /// Adapted from [A new efficient algorithm for computing Gröbner bases (F4)](https://doi.org/10.1016/S0022-4049(99)00005-5) by Jean-Charles Faugére.
     ///
     fn f4(&mut self) {
-        let nvars = self.system[0].nvars;
+        let nvars = self.system[0].nvars();
         let field = self.system[0].field.clone();
 
         let mut simplifications = vec![];
@@ -218,7 +213,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
             new_polys.clear();
             let mut i = 0;
             while i < selected_polys.len() {
-                for monom in selected_polys[i].exponents.chunks(nvars) {
+                for monom in selected_polys[i].exponents_iter() {
                     if let Some(m) = all_monomials.get_mut(monom) {
                         if m.present {
                             continue;
@@ -303,7 +298,6 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
             R::echelonize(
                 &mut matrix,
                 &mut selected_polys,
-                nvars,
                 &all_monomials,
                 &sorted_monomial_indices,
                 &field,
@@ -441,7 +435,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         let mut rest_coeff = vec![];
         let mut rest_exponents = vec![];
 
-        let mut monom = vec![E::zero(); p.nvars];
+        let mut monom = vec![E::zero(); p.nvars()];
 
         'term: while !r.is_zero() {
             // find a divisor that has the least amount of terms
@@ -475,7 +469,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
         // append in sorted order
         while let Some(c) = rest_coeff.pop() {
             let l = rest_coeff.len();
-            q.append_monomial(c, &rest_exponents[l * p.nvars..(l + 1) * p.nvars]);
+            q.append_monomial(c, &rest_exponents[l * p.nvars()..(l + 1) * p.nvars()]);
         }
 
         q
@@ -575,7 +569,6 @@ pub trait Echelonize: Field {
     fn echelonize<E: Exponent, O: MonomialOrder>(
         matrix: &mut Vec<Vec<(Self::LargerField, usize)>>,
         selected_polys: &mut Vec<Rc<MultivariatePolynomial<Self, E, O>>>,
-        nvars: usize,
         all_monomials: &HashMap<Vec<E>, MonomialData>,
         sorted_monomial_indices: &[usize],
         field: &Self,
@@ -585,18 +578,17 @@ pub trait Echelonize: Field {
     );
 }
 
-impl Echelonize for FiniteField<u32> {
+impl Echelonize for Zp {
     type LargerField = i64;
 
     /// Specialized 32-bit finite field echelonization based on
     /// "A Compact Parallel Implementation of F4" by Monagan and Pearce.
     fn echelonize<E: Exponent, O: MonomialOrder>(
         matrix: &mut Vec<Vec<(i64, usize)>>,
-        selected_polys: &mut Vec<Rc<MultivariatePolynomial<FiniteField<u32>, E, O>>>,
-        nvars: usize,
+        selected_polys: &mut Vec<Rc<MultivariatePolynomial<Zp, E, O>>>,
         all_monomials: &HashMap<Vec<E>, MonomialData>,
         sorted_monomial_indices: &[usize],
-        field: &FiniteField<u32>,
+        field: &Zp,
         buffer: &mut Vec<i64>,
         pivots: &mut Vec<Option<usize>>,
         print_stats: bool,
@@ -631,7 +623,7 @@ impl Echelonize for FiniteField<u32> {
         for (row, p) in matrix.iter_mut().zip(selected_polys) {
             row.clear();
 
-            for (coeff, exp) in p.coefficients.iter().zip(p.exponents.chunks(nvars)).rev() {
+            for (coeff, exp) in p.coefficients.iter().zip(p.exponents_iter()).rev() {
                 row.push((
                     field.from_element(coeff) as i64,
                     all_monomials.get(exp).unwrap().column,
@@ -801,7 +793,6 @@ macro_rules! echelonize_impl {
             fn echelonize<E: Exponent, O: MonomialOrder>(
                 matrix: &mut Vec<Vec<(Self::Element, usize)>>,
                 selected_polys: &mut Vec<Rc<MultivariatePolynomial<Self, E, O>>>,
-                nvars: usize,
                 all_monomials: &HashMap<Vec<E>, MonomialData>,
                 sorted_monomial_indices: &[usize],
                 field: &Self,
@@ -813,7 +804,7 @@ macro_rules! echelonize_impl {
                 for (row, p) in matrix.iter_mut().zip(selected_polys) {
                     row.clear();
 
-                    for (coeff, exp) in p.coefficients.iter().zip(p.exponents.chunks(nvars)).rev() {
+                    for (coeff, exp) in p.coefficients.iter().zip(p.exponents_iter()).rev() {
                         row.push((coeff.clone(), all_monomials.get(exp).unwrap().column));
                     }
                 }
@@ -931,6 +922,80 @@ macro_rules! echelonize_impl {
     };
 }
 
-echelonize_impl!(FiniteField<u64>);
+echelonize_impl!(Zp64);
 echelonize_impl!(FiniteField<Mersenne64>);
 echelonize_impl!(RationalField);
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        atom::Atom,
+        domains::finite_field::Zp,
+        poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
+    };
+
+    #[test]
+    fn cyclic4() {
+        let polys = [
+            "v1 v2 v3 v4 - 1",
+            "v1 v2 v3 + v1 v2 v4 + v1 v3 v4 + v2 v3 v4",
+            "v1 v2 + v2 v3 + v1 v4 + v3 v4",
+            "v1 + v2 + v3 + v4",
+        ];
+
+        let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
+            .iter()
+            .map(|x| {
+                let a = Atom::parse(x).unwrap().expand();
+                a.to_polynomial(&Zp::new(13), None)
+            })
+            .collect();
+
+        // compute the Groebner basis with lex ordering
+        let gb = GroebnerBasis::new(&ideal, false);
+
+        let res = [
+            "v4+v3+v2+v1",
+            "v4^2+2*v2*v4+v2^2",
+            "11*v4^2+v3*v4+v3^2*v4^4-v2*v4+v2*v3",
+            "-v4+v4^5-v2+v2*v4^4",
+            "-v4-v3+v3^2*v4^3+v3^3*v4^2",
+            "1-v4^4-v3^2*v4^2+v3^2*v4^6",
+        ];
+
+        let res: Vec<MultivariatePolynomial<_, u16>> = res
+            .iter()
+            .map(|x| {
+                let a = Atom::parse(x).unwrap().expand();
+                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+            })
+            .collect();
+
+        assert_eq!(gb.system, res);
+
+        // compute the Groebner basis with grevlex ordering by converting the polynomials
+        let grevlex_ideal: Vec<_> = ideal.iter().map(|p| p.reorder::<GrevLexOrder>()).collect();
+        let gb = GroebnerBasis::new(&grevlex_ideal, false);
+
+        let res = [
+            "v4+v3+v2+v1",
+            "v4^2+2*v2*v4+v2^2",
+            "-v4^3-v2*v4^2+v3^2*v4+v2*v3^2",
+            "-1-v4^4+v3*v4^3-v2*v4^3+v3^2*v4^2+v2*v3*v4^2",
+            "-v4-v2+v4^5+v2*v4^4",
+            "-v4-v3+v3^2*v4^3+v3^3*v4^2",
+            "11*v4^2+v3*v4-v2*v4+v2*v3+v3^2*v4^4",
+        ];
+
+        let res: Vec<MultivariatePolynomial<_, u16, _>> = res
+            .iter()
+            .map(|x| {
+                let a = Atom::parse(x).unwrap().expand();
+                a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
+                    .reorder::<GrevLexOrder>()
+            })
+            .collect();
+
+        assert_eq!(gb.system, res);
+    }
+}

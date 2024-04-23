@@ -1,34 +1,25 @@
+use brotli::CompressorWriter;
 use symbolica::{
+    atom::Atom,
     id::Pattern,
-    representations::Atom,
-    state::{ResettableBuffer, State, Workspace},
-    streaming::TermStreamer,
+    streaming::{TermStreamer, TermStreamerConfig},
 };
 
 fn main() {
-    let mut state = State::new();
-    let workspace: Workspace = Workspace::default();
+    let input = Atom::parse("x+ f(x) + 2*f(y) + 7*f(z)").unwrap();
+    let pattern = Pattern::parse("f(x_)").unwrap();
+    let rhs = Pattern::parse("f(x) + x").unwrap();
 
-    let input = Atom::parse("x+ f(x) + 2*f(y) + 7*f(z)", &mut state, &workspace).unwrap();
-    let pattern = Pattern::parse("f(x_)", &mut state, &workspace).unwrap();
-    let rhs = Pattern::parse("f(x) + x", &mut state, &workspace).unwrap();
-
-    let mut stream = TermStreamer::new_from(input);
+    let mut stream = TermStreamer::<CompressorWriter<_>>::new(TermStreamerConfig {
+        n_cores: 4,
+        path: ".".to_owned(),
+        max_mem_bytes: 40,
+    });
+    stream.push(input);
 
     // map every term in the expression
-    stream = stream.map(|workspace, x| {
-        let mut out1 = workspace.new_atom();
-        pattern.replace_all(x.as_view(), &rhs, &state, workspace, None, None, &mut out1);
+    stream = stream.map(|x| pattern.replace_all(x.as_view(), &rhs, None, None).expand());
 
-        let mut out2 = workspace.new_atom();
-        out1.as_view().normalize(workspace, &state, &mut out2);
-
-        let mut out3 = Atom::new();
-        out2.as_view().expand(workspace, &state, &mut out3);
-
-        out3
-    });
-
-    let res = stream.to_expression(&workspace, &state);
-    println!("\t+ {}", res.printer(&state));
+    let res = stream.to_expression();
+    println!("\t+ {}", res);
 }

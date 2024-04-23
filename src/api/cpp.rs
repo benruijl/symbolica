@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use smartstring::{LazyCompact, SmartString};
 
-use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64};
-use crate::domains::integer::IntegerRing;
+use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64};
+use crate::domains::integer::{IntegerRing, Z};
 use crate::domains::rational::RationalField;
 use crate::parser::Token;
 use crate::poly::Variable;
@@ -15,8 +15,7 @@ use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
     domains::rational_polynomial::RationalPolynomial,
     printer::{FactorizedRationalPolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
-    representations::default::Linear,
-    state::{State, Workspace},
+    state::State,
 };
 
 struct LocalState {
@@ -28,8 +27,6 @@ struct LocalState {
 }
 
 struct Symbolica {
-    state: State,
-    workspace: Workspace<Linear>,
     local_state: LocalState,
 }
 
@@ -100,8 +97,6 @@ unsafe extern "C" fn get_offline_license_key(key: *mut c_char) -> bool {
 #[no_mangle]
 unsafe extern "C" fn init() -> *mut Symbolica {
     let s = Symbolica {
-        state: State::new(),
-        workspace: Workspace::new(),
         local_state: LocalState {
             buffer: String::with_capacity(2048),
             var_map: Arc::new(vec![]),
@@ -138,7 +133,7 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
     let mut var_map = vec![];
 
     for var in cstr.split(',') {
-        var_map.push(Variable::Identifier(symbolica.state.get_or_insert_var(var)));
+        var_map.push(Variable::Symbol(State::get_symbol(var)));
         symbolica.local_state.var_name_map.push(var.into());
     }
 
@@ -164,7 +159,7 @@ unsafe extern "C" fn simplify(
     let opts = PrintOptions {
         terms_on_new_line: false,
         color_top_level_sum: false,
-        color_builtin_functions: false,
+        color_builtin_symbols: false,
         print_finite_field: false,
         symmetric_representation_for_finite_field: false,
         explicit_rational_polynomial,
@@ -180,10 +175,8 @@ unsafe extern "C" fn simplify(
             if prime == 0 {
                 let r: RationalPolynomial<IntegerRing, $exp_size> = token
                     .to_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
                         &<$in_field>::new(),
-                        &IntegerRing::new(),
+                        &Z,
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
                     )
@@ -195,18 +188,15 @@ unsafe extern "C" fn simplify(
                     "{}\0", // add the NUL character
                     RationalPolynomialPrinter {
                         poly: &r,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
                 )
                 .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
-                let field = FiniteField::<u32>::new(prime as u32);
-                let rf: RationalPolynomial<FiniteField<u32>, $exp_size> = token
+                let field = Zp::new(prime as u32);
+                let rf: RationalPolynomial<Zp, $exp_size> = token
                     .to_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -220,7 +210,6 @@ unsafe extern "C" fn simplify(
                     "{}\0", // add the NUL character
                     RationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -230,8 +219,6 @@ unsafe extern "C" fn simplify(
                 let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
                 let rf: RationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
                     .to_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -245,18 +232,15 @@ unsafe extern "C" fn simplify(
                     "{}\0", // add the NUL character
                     RationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
                 )
                 .unwrap();
             } else {
-                let field = FiniteField::<u64>::new(prime as u64);
-                let rf: RationalPolynomial<FiniteField<u64>, $exp_size> = token
+                let field = Zp64::new(prime as u64);
+                let rf: RationalPolynomial<Zp64, $exp_size> = token
                     .to_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -270,7 +254,6 @@ unsafe extern "C" fn simplify(
                     "{}\0", // add the NUL character
                     RationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -312,7 +295,7 @@ unsafe extern "C" fn simplify_factorized(
     let opts = PrintOptions {
         terms_on_new_line: false,
         color_top_level_sum: false,
-        color_builtin_functions: false,
+        color_builtin_symbols: false,
         print_finite_field: false,
         symmetric_representation_for_finite_field: false,
         explicit_rational_polynomial,
@@ -328,10 +311,8 @@ unsafe extern "C" fn simplify_factorized(
             if prime == 0 {
                 let r: FactorizedRationalPolynomial<IntegerRing, $exp_size> = token
                     .to_factorized_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
                         &<$in_field>::new(),
-                        &IntegerRing::new(),
+                        &Z,
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
                     )
@@ -343,18 +324,15 @@ unsafe extern "C" fn simplify_factorized(
                     "{}\0", // add the NUL character
                     FactorizedRationalPolynomialPrinter {
                         poly: &r,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
                 )
                 .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
-                let field = FiniteField::<u32>::new(prime as u32);
-                let rf: FactorizedRationalPolynomial<FiniteField<u32>, $exp_size> = token
+                let field = Zp::new(prime as u32);
+                let rf: FactorizedRationalPolynomial<Zp, $exp_size> = token
                     .to_factorized_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -368,7 +346,6 @@ unsafe extern "C" fn simplify_factorized(
                     "{}\0", // add the NUL character
                     FactorizedRationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -378,8 +355,6 @@ unsafe extern "C" fn simplify_factorized(
                 let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
                 let rf: FactorizedRationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
                     .to_factorized_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -393,18 +368,15 @@ unsafe extern "C" fn simplify_factorized(
                     "{}\0", // add the NUL character
                     FactorizedRationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
                 )
                 .unwrap();
             } else {
-                let field = FiniteField::<u64>::new(prime as u64);
-                let rf: FactorizedRationalPolynomial<FiniteField<u64>, $exp_size> = token
+                let field = Zp64::new(prime as u64);
+                let rf: FactorizedRationalPolynomial<Zp64, $exp_size> = token
                     .to_factorized_rational_polynomial(
-                        &symbolica.workspace,
-                        &mut symbolica.state,
                         &field,
                         &field,
                         &symbolica.local_state.var_map,
@@ -418,7 +390,6 @@ unsafe extern "C" fn simplify_factorized(
                     "{}\0", // add the NUL character
                     FactorizedRationalPolynomialPrinter {
                         poly: &rf,
-                        state: &symbolica.state,
                         opts,
                         add_parentheses: false,
                     }
@@ -445,4 +416,185 @@ unsafe extern "C" fn simplify_factorized(
 #[no_mangle]
 unsafe extern "C" fn drop(symbolica: *mut Symbolica) {
     let _ = Box::from_raw(symbolica);
+}
+
+#[cfg(test)]
+mod test {
+    use std::ffi::{c_char, CStr};
+
+    use crate::domains::finite_field::Mersenne64;
+
+    use super::{drop, init, set_options};
+
+    #[test]
+    fn simplify() {
+        let symbolica = unsafe { init() };
+
+        unsafe { set_options(symbolica, true, false) };
+
+        unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
+
+        let input = "-(4096-4096*y^2)/(-3072+1024*d)*(1536-512*d)-(-8192+8192*y^2)/(2)*((-6+d)/2)-(-8192+8192*y^2)/(-2)*((-13+3*d)/2)-(-8192+8192*y^2)/(-4)*(-8+2*d)\0";
+        let result = unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, 0, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "[32768-32768*y^2-8192*d+8192*d*y^2]");
+
+        unsafe { set_options(symbolica, true, true) };
+
+        let result = unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, 0, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "32768-32768*y^2-8192*d+8192*d*y^2");
+
+        unsafe { set_options(symbolica, false, false) };
+
+        let result =
+            unsafe { super::simplify_factorized(symbolica, input.as_ptr() as *const i8, 0, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "[8192]*[4-4*y^2-d+d*y^2]");
+
+        let result =
+            unsafe { super::simplify_factorized(symbolica, input.as_ptr() as *const i8, 0, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        unsafe { drop(symbolica) };
+        assert_eq!(result, "8192*(4-4*y^2-d+d*y^2)");
+    }
+
+    #[test]
+    fn simplify_ff() {
+        let symbolica = unsafe { init() };
+
+        unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
+
+        let prime = 4293491017;
+
+        let input = "-(4096-4096*y^2)/(-3072+1024*d)*(1536-512*d)-(-8192+8192*y^2)/(2)*((-6+d)/2)-(-8192+8192*y^2)/(-2)*((-13+3*d)/2)-(-8192+8192*y^2)/(-4)*(-8+2*d)\0";
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "[32768+4293458249*y^2+4293482825*d+8192*d*y^2]");
+
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "32768+4293458249*y^2+4293482825*d+8192*d*y^2");
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, true)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(result, "[32768+4293458249*y^2+4293482825*d+8192*d*y^2]");
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, false)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        unsafe { drop(symbolica) };
+        assert_eq!(result, "32768+4293458249*y^2+4293482825*d+8192*d*y^2");
+    }
+
+    #[test]
+    fn simplify_mersenne() {
+        let symbolica = unsafe { init() };
+
+        unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
+
+        let prime = Mersenne64::PRIME;
+
+        let input = "-(4096-4096*y^2)/(-3072+1024*d)*(1536-512*d)-(-8192+8192*y^2)/(2)*((-6+d)/2)-(-8192+8192*y^2)/(-2)*((-13+3*d)/2)-(-8192+8192*y^2)/(-4)*(-8+2*d)\0";
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "[32768+2305843009213661183*y^2+2305843009213685759*d+8192*d*y^2]"
+        );
+
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "32768+2305843009213661183*y^2+2305843009213685759*d+8192*d*y^2"
+        );
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, true)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "[32768+2305843009213661183*y^2+2305843009213685759*d+8192*d*y^2]"
+        );
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, false)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        unsafe { drop(symbolica) };
+        assert_eq!(
+            result,
+            "32768+2305843009213661183*y^2+2305843009213685759*d+8192*d*y^2"
+        );
+    }
+
+    #[test]
+    fn simplify_u64_prime() {
+        let symbolica = unsafe { init() };
+
+        unsafe { super::set_vars(symbolica, b"d,y\0".as_ptr() as *const c_char) };
+
+        let prime = 18446744073709551163;
+
+        let input = "-(4096-4096*y^2)/(-3072+1024*d)*(1536-512*d)-(-8192+8192*y^2)/(2)*((-6+d)/2)-(-8192+8192*y^2)/(-2)*((-13+3*d)/2)-(-8192+8192*y^2)/(-4)*(-8+2*d)\0";
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, true) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "[32768+18446744073709518395*y^2+18446744073709542971*d+8192*d*y^2]"
+        );
+
+        let result =
+            unsafe { super::simplify(symbolica, input.as_ptr() as *const i8, prime, false) };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "32768+18446744073709518395*y^2+18446744073709542971*d+8192*d*y^2"
+        );
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, true)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        assert_eq!(
+            result,
+            "[32768+18446744073709518395*y^2+18446744073709542971*d+8192*d*y^2]"
+        );
+
+        let result = unsafe {
+            super::simplify_factorized(symbolica, input.as_ptr() as *const i8, prime, false)
+        };
+        let result = unsafe { CStr::from_ptr(result).to_str().unwrap() }.to_owned();
+
+        unsafe { drop(symbolica) };
+        assert_eq!(
+            result,
+            "32768+18446744073709518395*y^2+18446744073709542971*d+8192*d*y^2"
+        );
+    }
 }

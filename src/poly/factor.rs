@@ -9,9 +9,10 @@ use crate::{
     domains::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldWorkspace, PrimeIteratorU64, ToFiniteField,
+            Zp, Zp64,
         },
-        integer::{Integer, IntegerRing},
-        rational::RationalField,
+        integer::{Integer, IntegerRing, Z},
+        rational::{RationalField, Q},
         EuclideanDomain, Field, Ring,
     },
     poly::gcd::LARGE_U32_PRIMES,
@@ -35,7 +36,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         let mut stripped = self.clone();
 
         let mut factors = vec![];
-        for x in 0..self.nvars {
+        for x in 0..self.nvars() {
             if self.degree(x) == E::zero() {
                 continue;
             }
@@ -71,7 +72,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         // any variable can be selected
         // select the one with the lowest degree
-        let lowest_rank_var = (0..self.nvars)
+        let lowest_rank_var = (0..self.nvars())
             .filter_map(|x| {
                 let d = self.degree(x);
                 if d > E::zero() {
@@ -85,7 +86,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             .0;
 
         let b = self.derivative(lowest_rank_var);
-        let c = MultivariatePolynomial::gcd(self, &b);
+        let c = self.gcd(&b);
 
         if c.is_one() {
             return vec![(self.clone(), 1)];
@@ -99,7 +100,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         let mut i = 1;
         while !w.is_constant() {
             let z = y - w.derivative(lowest_rank_var);
-            let g = MultivariatePolynomial::gcd(&w, &z);
+            let g = w.gcd(&z);
             w = w / &g;
             y = z / &g;
 
@@ -152,7 +153,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             lower
         }
 
-        let vars: Vec<_> = (0..self.nvars)
+        let vars: Vec<_> = (0..self.nvars())
             .filter(|v| self.degree(*v) > E::zero())
             .collect();
 
@@ -162,7 +163,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         let points = self
             .exponents
-            .chunks(self.nvars)
+            .chunks(self.nvars())
             .map(|e| (e[vars[0]].to_u32() as isize, e[vars[1]].to_u32() as isize))
             .collect();
 
@@ -235,7 +236,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
         let sf = self.square_free_factorization();
 
         let mut factors = vec![];
-        let mut degrees = vec![0; self.nvars];
+        let mut degrees = vec![0; self.nvars()];
         for (f, p) in sf {
             debug!("SFF {} {}", f, p);
 
@@ -298,14 +299,14 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
                 debug_assert!(coeff.is_integer());
                 coeff.numerator()
             },
-            IntegerRing::new(),
+            Z,
         );
 
         let fs = stripped.square_free_factorization();
 
         let mut factors: Vec<_> = fs
             .into_iter()
-            .map(|(f, e)| (f.map_coeff(|coeff| coeff.into(), RationalField::new()), e))
+            .map(|(f, e)| (f.map_coeff(|coeff| coeff.into(), Q), e))
             .collect();
 
         if !c.is_one() {
@@ -324,13 +325,13 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
                 debug_assert!(coeff.is_integer());
                 coeff.numerator()
             },
-            IntegerRing::new(),
+            Z,
         );
 
         let mut factors: Vec<_> = stripped
             .factor()
             .into_iter()
-            .map(|(ff, p)| (ff.map_coeff(|coeff| coeff.into(), RationalField::new()), p))
+            .map(|(ff, p)| (ff.map_coeff(|coeff| coeff.into(), Q), p))
             .collect();
 
         if !c.is_one() {
@@ -347,8 +348,8 @@ where
     FiniteField<UField>: Field + PolynomialGCD<E> + FiniteFieldCore<UField>,
 {
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
-        let c = self.content();
-        let stripped = self.clone().div_coeff(&c);
+        let c = self.lcoeff();
+        let stripped = self.clone().make_monic();
 
         let mut factors = vec![];
         let fs = stripped.factor_separable();
@@ -369,12 +370,12 @@ where
         let sf = self.square_free_factorization();
 
         let mut factors = vec![];
-        let mut degrees = vec![0; self.nvars];
+        let mut degrees = vec![0; self.nvars()];
         for (f, p) in sf {
             debug!("SFF {} {}", f, p);
 
             let mut var_count = 0;
-            for v in 0..self.nvars {
+            for v in 0..self.nvars() {
                 degrees[v] = f.degree(v).to_u32() as usize;
                 if degrees[v] > 0 {
                     var_count += 1;
@@ -382,7 +383,10 @@ where
             }
 
             match var_count {
-                0 | 1 => {
+                0 => {
+                    factors.push((f, p));
+                }
+                1 => {
                     for (d2, f2) in f.distinct_degree_factorization() {
                         debug!("DDF {} {}", f2, d2);
                         for f3 in f2.equal_degree_factorization(d2) {
@@ -449,7 +453,7 @@ where
 
         let mut h = HashMap::default();
         let mut hr;
-        for var in 0..self.nvars {
+        for var in 0..self.nvars() {
             if f.degree(var) > E::zero() {
                 (f, hr) = f.square_free_factorization_ff_yun(var);
 
@@ -468,7 +472,7 @@ where
         // since the derivative in every var is 0, all powers are divisible by p
         let p = self.field.get_prime().to_u64() as usize;
         let mut b = f.clone();
-        for es in b.exponents.chunks_mut(self.nvars) {
+        for es in b.exponents_iter_mut() {
             for e in es {
                 if e.is_zero() {
                     continue;
@@ -491,7 +495,7 @@ where
         for (mut k, n) in sub_factors {
             for (powh, hi) in &mut h {
                 if *powh < p {
-                    let g = MultivariatePolynomial::gcd(&k, hi);
+                    let g = k.gcd(hi);
                     if !g.is_constant() {
                         k = k / &g;
                         *hi = &*hi / &g;
@@ -517,7 +521,7 @@ where
     /// A modified version of Yun's square free factorization algorithm.
     fn square_free_factorization_ff_yun(&self, var: usize) -> (Self, Vec<(Self, usize)>) {
         let b = self.derivative(var);
-        let mut c = MultivariatePolynomial::gcd(self, &b);
+        let mut c = self.gcd(&b);
         let mut w = self / &c;
         let mut v = &b / &c;
 
@@ -526,7 +530,7 @@ where
         let mut i = 1;
         while !w.is_constant() && i < self.field.get_prime().to_u64() as usize {
             let z = v - w.derivative(var);
-            let g = MultivariatePolynomial::gcd(&w, &z);
+            let g = w.gcd(&z);
             w = w / &g;
             v = z / &g;
             c = c / &w;
@@ -560,7 +564,7 @@ where
 
             h = h.exp_mod_univariate(self.field.get_prime().to_u64().into(), &mut f);
 
-            let mut g = MultivariatePolynomial::gcd(&(&h - &x), &f);
+            let mut g = f.gcd(&(&h - &x));
 
             if !g.is_one() {
                 f = f.quot_rem_univariate(&mut g).0;
@@ -601,7 +605,7 @@ where
 
         let mut rng = thread_rng();
         let mut random_poly = self.zero_with_capacity(d);
-        let mut exp = vec![E::zero(); self.nvars];
+        let mut exp = vec![E::zero(); self.nvars()];
 
         let mut try_counter = 0;
 
@@ -631,7 +635,7 @@ where
                 }
             }
 
-            let g = MultivariatePolynomial::gcd(&random_poly, &s);
+            let g = random_poly.gcd(&s);
 
             if !g.is_one() {
                 break g;
@@ -643,7 +647,7 @@ where
                 .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
                 - self.one();
 
-            let g = MultivariatePolynomial::gcd(&b, &s);
+            let g = b.gcd(&s);
 
             if !g.is_one() && g != s {
                 break g;
@@ -751,7 +755,7 @@ where
             .map(|ts| {
                 let mut new_poly = self.zero_with_capacity(ts.len());
                 for (i, mut f) in ts.into_iter().enumerate() {
-                    for x in f.exponents.chunks_mut(f.nvars) {
+                    for x in f.exponents_iter_mut() {
                         x[interpolation_var] = E::from_u32(i as u32);
                     }
                     new_poly = new_poly + f;
@@ -775,7 +779,7 @@ where
             return self.bivariate_factorization(interpolation_var, main_var);
         }
 
-        let g = MultivariatePolynomial::gcd(self, &der);
+        let g = self.gcd(&der);
         if !g.is_constant() {
             let mut factors = g.bivariate_factorization(main_var, interpolation_var);
             factors.extend((self / &g).bivariate_factorization(main_var, interpolation_var));
@@ -788,7 +792,7 @@ where
         let mut i = 0;
         loop {
             if self.degree(main_var) == uni_f.degree(main_var)
-                && MultivariatePolynomial::gcd(&uni_f, &uni_f.derivative(main_var)).is_constant()
+                && uni_f.gcd(&uni_f.derivative(main_var)).is_constant()
             {
                 break;
             }
@@ -886,7 +890,7 @@ where
         for x in coeffs {
             let d = x.rational_approximant_univariate(deg_n, deg_d).unwrap().1;
             if !d.is_one() {
-                let g = MultivariatePolynomial::gcd(&d, &lcoeff);
+                let g = d.gcd(&lcoeff);
                 lcoeff = lcoeff * &(d / &g);
             }
         }
@@ -935,7 +939,7 @@ where
 
         let mut lcoeff_square_free = self.one();
         for (f, _) in &sqf {
-            lcoeff_square_free = lcoeff_square_free * &f;
+            lcoeff_square_free = lcoeff_square_free * f;
         }
 
         let sorted_main_factors = Self::canonical_sort(bivariate_factors, order[1], sample_points);
@@ -1062,7 +1066,7 @@ where
                     }
                 }
 
-                let g = MultivariatePolynomial::gcd(&contrib, l);
+                let g = contrib.gcd(l);
                 let mut new = contrib / &g;
 
                 // make sure the new part keeps the desired image coeff intact
@@ -1204,7 +1208,7 @@ where
             );
         }
 
-        let g = MultivariatePolynomial::gcd(self, &der);
+        let g = self.gcd(&der);
         if !g.is_constant() {
             let mut factors =
                 g.multivariate_factorization(order, coefficient_upper_bound, max_bivariate_factors);
@@ -1258,8 +1262,8 @@ where
 
             if degree == biv_f.degree(order[0])
                 && degree == uni_f.degree(order[0])
-                && MultivariatePolynomial::gcd(&biv_f, &biv_df).is_constant()
-                && MultivariatePolynomial::gcd(&uni_f, &uni_df).is_constant()
+                && biv_f.gcd(&biv_df).is_constant()
+                && uni_f.gcd(&uni_df).is_constant()
             {
                 if !biv_f.univariate_content(order[0]).is_one() {
                     content_fail_count += 1;
@@ -1410,7 +1414,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         // TODO: precompute
         let mut mod_vars = Vec::with_capacity(order.len() - 2);
-        let mut exp = vec![E::zero(); error.nvars];
+        let mut exp = vec![E::zero(); error.nvars()];
         for r in order[1..order.len() - 1].iter().zip(&degrees[1..]) {
             let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
             exp[*r.0] = E::one();
@@ -1457,7 +1461,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let mut e_mod = e
                 .shift_var(last_var, shift)
                 .mod_var(last_var, E::from_u32(j as u32 + 1));
-            for e in e_mod.exponents.chunks_mut(e_mod.nvars) {
+            for e in e_mod.exponents_iter_mut() {
                 debug_assert_eq!(e[last_var], E::from_u32(j as u32));
                 e[last_var] = E::zero();
             }
@@ -1531,7 +1535,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
                     bs.last_mut().unwrap().0 = lcoeff;
 
                     let mut fixed_fac = self.zero();
-                    let mut exp = vec![E::zero(); self.nvars];
+                    let mut exp = vec![E::zero(); self.nvars()];
                     for (p, e) in bs {
                         exp[order[0]] = e;
                         fixed_fac = fixed_fac + p.mul_exp(&exp);
@@ -1693,7 +1697,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             .map(|ts| {
                 let mut new_poly = self.zero_with_capacity(ts.len());
                 for (i, mut f) in ts.into_iter().enumerate() {
-                    for x in f.exponents.chunks_mut(f.nvars) {
+                    for x in f.exponents_iter_mut() {
                         debug_assert_eq!(x[last_var], E::zero());
                         x[last_var] = E::from_u32(i as u32);
                     }
@@ -1740,8 +1744,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         debug_assert!((&s * &u + &t * &w).is_one());
 
-        let mut u_i = u.map_coeff(|c| field.to_symmetric_integer(c), IntegerRing::new());
-        let mut w_i = w.map_coeff(|c| field.to_symmetric_integer(c), IntegerRing::new());
+        let mut u_i = u.map_coeff(|c| field.to_symmetric_integer(c), Z);
+        let mut w_i = w.map_coeff(|c| field.to_symmetric_integer(c), Z);
 
         // only replace the leading coefficient
         *u_i.coefficients.last_mut().unwrap() = gamma.clone();
@@ -1758,10 +1762,10 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             u_i = u_i
                 + tau
-                    .map_coeff(|c| field.to_symmetric_integer(c), IntegerRing::new())
+                    .map_coeff(|c| field.to_symmetric_integer(c), Z)
                     .mul_coeff(m.clone());
             w_i = w_i
-                + r.map_coeff(|c| field.to_symmetric_integer(c), IntegerRing::new())
+                + r.map_coeff(|c| field.to_symmetric_integer(c), Z)
                     .mul_coeff(m.clone());
             e = &a - &(&u_i * &w_i);
 
@@ -1783,12 +1787,12 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         } else {
             if !u_i.lcoeff().is_one() {
                 let inv = u_i.lcoeff().mod_inverse(&m);
-                u_i = u_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), IntegerRing::new());
+                u_i = u_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), Z);
             }
 
             if !w_i.lcoeff().is_one() {
                 let inv = w_i.lcoeff().mod_inverse(&m);
-                w_i = w_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), IntegerRing::new());
+                w_i = w_i.map_coeff(|c| (c * &inv).symmetric_mod(&m), Z);
             }
 
             Err((u_i, w_i))
@@ -1798,7 +1802,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
     /// Lift multiple factors by creating a binary tree and lifting each product.
     fn multi_factor_hensel_lift(
         &self,
-        hs: &[MultivariatePolynomial<FiniteField<u32>, E, LexOrder>],
+        hs: &[MultivariatePolynomial<Zp, E, LexOrder>],
         max_p: &Integer,
     ) -> Vec<Self> {
         if hs.len() == 1 {
@@ -1806,7 +1810,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 return vec![self.clone()];
             } else {
                 let inv = self.lcoeff().mod_inverse(max_p);
-                let r = self.map_coeff(|c| (c * &inv).symmetric_mod(max_p), IntegerRing::new());
+                let r = self.map_coeff(|c| (c * &inv).symmetric_mod(max_p), Z);
                 return vec![r];
             }
         }
@@ -1859,12 +1863,12 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 continue;
             }
 
-            field = FiniteField::<u32>::new(p);
+            field = Zp::new(p);
             f_p = self.map_coeff(|f| f.to_finite_field(&field), field.clone());
             let df_p = f_p.derivative(var);
 
             // check is f_p remains square-free
-            if MultivariatePolynomial::gcd(&f_p, &df_p).is_one() {
+            if f_p.gcd(&df_p).is_one() {
                 break;
             }
         }
@@ -1904,11 +1908,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             let mut fs = CombinationIterator::new(factors.len(), s);
             while let Some(cs) = fs.next() {
                 // check if the constant term matches
-                if rest.exponents[..rest.nvars].iter().all(|e| *e == E::zero()) {
+                if rest.exponents[..rest.nvars()]
+                    .iter()
+                    .all(|e| *e == E::zero())
+                {
                     let mut g1 = rest.lcoeff();
                     let mut h1 = rest.lcoeff();
                     for (i, f) in factors.iter().enumerate() {
-                        if f.exponents[..rest.nvars].iter().all(|x| *x == E::zero()) {
+                        if f.exponents[..rest.nvars()].iter().all(|x| *x == E::zero()) {
                             if cs.contains(&i) {
                                 g1 = (&g1 * &f.coefficients[0]).symmetric_mod(&max_p);
                             } else {
@@ -1927,7 +1934,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 let mut g = rest.constant(rest.lcoeff());
                 for (i, f) in factors.iter().enumerate() {
                     if cs.contains(&i) {
-                        g = (&g * f).map_coeff(|i| i.symmetric_mod(&max_p), IntegerRing::new());
+                        g = (&g * f).map_coeff(|i| i.symmetric_mod(&max_p), Z);
                     }
                 }
                 let c = g.content();
@@ -1970,7 +1977,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         p: u32,
         k: usize,
     ) -> Vec<MultivariatePolynomial<FiniteField<Integer>, E, LexOrder>> {
-        let finite_field = FiniteField::<u32>::new(p);
+        let finite_field = Zp::new(p);
 
         // add the leading coefficient as a first factor
         let mut factors = vec![lcoeff.replace(interpolation_var, &poly.field.zero())];
@@ -2051,7 +2058,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             .map(|ts| {
                 let mut new_poly = poly.zero_with_capacity(ts.len());
                 for (i, mut f) in ts.into_iter().enumerate() {
-                    for x in f.exponents.chunks_mut(f.nvars) {
+                    for x in f.exponents_iter_mut() {
                         x[interpolation_var] = E::from_u32(i as u32);
                     }
                     new_poly = new_poly + f;
@@ -2079,7 +2086,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             uni_f = self.replace(interpolation_var, &sample_point);
 
             if self.degree(main_var) == uni_f.degree(main_var)
-                && MultivariatePolynomial::gcd(&uni_f, &uni_f.derivative(main_var)).is_constant()
+                && uni_f.gcd(&uni_f.derivative(main_var)).is_constant()
             {
                 break;
             }
@@ -2118,7 +2125,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 continue;
             }
 
-            field = FiniteField::<u32>::new(p);
+            field = Zp::new(p);
 
             // make sure the factors stay coprime
             let fs_p: Vec<_> = uni_fs
@@ -2128,7 +2135,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             for (j, f) in fs_p.iter().enumerate() {
                 for g in &fs_p[j + 1..] {
-                    if !MultivariatePolynomial::gcd(f, g).is_one() {
+                    if !f.gcd(g).is_one() {
                         continue 'new_prime;
                     }
                 }
@@ -2143,7 +2150,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             self.clone()
         };
 
-        // TODO: if bound is less than u64, we may also use FiniteField<u64> for the computation
+        // TODO: if bound is less than u64, we may also use Zp64 for the computation
         let bound = shifted_poly.coefficient_bound();
 
         let p = Integer::from(field.get_prime().to_u64());
@@ -2201,8 +2208,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 }
 
                 // convert to integer
-                let mut g_int =
-                    g.map_coeff(|c| mod_field.to_symmetric_integer(c), IntegerRing::new());
+                let mut g_int = g.map_coeff(|c| mod_field.to_symmetric_integer(c), Z);
 
                 let content = g_int.univariate_content(main_var);
                 g_int = &g_int / &content;
@@ -2247,7 +2253,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         p: u32,
         k: usize,
     ) -> Vec<MultivariatePolynomial<FiniteField<Integer>, E, LexOrder>> {
-        let field = FiniteField::<u32>::new(p);
+        let field = Zp::new(p);
         let prime: Integer = (p as u64).into();
 
         let mut f_p: Vec<_> = factors
@@ -2258,9 +2264,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         // TODO: recycle from finite field computation that must have happened earlier
         let mut delta =
-            MultivariatePolynomial::<FiniteField<u32>, E, LexOrder>::diophantine_univariate(
-                &mut f_p, &rhs_p,
-            );
+            MultivariatePolynomial::<Zp, E, LexOrder>::diophantine_univariate(&mut f_p, &rhs_p);
 
         let mut deltas: Vec<_> = delta
             .iter()
@@ -2320,7 +2324,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let mut bound = Integer::one();
         let mut total_degree = 0;
         let mut non_zero_vars = 0;
-        for v in 0..self.nvars {
+        for v in 0..self.nvars() {
             let d = self.degree(v).to_u32() as u64;
             if d > 0 {
                 non_zero_vars += 1;
@@ -2535,7 +2539,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     }
                 }
 
-                let g = MultivariatePolynomial::gcd(&contrib, l);
+                let g = contrib.gcd(l);
                 let new = (contrib / &g).make_primitive();
 
                 *l = (&*l * &new).make_primitive();
@@ -2579,7 +2583,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             }
             let f_lc = f_eval.lcoeff();
 
-            let (q, r) = IntegerRing::new().quot_rem(&b_lc, &f_lc);
+            let (q, r) = Z.quot_rem(&b_lc, &f_lc);
             assert!(
                 r.is_zero(),
                 "Problem with bivariate factor scaling in factorization of {}: order={:?}, samples={:?}",
@@ -2640,7 +2644,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             return h
                 .into_iter()
-                .map(|f| f.map_coeff(|c| modulus.to_symmetric_integer(c), IntegerRing::new()))
+                .map(|f| f.map_coeff(|c| modulus.to_symmetric_integer(c), Z))
                 .collect();
         }
 
@@ -2684,7 +2688,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         h.into_iter()
             .map(|f| {
-                let f_i = f.map_coeff(|c| modulus.to_symmetric_integer(c), IntegerRing::new());
+                let f_i = f.map_coeff(|c| modulus.to_symmetric_integer(c), Z);
                 let c = f_i.univariate_content(order[0]);
                 f_i / &c
             })
@@ -2744,8 +2748,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             if degree == cur_biv_f.degree(order[0])
                 && degree == cur_uni_f.degree(order[0])
-                && MultivariatePolynomial::gcd(&cur_biv_f, &biv_df).is_constant()
-                && MultivariatePolynomial::gcd(&cur_uni_f, &uni_df).is_constant()
+                && cur_biv_f.gcd(&biv_df).is_constant()
+                && cur_uni_f.gcd(&uni_df).is_constant()
             {
                 if !cur_biv_f.univariate_content(order[0]).is_one() {
                     content_fail_count += 1;
@@ -2873,7 +2877,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 continue;
             }
 
-            field = FiniteField::<u32>::new(p);
+            field = Zp::new(p);
 
             // make sure the bivariate factors stay coprime
             let fs_p: Vec<_> = bivariate_factors
@@ -2883,7 +2887,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
             for (j, f) in fs_p.iter().enumerate() {
                 for g in &fs_p[j + 1..] {
-                    if !MultivariatePolynomial::gcd(f, g).is_one() {
+                    if !f.gcd(g).is_one() {
                         continue 'new_prime;
                     }
                 }
@@ -2949,7 +2953,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 Integer::Double(b) => b as u64,
                 Integer::Large(b) => b.to_u64().unwrap(),
             };
-            let small_field_mod = FiniteField::<u64>::new(prime);
+            let small_field_mod = Zp64::new(prime);
 
             let poly_ff = self.map_coeff(
                 |c| c.to_finite_field(&small_field_mod),
@@ -2966,7 +2970,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 })
                 .collect();
 
-            let mut sorted_biv_factors_ff: Vec<_> = sorted_biv_factors
+            let sorted_biv_factors_ff: Vec<_> = sorted_biv_factors
                 .into_iter()
                 .map(|f| {
                     f.map_coeff(
@@ -3002,7 +3006,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 .collect();
 
             let factorization_ff = poly_ff.multivariate_hensel_lifting(
-                &mut sorted_biv_factors_ff,
+                &sorted_biv_factors_ff,
                 &mut uni_f,
                 &delta_f,
                 &sample_points,
@@ -3012,12 +3016,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             );
             factorization_ff
                 .into_iter()
-                .map(|f| {
-                    f.map_coeff(
-                        |c| small_field_mod.to_symmetric_integer(c),
-                        IntegerRing::new(),
-                    )
-                })
+                .map(|f| f.map_coeff(|c| small_field_mod.to_symmetric_integer(c), Z))
                 .collect()
         } else {
             let field_mod = FiniteField::<Integer>::new(max_p.clone());
@@ -3040,7 +3039,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             );
             factorization_ff
                 .into_iter()
-                .map(|f| f.map_coeff(|c| field_mod.to_symmetric_integer(c), IntegerRing::new()))
+                .map(|f| f.map_coeff(|c| field_mod.to_symmetric_integer(c), Z))
                 .collect()
         };
 
@@ -3093,5 +3092,237 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<Integer>, E, LexOrder> {
         );
 
         (univariate_factors, univariate_deltas)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        atom::Atom,
+        domains::{finite_field::Zp, integer::Z},
+        poly::factor::Factorize,
+    };
+
+    #[test]
+    fn factor_ff_square_free() {
+        let field = Zp::new(3);
+        let poly = Atom::parse("(1+v1)*(1+v1^2)^2*(v1^4+1)^3")
+            .unwrap()
+            .to_polynomial::<_, u8>(&field, None);
+
+        let res = [("1+v1^4", 3), ("1+v1^2", 2), ("1+v1", 1)];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&field, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.square_free_factorization();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_ff_bivariate() {
+        let field = Zp::new(997);
+        let poly = Atom::parse("((v2+1)*v1^2+v1*v2+1)*((v2^2+2)*v1^2+v2+1)")
+            .unwrap()
+            .to_polynomial::<_, u8>(&field, None);
+
+        let res = [("1+2*v1^2+v2+v2^2*v1^2", 1), ("1+v1^2+v2*v1+v2*v1^2", 1)];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&field, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_square_free() {
+        let poly = Atom::parse("3*(2*v1^2+v2)(v1^3+v2)^2(1+4*v2)^2(1+v1)")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("3", 1),
+            ("1+4*v2", 2),
+            ("1+v1", 1),
+            ("v2+2*v1^2", 1),
+            ("v2+v1^3", 2),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.square_free_factorization();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_univariate_1() {
+        let poly = Atom::parse("2*(4 + 3*v1)*(3 + 2*v1 + 3*v1^2)*(3 + 8*v1^2)*(4 + v1 + v1^16)")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("2", 1),
+            ("4+3*v1", 1),
+            ("3+2*v1+3*v1^2", 1),
+            ("3+8*v1^2", 1),
+            ("4+v1+v1^16", 1),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_univariate_2() {
+        let poly = Atom::parse(
+            "(v1+1)(v1+2)(v1+3)^3(v1+4)(v1+5)(v1^2+6)(v1^3+7)(v1+8)^2(v1^4+9)(v1^5+v1+10)",
+        )
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("5+v1", 1),
+            ("1+v1", 1),
+            ("4+v1", 1),
+            ("2+v1", 1),
+            ("7+v1^3", 1),
+            ("10+v1+v1^5", 1),
+            ("6+v1^2", 1),
+            ("9+v1^4", 1),
+            ("8+v1", 2),
+            ("3+v1", 3),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_bivariate() {
+        let input = "(v1^2+v2+v1+1)(3*v1+v2^2+4)*(6*v1*(v2+1)+v2+5)*(7*v1*v2+4)";
+        let poly = Atom::parse(input).unwrap().to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("(1+v2+v1+v1^2)", 1),
+            ("(5+v2+6*v1+6*v1*v2)", 1),
+            ("(4+v2^2+3*v1)", 1),
+            ("(4+7*v1*v2)", 1),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_multivariate() {
+        let input = "(v1*(2+2*v2+2*v3)+1)*(v1*(4+v3^2)+v2+3)*(v1*(v4+v4^2+4+v2)+v4+5)";
+        let poly = Atom::parse(input).unwrap().to_polynomial::<_, u8>(&Z, None);
+
+        let res = [
+            ("5+v4+4*v1+v1*v4+v1*v4^2+v1*v2", 1),
+            ("1+2*v1+2*v1*v3+2*v1*v2 ", 1),
+            ("3+v2+4*v1+v1*v3^2", 1),
+        ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        assert_eq!(r, res);
     }
 }

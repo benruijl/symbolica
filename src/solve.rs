@@ -1,48 +1,36 @@
-use std::ops::Neg;
-
-use ahash::HashMap;
+use std::{ops::Neg, sync::Arc};
 
 use crate::{
+    atom::{Atom, AtomView, Symbol},
     domains::{
-        integer::IntegerRing,
-        linear_system::Matrix,
-        rational::RationalField,
+        integer::{IntegerRing, Z},
+        rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::{Exponent, Variable},
-    representations::{Atom, AtomSet, AtomView, Identifier},
-    state::{ResettableBuffer, State, Workspace},
+    tensors::matrix::Matrix,
 };
 
-impl<'a, P: AtomSet> AtomView<'a, P> {
+impl<'a> AtomView<'a> {
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
     pub fn solve_linear_system<E: Exponent>(
-        system: &[AtomView<P>],
-        vars: &[Identifier],
-        workspace: &Workspace<P>,
-        state: &State,
-    ) -> Result<Vec<Atom<P>>, String> {
-        let vars: Vec<_> = vars.iter().map(|v| Variable::Identifier(*v)).collect();
-        let mut map = HashMap::default();
+        system: &[AtomView],
+        vars: &[Symbol],
+    ) -> Result<Vec<Atom>, String> {
+        let vars: Vec<_> = vars.iter().map(|v| Variable::Symbol(*v)).collect();
 
         let mut mat = Vec::with_capacity(system.len() * vars.len());
-        let mut row = vec![RationalPolynomial::<_, E>::new(&IntegerRing::new(), None); vars.len()];
-        let mut rhs = vec![RationalPolynomial::<_, E>::new(&IntegerRing::new(), None); vars.len()];
+        let mut row = vec![RationalPolynomial::<_, E>::new(&Z, Arc::new(vec![])); vars.len()];
+        let mut rhs = vec![RationalPolynomial::<_, E>::new(&Z, Arc::new(vec![])); vars.len()];
 
         for (si, a) in system.iter().enumerate() {
-            let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial_with_map(
-                workspace,
-                state,
-                &RationalField::new(),
-                &IntegerRing::new(),
-                &mut map,
-            );
+            let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial(&Q, &Z, None);
 
             let poly = rat.to_polynomial(&vars, true).unwrap();
 
             for e in &mut row {
-                *e = RationalPolynomial::<_, E>::new(&IntegerRing::new(), None);
+                *e = RationalPolynomial::<_, E>::new(&Z, poly.variables.clone());
             }
 
             // get linear coefficients
@@ -71,29 +59,18 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
 
         for _ in 0..2 {
             for x in &mut *rest {
-                first.unify_var_map(x);
+                first.unify_variables(x);
             }
             for x in &mut rhs {
-                first.unify_var_map(x);
+                first.unify_variables(x);
             }
         }
 
-        let field = RationalPolynomialField::new(
-            IntegerRing::new(),
-            rhs[0].numerator.nvars,
-            rhs[0].numerator.var_map.clone(),
-        );
+        let field = RationalPolynomialField::new(Z, rhs[0].numerator.get_vars().into());
 
-        let m = Matrix {
-            shape: ((mat.len() / rhs.len()) as u32, rhs.len() as u32),
-            data: mat.into(),
-            field: field.clone(),
-        };
-        let b = Matrix {
-            shape: (rhs.len() as u32, 1),
-            data: rhs.into(),
-            field: field,
-        };
+        let nrows = (mat.len() / rhs.len()) as u32;
+        let m = Matrix::from_linear(mat, nrows, rhs.len() as u32, field.clone()).unwrap();
+        let b = Matrix::new_vec(rhs, field);
 
         let sol = match m.solve(&b) {
             Ok(sol) => sol,
@@ -103,17 +80,118 @@ impl<'a, P: AtomSet> AtomView<'a, P> {
         // replace the temporary variables
         let mut result = Vec::with_capacity(vars.len());
 
-        let inv_map = map.iter().map(|(k, v)| (*v, k.as_view())).collect();
-        for (s, v) in sol.data.iter().zip(&vars) {
-            let mut a = Atom::new();
-            s.to_expression(workspace, state, &inv_map, &mut a);
-            let Variable::Identifier(_) = *v else {
-                panic!("Temp var left");
-            };
-
-            result.push(a);
+        for s in sol.data {
+            result.push(s.to_expression());
         }
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use crate::{
+        atom::{Atom, AtomView},
+        domains::{
+            integer::Z,
+            rational::Q,
+            rational_polynomial::{RationalPolynomial, RationalPolynomialField},
+        },
+        poly::Variable,
+        state::State,
+        tensors::matrix::Matrix,
+    };
+
+    #[test]
+    fn solve() {
+        let x = State::get_symbol("v1");
+        let y = State::get_symbol("v2");
+        let z = State::get_symbol("v3");
+        let eqs = [
+            "v4*v1 + f1(v4)*v2 + v3 - 1",
+            "v1 + v4*v2 + v3/v4 - 2",
+            "(v4-1)v1 + v4*v3",
+        ];
+
+        let atoms: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
+        let system: Vec<_> = atoms.iter().map(|x| x.as_view()).collect();
+
+        let sol = AtomView::solve_linear_system::<u8>(&system, &[x, y, z]).unwrap();
+
+        let res = [
+            "(v4^3-2*v4^2*f1(v4))*(v4^2-v4^3+v4^4-f1(v4)+v4*f1(v4)-v4^2*f1(v4))^-1",
+            "(v4^2-f1(v4))^-1*(2*v4-1)",
+            "(v4^2-v4^3-2*v4*f1(v4)+2*v4^2*f1(v4))*(v4^2-v4^3+v4^4-f1(v4)+v4*f1(v4)-v4^2*f1(v4))^-1",
+        ];
+        let res = res
+            .iter()
+            .map(|x| Atom::parse(x).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(sol, res);
+    }
+
+    #[test]
+    fn solve_from_matrix() {
+        let system = [
+            ["v4", "v4+1", "v4^2+5"],
+            ["1", "v4", "v4+1"],
+            ["v4-1", "-1", "v4"],
+        ];
+        let rhs = ["1", "2", "-1"];
+
+        let var_map = Arc::new(vec![Variable::Symbol(State::get_symbol("v4"))]);
+
+        let system_rat: Vec<RationalPolynomial<_, u8>> = system
+            .iter()
+            .flatten()
+            .map(|s| {
+                Atom::parse(s)
+                    .unwrap()
+                    .to_rational_polynomial(&Q, &Z, Some(var_map.clone()))
+            })
+            .collect();
+
+        let rhs_rat: Vec<RationalPolynomial<_, u8>> = rhs
+            .iter()
+            .map(|s| {
+                Atom::parse(s)
+                    .unwrap()
+                    .to_rational_polynomial(&Q, &Z, Some(var_map.clone()))
+            })
+            .collect();
+
+        let field = RationalPolynomialField::new_from_poly(&rhs_rat[0].numerator);
+        let m = Matrix::from_linear(
+            system_rat,
+            system.len() as u32,
+            system.len() as u32,
+            field.clone(),
+        )
+        .unwrap();
+        let b = Matrix::new_vec(rhs_rat, field);
+
+        let sol = m.solve(&b).unwrap();
+
+        let res = [
+            "(10-2*v4+4*v4^2-v4^3)/(6-4*v4+5*v4^2-3*v4^3+v4^4)",
+            "(-4+10*v4-5*v4^2+2*v4^3)/(6-4*v4+5*v4^2-3*v4^3+v4^4)",
+            "(2-4*v4)/(6-4*v4+5*v4^2-3*v4^3+v4^4)",
+        ];
+
+        let res = res
+            .iter()
+            .map(|x| {
+                Atom::parse(x).unwrap().to_rational_polynomial(
+                    &Z,
+                    &Z,
+                    m.data[0].get_variables().clone().into(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(sol.data, res);
     }
 }

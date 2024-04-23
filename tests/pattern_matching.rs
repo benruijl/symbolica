@@ -1,10 +1,11 @@
 use symbolica::{
     atom::{Atom, AtomView},
-    id::{Match, Pattern, PatternRestriction},
+    id::{Condition, Match, MatchSettings, Pattern, PatternRestriction},
     state::{RecycledAtom, State},
 };
 
-fn main() {
+#[test]
+fn fibonacci() {
     // prepare all patterns
     let pattern = Pattern::parse("f(x_)").unwrap();
     let rhs = Pattern::parse("f(x_ - 1) + f(x_ - 2)").unwrap();
@@ -25,11 +26,6 @@ fn main() {
     let input = Atom::parse("f(10)").unwrap();
     let mut target: RecycledAtom = input.clone().into();
 
-    println!(
-        "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {}:",
-        target,
-    );
-
     for _ in 0..9 {
         let mut out = RecycledAtom::new();
         pattern.replace_all_into(target.as_view(), &rhs, Some(&restrictions), None, &mut out);
@@ -41,8 +37,43 @@ fn main() {
 
         lhs_one_pat.replace_all_into(out.as_view(), &rhs_one, None, None, &mut out2);
 
-        println!("\t{}", out2);
-
         target = out2;
     }
+
+    assert_eq!(target.into_inner(), Atom::new_num(89));
+}
+
+#[test]
+fn replace_once() {
+    let expr = Atom::parse("f(z)*f(f(x))*f(y)").unwrap();
+    let pat_expr = Atom::parse("f(x_)").unwrap();
+
+    let rhs_expr = Atom::parse("g(x_)").unwrap();
+    let rhs = rhs_expr.as_view().into_pattern();
+
+    let pattern = pat_expr.as_view().into_pattern();
+    let restrictions = Condition::default();
+    let settings = MatchSettings::default();
+
+    let mut replaced = Atom::new();
+
+    let mut it = pattern.replace_iter(expr.as_view(), &rhs, &restrictions, &settings);
+    let mut r = vec![];
+    while let Some(()) = it.next(&mut replaced) {
+        r.push(replaced.clone());
+    }
+
+    let res = [
+        "g(z)*f(y)*f(f(x))",
+        "f(z)*g(y)*f(f(x))",
+        "f(z)*f(y)*g(f(x))",
+        "f(z)*f(y)*f(g(x))",
+    ];
+
+    let res = res
+        .iter()
+        .map(|x| Atom::parse(x).unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(r, res);
 }

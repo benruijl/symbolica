@@ -1,17 +1,18 @@
+pub mod algebraic_number;
 pub mod factorized_rational_polynomial;
 pub mod finite_field;
 pub mod float;
 pub mod integer;
-pub mod linear_system;
 pub mod rational;
 pub mod rational_polynomial;
 
 use std::fmt::{Debug, Display, Error, Formatter};
+use std::hash::Hash;
 
-use crate::{printer::PrintOptions, state::State};
+use crate::printer::PrintOptions;
 
-pub trait Ring: Clone + PartialEq + Debug + Display {
-    type Element: Clone + PartialEq + PartialOrd + Debug;
+pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
+    type Element: Clone + PartialEq + Eq + Hash + PartialOrd + Debug;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
@@ -37,11 +38,14 @@ pub trait Ring: Clone + PartialEq + Debug + Display {
     fn fmt_display(
         &self,
         element: &Self::Element,
-        state: Option<&State>,
         opts: &PrintOptions,
         in_product: bool, // can be used to add parentheses
         f: &mut Formatter<'_>,
     ) -> Result<(), Error>;
+
+    fn printer<'a>(&'a self, element: &'a Self::Element) -> RingPrinter<'a, Self> {
+        RingPrinter::new(self, element)
+    }
 }
 
 pub trait EuclideanDomain: Ring {
@@ -59,14 +63,24 @@ pub trait Field: EuclideanDomain {
 pub struct RingPrinter<'a, R: Ring> {
     pub ring: &'a R,
     pub element: &'a R::Element,
-    pub state: Option<&'a State>,
-    pub opts: &'a PrintOptions,
+    pub opts: PrintOptions,
     pub in_product: bool,
+}
+
+impl<'a, R: Ring> RingPrinter<'a, R> {
+    pub fn new(ring: &'a R, element: &'a R::Element) -> RingPrinter<'a, R> {
+        RingPrinter {
+            ring,
+            element,
+            opts: PrintOptions::default(),
+            in_product: false,
+        }
+    }
 }
 
 impl<'a, R: Ring> Display for RingPrinter<'a, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.ring
-            .fmt_display(self.element, self.state, self.opts, self.in_product, f)
+            .fmt_display(self.element, &self.opts, self.in_product, f)
     }
 }

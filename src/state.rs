@@ -1,4 +1,8 @@
 use std::hash::Hash;
+use std::mem::ManuallyDrop;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::RwLock;
+use std::thread::LocalKey;
 use std::{
     cell::RefCell,
     collections::hash_map::Entry,
@@ -6,14 +10,15 @@ use std::{
 };
 
 use ahash::{HashMap, HashMapExt};
+use append_only_vec::AppendOnlyVec;
+use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
+use crate::domains::finite_field::Zp64;
 use crate::{
+    atom::{Atom, Symbol},
     coefficient::Coefficient,
-    domains::finite_field::{FiniteField, FiniteFieldCore},
-    representations::{
-        default::Linear, AsAtomView, Atom, AtomSet, AtomView, Identifier, OwnedNum, OwnedVar,
-    },
+    domains::finite_field::FiniteFieldCore,
     LicenseManager, LICENSE_MANAGER,
 };
 
@@ -27,14 +32,22 @@ pub enum FunctionAttribute {
     Linear,
 }
 
+static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
+static ID_TO_STR: AppendOnlyVec<String> = AppendOnlyVec::<String>::new();
+static FINITE_FIELDS: AppendOnlyVec<Zp64> = AppendOnlyVec::<Zp64>::new();
+static SYMBOL_OFFSET: AtomicUsize = AtomicUsize::new(0);
+
+thread_local!(
+    /// A thread-local workspace, that stores recyclable atoms. By making it const and
+    /// `ManuallyDrop`, the fastest implementation is chosen for the current platform.
+    /// In principle this leaks memory, but Symbolica only uses thread pools that live as
+    /// long as the main thread, so this is no issue.
+    static WORKSPACE: ManuallyDrop<Workspace> = const { ManuallyDrop::new(Workspace::new()) }
+);
+
 /// A global state, that stores mappings from variable and function names to ids.
-#[derive(Clone)]
 pub struct State {
-    // get variable maps from here
-    str_to_var_id: HashMap<String, Identifier>,
-    function_attributes: HashMap<Identifier, Vec<FunctionAttribute>>,
-    var_info: Vec<(String, usize)>,
-    finite_fields: Vec<FiniteField<u64>>,
+    str_to_id: HashMap<String, Symbol>,
 }
 
 impl Default for State {
@@ -44,312 +57,401 @@ impl Default for State {
 }
 
 impl State {
-    pub const ARG: Identifier = Identifier::init(0);
-    pub const COEFF: Identifier = Identifier::init(1);
-    pub const EXP: Identifier = Identifier::init(2);
-    pub const LOG: Identifier = Identifier::init(3);
-    pub const SIN: Identifier = Identifier::init(4);
-    pub const COS: Identifier = Identifier::init(5);
-    pub const SQRT: Identifier = Identifier::init(6);
-    pub const DERIVATIVE: Identifier = Identifier::init(7);
-    pub const E: Identifier = Identifier::init(8);
-    pub const I: Identifier = Identifier::init(9);
-    pub const PI: Identifier = Identifier::init(10);
+    pub const ARG: Symbol = Symbol::init_fn(0, 0, false, false, false);
+    pub const COEFF: Symbol = Symbol::init_fn(1, 0, false, false, false);
+    pub const EXP: Symbol = Symbol::init_fn(2, 0, false, false, false);
+    pub const LOG: Symbol = Symbol::init_fn(3, 0, false, false, false);
+    pub const SIN: Symbol = Symbol::init_fn(4, 0, false, false, false);
+    pub const COS: Symbol = Symbol::init_fn(5, 0, false, false, false);
+    pub const SQRT: Symbol = Symbol::init_fn(6, 0, false, false, false);
+    pub const DERIVATIVE: Symbol = Symbol::init_fn(7, 0, false, false, false);
+    pub const E: Symbol = Symbol::init_var(8, 0);
+    pub const I: Symbol = Symbol::init_var(9, 0);
+    pub const PI: Symbol = Symbol::init_var(10, 0);
 
-    pub(crate) const BUILTIN_VAR_LIST: [&'static str; 11] = [
+    pub const BUILTIN_VAR_LIST: [&'static str; 11] = [
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 
-    pub fn new() -> State {
+    fn new() -> State {
         LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
 
         let mut state = State {
-            str_to_var_id: HashMap::new(),
-            function_attributes: HashMap::new(),
-            var_info: vec![],
-            finite_fields: vec![],
+            str_to_id: HashMap::new(),
         };
 
         for x in Self::BUILTIN_VAR_LIST {
-            state.get_or_insert_var(x);
+            state.get_symbol_impl(x);
+        }
+
+        #[cfg(test)]
+        {
+            state.initialize_test();
         }
 
         state
     }
 
+    /// Get the global state.
+    #[inline]
+    pub(crate) fn get_global_state() -> &'static RwLock<State> {
+        &STATE
+    }
+
+    /// Initialize the global state for testing purposes by allocating
+    /// variables and functions with the names v0, ..., v29, f0, ..., f29,
+    /// that can be used in concurrently run unit tests without interference.
+    #[cfg(test)]
+    fn initialize_test(&mut self) {
+        for i in 0..30 {
+            let _ = self.get_symbol_impl(&format!("v{}", i));
+        }
+        for i in 0..30 {
+            let _ = self.get_symbol_impl(&format!("f{}", i));
+        }
+        for i in 0..5 {
+            let _ = self.get_symbol_with_attributes_impl(
+                &format!("fs{}", i),
+                &[FunctionAttribute::Symmetric],
+            );
+        }
+        for i in 0..5 {
+            let _ = self.get_symbol_with_attributes_impl(
+                &format!("fa{}", i),
+                &[FunctionAttribute::Antisymmetric],
+            );
+        }
+        for i in 0..5 {
+            let _ = self
+                .get_symbol_with_attributes_impl(&format!("fl{}", i), &[FunctionAttribute::Linear]);
+        }
+        for i in 0..5 {
+            let _ = self.get_symbol_with_attributes_impl(
+                &format!("fsl{}", i),
+                &[FunctionAttribute::Symmetric, FunctionAttribute::Linear],
+            );
+        }
+    }
+
+    /// Remove all user-defined symbols from the state. This will invalidate all
+    /// currently existing atoms, and hence this function is unsafe.
+    ///
+    /// Example:
+    /// ```
+    /// State::get_symbol_with_attributes("f", vec![FunctionAttribute::Symmetric]).unwrap();
+    /// unsafe { State::reset(); }
+    /// State::get_symbol_with_attributes("f", vec![FunctionAttribute::Antisymmetric]).unwrap();
+    /// ```
+    pub unsafe fn reset() {
+        let mut state = STATE.write().unwrap();
+
+        state.str_to_id.clear();
+        SYMBOL_OFFSET.store(ID_TO_STR.len(), Ordering::Relaxed);
+
+        for x in Self::BUILTIN_VAR_LIST {
+            state.get_symbol_impl(x);
+        }
+
+        #[cfg(test)]
+        {
+            state.initialize_test();
+        }
+    }
+
     /// Iterate over all defined symbols.
-    pub fn symbol_iter(&self) -> impl Iterator<Item = &str> {
-        self.var_info.iter().map(|(s, _)| s.as_str())
+    pub fn symbol_iter() -> impl Iterator<Item = &'static str> {
+        ID_TO_STR
+            .iter()
+            .skip(SYMBOL_OFFSET.load(Ordering::Relaxed))
+            .map(|s| s.as_str())
     }
 
     /// Returns `true` iff this identifier is defined by Symbolica.
-    pub fn is_builtin(id: Identifier) -> bool {
-        id.to_u32() < Self::BUILTIN_VAR_LIST.len() as u32
+    pub fn is_builtin(id: Symbol) -> bool {
+        id.get_id() < Self::BUILTIN_VAR_LIST.len() as u32
     }
 
-    // note: could be made immutable by using frozen collections
-    /// Get the id for a certain name if the name is already registered,
-    /// else register it and return a new id.
-    pub fn get_or_insert_var<S: AsRef<str>>(&mut self, name: S) -> Identifier {
-        match self.str_to_var_id.entry(name.as_ref().into()) {
+    /// Get the symbol for a certain name if the name is already registered,
+    /// else register it and return a new symbol without attributes.
+    ///
+    /// To register a symbol with attributes, use [`State::get_symbol_with_attributes`].
+    pub fn get_symbol<S: AsRef<str>>(name: S) -> Symbol {
+        STATE.write().unwrap().get_symbol_impl(name.as_ref())
+    }
+
+    pub(crate) fn get_symbol_impl(&mut self, name: &str) -> Symbol {
+        match self.str_to_id.entry(name.into()) {
             Entry::Occupied(o) => *o.get(),
             Entry::Vacant(v) => {
-                if self.var_info.len() == u32::MAX as usize - 1 {
+                let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
+                if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
 
                 let mut wildcard_level = 0;
-                for x in name.as_ref().chars().rev() {
+                for x in name.chars().rev() {
                     if x != '_' {
                         break;
                     }
                     wildcard_level += 1;
                 }
 
-                let new_id = Identifier::from(self.var_info.len() as u32);
-                v.insert(new_id);
-                self.var_info.push((name.as_ref().into(), wildcard_level));
-                new_id
+                // there is no synchronization issue since only one thread can insert at a time
+                // as the state itself is behind a mutex
+                let id = ID_TO_STR.push(name.into()) - offset;
+
+                let new_symbol = Symbol::init_var(id as u32, wildcard_level);
+                v.insert(new_symbol);
+                new_symbol
             }
         }
     }
 
-    /// Get the id of a certain function name if the name is already registered,
-    /// else register it and return a new id.
+    /// Get the symbol for a certain name if the name is already registered,
+    /// else register it and return a new symbol with the given attributes.
     ///
-    /// Providing an attribute `None` means that the attributes will be fetched from
-    /// the state if the function exists, or the attribute list will be empty if not.
-    pub fn get_or_insert_fn<S: AsRef<str>>(
-        &mut self,
+    /// This function will return an error when an existing symbol is redefined
+    /// with different attributes.
+    pub fn get_symbol_with_attributes<S: AsRef<str>>(
         name: S,
-        attributes: Option<Vec<FunctionAttribute>>,
-    ) -> Result<Identifier, String> {
-        match self.str_to_var_id.entry(name.as_ref().into()) {
+        attributes: &[FunctionAttribute],
+    ) -> Result<Symbol, String> {
+        STATE
+            .write()
+            .unwrap()
+            .get_symbol_with_attributes_impl(name.as_ref(), attributes)
+    }
+
+    pub(crate) fn get_symbol_with_attributes_impl(
+        &mut self,
+        name: &str,
+        attributes: &[FunctionAttribute],
+    ) -> Result<Symbol, String> {
+        match self.str_to_id.entry(name.into()) {
             Entry::Occupied(o) => {
                 let r = *o.get();
-                let old_attrib = self.function_attributes.get(&r);
 
-                if attributes.is_none() || attributes.as_ref() == old_attrib {
+                let new_id = Symbol::init_fn(
+                    r.get_id(),
+                    r.get_wildcard_level(),
+                    attributes.contains(&FunctionAttribute::Symmetric),
+                    attributes.contains(&FunctionAttribute::Antisymmetric),
+                    attributes.contains(&FunctionAttribute::Linear),
+                );
+
+                if r == new_id {
                     Ok(r)
                 } else {
-                    Err(format!("Function {} redefined with new attributes", name.as_ref()).into())
+                    Err(format!("Function {} redefined with new attributes", name).into())
                 }
             }
             Entry::Vacant(v) => {
-                if self.var_info.len() == u32::MAX as usize - 1 {
+                let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
+                if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
                     panic!("Too many variables defined");
                 }
 
+                // there is no synchronization issue since only one thread can insert at a time
+                // as the state itself is behind a mutex
+                let id = ID_TO_STR.push(name.into()) - offset;
+
                 let mut wildcard_level = 0;
-                for x in name.as_ref().chars().rev() {
+                for x in name.chars().rev() {
                     if x != '_' {
                         break;
                     }
                     wildcard_level += 1;
                 }
 
-                let new_id = Identifier::from(self.var_info.len() as u32);
-                v.insert(new_id);
-                self.var_info.push((name.as_ref().into(), wildcard_level));
+                let new_symbol = Symbol::init_fn(
+                    id as u32,
+                    wildcard_level,
+                    attributes.contains(&FunctionAttribute::Symmetric),
+                    attributes.contains(&FunctionAttribute::Antisymmetric),
+                    attributes.contains(&FunctionAttribute::Linear),
+                );
 
-                self.function_attributes
-                    .insert(new_id, attributes.unwrap_or_default());
+                v.insert(new_symbol);
 
-                Ok(new_id)
+                Ok(new_symbol)
             }
         }
     }
 
-    pub fn get_function_attributes(&self, id: Identifier) -> &[FunctionAttribute] {
-        self.function_attributes
-            .get(&id)
-            .map(|x| x.as_ref())
-            .unwrap_or(&[])
+    /// Get the name for a given symbol.
+    pub fn get_name(id: Symbol) -> &'static str {
+        &ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)]
     }
 
-    /// Get the name for a given id.
-    pub fn get_name(&self, id: Identifier) -> &String {
-        &self.var_info[id.to_u32() as usize].0
+    pub fn get_finite_field(fi: FiniteFieldIndex) -> &'static Zp64 {
+        &FINITE_FIELDS[fi.0]
     }
 
-    pub fn get_wildcard_level(&self, id: Identifier) -> usize {
-        self.var_info[id.to_u32() as usize].1
+    pub fn get_or_insert_finite_field(f: Zp64) -> FiniteFieldIndex {
+        STATE.write().unwrap().get_or_insert_finite_field_impl(f)
     }
 
-    pub fn get_finite_field(&self, fi: FiniteFieldIndex) -> &FiniteField<u64> {
-        &self.finite_fields[fi.0]
-    }
-
-    pub fn get_or_insert_finite_field(&mut self, f: FiniteField<u64>) -> FiniteFieldIndex {
-        for (i, f2) in self.finite_fields.iter().enumerate() {
+    pub(crate) fn get_or_insert_finite_field_impl(&mut self, f: Zp64) -> FiniteFieldIndex {
+        for (i, f2) in FINITE_FIELDS.iter().enumerate() {
             if f.get_prime() == f2.get_prime() {
                 return FiniteFieldIndex(i);
             }
         }
 
-        self.finite_fields.push(f);
-        FiniteFieldIndex(self.finite_fields.len() - 1)
+        let index = FINITE_FIELDS.push(f);
+        FiniteFieldIndex(index)
     }
 }
 
-/// A workspace that stores reusable buffers.
-pub struct Workspace<P: AtomSet = Linear> {
-    atom_stack: Stack<Atom<P>>,
+/// A workspace that stores recyclable atoms. Upon dropping, the atoms automatically returned to a
+/// thread-local workspace (which may be a different one than the one it was created by).
+pub struct Workspace {
+    atom_buffer: RefCell<Vec<Atom>>,
 }
 
-impl<P: AtomSet> Workspace<P> {
-    pub fn new() -> Self {
-        LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
+impl Workspace {
+    const ATOM_BUFFER_MAX: usize = 25;
 
+    /// Create a new workspace.
+    const fn new() -> Self {
         Workspace {
-            atom_stack: Stack::new(),
+            atom_buffer: RefCell::new(Vec::new()),
         }
     }
 
+    /// Get a thread-local workspace.
     #[inline]
-    pub fn new_atom(&self) -> BufferHandle<Atom<P>> {
-        self.atom_stack.get_buf_ref()
+    pub const fn get_local() -> &'static LocalKey<ManuallyDrop<Workspace>> {
+        &WORKSPACE
     }
 
+    /// Return a recycled atom from this workspace. The atom may have the same value as before.
     #[inline]
-    pub fn new_var(&self, id: Identifier) -> BufferHandle<Atom<P>> {
-        let mut owned = self.new_atom();
-        owned.to_var().set_from_id(id);
-        owned
-    }
-
-    #[inline]
-    pub fn new_num<T: Into<Coefficient>>(&self, num: T) -> BufferHandle<Atom<P>> {
-        let mut owned = self.new_atom();
-        owned.to_num().set_from_coeff(num.into());
-        owned
-    }
-}
-
-impl Default for Workspace<Linear> {
-    fn default() -> Self {
-        Self {
-            atom_stack: Stack::new(),
-        }
-    }
-}
-
-/// A buffer that can be reset to its initial state.
-/// The `new` function may allocate, but the `reset` function must not.
-pub trait ResettableBuffer: Sized {
-    /// Create a new resettable buffer. May allocate.
-    fn new() -> Self;
-    /// Reset the buffer to its initial state. Must not allocate.
-    fn reset(&mut self);
-}
-
-/// A stack of resettable buffers. Any buffer lend from this stack
-/// will be returned to it when it is dropped. If a buffer is requested
-/// on an empty stack, a new buffer will be created. Use a stack to prevent
-/// allocations by recycling used buffers first before creating new ones.
-pub struct Stack<T: ResettableBuffer> {
-    buffers: RefCell<Vec<T>>,
-}
-
-impl<T: ResettableBuffer> Stack<T> {
-    /// Create a new stack.
-    #[inline]
-    pub const fn new() -> Self {
-        Self {
-            buffers: RefCell::new(vec![]),
-        }
-    }
-
-    /// Get a buffer from the stack if the stack is not empty,
-    /// else create a new one.
-    #[inline]
-    pub fn get_buf_ref(&self) -> BufferHandle<T> {
-        let b = if let Ok(mut a) = self.buffers.try_borrow_mut() {
+    pub fn new_atom(&self) -> RecycledAtom {
+        if let Ok(mut a) = self.atom_buffer.try_borrow_mut() {
             if let Some(b) = a.pop() {
-                b
+                b.into()
             } else {
-                T::new()
+                Atom::default().into()
             }
         } else {
-            T::new() // should never happen
-        };
-
-        BufferHandle {
-            buf: Some(b),
-            parent: self,
+            Atom::default().into() // very rare
         }
     }
 
-    /// Return a buffer to the stack.
+    /// Create a new variable from a recycled atom from this workspace.
     #[inline]
-    fn return_arg(&self, mut b: T) {
-        if let Ok(mut a) = self.buffers.try_borrow_mut() {
-            b.reset();
-            a.push(b);
+    pub fn new_var(&self, id: Symbol) -> RecycledAtom {
+        let mut owned = self.new_atom();
+        owned.to_var(id);
+        owned
+    }
+
+    /// Create a new number from a recycled atom from this workspace.
+    #[inline]
+    pub fn new_num<T: Into<Coefficient>>(&self, num: T) -> RecycledAtom {
+        let mut owned = self.new_atom();
+        owned.to_num(num.into());
+        owned
+    }
+
+    pub fn return_atom(&self, atom: Atom) {
+        if let Ok(mut a) = self.atom_buffer.try_borrow_mut() {
+            a.push(atom);
         }
     }
 }
 
-/// A handle to an underlying resettable buffer. When this handle is dropped,
-/// the buffer is returned to the stack it was created by.
-pub struct BufferHandle<'a, T: ResettableBuffer> {
-    buf: Option<T>,
-    parent: &'a Stack<T>,
-}
+#[derive(PartialEq, Eq, Debug, Hash, Clone)]
+pub struct RecycledAtom(Atom);
 
-impl<'a, T: ResettableBuffer + Eq> Eq for BufferHandle<'a, T> {}
-
-impl<'a, T: ResettableBuffer + PartialEq> PartialEq for BufferHandle<'a, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.buf == other.buf
+impl From<Atom> for RecycledAtom {
+    fn from(a: Atom) -> Self {
+        RecycledAtom(a)
     }
 }
 
-impl<'a, T: ResettableBuffer + Hash> Hash for BufferHandle<'a, T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.buf.hash(state);
+impl std::fmt::Display for RecycledAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
-impl<'a, T: ResettableBuffer> Deref for BufferHandle<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.get()
+impl Default for RecycledAtom {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl<'a, T: ResettableBuffer> DerefMut for BufferHandle<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.get_mut()
-    }
-}
-
-impl<'a, T: ResettableBuffer> BufferHandle<'a, T> {
-    /// Get an immutable reference to the underlying buffer.
+impl RecycledAtom {
+    /// Get a recycled atom from a thread-local workspace.
     #[inline]
-    pub fn get(&self) -> &T {
-        self.buf.as_ref().unwrap()
+    pub fn new() -> RecycledAtom {
+        Workspace::get_local().with(|ws| ws.new_atom())
     }
 
-    /// Get a mutable reference to the underlying buffer.
+    /// Wrap an atom so that it gets recycled upon dropping.
+    pub fn wrap(atom: Atom) -> RecycledAtom {
+        RecycledAtom(atom)
+    }
+
     #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        self.buf.as_mut().unwrap()
+    pub fn new_var(id: Symbol) -> RecycledAtom {
+        let mut owned = Self::new();
+        owned.to_var(id);
+        owned
+    }
+
+    /// Create a new number from a recycled atom from this workspace.
+    #[inline]
+    pub fn new_num<T: Into<Coefficient>>(num: T) -> RecycledAtom {
+        let mut owned = Self::new();
+        owned.to_num(num.into());
+        owned
+    }
+
+    /// Yield the atom, which will now no longer be recycled upon dropping.
+    pub fn into_inner(mut self) -> Atom {
+        std::mem::replace(&mut self.0, Atom::Empty)
     }
 }
 
-impl<'a, T: ResettableBuffer> Drop for BufferHandle<'a, T> {
-    /// Upon dropping the handle, the buffer is returned to the stack it was created by.
+impl Deref for RecycledAtom {
+    type Target = Atom;
+
+    fn deref(&self) -> &Atom {
+        &self.0
+    }
+}
+
+impl DerefMut for RecycledAtom {
+    fn deref_mut(&mut self) -> &mut Atom {
+        &mut self.0
+    }
+}
+
+impl AsRef<Atom> for RecycledAtom {
+    fn as_ref(&self) -> &Atom {
+        self.deref()
+    }
+}
+
+impl Drop for RecycledAtom {
     #[inline]
     fn drop(&mut self) {
-        self.parent
-            .return_arg(std::mem::take(&mut self.buf).unwrap())
-    }
-}
+        if let Atom::Empty = self.0 {
+            return;
+        }
 
-impl<'a, 'b, P: AtomSet> AsAtomView<'b, P> for &'b BufferHandle<'a, Atom<P>> {
-    fn as_atom_view(self) -> AtomView<'b, P> {
-        self.as_view()
+        let _ = WORKSPACE.try_with(
+            #[inline(always)]
+            |ws| {
+                if let Ok(mut a) = ws.atom_buffer.try_borrow_mut() {
+                    if a.len() < Workspace::ATOM_BUFFER_MAX {
+                        a.push(std::mem::replace(&mut self.0, Atom::Empty));
+                    }
+                }
+            },
+        );
     }
 }

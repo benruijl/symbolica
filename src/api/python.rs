@@ -1,18 +1,20 @@
 use std::{
-    borrow::{Borrow, BorrowMut},
+    borrow::Borrow,
+    fs::File,
     hash::{Hash, Hasher},
-    ops::Neg,
-    sync::{Arc, RwLock},
+    io::BufWriter,
+    ops::{Deref, Neg},
+    sync::Arc,
 };
 
 use ahash::HashMap;
-use once_cell::sync::Lazy;
+use brotli::CompressorWriter;
 use pyo3::{
     exceptions::{self, PyIndexError},
     pyclass,
     pyclass::CompareOp,
     pyfunction, pymethods, pymodule,
-    types::{PyComplex, PyLong, PyModule, PyTuple, PyType},
+    types::{PyBytes, PyComplex, PyLong, PyModule, PyTuple, PyType},
     wrap_pyfunction, FromPyObject, IntoPy, PyErr, PyObject, PyRef, PyResult, Python,
 };
 use rug::Complete;
@@ -21,23 +23,23 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    atom::{Atom, AtomType, AtomView, ListIterator, Symbol},
     domains::{
-        finite_field::ToFiniteField,
-        integer::Integer,
-        rational::RationalField,
-        rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
-    },
-    domains::{
-        finite_field::{FiniteField, FiniteFieldCore},
+        finite_field::{ToFiniteField, Zp},
         float::Complex,
-        integer::IntegerRing,
+        integer::{Integer, IntegerRing, Z},
+        rational::{Rational, RationalField, Q},
+        rational_polynomial::{
+            FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
+        },
+        Ring,
     },
     evaluate::EvaluationFn,
     id::{
-        AtomType, Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
+        Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
         PatternRestriction, ReplaceIterator, WildcardAndRestriction,
     },
-    numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, Sample},
+    numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
     parser::Token,
     poly::{
         evaluate::{
@@ -49,44 +51,19 @@ use crate::{
         polynomial::MultivariatePolynomial,
         GrevLexOrder, LexOrder, Variable, INLINED_EXPONENTS,
     },
-    printer::{AtomPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
-    representations::{
-        default::ListIteratorD, Add, Atom, AtomSet, AtomView, Fun, Identifier, ListSlice, Mul, Num,
-        OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar, Pow, Var,
+    printer::{
+        AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
     },
-    state::{FunctionAttribute, ResettableBuffer, State, Workspace},
-    streaming::TermStreamer,
+    state::{FunctionAttribute, RecycledAtom, State, Workspace},
+    streaming::{TermStreamer, TermStreamerConfig},
+    tensors::matrix::Matrix,
     transformer::{StatsOptions, Transformer, TransformerError},
     LicenseManager,
 };
 
-static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
-thread_local!(static WORKSPACE: Workspace = Workspace::new());
-
-macro_rules! get_state {
-    () => {
-        STATE.read().map_err(|_| {
-            exceptions::PyRuntimeError::new_err(
-                "A critical error has occurred earlier in Symbolica: the Python interpreter must be restarted.",
-            )
-        })
-    };
-}
-
-macro_rules! get_state_mut {
-    () => {
-        STATE.write().map_err(|_| {
-            exceptions::PyRuntimeError::new_err(
-                "A critical error has occurred earlier in Symbolica: the Python interpreter must be restarted.",
-            )
-        })
-    };
-}
-
 #[pymodule]
 fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonExpression>()?;
-    m.add_class::<PythonFunction>()?;
     m.add_class::<PythonPattern>()?;
     m.add_class::<PythonPolynomial>()?;
     m.add_class::<PythonIntegerPolynomial>()?;
@@ -94,11 +71,15 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonRationalPolynomial>()?;
     m.add_class::<PythonRationalPolynomialSmallExponent>()?;
     m.add_class::<PythonFiniteFieldRationalPolynomial>()?;
+    m.add_class::<PythonMatrix>()?;
     m.add_class::<PythonNumericalIntegrator>()?;
     m.add_class::<PythonSample>()?;
     m.add_class::<PythonAtomType>()?;
     m.add_class::<PythonAtomTree>()?;
     m.add_class::<PythonInstructionEvaluator>()?;
+    m.add_class::<PythonRandomNumberGenerator>()?;
+    m.add_class::<PythonPatternRestriction>()?;
+    m.add_class::<PythonTermStreamer>()?;
 
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_function(wrap_pyfunction!(is_licensed, m)?)?;
@@ -107,6 +88,8 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(request_trial_license, m)?)?;
     m.add_function(wrap_pyfunction!(request_sublicense, m)?)?;
     m.add_function(wrap_pyfunction!(get_offline_license_key, m)?)?;
+
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
     Ok(())
 }
@@ -169,7 +152,7 @@ fn get_offline_license_key() -> PyResult<String> {
 
 /// Specifies the type of the atom.
 #[derive(Clone, Copy)]
-#[pyclass(name = "AtomType")]
+#[pyclass(name = "AtomType", module = "symbolica")]
 pub enum PythonAtomType {
     Num,
     Var,
@@ -194,7 +177,7 @@ pub enum PythonAtomType {
 /// - the base and exponent for type `Pow`
 /// - the function arguments for type `Fn`
 #[derive(Clone)]
-#[pyclass(name = "AtomTree")]
+#[pyclass(name = "AtomTree", module = "symbolica")]
 pub struct PythonAtomTree {
     /// The type of this atom.
     #[pyo3(get)]
@@ -207,22 +190,22 @@ pub struct PythonAtomTree {
     pub tail: Vec<PythonAtomTree>,
 }
 
-impl<'a, P: AtomSet> From<AtomView<'a, P>> for PyResult<PythonAtomTree> {
-    fn from(atom: AtomView<'a, P>) -> Self {
+impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
+    fn from(atom: AtomView<'a>) -> Self {
         let tree = match atom {
             AtomView::Num(_) => PythonAtomTree {
                 atom_type: PythonAtomType::Num,
-                head: Some(format!("{}", AtomPrinter::new(atom, &&get_state!()?))),
+                head: Some(format!("{}", AtomPrinter::new(atom))),
                 tail: vec![],
             },
             AtomView::Var(v) => PythonAtomTree {
                 atom_type: PythonAtomType::Var,
-                head: Some(get_state!()?.get_name(v.get_name()).to_string()),
+                head: Some(State::get_name(v.get_symbol()).to_string()),
                 tail: vec![],
             },
             AtomView::Fun(f) => PythonAtomTree {
                 atom_type: PythonAtomType::Fn,
-                head: Some(get_state!()?.get_name(f.get_name()).to_string()),
+                head: Some(State::get_name(f.get_symbol()).to_string()),
                 tail: f.iter().map(|x| x.into()).collect::<Result<Vec<_>, _>>()?,
             },
             AtomView::Add(a) => PythonAtomTree {
@@ -241,8 +224,8 @@ impl<'a, P: AtomSet> From<AtomView<'a, P>> for PyResult<PythonAtomTree> {
                     atom_type: PythonAtomType::Pow,
                     head: None,
                     tail: vec![
-                        <AtomView<P> as Into<PyResult<PythonAtomTree>>>::into(b)?,
-                        <AtomView<P> as Into<PyResult<PythonAtomTree>>>::into(e)?,
+                        <AtomView as Into<PyResult<PythonAtomTree>>>::into(b)?,
+                        <AtomView as Into<PyResult<PythonAtomTree>>>::into(e)?,
                     ],
                 }
             }
@@ -261,24 +244,23 @@ pub enum ConvertibleToPattern {
 impl ConvertibleToPattern {
     pub fn to_pattern(self) -> PyResult<PythonPattern> {
         match self {
-            Self::Literal(l) => Ok(PythonPattern {
-                expr: Arc::new(
-                    l.to_expression()
-                        .expr
-                        .as_view()
-                        .into_pattern(&&get_state!()?),
-                ),
-            }),
+            Self::Literal(l) => Ok(l.to_expression().expr.as_view().into_pattern().into()),
             Self::Pattern(e) => Ok(e),
         }
     }
 }
 
 /// Operations that transform an expression.
-#[pyclass(name = "Transformer")]
+#[pyclass(name = "Transformer", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonPattern {
-    pub expr: Arc<Pattern>,
+    pub expr: Pattern,
+}
+
+impl From<Pattern> for PythonPattern {
+    fn from(expr: Pattern) -> Self {
+        PythonPattern { expr }
+    }
 }
 
 macro_rules! append_transformer {
@@ -286,13 +268,10 @@ macro_rules! append_transformer {
         if let Pattern::Transformer(b) = $self.expr.borrow() {
             let mut t = b.clone();
             t.1.push($t);
-            Ok(PythonPattern {
-                expr: Arc::new(Pattern::Transformer(t)),
-            })
+            Ok(Pattern::Transformer(t).into())
         } else {
-            return Err(exceptions::PyValueError::new_err(
-                "Pattern must be a transformer",
-            ));
+            // pattern is not a transformer yet (but may have subtransformers)
+            Ok(Pattern::Transformer(Box::new((Some($self.expr.clone()), vec![$t]))).into())
         }
     };
 }
@@ -302,9 +281,7 @@ impl PythonPattern {
     /// Create a new transformer for a term provided by `Expression.map`.
     #[new]
     pub fn new() -> PythonPattern {
-        PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new((None, vec![])))),
-        }
+        Pattern::Transformer(Box::new((None, vec![]))).into()
     }
 
     /// Create a transformer that expands products and powers.
@@ -312,12 +289,24 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x, x_ = Expression.vars('x', 'x_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x, x_ = Expression.symbols('x', 'x_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
     /// >>> print(e)
-    pub fn expand(&self) -> PyResult<PythonPattern> {
-        return append_transformer!(self, Transformer::Expand);
+    pub fn expand(&self, var: Option<ConvertibleToExpression>) -> PyResult<PythonPattern> {
+        if let Some(var) = var {
+            let id = if let AtomView::Var(x) = var.to_expression().expr.as_view() {
+                x.get_symbol()
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Expansion must be done wrt a variable or function name",
+                ));
+            };
+
+            return append_transformer!(self, Transformer::Expand(Some(id)));
+        } else {
+            return append_transformer!(self, Transformer::Expand(None));
+        }
     }
 
     /// Create a transformer that computes the product of a list of arguments.
@@ -325,8 +314,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x__ = Expression.var('x__')
-    /// >>> f = Expression.fun('f')
+    /// >>> x__ = Expression.symbol('x__')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(2,3).replace_all(f(x__), x__.transform().prod())
     /// >>> print(e)
     pub fn prod(&self) -> PyResult<PythonPattern> {
@@ -338,8 +327,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x__ = Expression.var('x__')
-    /// >>> f = Expression.fun('f')
+    /// >>> x__ = Expression.symbol('x__')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(2,3).replace_all(f(x__), x__.transform().sum())
     /// >>> print(e)
     pub fn sum(&self) -> PyResult<PythonPattern> {
@@ -356,8 +345,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x__ = Expression.var('x__')
-    /// >>> f = Expression.fun('f')
+    /// >>> x__ = Expression.symbol('x__')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(2,3,4).replace_all(f(x__), x__.transform().nargs())
     /// >>> print(e)
     #[pyo3(signature = (only_for_arg_fun = false))]
@@ -370,8 +359,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,2,1).replace_all(f(x_), x_.transform().sort())
     /// >>> print(e)
     pub fn sort(&self) -> PyResult<PythonPattern> {
@@ -384,8 +373,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x__ = Expression.var('x__')
-    /// >>> f = Expression.fun('f')
+    /// >>> x__ = Expression.symbol('x__')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2,1,2).replace_all(f(x__), x__.transform().deduplicate())
     /// >>> print(e)
     ///
@@ -410,8 +399,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x, x__ = Expression.vars('x', 'x__')
-    /// >>> f = Expression.fun('f')
+    /// >>> x, x__ = Expression.symbols('x', 'x__')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = (x + 1).replace_all(x__, f(x__.transform().split()))
     /// >>> print(e)
     pub fn split(&self) -> PyResult<PythonPattern> {
@@ -432,8 +421,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id, g_id = Expression.vars('x_', 'f', 'g')
-    /// >>> f = Expression.fun('f')
+    /// >>> x_, f_id, g_id = Expression.symbols('x_', 'f', 'g')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
     /// >>> print(e)
     ///
@@ -451,10 +440,10 @@ impl PythonPattern {
         let mut conv_bins = vec![];
 
         for (x, len) in bins {
-            let id = match &*x.to_pattern()?.expr {
+            let id = match &x.to_pattern()?.expr {
                 Pattern::Literal(x) => {
                     if let AtomView::Var(x) = x.as_view() {
-                        x.get_name()
+                        x.get_symbol()
                     } else {
                         return Err(exceptions::PyValueError::new_err(
                             "Derivative must be taken wrt a variable",
@@ -480,9 +469,9 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id = Expression.vars('x_', 'f')
-    /// >>> f = Expression.fun('f')
-    /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id)
+    /// >>> x_, f_id = Expression.symbols('x_', 'f')
+    /// >>> f = Expression.symbol('f')
+    /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id))
     /// >>> print(e)
     ///
     /// yields:
@@ -490,10 +479,10 @@ impl PythonPattern {
     /// 4*f(1,1,2,2)+4*f(1,2,1,2)+4*f(1,2,2,1)+4*f(2,1,1,2)+4*f(2,1,2,1)+4*f(2,2,1,1)
     /// ```
     pub fn permutations(&self, function_name: ConvertibleToPattern) -> PyResult<PythonPattern> {
-        let id = match &*function_name.to_pattern()?.expr {
+        let id = match &function_name.to_pattern()?.expr {
             Pattern::Literal(x) => {
                 if let AtomView::Var(x) = x.as_view() {
-                    x.get_name()
+                    x.get_symbol()
                 } else {
                     return Err(exceptions::PyValueError::new_err(
                         "Derivative must be taken wrt a variable",
@@ -516,14 +505,14 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
     /// >>> print(e)
     pub fn map(&self, f: PyObject) -> PyResult<PythonPattern> {
         let transformer = Transformer::Map(Box::new(move |expr, out| {
             let expr = PythonExpression {
-                expr: Arc::new(expr.into()),
+                expr: expr.to_owned(),
             };
 
             let res = Python::with_gil(|py| {
@@ -552,14 +541,48 @@ impl PythonPattern {
         return append_transformer!(self, transformer);
     }
 
+    /// Create a transformer that applies a transformer chain to every argument of the `arg()` function.
+    /// If the input is not `arg()`, the transformer is applied to the input.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> f = Expression.symbol('f')
+    /// >>> e = (1+x).transform().split().for_each(Transformer().map(f)).execute()
+    #[pyo3(signature = (*transformers))]
+    pub fn for_each(&self, transformers: &PyTuple) -> PyResult<PythonPattern> {
+        let mut rep_chain = vec![];
+        // fuse all sub-transformers into one chain
+        for r in transformers {
+            let p = r.extract::<PythonPattern>()?;
+
+            let Pattern::Transformer(t) = p.expr.borrow() else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Argument must be a transformer",
+                ));
+            };
+
+            if t.0.is_some() {
+                return Err(exceptions::PyValueError::new_err(
+                    "Transformers in a for_each must be unbound. Use Transformer() to create it.",
+                ));
+            }
+
+            rep_chain.extend_from_slice(&t.1);
+        }
+
+        return append_transformer!(self, Transformer::ForEach(rep_chain));
+    }
+
     /// Create a transformer that checks for a Python interrupt,
     /// such as ctrl-c and aborts the current transformer.
     ///
     /// Examples
     /// --------
     /// >>> from symbolica import *
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol('f')
     /// >>> f(10).transform().repeat(Transformer().replace_all(
     /// >>> f(x_), f(x_+1)).check_interrupt()).execute()
     pub fn check_interrupt(&self) -> PyResult<PythonPattern> {
@@ -576,8 +599,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = Expression.parse("f(5)")
     /// >>> e = e.transform().repeat(
     /// >>>     Transformer().expand(),
@@ -614,8 +637,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = Expression.parse("f(5)")
     /// >>> e = e.transform().repeat(
     /// >>>     Transformer().expand(),
@@ -644,9 +667,7 @@ impl PythonPattern {
                 ts.1.extend_from_slice(&t.1);
             }
 
-            Ok(PythonPattern {
-                expr: Arc::new(Pattern::Transformer(ts)),
-            })
+            Ok(Pattern::Transformer(ts).into())
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Pattern must be a transformer",
@@ -659,17 +680,15 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.var('x')
+    /// >>> x = Expression.symbol('x')
     /// >>> e = (x+1)**5
     /// >>> e = e.transform().expand().execute()
     /// >>> print(e)
     pub fn execute(&self) -> PyResult<PythonExpression> {
-        let mut out = Atom::new();
-        let state = get_state!()?;
-        WORKSPACE
+        let mut out = Atom::default();
+        Workspace::get_local()
             .with(|workspace| {
                 self.expr.substitute_wildcards(
-                    &state.borrow(),
                     workspace,
                     &mut out,
                     &MatchStack::new(&Condition::default(), &MatchSettings::default()),
@@ -682,17 +701,15 @@ impl PythonPattern {
                 TransformerError::ValueError(v) => exceptions::PyValueError::new_err(v),
             })?;
 
-        Ok(PythonExpression {
-            expr: Arc::new(out),
-        })
+        Ok(out.into())
     }
 
     /// Create a transformer that derives `self` w.r.t the variable `x`.
     pub fn derivative(&self, x: ConvertibleToPattern) -> PyResult<PythonPattern> {
-        let id = match &*x.to_pattern()?.expr {
+        let id = match &x.to_pattern()?.expr {
             Pattern::Literal(x) => {
                 if let AtomView::Var(x) = x.as_view() {
-                    x.get_name()
+                    x.get_symbol()
                 } else {
                     return Err(exceptions::PyValueError::new_err(
                         "Derivative must be taken wrt a variable",
@@ -718,7 +735,7 @@ impl PythonPattern {
         depth: u32,
     ) -> PyResult<PythonPattern> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_symbol()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Derivative must be taken wrt a variable",
@@ -727,7 +744,7 @@ impl PythonPattern {
 
         return append_transformer!(
             self,
-            Transformer::TaylorSeries(id, (*expansion_point.to_expression().expr).clone(), depth,)
+            Transformer::TaylorSeries(id, expansion_point.to_expression().expr.clone(), depth,)
         );
     }
 
@@ -735,11 +752,15 @@ impl PythonPattern {
     /// Restrictions on pattern can be supplied through `cond`. The settings `non_greedy_wildcards` can be used to specify
     /// wildcards that try to match as little as possible.
     ///
+    /// The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
+    /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+    /// depending on `level_is_tree_depth`.
+    ///
     /// Examples
     /// --------
     ///
-    /// >>> x, w1_, w2_ = Expression.vars('x','w1_','w2_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x, w1_, w2_ = Expression.symbols('x','w1_','w2_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,x)
     /// >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
     /// >>> print(r)
@@ -749,37 +770,43 @@ impl PythonPattern {
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
+        level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
     ) -> PyResult<PythonPattern> {
-        let settings = if let Some(ngw) = non_greedy_wildcards {
-            Some(MatchSettings {
-                non_greedy_wildcards: ngw
-                    .iter()
-                    .map(|x| match x.expr.as_view() {
-                        AtomView::Var(v) => {
-                            let name = v.get_name();
-                            if get_state!()?.get_wildcard_level(name) == 0 {
-                                return Err(exceptions::PyTypeError::new_err(
-                                    "Only wildcards can be restricted.",
-                                ));
-                            }
-                            Ok(name)
+        let mut settings = MatchSettings::default();
+
+        if let Some(ngw) = non_greedy_wildcards {
+            settings.non_greedy_wildcards = ngw
+                .iter()
+                .map(|x| match x.expr.as_view() {
+                    AtomView::Var(v) => {
+                        let name = v.get_symbol();
+                        if v.get_wildcard_level() == 0 {
+                            return Err(exceptions::PyTypeError::new_err(
+                                "Only wildcards can be restricted.",
+                            ));
                         }
-                        _ => Err(exceptions::PyTypeError::new_err(
-                            "Only wildcards can be restricted.",
-                        )),
-                    })
-                    .collect::<Result<_, _>>()?,
-            })
-        } else {
-            None
-        };
+                        Ok(name)
+                    }
+                    _ => Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    )),
+                })
+                .collect::<Result<_, _>>()?;
+        }
+        if let Some(level_range) = level_range {
+            settings.level_range = level_range;
+        }
+        if let Some(level_is_tree_depth) = level_is_tree_depth {
+            settings.level_is_tree_depth = level_is_tree_depth;
+        }
 
         return append_transformer!(
             self,
             Transformer::ReplaceAll(
-                (*lhs.to_pattern()?.expr).clone(),
-                (*rhs.to_pattern()?.expr).clone(),
-                cond.map(|r| r.condition.as_ref().clone()),
+                lhs.to_pattern()?.expr.clone(),
+                rhs.to_pattern()?.expr.clone(),
+                cond.map(|r| r.condition.clone()).unwrap_or_default(),
                 settings,
             )
         );
@@ -793,7 +820,7 @@ impl PythonPattern {
     #[pyo3(signature =
         (terms_on_new_line = false,
             color_top_level_sum = true,
-            color_builtin_functions = true,
+            color_builtin_symbols = true,
             print_finite_field = true,
             symmetric_representation_for_finite_field = false,
             explicit_rational_polynomial = false,
@@ -807,7 +834,7 @@ impl PythonPattern {
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
-        color_builtin_functions: bool,
+        color_builtin_symbols: bool,
         print_finite_field: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
@@ -822,7 +849,7 @@ impl PythonPattern {
             Transformer::Print(PrintOptions {
                 terms_on_new_line,
                 color_top_level_sum,
-                color_builtin_functions,
+                color_builtin_symbols,
                 print_finite_field,
                 symmetric_representation_for_finite_field,
                 explicit_rational_polynomial,
@@ -840,8 +867,8 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = Expression.parse("f(5)")
     /// >>> e = e.transform().stats('replace', Transformer().replace_all(f(x_), 1)).execute()
     ///
@@ -885,17 +912,11 @@ impl PythonPattern {
 
     /// Add this transformer to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
-        let res = WORKSPACE.with(|workspace| {
-            Ok::<Pattern, PyErr>(self.expr.add(
-                &rhs.to_pattern()?.expr,
-                workspace,
-                get_state!()?.borrow(),
-            ))
+        let res = Workspace::get_local().with(|workspace| {
+            Ok::<Pattern, PyErr>(self.expr.add(&rhs.to_pattern()?.expr, workspace))
         })?;
 
-        Ok(PythonPattern {
-            expr: Arc::new(res),
-        })
+        Ok(res.into())
     }
 
     /// Add this transformer to `other`, returning the result.
@@ -916,17 +937,11 @@ impl PythonPattern {
 
     /// Add this transformer to `other`, returning the result.
     pub fn __mul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
-        let res = WORKSPACE.with(|workspace| {
-            Ok::<Pattern, PyErr>(self.expr.mul(
-                &rhs.to_pattern()?.expr,
-                workspace,
-                get_state!()?.borrow(),
-            ))
+        let res = Workspace::get_local().with(|workspace| {
+            Ok::<Pattern, PyErr>(self.expr.mul(&rhs.to_pattern()?.expr, workspace))
         });
 
-        Ok(PythonPattern {
-            expr: Arc::new(res?),
-        })
+        Ok(res?.into())
     }
 
     /// Add this transformer to `other`, returning the result.
@@ -936,17 +951,11 @@ impl PythonPattern {
 
     /// Divide this transformer by `other`, returning the result.
     pub fn __truediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
-        let res = WORKSPACE.with(|workspace| {
-            Ok::<Pattern, PyErr>(self.expr.div(
-                &rhs.to_pattern()?.expr,
-                workspace,
-                get_state!()?.borrow(),
-            ))
+        let res = Workspace::get_local().with(|workspace| {
+            Ok::<Pattern, PyErr>(self.expr.div(&rhs.to_pattern()?.expr, workspace))
         });
 
-        Ok(PythonPattern {
-            expr: Arc::new(res?),
-        })
+        Ok(res?.into())
     }
 
     /// Divide `other` by this transformer, returning the result.
@@ -967,17 +976,10 @@ impl PythonPattern {
             ));
         }
 
-        let res = WORKSPACE.with(|workspace| {
-            Ok::<_, PyErr>(self.expr.pow(
-                &rhs.to_pattern()?.expr,
-                workspace,
-                get_state!()?.borrow(),
-            ))
-        });
+        let res = Workspace::get_local()
+            .with(|workspace| Ok::<_, PyErr>(self.expr.pow(&rhs.to_pattern()?.expr, workspace)));
 
-        Ok(PythonPattern {
-            expr: Arc::new(res?),
-        })
+        Ok(res?.into())
     }
 
     /// Take `base` to power `self`, returning the result.
@@ -1006,12 +1008,10 @@ impl PythonPattern {
 
     /// Negate the current transformer, returning the result.
     pub fn __neg__(&self) -> PyResult<PythonPattern> {
-        let res = WORKSPACE
-            .with(|workspace| Ok::<Pattern, PyErr>(self.expr.neg(workspace, &&get_state!()?)));
+        let res =
+            Workspace::get_local().with(|workspace| Ok::<Pattern, PyErr>(self.expr.neg(workspace)));
 
-        Ok(PythonPattern {
-            expr: Arc::new(res?),
-        })
+        Ok(res?.into())
     }
 }
 
@@ -1022,43 +1022,76 @@ impl PythonPattern {
 ///
 /// Examples
 /// --------
-/// >>> x = Expression.var('x')
+/// >>> x = Expression.symbol('x')
 /// >>> e = x**2 + 2 - x + 1 / x**4
 /// >>> print(e)
-#[pyclass(name = "Expression")]
+///
+/// Attributes
+/// ----------
+/// E: Expression
+///     Euler's number `e`.
+/// PI: Expression
+///     The mathematical constant `π`.
+/// I: Expression
+///     The mathematical constant `i`, where `i^2 = -1`.
+/// COEFF: Expression
+///     The built-in function that converts a rational polynomial to a coefficient.
+/// COS: Expression
+///     The built-in cosine function.
+/// SIN: Expression
+///     The built-in sine function.
+/// EXP: Expression
+///     The built-in exponential function.
+/// LOG: Expression
+///     The built-in logarithm function.
+#[pyclass(name = "Expression", module = "symbolica")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonExpression {
-    pub expr: Arc<Atom>,
+    pub expr: Atom,
+}
+
+impl From<Atom> for PythonExpression {
+    fn from(expr: Atom) -> Self {
+        PythonExpression { expr }
+    }
+}
+
+impl Deref for PythonExpression {
+    type Target = Atom;
+
+    fn deref(&self) -> &Self::Target {
+        &self.expr
+    }
 }
 
 /// A restriction on wildcards.
-#[pyclass(name = "PatternRestriction")]
+#[pyclass(name = "PatternRestriction", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonPatternRestriction {
-    pub condition: Arc<Condition<WildcardAndRestriction>>,
+    pub condition: Condition<WildcardAndRestriction>,
+}
+
+impl From<Condition<WildcardAndRestriction>> for PythonPatternRestriction {
+    fn from(condition: Condition<WildcardAndRestriction>) -> Self {
+        PythonPatternRestriction { condition }
+    }
 }
 
 #[pymethods]
 impl PythonPatternRestriction {
     /// Create a new pattern restriction that is the logical 'and' operation between two restrictions (i.e., both should hold).
     pub fn __and__(&self, other: Self) -> PythonPatternRestriction {
-        PythonPatternRestriction {
-            condition: Arc::new(self.condition.as_ref().clone() & other.condition.as_ref().clone()),
-        }
+        (self.condition.clone() & other.condition.clone()).into()
     }
 
     /// Create a new pattern restriction that is the logical 'or' operation between two restrictions (i.e., one of the two should hold).
     pub fn __or__(&self, other: Self) -> PythonPatternRestriction {
-        PythonPatternRestriction {
-            condition: Arc::new(self.condition.as_ref().clone() | other.condition.as_ref().clone()),
-        }
+        (self.condition.clone() | other.condition.clone()).into()
     }
 
     /// Create a new pattern restriction that takes the logical 'not' of the current restriction.
     pub fn __invert__(&self) -> PythonPatternRestriction {
-        PythonPatternRestriction {
-            condition: Arc::new(!self.condition.as_ref().clone()),
-        }
+        (!self.condition.clone()).into()
     }
 }
 
@@ -1067,15 +1100,11 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
         if let Ok(a) = ob.extract::<PythonExpression>() {
             Ok(ConvertibleToExpression(a))
         } else if let Ok(num) = ob.extract::<i64>() {
-            Ok(ConvertibleToExpression(PythonExpression {
-                expr: Arc::new(Atom::new_num(num)),
-            }))
+            Ok(ConvertibleToExpression(Atom::new_num(num).into()))
         } else if let Ok(num) = ob.extract::<&PyLong>() {
             let a = format!("{}", num);
             let i = Integer::from_large(rug::Integer::parse(&a).unwrap().complete());
-            Ok(ConvertibleToExpression(PythonExpression {
-                expr: Arc::new(Atom::new_num(i)),
-            }))
+            Ok(ConvertibleToExpression(Atom::new_num(i).into()))
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Cannot convert to expression",
@@ -1084,18 +1113,16 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
     }
 }
 
-impl<'a> FromPyObject<'a> for Identifier {
+impl<'a> FromPyObject<'a> for Symbol {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonExpression>() {
             match a.expr.as_view() {
-                AtomView::Var(v) => Ok(v.get_name()),
+                AtomView::Var(v) => Ok(v.get_symbol()),
                 e => Err(exceptions::PyValueError::new_err(format!(
-                    "Expected variable instead of {:?}",
+                    "Expected variable instead of {}",
                     e
                 ))),
             }
-        } else if let Ok(a) = ob.extract::<PythonFunction>() {
-            Ok(a.id)
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid variable"))
         }
@@ -1104,7 +1131,7 @@ impl<'a> FromPyObject<'a> for Identifier {
 
 impl<'a> FromPyObject<'a> for Variable {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
-        Ok(Variable::Identifier(Identifier::extract(ob)?))
+        Ok(Variable::Symbol(Symbol::extract(ob)?))
     }
 }
 
@@ -1142,35 +1169,33 @@ macro_rules! req_cmp {
 
         match $self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: Arc::new(
-                        (
-                            name,
-                            PatternRestriction::Filter(Box::new(move |v: &Match<_>| {
-                                let k = num.expr.as_view();
+                    condition: (
+                        name,
+                        PatternRestriction::Filter(Box::new(move |v: &Match| {
+                            let k = num.expr.as_view();
 
-                                if let Match::Single(m) = v {
-                                    if !$cmp_any_atom {
-                                        if let AtomView::Num(_) = m {
-                                            return m.cmp(&k).$c();
-                                        }
-                                    } else {
+                            if let Match::Single(m) = v {
+                                if !$cmp_any_atom {
+                                    if let AtomView::Num(_) = m {
                                         return m.cmp(&k).$c();
                                     }
+                                } else {
+                                    return m.cmp(&k).$c();
                                 }
+                            }
 
-                                false
-                            })),
-                        )
-                            .into(),
-                    ),
+                            false
+                        })),
+                    )
+                        .into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1184,8 +1209,8 @@ macro_rules! req_wc_cmp {
     ($self:ident,$other:ident,$cmp_any_atom:ident,$c:ident) => {{
         let id = match $self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1201,8 +1226,8 @@ macro_rules! req_wc_cmp {
 
         let other_id = match $other.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -1217,140 +1242,166 @@ macro_rules! req_wc_cmp {
         };
 
         Ok(PythonPatternRestriction {
-            condition: Arc::new(
-                (
-                    id,
-                    PatternRestriction::Cmp(
-                        other_id,
-                        Box::new(move |m1: &Match<_>, m2: &Match<_>| {
-                            if let Match::Single(a1) = m1 {
-                                if let Match::Single(a2) = m2 {
-                                    if !$cmp_any_atom {
-                                        if let AtomView::Num(_) = a1 {
-                                            if let AtomView::Num(_) = a2 {
-                                                return a1.cmp(a2).$c();
-                                            }
+            condition: (
+                id,
+                PatternRestriction::Cmp(
+                    other_id,
+                    Box::new(move |m1: &Match, m2: &Match| {
+                        if let Match::Single(a1) = m1 {
+                            if let Match::Single(a2) = m2 {
+                                if !$cmp_any_atom {
+                                    if let AtomView::Num(_) = a1 {
+                                        if let AtomView::Num(_) = a2 {
+                                            return a1.cmp(a2).$c();
                                         }
-                                    } else {
-                                        return a1.cmp(a2).$c();
                                     }
+                                } else {
+                                    return a1.cmp(a2).$c();
                                 }
                             }
-                            false
-                        }),
-                    ),
-                )
-                    .into(),
-            ),
+                        }
+                        false
+                    }),
+                ),
+            )
+                .into(),
         })
     }};
 }
 
 #[pymethods]
 impl PythonExpression {
-    /// Create a Symbolica expression that is a single variable.
+    /// Create a new symbol from a `name`. Can be turned into a symmetric symbol
+    /// using `is_symmetric=True` or into an antisymmetric symbol using `is_antisymmetric=True`.
+    /// The symbol can be made multilinear using `is_linear=True`. If no attributes
+    /// are specified, the attributes are inherited from the symbol if it was already defined,
+    /// otherwise all attributes are set to `false`.
+    ///
+    /// Once attributes are defined on a symbol, they cannot be redefined later.
     ///
     /// Examples
     /// --------
-    /// >>> var_x = Expression.var('x')
-    /// >>> print(var_x)
-    /// x
+    /// Define a regular symbol and use it as a variable:
+    /// >>> f = Expression.symbol('x')
+    /// >>> e = x**2 + 5
+    /// >>> print(e)
+    /// x**2 + 5
     ///
-    #[classmethod]
-    pub fn var(_cls: &PyType, name: &str) -> PyResult<PythonExpression> {
-        let mut guard = get_state_mut!()?;
-        let state = guard.borrow_mut();
-        // TODO: check if the name meets the requirements
-        let id = state.get_or_insert_var(name);
-        let var = Atom::new_var(id);
-
-        Ok(PythonExpression {
-            expr: Arc::new(var),
-        })
-    }
-
-    /// Create a Symbolica variable for every name in `*names`.
-    #[pyo3(signature = (*args,))]
-    #[classmethod]
-    pub fn vars(_cls: &PyType, args: &PyTuple) -> PyResult<Vec<PythonExpression>> {
-        let mut guard = get_state_mut!()?;
-        let state = guard.borrow_mut();
-        let mut result = Vec::with_capacity(args.len());
-
-        for a in args {
-            // TODO: check if the name meets the requirements
-            let name = a.extract::<&str>()?;
-            let id = state.get_or_insert_var(name);
-            let var = Atom::new_var(id);
-
-            result.push(PythonExpression {
-                expr: Arc::new(var),
-            });
-        }
-
-        Ok(result)
-    }
-
-    /// Create a new Symbolica function with a given name.
-    ///
-    /// Examples
-    /// --------
-    /// >>> f = Expression.fun('f')
+    /// Define a regular symbol and use it as a function symbol:
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2)
     /// >>> print(e)
     /// f(1,2)
     ///
     /// Define a symmetric function:
-    /// >>> f = Expression.fun('f', is_symmetric=True)
+    /// >>> f = Expression.symbol('f', is_symmetric=True)
     /// >>> e = f(2,1)
     /// >>> print(e)
     /// f(1,2)
     ///
     /// Define a linear and symmetric function:
-    /// >>> p1, p2, p3, p4 = Expression.vars('p1', 'p2', 'p3', 'p4')
-    /// >>> dot = Expression.fun('dot', is_symmetric=True, is_linear=True)
+    /// >>> p1, p2, p3, p4 = Expression.symbols('p1', 'p2', 'p3', 'p4')
+    /// >>> dot = Expression.symbol('dot', is_symmetric=True, is_linear=True)
     /// >>> e = dot(p2+2*p3,p1+3*p2-p3)
     /// dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
     #[classmethod]
-    pub fn fun(
+    pub fn symbol(
         _cls: &PyType,
         name: &str,
         is_symmetric: Option<bool>,
         is_antisymmetric: Option<bool>,
         is_linear: Option<bool>,
-    ) -> PyResult<PythonFunction> {
-        PythonFunction::__new__(name, is_symmetric, is_antisymmetric, is_linear)
+    ) -> PyResult<Self> {
+        if is_symmetric.is_none() && is_antisymmetric.is_none() && is_linear.is_none() {
+            return Ok(Atom::new_var(State::get_symbol(name)).into());
+        }
+
+        if is_symmetric == Some(true) && is_antisymmetric == Some(true) {
+            Err(exceptions::PyValueError::new_err(
+                "Function cannot be both symmetric and antisymmetric",
+            ))?;
+        }
+
+        let mut opts = vec![];
+
+        if let Some(true) = is_symmetric {
+            opts.push(FunctionAttribute::Symmetric);
+        }
+
+        if let Some(true) = is_antisymmetric {
+            opts.push(FunctionAttribute::Antisymmetric);
+        }
+
+        if let Some(true) = is_linear {
+            opts.push(FunctionAttribute::Linear);
+        }
+
+        let id = State::get_symbol_with_attributes(name, &opts)
+            .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+
+        Ok(Atom::new_var(id).into())
     }
 
-    /// Create a Symbolica function for every name in `*names`.
-    #[pyo3(signature = (*args,))]
+    /// Create a Symbolica variable for every name in `*names`.
+    #[pyo3(signature = (*args,is_symmetric=None,is_antisymmetric=None,is_linear=None))]
     #[classmethod]
-    pub fn funs(_cls: &PyType, args: &PyTuple) -> PyResult<Vec<PythonFunction>> {
+    pub fn symbols(
+        cls: &PyType,
+        args: &PyTuple,
+        is_symmetric: Option<bool>,
+        is_antisymmetric: Option<bool>,
+        is_linear: Option<bool>,
+    ) -> PyResult<Vec<PythonExpression>> {
         let mut result = Vec::with_capacity(args.len());
+
         for a in args {
             let name = a.extract::<&str>()?;
-            result.push(PythonFunction::__new__(name, None, None, None)?);
+            let s = Self::symbol(cls, name, is_symmetric, is_antisymmetric, is_linear)?;
+            result.push(s);
         }
 
         Ok(result)
     }
 
-    /// Create a new Symbolica number.
+    /// Create a new Symbolica number from an int or a float.
+    /// A floating point number is converted to its rational number equivalent,
+    /// but it can also be truncated by specifying the maximal denominator value.
     ///
     /// Examples
     /// --------
     /// >>> e = Expression.num(1) / 2
     /// >>> print(e)
     /// 1/2
+    ///
+    /// >>> print(Expression.num(0.33))
+    /// >>> print(Expression.num(0.33, 5))
+    /// 5944751508129055/18014398509481984
+    /// 1/3
     #[classmethod]
-    pub fn num(_cls: &PyType, num: &PyLong) -> PyResult<PythonExpression> {
-        if let Ok(num) = num.extract::<i64>() {
-            Ok(PythonExpression {
-                expr: Arc::new(Atom::new_num(num)),
-            })
-        } else {
+    pub fn num(
+        _cls: &PyType,
+        py: Python,
+        num: PyObject,
+        max_denom: Option<usize>,
+    ) -> PyResult<PythonExpression> {
+        if let Ok(num) = num.extract::<i64>(py) {
+            Ok(Atom::new_num(num).into())
+        } else if let Ok(num) = num.extract::<&PyLong>(py) {
             let a = format!("{}", num);
             PythonExpression::parse(_cls, &a)
+        } else if let Ok(f) = num.extract::<f64>(py) {
+            if !f.is_finite() {
+                return Err(exceptions::PyValueError::new_err("Number must be finite"));
+            }
+
+            let mut r: Rational = f.into();
+            if let Some(max_denom) = max_denom {
+                r = r.truncate_denominator(&(max_denom as u64).into())
+            }
+
+            Ok(Atom::new_num(r).into())
+        } else {
+            Err(exceptions::PyValueError::new_err("Not a valid number"))
         }
     }
 
@@ -1358,18 +1409,14 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "E")]
     pub fn e() -> PythonExpression {
-        PythonExpression {
-            expr: Arc::new(Atom::new_var(State::E)),
-        }
+        Atom::new_var(State::E).into()
     }
 
     /// The mathematical constant `π`.
     #[classattr]
     #[pyo3(name = "PI")]
     pub fn pi() -> PythonExpression {
-        PythonExpression {
-            expr: Arc::new(Atom::new_var(State::PI)),
-        }
+        Atom::new_var(State::PI).into()
     }
 
     /// The mathematical constant `i`, where
@@ -1377,26 +1424,55 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "I")]
     pub fn i() -> PythonExpression {
-        PythonExpression {
-            expr: Arc::new(Atom::new_var(State::I)),
-        }
+        Atom::new_var(State::I).into()
+    }
+
+    /// The built-in function that converts a rational polynomial to a coefficient.
+    #[classattr]
+    #[pyo3(name = "COEFF")]
+    pub fn coeff() -> PythonExpression {
+        Atom::new_var(State::COEFF).into()
+    }
+
+    /// The built-in cosine function.
+    #[classattr]
+    #[pyo3(name = "COS")]
+    pub fn cos() -> PythonExpression {
+        Atom::new_var(State::COS).into()
+    }
+
+    /// The built-in sine function.
+    #[classattr]
+    #[pyo3(name = "SIN")]
+    pub fn sin() -> PythonExpression {
+        Atom::new_var(State::SIN).into()
+    }
+
+    /// The built-in exponential function.
+    #[classattr]
+    #[pyo3(name = "EXP")]
+    pub fn exp() -> PythonExpression {
+        Atom::new_var(State::EXP).into()
+    }
+
+    /// The built-in logarithm function.
+    #[classattr]
+    #[pyo3(name = "LOG")]
+    pub fn log() -> PythonExpression {
+        Atom::new_var(State::LOG).into()
     }
 
     /// Return all defined symbol names (function names and variables).
     #[classmethod]
     pub fn get_all_symbol_names(_cls: &PyType) -> PyResult<Vec<String>> {
-        let guard = get_state!()?;
-        let state = guard.borrow();
-
-        Ok(state.symbol_iter().map(|x| x.to_string()).collect())
+        Ok(State::symbol_iter().map(|x| x.to_string()).collect())
     }
 
     /// Parse a Symbolica expression from a string.
     ///
     /// Parameters
     /// ----------
-    /// input: str
-    ///     An input string. UTF-8 character are allowed.
+    /// input: str An input string. UTF-8 character are allowed.
     ///
     /// Examples
     /// --------
@@ -1410,28 +1486,19 @@ impl PythonExpression {
     ///     If the input is not a valid Symbolica expression.
     ///
     #[classmethod]
-    pub fn parse(_cls: &PyType, arg: &str) -> PyResult<PythonExpression> {
-        let e = WORKSPACE.with(|f| {
-            Atom::parse(arg, &mut &mut get_state_mut!()?, f)
-                .map_err(exceptions::PyValueError::new_err)
-        })?;
-
-        Ok(PythonExpression { expr: Arc::new(e) })
+    pub fn parse(_cls: &PyType, input: &str) -> PyResult<PythonExpression> {
+        let e = Atom::parse(input).map_err(exceptions::PyValueError::new_err)?;
+        Ok(e.into())
     }
 
     /// Copy the expression.
     pub fn __copy__(&self) -> PythonExpression {
-        PythonExpression {
-            expr: Arc::new((*self.expr).clone()),
-        }
+        self.expr.clone().into()
     }
 
     /// Convert the expression into a human-readable string.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            AtomPrinter::new(self.expr.as_view(), &&get_state!()?)
-        ))
+        Ok(format!("{}", AtomPrinter::new(self.expr.as_view())))
     }
 
     /// Get the number of bytes that this expression takes up in memory.
@@ -1448,7 +1515,7 @@ impl PythonExpression {
     #[pyo3(signature =
     (terms_on_new_line = false,
         color_top_level_sum = true,
-        color_builtin_functions = true,
+        color_builtin_symbols = true,
         print_finite_field = true,
         symmetric_representation_for_finite_field = false,
         explicit_rational_polynomial = false,
@@ -1462,7 +1529,7 @@ impl PythonExpression {
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
-        color_builtin_functions: bool,
+        color_builtin_symbols: bool,
         print_finite_field: bool,
         symmetric_representation_for_finite_field: bool,
         explicit_rational_polynomial: bool,
@@ -1479,7 +1546,7 @@ impl PythonExpression {
                 PrintOptions {
                     terms_on_new_line,
                     color_top_level_sum,
-                    color_builtin_functions,
+                    color_builtin_symbols,
                     print_finite_field,
                     symmetric_representation_for_finite_field,
                     explicit_rational_polynomial,
@@ -1489,7 +1556,6 @@ impl PythonExpression {
                     num_exp_as_superscript,
                     latex
                 },
-                &&get_state!()?,
             )
         ))
     }
@@ -1505,11 +1571,7 @@ impl PythonExpression {
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            AtomPrinter::new_with_options(
-                self.expr.as_view(),
-                PrintOptions::latex(),
-                &&get_state!()?,
-            )
+            AtomPrinter::new_with_options(self.expr.as_view(), PrintOptions::latex(),)
         ))
     }
 
@@ -1542,82 +1604,16 @@ impl PythonExpression {
     /// is a variable or function.
     pub fn get_name(&self) -> PyResult<Option<String>> {
         match self.expr.as_ref() {
-            Atom::Var(v) => Ok(Some(
-                get_state!()?
-                    .get_name(v.to_var_view().get_name())
-                    .to_string(),
-            )),
-            Atom::Fun(f) => Ok(Some(
-                get_state!()?
-                    .get_name(f.to_fun_view().get_name())
-                    .to_string(),
-            )),
+            Atom::Var(v) => Ok(Some(State::get_name(v.get_symbol()).to_string())),
+            Atom::Fun(f) => Ok(Some(State::get_name(f.get_symbol()).to_string())),
             _ => Ok(None),
         }
     }
 
-    /// Create a wildcard from a variable name by appending a _
-    /// if none is present yet.
-    #[getter]
-    fn get_w(&self) -> PyResult<PythonExpression> {
-        let mut guard = get_state_mut!()?;
-        let state = guard.borrow_mut();
-        let mut var_name = match self.expr.as_view() {
-            AtomView::Var(v) => {
-                if state.get_wildcard_level(v.get_name()) > 0 {
-                    return Ok(self.clone());
-                } else {
-                    // create name with underscore
-                    state.get_name(v.get_name()).to_string()
-                }
-            }
-            AtomView::Fun(f) => {
-                if state.get_wildcard_level(f.get_name()) > 0 {
-                    return Ok(self.clone());
-                } else {
-                    // create name with underscore
-                    state.get_name(f.get_name()).to_string()
-                }
-            }
-            x => {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "Cannot convert to wildcard: {:?}",
-                    x
-                )));
-            }
-        };
-
-        // create name with underscore
-        var_name.push('_');
-
-        // TODO: check if the name meets the requirements
-        let id = state.get_or_insert_var(var_name);
-        let var = Atom::new_var(id);
-
-        Ok(PythonExpression {
-            expr: Arc::new(var),
-        })
-    }
-
     /// Add this expression to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut e = workspace.new_atom();
-            let a = e.to_add();
-
-            a.extend(self.expr.as_view());
-            a.extend(rhs.to_expression().expr.as_view());
-            a.set_dirty(true);
-
-            let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
-            b
-        });
-
-        Ok(PythonExpression { expr: Arc::new(b) })
+        let rhs = rhs.to_expression();
+        Ok((self.expr.as_ref() + rhs.expr.as_ref()).into())
     }
 
     /// Add this expression to `other`, returning the result.
@@ -1638,23 +1634,8 @@ impl PythonExpression {
 
     /// Add this expression to `other`, returning the result.
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut e = workspace.new_atom();
-            let a = e.to_mul();
-
-            a.extend(self.expr.as_view());
-            a.extend(rhs.to_expression().expr.as_view());
-            a.set_dirty(true);
-
-            let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
-            b
-        });
-
-        Ok(PythonExpression { expr: Arc::new(b) })
+        let rhs = rhs.to_expression();
+        Ok((self.expr.as_ref() * rhs.expr.as_ref()).into())
     }
 
     /// Add this expression to `other`, returning the result.
@@ -1664,32 +1645,8 @@ impl PythonExpression {
 
     /// Divide this expression by `other`, returning the result.
     pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut pow = workspace.new_atom();
-            let pow_num = pow.to_num();
-            pow_num.set_from_coeff((-1).into());
-
-            let mut e = workspace.new_atom();
-            let a = e.to_pow();
-            a.set_from_base_and_exp(rhs.to_expression().expr.as_view(), pow.get().as_view());
-            a.set_dirty(true);
-
-            let mut m = workspace.new_atom();
-            let md = m.to_mul();
-
-            md.extend(self.expr.as_view());
-            md.extend(e.get().as_view());
-            md.set_dirty(true);
-
-            let mut b = Atom::new();
-            m.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
-            b
-        });
-
-        Ok(PythonExpression { expr: Arc::new(b) })
+        let rhs = rhs.to_expression();
+        Ok((self.expr.as_ref() / rhs.expr.as_ref()).into())
     }
 
     /// Divide `other` by this expression, returning the result.
@@ -1710,21 +1667,8 @@ impl PythonExpression {
             ));
         }
 
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut e = workspace.new_atom();
-            let a = e.to_pow();
-            a.set_from_base_and_exp(self.expr.as_view(), rhs.to_expression().expr.as_view());
-            a.set_dirty(true);
-
-            let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
-            b
-        });
-
-        Ok(PythonExpression { expr: Arc::new(b) })
+        let rhs = rhs.to_expression();
+        Ok(self.expr.pow(&rhs.expr).into())
     }
 
     /// Take `base` to power `self`, returning the result.
@@ -1753,27 +1697,7 @@ impl PythonExpression {
 
     /// Negate the current expression, returning the result.
     pub fn __neg__(&self) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut e = workspace.new_atom();
-            let a = e.to_mul();
-
-            let mut sign = workspace.new_atom();
-            let sign_num = sign.to_num();
-            sign_num.set_from_coeff((-1).into());
-
-            a.extend(self.expr.as_view());
-            a.extend(sign.get().as_view());
-            a.set_dirty(true);
-
-            let mut b = Atom::new();
-            e.get()
-                .as_view()
-                .normalize(workspace, state.borrow(), &mut b);
-            b
-        });
-
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok((-self.expr.as_ref()).into())
     }
 
     /// Return the length of the atom.
@@ -1786,14 +1710,86 @@ impl PythonExpression {
         }
     }
 
+    /// Create a Symbolica expression or transformer by calling the function with appropriate arguments.
+    ///
+    /// Examples
+    /// -------
+    /// >>> x = Expression.symbols('x')
+    /// >>> f = Expression.symbol('f')
+    /// >>> e = f(3,x)
+    /// >>> print(e)
+    /// f(3,x)
+    #[pyo3(signature = (*args,))]
+    pub fn __call__(&self, args: &PyTuple, py: Python) -> PyResult<PyObject> {
+        let id = match self.expr.as_view() {
+            AtomView::Var(v) => v.get_symbol(),
+            _ => {
+                return Err(exceptions::PyTypeError::new_err(
+                    "Only symbols can be called as functions",
+                ))
+            }
+        };
+
+        pub enum ExpressionOrTransformer {
+            Expression(PythonExpression),
+            Transformer(ConvertibleToPattern),
+        }
+
+        let mut fn_args = Vec::with_capacity(args.len());
+
+        for arg in args {
+            if let Ok(a) = arg.extract::<ConvertibleToExpression>() {
+                fn_args.push(ExpressionOrTransformer::Expression(a.to_expression()));
+            } else if let Ok(a) = arg.extract::<ConvertibleToPattern>() {
+                fn_args.push(ExpressionOrTransformer::Transformer(a));
+            } else {
+                let msg = format!("Unknown type: {}", arg.get_type().name().unwrap());
+                return Err(exceptions::PyTypeError::new_err(msg));
+            }
+        }
+
+        if fn_args
+            .iter()
+            .all(|x| matches!(x, ExpressionOrTransformer::Expression(_)))
+        {
+            // simplify to literal expression
+            Workspace::get_local().with(|workspace| {
+                let mut fun_b = workspace.new_atom();
+                let fun = fun_b.to_fun(id);
+
+                for x in fn_args {
+                    if let ExpressionOrTransformer::Expression(a) = x {
+                        fun.add_arg(a.expr.as_view());
+                    }
+                }
+
+                let mut out = Atom::default();
+                fun_b.as_view().normalize(workspace, &mut out);
+
+                Ok(PythonExpression::from(out).into_py(py))
+            })
+        } else {
+            // convert all wildcards back from literals
+            let mut transformer_args = Vec::with_capacity(args.len());
+            for arg in fn_args {
+                match arg {
+                    ExpressionOrTransformer::Transformer(t) => {
+                        transformer_args.push(t.to_pattern()?.expr.clone());
+                    }
+                    ExpressionOrTransformer::Expression(a) => {
+                        transformer_args.push(a.expr.as_view().into_pattern().clone());
+                    }
+                }
+            }
+
+            let p = Pattern::Fn(id, transformer_args);
+            Ok(PythonPattern::from(p).into_py(py))
+        }
+    }
+
     /// Convert the input to a transformer, on which subsequent transformations can be applied.
     pub fn transform(&self) -> PyResult<PythonPattern> {
-        Ok(PythonPattern {
-            expr: Arc::new(Pattern::Transformer(Box::new((
-                Some(self.expr.into_pattern(&&get_state!()?)),
-                vec![],
-            )))),
-        })
+        Ok(Pattern::Transformer(Box::new((Some(self.expr.into_pattern()), vec![]))).into())
     }
 
     /// Get the `idx`th component of the expression.
@@ -1802,16 +1798,18 @@ impl PythonExpression {
             AtomView::Add(a) => a.to_slice(),
             AtomView::Mul(m) => m.to_slice(),
             AtomView::Fun(f) => f.to_slice(),
+            AtomView::Pow(p) => p.to_slice(),
             _ => Err(PyIndexError::new_err("Cannot access child of leaf node"))?,
         };
 
         if idx.unsigned_abs() < slice.len() {
-            Ok(PythonExpression {
-                expr: Arc::new(Atom::new_from_view(&if idx < 0 {
-                    slice.get(slice.len() - idx.abs() as usize)
-                } else {
-                    slice.get(idx as usize)
-                })),
+            Ok(if idx < 0 {
+                slice
+                    .get(slice.len() - idx.abs() as usize)
+                    .to_owned()
+                    .into()
+            } else {
+                slice.get(idx as usize).to_owned().into()
             })
         } else {
             Err(PyIndexError::new_err(format!(
@@ -1830,17 +1828,15 @@ impl PythonExpression {
     ) -> PyResult<PythonPatternRestriction> {
         match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: Arc::new(
-                        (name, PatternRestriction::Length(min_length, max_length)).into(),
-                    ),
+                    condition: (name, PatternRestriction::Length(min_length, max_length)).into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1854,8 +1850,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, AtomType
-    /// >>> x, x_ = Expression.vars('x', 'x_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x, x_ = Expression.symbols('x', 'x_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(x)*f(2)*f(f(3))
     /// >>> e = e.replace_all(f(x_), 1, x_.req_type(AtomType.Num))
     /// >>> print(e)
@@ -1864,28 +1860,26 @@ impl PythonExpression {
     pub fn req_type(&self, atom_type: PythonAtomType) -> PyResult<PythonPatternRestriction> {
         match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: Arc::new(
-                        (
-                            name,
-                            PatternRestriction::IsAtomType(match atom_type {
-                                PythonAtomType::Num => AtomType::Num,
-                                PythonAtomType::Var => AtomType::Var,
-                                PythonAtomType::Add => AtomType::Add,
-                                PythonAtomType::Mul => AtomType::Mul,
-                                PythonAtomType::Pow => AtomType::Pow,
-                                PythonAtomType::Fn => AtomType::Fun,
-                            }),
-                        )
-                            .into(),
-                    ),
+                    condition: (
+                        name,
+                        PatternRestriction::IsAtomType(match atom_type {
+                            PythonAtomType::Num => AtomType::Num,
+                            PythonAtomType::Var => AtomType::Var,
+                            PythonAtomType::Add => AtomType::Add,
+                            PythonAtomType::Mul => AtomType::Mul,
+                            PythonAtomType::Pow => AtomType::Pow,
+                            PythonAtomType::Fn => AtomType::Fun,
+                        }),
+                    )
+                        .into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1899,15 +1893,15 @@ impl PythonExpression {
     pub fn req_lit(&self) -> PyResult<PythonPatternRestriction> {
         match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: Arc::new((name, PatternRestriction::IsLiteralWildcard(name)).into()),
+                    condition: (name, PatternRestriction::IsLiteralWildcard(name)).into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -1964,8 +1958,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_), 1, x_.req_lt(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -1987,8 +1981,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_), 1, x_.req_gt(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -2010,8 +2004,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_), 1, x_.req_le(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -2033,8 +2027,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_), 1, x_.req_ge(2))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -2052,15 +2046,15 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
     pub fn req(&self, filter_fn: PyObject) -> PyResult<PythonPatternRestriction> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -2075,29 +2069,23 @@ impl PythonExpression {
         };
 
         Ok(PythonPatternRestriction {
-            condition: Arc::new(
-                (
-                    id,
-                    PatternRestriction::Filter(Box::new(move |m| {
-                        let data = PythonExpression {
-                            expr: Arc::new({
-                                let mut a = Atom::new();
-                                m.to_atom(&mut a);
-                                a
-                            }),
-                        };
+            condition: (
+                id,
+                PatternRestriction::Filter(Box::new(move |m| {
+                    let mut a = Atom::default();
+                    m.to_atom(&mut a);
+                    let data: PythonExpression = a.into();
 
-                        Python::with_gil(|py| {
-                            filter_fn
-                                .call(py, (data,), None)
-                                .expect("Bad callback function")
-                                .extract::<bool>(py)
-                                .expect("Pattern filter does not return a boolean")
-                        })
-                    })),
-                )
-                    .into(),
-            ),
+                    Python::with_gil(|py| {
+                        filter_fn
+                            .call(py, (data,), None)
+                            .expect("Bad callback function")
+                            .extract::<bool>(py)
+                            .expect("Pattern filter does not return a boolean")
+                    })
+                })),
+            )
+                .into(),
         })
     }
 
@@ -2111,8 +2099,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.var('x_', 'y_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(1,2)
     /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_lt(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -2134,8 +2122,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.var('x_', 'y_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(2,1)
     /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_gt(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -2157,8 +2145,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.var('x_', 'y_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(1,2)
     /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_le(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -2180,8 +2168,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.var('x_', 'y_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(2,1)
     /// >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_ge(y_))
     #[pyo3(signature =(other, cmp_any_atom = false))]
@@ -2199,8 +2187,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.vars('x_', 'y_')
-    /// >>> f = Expression.fun("f")
+    /// >>> x_, y_ = Expression.symbols('x_', 'y_')
+    /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
     pub fn req_cmp(
@@ -2210,8 +2198,8 @@ impl PythonExpression {
     ) -> PyResult<PythonPatternRestriction> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -2227,8 +2215,8 @@ impl PythonExpression {
 
         let other_id = match other.expr.as_view() {
             AtomView::Var(v) => {
-                let name = v.get_name();
-                if get_state!()?.get_wildcard_level(name) == 0 {
+                let name = v.get_symbol();
+                if v.get_wildcard_level() == 0 {
                     return Err(exceptions::PyTypeError::new_err(
                         "Only wildcards can be restricted.",
                     ));
@@ -2243,50 +2231,39 @@ impl PythonExpression {
         };
 
         Ok(PythonPatternRestriction {
-            condition: Arc::new(
-                (
-                    id,
-                    PatternRestriction::Cmp(
-                        other_id,
-                        Box::new(move |m1, m2| {
-                            let data1 = PythonExpression {
-                                expr: Arc::new({
-                                    let mut a = Atom::new();
-                                    m1.to_atom(&mut a);
-                                    a
-                                }),
-                            };
+            condition: (
+                id,
+                PatternRestriction::Cmp(
+                    other_id,
+                    Box::new(move |m1, m2| {
+                        let mut a = Atom::default();
+                        m1.to_atom(&mut a);
+                        let data1: PythonExpression = a.clone().into();
 
-                            let data2 = PythonExpression {
-                                expr: Arc::new({
-                                    let mut a = Atom::new();
-                                    m2.to_atom(&mut a);
-                                    a
-                                }),
-                            };
+                        m2.to_atom(&mut a);
+                        let data2: PythonExpression = a.into();
 
-                            Python::with_gil(|py| {
-                                cmp_fn
-                                    .call(py, (data1, data2), None)
-                                    .expect("Bad callback function")
-                                    .extract::<bool>(py)
-                                    .expect("Pattern comparison does not return a boolean")
-                            })
-                        }),
-                    ),
-                )
-                    .into(),
-            ),
+                        Python::with_gil(|py| {
+                            cmp_fn
+                                .call(py, (data1, data2), None)
+                                .expect("Bad callback function")
+                                .extract::<bool>(py)
+                                .expect("Pattern comparison does not return a boolean")
+                        })
+                    }),
+                ),
+            )
+                .into(),
         })
     }
 
     /// Create an iterator over all atoms in the expression.
     fn __iter__(&self) -> PyResult<PythonAtomIterator> {
         match self.expr.as_view() {
-            AtomView::Add(_) | AtomView::Mul(_) | AtomView::Fun(_) => {}
+            AtomView::Add(_) | AtomView::Mul(_) | AtomView::Fun(_) | AtomView::Pow(_) => {}
             x => {
                 return Err(exceptions::PyValueError::new_err(format!(
-                    "Non-iterable type: {:?}",
+                    "Non-iterable type: {}",
                     x
                 )));
             }
@@ -2298,18 +2275,19 @@ impl PythonExpression {
     /// Map the transformations to every term in the expression.
     /// The execution happen in parallel.
     ///
-    /// No new functions or variables can be defined and no new
-    /// expressions can be parsed inside the map. Doing so will
-    /// result in a deadlock.
-    ///
     /// Examples
     /// --------
-    /// >>> x, x_ = Expression.vars('x', 'x_')
+    /// >>> x, x_ = Expression.symbols('x', 'x_')
     /// >>> e = (1+x)**2
     /// >>> r = e.map(Transformer().expand().replace_all(x, 6))
     /// >>> print(r)
-    pub fn map(&self, op: PythonPattern, py: Python) -> PyResult<PythonExpression> {
-        let t = match op.expr.as_ref() {
+    pub fn map(
+        &self,
+        op: PythonPattern,
+        py: Python,
+        n_cores: Option<usize>,
+    ) -> PyResult<PythonExpression> {
+        let t = match &op.expr {
             Pattern::Transformer(t) => {
                 if t.0.is_some() {
                     return Err(exceptions::PyValueError::new_err(
@@ -2330,24 +2308,28 @@ impl PythonExpression {
         // within the term mapper
         let mut stream = py.allow_threads(move || {
             // map every term in the expression
-            let stream = TermStreamer::new_from((*self.expr).clone());
-            let state = get_state!()?;
-            let m = stream.map(|workspace, x| {
-                let mut out = Atom::new();
-                // TODO: capture and abort the parallel run
-                Transformer::execute(x.as_view(), &t, &state.borrow(), workspace, &mut out)
-                    .unwrap_or_else(|e| {
+            let mut stream = TermStreamer::<CompressorWriter<_>>::new(TermStreamerConfig {
+                n_cores: n_cores.unwrap_or(1),
+                ..Default::default()
+            });
+            stream.push(self.expr.clone());
+
+            let m = stream.map(|x| {
+                let mut out = Atom::default();
+                Workspace::get_local().with(|ws| {
+                    Transformer::execute(x.as_view(), &t, ws, &mut out).unwrap_or_else(|e| {
+                        // TODO: capture and abort the parallel run
                         panic!("Transformer failed during parallel execution: {:?}", e)
                     });
+                });
                 out
             });
             Ok::<_, PyErr>(m)
         })?;
 
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| stream.to_expression(workspace, state.borrow()));
+        let b = stream.to_expression();
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(b.into())
     }
 
     /// Set the coefficient ring to contain the variables in the `vars` list.
@@ -2355,49 +2337,43 @@ impl PythonExpression {
 
     /// Parameters
     /// ----------
-    /// vars : List[Expression]
-    ///         A list of variables
+    /// vars: List[Expression] A list of variables
     pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonExpression> {
         let mut var_map = vec![];
         for v in vars {
             match v.expr.as_view() {
-                AtomView::Var(v) => var_map.push(v.get_name().into()),
+                AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {:?}",
+                        "Expected variable instead of {}",
                         e
                     )))?;
                 }
             }
         }
 
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut b = Atom::new();
-            self.expr.as_view().set_coefficient_ring(
-                &Arc::new(var_map),
-                state.borrow(),
-                workspace,
-                &mut b,
-            );
-            b
-        });
+        let b = self.expr.as_view().set_coefficient_ring(&Arc::new(var_map));
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(b.into())
     }
 
-    /// Expand the expression.
-    pub fn expand(&self) -> PyResult<PythonExpression> {
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut b = Atom::new();
-            self.expr
-                .as_view()
-                .expand(workspace, state.borrow(), &mut b);
-            b
-        });
+    /// Expand the expression. Optionally, expand in `var` only.
+    pub fn expand(&self, var: Option<ConvertibleToExpression>) -> PyResult<PythonExpression> {
+        if let Some(var) = var {
+            let id = if let AtomView::Var(x) = var.to_expression().expr.as_view() {
+                x.get_symbol()
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Expansion must be done wrt a variable or function name",
+                ));
+            };
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+            let b = self.expr.as_view().expand_in(id);
+            Ok(b.into())
+        } else {
+            let b = self.expr.as_view().expand();
+            Ok(b.into())
+        }
     }
 
     /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
@@ -2410,7 +2386,7 @@ impl PythonExpression {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> x, y = Expression.symbols('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
     /// >>> print(e.collect(x))
@@ -2418,7 +2394,7 @@ impl PythonExpression {
     /// yields `x^2+x*(y+5)+5`.
     ///
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> x, y = Expression.symbols('x', 'y')
     /// >>> exp, coeff = Expression.funs('var', 'coeff')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
@@ -2432,68 +2408,77 @@ impl PythonExpression {
         coeff_map: Option<PyObject>,
     ) -> PyResult<PythonExpression> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_symbol()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Collect must be done wrt a variable or function name",
             ));
         };
 
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut b = Atom::new();
-            self.expr.as_view().collect(
-                id,
-                workspace,
-                state.borrow(),
-                if let Some(key_map) = key_map {
-                    Some(Box::new(move |key, out| {
-                        Python::with_gil(|py| {
-                            let key = PythonExpression {
-                                expr: Arc::new(key.into()),
-                            };
+        let b = self.expr.as_view().collect(
+            id,
+            if let Some(key_map) = key_map {
+                Some(Box::new(move |key, out| {
+                    Python::with_gil(|py| {
+                        let key: PythonExpression = key.to_owned().into();
 
-                            out.set_from_view(
-                                &key_map
-                                    .call(py, (key,), None)
-                                    .expect("Bad callback function")
-                                    .extract::<PythonExpression>(py)
-                                    .expect("Key map should return an expression")
-                                    .expr
-                                    .as_view(),
-                            )
-                        });
-                    }))
-                } else {
-                    None
-                },
-                if let Some(coeff_map) = coeff_map {
-                    Some(Box::new(move |coeff, out| {
-                        Python::with_gil(|py| {
-                            let coeff = PythonExpression {
-                                expr: Arc::new(coeff.into()),
-                            };
+                        out.set_from_view(
+                            &key_map
+                                .call(py, (key,), None)
+                                .expect("Bad callback function")
+                                .extract::<PythonExpression>(py)
+                                .expect("Key map should return an expression")
+                                .expr
+                                .as_view(),
+                        )
+                    });
+                }))
+            } else {
+                None
+            },
+            if let Some(coeff_map) = coeff_map {
+                Some(Box::new(move |coeff, out| {
+                    Python::with_gil(|py| {
+                        let coeff: PythonExpression = coeff.to_owned().into();
 
-                            out.set_from_view(
-                                &coeff_map
-                                    .call(py, (coeff,), None)
-                                    .expect("Bad callback function")
-                                    .extract::<PythonExpression>(py)
-                                    .expect("Coeff map should return an expression")
-                                    .expr
-                                    .as_view(),
-                            )
-                        });
-                    }))
-                } else {
-                    None
-                },
-                &mut b,
-            );
-            b
-        });
+                        out.set_from_view(
+                            &coeff_map
+                                .call(py, (coeff,), None)
+                                .expect("Bad callback function")
+                                .extract::<PythonExpression>(py)
+                                .expect("Coeff map should return an expression")
+                                .expr
+                                .as_view(),
+                        )
+                    });
+                }))
+            } else {
+                None
+            },
+        );
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(b.into())
+    }
+
+    /// Collect terms involving the literal occurrence of `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// from symbolica import Expression
+    /// >>>
+    /// >>> x, y = Expression.symbols('x', 'y')
+    /// >>> e = 5*x + x * y + x**2 + y*x**2
+    /// >>> print(e.coefficient(x**2))
+    ///
+    /// yields
+    ///
+    /// ```
+    /// y + 1
+    /// ```
+    pub fn coefficient(&self, x: ConvertibleToExpression) -> PythonExpression {
+        let r = self.expr.coefficient(x.to_expression().expr.as_view());
+        r.into()
     }
 
     /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
@@ -2504,7 +2489,7 @@ impl PythonExpression {
     ///
     /// from symbolica import Expression
     /// >>>
-    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> x, y = Expression.symbols('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
     /// >>> for a in e.coefficient_list(x):
@@ -2522,79 +2507,53 @@ impl PythonExpression {
         x: ConvertibleToExpression,
     ) -> PyResult<Vec<(PythonExpression, PythonExpression)>> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_symbol()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Coefficient list must be done wrt a variable or function name",
             ));
         };
 
-        let state = get_state!()?;
-        WORKSPACE.with(|workspace| {
-            let (list, rest) = self.expr.as_view().coefficient_list(id, workspace, &state);
+        let (list, rest) = self.expr.coefficient_list(id);
 
-            let mut py_list: Vec<_> = list
-                .into_iter()
-                .map(|e| {
-                    (
-                        PythonExpression {
-                            expr: Arc::new(e.0.into()),
-                        },
-                        PythonExpression {
-                            expr: Arc::new(e.1),
-                        },
-                    )
-                })
-                .collect();
+        let mut py_list: Vec<_> = list
+            .into_iter()
+            .map(|e| (e.0.to_owned().into(), e.1.into()))
+            .collect();
 
-            if let Atom::Num(n) = &rest {
-                if n.to_num_view().is_zero() {
-                    return Ok(py_list);
-                }
+        if let Atom::Num(n) = &rest {
+            if n.to_num_view().is_zero() {
+                return Ok(py_list);
             }
+        }
 
-            py_list.push((
-                PythonExpression {
-                    expr: Arc::new(Atom::new_num(1)),
-                },
-                PythonExpression {
-                    expr: Arc::new(rest),
-                },
-            ));
+        py_list.push((Atom::new_num(1).into(), rest.into()));
 
-            Ok(py_list)
-        })
+        Ok(py_list)
     }
 
     /// Derive the expression w.r.t the variable `x`.
     pub fn derivative(&self, x: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_symbol()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Derivative must be taken wrt a variable",
             ));
         };
 
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut b = Atom::new();
-            self.expr
-                .as_view()
-                .derivative(id, workspace, state.borrow(), &mut b);
-            b
-        });
+        let b = self.expr.derivative(id);
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(b.into())
     }
 
     /// Taylor expand in `x` around `expansion_point` to depth `depth`.
     ///
-    /// Example
+    /// Examples
     /// -------
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.vars('x', 'y')
-    /// >>> f = Expression.fun('f')
+    /// >>> x, y = Expression.symbols('x', 'y')
+    /// >>> f = Expression.symbol('f')
     /// >>>
     /// >>> e = 2* x**2 * y + f(x)
     /// >>> e = e.taylor_series(x, 0, 2)
@@ -2609,40 +2568,84 @@ impl PythonExpression {
         depth: u32,
     ) -> PyResult<PythonExpression> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_name()
+            x.get_symbol()
         } else {
             return Err(exceptions::PyValueError::new_err(
                 "Derivative must be taken wrt a variable",
             ));
         };
 
-        let state = get_state!()?;
-        let b = WORKSPACE.with(|workspace| {
-            let mut b = Atom::new();
-            self.expr.as_view().taylor_series(
-                id,
-                expansion_point.to_expression().expr.as_view(),
-                depth,
-                workspace,
-                state.borrow(),
-                &mut b,
-            );
-            b
+        let b = self
+            .expr
+            .taylor_series(id, expansion_point.to_expression().expr.as_view(), depth);
+
+        Ok(b.into())
+    }
+
+    /// Compute the partial fraction decomposition in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))')
+    /// >>> print(p.apart(x))
+    pub fn apart(&self, x: PythonExpression) -> PyResult<PythonExpression> {
+        let poly = self.expr.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
+        let x = poly
+            .get_variables()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        let fs = poly.apart(x);
+
+        let mut rn = Atom::new();
+        Workspace::get_local().with(|ws| {
+            let mut res = ws.new_atom();
+            let a = res.to_add();
+            for f in fs {
+                a.extend(f.to_expression().as_view());
+            }
+
+            res.as_view().normalize(ws, &mut rn);
         });
 
-        Ok(PythonExpression { expr: Arc::new(b) })
+        Ok(rn.into())
+    }
+
+    /// Write the expression over a common denominator.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('v1^2/2+v1^3/v4*v2+v3/(1+v4)')
+    /// >>> print(p.together())
+    pub fn together(&self) -> PyResult<PythonExpression> {
+        let poly = self.expr.to_rational_polynomial::<_, _, u32>(&Q, &Z, None);
+        Ok(poly.to_expression().into())
     }
 
     /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+    /// All non-polynomial elements will be converted to new independent variables.
     pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {
         let mut var_map = vec![];
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_name().into()),
+                    AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {:?}",
+                            "Expected variable instead of {}",
                             e
                         )))?;
                     }
@@ -2656,54 +2659,16 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        self.expr
-            .as_view()
-            .to_polynomial(&RationalField::new(), var_map.as_ref())
-            .map(|x| PythonPolynomial { poly: Arc::new(x) })
-            .map_err(|e| {
-                exceptions::PyValueError::new_err(format!(
-                    "Could not convert to polynomial: {:?}",
-                    e
-                ))
-            })
+        Ok(PythonPolynomial {
+            poly: self.expr.to_polynomial(&Q, var_map),
+        })
     }
 
-    /// Convert the expression to a polynomial, rewriting all non-polynomial elements.
-    pub fn to_polynomial_with_map(&self) -> (PythonPolynomial, HashMap<PythonExpression, usize>) {
-        let mut map = HashMap::default();
-
-        let poly = PythonPolynomial {
-            poly: Arc::new(
-                self.expr
-                    .as_view()
-                    .to_polynomial_with_map(&RationalField::new(), &mut map),
-            ),
-        };
-
-        let map = map
-            .into_iter()
-            .map(|(k, v)| {
-                (
-                    PythonExpression {
-                        expr: Arc::new(Atom::new_from_view(&k)),
-                    },
-                    poly.poly
-                        .var_map
-                        .as_ref()
-                        .unwrap()
-                        .iter()
-                        .position(|v1| *v1 == v)
-                        .unwrap(),
-                )
-            })
-            .collect();
-
-        (poly, map)
-    }
-
-    /// Convert the expression to a rational polynomial, optionally, with the variables and the ordering specified in `vars`.
+    /// Convert the expression to a rational polynomial, optionally, with the variable ordering specified in `vars`.
     /// The latter is useful if it is known in advance that more variables may be added in the future to the
     /// rational polynomial through composition with other rational polynomials.
+    ///
+    /// All non-rational polynomial parts will automatically be converted to new independent variables.
     ///
     /// Examples
     /// --------
@@ -2717,10 +2682,10 @@ impl PythonExpression {
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_name().into()),
+                    AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {:?}",
+                            "Expected variable instead of {}",
                             e
                         )))?;
                     }
@@ -2734,23 +2699,8 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        WORKSPACE.with(|workspace| {
-            self.expr
-                .as_view()
-                .to_rational_polynomial(
-                    workspace,
-                    &&get_state!()?,
-                    &RationalField::new(),
-                    &IntegerRing::new(),
-                    var_map.as_ref(),
-                )
-                .map(|x| PythonRationalPolynomial { poly: Arc::new(x) })
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!(
-                        "Could not convert to polynomial: {:?}",
-                        e
-                    ))
-                })
+        Ok(PythonRationalPolynomial {
+            poly: self.expr.to_rational_polynomial(&Q, &Z, var_map),
         })
     }
 
@@ -2763,10 +2713,10 @@ impl PythonExpression {
         if let Some(vm) = vars {
             for v in vm {
                 match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_name().into()),
+                    AtomView::Var(v) => var_map.push(v.get_symbol().into()),
                     e => {
                         Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {:?}",
+                            "Expected variable instead of {}",
                             e
                         )))?;
                     }
@@ -2780,23 +2730,8 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        WORKSPACE.with(|workspace| {
-            self.expr
-                .as_view()
-                .to_rational_polynomial(
-                    workspace,
-                    &&get_state!()?,
-                    &RationalField::new(),
-                    &IntegerRing::new(),
-                    var_map.as_ref(),
-                )
-                .map(|x| PythonRationalPolynomialSmallExponent { poly: Arc::new(x) })
-                .map_err(|e| {
-                    exceptions::PyValueError::new_err(format!(
-                        "Could not convert to polynomial: {:?}",
-                        e
-                    ))
-                })
+        Ok(PythonRationalPolynomialSmallExponent {
+            poly: self.expr.to_rational_polynomial(&Q, &Z, var_map),
         })
     }
 
@@ -2806,8 +2741,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     ///
-    /// >>> x, x_ = Expression.vars('x','x_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x, x_ = Expression.symbols('x','x_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(x)*f(1)*f(2)*f(3)
     /// >>> for match in e.match(f(x_)):
     /// >>>    for map in match:
@@ -2817,21 +2752,26 @@ impl PythonExpression {
         &self,
         lhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
+        level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
     ) -> PyResult<PythonMatchIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
-            .unwrap_or(Arc::new(Condition::default()));
-        let settings = Arc::new(MatchSettings::default());
+            .unwrap_or(Condition::default());
+        let settings = MatchSettings {
+            level_range: level_range.unwrap_or((0, None)),
+            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
+            ..MatchSettings::default()
+        };
         Ok(PythonMatchIterator::new(
             (
                 lhs.to_pattern()?.expr,
                 self.expr.clone(),
                 conditions,
                 settings,
-                get_state!()?.clone(), // FIXME: state is cloned
             ),
-            move |(lhs, target, res, settings, state)| {
-                PatternAtomTreeIterator::new(lhs, target.as_view(), state, res, settings)
+            move |(lhs, target, res, settings)| {
+                PatternAtomTreeIterator::new(lhs, target.as_view(), res, settings)
             },
         ))
     }
@@ -2839,12 +2779,16 @@ impl PythonExpression {
     /// Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
+    /// The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
+    /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+    /// depending on `level_is_tree_depth`.
+    ///
     /// Examples
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x_ = Expression.var('x_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x_ = Expression.symbol('x_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> for r in e.replace(f(x_), f(x_ + 1)):
     /// >>>     print(r)
@@ -2860,11 +2804,17 @@ impl PythonExpression {
         lhs: ConvertibleToPattern,
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
+        level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
     ) -> PyResult<PythonReplaceIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
-            .unwrap_or(Arc::new(Condition::default()));
-        let settings = Arc::new(MatchSettings::default());
+            .unwrap_or(Condition::default());
+        let settings = MatchSettings {
+            level_range: level_range.unwrap_or((0, None)),
+            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
+            ..MatchSettings::default()
+        };
 
         Ok(PythonReplaceIterator::new(
             (
@@ -2873,10 +2823,9 @@ impl PythonExpression {
                 rhs.to_pattern()?.expr,
                 conditions,
                 settings,
-                get_state!()?.clone(), // FIXME: state is cloned
             ),
-            move |(lhs, target, rhs, res, settings, state)| {
-                ReplaceIterator::new(lhs, target.as_view(), rhs, state, res, settings)
+            move |(lhs, target, rhs, res, settings)| {
+                ReplaceIterator::new(lhs, target.as_view(), rhs, res, settings)
             },
         ))
     }
@@ -2884,82 +2833,96 @@ impl PythonExpression {
     /// Replace all atoms matching the pattern `pattern` by the right-hand side `rhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
+    /// The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
+    /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+    /// depending on `level_is_tree_depth`.
+    ///
     /// The entire operation can be repeated until there are no more matches using `repeat=True`.
     ///
     /// Examples
     /// --------
     ///
-    /// >>> x, w1_, w2_ = Expression.vars('x','w1_','w2_')
-    /// >>> f = Expression.fun('f')
+    /// >>> x, w1_, w2_ = Expression.symbols('x','w1_','w2_')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,x)
     /// >>> r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
     /// >>> print(r)
+    ///
+    /// Parameters
+    /// ----------
+    /// pattern: Transformer | Expression | int
+    ///     The pattern to match.
+    /// rhs: Transformer | Expression | int
+    ///     The right-hand side to replace the matched subexpression with.
+    /// cond: Optional[PatternRestriction]
+    ///     Conditions on the pattern.
+    /// level_range: (int, int), optional
+    ///     Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+    /// level_is_tree_depth: bool, optional
+    ///     If set to `True`, the level is increased when going one level deeper in the expression tree.
+    /// repeat: bool, optional
+    ///     If set to `True`, the entire operation will be repeated until there are no more matches.
     pub fn replace_all(
         &self,
         pattern: ConvertibleToPattern,
         rhs: ConvertibleToPattern,
         cond: Option<PythonPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
+        level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
         repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
         let rhs = &rhs.to_pattern()?.expr;
-        let mut out = Atom::new();
 
-        let settings = if let Some(ngw) = non_greedy_wildcards {
-            Some(MatchSettings {
-                non_greedy_wildcards: ngw
-                    .iter()
-                    .map(|x| match x.expr.as_view() {
-                        AtomView::Var(v) => {
-                            let name = v.get_name();
-                            if get_state!()?.get_wildcard_level(name) == 0 {
-                                return Err(exceptions::PyTypeError::new_err(
-                                    "Only wildcards can be restricted.",
-                                ));
-                            }
-                            Ok(name)
+        let mut settings = MatchSettings::default();
+
+        if let Some(ngw) = non_greedy_wildcards {
+            settings.non_greedy_wildcards = ngw
+                .iter()
+                .map(|x| match x.expr.as_view() {
+                    AtomView::Var(v) => {
+                        let name = v.get_symbol();
+                        if v.get_wildcard_level() == 0 {
+                            return Err(exceptions::PyTypeError::new_err(
+                                "Only wildcards can be restricted.",
+                            ));
                         }
-                        _ => Err(exceptions::PyTypeError::new_err(
-                            "Only wildcards can be restricted.",
-                        )),
-                    })
-                    .collect::<Result<_, _>>()?,
-            })
-        } else {
-            None
-        };
+                        Ok(name)
+                    }
+                    _ => Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    )),
+                })
+                .collect::<Result<_, _>>()?;
+        }
+        if let Some(level_range) = level_range {
+            settings.level_range = level_range;
+        }
+        if let Some(level_is_tree_depth) = level_is_tree_depth {
+            settings.level_is_tree_depth = level_is_tree_depth;
+        }
 
-        let guard = get_state!()?;
-        let state = guard.borrow();
+        let mut expr_ref = self.expr.as_view();
 
-        WORKSPACE.with(|workspace| {
-            let mut out2 = Atom::new();
-            let mut expr_ref = self.expr.as_view();
-
-            while pattern.replace_all(
-                expr_ref,
-                rhs,
-                state,
-                workspace,
-                cond.as_ref().map(|r| r.condition.as_ref()),
-                settings.as_ref(),
-                &mut out,
-            ) {
-                if !repeat.unwrap_or(false) {
-                    break;
-                }
-
-                std::mem::swap(&mut out, &mut out2);
-                expr_ref = out2.as_view();
+        let mut out = RecycledAtom::new();
+        let mut out2 = RecycledAtom::new();
+        while pattern.replace_all_into(
+            expr_ref,
+            rhs,
+            cond.as_ref().map(|r| &r.condition),
+            Some(&settings),
+            &mut out,
+        ) {
+            if !repeat.unwrap_or(false) {
+                break;
             }
 
-            Ok::<_, PyErr>(())
-        })?;
+            std::mem::swap(&mut out, &mut out2);
+            expr_ref = out2.as_view();
+        }
 
-        Ok(PythonExpression {
-            expr: Arc::new(out),
-        })
+        Ok(out.into_inner().into())
     }
 
     /// Solve a linear system in the variables `variables`, where each expression
@@ -2968,8 +2931,8 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, y, c = Expression.vars('x', 'y', 'c')
-    /// >>> f = Expression.fun('f')
+    /// >>> x, y, c = Expression.symbols('x', 'y', 'c')
+    /// >>> f = Expression.symbol('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
     #[classmethod]
@@ -2984,55 +2947,59 @@ impl PythonExpression {
         let mut vars = vec![];
         for v in variables {
             match v.expr.as_view() {
-                AtomView::Var(v) => vars.push(v.get_name().into()),
+                AtomView::Var(v) => vars.push(v.get_symbol().into()),
                 e => {
                     Err(exceptions::PyValueError::new_err(format!(
-                        "Expected variable instead of {:?}",
+                        "Expected variable instead of {}",
                         e
                     )))?;
                 }
             }
         }
 
-        let mut guard = get_state_mut!()?;
-        let state = guard.borrow_mut();
+        let res = AtomView::solve_linear_system::<u16>(&system_b, &vars).map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+        })?;
 
-        let res = WORKSPACE
-            .with(|workspace| {
-                AtomView::solve_linear_system::<u16>(&system_b, &vars, workspace, state)
-            })
-            .map_err(|e| {
-                exceptions::PyValueError::new_err(format!("Could not solve system: {:?}", e))
-            })?;
-
-        Ok(res
-            .into_iter()
-            .map(|x| PythonExpression { expr: Arc::new(x) })
-            .collect())
+        Ok(res.into_iter().map(|x| x.into()).collect())
     }
 
-    /// Evaluate the expression, using a map of all the variables and
+    /// Evaluate the expression, using a map of all the constants and
     /// user functions to a float.
     ///
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.var('x')
-    /// >>> f = Expression.fun('f')
+    /// >>> x = Expression.symbol('x')
+    /// >>> f = Expression.symbol('f')
     /// >>> e = Expression.parse('cos(x)')*3 + f(x,2)
     /// >>> print(e.evaluate({x: 1}, {f: lambda args: args[0]+args[1]}))
     pub fn evaluate(
         &self,
-        vars: HashMap<Variable, f64>,
+        constants: HashMap<PythonExpression, f64>,
         functions: HashMap<Variable, PyObject>,
-    ) -> f64 {
+    ) -> PyResult<f64> {
         let mut cache = HashMap::default();
+
+        let constants = constants
+            .iter()
+            .map(|(k, v)| (k.expr.as_view(), *v))
+            .collect();
 
         let functions = functions
             .into_iter()
             .map(|(k, v)| {
-                (
-                    k,
+                let id = if let Variable::Symbol(v) = k {
+                    v
+                } else {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Expected function name instead of {:?}",
+                        k
+                    )))?
+                };
+
+                Ok((
+                    id,
                     EvaluationFn::new(Box::new(move |args, _, _, _| {
                         Python::with_gil(|py| {
                             v.call(py, (args.to_vec(),), None)
@@ -3041,11 +3008,14 @@ impl PythonExpression {
                                 .expect("Function does not return a float")
                         })
                     })),
-                )
+                ))
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
-        self.expr.as_view().evaluate(&vars, &functions, &mut cache)
+        Ok(self
+            .expr
+            .as_view()
+            .evaluate(&constants, &functions, &mut cache))
     }
 
     /// Evaluate the expression, using a map of all the variables and
@@ -3054,22 +3024,36 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.vars('x', 'y')
+    /// >>> x, y = Expression.symbols('x', 'y')
     /// >>> e = Expression.parse('sqrt(x)')*y
     /// >>> print(e.evaluate_complex({x: 1 + 2j, y: 4 + 3j}, {}))
     pub fn evaluate_complex<'py>(
         &self,
         py: Python<'py>,
-        vars: HashMap<Variable, Complex<f64>>,
+        constants: HashMap<PythonExpression, Complex<f64>>,
         functions: HashMap<Variable, PyObject>,
-    ) -> &'py PyComplex {
+    ) -> PyResult<&'py PyComplex> {
         let mut cache = HashMap::default();
+
+        let constants = constants
+            .iter()
+            .map(|(k, v)| (k.expr.as_view(), *v))
+            .collect();
 
         let functions = functions
             .into_iter()
             .map(|(k, v)| {
-                (
-                    k,
+                let id = if let Variable::Symbol(v) = k {
+                    v
+                } else {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Expected function name instead of {:?}",
+                        k
+                    )))?
+                };
+
+                Ok((
+                    id,
                     EvaluationFn::new(Box::new(move |args: &[Complex<f64>], _, _, _| {
                         Python::with_gil(|py| {
                             v.call(
@@ -3085,200 +3069,127 @@ impl PythonExpression {
                             .expect("Function does not return a complex number")
                         })
                     })),
-                )
+                ))
             })
-            .collect();
+            .collect::<PyResult<_>>()?;
 
-        let r = self.expr.as_view().evaluate(&vars, &functions, &mut cache);
-        PyComplex::from_doubles(py, r.re, r.im)
+        let r = self
+            .expr
+            .as_view()
+            .evaluate(&constants, &functions, &mut cache);
+        Ok(PyComplex::from_doubles(py, r.re, r.im))
     }
 }
 
-/// A function class for python that constructs an `Expression` when called with arguments.
-/// This allows to write:
-/// ```python
-/// f = Expression.fun("f")
-/// e = f(1,2,3)
-/// ```
-#[pyclass(name = "Function")]
-#[derive(Clone)]
-pub struct PythonFunction {
-    id: Identifier,
+/// A Symbolica term streamer.
+#[pyclass(name = "TermStreamer", module = "symbolica")]
+pub struct PythonTermStreamer {
+    pub stream: TermStreamer<CompressorWriter<BufWriter<File>>>,
 }
 
 #[pymethods]
-impl PythonFunction {
-    /// Create a new function from a `name`. Can be turned into a symmetric function
-    /// using `is_symmetric=True` or into an antisymmetric function using `is_antisymmetric=True`.
-    /// The function can be made multilinear using `is_linear=True`.
-    ///
-    /// Once attributes are defined on a function, they cannot be redefined later.
+impl PythonTermStreamer {
+    /// Create a new term streamer with a given path for its files,
+    /// the maximum size of the memory buffer and the number of cores.
     #[new]
     pub fn __new__(
-        name: &str,
-        is_symmetric: Option<bool>,
-        is_antisymmetric: Option<bool>,
-        is_linear: Option<bool>,
+        path: Option<&str>,
+        max_mem_bytes: Option<usize>,
+        n_cores: Option<usize>,
     ) -> PyResult<Self> {
-        let mut opts = match (is_symmetric, is_antisymmetric) {
-            (Some(true), Some(true)) => Err(exceptions::PyValueError::new_err(
-                "Function cannot be both symmetric and antisymmetric",
-            ))?,
-            (Some(true), _) => Some(vec![FunctionAttribute::Symmetric]),
-            (_, Some(true)) => Some(vec![FunctionAttribute::Antisymmetric]),
-            (Some(false), _) | (_, Some(false)) => Some(vec![]),
-            (None, None) => None,
+        let d = TermStreamerConfig::default();
+
+        Ok(PythonTermStreamer {
+            stream: TermStreamer::new(TermStreamerConfig {
+                n_cores: n_cores.unwrap_or(d.n_cores),
+                max_mem_bytes: max_mem_bytes.unwrap_or(d.max_mem_bytes),
+                path: path.map(|x| x.into()).unwrap_or(d.path),
+            }),
+        })
+    }
+
+    /// Add this expression to `other`, returning the result.
+    pub fn __add__(&mut self, rhs: &mut Self) -> PyResult<Self> {
+        Ok(Self {
+            stream: &mut self.stream + &mut rhs.stream,
+        })
+    }
+
+    pub fn __iadd__(&mut self, rhs: &mut Self) {
+        self.stream += &mut rhs.stream;
+    }
+
+    pub fn get_byte_size(&self) -> usize {
+        self.stream.get_byte_size()
+    }
+
+    /// Add an expression to the term streamer.
+    pub fn push(&mut self, expr: PythonExpression) {
+        self.stream.push(expr.expr.clone());
+    }
+
+    /// Sort and fuse all terms in the streamer.
+    pub fn normalize(&mut self) {
+        self.stream.normalize();
+    }
+
+    /// Convert the term stream into an expression. This may exceed the available memory.
+    pub fn to_expression(&mut self) -> PythonExpression {
+        self.stream.to_expression().into()
+    }
+
+    /// Map the transformations to every term in the streamer.
+    pub fn map(&mut self, op: PythonPattern, py: Python) -> PyResult<Self> {
+        let t = match &op.expr {
+            Pattern::Transformer(t) => {
+                if t.0.is_some() {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Transformer is bound to expression. Use Transformer() instead."
+                            .to_string(),
+                    ));
+                }
+                &t.1
+            }
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Operation must of a transformer".to_string(),
+                ));
+            }
         };
 
-        match is_linear {
-            Some(true) => {
-                if let Some(opts) = &mut opts {
-                    opts.push(FunctionAttribute::Linear);
-                } else {
-                    opts = Some(vec![FunctionAttribute::Linear]);
-                }
-            }
-            Some(false) => {
-                if opts.is_none() {
-                    opts = Some(vec![]);
-                }
-            }
-            None => {}
-        }
-
-        let id = get_state_mut!()?
-            .borrow_mut()
-            .get_or_insert_fn(name, opts)
-            .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
-
-        Ok(PythonFunction { id })
-    }
-
-    /// The built-in function that converts a rational polynomial to a coefficient.
-    #[classattr]
-    #[pyo3(name = "COEFF")]
-    pub fn coeff() -> PythonFunction {
-        PythonFunction { id: State::COEFF }
-    }
-
-    /// The built-in cosine function.
-    #[classattr]
-    #[pyo3(name = "COS")]
-    pub fn cos() -> PythonFunction {
-        PythonFunction { id: State::COS }
-    }
-
-    /// The built-in sine function.
-    #[classattr]
-    #[pyo3(name = "SIN")]
-    pub fn sin() -> PythonFunction {
-        PythonFunction { id: State::SIN }
-    }
-
-    /// The built-in exponential function.
-    #[classattr]
-    #[pyo3(name = "EXP")]
-    pub fn exp() -> PythonFunction {
-        PythonFunction { id: State::EXP }
-    }
-
-    /// The built-in logarithm function.
-    #[classattr]
-    #[pyo3(name = "LOG")]
-    pub fn log() -> PythonFunction {
-        PythonFunction { id: State::LOG }
-    }
-
-    #[getter]
-    fn get_w(&mut self) -> PythonFunction {
-        PythonFunction { id: self.id }
-    }
-
-    /// Returns `True` iff this function is symmetric.
-    pub fn is_symmetric(&self) -> PyResult<bool> {
-        Ok(get_state!()?
-            .borrow_mut()
-            .get_function_attributes(self.id)
-            .contains(&FunctionAttribute::Symmetric))
-    }
-
-    /// Create a Symbolica expression or transformer by calling the function with appropriate arguments.
-    ///
-    /// Examples
-    /// -------
-    /// >>> x = Expression.vars('x')
-    /// >>> f = Expression.fun('f')
-    /// >>> e = f(3,x)
-    /// >>> print(e)
-    /// f(3,x)
-    #[pyo3(signature = (*args,))]
-    pub fn __call__(&self, args: &PyTuple, py: Python) -> PyResult<PyObject> {
-        let mut fn_args = Vec::with_capacity(args.len());
-
-        for arg in args {
-            if let Ok(a) = arg.extract::<ConvertibleToExpression>() {
-                fn_args.push(Pattern::Literal((*a.to_expression().expr).clone()));
-            } else if let Ok(a) = arg.extract::<ConvertibleToPattern>() {
-                fn_args.push((*a.to_pattern()?.expr).clone());
-            } else {
-                let msg = format!("Unknown type: {}", arg.get_type().name().unwrap());
-                return Err(exceptions::PyTypeError::new_err(msg));
-            }
-        }
-
-        if fn_args.iter().all(|x| matches!(x, Pattern::Literal(_))) {
-            // simplify to literal expression
-            WORKSPACE.with(|workspace| {
-                let mut fun_b = workspace.new_atom();
-                let fun = fun_b.to_fun();
-                fun.set_from_name(self.id);
-                fun.set_dirty(true);
-
-                for x in fn_args {
-                    if let Pattern::Literal(a) = x {
-                        fun.add_arg(a.as_view());
-                    }
-                }
-
-                let mut out = Atom::new();
-                fun_b
-                    .get()
-                    .as_view()
-                    .normalize(workspace, &&get_state!()?, &mut out);
-
-                Ok(PythonExpression {
-                    expr: Arc::new(out),
-                }
-                .into_py(py))
-            })
-        } else {
-            // convert all wildcards back from literals
-            let state = &&get_state!()?;
-            for arg in &mut fn_args {
-                if let Pattern::Literal(a) = arg {
-                    *arg = a.as_view().into_pattern(state);
-                }
-            }
-
-            let p = Pattern::Fn(self.id, state.get_wildcard_level(self.id) > 0, fn_args);
-            Ok(PythonPattern { expr: Arc::new(p) }.into_py(py))
-        }
+        // release the GIL as Python functions may be called from
+        // within the term mapper
+        py.allow_threads(move || {
+            // map every term in the expression
+            let m = self.stream.map(|x| {
+                let mut out = Atom::default();
+                Workspace::get_local().with(|ws| {
+                    Transformer::execute(x.as_view(), &t, ws, &mut out).unwrap_or_else(|e| {
+                        // TODO: capture and abort the parallel run
+                        panic!("Transformer failed during parallel execution: {:?}", e)
+                    });
+                });
+                out
+            });
+            Ok::<_, PyErr>(m)
+        })
+        .map(|x| PythonTermStreamer { stream: x })
     }
 }
 
 self_cell!(
-    #[pyclass]
+    #[pyclass(module = "symbolica")]
     pub struct PythonAtomIterator {
-        owner: Arc<Atom>,
+        owner: Atom,
         #[covariant]
-        dependent: ListIteratorD,
+        dependent: ListIterator,
     }
 );
 
 impl PythonAtomIterator {
     /// Create a self-referential structure for the iterator.
     pub fn from_expr(expr: PythonExpression) -> PythonAtomIterator {
-        PythonAtomIterator::new(expr.expr, |expr| match expr.as_view() {
+        PythonAtomIterator::new(expr.expr.clone(), |expr| match expr.as_view() {
             AtomView::Add(a) => a.iter(),
             AtomView::Mul(m) => m.iter(),
             AtomView::Fun(f) => f.iter(),
@@ -3291,29 +3202,26 @@ impl PythonAtomIterator {
 impl PythonAtomIterator {
     fn __next__(&mut self) -> Option<PythonExpression> {
         self.with_dependent_mut(|_, i| {
-            i.next().map(|e| PythonExpression {
-                expr: Arc::new({
-                    let mut owned = Atom::new();
-                    owned.set_from_view(&e);
-                    owned
-                }),
+            i.next().map(|e| {
+                let mut owned = Atom::default();
+                owned.set_from_view(&e);
+                owned.into()
             })
         })
     }
 }
 
 type OwnedMatch = (
-    Arc<Pattern>,
-    Arc<Atom>,
-    Arc<Condition<WildcardAndRestriction>>,
-    Arc<MatchSettings>,
-    State,
+    Pattern,
+    Atom,
+    Condition<WildcardAndRestriction>,
+    MatchSettings,
 );
-type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a, crate::representations::default::Linear>;
+type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a>;
 
 self_cell!(
     /// An iterator over matches.
-    #[pyclass]
+    #[pyclass(module = "symbolica")]
     pub struct PythonMatchIterator {
         owner: OwnedMatch,
         #[not_covariant]
@@ -3335,18 +3243,11 @@ impl PythonMatchIterator {
                 matches
                     .into_iter()
                     .map(|m| {
-                        (
-                            PythonExpression {
-                                expr: Arc::new(Atom::new_var(m.0)),
-                            },
-                            PythonExpression {
-                                expr: Arc::new({
-                                    let mut a = Atom::new();
-                                    m.1.to_atom(&mut a);
-                                    a
-                                }),
-                            },
-                        )
+                        (Atom::new_var(m.0).into(), {
+                            let mut a = Atom::default();
+                            m.1.to_atom(&mut a);
+                            a.into()
+                        })
                     })
                     .collect()
             })
@@ -3355,18 +3256,17 @@ impl PythonMatchIterator {
 }
 
 type OwnedReplace = (
-    Arc<Pattern>,
-    Arc<Atom>,
-    Arc<Pattern>,
-    Arc<Condition<WildcardAndRestriction>>,
-    Arc<MatchSettings>,
-    State,
+    Pattern,
+    Atom,
+    Pattern,
+    Condition<WildcardAndRestriction>,
+    MatchSettings,
 );
-type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a, crate::representations::default::Linear>;
+type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a>;
 
 self_cell!(
     /// An iterator over all single replacements.
-    #[pyclass]
+    #[pyclass(module = "symbolica")]
     pub struct PythonReplaceIterator {
         owner: OwnedReplace,
         #[not_covariant]
@@ -3384,25 +3284,21 @@ impl PythonReplaceIterator {
     /// Return the next replacement.
     fn __next__(&mut self) -> PyResult<Option<PythonExpression>> {
         self.with_dependent_mut(|_, i| {
-            WORKSPACE.with(|workspace| {
-                let mut out = Atom::new();
+            let mut out = Atom::default();
 
-                if i.next(&&get_state!()?, workspace, &mut out).is_none() {
-                    Ok(None)
-                } else {
-                    Ok::<_, PyErr>(Some(PythonExpression {
-                        expr: Arc::new(out),
-                    }))
-                }
-            })
+            if i.next(&mut out).is_none() {
+                Ok(None)
+            } else {
+                Ok::<_, PyErr>(Some(out.into()))
+            }
         })
     }
 }
 
-#[pyclass(name = "Polynomial")]
+#[pyclass(name = "Polynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonPolynomial {
-    pub poly: Arc<MultivariatePolynomial<RationalField, u16>>,
+    pub poly: MultivariatePolynomial<RationalField, u16>,
 }
 
 #[pymethods]
@@ -3428,31 +3324,24 @@ impl PythonPolynomial {
         let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
             SmallVec::new();
 
-        {
-            let mut state = get_state_mut!()?;
-            for v in vars {
-                let id = state.get_or_insert_var(v);
-                var_map.push(id.into());
-                var_name_map.push(v.into());
-            }
+        for v in vars {
+            let id = State::get_symbol(v);
+            var_map.push(id.into());
+            var_name_map.push(v.into());
         }
 
         let e = Token::parse(arg)
             .map_err(exceptions::PyValueError::new_err)?
-            .to_polynomial(&RationalField::new(), &Arc::new(var_map), &var_name_map)
+            .to_polynomial(&Q, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
-        Ok(Self { poly: Arc::new(e) })
+        Ok(Self { poly: e })
     }
 
     /// Convert the polynomial to a polynomial with integer coefficients, if possible.
     pub fn to_integer_polynomial(&self) -> PyResult<PythonIntegerPolynomial> {
-        let mut poly_int = MultivariatePolynomial::new(
-            self.poly.nvars,
-            &IntegerRing::new(),
-            Some(self.poly.nterms()),
-            self.poly.var_map.clone(),
-        );
+        let mut poly_int =
+            MultivariatePolynomial::new(&Z, Some(self.poly.nterms()), self.poly.variables.clone());
 
         let mut new_exponent = SmallVec::<[u8; 5]>::new();
 
@@ -3478,16 +3367,14 @@ impl PythonPolynomial {
             poly_int.append_monomial(t.coefficient.numerator(), &new_exponent);
         }
 
-        Ok(PythonIntegerPolynomial {
-            poly: Arc::new(poly_int),
-        })
+        Ok(PythonIntegerPolynomial { poly: poly_int })
     }
 
     /// Convert the coefficients of the polynomial to a finite field with prime `prime`.
     pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldPolynomial {
-        let f = FiniteField::<u32>::new(prime);
+        let f = Zp::new(prime);
         PythonFiniteFieldPolynomial {
-            poly: Arc::new(self.poly.map_coeff(|c| c.to_finite_field(&f), f.clone())),
+            poly: self.poly.map_coeff(|c| c.to_finite_field(&f), f.clone()),
         }
     }
 
@@ -3508,8 +3395,8 @@ impl PythonPolynomial {
                 format!(
                     "{}",
                     InstructionSetPrinter {
+                        name: "evaluate".to_string(),
                         instr: &o,
-                        state: &&get_state!()?,
                         mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {
                             write_header_and_test: true,
                             always_pass_output_array: false,
@@ -3522,7 +3409,7 @@ impl PythonPolynomial {
 
         let o_f64 = o.convert::<f64>();
         Ok(PythonInstructionEvaluator {
-            instr: Arc::new(o_f64.evaluator()),
+            instr: o_f64.evaluator(),
         })
     }
 
@@ -3563,17 +3450,43 @@ impl PythonPolynomial {
             gb.system
                 .into_iter()
                 .map(|p| Self {
-                    poly: Arc::new(p.reorder::<LexOrder>()),
+                    poly: p.reorder::<LexOrder>(),
                 })
                 .collect()
         } else {
-            let ideal: Vec<_> = system.iter().map(|p| p.poly.as_ref().clone()).collect();
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
             let gb = GroebnerBasis::new(&ideal, print_stats);
-            gb.system
-                .into_iter()
-                .map(|p| Self { poly: Arc::new(p) })
-                .collect()
+            gb.system.into_iter().map(|p| Self { poly: p }).collect()
         }
+    }
+
+    /// Integrate the polynomial in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.integrate(x))
+    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.integrate(x),
+        })
     }
 
     /// Convert the polynomial to an expression.
@@ -3582,44 +3495,38 @@ impl PythonPolynomial {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x = Expression.var('x')
+    /// >>> x = Expression.symbol('x')
     /// >>> e = Expression.parse('x*y+2*x+x^2')
     /// >>> p = e.to_polynomial()
     /// >>> print(e - p.to_expression())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
-        let mut atom = Atom::new();
-        let state = get_state!()?;
-        WORKSPACE.with(|workspace| {
-            self.poly
-                .to_expression(workspace, &&state, &HashMap::default(), &mut atom)
-        });
-
-        Ok(PythonExpression {
-            expr: Arc::new(atom),
-        })
+        Ok(self.poly.to_expression().into())
     }
 }
 
-#[pyclass(name = "Evaluator")]
+#[pyclass(name = "Evaluator", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonInstructionEvaluator {
-    pub instr: Arc<InstructionEvaluator<f64>>,
+    pub instr: InstructionEvaluator<f64>,
 }
 
 #[pymethods]
 impl PythonInstructionEvaluator {
     /// Evaluate the polynomial for multiple inputs and return the result.
     fn evaluate(&self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
-        let mut eval = (*self.instr).clone();
+        let mut eval = self.instr.clone();
 
-        inputs.iter().map(|s| eval.evaluate(s)[0]).collect()
+        inputs
+            .iter()
+            .map(|s| eval.evaluate_with_input(s)[0])
+            .collect()
     }
 }
 
-#[pyclass(name = "IntegerPolynomial")]
+#[pyclass(name = "IntegerPolynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonIntegerPolynomial {
-    pub poly: Arc<MultivariatePolynomial<IntegerRing, u8>>,
+    pub poly: MultivariatePolynomial<IntegerRing, u8>,
 }
 
 #[pymethods]
@@ -3644,21 +3551,18 @@ impl PythonIntegerPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
-        {
-            let mut state = get_state_mut!()?;
-            for v in vars {
-                let id = state.get_or_insert_var(v);
-                var_map.push(id.into());
-                var_name_map.push(v.into());
-            }
+        for v in vars {
+            let id = State::get_symbol(v);
+            var_map.push(id.into());
+            var_name_map.push(v.into());
         }
 
         let e = Token::parse(arg)
             .map_err(exceptions::PyValueError::new_err)?
-            .to_polynomial(&IntegerRing::new(), &Arc::new(var_map), &var_name_map)
+            .to_polynomial(&Z, &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
-        Ok(Self { poly: Arc::new(e) })
+        Ok(Self { poly: e })
     }
 
     /// Convert the polynomial to an expression.
@@ -3671,24 +3575,15 @@ impl PythonIntegerPolynomial {
     /// >>> p = e.to_polynomial()
     /// >>> print((e - p.to_expression()).expand())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
-        let mut atom = Atom::new();
-        let state = get_state!()?;
-        WORKSPACE.with(|workspace| {
-            self.poly
-                .to_expression(workspace, &&state, &HashMap::default(), &mut atom)
-        });
-
-        Ok(PythonExpression {
-            expr: Arc::new(atom),
-        })
+        Ok(self.poly.to_expression().into())
     }
 }
 
 /// A Symbolica polynomial over finite fields.
-#[pyclass(name = "FiniteFieldPolynomial")]
+#[pyclass(name = "FiniteFieldPolynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonFiniteFieldPolynomial {
-    pub poly: Arc<MultivariatePolynomial<FiniteField<u32>, u16>>,
+    pub poly: MultivariatePolynomial<Zp, u16>,
 }
 
 #[pymethods]
@@ -3713,25 +3608,18 @@ impl PythonFiniteFieldPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
-        {
-            let mut state = get_state_mut!()?;
-            for v in vars {
-                let id = state.get_or_insert_var(v);
-                var_map.push(id.into());
-                var_name_map.push(v.into());
-            }
+        for v in vars {
+            let id = State::get_symbol(v);
+            var_map.push(id.into());
+            var_name_map.push(v.into());
         }
 
         let e = Token::parse(arg)
             .map_err(exceptions::PyValueError::new_err)?
-            .to_polynomial(
-                &FiniteField::<u32>::new(prime),
-                &Arc::new(var_map),
-                &var_name_map,
-            )
+            .to_polynomial(&Zp::new(prime), &Arc::new(var_map), &var_name_map)
             .map_err(exceptions::PyValueError::new_err)?;
 
-        Ok(Self { poly: Arc::new(e) })
+        Ok(Self { poly: e })
     }
 
     /// Compute the Groebner basis of a polynomial system.
@@ -3758,17 +3646,43 @@ impl PythonFiniteFieldPolynomial {
             gb.system
                 .into_iter()
                 .map(|p| Self {
-                    poly: Arc::new(p.reorder::<LexOrder>()),
+                    poly: p.reorder::<LexOrder>(),
                 })
                 .collect()
         } else {
-            let ideal: Vec<_> = system.iter().map(|p| p.poly.as_ref().clone()).collect();
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
             let gb = GroebnerBasis::new(&ideal, print_stats);
-            gb.system
-                .into_iter()
-                .map(|p| Self { poly: Arc::new(p) })
-                .collect()
+            gb.system.into_iter().map(|p| Self { poly: p }).collect()
         }
+    }
+
+    /// Integrate the polynomial in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.integrate(x))
+    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.integrate(x),
+        })
     }
 }
 
@@ -3814,7 +3728,7 @@ macro_rules! generate_methods {
             /// Copy the polynomial.
             pub fn __copy__(&self) -> Self {
                 Self {
-                    poly: Arc::new((*self.poly).clone()),
+                    poly: self.poly.clone(),
                 }
             }
 
@@ -3827,7 +3741,7 @@ macro_rules! generate_methods {
             #[pyo3(signature =
                 (terms_on_new_line = false,
                     color_top_level_sum = true,
-                    color_builtin_functions = true,
+                    color_builtin_symbols = true,
                     print_finite_field = true,
                     symmetric_representation_for_finite_field = false,
                     explicit_rational_polynomial = false,
@@ -3841,7 +3755,7 @@ macro_rules! generate_methods {
                     &self,
                     terms_on_new_line: bool,
                     color_top_level_sum: bool,
-                    color_builtin_functions: bool,
+                    color_builtin_symbols: bool,
                     print_finite_field: bool,
                     symmetric_representation_for_finite_field: bool,
                     explicit_rational_polynomial: bool,
@@ -3855,11 +3769,10 @@ macro_rules! generate_methods {
                         "{}",
                         PolynomialPrinter::new_with_options(
                             &self.poly,
-                            &&get_state!()?,
                             PrintOptions {
                                 terms_on_new_line,
                                 color_top_level_sum,
-                                color_builtin_functions,
+                                color_builtin_symbols,
                                 print_finite_field,
                                 symmetric_representation_for_finite_field,
                                 explicit_rational_polynomial,
@@ -3879,7 +3792,6 @@ macro_rules! generate_methods {
                     "{}",
                     PolynomialPrinter {
                         poly: &self.poly,
-                        state: &&get_state!()?,
                         opts: PrintOptions::default()
                     }
                 ))
@@ -3891,7 +3803,6 @@ macro_rules! generate_methods {
                     "$${}$$",
                     PolynomialPrinter::new_with_options(
                         &self.poly,
-                        &&get_state!()?,
                         PrintOptions::latex(),
                     )
                 ))
@@ -3906,25 +3817,18 @@ macro_rules! generate_methods {
             pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
                 let mut var_list = vec![];
 
-                let vars = self
-                    .poly
-                    .var_map
-                    .as_ref()
-                    .ok_or(exceptions::PyValueError::new_err(format!(
-                        "Variable map missing",
-                    )))?;
-
-                for x in vars.as_ref() {
+                for x in self.poly.get_vars_ref() {
                     match x {
-                        Variable::Identifier(x) => {
-                            var_list.push(PythonExpression {
-                                expr: Arc::new(Atom::new_var(*x)),
-                            });
+                        Variable::Symbol(x) => {
+                            var_list.push(Atom::new_var(*x).into());
                         }
-                        _ => {
+                        Variable::Temporary(_) => {
                             Err(exceptions::PyValueError::new_err(format!(
                                 "Temporary variable in polynomial",
                             )))?;
+                        }
+                        Variable::Function(_, a) | Variable::Other(a) => {
+                            var_list.push(a.as_ref().clone().into());
                         }
                     }
                 }
@@ -3934,16 +3838,16 @@ macro_rules! generate_methods {
 
             /// Add two polynomials `self and `rhs`, returning the result.
             pub fn __add__(&self, rhs: Self) -> Self {
-                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     Self {
-                        poly: Arc::new((*self.poly).clone() + (*rhs.poly).clone()),
+                        poly: self.poly.clone() + rhs.poly.clone(),
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(new_self + new_rhs),
+                        poly: new_self + new_rhs,
                     }
                 }
             }
@@ -3955,34 +3859,34 @@ macro_rules! generate_methods {
 
             /// Multiply two polynomials `self and `rhs`, returning the result.
             pub fn __mul__(&self, rhs: Self) -> Self {
-                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     Self {
-                        poly: Arc::new(&*self.poly * &*rhs.poly),
+                        poly: &self.poly * &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(new_self * &new_rhs),
+                        poly: new_self * &new_rhs,
                     }
                 }
             }
 
             /// Divide the polynomial `self` by `rhs` if possible, returning the result.
             pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-                let (q, r) = if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     self.poly.quot_rem(&rhs.poly, false)
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
 
                     new_self.quot_rem(&new_rhs, false)
                 };
 
                 if r.is_zero() {
-                    Ok(Self { poly: Arc::new(q) })
+                    Ok(Self { poly: q })
                 } else {
                     Err(exceptions::PyValueError::new_err(format!(
                         "The division has a remainder: {}",
@@ -3993,41 +3897,74 @@ macro_rules! generate_methods {
 
             /// Divide `self` by `rhs`, returning the quotient and remainder.
             pub fn quot_rem(&self, rhs: Self) -> (Self, Self) {
-                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
-                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                    (Self { poly: q }, Self { poly: r })
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
 
                     let (q, r) = new_self.quot_rem(&new_rhs, false);
 
-                    (Self { poly: Arc::new(q) }, Self { poly: Arc::new(r) })
+                    (Self { poly: q }, Self { poly: r })
                 }
             }
 
             /// Negate the polynomial.
             pub fn __neg__(&self) -> Self {
                 Self {
-                    poly: Arc::new((*self.poly).clone().neg()),
+                    poly: self.poly.clone().neg(),
                 }
             }
 
             /// Compute the greatest common divisor (GCD) of two polynomials.
             pub fn gcd(&self, rhs: Self) -> Self {
-                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     Self {
-                        poly: Arc::new(MultivariatePolynomial::gcd(&self.poly, &rhs.poly)),
+                        poly: self.poly.gcd(&rhs.poly),
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(MultivariatePolynomial::gcd(&new_self, &new_rhs)),
+                        poly: new_self.gcd(&new_rhs),
                     }
+                }
+            }
+
+            /// Compute the resultant of two polynomials with respect to the variable `var`.
+            pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
+                let x = self.poly.get_vars_ref().iter().position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                    _ => false,
+                }).ok_or(exceptions::PyValueError::new_err(format!(
+                    "Variable {} not found in polynomial",
+                    var.__str__()?
+                )))?;
+
+
+                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+                    let self_uni = self.poly.to_univariate(x);
+                    let rhs_uni = rhs.poly.to_univariate(x);
+
+                    Ok(Self {
+                        poly: self_uni.resultant_prs(&rhs_uni),
+                    })
+                } else {
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
+
+                    let self_uni = new_self.to_univariate(x);
+                    let rhs_uni = new_rhs.to_univariate(x);
+
+                    Ok(Self {
+                        poly: self_uni.resultant_prs(&rhs_uni),
+                    })
                 }
             }
 
@@ -4045,7 +3982,7 @@ macro_rules! generate_methods {
                 self.poly
                     .square_free_factorization()
                     .into_iter()
-                    .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
+                    .map(|(f, p)| (Self { poly: f }, p))
                     .collect()
             }
 
@@ -4063,7 +4000,7 @@ macro_rules! generate_methods {
                 self.poly
                     .factor()
                     .into_iter()
-                    .map(|(f, p)| (Self { poly: Arc::new(f) }, p))
+                    .map(|(f, p)| (Self { poly: f }, p))
                     .collect()
             }
 
@@ -4073,32 +4010,20 @@ macro_rules! generate_methods {
             /// --------
             ///
             /// >>> from symbolica import Expression
-            /// >>> x = Expression.var('x')
+            /// >>> x = Expression.symbol('x')
             /// >>> p = Expression.parse('x^2+2').to_polynomial()
             /// >>> print(p.derivative(x))
             pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
-                let id = match x.expr.as_view() {
-                    AtomView::Var(x) => {
-                        x.get_name()
-                    }
-                    _ => {
-                        return Err(exceptions::PyValueError::new_err(
-                            "Derivative must be taken wrt a variable",
-                        ))
-                    }
-                };
-
-                let x = self.poly.get_var_map().as_ref().ok_or(
-                    exceptions::PyValueError::new_err("Variable map missing"),
-                )?.iter().position(|x| match x {
-                    Variable::Identifier(y) => *y == id,
+                let x = self.poly.get_vars_ref().iter().position(|v| match (v, x.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
                     _ => false,
                 }).ok_or(exceptions::PyValueError::new_err(format!(
                     "Variable {} not found in polynomial",
                     x.__str__()?
                 )))?;
 
-                Ok(Self { poly: Arc::new(self.poly.derivative(x))})
+                Ok(Self { poly: self.poly.derivative(x)})
             }
 
             /// Get the content, i.e., the GCD of the coefficients.
@@ -4110,7 +4035,7 @@ macro_rules! generate_methods {
             /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
             /// >>> print(p.content())
             pub fn content(&self) -> PyResult<Self> {
-                Ok(Self { poly: Arc::new(self.poly.constant(self.poly.content()))})
+                Ok(Self { poly: self.poly.constant(self.poly.content())})
             }
 
             /// Get the coefficient list in `x`.
@@ -4119,34 +4044,22 @@ macro_rules! generate_methods {
             /// --------
             ///
             /// >>> from symbolica import Expression
-            /// >>> x = Expression.var('x')
+            /// >>> x = Expression.symbol('x')
             /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
             /// >>> for n, pp in p.coefficient_list(x):
             /// >>>     print(n, pp)
-            pub fn coefficient_list(&self, x: PythonExpression) -> PyResult<Vec<(usize, Self)>> {
-                let id = match x.expr.as_view() {
-                    AtomView::Var(x) => {
-                        x.get_name()
-                    }
-                    _ => {
-                        return Err(exceptions::PyValueError::new_err(
-                            "Derivative must be taken wrt a variable",
-                        ))
-                    }
-                };
-
-                let x = self.poly.get_var_map().as_ref().ok_or(
-                    exceptions::PyValueError::new_err("Variable map missing"),
-                )?.iter().position(|x| match x {
-                    Variable::Identifier(y) => *y == id,
+            pub fn coefficient_list(&self, var: PythonExpression) -> PyResult<Vec<(usize, Self)>> {
+                let x = self.poly.get_vars_ref().iter().position(|v| match (v, var.expr.as_view()) {
+                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
                     _ => false,
                 }).ok_or(exceptions::PyValueError::new_err(format!(
                     "Variable {} not found in polynomial",
-                    x.__str__()?
+                    var.__str__()?
                 )))?;
 
                 Ok(self.poly.to_univariate_polynomial_list(x).into_iter()
-                    .map(|(f, p)| (p as usize, Self { poly: Arc::new(f) })).collect())
+                    .map(|(f, p)| (p as usize, Self { poly: f })).collect())
             }
 
             /// Replace the variable `x` with a polynomial `v`.
@@ -4155,14 +4068,14 @@ macro_rules! generate_methods {
             /// --------
             ///
             /// >>> from symbolica import Expression
-            /// >>> x = Expression.var('x')
+            /// >>> x = Expression.symbol('x')
             /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
             /// >>> r = Expression.parse('y+1').to_polynomial())
             /// >>> p.replace(x, r)
             pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
                 let id = match x.expr.as_view() {
                     AtomView::Var(x) => {
-                        x.get_name()
+                        x.get_symbol()
                     }
                     _ => {
                         return Err(exceptions::PyValueError::new_err(
@@ -4171,26 +4084,24 @@ macro_rules! generate_methods {
                     }
                 };
 
-                let x = self.poly.get_var_map().as_ref().ok_or(
-                    exceptions::PyValueError::new_err("Variable map missing"),
-                )?.iter().position(|x| match x {
-                    Variable::Identifier(y) => *y == id,
+                let x = self.poly.get_vars_ref().iter().position(|x| match x {
+                    Variable::Symbol(y) => *y == id,
                     _ => false,
                 }).ok_or(exceptions::PyValueError::new_err(format!(
                     "Variable {} not found in polynomial",
                     x.__str__()?
                 )))?;
 
-                if self.poly.get_var_map() == v.poly.get_var_map() {
+                if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
                     Ok(Self {
-                        poly: Arc::new(self.poly.replace_with_poly(x, &v.poly))
+                        poly: self.poly.replace_with_poly(x, &v.poly)
                     })
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*v.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = v.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
                     Ok(Self {
-                        poly: Arc::new(new_self.replace_with_poly(x, &new_rhs))
+                        poly: new_self.replace_with_poly(x, &new_rhs)
                     })
                 }
             }
@@ -4203,10 +4114,10 @@ generate_methods!(PythonIntegerPolynomial, u8);
 generate_methods!(PythonFiniteFieldPolynomial, u16);
 
 /// A Symbolica rational polynomial.
-#[pyclass(name = "RationalPolynomial")]
+#[pyclass(name = "RationalPolynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomial {
-    pub poly: Arc<RationalPolynomial<IntegerRing, u16>>,
+    pub poly: RationalPolynomial<IntegerRing, u16>,
 }
 
 #[pymethods]
@@ -4215,42 +4126,37 @@ impl PythonRationalPolynomial {
     #[new]
     pub fn __new__(num: &PythonPolynomial, den: &PythonPolynomial) -> Self {
         Self {
-            poly: Arc::new(RationalPolynomial::from_num_den(
-                (*num.poly).clone(),
-                (*den.poly).clone(),
-                &IntegerRing::new(),
-                true,
-            )),
+            poly: RationalPolynomial::from_num_den(num.poly.clone(), den.poly.clone(), &Z, true),
         }
     }
 
     /// Convert the coefficients to finite fields with prime `prime`.
     pub fn to_finite_field(&self, prime: u32) -> PythonFiniteFieldRationalPolynomial {
         PythonFiniteFieldRationalPolynomial {
-            poly: Arc::new(self.poly.to_finite_field(&FiniteField::<u32>::new(prime))),
+            poly: self.poly.to_finite_field(&Zp::new(prime)),
         }
     }
 
     /// Get the numerator.
     pub fn numerator(&self) -> PythonPolynomial {
         PythonPolynomial {
-            poly: Arc::new((&self.poly.numerator).into()),
+            poly: (&self.poly.numerator).into(),
         }
     }
 
     /// Get the denominator.
     pub fn denominator(&self) -> PythonPolynomial {
         PythonPolynomial {
-            poly: Arc::new((&self.poly.denominator).into()),
+            poly: (&self.poly.denominator).into(),
         }
     }
 }
 
 /// A Symbolica rational polynomial with variable powers limited to 255.
-#[pyclass(name = "RationalPolynomialSmallExponent")]
+#[pyclass(name = "RationalPolynomialSmallExponent", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonRationalPolynomialSmallExponent {
-    pub poly: Arc<RationalPolynomial<IntegerRing, u8>>,
+    pub poly: RationalPolynomial<IntegerRing, u8>,
 }
 
 macro_rules! generate_rat_parse {
@@ -4276,28 +4182,18 @@ macro_rules! generate_rat_parse {
                 let mut var_map = vec![];
                 let mut var_name_map = vec![];
 
-                let mut state = get_state_mut!()?;
                 for v in vars {
-                    let id = state.get_or_insert_var(v);
+                    let id = State::get_symbol(v);
                     var_map.push(id.into());
                     var_name_map.push(v.into());
                 }
 
-                let e = WORKSPACE.with(|workspace| {
-                    Token::parse(arg)
-                        .map_err(exceptions::PyValueError::new_err)?
-                        .to_rational_polynomial(
-                            workspace,
-                            &mut state,
-                            &RationalField::new(),
-                            &IntegerRing::new(),
-                            &Arc::new(var_map),
-                            &var_name_map,
-                        )
-                        .map_err(exceptions::PyValueError::new_err)
-                })?;
+                let e = Token::parse(arg)
+                    .map_err(exceptions::PyValueError::new_err)?
+                    .to_rational_polynomial(&Q, &Z, &Arc::new(var_map), &var_name_map)
+                    .map_err(exceptions::PyValueError::new_err)?;
 
-                Ok(Self { poly: Arc::new(e) })
+                Ok(Self { poly: e })
             }
 
             /// Convert the rational polynomial to an expression.
@@ -4310,16 +4206,7 @@ macro_rules! generate_rat_parse {
             /// >>> p = e.to_rational_polynomial()
             /// >>> print((e - p.to_expression()).expand())
             pub fn to_expression(&self) -> PyResult<PythonExpression> {
-                let mut atom = Atom::new();
-                let state = get_state!()?;
-                WORKSPACE.with(|workspace| {
-                    self.poly
-                        .to_expression(workspace, &&state, &HashMap::default(), &mut atom)
-                });
-
-                Ok(PythonExpression {
-                    expr: Arc::new(atom),
-                })
+                Ok(self.poly.to_expression().into())
             }
         }
     };
@@ -4329,10 +4216,10 @@ generate_rat_parse!(PythonRationalPolynomial);
 generate_rat_parse!(PythonRationalPolynomialSmallExponent);
 
 /// A Symbolica rational polynomial over finite fields.
-#[pyclass(name = "FiniteFieldRationalPolynomial")]
+#[pyclass(name = "FiniteFieldRationalPolynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonFiniteFieldRationalPolynomial {
-    pub poly: Arc<RationalPolynomial<FiniteField<u32>, u16>>,
+    pub poly: RationalPolynomial<Zp, u16>,
 }
 
 #[pymethods]
@@ -4356,29 +4243,19 @@ impl PythonFiniteFieldRationalPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
-        let mut state = get_state_mut!()?;
         for v in vars {
-            let id = state.get_or_insert_var(v);
+            let id = State::get_symbol(v);
             var_map.push(id.into());
             var_name_map.push(v.into());
         }
 
-        let field = FiniteField::<u32>::new(prime);
-        let e = WORKSPACE.with(|workspace| {
-            Token::parse(arg)
-                .map_err(exceptions::PyValueError::new_err)?
-                .to_rational_polynomial(
-                    workspace,
-                    &mut state,
-                    &field,
-                    &field,
-                    &Arc::new(var_map),
-                    &var_name_map,
-                )
-                .map_err(exceptions::PyValueError::new_err)
-        })?;
+        let field = Zp::new(prime);
+        let e = Token::parse(arg)
+            .map_err(exceptions::PyValueError::new_err)?
+            .to_rational_polynomial(&field, &field, &Arc::new(var_map), &var_name_map)
+            .map_err(exceptions::PyValueError::new_err)?;
 
-        Ok(Self { poly: Arc::new(e) })
+        Ok(Self { poly: e })
     }
 }
 
@@ -4390,7 +4267,7 @@ macro_rules! generate_rat_methods {
             /// Copy the rational polynomial.
             pub fn __copy__(&self) -> Self {
                 Self {
-                    poly: Arc::new((*self.poly).clone()),
+                    poly: self.poly.clone(),
                 }
             }
 
@@ -4422,21 +4299,18 @@ macro_rules! generate_rat_methods {
             pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
                 let mut var_list = vec![];
 
-                let vars = self.poly.numerator.var_map.as_ref().ok_or(
-                    exceptions::PyValueError::new_err(format!("Variable map missing",)),
-                )?;
-
-                for x in vars.as_ref() {
+                for x in self.poly.get_variables().iter() {
                     match x {
-                        Variable::Identifier(x) => {
-                            var_list.push(PythonExpression {
-                                expr: Arc::new(Atom::new_var(*x)),
-                            });
+                        Variable::Symbol(x) => {
+                            var_list.push(Atom::new_var(*x).into());
                         }
-                        _ => {
+                        Variable::Temporary(_) => {
                             Err(exceptions::PyValueError::new_err(format!(
                                 "Temporary variable in polynomial",
                             )))?;
+                        }
+                        Variable::Function(_, a) | Variable::Other(a) => {
+                            var_list.push(a.as_ref().clone().into());
                         }
                     }
                 }
@@ -4450,7 +4324,6 @@ macro_rules! generate_rat_methods {
                     "{}",
                     RationalPolynomialPrinter {
                         poly: &self.poly,
-                        state: &&get_state!()?,
                         opts: PrintOptions::default(),
                         add_parentheses: false,
                     }
@@ -4463,7 +4336,6 @@ macro_rules! generate_rat_methods {
                     "$${}$$",
                     RationalPolynomialPrinter::new_with_options(
                         &self.poly,
-                        &&get_state!()?,
                         PrintOptions::latex(),
                     )
                 ))
@@ -4471,64 +4343,64 @@ macro_rules! generate_rat_methods {
 
             /// Add two rational polynomials `self and `rhs`, returning the result.
             pub fn __add__(&self, rhs: Self) -> Self {
-                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(&*self.poly + &*rhs.poly),
+                        poly: &self.poly + &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(&new_self + &new_rhs),
+                        poly: &new_self + &new_rhs,
                     }
                 }
             }
 
             /// Subtract rational polynomials `rhs` from `self`, returning the result.
             pub fn __sub__(&self, rhs: Self) -> Self {
-                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(&*self.poly - &*rhs.poly),
+                        poly: &self.poly - &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(&new_self - &new_rhs),
+                        poly: &new_self - &new_rhs,
                     }
                 }
             }
 
             /// Multiply two rational polynomials `self and `rhs`, returning the result.
             pub fn __mul__(&self, rhs: Self) -> Self {
-                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(&*self.poly * &*rhs.poly),
+                        poly: &self.poly * &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(&new_self * &new_rhs),
+                        poly: &new_self * &new_rhs,
                     }
                 }
             }
 
             /// Divide the rational polynomial `self` by `rhs` if possible, returning the result.
             pub fn __truediv__(&self, rhs: Self) -> Self {
-                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(&*self.poly * &*rhs.poly),
+                        poly: &self.poly * &rhs.poly,
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(&new_self / &new_rhs),
+                        poly: &new_self / &new_rhs,
                     }
                 }
             }
@@ -4536,22 +4408,22 @@ macro_rules! generate_rat_methods {
             /// Negate the rational polynomial.
             pub fn __neg__(&self) -> Self {
                 Self {
-                    poly: Arc::new((*self.poly).clone().neg()),
+                    poly: self.poly.clone().neg(),
                 }
             }
 
             /// Compute the greatest common divisor (GCD) of two rational polynomials.
             pub fn gcd(&self, rhs: Self) -> Self {
-                if self.poly.get_var_map() == rhs.poly.get_var_map() {
+                if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: Arc::new(self.poly.gcd(&rhs.poly)),
+                        poly: self.poly.gcd(&rhs.poly),
                     }
                 } else {
-                    let mut new_self = (*self.poly).clone();
-                    let mut new_rhs = (*rhs.poly).clone();
-                    new_self.unify_var_map(&mut new_rhs);
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
                     Self {
-                        poly: Arc::new(new_self.gcd(&new_rhs)),
+                        poly: new_self.gcd(&new_rhs),
                     }
                 }
             }
@@ -4562,14 +4434,14 @@ macro_rules! generate_rat_methods {
             /// --------
             ///
             /// >>> from symbolica import Expression
-            /// >>> x = Expression.var('x')
+            /// >>> x = Expression.symbol('x')
             /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
             /// >>> for pp in p.apart(x):
             /// >>>     print(pp)
             pub fn apart(&self, x: PythonExpression) -> PyResult<Vec<Self>> {
                 let id = match x.expr.as_view() {
                     AtomView::Var(x) => {
-                        x.get_name()
+                        x.get_symbol()
                     }
                     _ => {
                         return Err(exceptions::PyValueError::new_err(
@@ -4578,10 +4450,8 @@ macro_rules! generate_rat_methods {
                     }
                 };
 
-                let x = self.poly.get_var_map().as_ref().ok_or(
-                    exceptions::PyValueError::new_err("Variable map missing"),
-                )?.iter().position(|x| match x {
-                    Variable::Identifier(y) => *y == id,
+                let x = self.poly.get_variables().iter().position(|x| match x {
+                    Variable::Symbol(y) => *y == id,
                     _ => false,
                 }).ok_or(exceptions::PyValueError::new_err(format!(
                     "Variable {} not found in polynomial",
@@ -4589,7 +4459,7 @@ macro_rules! generate_rat_methods {
                 )))?;
 
                 Ok(self.poly.apart(x).into_iter()
-                    .map(|f| Self { poly: Arc::new(f) }).collect())
+                    .map(|f| Self { poly: f }).collect())
             }
         }
     };
@@ -4599,9 +4469,476 @@ generate_rat_methods!(PythonRationalPolynomial);
 generate_rat_methods!(PythonRationalPolynomialSmallExponent);
 generate_rat_methods!(PythonFiniteFieldRationalPolynomial);
 
+#[derive(FromPyObject)]
+pub enum ConvertibleToRationalPolynomial {
+    Literal(PythonRationalPolynomial),
+    Expression(ConvertibleToExpression),
+}
+
+impl ConvertibleToRationalPolynomial {
+    pub fn to_rational_polynomial(self) -> PyResult<PythonRationalPolynomial> {
+        match self {
+            Self::Literal(l) => Ok(l),
+            Self::Expression(e) => {
+                let expr = &e.to_expression().expr;
+
+                let poly = expr.to_rational_polynomial(&Q, &Z, None);
+
+                Ok(PythonRationalPolynomial { poly })
+            }
+        }
+    }
+}
+
+#[derive(FromPyObject)]
+pub enum ScalarOrMatrix {
+    Scalar(ConvertibleToRationalPolynomial),
+    Matrix(PythonMatrix),
+}
+
+/// A Symbolica matrix with rational polynomial coefficients.
+#[pyclass(name = "Matrix", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonMatrix {
+    pub matrix: Matrix<RationalPolynomialField<IntegerRing, u16>>,
+}
+
+impl PythonMatrix {
+    fn unify(&self, rhs: &PythonMatrix) -> (PythonMatrix, PythonMatrix) {
+        if self.matrix.field == rhs.matrix.field {
+            return (self.clone(), rhs.clone());
+        }
+
+        let mut new_self = self.matrix.clone();
+        let mut new_rhs = rhs.matrix.clone();
+
+        let mut zero = self.matrix.field.zero();
+
+        zero.unify_variables(&mut new_rhs[(0, 0)]);
+        new_self.field = RationalPolynomialField::new(Z, zero.numerator.get_vars());
+        new_rhs.field = new_self.field.clone();
+
+        // now update every element
+        for e in &mut new_self.data {
+            zero.unify_variables(e);
+        }
+        for e in &mut new_rhs.data {
+            zero.unify_variables(e);
+        }
+
+        (
+            PythonMatrix { matrix: new_self },
+            PythonMatrix { matrix: new_rhs },
+        )
+    }
+
+    fn unify_scalar(
+        &self,
+        rhs: &PythonRationalPolynomial,
+    ) -> (PythonMatrix, PythonRationalPolynomial) {
+        if self.matrix.field == RationalPolynomialField::new(Z, rhs.poly.numerator.get_vars()) {
+            return (self.clone(), rhs.clone());
+        }
+
+        let mut new_self = self.matrix.clone();
+        let mut new_rhs = rhs.poly.clone();
+
+        let mut zero = self.matrix.field.zero();
+
+        zero.unify_variables(&mut new_rhs);
+        new_self.field = RationalPolynomialField::new(Z, zero.numerator.get_vars());
+
+        // now update every element
+        for e in &mut new_self.data {
+            zero.unify_variables(e);
+        }
+
+        (
+            PythonMatrix { matrix: new_self },
+            PythonRationalPolynomial { poly: new_rhs },
+        )
+    }
+}
+
+#[pymethods]
+impl PythonMatrix {
+    /// Create a new zeroed matrix with `nrows` rows and `ncols` columns.
+    #[new]
+    pub fn new(nrows: u32, ncols: u32) -> PyResult<PythonMatrix> {
+        if nrows == 0 || ncols == 0 {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        Ok(PythonMatrix {
+            matrix: Matrix::new(
+                nrows,
+                ncols,
+                RationalPolynomialField::new(Z, Arc::new(vec![])),
+            ),
+        })
+    }
+
+    /// Create a new square matrix with `nrows` rows and ones on the main diagonal and zeroes elsewhere.
+    #[classmethod]
+    pub fn identity(_cls: &PyType, nrows: u32) -> PyResult<PythonMatrix> {
+        if nrows == 0 {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        Ok(PythonMatrix {
+            matrix: Matrix::identity(nrows, RationalPolynomialField::new(Z, Arc::new(vec![]))),
+        })
+    }
+
+    /// Create a new matrix with the scalars `diag` on the main diagonal and zeroes elsewhere.
+    #[classmethod]
+    pub fn eye(
+        _cls: &PyType,
+        diag: Vec<ConvertibleToRationalPolynomial>,
+    ) -> PyResult<PythonMatrix> {
+        if diag.is_empty() {
+            return Err(exceptions::PyValueError::new_err(
+                "The diagonal must have at least one entry",
+            ));
+        }
+
+        let mut diag: Vec<_> = diag
+            .into_iter()
+            .map(|x| Ok(x.to_rational_polynomial()?.poly.clone()))
+            .collect::<PyResult<_>>()?;
+
+        // unify the entries
+        let (first, rest) = diag.split_first_mut().unwrap();
+        for _ in 0..2 {
+            for x in &mut *rest {
+                first.unify_variables(x);
+            }
+        }
+
+        let field = RationalPolynomialField::new(Z, first.numerator.get_vars());
+
+        Ok(PythonMatrix {
+            matrix: Matrix::eye(&diag, field),
+        })
+    }
+
+    /// Create a new row vector from a list of scalars.
+    #[classmethod]
+    pub fn vec(
+        _cls: &PyType,
+        entries: Vec<ConvertibleToRationalPolynomial>,
+    ) -> PyResult<PythonMatrix> {
+        if entries.is_empty() {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        let mut entries: Vec<_> = entries
+            .into_iter()
+            .map(|x| Ok(x.to_rational_polynomial()?.poly.clone()))
+            .collect::<PyResult<_>>()?;
+
+        // unify the entries
+        let (first, rest) = entries.split_first_mut().unwrap();
+        for _ in 0..2 {
+            for x in &mut *rest {
+                first.unify_variables(x);
+            }
+        }
+
+        let field = RationalPolynomialField::new(Z, first.numerator.get_vars());
+
+        Ok(PythonMatrix {
+            matrix: Matrix::new_vec(entries, field),
+        })
+    }
+
+    /// Create a new row vector from a list of scalars.
+    #[classmethod]
+    pub fn from_linear(
+        _cls: &PyType,
+        nrows: u32,
+        ncols: u32,
+        entries: Vec<ConvertibleToRationalPolynomial>,
+    ) -> PyResult<PythonMatrix> {
+        if entries.is_empty() {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        let mut entries: Vec<_> = entries
+            .into_iter()
+            .map(|x| Ok(x.to_rational_polynomial()?.poly.clone()))
+            .collect::<PyResult<_>>()?;
+
+        // unify the entries
+        let (first, rest) = entries.split_first_mut().unwrap();
+        for _ in 0..2 {
+            for x in &mut *rest {
+                first.unify_variables(x);
+            }
+        }
+
+        let field = RationalPolynomialField::new(Z, first.numerator.get_vars());
+
+        Ok(PythonMatrix {
+            matrix: Matrix::from_linear(entries, nrows, ncols, field)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("Invalid matrix: {}", e)))?,
+        })
+    }
+
+    /// Create a new matrix from a 2-dimensional vector of scalars.
+    #[classmethod]
+    pub fn from_nested(
+        cls: &PyType,
+        entries: Vec<Vec<ConvertibleToRationalPolynomial>>,
+    ) -> PyResult<PythonMatrix> {
+        if entries.is_empty() || entries.iter().any(|x| x.is_empty()) {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix must have at least one row and one column",
+            ));
+        }
+
+        let nrows = entries.len() as u32;
+        let ncols = entries[0].len() as u32;
+
+        if entries.iter().any(|x| x.len() != ncols as usize) {
+            return Err(exceptions::PyValueError::new_err(
+                "The matrix is not rectangular",
+            ));
+        }
+
+        let entries: Vec<_> = entries.into_iter().flatten().collect();
+
+        Self::from_linear(cls, nrows, ncols, entries)
+    }
+
+    /// Return the number of rows.
+    pub fn nrows(&self) -> usize {
+        self.matrix.nrows()
+    }
+
+    /// Return the number of columns.
+    pub fn ncols(&self) -> usize {
+        self.matrix.nrows()
+    }
+
+    /// Return true iff every entry in the matrix is zero.
+    pub fn is_zero(&self) -> bool {
+        self.matrix.is_zero()
+    }
+
+    /// Return true iff every non- main diagonal entry in the matrix is zero.
+    pub fn is_diagonal(&self) -> bool {
+        self.matrix.is_diagonal()
+    }
+
+    /// Return the transpose of the matrix.
+    pub fn transpose(&self) -> PythonMatrix {
+        PythonMatrix {
+            matrix: self.matrix.transpose(),
+        }
+    }
+
+    /// Return the inverse of the matrix, if it exists.
+    pub fn inv(&self) -> PyResult<PythonMatrix> {
+        Ok(PythonMatrix {
+            matrix: self
+                .matrix
+                .inv()
+                .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
+        })
+    }
+
+    /// Return the determinant of the matrix.
+    pub fn det(&self) -> PyResult<PythonRationalPolynomial> {
+        Ok(PythonRationalPolynomial {
+            poly: self
+                .matrix
+                .det()
+                .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
+        })
+    }
+
+    /// Solve `A * x = b` for `x`, where `A` is the current matrix.
+    pub fn solve(&self, b: PythonMatrix) -> PyResult<PythonMatrix> {
+        let (new_self, new_rhs) = self.unify(&b);
+        Ok(PythonMatrix {
+            matrix: new_self
+                .matrix
+                .solve(&new_rhs.matrix)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?,
+        })
+    }
+
+    /// Get the content of the matrix, i.e. the gcd of all entries.
+    pub fn content(&self) -> PythonRationalPolynomial {
+        PythonRationalPolynomial {
+            poly: self.matrix.content(),
+        }
+    }
+
+    /// Construct the same matrix, but with the content removed.
+    pub fn primitive_part(&self) -> PythonMatrix {
+        PythonMatrix {
+            matrix: self.matrix.primitive_part(),
+        }
+    }
+
+    /// Apply a function `f` to every entry of the matrix.
+    pub fn map(&self, f: PyObject) -> PyResult<PythonMatrix> {
+        let data = self
+            .matrix
+            .data
+            .iter()
+            .map(|x| {
+                let expr = PythonRationalPolynomial { poly: x.clone() };
+
+                Python::with_gil(|py| {
+                    Ok(f.call1(py, (expr,))
+                        .map_err(|e| e)?
+                        .extract::<ConvertibleToRationalPolynomial>(py)?
+                        .to_rational_polynomial()?
+                        .poly
+                        .clone())
+                })
+            })
+            .collect::<PyResult<_>>()?;
+
+        Ok(PythonMatrix {
+            matrix: Matrix::from_linear(
+                data,
+                self.matrix.nrows,
+                self.matrix.ncols,
+                self.matrix.field.clone(),
+            )
+            .unwrap(),
+        })
+    }
+
+    fn __getitem__(&self, mut idx: (isize, isize)) -> PyResult<PythonRationalPolynomial> {
+        if idx.0 < 0 {
+            idx.0 += self.matrix.nrows() as isize;
+        }
+        if idx.1 < 0 {
+            idx.1 += self.matrix.ncols() as isize;
+        }
+
+        if idx.0 as usize >= self.matrix.nrows() || idx.1 as usize >= self.matrix.ncols() {
+            return Err(exceptions::PyIndexError::new_err("Index out of bounds"));
+        }
+
+        Ok(PythonRationalPolynomial {
+            poly: self.matrix[(idx.0 as u32, idx.1 as u32)].clone(),
+        })
+    }
+
+    /// Convert the matrix into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            MatrixPrinter::new_with_options(&self.matrix, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Compare two matrices.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.matrix == other.matrix),
+            CompareOp::Ne => Ok(self.matrix != other.matrix),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between matrices are not supported",
+            ))),
+        }
+    }
+
+    /// Copy the matrix.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            matrix: self.matrix.clone(),
+        }
+    }
+
+    /// Convert the matrix into a human-readable string.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.matrix))
+    }
+
+    /// Add this matrix to `rhs`, returning the result.
+    pub fn __add__(&self, rhs: PythonMatrix) -> PythonMatrix {
+        let (new_self, new_rhs) = self.unify(&rhs);
+        PythonMatrix {
+            matrix: &new_self.matrix + &new_rhs.matrix,
+        }
+    }
+
+    ///  Subtract `rhs` from this matrix, returning the result.
+    pub fn __sub__(&self, rhs: PythonMatrix) -> PythonMatrix {
+        self.__add__(rhs.__neg__())
+    }
+
+    /// Add this matrix to `rhs`, returning the result.
+    pub fn __mul__(&self, rhs: ScalarOrMatrix) -> PyResult<PythonMatrix> {
+        match rhs {
+            ScalarOrMatrix::Scalar(s) => {
+                let (new_self, new_rhs) = self.unify_scalar(&s.to_rational_polynomial()?);
+
+                Ok(Self {
+                    matrix: new_self.matrix.mul_scalar(&new_rhs.poly),
+                })
+            }
+            ScalarOrMatrix::Matrix(m) => {
+                let (new_self, new_rhs) = self.unify(&m);
+                Ok(PythonMatrix {
+                    matrix: &new_self.matrix * &new_rhs.matrix,
+                })
+            }
+        }
+    }
+
+    /// Add this matrix to `rhs`, returning the result.
+    pub fn __rmul__(&self, rhs: ConvertibleToRationalPolynomial) -> PyResult<PythonMatrix> {
+        self.__mul__(ScalarOrMatrix::Scalar(rhs))
+    }
+
+    /// Divide the matrix by the scalar, returning the result.
+    pub fn __truediv__(&self, rhs: ConvertibleToRationalPolynomial) -> PyResult<PythonMatrix> {
+        Ok(PythonMatrix {
+            matrix: self.matrix.div_scalar(&rhs.to_rational_polynomial()?.poly),
+        })
+    }
+
+    /// Returns a warning that `**` should be used instead of `^` for taking a power.
+    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonMatrix> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor a matrix. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
+    }
+
+    /// Returns a warning that `**` should be used instead of `^` for taking a power.
+    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonMatrix> {
+        Err(exceptions::PyTypeError::new_err(
+            "Cannot xor a matrix. Did you mean to write a power? Use ** instead, i.e. x**2",
+        ))
+    }
+
+    /// Negate the matrix, returning the result.
+    pub fn __neg__(&self) -> PythonMatrix {
+        PythonMatrix {
+            matrix: -self.matrix.clone(),
+        }
+    }
+}
+
 /// A sample from the Symbolica integrator. It could consist of discrete layers,
 /// accessible with `d` (empty when there are not discrete layers), and the final continous layer `c` if it is present.
-#[pyclass(name = "Sample")]
+#[pyclass(name = "Sample", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonSample {
     #[pyo3(get)]
@@ -4672,7 +5009,29 @@ impl PythonSample {
     }
 }
 
-#[pyclass(name = "NumericalIntegrator")]
+/// A reproducible, fast, non-cryptographic random number generator suitable for parallel Monte Carlo simulations.
+/// A `seed` has to be set, which can be any `u64` number (small numbers work just as well as large numbers).
+///
+/// Each thread or instance generating samples should use the same `seed` but a different `stream_id`,
+/// which is an instance counter starting at 0.
+#[pyclass(name = "RandomNumberGenerator", module = "symbolica")]
+struct PythonRandomNumberGenerator {
+    state: MonteCarloRng,
+}
+
+#[pymethods]
+impl PythonRandomNumberGenerator {
+    /// Create a new random number generator with a given `seed` and `stream_id`. For parallel runs,
+    /// each thread or instance generating samples should use the same `seed` but a different `stream_id`.
+    #[new]
+    fn new(seed: u64, stream_id: usize) -> Self {
+        Self {
+            state: MonteCarloRng::new(seed, stream_id),
+        }
+    }
+}
+
+#[pyclass(name = "NumericalIntegrator", module = "symbolica")]
 #[derive(Clone)]
 struct PythonNumericalIntegrator {
     grid: Grid<f64>,
@@ -4743,14 +5102,26 @@ impl PythonNumericalIntegrator {
         }
     }
 
-    /// Sample `num_samples` points from the grid.
-    pub fn sample(&mut self, num_samples: usize) -> Vec<PythonSample> {
-        let mut rng = rand::thread_rng();
+    /// Create a new random number generator, suitable for use with the integrator.
+    /// Each thread of instance of the integrator should have its own random number generator,
+    /// that is initialized with the same seed but with a different stream id.
+    #[classmethod]
+    pub fn rng(_cls: &PyType, seed: u64, stream_id: usize) -> PythonRandomNumberGenerator {
+        PythonRandomNumberGenerator::new(seed, stream_id)
+    }
+
+    /// Sample `num_samples` points from the grid using the random number generator
+    /// `rng`. See `rng()` for how to create a random number generator.
+    pub fn sample(
+        &mut self,
+        num_samples: usize,
+        rng: &mut PythonRandomNumberGenerator,
+    ) -> Vec<PythonSample> {
         let mut sample = Sample::new();
 
         let mut samples = Vec::with_capacity(num_samples);
         for _ in 0..num_samples {
-            self.grid.sample(&mut rng, &mut sample);
+            self.grid.sample(&mut rng.state, &mut sample);
             samples.push(PythonSample::from_sample(&sample));
         }
 
@@ -4779,6 +5150,63 @@ impl PythonNumericalIntegrator {
         Ok(())
     }
 
+    /// Import an exported grid from another thread or machine.
+    /// Use `export_grid` to export the grid.
+    #[classmethod]
+    fn import_grid(_cls: &PyType, grid: &[u8]) -> PyResult<Self> {
+        let grid = bincode::deserialize(grid)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+
+        Ok(PythonNumericalIntegrator { grid })
+    }
+
+    /// Export the grid, so that it can be sent to another thread or machine.
+    /// Use `import_grid` to load the grid.
+    fn export_grid<'p>(&self, py: Python<'p>) -> PyResult<&'p PyBytes> {
+        bincode::serialize(&self.grid)
+            .map(|a| PyBytes::new(py, &a))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+
+    /// Get the estamate of the average, error, chi-squared, maximum negative and positive evaluations, and the number of processed samples
+    /// for the current iteration, including the points submitted in the current iteration.
+    fn get_live_estimate(&self) -> PyResult<(f64, f64, f64, f64, f64, usize)> {
+        match &self.grid {
+            Grid::Continuous(cs) => {
+                let mut a = cs.accumulator.shallow_copy();
+                a.update_iter();
+                Ok((
+                    a.avg,
+                    a.err,
+                    a.chi_sq,
+                    a.max_eval_negative,
+                    a.max_eval_positive,
+                    a.processed_samples,
+                ))
+            }
+            Grid::Discrete(ds) => {
+                let mut a = ds.accumulator.shallow_copy();
+                a.update_iter();
+                Ok((
+                    a.avg,
+                    a.err,
+                    a.chi_sq,
+                    a.max_eval_negative,
+                    a.max_eval_positive,
+                    a.processed_samples,
+                ))
+            }
+        }
+    }
+
+    /// Add the accumulated training samples from the grid `other` to the current grid.
+    /// The grid structure of `self` and `other` must be equivalent.
+    fn merge(&mut self, other: &PythonNumericalIntegrator) -> PyResult<()> {
+        self.grid
+            .merge(&other.grid)
+            .map_err(|e| pyo3::exceptions::PyAssertionError::new_err(e))
+    }
+
     /// Update the grid using the `learning_rate`.
     /// Examples
     /// --------
@@ -4801,7 +5229,7 @@ impl PythonNumericalIntegrator {
         self.grid.update(learing_rate);
 
         let stats = self.grid.get_statistics();
-        Ok((stats.avg, stats.err, stats.chi_sq))
+        Ok((stats.avg, stats.err, stats.chi_sq / stats.cur_iter as f64))
     }
 
     /// Integrate the function `integrand` that maps a list of `Sample`s to a list of `float`s.
@@ -4830,6 +5258,7 @@ impl PythonNumericalIntegrator {
         max_n_iter = 10_000_000,
         min_error = 0.01,
         n_samples_per_iter = 10_000,
+        seed = 0,
         show_stats = true)
     )]
     pub fn integrate(
@@ -4839,9 +5268,10 @@ impl PythonNumericalIntegrator {
         max_n_iter: usize,
         min_error: f64,
         n_samples_per_iter: usize,
+        seed: u64,
         show_stats: bool,
     ) -> PyResult<(f64, f64, f64)> {
-        let mut rng = rand::thread_rng();
+        let mut rng = MonteCarloRng::new(seed, 0);
 
         let mut samples = vec![Sample::new(); n_samples_per_iter];
         for iteration in 1..=max_n_iter {

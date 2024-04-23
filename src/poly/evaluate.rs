@@ -6,12 +6,22 @@ use std::{
 use ahash::{AHasher, HashMap, HashSet, HashSetExt};
 use rand::{thread_rng, Rng};
 
-use crate::domains::{
-    float::NumericalFloatLike,
-    rational::{Rational, RationalField},
-    EuclideanDomain,
+use crate::{
+    atom::Symbol,
+    coefficient::CoefficientView,
+    domains::{
+        float::NumericalFloatLike,
+        rational::{Rational, RationalField, Q},
+        EuclideanDomain,
+    },
+    state::Workspace,
 };
-use crate::{domains::Ring, state::State};
+use crate::{
+    atom::{Atom, AtomView},
+    domains::{float::Real, Ring},
+    evaluate::EvaluationFn,
+    state::State,
+};
 
 use super::{polynomial::MultivariatePolynomial, Exponent};
 
@@ -215,29 +225,21 @@ impl HornerScheme<RationalField> {
     /// Evaluate a polynomial written in a Horner scheme. For faster
     /// evaluation, convert the Horner scheme into an `InstructionList`.
     pub fn evaluate(&self, samples: &[Rational]) -> Rational {
-        let field = RationalField::new();
         match self {
             HornerScheme::Node(n) => {
                 let e = match &n.content_rest.0 {
                     Some(s) => match &n.content_rest.1 {
-                        Some(s1) => field.add(
-                            &field.mul(
-                                &field.pow(&samples[n.var], n.pow as u64),
-                                &s.evaluate(samples),
-                            ),
+                        Some(s1) => Q.add(
+                            &Q.mul(&Q.pow(&samples[n.var], n.pow as u64), &s.evaluate(samples)),
                             &s1.evaluate(samples),
                         ),
-                        None => field.mul(
-                            &field.pow(&samples[n.var], n.pow as u64),
-                            &s.evaluate(samples),
-                        ),
+                        None => Q.mul(&Q.pow(&samples[n.var], n.pow as u64), &s.evaluate(samples)),
                     },
                     None => match &n.content_rest.1 {
-                        Some(s1) => field.add(
-                            &field.pow(&samples[n.var], n.pow as u64),
-                            &s1.evaluate(samples),
-                        ),
-                        None => field.pow(&samples[n.var], n.pow as u64),
+                        Some(s1) => {
+                            Q.add(&Q.pow(&samples[n.var], n.pow as u64), &s1.evaluate(samples))
+                        }
+                        None => Q.pow(&samples[n.var], n.pow as u64),
                     },
                 };
                 &e * &n.gcd
@@ -318,7 +320,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
     /// defined in `order`.
     pub fn to_horner_scheme(&self, order: &[usize]) -> HornerScheme<RationalField> {
         let mut indices: Vec<_> = (0..self.nterms()).collect();
-        let mut power_sub = vec![E::zero(); self.nvars];
+        let mut power_sub = vec![E::zero(); self.nvars()];
         let mut horner_boxes = vec![];
 
         self.to_horner_scheme_impl(order, &mut indices, 0, &mut power_sub, &mut horner_boxes)
@@ -431,7 +433,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
             }
         };
 
-        gcd = RationalField::new().gcd(
+        gcd = Q.gcd(
             &gcd,
             match &rest {
                 HornerScheme::Node(n) => &n.gcd,
@@ -524,13 +526,13 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
     /// Optimize an expression for evaluation, given `num_iter` tries.
     pub fn optimize(&self, num_iter: usize) -> InstructionListOutput<Rational> {
         let (h, _ops, _scheme) = self.optimize_horner_scheme(num_iter);
-        let mut i = h.to_instr(self.nvars);
+        let mut i = h.to_instr(self.nvars());
         i.fuse_operations();
         while i.common_pair_elimination() {
             i.fuse_operations();
         }
 
-        i.to_output(self.var_map.as_ref().unwrap().to_vec(), true)
+        i.to_output(self.variables.as_ref().to_vec(), true)
     }
 }
 
@@ -546,13 +548,13 @@ impl HornerScheme<RationalField> {
         assert!(
             polys
                 .windows(2)
-                .all(|r| r[0].var_map == r[1].var_map && r[0].nvars == r[1].nvars),
+                .all(|r| r[0].variables == r[1].variables && r[0].nvars() == r[1].nvars()),
             "Variable maps of all polynomials must be the same"
         );
 
         // the starting scheme is the descending order of occurrence of variables
-        let mut occurrence: Vec<_> = (0..polys[0].nvars).map(|x| (x, 0)).collect();
-        for es in polys[0].exponents.chunks(polys[0].nvars) {
+        let mut occurrence: Vec<_> = (0..polys[0].nvars()).map(|x| (x, 0)).collect();
+        for es in polys[0].exponents.chunks(polys[0].nvars()) {
             for ((_, o), e) in occurrence.iter_mut().zip(es) {
                 if *e > E::zero() {
                     *o += 1;
@@ -564,7 +566,7 @@ impl HornerScheme<RationalField> {
         let mut scheme: Vec<_> = occurrence.into_iter().map(|(v, _)| v).collect();
 
         let mut indices: Vec<_> = vec![];
-        let mut power_sub = vec![E::zero(); polys[0].nvars];
+        let mut power_sub = vec![E::zero(); polys[0].nvars()];
 
         let mut horner_boxes = vec![];
 
@@ -592,8 +594,8 @@ impl HornerScheme<RationalField> {
 
         // TODO: for few variables, test all permutations
         for i in 0..num_tries {
-            let a = rng.gen_range(0..polys[0].nvars);
-            let b = rng.gen_range(0..polys[0].nvars);
+            let a = rng.gen_range(0..polys[0].nvars());
+            let b = rng.gen_range(0..polys[0].nvars());
             scheme.swap(a, b);
 
             let mut new_oc = 0;
@@ -685,7 +687,7 @@ impl HornerScheme<RationalField> {
         constants.sort_by_key(|(_, c)| *c);
 
         let mut instr: Vec<_> = (0..nvars)
-            .map(|i| Instruction::Init(Variable::Var(i)))
+            .map(|i| Instruction::Init(Variable::Var(i, None)))
             .collect();
 
         for x in constants {
@@ -846,19 +848,39 @@ pub enum Instruction<N: NumericalFloatLike> {
 // which may refer to another instruction in the instruction list.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Variable<N: NumericalFloatLike> {
-    Var(usize),
+    Var(usize, Option<usize>), // var or var[index]
     Constant(N),
 }
 
 impl Variable<Rational> {
-    fn to_pretty_string(
-        &self,
-        var_map: &[super::Variable],
-        state: &State,
-        mode: InstructionSetMode,
-    ) -> String {
+    fn to_pretty_string(&self, var_map: &[super::Variable], mode: InstructionSetMode) -> String {
         match self {
-            Variable::Var(v) => var_map[*v].to_string(state),
+            Variable::Var(v, index) => {
+                // convert f(0) to f[0]
+                if let super::Variable::Function(_, f) = &var_map[*v] {
+                    if let AtomView::Fun(f) = f.as_view() {
+                        if f.get_nargs() == 1 {
+                            if let Some(a) = f.iter().next() {
+                                if let AtomView::Num(n) = a {
+                                    if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
+                                        if d == 1 && n >= 0 {
+                                            return format!("{}[{}]", f.get_symbol(), a);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let mut s = var_map[*v].to_string();
+
+                if let Some(index) = index {
+                    s.push_str(&format!("[{}]", index));
+                }
+
+                s
+            }
             Variable::Constant(c) => match mode {
                 InstructionSetMode::Plain => format!("{}", c),
                 InstructionSetMode::CPP(_) => {
@@ -876,7 +898,13 @@ impl Variable<Rational> {
 impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Variable::Var(v) => f.write_fmt(format_args!("x{}", v)),
+            Variable::Var(v, index) => {
+                if let Some(index) = index {
+                    f.write_fmt(format_args!("x[{}][{}]", v, index))
+                } else {
+                    f.write_fmt(format_args!("x{}", v))
+                }
+            }
             Variable::Constant(c) => <N as std::fmt::Display>::fmt(c, f),
         }
     }
@@ -885,7 +913,7 @@ impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
 impl<N: NumericalFloatLike> Variable<N> {
     pub fn convert<'a, NO: NumericalFloatLike + From<&'a N>>(&'a self) -> Variable<NO> {
         match self {
-            Variable::Var(v) => Variable::Var(*v),
+            Variable::Var(v, index) => Variable::Var(*v, *index),
             Variable::Constant(c) => Variable::Constant(NO::from(c)),
         }
     }
@@ -919,7 +947,7 @@ impl InstructionList {
                     eval[reg] = r;
                 }
                 Instruction::Init(i) => match i {
-                    Variable::Var(v) => eval[reg] = samples[*v].clone(),
+                    Variable::Var(v, _index) => eval[reg] = samples[*v].clone(),
                     Variable::Constant(c) => eval[reg] = c.clone(),
                 },
                 Instruction::Yield(y) => return eval[*y].clone(),
@@ -1284,29 +1312,44 @@ enum InstructionRange {
 /// be done efficiently.
 #[derive(Clone)]
 pub struct InstructionEvaluator<N: NumericalFloatLike> {
+    input_map: Vec<super::Variable>,
     instr: Vec<InstructionRange>,
     indices: Vec<usize>,
     eval: Vec<N>, // evaluation buffer
     out: Vec<N>,  // output buffer
 }
 
-impl<N: NumericalFloatLike> InstructionEvaluator<N> {
+impl<'a, N: NumericalFloatLike> InstructionEvaluator<N> {
+    pub fn output_len(&self) -> usize {
+        let mut len = 0;
+        for x in &self.instr {
+            if let InstructionRange::Out(pos) = x {
+                len = len.max(*pos + 1);
+            }
+        }
+        len
+    }
+
     /// Evaluate the converted polynomials at a given sample point and
     /// write the values in `out`.
     ///
     /// The user must ensure that `samples` has the
     /// same length as the number of variables in the
     /// polynomials (including non-occurring ones).
-    pub fn evaluate(&mut self, samples: &[N]) -> &[N] {
+    pub fn evaluate_with_input(&mut self, samples: &[N]) -> &[N] {
+        // write the sample point into the evaluation buffer
+        // all constant numbers are still in the evaluation buffer
+        self.eval[..samples.len()].clone_from_slice(samples);
+
+        self.evaluate_impl()
+    }
+
+    fn evaluate_impl(&mut self) -> &[N] {
         macro_rules! get_eval {
             ($i:expr) => {
                 unsafe { self.eval.get_unchecked(*self.indices.get_unchecked($i)) }
             };
         }
-
-        // write the sample point into the evaluation buffer
-        // all constant numbers are still in the evaluation buffer
-        self.eval[..samples.len()].clone_from_slice(samples);
 
         let mut out_counter = 0;
 
@@ -1362,6 +1405,37 @@ impl<N: NumericalFloatLike> InstructionEvaluator<N> {
         }
 
         &self.out
+    }
+}
+
+impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
+    /// Evaluate all instructions, using a constant map and a function map for the input variables.
+    /// The constant map can map any literal expression to a value, for example
+    /// a variable or a function with fixed arguments.
+    ///
+    /// All variables and all user functions in the expression must occur in the map.
+    pub fn evaluate(
+        &mut self,
+        const_map: &HashMap<AtomView<'_>, N>,
+        function_map: &HashMap<Symbol, EvaluationFn<N>>,
+    ) -> &[N] {
+        Workspace::get_local().with(|ws| {
+            for (input, expr) in self.eval.iter_mut().zip(&self.input_map) {
+                match expr {
+                    super::Variable::Symbol(s) => {
+                        *input = *const_map
+                            .get(&ws.new_var(*s).as_view())
+                            .expect("Variable not found");
+                    }
+                    super::Variable::Function(_, o) | super::Variable::Other(o) => {
+                        *input = o.evaluate(const_map, function_map, &mut HashMap::default());
+                    }
+                    super::Variable::Temporary(_) => panic!("Temporary variable in input"),
+                }
+            }
+        });
+
+        self.evaluate_impl()
     }
 }
 
@@ -1423,6 +1497,7 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
         }
 
         InstructionEvaluator {
+            input_map: self.input_map.clone(),
             instr: simple_instr,
             indices,
             eval,
@@ -1491,8 +1566,8 @@ pub enum InstructionSetMode {
 
 pub struct InstructionSetPrinter<'a> {
     pub instr: &'a InstructionListOutput<Rational>,
-    pub state: &'a State,
     pub mode: InstructionSetMode,
+    pub name: String, // function name
 }
 
 impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
@@ -1518,13 +1593,32 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
 
             f.write_str("template<typename T>\n")?;
 
+            let mut seen_arrays = vec![];
+
             f.write_fmt(format_args!(
-                "{} evaluate({}{}) {{\n",
+                "{} {}({}{}) {{\n",
                 if use_return_value { "T" } else { "void" },
+                self.name,
                 self.instr
                     .input_map
                     .iter()
-                    .map(|x| format!("T {}", x.to_string(self.state)))
+                    .filter_map(|x| if let super::Variable::Function(x, _) = x {
+                        if !seen_arrays.contains(x) {
+                            seen_arrays.push(*x);
+
+                            Some(format!("T* {}", super::Variable::Symbol(*x).to_string()))
+                        } else {
+                            None
+                        }
+                    } else if let super::Variable::Symbol(i) = x {
+                        if [State::E, State::I, State::PI].contains(i) {
+                            None
+                        } else {
+                            Some(format!("T {}", x.to_string()))
+                        }
+                    } else {
+                        Some(format!("T {}", x.to_string()))
+                    })
                     .collect::<Vec<_>>()
                     .join(","),
                 if use_return_value { "" } else { ", T* out" }
@@ -1579,7 +1673,7 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                 Instruction::Init(x) => f.write_fmt(format_args!(
                     "\tZ{} = {};\n",
                     reg,
-                    x.to_pretty_string(&self.instr.input_map, self.state, self.mode)
+                    x.to_pretty_string(&self.instr.input_map, self.mode)
                 ))?,
             }
         }
@@ -1612,5 +1706,321 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
         }
 
         Ok(())
+    }
+}
+
+/// A computational graph with efficient output evaluation for a nesting of variable identifications (`x_n = x_{n-1} + 2*x_{n-2}`, etc).
+pub struct ExpressionEvaluator {
+    operations: Vec<(
+        super::Variable,
+        usize,
+        InstructionListOutput<Rational>,
+        Vec<super::Variable>,
+    )>,
+    input: Vec<super::Variable>,
+}
+
+impl ExpressionEvaluator {
+    /// Create a computational graph with efficient output evaluation for a nesting of variable identifications (`x_n = x_{n-1} + 2*x_{n-2}`, etc).
+    /// Every level provides a list of independent vectors whose expressions only depend on variables defined in previous levels.
+    /// In these expressions, the references to previous vectors are represented using functions with the vector's name whose single argument is an index into the output array of the evaluation of that vector.
+    /// For example:
+    /// ```text
+    /// x_0 = (p1, p2)
+    /// x_1 = x_0[0] * x_0[1] + 2
+    /// x_2 = x_1 + 2*x_0
+    /// ```
+    /// can be represented by:
+    /// ```
+    /// vec![
+    ///       vec![(x0, vec![Atom.parse("p1"), Atom.parse("p2")])],
+    ///       vec![(x1, vec![Atom.parse("x0(0) * x0(1) + 2")])],
+    ///       vec![(x2, vec![Atom.parse("x1(0) * 2 * x0(1)")])]
+    /// ]
+    /// ```
+    ///
+    /// Each expression will be converted to a polynomial and optimized by writing it in a near-optimal Horner scheme and by performing
+    /// common subexpression elimination. The number of optimization iterations can be set using `n_iter`.
+    ///
+    pub fn new(levels: Vec<Vec<(Symbol, Vec<Atom>)>>, n_iter: usize) -> ExpressionEvaluator {
+        let mut overall_ops = vec![]; // the main function that calls all levels
+
+        for l in levels {
+            for (id, joint) in l {
+                let mut polys: Vec<MultivariatePolynomial<_, u16>> =
+                    joint.iter().map(|a| a.to_polynomial(&Q, None)).collect();
+
+                // fuse the variable maps
+                MultivariatePolynomial::unify_variables_list(&mut polys);
+
+                let var_map = polys[0].variables.clone();
+
+                let poly_ref = polys.iter().collect::<Vec<_>>();
+
+                let (h, _score, _scheme) = HornerScheme::optimize_multiple(&poly_ref, n_iter);
+
+                // TODO: support giving output names and multiple destinations?
+                let mut i = HornerScheme::to_instr_multiple(&h, var_map.len());
+
+                i.fuse_operations();
+
+                for _ in 0..20_000 {
+                    if !i.common_pair_elimination() {
+                        break;
+                    }
+                    i.fuse_operations();
+                }
+
+                let o = i.to_output(var_map.as_ref().to_vec(), true);
+
+                let mut seen_arrays = vec![];
+                let call_args = var_map
+                    .iter()
+                    .filter_map(|x| {
+                        if let super::Variable::Function(x, _) = x {
+                            if !seen_arrays.contains(x) {
+                                seen_arrays.push(*x);
+
+                                Some(super::Variable::Symbol(*x))
+                            } else {
+                                None
+                            }
+                        } else if let super::Variable::Symbol(i) = x {
+                            if [State::E, State::I, State::PI].contains(i) {
+                                None
+                            } else {
+                                Some(x.clone())
+                            }
+                        } else {
+                            panic!("Expression contains non-array functions")
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                overall_ops.push((super::Variable::Symbol(id), h.len(), o, call_args));
+            }
+        }
+
+        let internal: HashSet<_> = overall_ops.iter().map(|x| &x.0).collect();
+        let mut external = HashSet::new();
+        for (_, _, _, args) in &overall_ops {
+            for arg in args {
+                if !internal.contains(arg) {
+                    external.insert(arg);
+                }
+            }
+        }
+        let mut input = external.into_iter().cloned().collect::<Vec<_>>();
+        input.sort_by_cached_key(|f| f.to_string());
+
+        ExpressionEvaluator {
+            operations: overall_ops,
+            input,
+        }
+    }
+
+    /// Get the list of input variables that have to be provided in this order to the generated evaluation function.
+    pub fn get_input(&self) -> &[super::Variable] {
+        &self.input
+    }
+}
+
+impl std::fmt::Display for ExpressionEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "#include <cmath>
+#include <complex>
+#include <iostream>
+
+using namespace std::complex_literals;
+
+auto 𝑖 = 1i;\n",
+        )?;
+
+        for (id, _, o, _) in self.operations.iter() {
+            f.write_fmt(format_args!(
+                "{}\n",
+                InstructionSetPrinter {
+                    instr: o,
+                    name: id.to_string(),
+                    mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {
+                        write_header_and_test: false,
+                        always_pass_output_array: true,
+                    },),
+                }
+            ))?;
+        }
+
+        let last = self.operations.last().unwrap().0.clone();
+
+        f.write_str("template<typename T>\n")?;
+        f.write_fmt(format_args!(
+            "void evaluate({}, T* {}_res) {{\n",
+            self.input
+                .iter()
+                .map(|x| format!("T* {}", x.to_string()))
+                .collect::<Vec<_>>()
+                .join(", "),
+            last.to_string()
+        ))?;
+
+        for (id, out_len, _, args) in &self.operations {
+            let name = id.to_string();
+
+            if *id != last {
+                f.write_fmt(format_args!("\tT {}_res[{}];\n", name, out_len))?;
+            }
+
+            let mut f_args: Vec<_> = args
+                .iter()
+                .map(|x| {
+                    if self.operations.iter().any(|(name, _, _, _)| x == name) {
+                        x.to_string() + "_res"
+                    } else {
+                        x.to_string()
+                    }
+                })
+                .collect();
+            f_args.push(format!("{}_res", name));
+
+            f.write_fmt(format_args!("\t{}({});\n", name, f_args.join(",")))?;
+        }
+
+        f.write_str("}")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        atom::Atom,
+        domains::{float::Complex, rational::Q},
+        poly::{
+            evaluate::{BorrowedHornerScheme, InstructionSetPrinter},
+            polynomial::MultivariatePolynomial,
+        },
+    };
+
+    use wide::f64x4;
+
+    const RES_53: &str = "-a5^3*b0^5+a4*a5^2*b0^4*b1-a4^2*a5*b0^4*b2+a4^3*b0^4*b3-a3*a5^2*
+b0^3*b1^2+2*a3*a5^2*b0^4*b2+a3*a4*a5*b0^3*b1*b2-3*a3*a4*a5*b0^4*
+b3-a3*a4^2*b0^3*b1*b3-a3^2*a5*b0^3*b2^2+2*a3^2*a5*b0^3*b1*b3+a3^2
+*a4*b0^3*b2*b3-a3^3*b0^3*b3^2+a2*a5^2*b0^2*b1^3-3*a2*a5^2*b0^3*b1
+*b2+3*a2*a5^2*b0^4*b3-a2*a4*a5*b0^2*b1^2*b2+2*a2*a4*a5*b0^3*b2^2+
+a2*a4*a5*b0^3*b1*b3+a2*a4^2*b0^2*b1^2*b3-2*a2*a4^2*b0^3*b2*b3+a2*
+a3*a5*b0^2*b1*b2^2-2*a2*a3*a5*b0^2*b1^2*b3-a2*a3*a5*b0^3*b2*b3-a2
+*a3*a4*b0^2*b1*b2*b3+3*a2*a3*a4*b0^3*b3^2+a2*a3^2*b0^2*b1*b3^2-
+a2^2*a5*b0^2*b2^3+3*a2^2*a5*b0^2*b1*b2*b3-3*a2^2*a5*b0^3*b3^2+
+a2^2*a4*b0^2*b2^2*b3-2*a2^2*a4*b0^2*b1*b3^2-a2^2*a3*b0^2*b2*b3^2+
+a2^3*b0^2*b3^3-a1*a5^2*b0*b1^4+4*a1*a5^2*b0^2*b1^2*b2-2*a1*a5^2*
+b0^3*b2^2-4*a1*a5^2*b0^3*b1*b3+a1*a4*a5*b0*b1^3*b2-3*a1*a4*a5*
+b0^2*b1*b2^2-a1*a4*a5*b0^2*b1^2*b3+5*a1*a4*a5*b0^3*b2*b3-a1*a4^2*
+b0*b1^3*b3+3*a1*a4^2*b0^2*b1*b2*b3-3*a1*a4^2*b0^3*b3^2-a1*a3*a5*
+b0*b1^2*b2^2+2*a1*a3*a5*b0*b1^3*b3+2*a1*a3*a5*b0^2*b2^3-4*a1*a3*
+a5*b0^2*b1*b2*b3+3*a1*a3*a5*b0^3*b3^2+a1*a3*a4*b0*b1^2*b2*b3-2*a1
+*a3*a4*b0^2*b2^2*b3-a1*a3*a4*b0^2*b1*b3^2-a1*a3^2*b0*b1^2*b3^2+2*
+a1*a3^2*b0^2*b2*b3^2+a1*a2*a5*b0*b1*b2^3-3*a1*a2*a5*b0*b1^2*b2*b3
+-a1*a2*a5*b0^2*b2^2*b3+5*a1*a2*a5*b0^2*b1*b3^2-a1*a2*a4*b0*b1*
+b2^2*b3+2*a1*a2*a4*b0*b1^2*b3^2+a1*a2*a4*b0^2*b2*b3^2+a1*a2*a3*b0
+*b1*b2*b3^2-3*a1*a2*a3*b0^2*b3^3-a1*a2^2*b0*b1*b3^3-a1^2*a5*b0*
+b2^4+4*a1^2*a5*b0*b1*b2^2*b3-2*a1^2*a5*b0*b1^2*b3^2-4*a1^2*a5*
+b0^2*b2*b3^2+a1^2*a4*b0*b2^3*b3-3*a1^2*a4*b0*b1*b2*b3^2+3*a1^2*a4
+*b0^2*b3^3-a1^2*a3*b0*b2^2*b3^2+2*a1^2*a3*b0*b1*b3^3+a1^2*a2*b0*
+b2*b3^3-a1^3*b0*b3^4+a0*a5^2*b1^5-5*a0*a5^2*b0*b1^3*b2+5*a0*a5^2*
+b0^2*b1*b2^2+5*a0*a5^2*b0^2*b1^2*b3-5*a0*a5^2*b0^3*b2*b3-a0*a4*a5
+*b1^4*b2+4*a0*a4*a5*b0*b1^2*b2^2+a0*a4*a5*b0*b1^3*b3-2*a0*a4*a5*
+b0^2*b2^3-7*a0*a4*a5*b0^2*b1*b2*b3+3*a0*a4*a5*b0^3*b3^2+a0*a4^2*
+b1^4*b3-4*a0*a4^2*b0*b1^2*b2*b3+2*a0*a4^2*b0^2*b2^2*b3+4*a0*a4^2*
+b0^2*b1*b3^2+a0*a3*a5*b1^3*b2^2-2*a0*a3*a5*b1^4*b3-3*a0*a3*a5*b0*
+b1*b2^3+6*a0*a3*a5*b0*b1^2*b2*b3+3*a0*a3*a5*b0^2*b2^2*b3-7*a0*a3*
+a5*b0^2*b1*b3^2-a0*a3*a4*b1^3*b2*b3+3*a0*a3*a4*b0*b1*b2^2*b3+a0*
+a3*a4*b0*b1^2*b3^2-5*a0*a3*a4*b0^2*b2*b3^2+a0*a3^2*b1^3*b3^2-3*a0
+*a3^2*b0*b1*b2*b3^2+3*a0*a3^2*b0^2*b3^3-a0*a2*a5*b1^2*b2^3+3*a0*
+a2*a5*b1^3*b2*b3+2*a0*a2*a5*b0*b2^4-6*a0*a2*a5*b0*b1*b2^2*b3-3*a0
+*a2*a5*b0*b1^2*b3^2+7*a0*a2*a5*b0^2*b2*b3^2+a0*a2*a4*b1^2*b2^2*b3
+-2*a0*a2*a4*b1^3*b3^2-2*a0*a2*a4*b0*b2^3*b3+4*a0*a2*a4*b0*b1*b2*
+b3^2-3*a0*a2*a4*b0^2*b3^3-a0*a2*a3*b1^2*b2*b3^2+2*a0*a2*a3*b0*
+b2^2*b3^2+a0*a2*a3*b0*b1*b3^3+a0*a2^2*b1^2*b3^3-2*a0*a2^2*b0*b2*
+b3^3+a0*a1*a5*b1*b2^4-4*a0*a1*a5*b1^2*b2^2*b3+2*a0*a1*a5*b1^3*
+b3^2-a0*a1*a5*b0*b2^3*b3+7*a0*a1*a5*b0*b1*b2*b3^2-3*a0*a1*a5*b0^2
+*b3^3-a0*a1*a4*b1*b2^3*b3+3*a0*a1*a4*b1^2*b2*b3^2+a0*a1*a4*b0*
+b2^2*b3^2-5*a0*a1*a4*b0*b1*b3^3+a0*a1*a3*b1*b2^2*b3^2-2*a0*a1*a3*
+b1^2*b3^3-a0*a1*a3*b0*b2*b3^3-a0*a1*a2*b1*b2*b3^3+3*a0*a1*a2*b0*
+b3^4+a0*a1^2*b1*b3^4-a0^2*a5*b2^5+5*a0^2*a5*b1*b2^3*b3-5*a0^2*a5*
+b1^2*b2*b3^2-5*a0^2*a5*b0*b2^2*b3^2+5*a0^2*a5*b0*b1*b3^3+a0^2*a4*
+b2^4*b3-4*a0^2*a4*b1*b2^2*b3^2+2*a0^2*a4*b1^2*b3^3+4*a0^2*a4*b0*
+b2*b3^3-a0^2*a3*b2^3*b3^2+3*a0^2*a3*b1*b2*b3^3-3*a0^2*a3*b0*b3^4+
+a0^2*a2*b2^2*b3^3-2*a0^2*a2*b1*b3^4-a0^2*a1*b2*b3^4+a0^3*b3^5";
+
+    #[test]
+    fn res_53() {
+        let poly: MultivariatePolynomial<_, u8> =
+            Atom::parse(RES_53).unwrap().to_polynomial(&Q, None);
+
+        let (h, _ops, scheme) = poly.optimize_horner_scheme(1000);
+        let mut i = h.to_instr(poly.nvars());
+
+        println!(
+            "Number of operations={}, with scheme={:?}",
+            BorrowedHornerScheme::from(&h).op_count_cse(),
+            scheme,
+        );
+
+        i.fuse_operations();
+
+        for _ in 0..100_000 {
+            if !i.common_pair_elimination() {
+                break;
+            }
+            i.fuse_operations();
+        }
+
+        let o = i.to_output(poly.variables.as_ref().to_vec(), true);
+        let o_f64 = o.convert::<f64>();
+
+        let _ = format!(
+            "{}",
+            InstructionSetPrinter {
+                name: "sigma".to_string(),
+                instr: &o,
+                mode: crate::poly::evaluate::InstructionSetMode::CPP(
+                    crate::poly::evaluate::InstructionSetModeCPPSettings {
+                        write_header_and_test: true,
+                        always_pass_output_array: false,
+                    }
+                )
+            }
+        );
+
+        let mut evaluator = o_f64.evaluator();
+
+        let res = evaluator
+            .evaluate_with_input(&(0..poly.nvars()).map(|x| x as f64 + 1.).collect::<Vec<_>>())[0];
+
+        assert_eq!(res, 280944.);
+
+        // evaluate with simd
+        let o_f64x4 = o.convert::<f64x4>();
+        let mut evaluator = o_f64x4.evaluator();
+
+        let res = evaluator.evaluate_with_input(
+            &(0..poly.nvars())
+                .map(|x| f64x4::new([x as f64 + 1., x as f64 + 2., x as f64 + 3., x as f64 + 4.]))
+                .collect::<Vec<_>>(),
+        )[0];
+
+        assert_eq!(res, f64x4::new([280944.0, 645000.0, 1774950.0, 4985154.0]));
+
+        // evaluate with complex numbers
+        let mut complex_evaluator = o.convert::<Complex<f64>>().evaluator();
+        let res = complex_evaluator.evaluate_with_input(
+            &(0..poly.nvars())
+                .map(|x| Complex::new(x as f64 + 0.1, x as f64 + 2.))
+                .collect::<Vec<_>>(),
+        )[0];
+        assert!(
+            (res.re - 3230756.634848104).abs() < 1e-6 && (res.im - 2522437.0904901037).abs() < 1e-6
+        );
     }
 }

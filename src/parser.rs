@@ -1,18 +1,68 @@
 use std::{fmt::Write, string::String, sync::Arc};
 
 use bytes::Buf;
-use rug::{Complete, Integer};
+use rug::Integer as MultiPrecisionInteger;
 
 use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
+    atom::Atom,
     coefficient::ConvertToRing,
-    domains::Ring,
+    domains::{integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
-    representations::{Atom, AtomSet, OwnedAdd, OwnedFun, OwnedMul, OwnedNum, OwnedPow, OwnedVar},
-    state::{ResettableBuffer, State, Workspace},
+    state::{State, Workspace},
 };
+
+const HEX_DIGIT_MASK: [bool; 255] = [
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, true, true, true, true, true,
+    true, true, true, true, true, false, false, false, false, false, false, false, true, true,
+    true, true, true, true, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false,
+];
+
+const DIGIT_MASK: [bool; 255] = [
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, true, true, true, true, true,
+    true, true, true, true, true, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false,
+];
+
+const HEX_TO_DIGIT: [u8; 24] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, 14, 15, 0,
+];
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ParseState {
@@ -67,11 +117,23 @@ impl Operator {
     }
 
     #[inline]
-    pub fn right_associative(&self) -> bool {
+    pub fn left_associative(&self) -> bool {
         match self {
             Operator::Mul => true,
             Operator::Add => true,
             Operator::Pow => false,
+            Operator::Argument => true,
+            Operator::Neg => true,
+            Operator::Inv => true,
+        }
+    }
+
+    #[inline]
+    pub fn right_associative(&self) -> bool {
+        match self {
+            Operator::Mul => true,
+            Operator::Add => true,
+            Operator::Pow => true,
             Operator::Argument => true,
             Operator::Neg => true,
             Operator::Inv => true,
@@ -194,7 +256,7 @@ impl Token {
 
             if let Token::Op(ml, mr, o2, mut args2) = other {
                 debug_assert!(!ml && !mr);
-                if *o1 == o2 {
+                if *o1 == o2 && o2.left_associative() {
                     // add from the left by swapping and then extending from the right
                     std::mem::swap(args, &mut args2);
                     args.append(&mut args2);
@@ -227,6 +289,13 @@ impl Token {
                     a.distribute_neg();
                 }
             }
+            Token::Number(n) => {
+                if n.starts_with('-') {
+                    n.remove(0);
+                } else {
+                    n.insert(0, '-');
+                }
+            }
             _ => {
                 let t = std::mem::replace(self, Token::EOF);
                 *self = Token::Op(false, false, Operator::Neg, vec![t]);
@@ -242,7 +311,15 @@ impl Token {
             *mr = false;
 
             if *o1 == Operator::Neg {
-                other.distribute_neg();
+                if let Token::Number(n) = &mut other {
+                    if n.starts_with('-') {
+                        n.remove(0);
+                    } else {
+                        n.insert(0, '-');
+                    }
+                } else {
+                    other.distribute_neg();
+                }
                 *self = other;
                 return Ok(());
             }
@@ -274,38 +351,31 @@ impl Token {
     }
 
     /// Parse the token into an atom.
-    pub fn to_atom<P: AtomSet>(
-        &self,
-        state: &mut State,
-        workspace: &Workspace<P>,
-    ) -> Result<Atom<P>, String> {
-        let mut atom = Atom::new();
-        self.to_atom_with_output(state, workspace, &mut atom)?;
+    pub fn to_atom(&self, workspace: &Workspace) -> Result<Atom, String> {
+        let mut atom = Atom::default();
+
+        let mut state = State::get_global_state().write().unwrap();
+        self.to_atom_with_output(&mut state, workspace, &mut atom)?;
+
         Ok(atom)
     }
 
     /// Parse the token into the atom `out`.
-    pub fn to_atom_with_output<P: AtomSet>(
+    fn to_atom_with_output(
         &self,
         state: &mut State,
-        workspace: &Workspace<P>,
-        out: &mut Atom<P>,
+        workspace: &Workspace,
+        out: &mut Atom,
     ) -> Result<(), String> {
         match self {
-            Token::Number(n) => {
-                if let Ok(x) = n.parse::<i64>() {
-                    out.to_num().set_from_coeff(x.into());
-                } else {
-                    match Integer::parse(n) {
-                        Ok(x) => {
-                            out.to_num().set_from_coeff(x.complete().into());
-                        }
-                        Err(e) => return Err(format!("Could not parse number: {}", e)),
-                    }
+            Token::Number(n) => match n.parse::<Integer>() {
+                Ok(x) => {
+                    out.to_num(x.into());
                 }
-            }
+                Err(e) => return Err(format!("Could not parse number: {}", e)),
+            },
             Token::ID(x) => {
-                out.to_var().set_from_id(state.get_or_insert_var(x));
+                out.to_var(state.get_symbol_impl(x));
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -318,8 +388,7 @@ impl Token {
                         mul.extend(atom.as_view());
                     }
 
-                    mul.set_dirty(true);
-                    mul_h.as_view().normalize(workspace, state, out);
+                    mul_h.as_view().normalize(workspace, out);
                 }
                 Operator::Add => {
                     let mut add_h = workspace.new_atom();
@@ -331,21 +400,21 @@ impl Token {
                         add.extend(atom.as_view());
                     }
 
-                    add.set_dirty(true);
-                    add_h.as_view().normalize(workspace, state, out);
+                    add_h.as_view().normalize(workspace, out);
                 }
                 Operator::Pow => {
-                    let mut base = workspace.new_atom();
-                    args[0].to_atom_with_output(state, workspace, &mut base)?;
+                    // pow is right associative
+                    args.last()
+                        .unwrap()
+                        .to_atom_with_output(state, workspace, out)?;
+                    for a in args.iter().rev().skip(1) {
+                        let mut cur_base = workspace.new_atom();
+                        a.to_atom_with_output(state, workspace, &mut cur_base)?;
 
-                    let mut exp = workspace.new_atom();
-                    args[1].to_atom_with_output(state, workspace, &mut exp)?;
-
-                    let mut pow_h = workspace.new_atom();
-                    let pow = pow_h.to_pow();
-                    pow.set_from_base_and_exp(base.as_view(), exp.as_view());
-                    pow.set_dirty(true);
-                    pow_h.as_view().normalize(workspace, state, out);
+                        let mut pow_h = workspace.new_atom();
+                        pow_h.to_pow(cur_base.as_view(), out.as_view());
+                        pow_h.as_view().normalize(workspace, out);
+                    }
                 }
                 Operator::Argument => return Err("Unexpected argument operator".into()),
                 Operator::Neg => {
@@ -360,8 +429,7 @@ impl Token {
                     let mul = mul_h.to_mul();
                     mul.extend(base.as_view());
                     mul.extend(num.as_view());
-                    mul.set_dirty(true);
-                    mul_h.as_view().normalize(workspace, state, out);
+                    mul_h.as_view().normalize(workspace, out);
                 }
                 Operator::Inv => {
                     debug_assert!(args.len() == 1);
@@ -372,10 +440,8 @@ impl Token {
                     let num = workspace.new_num(-1);
 
                     let mut pow_h = workspace.new_atom();
-                    let mul = pow_h.to_pow();
-                    mul.set_from_base_and_exp(base.as_view(), num.as_view());
-                    mul.set_dirty(true);
-                    pow_h.as_view().normalize(workspace, state, out);
+                    pow_h.to_pow(base.as_view(), num.as_view());
+                    pow_h.as_view().normalize(workspace, out);
                 }
             },
             Token::Fn(_, args) => {
@@ -385,16 +451,166 @@ impl Token {
                 };
 
                 let mut fun_h = workspace.new_atom();
-                let fun = fun_h.to_fun();
-                fun.set_from_name(state.get_or_insert_fn(name, None)?);
-                fun.set_dirty(true);
+                let fun = fun_h.to_fun(state.get_symbol_impl(name));
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
                     a.to_atom_with_output(state, workspace, &mut atom)?;
                     fun.add_arg(atom.as_view());
                 }
 
-                fun_h.as_view().normalize(workspace, state, out);
+                fun_h.as_view().normalize(workspace, out);
+            }
+            x => return Err(format!("Unexpected token {}", x)),
+        }
+
+        Ok(())
+    }
+
+    /// Parse the token into the atom `out` with pre-defined variables
+    pub fn to_atom_with_output_and_var_map(
+        &self,
+        workspace: &Workspace,
+        var_map: &Arc<Vec<Variable>>,
+        var_name_map: &[SmartString<LazyCompact>],
+        out: &mut Atom,
+    ) -> Result<(), String> {
+        match self {
+            Token::Number(n) => {
+                out.to_num(n.parse::<Integer>()?.into());
+            }
+            Token::ID(name) => {
+                let index = var_name_map
+                    .iter()
+                    .position(|x| x == name)
+                    .ok_or_else(|| format!("Undefined variable {}", name))?;
+                if let Variable::Symbol(id) = var_map[index] {
+                    out.to_var(id);
+                } else {
+                    Err(format!("Undefined variable {}", name))?;
+                }
+            }
+            Token::Op(_, _, op, args) => match op {
+                Operator::Mul => {
+                    let mut mul_h = workspace.new_atom();
+                    let mul = mul_h.to_mul();
+
+                    let mut atom = workspace.new_atom();
+                    for a in args {
+                        a.to_atom_with_output_and_var_map(
+                            workspace,
+                            var_map,
+                            var_name_map,
+                            &mut atom,
+                        )?;
+                        mul.extend(atom.as_view());
+                    }
+
+                    mul_h.as_view().normalize(workspace, out);
+                }
+                Operator::Add => {
+                    let mut add_h = workspace.new_atom();
+                    let add = add_h.to_add();
+
+                    let mut atom = workspace.new_atom();
+                    for a in args {
+                        a.to_atom_with_output_and_var_map(
+                            workspace,
+                            var_map,
+                            var_name_map,
+                            &mut atom,
+                        )?;
+                        add.extend(atom.as_view());
+                    }
+
+                    add_h.as_view().normalize(workspace, out);
+                }
+                Operator::Pow => {
+                    let mut base = workspace.new_atom();
+                    args[0].to_atom_with_output_and_var_map(
+                        workspace,
+                        var_map,
+                        var_name_map,
+                        &mut base,
+                    )?;
+
+                    let mut exp = workspace.new_atom();
+                    args[1].to_atom_with_output_and_var_map(
+                        workspace,
+                        var_map,
+                        var_name_map,
+                        &mut exp,
+                    )?;
+
+                    let mut pow_h = workspace.new_atom();
+                    pow_h.to_pow(base.as_view(), exp.as_view());
+                    pow_h.as_view().normalize(workspace, out);
+                }
+                Operator::Argument => return Err("Unexpected argument operator".into()),
+                Operator::Neg => {
+                    debug_assert!(args.len() == 1);
+
+                    let mut base = workspace.new_atom();
+                    args[0].to_atom_with_output_and_var_map(
+                        workspace,
+                        var_map,
+                        var_name_map,
+                        &mut base,
+                    )?;
+
+                    let num = workspace.new_num(-1);
+
+                    let mut mul_h = workspace.new_atom();
+                    let mul = mul_h.to_mul();
+                    mul.extend(base.as_view());
+                    mul.extend(num.as_view());
+                    mul_h.as_view().normalize(workspace, out);
+                }
+                Operator::Inv => {
+                    debug_assert!(args.len() == 1);
+
+                    let mut base = workspace.new_atom();
+                    args[0].to_atom_with_output_and_var_map(
+                        workspace,
+                        var_map,
+                        var_name_map,
+                        &mut base,
+                    )?;
+
+                    let num = workspace.new_num(-1);
+
+                    let mut pow_h = workspace.new_atom();
+                    pow_h.to_pow(base.as_view(), num.as_view());
+                    pow_h.as_view().normalize(workspace, out);
+                }
+            },
+            Token::Fn(_, args) => {
+                let name = match &args[0] {
+                    Token::ID(s) => s,
+                    _ => unreachable!(),
+                };
+
+                let index = var_name_map
+                    .iter()
+                    .position(|x| x == name)
+                    .ok_or_else(|| format!("Undefined variable {}", name))?;
+                if let Variable::Symbol(id) = var_map[index] {
+                    let mut fun_h = workspace.new_atom();
+                    let fun = fun_h.to_fun(id);
+                    let mut atom = workspace.new_atom();
+                    for a in args.iter().skip(1) {
+                        a.to_atom_with_output_and_var_map(
+                            workspace,
+                            var_map,
+                            var_name_map,
+                            &mut atom,
+                        )?;
+                        fun.add_arg(atom.as_view());
+                    }
+
+                    fun_h.as_view().normalize(workspace, out);
+                } else {
+                    Err(format!("Undefined variable {}", name))?;
+                }
             }
             x => return Err(format!("Unexpected token {}", x)),
         }
@@ -441,33 +657,32 @@ impl Token {
                 }
                 ParseState::Number => {
                     if c != '_' && c != ' ' && !c.is_ascii_digit() {
-                        // drag in the neg operator
-                        if let Some(Token::Op(false, true, Operator::Neg, _)) = stack.last_mut() {
-                            stack.pop();
-                            id_buffer.insert(0, '-');
-                        }
-
                         state = ParseState::Any;
-
                         stack.push(Token::Number(id_buffer.as_str().into()));
-
                         id_buffer.clear();
                     } else if c != '_' && c != ' ' {
                         id_buffer.push(c);
                     }
                 }
                 ParseState::RationalPolynomial => {
-                    if c == ']' {
-                        stack.push(Token::RationalPolynomial(id_buffer.as_str().into()));
-                        id_buffer.clear();
+                    let start = char_iter.clone();
+                    let mut pos = 0;
 
-                        state = ParseState::Any;
+                    let mut s = SmartString::new();
+                    s.push(c);
 
-                        column_counter += 1;
+                    while c != ']' {
+                        pos += 1;
                         c = char_iter.next().unwrap_or('\0');
-                    } else if !whitespace.contains(&c) {
-                        id_buffer.push(c);
                     }
+
+                    s.push_str(&start.as_str()[..pos - 1]);
+                    stack.push(Token::RationalPolynomial(s));
+
+                    state = ParseState::Any;
+
+                    column_counter += pos + 1;
+                    c = char_iter.next().unwrap_or('\0');
                 }
                 ParseState::Any => {}
             }
@@ -745,11 +960,12 @@ impl Token {
         field: &R,
     ) -> (&'a [u8], MultivariatePolynomial<R, E>) {
         let mut exponents = vec![E::zero(); var_name_map.len()];
-        let mut poly =
-            MultivariatePolynomial::new(var_name_map.len(), field, None, Some(var_map.clone()));
+        let mut poly = MultivariatePolynomial::new(field, None, var_map.clone());
 
         let mut last_pos = input;
         let mut c = input.get_u8();
+
+        let mut digit_buffer = vec![];
         loop {
             if c == b'(' || c == b')' || c == b'/' {
                 break;
@@ -773,40 +989,84 @@ impl Token {
                 c = input.get_u8();
             }
 
-            loop {
-                if !c.is_ascii_digit() {
-                    break;
-                }
+            let mut is_hex = false;
+            let mask = if c == b'#' {
+                is_hex = true;
+                last_pos = input;
+                c = input.get_u8();
+                &HEX_DIGIT_MASK
+            } else {
+                &DIGIT_MASK
+            };
 
-                if input.is_empty() {
-                    break;
-                }
-
+            while mask[c as usize] && !input.is_empty() {
                 last_pos = input;
                 c = input.get_u8();
             }
 
             // construct number
             let mut len = unsafe { input.as_ptr().offset_from(num_start.as_ptr()) } as usize;
-            if !c.is_ascii_digit() && (len > 1 || c != b'-') {
+            let mut last_read_is_non_digit = false;
+            if !mask[c as usize] && (len > 1 || c != b'-') {
+                last_read_is_non_digit = true;
                 len -= 1;
             }
 
             if len > 0 {
-                let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
+                coeff = 'read_coeff: {
+                    if len == 1 && num_start[0] == b'-' {
+                        break 'read_coeff field.neg(&field.one());
+                    }
 
-                if len == 1 && num_start[0] == b'-' {
-                    coeff = field.neg(&field.one());
-                } else {
-                    coeff = if let Ok(x) = n.parse::<i64>() {
-                        field.element_from_coefficient(x.into())
-                    } else {
-                        match Integer::parse(n) {
-                            Ok(x) => field.element_from_coefficient(x.complete().into()),
-                            Err(e) => panic!("Could not parse number: {}", e),
+                    if !is_hex && len <= 40 {
+                        let n = unsafe { std::str::from_utf8_unchecked(&num_start[..len]) };
+
+                        if len <= 20 {
+                            if let Ok(n) = n.parse::<i64>() {
+                                break 'read_coeff field.element_from_coefficient(n.into());
+                            }
                         }
+
+                        if let Ok(n) = n.parse::<i128>() {
+                            break 'read_coeff field
+                                .element_from_coefficient(Integer::Double(n).into());
+                        }
+                    }
+
+                    let (is_negative, digits) = if num_start[0] == b'-' {
+                        (true, &num_start[1..len])
+                    } else {
+                        (false, &num_start[..len])
                     };
+
+                    digit_buffer.clear();
+
+                    if is_hex {
+                        digit_buffer.extend(
+                            digits[1..]
+                                .iter()
+                                .map(|&x| HEX_TO_DIGIT[(x - b'0') as usize]),
+                        );
+                    } else {
+                        digit_buffer.extend(digits.iter().map(|&x| (x - b'0')));
+                    }
+
+                    let mut p = MultiPrecisionInteger::new();
+                    unsafe {
+                        p.assign_bytes_radix_unchecked(
+                            &digit_buffer,
+                            if is_hex { 16 } else { 10 },
+                            is_negative,
+                        )
+                    };
+
+                    field.element_from_coefficient(p.into())
                 }
+            }
+
+            if input.is_empty() && !last_read_is_non_digit {
+                poly.append_monomial(coeff, &exponents);
+                break;
             }
 
             if c == b'-' {
@@ -898,5 +1158,60 @@ impl Token {
         } else {
             (last_pos, poly)
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use crate::{atom::Atom, domains::integer::Z, parser::Token, state::State};
+
+    #[test]
+    fn pow() {
+        let input = Atom::parse("v1^v2^v3^3").unwrap();
+        assert_eq!(format!("{}", input), "v1^v2^v3^3");
+
+        let input = Atom::parse("(v1^v2)^3").unwrap();
+        assert_eq!(format!("{}", input), "(v1^v2)^3");
+    }
+
+    #[test]
+    fn unary() {
+        let input = Atom::parse("-x^z").unwrap();
+        assert_eq!(format!("{}", input), "-x^z");
+
+        let input = Atom::parse("(-x)^z").unwrap();
+        assert_eq!(format!("{}", input), "(-x)^z");
+    }
+
+    #[test]
+    fn liberal() {
+        let input = Atom::parse(
+            "89233_21837281 x   
+            ^2 / y + 5",
+        )
+        .unwrap();
+        let res = Atom::parse("8923321837281*x^2*y^-1+5").unwrap();
+        assert_eq!(input, res);
+    }
+
+    #[test]
+    fn poly() {
+        let var_names = ["v1".into(), "v2".into()];
+        let var_map = Arc::new(vec![
+            State::get_symbol("v1").into(),
+            State::get_symbol("v2").into(),
+        ]);
+        let (rest, input) =
+            Token::parse_polynomial::<_, u8>("#ABC*v1^2*v2+5".as_bytes(), &var_map, &var_names, &Z);
+
+        assert!(rest.is_empty());
+        assert_eq!(
+            input,
+            Atom::parse("5+2748*v1^2*v2")
+                .unwrap()
+                .to_polynomial(&Z, var_map.clone().into())
+        );
     }
 }

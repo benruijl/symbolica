@@ -82,7 +82,7 @@ class Expression:
 
     Examples
     --------
-    >>> x = Expression.var('x')
+    >>> x = Expression.symbol('x')
     >>> e = x**2 + 2 - x + 1 / x**4
     >>> print(e)
     """
@@ -96,65 +96,109 @@ class Expression:
     I: Expression
     """The mathematical constant `i`, where `i^2 = -1`."""
 
+    COEFF: Expression
+    """The built-in function that convert a rational polynomials to a coefficient."""
+
+    COS: Expression
+    """The built-in cosine function."""
+
+    SIN: Expression
+    """The built-in sine function."""
+
+    EXP: Expression
+    """The built-in exponential function."""
+
+    LOG: Expression
+    """The built-in logarithm function."""
+
     @classmethod
-    def var(_cls, name: str) -> Expression:
+    def symbol(_cls, name: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Expression:
         """
-        Create a Symbolica expression that is a single variable.
+        Create a new symbol from a `name`. Can be turned into a symmetric function
+        using `is_symmetric=True` or into an antisymmetric function using `is_antisymmetric=True`.
+        The function can be made multilinear using `is_linear=True`. If no attributes
+        are specified, the attributes are inherited from the symbol if it was already defined,
+        otherwise all attributes are set to `false`.
+
+        Once attributes are defined on a function, they cannot be redefined later.
 
         Examples
         --------
-        >>> var_x = Expression.var('x')
-        >>> print(var_x)
-        x
-        """
+        Define a regular symbol and use it as a variable:
+        >>> f = Expression.symbol('x')
+        >>> e = x**2 + 5
+        >>> print(e)
+        x**2 + 5
 
-    @classmethod
-    def vars(_cls, *names: str) -> Sequence[Expression]:
-        """
-        Create a Symbolica variable for every name in `*names`.
-        """
-
-    @classmethod
-    def fun(_cls, name: str, is_symmetric: bool = False, is_antisymmetric: bool = False, is_linear: bool = False) -> Function:
-        """
-        Create a new Symbolica function with a given name.
-
-        Examples
-        --------
-        >>> f = Expression.fun('f')
+        Define a regular symbol and use it as a function symbol:
+        >>> f = Expression.symbol('f')
         >>> e = f(1,2)
         >>> print(e)
         f(1,2)
 
 
         Define a symmetric function:
-        >>> f = Expression.fun('f', is_symmetric=True)
+        >>> f = Expression.symbol('f', is_symmetric=True)
         >>> e = f(2,1)
         >>> print(e)
         f(1,2)
 
+
         Define a linear and symmetric function:
-        >>> p1, p2, p3, p4 = Expression.vars('p1', 'p2', 'p3', 'p4')
-        >>> dot = Expression.fun('dot', is_symmetric=True, is_linear=True)
+        >>> p1, p2, p3, p4 = Expression.symbols('p1', 'p2', 'p3', 'p4')
+        >>> dot = Expression.symbol('dot', is_symmetric=True, is_linear=True)
         >>> e = dot(p2+2*p3,p1+3*p2-p3)
         dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
         """
 
     @classmethod
-    def funs(_cls, *names: str) -> Sequence[Function]:
+    def symbols(_cls, *names: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Sequence[Expression]:
         """
         Create a Symbolica function for every name in `*names`.
         """
 
+    @overload
+    def __call__(self, *args: Expression | int) -> Expression:
+        """
+        Create a Symbolica expression or transformer by calling the function with appropriate arguments.
+
+        Examples
+        -------
+        >>> x, f = Expression.symbols('x', 'f')
+        >>> e = f(3,x)
+        >>> print(e)
+        f(3,x)
+        """
+
+    @overload
+    def __call__(self, *args: Transformer | Expression | int) -> Transformer:
+        """
+        Create a Symbolica expression or transformer by calling the function with appropriate arguments.
+
+        Examples
+        -------
+        >>> x, f = Expression.symbols('x', 'f')
+        >>> e = f(3,x)
+        >>> print(e)
+        f(3,x)
+        """
+
     @classmethod
-    def num(_cls, num: int) -> Expression:
-        """Create a new Symbolica number.
+    def num(_cls, num: int | float, max_denom: Optional[int] = None) -> Expression:
+        """Create a new Symbolica number from an int or a float.
+        A floating point number is converted to its rational number equivalent,
+        but it can also be truncated by specifying the maximal denominator value.
 
         Examples
         --------
         >>> e = Expression.num(1) / 2
         >>> print(e)
         1/2
+
+        >>> print(Expression.num(0.33))
+        >>> print(Expression.num(0.33, 5))
+        5944751508129055/18014398509481984
+        1/3
         """
 
     @classmethod
@@ -200,7 +244,7 @@ class Expression:
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -272,12 +316,12 @@ class Expression:
 
     def __mul__(self, other: Expression | int) -> Expression:
         """
-        Add this expression to `other`, returning the result.
+        Multiply this expression with `other`, returning the result.
         """
 
     def __rmul__(self, other: Expression | int) -> Expression:
         """
-        Add this expression to `other`, returning the result.
+        Multiply this expression with `other`, returning the result.
         """
 
     def __truediv__(self, other: Expression | int) -> Expression:
@@ -338,8 +382,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression, AtomType
-        >>> x, x_ = Expression.vars('x', 'x_')
-        >>> f = Expression.fun("f")
+        >>> x, x_ = Expression.symbols('x', 'x_')
+        >>> f = Expression.symbol('f')
         >>> e = f(x)*f(2)*f(f(3))
         >>> e = e.replace_all(f(x_), 1, x_.req_type(AtomType.Num))
         >>> print(e)
@@ -364,8 +408,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun("f")
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
         >>> e = e.replace_all(f(x_), 1, x_.req(lambda m: m == 2 or m == 3))
         """
@@ -382,8 +426,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_, y_ = Expression.vars('x_', 'y_')
-        >>> f = Expression.fun("f")
+        >>> x_, y_ = Expression.symbols('x_', 'y_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
         >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
         """
@@ -399,8 +443,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun("f")
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
         >>> e = e.replace_all(f(x_), 1, x_.req_lt(2))
         """
@@ -416,8 +460,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun("f")
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
         >>> e = e.replace_all(f(x_), 1, x_.req_gt(2))
         """
@@ -433,8 +477,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun("f")
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
         >>> e = e.replace_all(f(x_), 1, x_.req_le(2))
         """
@@ -450,8 +494,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun("f")
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
         >>> e = e.replace_all(f(x_), 1, x_.req_ge(2))
         """
@@ -467,8 +511,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_, y_ = Expression.var('x_', 'y_')
-        >>> f = Expression.fun("f")
+        >>> x_, y_ = Expression.symbol('x_', 'y_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1,2)
         >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_lt(y_))
         """
@@ -484,8 +528,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_, y_ = Expression.var('x_', 'y_')
-        >>> f = Expression.fun("f")
+        >>> x_, y_ = Expression.symbol('x_', 'y_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1,2)
         >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_gt(y_))
         """
@@ -501,8 +545,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_, y_ = Expression.var('x_', 'y_')
-        >>> f = Expression.fun("f")
+        >>> x_, y_ = Expression.symbol('x_', 'y_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1,2)
         >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_le(y_))
         """
@@ -518,8 +562,8 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_, y_ = Expression.var('x_', 'y_')
-        >>> f = Expression.fun("f")
+        >>> x_, y_ = Expression.symbol('x_', 'y_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1,2)
         >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_ge(y_))
         """
@@ -577,7 +621,7 @@ class Expression:
 
         Examples
         --------
-        >>> x, x_ = Expression.vars('x', 'x_')
+        >>> x, x_ = Expression.symbols('x', 'x_')
         >>> e = (1+x)**2
         >>> r = e.map(Transformer().expand().replace_all(x, 6))
         >>> print(r)
@@ -590,13 +634,13 @@ class Expression:
 
         Parameters
         ----------
-        vars : List[Expression]
+        vars : Sequence[Expression]
                 A list of variables
         """
 
-    def expand(self) -> Expression:
+    def expand(self, var: Optional[Expression] = None) -> Expression:
         """
-        Expand the expression.
+        Expand the expression. Optionally, expand in `var` only.
         """
 
     def collect(
@@ -615,7 +659,7 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x, y = Expression.vars('x', 'y')
+        >>> x, y = Expression.symbols('x', 'y')
         >>> e = 5*x + x * y + x**2 + 5
         >>>
         >>> print(e.collect(x))
@@ -623,13 +667,18 @@ class Expression:
         yields `x^2+x*(y+5)+5`.
 
         >>> from symbolica import Expression
-        >>> x, y = Expression.vars('x', 'y')
+        >>> x, y = Expression.symbols('x', 'y')
         >>> var, coeff = Expression.funs('var', 'coeff')
         >>> e = 5*x + x * y + x**2 + 5
         >>>
         >>> print(e.collect(x, key_map=lambda x: var(x), coeff_map=lambda x: coeff(x)))
 
         yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
+
+        Parameters
+        ----------
+        key_map: A function to be applied to the quantity collected in
+        coeff_map: A function to be applied to the coefficient
         """
 
     def coefficient_list(
@@ -641,8 +690,8 @@ class Expression:
         Examples
         --------
 
-        >>> from symbolica import Expression
-        >>> x, y = Expression.vars('x', 'y')
+        >>> from symbolica import *
+        >>> x, y = Expression.symbols('x', 'y')
         >>> e = 5*x + x * y + x**2 + 5
         >>>
         >>> for a in e.coefficient_list(x):
@@ -653,6 +702,24 @@ class Expression:
         x y+5
         x^2 1
         1 5
+        ```
+        """
+
+    def coefficient(self, x: Expression) -> Expression:
+        """Collect terms involving the literal occurrence of `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> x, y = Expression.symbols('x', 'y')
+        >>> e = 5*x + x * y + x**2 + y*x**2
+        >>> print(e.coefficient(x**2))
+
+        yields
+
+        ```
+        y + 1
         ```
         """
 
@@ -667,17 +734,44 @@ class Expression:
     ) -> Expression:
         """Taylor expand in `x` around `expansion_point` to depth `depth`."""
 
+    def apart(self, x: Expression) -> Expression:
+        """Compute the partial fraction decomposition in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))')
+        >>> print(p.apart(x))
+        """
+
+    def together(self) -> Expression:
+        """Write the expression over a common denominator.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('v1^2/2+v1^3/v4*v2+v3/(1+v4)')
+        >>> print(p.together())
+        """
+
     def to_polynomial(self, vars: Optional[Sequence[Expression]] = None) -> Polynomial:
-        """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`."""
+        """Convert the expression to a polynomial, optionally, with the variable ordering specified in `vars`.
+        All non-polynomial parts will be converted to new, independent variables.
+        """
 
     def to_rational_polynomial(
         self,
         vars: Optional[Sequence[Expression]] = None,
     ) -> RationalPolynomial:
         """
-        Convert the expression to a rational polynomial, optionally, with the variables and the ordering specified in `vars`.
+        Convert the expression to a rational polynomial, optionally, with the variable ordering specified in `vars`.
         The latter is useful if it is known in advance that more variables may be added in the future to the
         rational polynomial through composition with other rational polynomials.
+
+        All non-rational polynomial parts are converted to new, independent variables.
 
         Examples
         --------
@@ -695,16 +789,22 @@ class Expression:
         self,
         lhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
     ) -> MatchIterator:
         """
         Return an iterator over the pattern `self` matching to `lhs`.
         Restrictions on pattern can be supplied through `cond`.
 
+        The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
+        The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
+        depending on `level_is_tree_depth`.
+
         Examples
         --------
 
-        >>> x, x_ = Expression.vars('x','x_')
-        >>> f = Expression.fun('f')
+        >>> x, x_ = Expression.symbols('x','x_')
+        >>> f = Expression.symbol('f')
         >>> e = f(x)*f(1)*f(2)*f(3)
         >>> for match in e.match(f(x_)):
         >>>    for map in match:
@@ -716,6 +816,8 @@ class Expression:
         lhs: Transformer | Expression | int,
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
     ) -> ReplaceIterator:
         """
         Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
@@ -725,8 +827,8 @@ class Expression:
         --------
 
         >>> from symbolica import Expression
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun('f')
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = f(1)*f(2)*f(3)
         >>> for r in e.replace(f(x_), f(x_ + 1)):
         >>>     print(r)
@@ -737,6 +839,14 @@ class Expression:
         f(1)*f(3)*f(3)
         f(1)*f(2)*f(4)
         ```
+
+        Parameters
+        ----------
+        lhs: The pattern to match.
+        rhs: The right-hand side to replace the matched subexpression with.
+        cond: Conditions on the pattern.
+        level_range: Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+        level_is_tree_depth: If set to `True`, the level is increased when going one level deeper in the expression tree.
         """
 
     def replace_all(
@@ -744,25 +854,33 @@ class Expression:
         pattern: Transformer | Expression | int,
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
-        non_greedy_wildcards: Optional[List[Expression]] = None,
+        non_greedy_wildcards: Optional[Sequence[Expression]] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
         repeat: Optional[bool] = False,
     ) -> Expression:
         """
-        Replace all atoms matching the pattern `pattern` by the right-hand side `rhs`.
-        Restrictions on pattern can be supplied through `cond`.
-        The settings `non_greedy_wildcards` can be used to specify
-        wildcards that try to match as little as possible.
-
-        The entire operation can be repeated until there are no more matches using `repeat=True`.
+        Replace all subexpressions matching the pattern `pattern` by the right-hand side `rhs`.
 
         Examples
         --------
 
-        >>> x, w1_, w2_ = Expression.vars('x','w1_','w2_')
-        >>> f = Expression.fun('f')
+        >>> x, w1_, w2_ = Expression.symbols('x','w1_','w2_')
+        >>> f = Expression.symbol('f')
         >>> e = f(3,x)
         >>> r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
         >>> print(r)
+
+        Parameters
+        ----------
+        self: The expression to match and replace on.
+        pattern: The pattern to match.
+        rhs: The right-hand side to replace the matched subexpression with.
+        cond: Conditions on the pattern.
+        non_greedy_wildcards: Wildcards that try to match as little as possible.
+        level_range: Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+        level_is_tree_depth: If set to `True`, the level is increased when going one level deeper in the expression tree.
+        repeat: If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
     @classmethod
@@ -777,14 +895,14 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x, y, c = Expression.vars('x', 'y', 'c')
-        >>> f = Expression.fun('f')
+        >>> x, y, c = Expression.symbols('x', 'y', 'c')
+        >>> f = Expression.symbol('f')
         >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
         >>> print('x =', x_r, ', y =', y_r)
         """
 
     def evaluate(
-        self, vars: dict[Expression, float], funs: dict[Expression | Function, Callable[[Sequence[float]], float]]
+        self, constants: dict[Expression, float], funs: dict[Expression, Callable[[Sequence[float]], float]]
     ) -> float:
         """Evaluate the expression, using a map of all the variables and
         user functions to a float.
@@ -792,14 +910,14 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
-        >>> f = Expression.fun('f')
+        >>> x = Expression.symbol('x')
+        >>> f = Expression.symbol('f')
         >>> e = Expression.parse('cos(x)')*3 + f(x,2)
         >>> print(e.evaluate({x: 1}, {f: lambda args: args[0]+args[1]}))
         """
 
     def evaluate_complex(
-        self, vars: dict[Expression, float | complex], funs: dict[Expression | Function, Callable[[Sequence[complex]], float | complex]]
+        self, constants: dict[Expression, float | complex], funs: dict[Expression, Callable[[Sequence[complex]], float | complex]]
     ) -> complex:
         """Evaluate the expression, using a map of all the variables and
         user functions to a complex number.
@@ -807,7 +925,7 @@ class Expression:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x, y = Expression.vars('x', 'y')
+        >>> x, y = Expression.symbols('x', 'y')
         >>> e = Expression.parse('sqrt(x)')*y
         >>> print(e.evaluate_complex({x: 1 + 2j, y: 4 + 3j}, {}))
         """
@@ -830,79 +948,20 @@ class CompareOp:
     """One of the following comparison operators: `<`,`>`,`<=`,`>=`,`==`,`!=`."""
 
 
-class Function:
-    """A Symbolica function. Will turn into an expression or a transformer when called with arguments."""
-
-    COEFF: Function
-    """The built-in function that convert a rational polynomials to a coefficient."""
-
-    COS: Function
-    """The built-in cosine function."""
-
-    SIN: Function
-    """The built-in sine function."""
-
-    EXP: Function
-    """The built-in exponential function."""
-
-    LOG: Function
-    """The built-in logarithm function."""
-
-    def __new__(_cls, name: str, is_symmetric: Optional[bool], is_antisymmetric: Optional[bool], is_linear: Optional[bool]) -> Function:
-        """
-        Create a new function from a `name`. Can be turned into a symmetric function
-        using `is_symmetric=True` or into an antisymmetric function using `is_antisymmetric=True`.
-        The function can be made multilinear using `is_linear=True`.
-
-        Once attributes are defined on a function, they cannot be redefined later.
-        """
-
-    def is_symmetric(self) -> bool:
-        """Returns `True` iff this function is symmetric."""
-
-    @overload
-    def __call__(self, *args: Expression | int) -> Expression:
-        """
-        Create a Symbolica expression or transformer by calling the function with appropriate arguments.
-
-        Examples
-        -------
-        >>> x = Expression.vars('x')
-        >>> f = Expression.fun('f')
-        >>> e = f(3,x)
-        >>> print(e)
-        f(3,x)
-        """
-
-    @overload
-    def __call__(self, *args: Transformer | Expression | int) -> Transformer:
-        """
-        Create a Symbolica expression or transformer by calling the function with appropriate arguments.
-
-        Examples
-        -------
-        >>> x = Expression.vars('x')
-        >>> f = Expression.fun('f')
-        >>> e = f(3,x)
-        >>> print(e)
-        f(3,x)
-        """
-
-
 class Transformer:
     """Operations that transform an expression."""
 
     def __new__(_cls) -> Transformer:
         """Create a new transformer for a term provided by `Expression.map`."""
 
-    def expand(self) -> Transformer:
+    def expand(self, var: Optional[Expression] = None) -> Transformer:
         """Create a transformer that expands products and powers.
 
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x, x_ = Expression.vars('x', 'x_')
-        >>> f = Expression.fun('f')
+        >>> x, x_ = Expression.symbols('x', 'x_')
+        >>> f = Expression.symbol('f')
         >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
         >>> print(e)
         """
@@ -913,8 +972,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x__ = Expression.var('x__')
-        >>> f = Expression.fun('f')
+        >>> x__ = Expression.symbol('x__')
+        >>> f = Expression.symbol('f')
         >>> e = f(2,3).replace_all(f(x__), x__.transform().prod())
         >>> print(e)
         """
@@ -925,8 +984,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x__ = Expression.var('x__')
-        >>> f = Expression.fun('f')
+        >>> x__ = Expression.symbol('x__')
+        >>> f = Expression.symbol('f')
         >>> e = f(2,3).replace_all(f(x__), x__.transform().sum())
         >>> print(e)
         """
@@ -942,8 +1001,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x__ = Expression.var('x__')
-        >>> f = Expression.fun('f')
+        >>> x__ = Expression.symbol('x__')
+        >>> f = Expression.symbol('f')
         >>> e = f(2,3,4).replace_all(f(x__), x__.transform().nargs())
         >>> print(e)
         """
@@ -954,8 +1013,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x__ = Expression.var('x__')
-        >>> f = Expression.fun('f')
+        >>> x__ = Expression.symbol('x__')
+        >>> f = Expression.symbol('f')
         >>> e = f(3,2,1).replace_all(f(x__), x__.transform().sort())
         >>> print(e)
         """
@@ -967,8 +1026,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x__ = Expression.var('x__')
-        >>> f = Expression.fun('f')
+        >>> x__ = Expression.symbol('x__')
+        >>> f = Expression.symbol('f')
         >>> e = f(1,2,1,2).replace_all(f(x__), x__.transform().deduplicate())
         >>> print(e)
 
@@ -991,8 +1050,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x, x__ = Expression.vars('x', 'x__')
-        >>> f = Expression.fun('f')
+        >>> x, x__ = Expression.symbols('x', 'x__')
+        >>> f = Expression.symbol('f')
         >>> e = (x + 1).replace_all(x__, f(x_.transform().split()))
         >>> print(e)
         """
@@ -1017,8 +1076,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_, f_id, g_id = Expression.vars('x_', 'f', 'g')
-        >>> f = Expression.fun('f')
+        >>> x_, f_id, g_id = Expression.symbols('x_', 'f', 'g')
+        >>> f = Expression.symbol('f')
         >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
         >>> print(e)
 
@@ -1034,8 +1093,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_, f_id = Expression.vars('x_', 'f')
-        >>> f = Expression.fun('f')
+        >>> x_, f_id = Expression.symbols('x_', 'f')
+        >>> f = Expression.symbol('f')
         >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id)
         >>> print(e)
 
@@ -1051,10 +1110,22 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun('f')
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
         >>> print(e)
+        """
+
+    def for_each(self, *transformers: Transformer) -> Transformer:
+        """Create a transformer that applies a transformer chain to every argument of the `arg()` function.
+        If the input is not `arg()`, the transformer is applied to the input.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> f = Expression.symbol('f')
+        >>> e = (1+x).transform().split().for_each(Transformer().map(f)).execute()
         """
 
     def check_interrupt(self) -> Transformer:
@@ -1064,8 +1135,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import *
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun('f')
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> f(10).transform().repeat(Transformer().replace_all(
         >>> f(x_), f(x_+1)).check_interrupt()).execute()
         """
@@ -1078,8 +1149,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun('f')
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = Expression.parse("f(5)")
         >>> e = e.transform().repeat(
         >>>     Transformer().expand(),
@@ -1094,8 +1165,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun('f')
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = Expression.parse("f(5)")
         >>> e = e.transform().chain(
         >>>     Transformer().expand(),
@@ -1109,7 +1180,7 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> e = (x+1)**5
         >>> e = e.transform().expand().execute()
         >>> print(e)
@@ -1126,11 +1197,11 @@ class Transformer:
     ) -> Expression:
         """Create a transformer that Taylor expands in `x` around `expansion_point` to depth `depth`.
 
-        Example
+        Examples
         -------
         >>> from symbolica import Expression
-        >>> x, y = Expression.vars('x', 'y')
-        >>> f = Expression.fun('f')
+        >>> x, y = Expression.symbols('x', 'y')
+        >>> f = Expression.symbol('f')
         >>>
         >>> e = 2* x**2 * y + f(x)
         >>> e = e.taylor_series(x, 0, 2)
@@ -1145,29 +1216,38 @@ class Transformer:
         pat: Transformer | Expression | int,
         rhs: Transformer | Expression | int,
         cond: Optional[PatternRestriction] = None,
-        non_greedy_wildcards: Optional[List[Expression]] = None,
+        non_greedy_wildcards: Optional[Sequence[Expression]] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
     ) -> Transformer:
         """
-        Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
-        Restrictions on pattern can be supplied through `cond`.
-        The settings `non_greedy_wildcards` can be used to specify
-        wildcards that try to match as little as possible.
+        Create a transformer that replaces all subexpressions matching the pattern `pat` by the right-hand side `rhs`.
 
         Examples
         --------
 
-        >>> x, w1_, w2_ = Expression.vars('x','w1_','w2_')
-        >>> f = Expression.fun('f')
+        >>> x, w1_, w2_ = Expression.symbols('x','w1_','w2_')
+        >>> f = Expression.symbol('f')
         >>> e = f(3,x)
         >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
         >>> print(r)
+
+        Parameters
+        ----------
+        pat: The pattern to match.
+        rhs: The right-hand side to replace the matched subexpression with.
+        cond: Conditions on the pattern.
+        non_greedy_wildcards: Wildcards that try to match as little as possible.
+        level_range: Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+        level_is_tree_depth: If set to `True`, the level is increased when going one level deeper in the expression tree.
+        repeat: If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
     def print(
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -1198,8 +1278,8 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression
-        >>> x_ = Expression.var('x_')
-        >>> f = Expression.fun('f')
+        >>> x_ = Expression.symbol('x_')
+        >>> f = Expression.symbol('f')
         >>> e = Expression.parse("f(5)")
         >>> e = e.transform().stats('replace', Transformer().replace_all(f(x_), 1)).execute()
 
@@ -1277,6 +1357,36 @@ class Transformer:
         """
 
 
+class TermStreamer:
+    def __new__(_cls, path: Optional[str] = None,
+                max_mem_bytes: Optional[int] = None,
+                n_cores: Optional[int] = None) -> TermStreamer:
+        """Create a new term streamer with a given path for its files,
+           the maximum size of the memory buffer and the number of cores.
+        """
+
+    def __add__(self, other: TermStreamer) -> TermStreamer:
+        """Add two term streamers together, returning the result."""
+
+    def __iadd__(self, other: TermStreamer):
+        """Add another term streamer to this one."""
+
+    def get_byte_size(self) -> int:
+        """Get the byte size of the term streamer."""
+
+    def push(self, expr: Expression):
+        """Push an expresssion to the term streamer."""
+
+    def normalize(self):
+        """Sort and fuse all terms in the streamer."""
+
+    def to_expression(self) -> Expression:
+        """Convert the term stream into an expression. This may exceed the available memory."""
+
+    def map(self, f: Transformer) -> TermStreamer:
+        """Apply a transformer to all terms in the streamer."""
+
+
 class MatchIterator:
     """An iterator over matches."""
 
@@ -1301,7 +1411,7 @@ class Polynomial:
     """A Symbolica polynomial with rational coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str]) -> Polynomial:
+    def parse(_cls, input: str, vars: Sequence[str]) -> Polynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -1333,7 +1443,7 @@ class Polynomial:
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -1361,18 +1471,18 @@ class Polynomial:
         """Get the list of variables in the internal ordering of the polynomial."""
 
     def __add__(self, rhs: Polynomial) -> Polynomial:
-        """Add two polynomials `self and `rhs`, returning the result."""
+        """Add two polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: Polynomial) -> Polynomial:
         """Subtract polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: Polynomial) -> Polynomial:
-        """Multiply two polynomials `self and `rhs`, returning the result."""
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: Polynomial) -> Polynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
 
-    def quot_rem(self, rhs: Polynomial) -> Polynomial:
+    def quot_rem(self, rhs: Polynomial) -> Tuple[Polynomial, Polynomial]:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
 
     def __neg__(self) -> Polynomial:
@@ -1380,6 +1490,9 @@ class Polynomial:
 
     def gcd(self, rhs: Polynomial) -> Polynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def resultant(self, rhs: Polynomial, var: Expression) -> Polynomial:
+        """Compute the resultant of two polynomials with respect to the variable `var`."""
 
     def to_integer_polynomial(self) -> IntegerPolynomial:
         """Convert the polynomial to a polynomial with integer coefficients, if possible."""
@@ -1428,9 +1541,21 @@ class Polynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('x^2+2').to_polynomial()
         >>> print(p.derivative(x))
+        """
+
+    def integrate(self, x: Expression) -> Polynomial:
+        """Integrate the polynomial in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> print(p.integrate(x))
         """
 
     def content(self) -> Polynomial:
@@ -1451,7 +1576,7 @@ class Polynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
         >>> for n, pp in p.coefficient_list(x):
         >>>     print(n, pp)
@@ -1499,7 +1624,7 @@ class Polynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
         >>> r = Expression.parse('y+1').to_polynomial())
         >>> p.replace(x, r)
@@ -1510,7 +1635,7 @@ class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str]) -> IntegerPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str]) -> IntegerPolynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -1542,7 +1667,7 @@ class IntegerPolynomial:
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -1570,18 +1695,18 @@ class IntegerPolynomial:
         """Get the list of variables in the internal ordering of the polynomial."""
 
     def __add__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Add two polynomials `self and `rhs`, returning the result."""
+        """Add two polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Subtract polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
-        """Multiply two polynomials `self and `rhs`, returning the result."""
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
 
-    def quot_rem(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
+    def quot_rem(self, rhs: IntegerPolynomial) -> Tuple[IntegerPolynomial, IntegerPolynomial]:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
 
     def __neg__(self) -> IntegerPolynomial:
@@ -1589,6 +1714,9 @@ class IntegerPolynomial:
 
     def gcd(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def resultant(self, rhs: IntegerPolynomial, var: Expression) -> IntegerPolynomial:
+        """Compute the resultant of two polynomials with respect to the variable `var`."""
 
     def factor_square_free(self) -> list[Tuple[IntegerPolynomial, int]]:
         """Compute the square-free factorization of the polynomial.
@@ -1625,8 +1753,8 @@ class IntegerPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
-        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial().to_integer_polynomial()
         >>> print(p.derivative(x))
         """
 
@@ -1637,7 +1765,7 @@ class IntegerPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+        >>> p = Expression.parse('3x^2+6x+9').to_polynomial().to_integer_polynomial()
         >>> print(p.content())
         """
 
@@ -1648,8 +1776,8 @@ class IntegerPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
-        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial().to_integer_polynomial()
         >>> for n, pp in p.coefficient_list(x):
         >>>     print(n, pp)
         """
@@ -1662,7 +1790,7 @@ class IntegerPolynomial:
 
         >>> from symbolica import Expression
         >>> e = Expression.parse('x*y+2*x+x^2')
-        >>> p = e.to_polynomial()
+        >>> p = e.to_polynomial().to_integer_polynomial()
         >>> print((e - p.to_expression()).expand())
         """
 
@@ -1673,7 +1801,7 @@ class IntegerPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
         >>> r = Expression.parse('y+1').to_polynomial())
         >>> p.replace(x, r)
@@ -1684,7 +1812,7 @@ class FiniteFieldPolynomial:
     """A Symbolica polynomial with finite field coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str], prime: int) -> FiniteFieldPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], prime: int) -> FiniteFieldPolynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -1716,7 +1844,7 @@ class FiniteFieldPolynomial:
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
-        color_builtin_functions: bool = True,
+        color_builtin_symbols: bool = True,
         print_finite_field: bool = True,
         symmetric_representation_for_finite_field: bool = False,
         explicit_rational_polynomial: bool = False,
@@ -1744,18 +1872,18 @@ class FiniteFieldPolynomial:
         """Get the list of variables in the internal ordering of the polynomial."""
 
     def __add__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
-        """Add two polynomials `self and `rhs`, returning the result."""
+        """Add two polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
         """Subtract polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
-        """Multiply two polynomials `self and `rhs`, returning the result."""
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
         """Divide the polynomial `self` by `rhs` if possible, returning the result."""
 
-    def quot_rem(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+    def quot_rem(self, rhs: FiniteFieldPolynomial) -> Tuple[FiniteFieldPolynomial, FiniteFieldPolynomial]:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
 
     def __neg__(self) -> FiniteFieldPolynomial:
@@ -1763,6 +1891,9 @@ class FiniteFieldPolynomial:
 
     def gcd(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
         """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def resultant(self, rhs: FiniteFieldPolynomial, var: Expression) -> FiniteFieldPolynomial:
+        """Compute the resultant of two polynomials with respect to the variable `var`."""
 
     def optimize(self, iterations: int = 1000, to_file: str | None = None) -> Evaluator:
         """
@@ -1807,9 +1938,21 @@ class FiniteFieldPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('x^2+2').to_polynomial()
         >>> print(p.derivative(x))
+        """
+
+    def integrate(self, x: Expression) -> FiniteFieldPolynomial:
+        """Integrate the polynomial in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> print(p.integrate(x))
         """
 
     def content(self) -> FiniteFieldPolynomial:
@@ -1830,7 +1973,7 @@ class FiniteFieldPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
         >>> for n, pp in p.coefficient_list(x):
         >>>     print(n, pp)
@@ -1839,11 +1982,6 @@ class FiniteFieldPolynomial:
     @classmethod
     def groebner_basis(_cls, system: list[FiniteFieldPolynomial], grevlex: bool = True, print_stats: bool = False) -> list[FiniteFieldPolynomial]:
         """Compute the Groebner basis of a polynomial system.
-
-        If `grevlex=True`, reverse graded lexicographical ordering is used,
-        otherwise the ordering is lexicographical.
-
-        If `print_stats=True` intermediate statistics will be printed.
 
         Examples
         --------
@@ -1857,6 +1995,11 @@ class FiniteFieldPolynomial:
         >>> )
         >>> for p in basis:
         >>>     print(p)
+
+        Parameters
+        ----------
+        grevlex: if `True`, reverse graded lexicographical ordering is used, otherwise the ordering is lexicographical.
+        print_stats: if `True`, intermediate statistics will be printed.
         """
 
     def replace(self, x: Expression, v: Polynomial) -> Polynomial:
@@ -1866,7 +2009,7 @@ class FiniteFieldPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
         >>> r = Expression.parse('y+1').to_polynomial())
         >>> p.replace(x, r)
@@ -1880,7 +2023,7 @@ class RationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str]) -> RationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str]) -> RationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -1916,13 +2059,13 @@ class RationalPolynomial:
         """Get the denominator."""
 
     def __add__(self, rhs: RationalPolynomial) -> RationalPolynomial:
-        """Add two rational polynomials `self and `rhs`, returning the result."""
+        """Add two rational polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Subtract rational polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: RationalPolynomial) -> RationalPolynomial:
-        """Multiply two rational polynomials `self and `rhs`, returning the result."""
+        """Multiply two rational polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: RationalPolynomial) -> RationalPolynomial:
         """Divide the rational polynomial `self` by `rhs` if possible, returning the result."""
@@ -1955,7 +2098,7 @@ class RationalPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
         >>> for pp in p.apart(x):
         >>>     print(pp)
@@ -1966,7 +2109,7 @@ class RationalPolynomialSmallExponent:
     """A Symbolica rational polynomial with variable powers limited to 255."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str]) -> RationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str]) -> RationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -1998,7 +2141,7 @@ class RationalPolynomialSmallExponent:
     def __add__(
         self, rhs: RationalPolynomialSmallExponent
     ) -> RationalPolynomialSmallExponent:
-        """Add two rational polynomials `self and `rhs`, returning the result."""
+        """Add two rational polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(
         self, rhs: RationalPolynomialSmallExponent
@@ -2008,7 +2151,7 @@ class RationalPolynomialSmallExponent:
     def __mul__(
         self, rhs: RationalPolynomialSmallExponent
     ) -> RationalPolynomialSmallExponent:
-        """Multiply two rational polynomials `self and `rhs`, returning the result."""
+        """Multiply two rational polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(
         self, rhs: RationalPolynomialSmallExponent
@@ -2042,7 +2185,7 @@ class RationalPolynomialSmallExponent:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
         >>> for pp in p.apart(x):
         >>>     print(pp)
@@ -2056,7 +2199,7 @@ class FiniteFieldRationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
-    def parse(_cls, input: str, vars: List[str], prime: int) -> FiniteFieldRationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], prime: int) -> FiniteFieldRationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -2086,13 +2229,13 @@ class FiniteFieldRationalPolynomial:
         """Get the list of variables in the internal ordering of the polynomial."""
 
     def __add__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
-        """Add two rational polynomials `self and `rhs`, returning the result."""
+        """Add two rational polynomials `self` and `rhs`, returning the result."""
 
     def __sub__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
         """Subtract rational polynomials `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
-        """Multiply two rational polynomials `self and `rhs`, returning the result."""
+        """Multiply two rational polynomials `self` and `rhs`, returning the result."""
 
     def __truediv__(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
         """Divide the rational polynomial `self` by `rhs` if possible, returning the result."""
@@ -2110,32 +2253,128 @@ class FiniteFieldRationalPolynomial:
         --------
 
         >>> from symbolica import Expression
-        >>> x = Expression.var('x')
+        >>> x = Expression.symbol('x')
         >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
         >>> for pp in p.apart(x):
         >>>     print(pp)
         """
 
 
+class Matrix:
+    def __new__(cls, nrows: int, ncols: int) -> Matrix:
+        """Create a new zeroed matrix with `nrows` rows and `ncols` columns."""
+
+    @classmethod
+    def identity(cls, nrows: int) -> Matrix:
+        """Create a new square matrix with `nrows` rows and ones on the main diagonal and zeroes elsewhere."""
+
+    @classmethod
+    def eye(cls, diag: Sequence[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
+        """Create a new matrix with the scalars `diag` on the main diagonal and zeroes elsewhere."""
+
+    @classmethod
+    def vec(cls, entries: Sequence[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
+        """Create a new row vector from a list of scalars."""
+
+    @classmethod
+    def from_linear(cls, nrows: int, ncols: int, entries: Sequence[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
+        """Create a new matrix from a 1-dimensional vector of scalars."""
+
+    @classmethod
+    def from_nested(cls, entries: Sequence[Sequence[RationalPolynomial | Polynomial | Expression | int]]) -> Matrix:
+        """Create a new matrix from a 2-dimensional vector of scalars."""
+
+    def nrows(self) -> int:
+        """Get the number of rows in the matrix."""
+
+    def ncols(self) -> int:
+        """Get the number of columns in the matrix."""
+
+    def is_zero(self) -> bool:
+        """Return true iff every entry in the matrix is zero."""
+
+    def is_diagonal(self) -> bool:
+        """Return true iff every non- main diagonal entry in the matrix is zero."""
+
+    def transpose(self) -> Matrix:
+        """Return the transpose of the matrix."""
+
+    def inv(self) -> Matrix:
+        """Return the inverse of the matrix, if it exists."""
+
+    def det(self) -> RationalPolynomial:
+        """Return the determinant of the matrix."""
+
+    def solve(self, b: Matrix) -> Matrix:
+        """Solve `A * x = b` for `x`, where `A` is the current matrix."""
+
+    def content(self) -> RationalPolynomial:
+        """Get the content, i.e., the GCD of the coefficients."""
+
+    def primitive_part(self) -> Matrix:
+        """Construct the same matrix, but with the content removed."""
+
+    def map(self, f: Callable[[RationalPolynomial], RationalPolynomial]) -> Matrix:
+        """Apply a function `f` to every entry of the matrix."""
+
+    def to_latex(self) -> str:
+        """Convert the matrix into a LaTeX string."""
+
+    def __copy__(self) -> Matrix:
+        """Copy the matrix."""
+
+    def __getitem__(self, key: Tuple[int, int]) -> RationalPolynomial:
+        """Get the entry at position `key` in the matrix."""
+
+    def __str__(self) -> str:
+        """Print the matrix in a human-readable format."""
+
+    def __eq__(self, other: Matrix) -> bool:
+        """Compare two matrices."""
+
+    def __neq__(self, other: Matrix) -> bool:
+        """Compare two matrices."""
+
+    def __add__(self, rhs: Matrix) -> Matrix:
+        """Add two matrices `self` and `rhs`, returning the result."""
+
+    def __sub__(self, rhs: Matrix) -> Matrix:
+        """Subtract matrix `rhs` from `self`, returning the result."""
+
+    def __mul__(self, rhs: Matrix | RationalPolynomial | Polynomial | Expression | int) -> Matrix:
+        """Multiply two matrices `self` and `rhs`, returning the result."""
+
+    def __rmul__(self, rhs: RationalPolynomial | Polynomial | Expression | int) -> Matrix:
+        """Multiply two matrices `self` and `rhs`, returning the result."""
+
+    def __truediv__(self, rhs: RationalPolynomial | Polynomial | Expression | int) -> Matrix:
+        """Divide this matrix by scalar `rhs` and return the result."""
+
+    def __neg__(self) -> Matrix:
+        """Negate the matrix, returning the result."""
+
+
 class Evaluator:
-    def evaluate(self, inputs: List[List[float]]) -> List[float]:
+    def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[float]:
         """Evaluate the polynomial for multiple inputs and return the result."""
 
 
 class NumericalIntegrator:
-    @staticmethod
+    @classmethod
     def continuous(
+        _cls,
         n_dims: int,
         n_bins: int = 128,
         min_samples_for_update: int = 100,
-        bin_number_evolution: Optional[List[int]] = None,
+        bin_number_evolution: Optional[Sequence[int]] = None,
         train_on_avg: bool = False,
     ) -> NumericalIntegrator:
         """Create a new continuous grid for the numerical integrator."""
 
-    @staticmethod
+    @classmethod
     def discrete(
-        bins: List[Optional[NumericalIntegrator]],
+        _cls,
+        bins: Sequence[Optional[NumericalIntegrator]],
         max_prob_ratio: float = 100.0,
         train_on_avg: bool = False,
     ) -> NumericalIntegrator:
@@ -2158,10 +2397,45 @@ class NumericalIntegrator:
         >>> integrator.integrate(integrand, True, 10, 10000)
         """
 
-    def sample(self, num_samples: int) -> List[Sample]:
-        """Sample `num_samples` points from the grid."""
+    @classmethod
+    def rng(
+        _cls,
+        seed: int,
+        stream_id: int
+    ) -> RandomNumberGenerator:
+        """Create a new random number generator, suitable for use with the integrator.
+        Each thread of instance of the integrator should have its own random number generator,
+        that is initialized with the same seed but with a different stream id."""
 
-    def add_training_samples(self, samples: List[Sample], evals: List[float]):
+    @classmethod
+    def import_grid(
+        _cls,
+        grid: bytes
+    ) -> NumericalIntegrator:
+        """Import an exported grid from another thread or machine.
+        Use `export_grid` to export the grid."""
+
+    def export_grid(
+        self,
+    ) -> bytes:
+        """Export the grid, so that it can be sent to another thread or machine.
+        Use `import_grid` to load the grid."""
+
+    def get_live_estimate(
+        self,
+    ) -> Tuple[float, float, float, float, float, int]:
+        """Get the estamate of the average, error, chi-squared, maximum negative and positive evaluations, and the number of processed samples
+        for the current iteration, including the points submitted in the current iteration."""
+
+    def sample(self, num_samples: int, rng: RandomNumberGenerator) -> List[Sample]:
+        """Sample `num_samples` points from the grid using the random number generator
+        `rng`. See `rng()` for how to create a random number generator."""
+
+    def merge(self, other: NumericalIntegrator) -> None:
+        """Add the accumulated training samples from the grid `other` to the current grid.
+        The grid structure of `self` and `other` must be equivalent."""
+
+    def add_training_samples(self, samples: Sequence[Sample], evals: Sequence[float]) -> None:
         """Add the samples and their corresponding function evaluations to the grid.
         Call `update` after to update the grid and to obtain the new expected value for the integral."""
 
@@ -2188,10 +2462,11 @@ class NumericalIntegrator:
 
     def integrate(
         self,
-        integrand: Callable[[List[Sample]], List[float]],
+        integrand: Callable[[Sequence[Sample]], List[float]],
         max_n_iter: int = 10000000,
         min_error: float = 0.01,
         n_samples_per_iter: int = 10000,
+        seed: int = 0,
         show_stats: bool = True,
     ) -> Tuple[float, float, float]:
         """Integrate the function `integrand` that maps a list of `Sample`s to a list of `float`s.
@@ -2229,3 +2504,15 @@ class Sample:
     """ A sample point per (nested) discrete layer. Empty if not present."""
     c: List[float]
     """ A sample in the continuous layer. Empty if not present."""
+
+
+class RandomNumberGenerator:
+    """A reproducible, fast, non-cryptographic random number generator suitable for parallel Monte Carlo simulations.
+    A `seed` has to be set, which can be any `u64` number (small numbers work just as well as large numbers).
+
+    Each thread or instance generating samples should use the same `seed` but a different `stream_id`,
+    which is an instance counter starting at 0."""
+
+    def __new__(_cls, seed: int, stream_id: int):
+        """Create a new random number generator with a given `seed` and `stream_id`. For parallel runs,
+        each thread or instance generating samples should use the same `seed` but a different `stream_id`."""

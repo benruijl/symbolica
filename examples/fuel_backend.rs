@@ -5,12 +5,10 @@ use std::{
 
 use smartstring::{LazyCompact, SmartString};
 use symbolica::{
-    domains::{
-        integer::IntegerRing, rational::RationalField, rational_polynomial::RationalPolynomial,
-    },
+    domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial},
     parser::Token,
     printer::{PrintOptions, RationalPolynomialPrinter},
-    state::{State, Workspace},
+    state::State,
 };
 
 fn main() {
@@ -38,19 +36,17 @@ fn main() {
         );
     }
 
-    let mut state = State::new();
-    let workspace = Workspace::default();
     let vars: Arc<Vec<_>> = Arc::new(
         var_names
             .iter()
-            .map(|v| state.get_or_insert_var(v).into())
+            .map(|v| State::get_symbol(v).into())
             .collect(),
     );
 
     let print_opt = PrintOptions {
         terms_on_new_line: false,
         color_top_level_sum: false,
-        color_builtin_functions: false,
+        color_builtin_symbols: false,
         print_finite_field: false,
         symmetric_representation_for_finite_field: false,
         explicit_rational_polynomial: false,
@@ -67,23 +63,15 @@ fn main() {
             break;
         }
 
-        let r: RationalPolynomial<IntegerRing, u16> = Token::parse(&buffer)
+        let r: RationalPolynomial<_, u16> = Token::parse(&buffer)
             .unwrap()
-            .to_rational_polynomial(
-                &workspace,
-                &mut state,
-                &RationalField::new(),
-                &IntegerRing::new(),
-                &vars,
-                &var_names,
-            )
+            .to_rational_polynomial(&Q, &Z, &vars, &var_names)
             .unwrap();
 
         let out_str = format!(
             "{}",
             RationalPolynomialPrinter {
                 poly: &r,
-                state: &state,
                 opts: print_opt,
                 add_parentheses: false
             }

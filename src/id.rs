@@ -1292,8 +1292,7 @@ impl<'a> Match<'a> {
                 }
             },
             Self::FunctionName(n) => {
-                let f = out.to_fun(*n);
-                f.set_normalized(true);
+                out.to_var(*n);
             }
         }
     }

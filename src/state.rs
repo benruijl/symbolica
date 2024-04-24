@@ -1,7 +1,7 @@
 use std::hash::Hash;
 use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::thread::LocalKey;
 use std::{
     cell::RefCell,
@@ -15,6 +15,7 @@ use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
 use crate::domains::finite_field::Zp64;
+use crate::poly::Variable;
 use crate::{
     atom::{Atom, Symbol},
     coefficient::Coefficient,
@@ -25,6 +26,9 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FiniteFieldIndex(pub(crate) usize);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VariableListIndex(pub(crate) usize);
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum FunctionAttribute {
     Symmetric,
@@ -33,8 +37,9 @@ pub enum FunctionAttribute {
 }
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
-static ID_TO_STR: AppendOnlyVec<String> = AppendOnlyVec::<String>::new();
-static FINITE_FIELDS: AppendOnlyVec<Zp64> = AppendOnlyVec::<Zp64>::new();
+static ID_TO_STR: AppendOnlyVec<String> = AppendOnlyVec::new();
+static FINITE_FIELDS: AppendOnlyVec<Zp64> = AppendOnlyVec::new();
+static VARIABLE_LISTS: AppendOnlyVec<Arc<Vec<Variable>>> = AppendOnlyVec::new();
 static SYMBOL_OFFSET: AtomicUsize = AtomicUsize::new(0);
 
 thread_local!(
@@ -300,6 +305,28 @@ impl State {
 
         let index = FINITE_FIELDS.push(f);
         FiniteFieldIndex(index)
+    }
+
+    pub fn get_variable_list(fi: VariableListIndex) -> Arc<Vec<Variable>> {
+        VARIABLE_LISTS[fi.0].clone()
+    }
+
+    pub fn get_or_insert_variable_list(f: Arc<Vec<Variable>>) -> VariableListIndex {
+        STATE.write().unwrap().get_or_insert_variable_list_impl(f)
+    }
+
+    pub(crate) fn get_or_insert_variable_list_impl(
+        &mut self,
+        f: Arc<Vec<Variable>>,
+    ) -> VariableListIndex {
+        for (i, f2) in VARIABLE_LISTS.iter().enumerate() {
+            if f2 == &f {
+                return VariableListIndex(i);
+            }
+        }
+
+        let index = VARIABLE_LISTS.push(f);
+        VariableListIndex(index)
     }
 }
 

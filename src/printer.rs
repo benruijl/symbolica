@@ -371,7 +371,7 @@ impl<'a> FormattedPrintNum for NumView<'a> {
             CoefficientView::RationalPolynomial(p) => f.write_fmt(format_args!(
                 "[{}]",
                 RationalPolynomialPrinter {
-                    poly: p,
+                    poly: &p.deserialize(),
                     opts: *opts,
                     add_parentheses: false,
                 }

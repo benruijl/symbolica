@@ -485,7 +485,11 @@ impl Transformer {
                 Transformer::FromNumber => {
                     if let AtomView::Num(n) = input {
                         if let CoefficientView::RationalPolynomial(r) = n.get_coeff_view() {
-                            r.to_expression_with_map(workspace, &HashMap::default(), out);
+                            r.deserialize().to_expression_with_map(
+                                workspace,
+                                &HashMap::default(),
+                                out,
+                            );
                             continue;
                         }
                     }

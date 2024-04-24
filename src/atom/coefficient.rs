@@ -1,14 +1,15 @@
 use bytes::{Buf, BufMut};
-use rug::integer::Order;
+use rug::{integer::Order, Integer as MultiPrecisionInteger};
 
 use crate::{
-    coefficient::{Coefficient, CoefficientView, SerializedRational},
+    coefficient::{Coefficient, CoefficientView, SerializedRational, SerializedRationalPolynomial},
     domains::{
-        finite_field::FiniteFieldElement, integer::IntegerRing, rational::Rational,
+        finite_field::FiniteFieldElement,
+        integer::{Integer, IntegerRing, Z},
+        rational::Rational,
         rational_polynomial::RationalPolynomial,
     },
-    state::FiniteFieldIndex,
-    utils,
+    state::{FiniteFieldIndex, State, VariableListIndex},
 };
 
 const U8_NUM: u8 = 0b00000001;
@@ -36,6 +37,66 @@ fn get_size_of_natural(num_type: u8) -> u8 {
         U32_NUM => 4,
         U64_NUM => 8,
         _ => unreachable!(),
+    }
+}
+
+impl<'a> SerializedRationalPolynomial<'a> {
+    pub fn deserialize(self) -> RationalPolynomial<IntegerRing, u16> {
+        let mut source = self.0;
+
+        let index;
+        let num_nterms;
+        let den_nterms;
+        (index, num_nterms, source) = source.get_frac_u64();
+        (den_nterms, _, source) = source.get_frac_u64();
+
+        let vars = State::get_variable_list(VariableListIndex(index as usize));
+        let nvars = vars.len();
+
+        let mut poly = RationalPolynomial::new(&Z, vars);
+
+        poly.numerator.exponents = vec![0u16; num_nterms as usize * nvars];
+        for i in 0..poly.numerator.exponents.len() {
+            poly.numerator.exponents[i] = source.get_u16_le();
+        }
+
+        poly.denominator.exponents = vec![0u16; den_nterms as usize * nvars];
+        for i in 0..poly.denominator.exponents.len() {
+            poly.denominator.exponents[i] = source.get_u16_le();
+        }
+
+        fn parse_num(source: &mut &[u8]) -> Integer {
+            match source.get_u8() {
+                1 => Integer::Natural(source.get_i64_le()),
+                2 => Integer::Double(source.get_i128_le()),
+                x @ 4 | x @ 5 => {
+                    let (num_digits, _, new_source) = source.get_frac_u64();
+                    *source = new_source;
+                    let i = MultiPrecisionInteger::from_digits(
+                        &source[..num_digits as usize],
+                        Order::Lsf,
+                    );
+                    source.advance(num_digits as usize);
+                    if x == 5 {
+                        Integer::from_large(-i)
+                    } else {
+                        Integer::from_large(i)
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        for _ in 0..num_nterms {
+            poly.numerator.coefficients.push(parse_num(&mut source));
+        }
+
+        poly.denominator.coefficients.clear();
+        for _ in 0..den_nterms {
+            poly.denominator.coefficients.push(parse_num(&mut source));
+        }
+
+        poly
     }
 }
 
@@ -80,13 +141,54 @@ impl PackedRationalNumberWriter for Coefficient {
             }
             Coefficient::RationalPolynomial(p) => {
                 dest.put_u8(RAT_POLY);
-                // note that this is not a linear representation
-                // FIXME: pointer alignment
-                let p = p.clone();
-                let v = std::mem::ManuallyDrop::new(p);
-                let lin_buf = unsafe { utils::any_as_u8_slice(&v) };
+                dest.put_u32(0);
+                let pos = dest.len();
 
-                dest.extend(lin_buf);
+                let index = State::get_or_insert_variable_list(p.get_variables().clone());
+
+                (index.0 as u64, p.numerator.nterms() as u64).write_packed(dest);
+                (p.denominator.nterms() as u64, 1).write_packed(dest);
+
+                for i in p.numerator.exponents.iter().chain(&p.denominator.exponents) {
+                    dest.put_u16_le(*i);
+                }
+
+                for i in p
+                    .numerator
+                    .coefficients
+                    .iter()
+                    .chain(&p.denominator.coefficients)
+                {
+                    match i {
+                        Integer::Natural(n) => {
+                            dest.put_u8(1);
+                            dest.put_i64_le(*n);
+                        }
+                        Integer::Double(d) => {
+                            dest.put_u8(2);
+                            dest.put_i128_le(*d);
+                        }
+                        Integer::Large(l) => {
+                            if l.is_negative() {
+                                dest.put_u8(5);
+                            } else {
+                                dest.put_u8(4);
+                            }
+                            let num_digits = l.significant_digits::<u8>();
+                            (num_digits as u64, 1).write_packed(dest);
+                            let old_len = dest.len();
+                            dest.resize(old_len + num_digits, 0);
+                            l.write_digits(&mut dest[old_len..], Order::Lsf);
+                        }
+                    }
+                }
+
+                let len = dest.len() - pos;
+                if len > u32::MAX as usize {
+                    panic!("Rational polynomial too large to serialize");
+                }
+
+                dest[pos - 4..pos].copy_from_slice(&(len as u32).to_le_bytes());
             }
         }
     }
@@ -119,7 +221,7 @@ impl PackedRationalNumberWriter for Coefficient {
             },
             Coefficient::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
             Coefficient::RationalPolynomial(_) => {
-                1 + std::mem::size_of::<RationalPolynomial<IntegerRing, u16>>() as u64
+                unimplemented!("Cannot get the packed size of a rational polynomial")
             }
         }
     }
@@ -141,10 +243,12 @@ impl PackedRationalNumberReader for [u8] {
         let mut source = self;
         let disc = source.get_u8();
         if disc == RAT_POLY {
-            let rat = unsafe { std::mem::transmute(&source[0]) };
+            let len = source.get_u32_le() as usize;
+            let start = source;
+            source.advance(len);
             (
-                CoefficientView::RationalPolynomial(rat),
-                &source[std::mem::size_of::<RationalPolynomial<IntegerRing, u16>>()..],
+                CoefficientView::RationalPolynomial(SerializedRationalPolynomial(&start[..len])),
+                source,
             )
         } else if (disc & NUM_MASK) == ARB_NUM {
             let (num, den);
@@ -316,7 +420,8 @@ impl PackedRationalNumberReader for [u8] {
             dest.advance(num_size + den_size);
             dest
         } else if v_num == RAT_POLY {
-            dest.advance(std::mem::size_of::<RationalPolynomial<IntegerRing, u16>>());
+            let size = dest.get_u32_le() as usize;
+            dest.advance(size);
             dest
         } else if v_num == FIN_NUM {
             let var_size = dest.get_u8();

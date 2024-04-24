@@ -254,13 +254,16 @@ impl<'a> SerializedRational<'a> {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct SerializedRationalPolynomial<'a>(pub &'a [u8]);
+
 /// A view of a coefficient that keeps GMP rationals serialized.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CoefficientView<'a> {
     Natural(i64, i64),
     Large(SerializedRational<'a>),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
-    RationalPolynomial(&'a RationalPolynomial<IntegerRing, u16>),
+    RationalPolynomial(SerializedRationalPolynomial<'a>),
 }
 
 impl ConvertToRing for RationalField {
@@ -409,7 +412,9 @@ impl CoefficientView<'_> {
             CoefficientView::Natural(num, den) => Coefficient::Rational((*num, *den).into()),
             CoefficientView::Large(r) => Coefficient::Rational(r.to_rat().into()),
             CoefficientView::FiniteField(num, field) => Coefficient::FiniteField(*num, *field),
-            CoefficientView::RationalPolynomial(p) => Coefficient::RationalPolynomial((*p).clone()),
+            CoefficientView::RationalPolynomial(p) => {
+                Coefficient::RationalPolynomial(p.deserialize())
+            }
         }
     }
 
@@ -448,14 +453,14 @@ impl CoefficientView<'_> {
                 }
 
                 if n2 < 0 {
-                    let r = r.clone().inv();
+                    let r = r.deserialize().inv();
                     (
                         Coefficient::RationalPolynomial(r.pow(n2.unsigned_abs())),
                         (1, d2).into(),
                     )
                 } else {
                     (
-                        Coefficient::RationalPolynomial(r.pow(n2 as u64)),
+                        Coefficient::RationalPolynomial(r.deserialize().pow(n2 as u64)),
                         (1, d2).into(),
                     )
                 }
@@ -572,31 +577,32 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             }
             (CoefficientView::Natural(n, d), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d)) => {
-                let r = (*p).clone();
+                let r = p.deserialize();
                 let r2 = RationalPolynomial {
-                    numerator: p.numerator.constant(Integer::Natural(n)),
-                    denominator: p.denominator.constant(Integer::Natural(d)),
+                    numerator: r.numerator.constant(Integer::Natural(n)),
+                    denominator: r.denominator.constant(Integer::Natural(d)),
                 };
                 Coefficient::RationalPolynomial(&r + &r2)
             }
             (CoefficientView::Large(l), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l)) => {
-                let r = (*p).clone();
+                let r = p.deserialize();
                 let (n, d) = l.to_rat().into_numer_denom();
                 let r2 = RationalPolynomial {
-                    numerator: p.numerator.constant(Integer::from_large(n)),
-                    denominator: p.denominator.constant(Integer::from_large(d)),
+                    numerator: r.numerator.constant(Integer::from_large(n)),
+                    denominator: r.denominator.constant(Integer::from_large(d)),
                 };
                 Coefficient::RationalPolynomial(&r + &r2)
             }
             (CoefficientView::RationalPolynomial(p1), CoefficientView::RationalPolynomial(p2)) => {
+                let mut p1 = p1.deserialize();
+                let mut p2 = p2.deserialize();
+
                 let r = if p1.get_variables() != p2.get_variables() {
-                    let mut p1 = (*p1).clone();
-                    let mut p2 = (*p2).clone();
                     p1.unify_variables(&mut p2);
                     &p1 + &p2
                 } else {
-                    p1 + p2
+                    &p1 + &p2
                 };
 
                 if r.is_constant() {
@@ -643,7 +649,7 @@ impl Mul for CoefficientView<'_> {
             }
             (CoefficientView::Natural(n, d), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Natural(n, d)) => {
-                let mut r = (*p).clone();
+                let mut r = p.deserialize();
                 let (n, d) = (Integer::Natural(n), Integer::Natural(d));
 
                 let gcd1 = Z.gcd(&n, &r.denominator.content());
@@ -654,7 +660,7 @@ impl Mul for CoefficientView<'_> {
             }
             (CoefficientView::Large(l), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l)) => {
-                let mut r = (*p).clone();
+                let mut r = p.deserialize();
                 let (n, d) = l.to_rat().into_numer_denom();
                 let (n, d) = (Integer::from_large(n), Integer::from_large(d));
 
@@ -665,13 +671,13 @@ impl Mul for CoefficientView<'_> {
                 Coefficient::RationalPolynomial(r)
             }
             (CoefficientView::RationalPolynomial(p1), CoefficientView::RationalPolynomial(p2)) => {
+                let mut p1 = p1.deserialize();
+                let mut p2 = p2.deserialize();
                 let r = if p1.get_variables() != p2.get_variables() {
-                    let mut p1 = (*p1).clone();
-                    let mut p2 = (*p2).clone();
                     p1.unify_variables(&mut p2);
                     &p1 * &p2
                 } else {
-                    p1 * p2
+                    &p1 * &p2
                 };
 
                 if r.is_constant() {
@@ -698,12 +704,13 @@ impl Add<i64> for CoefficientView<'_> {
                 Coefficient::FiniteField(f.add(&n1, &f.element_from_coefficient(other.into())), i1)
             }
             CoefficientView::RationalPolynomial(p) => {
+                let p = p.deserialize();
                 let a = RationalPolynomial {
                     numerator: p.numerator.constant(Integer::Natural(other)),
                     denominator: p.denominator.constant(Integer::Natural(1)),
                 };
 
-                Coefficient::RationalPolynomial(p + &a)
+                Coefficient::RationalPolynomial(&p + &a)
             }
         }
     }
@@ -733,6 +740,7 @@ impl<'a> AtomView<'a> {
         match self {
             AtomView::Num(n) => {
                 if let CoefficientView::RationalPolynomial(r) = n.get_coeff_view() {
+                    let r = r.deserialize();
                     let old_var_map = r.get_variables();
                     if old_var_map != vars {
                         if old_var_map.iter().all(|x| vars.contains(x)) {
@@ -893,6 +901,26 @@ mod test {
     use std::sync::Arc;
 
     use crate::{atom::Atom, domains::rational::Rational, state::State};
+
+    #[test]
+    fn coeff_conversion() {
+        let expr = Atom::parse("v1*coeff(v2+v3/v4)+v1*coeff(v2)").unwrap();
+        let res = Atom::parse("coeff((v3+2*v2*v4)/v4)*v1").unwrap();
+        assert_eq!(expr - &res, Atom::new());
+    }
+
+    #[test]
+    fn coeff_conversion_large() {
+        let expr = Atom::parse(
+            "coeff(-8123781237821378123128937128937211238971238*v2-1289378192371289372891378127893)",
+        )
+        .unwrap();
+        let res = Atom::parse(
+            "1289378192371289372891378127893+8123781237821378123128937128937211238971238*coeff(v2)",
+        )
+        .unwrap();
+        assert_eq!(expr + &res, Atom::new());
+    }
 
     #[test]
     fn coefficient_ring() {

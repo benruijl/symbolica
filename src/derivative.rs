@@ -436,17 +436,15 @@ impl<'a> AtomView<'a> {
             {
                 std::mem::swap(&mut current_order, &mut next_order);
             } else {
-                if d == 0 {
-                    out.set_from_view(&workspace.new_num(0).as_view());
-                    return false;
-                }
-
                 break;
             }
         }
 
         series.as_view().normalize(workspace, out);
 
+        if let AtomView::Num(n) = out.as_view() {
+            return !n.is_zero();
+        }
         true
     }
 }
@@ -457,20 +455,20 @@ mod test {
 
     #[test]
     fn derivative() {
-        let x = State::get_symbol("x");
+        let v1 = State::get_symbol("v1");
         let inputs = [
-            "(1+2*x)^(5+x)",
-            "log(2*x) + exp(3*x) + sin(4*x) + cos(y*x)",
-            "f(x^2,x)",
-            "der(0,1,f(x,x^3))",
+            "(1+2*v1)^(5+v1)",
+            "log(2*v1) + exp(3*v1) + sin(4*v1) + cos(y*v1)",
+            "f(v1^2,v1)",
+            "der(0,1,f(v1,v1^3))",
         ];
-        let r = inputs.map(|input| Atom::parse(input).unwrap().derivative(x));
+        let r = inputs.map(|input| Atom::parse(input).unwrap().derivative(v1));
 
         let res = [
-            "(2*x+1)^(x+5)*log(2*x+1)+2*(x+5)*(2*x+1)^(x+4)",
-            "2*(2*x)^-1+3*exp(3*x)+4*cos(4*x)-y*sin(x*y)",
-            "der(0,1,f(x^2,x))+2*x*der(1,0,f(x^2,x))",
-            "der(1,1,f(x,x^3))+3*x^2*der(0,2,f(x,x^3))",
+            "(2*v1+1)^(v1+5)*log(2*v1+1)+2*(v1+5)*(2*v1+1)^(v1+4)",
+            "2*(2*v1)^-1+3*exp(3*v1)+4*cos(4*v1)-y*sin(v1*y)",
+            "der(0,1,f(v1^2,v1))+2*v1*der(1,0,f(v1^2,v1))",
+            "der(1,1,f(v1,v1^3))+3*v1^2*der(0,2,f(v1,v1^3))",
         ];
         let res = res.map(|input| Atom::parse(input).unwrap());
 
@@ -479,11 +477,16 @@ mod test {
 
     #[test]
     fn taylor_series() {
-        let x = State::get_symbol("x");
-        let input = Atom::parse("cos(x^2+1)*(x+3)").unwrap();
-        let t = input.taylor_series(x, Atom::new_num(0).as_view(), 2);
+        let v1 = State::get_symbol("v1");
 
-        let res = Atom::parse("3*cos(1)+x*cos(1)-3*x^2*sin(1)").unwrap();
+        let input = Atom::parse("1").unwrap();
+        let t = input.taylor_series(v1, Atom::new_num(0).as_view(), 0);
+        assert_eq!(t, Atom::new_num(1));
+
+        let input = Atom::parse("cos(v1^2+1)*(v1+3)").unwrap();
+        let t = input.taylor_series(v1, Atom::new_num(0).as_view(), 2);
+
+        let res = Atom::parse("3*cos(1)+v1*cos(1)-3*v1^2*sin(1)").unwrap();
         assert_eq!(t, res);
     }
 }

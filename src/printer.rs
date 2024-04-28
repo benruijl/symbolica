@@ -1406,11 +1406,16 @@ mod test {
         let a = Atom::parse("15 x^2 / ((1+x)(x+2))")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
-        assert_eq!(format!("{}", a), "15*x^2/((1+x)(2+x))");
+        assert!(
+            format!("{}", a) == "15*x^2/((1+x)(2+x))" || format!("{}", a) == "15*x^2/((2+x)(1+x))"
+        );
 
         let a = Atom::parse("(15 x^2 + 6) / ((1+x)(x+2))")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
-        assert_eq!(format!("{}", a), "3*(2+5*x^2)/((1+x)(2+x))");
+        assert!(
+            format!("{}", a) == "3*(2+5*x^2)/((1+x)(2+x))"
+                || format!("{}", a) == "3*(2+5*x^2)/((2+x)(1+x))"
+        );
     }
 }

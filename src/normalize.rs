@@ -580,6 +580,7 @@ impl<'a> AtomView<'a> {
             AtomView::Mul(t) => {
                 let mut atom_test_buf: SmallVec<[_; 20]> = SmallVec::new();
 
+                let mut is_zero = false;
                 for a in t.iter() {
                     let mut handle = workspace.new_atom();
 
@@ -602,7 +603,8 @@ impl<'a> AtomView<'a> {
 
                                 if n.is_zero() {
                                     out.to_num(Coefficient::zero());
-                                    return;
+                                    is_zero = true;
+                                    continue; // do not return as we may encounter 0/0
                                 }
                             }
 
@@ -616,12 +618,17 @@ impl<'a> AtomView<'a> {
 
                             if n.is_zero() {
                                 out.to_num(Coefficient::zero());
-                                return;
+                                is_zero = true;
+                                continue;
                             }
                         }
 
                         atom_test_buf.push(handle);
                     }
+                }
+
+                if is_zero {
+                    return;
                 }
 
                 atom_test_buf.sort_by(|a, b| a.as_view().cmp_factors(&b.as_view()));
@@ -1023,9 +1030,18 @@ impl<'a> AtomView<'a> {
 
                                 break 'pow_simplify;
                             }
-                        } else if let AtomView::Mul(_) = base_handle.as_view() {
-                            // TODO: turn (x*y)^2 into x^2*y^2?
-                            // for now, expand() needs to be used
+                        } else if let AtomView::Mul(m) = base_handle.as_view() {
+                            // rewrite (x*y)^2 into x^2*y^2
+                            let mut mul_h = workspace.new_atom();
+                            let mul = mul_h.to_mul();
+                            for arg in m.iter() {
+                                let mut pow_h = workspace.new_atom();
+                                pow_h.to_pow(arg, exp_handle.as_view());
+                                mul.extend(pow_h.as_view());
+                            }
+
+                            mul_h.as_view().normalize(workspace, out);
+                            break 'pow_simplify;
                         }
                     }
 
@@ -1134,6 +1150,13 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{atom::Atom, state::State};
+
+    #[test]
+    fn pow_apart() {
+        let res = Atom::parse("v1*(v1*v2*v3)^-5").unwrap();
+        let refr = Atom::parse("v1^-4*v2^-5*v3^-5").unwrap();
+        assert_eq!(res, refr);
+    }
 
     #[test]
     fn linear_symmetric() {

@@ -1076,7 +1076,7 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_, f_id, g_id = Expression.symbols('x_', 'f', 'g')
+        >>> x_, f_id, g_id = Expression.symbols('x__', 'f', 'g')
         >>> f = Expression.symbol('f')
         >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
         >>> print(e)
@@ -1093,7 +1093,7 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_, f_id = Expression.symbols('x_', 'f')
+        >>> x_, f_id = Expression.symbols('x__', 'f')
         >>> f = Expression.symbol('f')
         >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id)
         >>> print(e)

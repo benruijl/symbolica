@@ -5,7 +5,10 @@ use std::{
     io::{Read, Write},
 };
 
-use crate::coefficient::{Coefficient, CoefficientView};
+use crate::{
+    coefficient::{Coefficient, CoefficientView},
+    state::{StateMap, Workspace},
+};
 
 use super::{
     coefficient::{PackedRationalNumberReader, PackedRationalNumberWriter},
@@ -35,7 +38,7 @@ pub type RawAtom = Vec<u8>;
 impl Atom {
     /// Read from a binary stream. The format is the byte-length first
     /// followed by the data.
-    pub unsafe fn read<R: Read>(&mut self, mut source: R) -> Result<(), std::io::Error> {
+    pub(crate) fn read<R: Read>(&mut self, mut source: R) -> Result<(), std::io::Error> {
         let mut dest = std::mem::replace(self, Atom::Empty).into_raw();
 
         // should also set whether rat poly coefficient needs to be converted
@@ -51,17 +54,25 @@ impl Atom {
         dest.resize(n_size as usize, 0);
         source.read_exact(&mut dest)?;
 
-        match dest[0] & TYPE_MASK {
-            NUM_ID => *self = Atom::Num(Num::from_raw(dest)),
-            VAR_ID => *self = Atom::Var(Var::from_raw(dest)),
-            FUN_ID => *self = Atom::Fun(Fun::from_raw(dest)),
-            MUL_ID => *self = Atom::Mul(Mul::from_raw(dest)),
-            ADD_ID => *self = Atom::Add(Add::from_raw(dest)),
-            POW_ID => *self = Atom::Pow(Pow::from_raw(dest)),
-            _ => unreachable!("Unknown type {}", dest[0]),
+        unsafe {
+            match dest[0] & TYPE_MASK {
+                NUM_ID => *self = Atom::Num(Num::from_raw(dest)),
+                VAR_ID => *self = Atom::Var(Var::from_raw(dest)),
+                FUN_ID => *self = Atom::Fun(Fun::from_raw(dest)),
+                MUL_ID => *self = Atom::Mul(Mul::from_raw(dest)),
+                ADD_ID => *self = Atom::Add(Add::from_raw(dest)),
+                POW_ID => *self = Atom::Pow(Pow::from_raw(dest)),
+                _ => unreachable!("Unknown type {}", dest[0]),
+            }
         }
 
         Ok(())
+    }
+
+    pub fn import<R: Read>(source: R, state_map: &StateMap) -> Result<Atom, std::io::Error> {
+        let mut a = Atom::new();
+        a.read(source)?;
+        Ok(a.as_view().rename(state_map))
     }
 }
 
@@ -1263,13 +1274,98 @@ impl<'a> AtomView<'a> {
     }
 
     /// Write the expression to a binary stream. The format is the byte-length first
-    /// followed by the data.
+    /// followed by the data. To import the expression in new session, also export the [`State`].
     #[inline(always)]
     pub fn write<W: Write>(&self, mut dest: W) -> Result<(), std::io::Error> {
         let d = self.get_data();
         dest.write_u8(0)?;
         dest.write_u64::<LittleEndian>(d.len() as u64)?;
         dest.write_all(d)
+    }
+
+    pub(crate) fn rename(&self, state_map: &StateMap) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut a = ws.new_atom();
+            self.rename_no_norm(state_map, ws, &mut a);
+            let mut r = Atom::new();
+            a.as_view().normalize(ws, &mut r);
+            r
+        })
+    }
+
+    fn rename_no_norm(&self, state_map: &StateMap, ws: &Workspace, out: &mut Atom) {
+        match self {
+            AtomView::Num(n) => match n.get_coeff_view() {
+                CoefficientView::FiniteField(e, i) => {
+                    if let Some(s) = state_map.finite_fields.get(&i) {
+                        out.to_num(Coefficient::FiniteField(e, *s));
+                    } else {
+                        out.set_from_view(self);
+                    }
+                }
+                CoefficientView::RationalPolynomial(r) => {
+                    let (old_id, _, _) = r.0.get_frac_u64();
+
+                    if let Some(nv) = state_map.variables_lists.get(&old_id) {
+                        let mut rr = r.deserialize();
+                        rr.numerator.variables = nv.clone();
+                        rr.denominator.variables = nv.clone();
+                        out.to_num(Coefficient::RationalPolynomial(rr));
+                    } else {
+                        out.set_from_view(self);
+                    }
+                }
+                _ => out.set_from_view(self),
+            },
+            AtomView::Var(v) => {
+                if let Some(s) = state_map.symbols.get(&v.get_symbol().get_id()) {
+                    out.to_var(*s);
+                } else {
+                    out.set_from_view(self);
+                }
+            }
+            AtomView::Fun(f) => {
+                if let Some(s) = state_map.symbols.get(&f.get_symbol().get_id()) {
+                    let nf = out.to_fun(*s);
+
+                    let mut na = ws.new_atom();
+                    for a in f.iter() {
+                        a.rename_no_norm(state_map, ws, &mut na);
+                        nf.add_arg(na.as_view());
+                    }
+                } else {
+                    out.set_from_view(self);
+                }
+            }
+            AtomView::Pow(p) => {
+                let (b, e) = p.get_base_exp();
+
+                let mut nb = ws.new_atom();
+                b.rename_no_norm(state_map, ws, &mut nb);
+                let mut ne = ws.new_atom();
+                e.rename_no_norm(state_map, ws, &mut ne);
+
+                out.to_pow(nb.as_view(), ne.as_view());
+            }
+            AtomView::Mul(m) => {
+                let nm = out.to_mul();
+
+                let mut na = ws.new_atom();
+                for a in m.iter() {
+                    a.rename_no_norm(state_map, ws, &mut na);
+                    nm.extend(na.as_view());
+                }
+            }
+            AtomView::Add(add) => {
+                let nm = out.to_add();
+
+                let mut na = ws.new_atom();
+                for a in add.iter() {
+                    a.rename_no_norm(state_map, ws, &mut na);
+                    nm.extend(na.as_view());
+                }
+            }
+        }
     }
 }
 

@@ -421,7 +421,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id, g_id = Expression.symbols('x_', 'f', 'g')
+    /// >>> x_, f_id, g_id = Expression.symbols('x__', 'f', 'g')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
     /// >>> print(e)
@@ -469,7 +469,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id = Expression.symbols('x_', 'f')
+    /// >>> x_, f_id = Expression.symbols('x__', 'f')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id))
     /// >>> print(e)
@@ -1465,7 +1465,7 @@ impl PythonExpression {
     /// Return all defined symbol names (function names and variables).
     #[classmethod]
     pub fn get_all_symbol_names(_cls: &PyType) -> PyResult<Vec<String>> {
-        Ok(State::symbol_iter().map(|x| x.to_string()).collect())
+        Ok(State::symbol_iter().map(|(_, x)| x.to_string()).collect())
     }
 
     /// Parse a Symbolica expression from a string.

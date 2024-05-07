@@ -1368,16 +1368,16 @@ class TermStreamer:
     def __add__(self, other: TermStreamer) -> TermStreamer:
         """Add two term streamers together, returning the result."""
 
-    def __iadd__(self, other: TermStreamer):
+    def __iadd__(self, other: TermStreamer) -> None:
         """Add another term streamer to this one."""
 
     def get_byte_size(self) -> int:
         """Get the byte size of the term streamer."""
 
-    def push(self, expr: Expression):
+    def push(self, expr: Expression) -> None:
         """Push an expresssion to the term streamer."""
 
-    def normalize(self):
+    def normalize(self) -> None:
         """Sort and fuse all terms in the streamer."""
 
     def to_expression(self) -> Expression:

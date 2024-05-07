@@ -393,6 +393,14 @@ impl Variable {
         }
     }
 
+    pub fn to_atom(&self) -> Atom {
+        match self {
+            Variable::Symbol(s) => Atom::new_var(*s),
+            Variable::Function(_, a) | Variable::Other(a) => a.as_ref().clone(),
+            Variable::Temporary(_) => panic!("Cannot convert a temporary variable to an atom"),
+        }
+    }
+
     /// Check if the symbol `symbol` appears at most once in the variable map.
     /// For example, `[x,f(x)]` is not independent in `x`, but `[x,y]` is.
     pub fn is_independent_symbol(variables: &[Variable], symbol: Symbol) -> bool {

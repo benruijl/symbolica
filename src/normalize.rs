@@ -281,11 +281,10 @@ impl Atom {
         &mut self,
         other: &mut Self,
         helper: &mut Self,
-
         workspace: &Workspace,
     ) -> bool {
-        // x^a * x^b = x^(a + b)
         if let Atom::Pow(p1) = self {
+            // x^a * x^b = x^(a + b)
             if let Atom::Pow(p2) = other {
                 let (base2, exp2) = p2.to_pow_view().get_base_exp();
 
@@ -321,6 +320,40 @@ impl Atom {
                 p1.set_normalized(true);
                 return true;
             }
+
+            // x^n * x = x^(n+1)
+            let pv = p1.to_pow_view();
+            let (base, exp) = pv.get_base_exp();
+
+            if other.as_view() == base {
+                if let AtomView::Num(n) = &exp {
+                    let new_exp = n.get_coeff_view() + 1;
+
+                    if new_exp.is_zero() {
+                        self.to_num(1.into());
+                    } else if new_exp == 1.into() {
+                        self.set_from_view(&other.as_view());
+                    } else {
+                        let num = helper.to_num(new_exp);
+                        self.to_pow(other.as_view(), AtomView::Num(num.to_num_view()));
+                    }
+                } else {
+                    other.to_num(1.into());
+
+                    let new_exp = helper.to_add();
+                    new_exp.extend(other.as_view());
+                    new_exp.extend(exp);
+                    let mut helper2 = workspace.new_atom();
+                    helper.as_view().normalize(workspace, &mut helper2);
+                    other.to_pow(base, helper2.as_view());
+                    std::mem::swap(self, other);
+                }
+
+                self.set_normalized(true);
+                return true;
+            }
+
+            return false;
         }
 
         // x * x^n = x^(n+1)
@@ -956,6 +989,11 @@ impl<'a> AtomView<'a> {
                 };
 
                 'pow_simplify: {
+                    if base_handle.is_one() {
+                        out.to_num(1.into());
+                        break 'pow_simplify;
+                    }
+
                     if let AtomView::Num(e) = exp_handle.as_view() {
                         let exp_num = e.get_coeff_view();
                         if exp_num == CoefficientView::Natural(0, 1) {
@@ -1013,38 +1051,37 @@ impl<'a> AtomView<'a> {
                                 }
                             }
                         } else if let AtomView::Pow(p_base) = base_handle.as_view() {
-                            // simplify x^2^3
-                            let (p_base_base, p_base_exp) = p_base.get_base_exp();
-                            if let AtomView::Num(n) = p_base_exp {
-                                let new_exp = n.get_coeff_view() * exp_num;
+                            if exp_num.is_integer() {
+                                // rewrite (x^y)^3 as x^(3*y)
+                                let (p_base_base, p_base_exp) = p_base.get_base_exp();
 
-                                if new_exp == 1.into() {
-                                    out.set_from_view(&p_base_base);
-                                    break 'pow_simplify;
-                                }
+                                let mut mul_h = workspace.new_atom();
+                                let mul = mul_h.to_mul();
+                                mul.extend(p_base_exp);
+                                mul.extend(exp_handle.as_view());
+                                let mut exp_h = workspace.new_atom();
+                                mul.as_view().normalize(workspace, &mut exp_h);
 
-                                exp_handle.to_num(new_exp);
-
-                                let p = out.to_pow(p_base_base, exp_handle.as_view());
-                                p.set_normalized(true);
-
+                                mul_h.to_pow(p_base_base, exp_h.as_view());
+                                mul_h.as_view().normalize(workspace, out);
                                 break 'pow_simplify;
                             }
                         } else if let AtomView::Mul(m) = base_handle.as_view() {
-                            // rewrite (x*y)^2 into x^2*y^2
-                            let mut mul_h = workspace.new_atom();
-                            let mul = mul_h.to_mul();
-                            for arg in m.iter() {
-                                let mut pow_h = workspace.new_atom();
-                                pow_h.to_pow(arg, exp_handle.as_view());
-                                mul.extend(pow_h.as_view());
-                            }
+                            // rewrite (x*y)^2 as x^2*y^2
+                            if exp_num.is_integer() {
+                                let mut mul_h = workspace.new_atom();
+                                let mul = mul_h.to_mul();
+                                for arg in m.iter() {
+                                    let mut pow_h = workspace.new_atom();
+                                    pow_h.to_pow(arg, exp_handle.as_view());
+                                    mul.extend(pow_h.as_view());
+                                }
 
-                            mul_h.as_view().normalize(workspace, out);
-                            break 'pow_simplify;
+                                mul_h.as_view().normalize(workspace, out);
+                                break 'pow_simplify;
+                            }
                         }
                     }
-
                     out.to_pow(base_handle.as_view(), exp_handle.as_view());
                 }
 
@@ -1156,6 +1193,17 @@ mod test {
         let res = Atom::parse("v1*(v1*v2*v3)^-5").unwrap();
         let refr = Atom::parse("v1^-4*v2^-5*v3^-5").unwrap();
         assert_eq!(res, refr);
+    }
+
+    #[test]
+    fn pow_simplify() {
+        assert_eq!(Atom::parse("1^(1/2)"), Atom::parse("1"));
+        assert_eq!(
+            format!("{}", Atom::parse("(v1^2)^v2").unwrap()),
+            "(v1^2)^v2"
+        );
+        assert_eq!(Atom::parse("(v1^v2)^2"), Atom::parse("v1^(2*v2)"));
+        assert_eq!(Atom::parse("(v1^(1/2))^2"), Atom::parse("v1"));
     }
 
     #[test]

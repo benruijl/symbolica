@@ -91,7 +91,7 @@ impl<'a, R: ReadableNamedStream> Iterator for TermInputStream<'a, R> {
 
         while self.pos <= self.file_buf.len() {
             let mut a = Atom::new();
-            if let Ok(()) = unsafe { a.read(&mut self.file_buf[self.pos - 1]) } {
+            if let Ok(()) = a.read(&mut self.file_buf[self.pos - 1]) {
                 return Some(a);
             }
 
@@ -295,6 +295,10 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
     pub fn normalize(&mut self) {
         self.sort();
 
+        if self.file_buf.is_empty() {
+            return;
+        }
+
         self.mem_buf.reverse();
 
         let mut head = vec![self.mem_buf.pop()];
@@ -311,7 +315,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
 
         for ff in &mut files {
             let mut a = Atom::new();
-            if let Ok(()) = unsafe { a.read(ff) } {
+            if let Ok(()) = a.read(ff) {
                 head.push(Some(a));
             } else {
                 head.push(None);
@@ -348,7 +352,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
                 head[0] = self.mem_buf.pop();
             } else {
                 let mut a = Atom::new();
-                if let Ok(()) = unsafe { a.read(&mut files[smallest[0] - 1]) } {
+                if let Ok(()) = a.read(&mut files[smallest[0] - 1]) {
                     head[smallest[0]] = Some(a);
                 }
             }

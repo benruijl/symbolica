@@ -240,6 +240,24 @@ impl<'a> AtomView<'a> {
         target.set_from_view(self);
     }
 
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        if let AtomView::Num(n) = self {
+            n.is_zero()
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    pub fn is_one(&self) -> bool {
+        if let AtomView::Num(n) = self {
+            n.is_one()
+        } else {
+            false
+        }
+    }
+
     /// Add two atoms and return the buffer that contains the unnormalized result.
     fn add_no_norm(&self, workspace: &Workspace, rhs: AtomView<'_>) -> RecycledAtom {
         let mut e = workspace.new_atom();
@@ -420,6 +438,18 @@ impl From<Fun> for Atom {
     }
 }
 
+impl PartialOrd for Atom {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Atom {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_view().cmp(&other.as_view())
+    }
+}
+
 impl Atom {
     /// Create an atom that represents the number 0.
     pub fn new() -> Atom {
@@ -439,6 +469,16 @@ impl Atom {
     #[inline]
     pub fn new_num<T: Into<Coefficient>>(num: T) -> Atom {
         Num::new(num.into()).into()
+    }
+
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.as_view().is_zero()
+    }
+
+    #[inline]
+    pub fn is_one(&self) -> bool {
+        self.as_view().is_one()
     }
 
     #[inline]
@@ -672,6 +712,36 @@ impl Atom {
                 .normalize(ws, &mut t);
             t.into_inner()
         })
+    }
+
+    /// Add the atoms in `args`.
+    pub fn add_many<'a, T: AsAtomView<'a> + Copy>(args: &[T]) -> Atom {
+        let mut out = Atom::new();
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            let add = t.to_add();
+            for a in args {
+                add.extend(a.as_atom_view());
+            }
+
+            t.as_view().normalize(ws, &mut out);
+        });
+        out
+    }
+
+    /// Multiply the atoms in `args`.
+    pub fn mul_many<'a, T: AsAtomView<'a> + Copy>(args: &[T]) -> Atom {
+        let mut out = Atom::new();
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            let add = t.to_mul();
+            for a in args {
+                add.extend(a.as_atom_view());
+            }
+
+            t.as_view().normalize(ws, &mut out);
+        });
+        out
     }
 }
 

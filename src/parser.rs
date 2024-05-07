@@ -1165,8 +1165,8 @@ mod test {
         let input = Atom::parse("v1^v2^v3^3").unwrap();
         assert_eq!(format!("{}", input), "v1^v2^v3^3");
 
-        let input = Atom::parse("(v1^v2)^3").unwrap();
-        assert_eq!(format!("{}", input), "(v1^v2)^3");
+        let input = Atom::parse("(v1^v2)^v3").unwrap();
+        assert_eq!(format!("{}", input), "(v1^v2)^v3");
     }
 
     #[test]

@@ -806,6 +806,12 @@ impl PartialOrd for Rational {
     }
 }
 
+impl Ord for Rational {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
 impl Add<Rational> for Rational {
     type Output = Rational;
 

@@ -6,7 +6,6 @@ use symbolica::{
     state::{FunctionAttribute, State},
 };
 
-#[test]
 fn conflict() {
     State::get_symbol("x");
     State::get_symbol("y");
@@ -62,4 +61,7 @@ fn rational_rename() {
 
     let r = Atom::parse("x^2*coeff(x)").unwrap();
     assert_eq!(a_rec, r);
+
+    unsafe { State::reset() };
+    conflict();
 }

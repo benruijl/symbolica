@@ -4,6 +4,7 @@ pub mod gcd;
 pub mod groebner;
 pub mod polynomial;
 pub mod resultant;
+pub mod series;
 pub mod univariate;
 
 use std::borrow::Cow;

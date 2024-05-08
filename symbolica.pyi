@@ -726,13 +726,14 @@ class Expression:
     def derivative(self, x: Expression) -> Expression:
         """Derive the expression w.r.t the variable `x`."""
 
-    def taylor_series(
+    def series(
         self,
         x: Expression,
         expansion_point: Expression | int,
         depth: int,
-    ) -> Expression:
-        """Taylor expand in `x` around `expansion_point` to depth `depth`."""
+        depth_denom: int = 1,
+    ) -> Series:
+        """Series expand in `x` around `expansion_point` to depth `depth`."""
 
     def apart(self, x: Expression) -> Expression:
         """Compute the partial fraction decomposition in `x`.
@@ -1189,13 +1190,14 @@ class Transformer:
     def derivative(self, x: Transformer | Expression) -> Transformer:
         """Create a transformer that derives `self` w.r.t the variable `x`."""
 
-    def taylor_series(
+    def series(
         self,
         x: Expression,
         expansion_point: Expression,
         depth: int,
-    ) -> Expression:
-        """Create a transformer that Taylor expands in `x` around `expansion_point` to depth `depth`.
+        depth_denom: int = 1,
+    ) -> Transformer:
+        """Create a transformer that series expands in `x` around `expansion_point` to depth `depth`.
 
         Examples
         -------
@@ -1204,7 +1206,7 @@ class Transformer:
         >>> f = Expression.symbol('f')
         >>>
         >>> e = 2* x**2 * y + f(x)
-        >>> e = e.taylor_series(x, 0, 2)
+        >>> e = e.series(x, 0, 2)
         >>>
         >>> print(e)
 
@@ -1355,6 +1357,44 @@ class Transformer:
         """
         Negate the current transformer, returning the result.
         """
+
+
+class Series:
+    def __add__(self, other: Series) -> Series:
+        """Add two series together, returning the result."""
+
+    def __sub__(self, other: Series) -> Series:
+        """Subtract `other` from `self`, returning the result."""
+
+    def __mul__(self, other: Series) -> Series:
+        """Multiply two series together, returning the result."""
+
+    def __truediv__(self, other: Series) -> Series:
+        """Divide `self` by `other`, returning the result."""
+
+    def __pow__(self, exp: int) -> Series:
+        """Raise the series to the power of `exp`, returning the result."""
+
+    def __neg__(self) -> Series:
+        """Negate the series."""
+
+    def sin(self) -> Series:
+        """Compute the sine of the series, returning the result."""
+
+    def cos(self) -> Series:
+        """Compute the cosine of the series, returning the result."""
+
+    def exp(self) -> Series:
+        """Compute the exponential of the series, returning the result."""
+
+    def log(self) -> Series:
+        """Compute the natural logarithm of the series, returning the result."""
+
+    def pow(self, num: int, den: int) -> Series:
+        """Raise the series to the power of `num/den`, returning the result."""
+
+    def to_expression(self) -> Expression:
+        """Convert the term stream into an expression. This may exceed the available memory."""
 
 
 class TermStreamer:

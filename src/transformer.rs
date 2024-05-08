@@ -4,6 +4,7 @@ use crate::{
     atom::{Atom, AtomView, Symbol},
     coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
+    domains::rational::Rational,
     id::{Condition, MatchSettings, Pattern, WildcardAndRestriction},
     printer::{AtomPrinter, PrintOptions},
     state::{State, Workspace},
@@ -65,7 +66,7 @@ pub enum Transformer {
     /// Derive the rhs w.r.t a variable.
     Derivative(Symbol),
     /// Derive the rhs w.r.t a variable.
-    TaylorSeries(Symbol, Atom, u32),
+    Series(Symbol, Atom, Rational),
     /// Apply find-and-replace on the rhs.
     ReplaceAll(
         Pattern,
@@ -122,7 +123,7 @@ impl std::fmt::Debug for Transformer {
             Transformer::Sort => f.debug_tuple("Sort").finish(),
             Transformer::Deduplicate => f.debug_tuple("Deduplicate").finish(),
             Transformer::Permutations(i) => f.debug_tuple("Permutations").field(i).finish(),
-            Transformer::TaylorSeries(x, point, d) => f
+            Transformer::Series(x, point, d) => f
                 .debug_tuple("TaylorSeries")
                 .field(x)
                 .field(point)
@@ -199,14 +200,12 @@ impl Transformer {
                 Transformer::Derivative(x) => {
                     input.derivative_with_ws_into(*x, workspace, out);
                 }
-                Transformer::TaylorSeries(x, expansion_point, depth) => {
-                    input.taylor_series_with_ws_into(
-                        *x,
-                        expansion_point.as_view(),
-                        *depth,
-                        workspace,
-                        out,
-                    );
+                Transformer::Series(x, expansion_point, depth) => {
+                    if let Ok(s) = input.series(*x, expansion_point.as_view(), depth.clone()) {
+                        s.to_atom_into(out);
+                    } else {
+                        out.set_from_view(&input);
+                    }
                 }
                 Transformer::ReplaceAll(pat, rhs, cond, settings) => {
                     pat.replace_all_with_ws_into(
@@ -558,7 +557,7 @@ mod test {
 
     #[test]
     fn product_series() {
-        let p = Atom::parse("arg(x,x+1,3)").unwrap();
+        let p = Atom::parse("arg(v1,v1+1,3)").unwrap();
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
@@ -566,7 +565,7 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::Product,
-                    Transformer::TaylorSeries(State::get_symbol("x"), Atom::new_num(1), 3),
+                    Transformer::Series(State::get_symbol("v1"), Atom::new_num(1), 3.into()),
                 ],
                 ws,
                 &mut out,
@@ -574,7 +573,7 @@ mod test {
             .unwrap()
         });
 
-        let r = Atom::parse("3*(x-1)^2+9*(x-1)+6").unwrap();
+        let r = Atom::parse("3*(v1-1)^2+9*(v1-1)+6").unwrap();
         assert_eq!(out, r);
     }
 

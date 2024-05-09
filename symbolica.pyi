@@ -1393,6 +1393,9 @@ class Series:
     def pow(self, num: int, den: int) -> Series:
         """Raise the series to the power of `num/den`, returning the result."""
 
+    def spow(self, exp: Series) -> Series:
+        """Raise the series to the power of `exp`, returning the result."""
+
     def to_expression(self) -> Expression:
         """Convert the term stream into an expression. This may exceed the available memory."""
 

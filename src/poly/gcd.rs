@@ -2873,17 +2873,20 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicNumberRing<RationalField> {
                     let mut gpc_pos = 0;
                     let mut gmc_pos = 0;
                     for i in 0..a.field.poly().degree(0) {
-                        let gpc = if i == gpc.poly.exponents(gpc_pos)[0] {
-                            gpc_pos += 1;
-                            Integer::from_finite_field(
-                                &finite_field,
-                                gpc.poly.coefficients[gpc_pos - 1],
-                            )
-                        } else {
-                            Integer::zero()
-                        };
+                        let gpc =
+                            if gpc_pos < gpc.poly.nterms() && i == gpc.poly.exponents(gpc_pos)[0] {
+                                gpc_pos += 1;
+                                Integer::from_finite_field(
+                                    &finite_field,
+                                    gpc.poly.coefficients[gpc_pos - 1],
+                                )
+                            } else {
+                                Integer::zero()
+                            };
 
-                        let gpm = if i == gmc_a.poly.exponents(gmc_pos)[0] {
+                        let gpm = if gmc_pos < gmc_a.poly.nterms()
+                            && i == gmc_a.poly.exponents(gmc_pos)[0]
+                        {
                             gmc_pos += 1;
                             let r = &gmc_a.poly.coefficients[gmc_pos - 1];
                             if r.is_negative() {

@@ -384,6 +384,10 @@ impl<'a> AtomView<'a> {
         workspace: &Workspace,
         info: &Series<AtomField>,
     ) -> Result<Series<AtomField>, &'static str> {
+        if !self.contains_symbol(x) {
+            return Ok(info.constant(self.to_owned().into()));
+        }
+
         // TODO: optimize, appending a monomial using addition is slow
         match self {
             AtomView::Num(n) => Ok(info.constant(n.to_owned().into())),
@@ -429,7 +433,8 @@ impl<'a> AtomView<'a> {
                         unimplemented!("Cannot series expand with large exponents yet")
                     }
                 } else {
-                    unimplemented!("Cannot series expand with non-numerical exponents yet")
+                    let e = exp.series_with_ws(x, expansion_point, workspace, info)?;
+                    base_series.pow(&e)
                 }
             }
             AtomView::Mul(args) => {

@@ -3192,6 +3192,15 @@ impl PythonSeries {
         })
     }
 
+    pub fn spow(&self, pow: &Self) -> PyResult<Self> {
+        Ok(Self {
+            series: self
+                .series
+                .pow(&pow.series)
+                .map_err(|e| exceptions::PyValueError::new_err(e))?,
+        })
+    }
+
     /// Convert the series into an expression.
     pub fn to_expression(&self) -> PythonExpression {
         self.series.to_atom().into()

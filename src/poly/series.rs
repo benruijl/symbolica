@@ -360,7 +360,7 @@ impl<F: Ring> Series<F> {
     }
 
     /// Compute `self^pow`.
-    pub fn pow(&self, mut pow: usize) -> Self {
+    pub fn npow(&self, mut pow: usize) -> Self {
         if pow == 0 {
             return self.one();
         }
@@ -742,7 +742,8 @@ impl Series<AtomField> {
             r = r + s;
         }
 
-        Ok(r.mul_coeff(&Atom::new_var(State::E).pow(&c)))
+        let e = FunctionBuilder::new(State::EXP).add_arg(&c).finish();
+        Ok(r.mul_coeff(&e))
     }
 
     pub fn log(&self) -> Result<Self, &'static str> {
@@ -862,6 +863,11 @@ impl Series<AtomField> {
         Ok(e)
     }
 
+    /// Take the series to the power of another series.
+    pub fn pow(&self, pow: &Self) -> Result<Self, &'static str> {
+        (self.log()? * pow).exp()
+    }
+
     /// Take the series to the power of a rational number.
     pub fn rpow(&self, pow: Rational) -> Self {
         if pow.is_zero() {
@@ -869,7 +875,7 @@ impl Series<AtomField> {
         }
 
         if pow.is_integer() && !pow.is_negative() {
-            return self.pow(pow.numerator().to_i64().unwrap() as usize);
+            return self.npow(pow.numerator().to_i64().unwrap() as usize);
         }
 
         if pow.is_negative() && self.is_zero() {

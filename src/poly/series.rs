@@ -244,7 +244,7 @@ impl<F: Ring> Series<F> {
         (self.order as i64, self.ramification as i64).into()
     }
 
-    /// Get the relative order of the series expansion.
+    /// Get the absolute order of the series expansion.
     #[inline]
     pub fn absolute_order(&self) -> Rational {
         (
@@ -331,6 +331,20 @@ impl<F: Ring> Series<F> {
     #[inline]
     pub fn is_constant(&self) -> bool {
         self.coefficients.len() <= 1 && self.shift == 0
+    }
+
+    #[inline]
+    pub fn get_trailing_coefficient(&self) -> F::Element {
+        if self.coefficients.is_empty() {
+            return self.field.zero();
+        } else {
+            self.coefficients[0].clone()
+        }
+    }
+
+    #[inline]
+    pub fn get_trailing_exponent(&self) -> Rational {
+        self.get_exponent(0)
     }
 
     /// Get a copy of the variable/
@@ -742,6 +756,7 @@ impl Series<AtomField> {
             r = r + s;
         }
 
+        // FIXME: update bounds
         let e = FunctionBuilder::new(State::EXP).add_arg(&c).finish();
         Ok(r.mul_coeff(&e))
     }

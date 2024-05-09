@@ -1,9 +1,10 @@
 use std::{ops::DerefMut, sync::Arc};
 
 use crate::{
-    atom::{Atom, AtomView, Symbol},
+    atom::{Atom, AtomView, FunctionBuilder, Symbol},
     coefficient::{Coefficient, CoefficientView},
-    domains::{atom::AtomField, rational::Rational},
+    combinatorics::CombinationWithReplacementIterator,
+    domains::{atom::AtomField, integer::Integer, rational::Rational},
     poly::{series::Series, Variable},
     state::{State, Workspace},
 };
@@ -411,13 +412,61 @@ impl<'a> AtomView<'a> {
                     State::LOG => args_series[0].log(),
                     State::SQRT => Ok(args_series[0].rpow((1, 2).into())),
                     _ => {
-                        if self.contains_symbol(x) {
-                            unimplemented!(
-                                "Cannot series general expand function with x in the arguments"
-                            );
-                        } else {
-                            Ok(info.constant(f.to_owned().into()))
+                        // TODO: also check for log(x)?
+                        if args_series
+                            .iter()
+                            .any(|x| x.get_trailing_exponent().is_negative())
+                        {
+                            return Err("Cannot series expand custom function with poles");
                         }
+
+                        // TODO: depth is an overestimate
+                        let order = info.absolute_order();
+                        let depth = order.numerator().to_i64().unwrap() as u32
+                            * order.denominator().to_i64().unwrap() as u32;
+
+                        // strip the constant terms
+                        let mut constants = vec![];
+                        for x in &mut args_series {
+                            if x.get_trailing_exponent().is_zero() {
+                                let c = x.get_trailing_coefficient();
+                                *x = &*x - &x.constant(c.clone());
+                                constants.push(c);
+                        } else {
+                                constants.push(Atom::new_num(0));
+                            }
+                        }
+
+                        let mut f_eval = FunctionBuilder::new(f.get_symbol());
+                        for c in &constants {
+                            f_eval = f_eval.add_arg(c);
+                        }
+                        let constant = f_eval.finish();
+
+                        let mut result = info.constant(constant.clone());
+                        for i in 0..=depth {
+                            let mut it =
+                                CombinationWithReplacementIterator::new(args_series.len(), i);
+
+                            while let Some(x) = it.next() {
+                                let mut f_der = FunctionBuilder::new(State::DERIVATIVE);
+                                let mut term = info.one();
+                                for (arg, pow) in x.iter().enumerate() {
+                                    term = &term * &args_series[arg].npow(*pow as usize);
+                                    f_der = f_der.add_arg(&Atom::new_num(*pow as i64));
+                                }
+
+                                f_der = f_der.add_arg(&constant);
+
+                                result = &result
+                                    + &term
+                                        .mul_coeff(&f_der.finish())
+                                        .mul_coeff(&Atom::new_num(Integer::multinom(x)))
+                                        .div_coeff(&Atom::new_num(Integer::factorial(i)));
+                            }
+                        }
+
+                        Ok(result)
                     }
                 }
             }
@@ -494,7 +543,7 @@ mod test {
             .to_atom();
 
         let res = Atom::parse(
-            "1/3*𝑒-𝑒*log(3)+v1*(-7/18*𝑒+2*𝑒*log(3))+v1^2*(119/162*𝑒-2*𝑒*log(3))+𝑒*v1^-1*log(3)",
+            "1/3*exp(1)+v1*(-7/18*exp(1)+2*exp(1)*log(3))+v1^2*(119/162*exp(1)-2*exp(1)*log(3))-exp(1)*log(3)+v1^-1*exp(1)*log(3)",
         )
         .unwrap();
         assert_eq!(t, res);
@@ -579,5 +628,23 @@ mod test {
         println!("t={}", t);
 
         assert_eq!(t, Atom::parse("v1^-10").unwrap())
+    }
+
+    #[test]
+    fn series_user_function() {
+        let v1 = State::get_symbol("v1");
+
+        let input = Atom::parse("f(exp(v1),sin(v1))").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 2.into())
+            .unwrap()
+            .to_atom();
+
+        let res = Atom::parse(
+            "der(0,0,f(1,0))+f(1,0)+v1*(der(0,1,f(1,0))+der(1,0,f(1,0)))
+            +v1^2*(1/2*der(0,2,f(1,0))+1/2*der(1,0,f(1,0))+der(1,1,f(1,0))+1/2*der(2,0,f(1,0)))",
+        )
+        .unwrap();
+        assert_eq!(t, res);
     }
 }

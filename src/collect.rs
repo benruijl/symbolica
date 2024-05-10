@@ -354,6 +354,26 @@ impl<'a> AtomView<'a> {
 
                     coeff.extend(collected.as_view());
                 }
+
+                if let AtomView::Mul(y) = x {
+                    // check if all factors occur
+                    for xx in y.iter() {
+                        if !m.iter().any(|a| a == xx) {
+                            return;
+                        }
+                    }
+
+                    let mut collected = workspace.new_atom();
+                    let mul = collected.to_mul();
+
+                    for xx in m.iter() {
+                        if !y.iter().any(|a| a == xx) {
+                            mul.extend(xx);
+                        }
+                    }
+
+                    coeff.extend(collected.as_view());
+                }
             }
             _ => {
                 if *self == x {

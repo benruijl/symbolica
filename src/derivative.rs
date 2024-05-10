@@ -432,7 +432,7 @@ impl<'a> AtomView<'a> {
                                 let c = x.get_trailing_coefficient();
                                 *x = &*x - &x.constant(c.clone());
                                 constants.push(c);
-                        } else {
+                            } else {
                                 constants.push(Atom::new_num(0));
                             }
                         }
@@ -646,5 +646,19 @@ mod test {
         )
         .unwrap();
         assert_eq!(t, res);
+    }
+
+    #[test]
+    fn series_exp_log() {
+        let v1 = State::get_symbol("v1");
+
+        let input = Atom::parse("1+2*log(v1^4)").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 4.into())
+            .unwrap()
+            .exp()
+            .unwrap();
+
+        assert_eq!(t.to_atom().expand(), Atom::parse("v1^8*exp(1)",).unwrap());
     }
 }

@@ -6,7 +6,8 @@ use std::{
 };
 
 use crate::{
-    atom::{Atom, FunctionBuilder},
+    atom::{Atom, AtomView, FunctionBuilder, Symbol},
+    coefficient::CoefficientView,
     domains::{
         atom::AtomField, integer::Integer, rational::Rational, EuclideanDomain, Ring, RingPrinter,
     },
@@ -466,6 +467,16 @@ impl<F: Ring> Series<F> {
         self.order -= d;
         self.coefficients.drain(0..d);
     }
+
+    /// Remove the constant term, if it is first and it exists.
+    fn remove_constant(mut self) -> Self {
+        if !self.is_zero() && self.shift == 0 {
+            self.coefficients[0] = self.field.zero();
+            self.truncate();
+        }
+
+        self
+    }
 }
 
 impl<F: Ring> PartialEq for Series<F> {
@@ -727,6 +738,49 @@ impl<F: EuclideanDomain> Series<F> {
 }
 
 impl Series<AtomField> {
+    /// Extract x^a from an expression that comes from simplifying an exponential with logs
+    /// i.e.: exp(c + 3 Log[x^5]]) = exp(c)*x^15.
+    fn extract_exp_log(&self, e: AtomView, s: Symbol) -> Result<Self, &'static str> {
+        if !e.contains_symbol(s) {
+            return Ok(self.constant(e.to_owned()));
+        }
+
+        match e {
+            AtomView::Pow(p) => {
+                let (b, exp) = p.get_base_exp();
+
+                if let AtomView::Var(v) = b {
+                    if v.get_symbol() == s {
+                        if let AtomView::Num(n) = exp {
+                            if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
+                                Ok(self.monomial(self.field.one(), (n, d).into()))
+                            } else {
+                                unimplemented!("Cannot series expand with large exponents yet")
+                            }
+                        } else {
+                            Err("Power of variable must be rational")
+                        }
+                    } else {
+                        // s appears in the power
+                        Err("Unexpected term in exp-log simplification")
+                    }
+                } else {
+                    Err("Unexpected term in exp-log simplification")
+                }
+            }
+            AtomView::Var(_) => Ok(self.monomial(self.field.one(), (1, 1).into())),
+            AtomView::Mul(m) => {
+                let mut shift_series = self.one();
+                for a in m.iter() {
+                    shift_series = &shift_series * &self.extract_exp_log(a, s)?;
+                }
+
+                Ok(shift_series)
+            }
+            _ => Err("Unexpected term in exp-log simplification"),
+        }
+    }
+
     pub fn exp(&self) -> Result<Self, &'static str> {
         if self.shift < 0 {
             return Err("Cannot compute the exponential of a series with poles");
@@ -742,7 +796,17 @@ impl Series<AtomField> {
             Atom::new()
         };
 
-        let p = self - &self.constant(c.clone());
+        // construct the constant term, log(x) in the argument will be turned into x
+        let e = FunctionBuilder::new(State::EXP).add_arg(&c).finish();
+
+        // split the true constant part and the x-dependent part
+        let shift_series = if let Variable::Symbol(s) = self.variable.as_ref() {
+            self.extract_exp_log(e.as_view(), *s)?
+        } else {
+            unreachable!("Expansion variable is not a variable");
+        };
+
+        let p = self.clone().remove_constant();
 
         let mut r = self.one();
         let mut sp = p.clone();
@@ -756,9 +820,7 @@ impl Series<AtomField> {
             r = r + s;
         }
 
-        // FIXME: update bounds
-        let e = FunctionBuilder::new(State::EXP).add_arg(&c).finish();
-        Ok(r.mul_coeff(&e))
+        Ok(r * &shift_series)
     }
 
     pub fn log(&self) -> Result<Self, &'static str> {
@@ -807,7 +869,15 @@ impl Series<AtomField> {
             Atom::new()
         };
 
-        let p = self - &self.constant(c.clone());
+        if let Variable::Symbol(s) = self.variable.as_ref() {
+            if c.contains_symbol(*s) {
+                return Err(
+                    "Cannot compute the sin of a series with a constant term that depends on x",
+                );
+            }
+        }
+
+        let p = self.clone().remove_constant();
 
         let mut e = self.constant(FunctionBuilder::new(State::SIN).add_arg(&c).finish());
         let mut sp = p.clone();
@@ -850,7 +920,15 @@ impl Series<AtomField> {
             Atom::new()
         };
 
-        let p = self - &self.constant(c.clone());
+        if let Variable::Symbol(s) = self.variable.as_ref() {
+            if c.contains_symbol(*s) {
+                return Err(
+                    "Cannot compute the cosine of a series with a constant term that depends on x",
+                );
+            }
+        }
+
+        let p = self.clone().remove_constant();
 
         let mut e = self.constant(FunctionBuilder::new(State::COS).add_arg(&c).finish());
         let mut sp = p.clone();

@@ -271,6 +271,80 @@ impl<'a> AtomView<'a> {
             (AtomView::Add(_), _) | (_, AtomView::Add(_)) => unreachable!("Cannot have nested add"),
         }
     }
+
+    /// Simplify logs in the argument of the exponential function.
+    fn simplify_exp_log(&self, ws: &Workspace, out: &mut Atom) -> bool {
+        if let AtomView::Fun(f) = self {
+            if f.get_symbol() == State::LOG && f.get_nargs() == 1 {
+                out.set_from_view(&f.iter().next().unwrap());
+                return true;
+            }
+        }
+
+        if let AtomView::Mul(m) = self {
+            let mut found_index = None;
+            for (i, a) in m.iter().enumerate() {
+                if a.simplify_exp_log(ws, out) {
+                    if found_index.is_some() {
+                        return false;
+                    }
+
+                    found_index = Some(i);
+                }
+            }
+
+            if let Some(i) = found_index {
+                let mut mm = ws.new_atom();
+                let mmm = mm.to_mul();
+                for (j, a) in m.iter().enumerate() {
+                    if j != i {
+                        mmm.extend(a);
+                    }
+                }
+
+                let mut b = ws.new_atom();
+                b.to_pow(out.as_view(), mm.as_view());
+
+                b.as_view().normalize(ws, out);
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        if let AtomView::Add(a) = self {
+            // all terms must simplify
+            let mut mm = ws.new_atom();
+            let m = mm.to_mul();
+
+            let mut aa = ws.new_atom();
+            let aaa = aa.to_add();
+
+            let mut changed = false;
+            for a in a.iter() {
+                if a.simplify_exp_log(ws, out) {
+                    changed = true;
+                    m.extend(out.as_view());
+                } else {
+                    aaa.extend(a);
+                }
+            }
+
+            if changed {
+                let mut new_exp = ws.new_atom();
+                // TODO: change to e^()
+                new_exp.to_fun(State::EXP).add_arg(aa.as_view());
+
+                m.extend(new_exp.as_view());
+
+                mm.as_view().normalize(ws, out);
+            }
+
+            return changed;
+        }
+
+        false
+    }
 }
 
 impl Atom {
@@ -801,6 +875,18 @@ impl<'a> AtomView<'a> {
                                 return;
                             }
                         }
+                    }
+                }
+
+                if id == State::EXP && out_f.to_fun_view().get_nargs() == 1 {
+                    let arg = out_f.to_fun_view().iter().next().unwrap();
+                    // simplify logs inside exp
+                    if arg.contains_symbol(State::LOG) {
+                        let mut buffer = workspace.new_atom();
+                        if arg.simplify_exp_log(workspace, &mut buffer) {
+                            out.set_from_view(&buffer.as_view());
+                        }
+                        return;
                     }
                 }
 

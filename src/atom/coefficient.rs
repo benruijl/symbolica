@@ -304,9 +304,6 @@ impl PackedRationalNumberReader for [u8] {
                 let v = source.get_u64_le();
                 (v, source)
             }
-            ARB_NUM => {
-                panic!("Overflow")
-            }
             x => {
                 unreachable!("Unsupported numerator type {}", x)
             }
@@ -330,9 +327,6 @@ impl PackedRationalNumberReader for [u8] {
             U64_DEN => {
                 let v = source.get_u64_le();
                 (v, source)
-            }
-            ARB_DEN => {
-                panic!("Overflow")
             }
             x => {
                 unreachable!("Unsupported denominator type {}", x)
@@ -364,9 +358,6 @@ impl PackedRationalNumberReader for [u8] {
                 let v = source.get_u64_le();
                 (v as i64, source)
             }
-            ARB_NUM => {
-                panic!("Overflow")
-            }
             x => {
                 unreachable!("Unsupported numerator type {}", x)
             }
@@ -390,9 +381,6 @@ impl PackedRationalNumberReader for [u8] {
             U64_DEN => {
                 let v = source.get_u64_le();
                 (v as i64, source)
-            }
-            ARB_DEN => {
-                panic!("Overflow")
             }
             x => {
                 unreachable!("Unsupported denominator type {}", x)

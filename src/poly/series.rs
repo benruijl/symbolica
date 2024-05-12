@@ -87,16 +87,25 @@ impl<F: Ring + std::fmt::Display> std::fmt::Display for Series<F> {
                 } else {
                     write!(f, "{}*{}", p, v)?;
                 }
-            } else {
-                if self.field.is_one(c) {
+            } else if self.field.is_one(c) {
+                if e.is_integer() {
                     write!(f, "{}^{}", v, e)?;
                 } else {
-                    write!(f, "{}*{}^{}", p, v, e)?;
+                    write!(f, "{}^({})", v, e)?;
                 }
+            } else if e.is_integer() {
+                    write!(f, "{}*{}^{}", p, v, e)?;
+            } else {
+                write!(f, "{}*{}^({})", p, v, e)?;
             }
         }
 
-        write!(f, "+O({}^{})", v, self.absolute_order())
+        let o = self.absolute_order();
+        if o.is_integer() {
+            write!(f, "+O({}^{})", v, o)
+        } else {
+            write!(f, "+O({}^({}))", v, o)
+        }
     }
 }
 

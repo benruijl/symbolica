@@ -668,11 +668,7 @@ impl Add {
     pub(crate) fn new_into(mut buffer: RawAtom) -> Add {
         buffer.clear();
         buffer.put_u8(ADD_ID | NOT_NORMALIZED);
-        buffer.put_u32_le(0_u32);
-        (0u64, 1).write_packed(&mut buffer);
-        let len = buffer.len() as u32 - 1 - 4;
-        (&mut buffer[1..]).put_u32_le(len);
-
+        (0u64, 0).write_packed(&mut buffer);
         Add { data: buffer }
     }
 
@@ -695,55 +691,44 @@ impl Add {
     pub(crate) fn extend(&mut self, other: AtomView<'_>) {
         self.data[0] |= NOT_NORMALIZED;
 
-        // may increase size of the num of args
-        let mut c = &self.data[1 + 4..];
-
-        let buf_pos = 1 + 4;
+        let mut c = &self.data[1..];
 
         let mut n_args;
         (n_args, _, c) = c.get_frac_u64();
 
-        let old_size = unsafe { c.as_ptr().offset_from(self.data.as_ptr()) } as usize - 1 - 4;
+        let old_header_size = unsafe { c.as_ptr().offset_from(self.data.as_ptr()) } as usize;
 
         let new_slice = match other {
             AtomView::Add(m) => m.to_slice(),
             _ => ListSlice::from_one(other),
         };
 
-        n_args += new_slice.len() as u64;
-
-        let new_size = (n_args, 1).get_packed_size() as usize;
-
-        match new_size.cmp(&old_size) {
-            Ordering::Equal => {}
-            Ordering::Less => {
-                self.data.copy_within(1 + 4 + old_size.., 1 + 4 + new_size);
-                self.data.resize(self.data.len() - old_size + new_size, 0);
-            }
-            Ordering::Greater => {
-                let old_len = self.data.len();
-                self.data.resize(old_len + new_size - old_size, 0);
-                self.data
-                    .copy_within(1 + 4 + old_size..old_len, 1 + 4 + new_size);
-            }
-        }
-
-        // size should be ok now
-        (n_args, 1).write_packed_fixed(&mut self.data[1 + 4..1 + 4 + new_size]);
-
         for child in new_slice.iter() {
             self.data.extend_from_slice(child.get_data());
         }
 
-        let new_buf_pos = self.data.len();
+        n_args += new_slice.len() as u64;
 
-        let mut cursor = &mut self.data[1..];
+        let new_len = self.data.len() - old_header_size;
+        let new_header_size = (n_args, new_len as u64).get_packed_size() as usize + 1;
 
-        assert!(new_buf_pos - buf_pos < u32::MAX as usize, "Term too large");
+        match new_header_size.cmp(&old_header_size) {
+            Ordering::Equal => {}
+            Ordering::Less => {
+                self.data.copy_within(old_header_size.., new_header_size);
+                self.data
+                    .resize(self.data.len() - old_header_size + new_header_size, 0);
+            }
+            Ordering::Greater => {
+                let old_len = self.data.len();
+                self.data
+                    .resize(old_len + new_header_size - old_header_size, 0);
+                self.data
+                    .copy_within(old_header_size..old_len, new_header_size);
+            }
+        }
 
-        cursor
-            .write_u32::<LittleEndian>((new_buf_pos - buf_pos) as u32)
-            .unwrap();
+        (n_args, new_len as u64).write_packed_fixed(&mut self.data[1..new_header_size]);
     }
 
     #[inline(always)]
@@ -1206,17 +1191,16 @@ impl<'a> AddView<'a> {
 
     #[inline(always)]
     pub fn get_nargs(&self) -> usize {
-        self.data[1 + 4..].get_frac_i64().0 as usize
+        self.data[1..].get_frac_u64().0 as usize
     }
 
     #[inline]
     pub fn iter(&self) -> ListIterator<'a> {
         let mut c = self.data;
         c.get_u8();
-        c.get_u32_le(); // size
 
         let n_args;
-        (n_args, _, c) = c.get_frac_i64();
+        (n_args, _, c) = c.get_frac_u64();
 
         ListIterator {
             data: c,
@@ -1232,10 +1216,9 @@ impl<'a> AddView<'a> {
     pub fn to_slice(&self) -> ListSlice<'a> {
         let mut c = self.data;
         c.get_u8();
-        c.get_u32_le(); // size
 
         let n_args;
-        (n_args, _, c) = c.get_frac_i64();
+        (n_args, _, c) = c.get_frac_u64();
 
         ListSlice {
             data: c,
@@ -1399,9 +1382,14 @@ impl<'a> Iterator for ListIterator<'a> {
                 NUM_ID | VAR_ID => {
                     self.data = self.data.skip_rational();
                 }
-                FUN_ID | MUL_ID | ADD_ID => {
+                FUN_ID | MUL_ID => {
                     let n_size = self.data.get_u32_le();
                     self.data.advance(n_size as usize);
+                }
+                ADD_ID => {
+                    let (_, size, np) = self.data.get_frac_u64();
+                    self.data = np;
+                    self.data.advance(size as usize);
                 }
                 POW_ID => {
                     skip_count += 2;
@@ -1453,9 +1441,14 @@ impl<'a> ListSlice<'a> {
                 NUM_ID | VAR_ID => {
                     pos = pos.skip_rational();
                 }
-                FUN_ID | MUL_ID | ADD_ID => {
+                FUN_ID | MUL_ID => {
                     let n_size = pos.get_u32_le();
                     pos.advance(n_size as usize);
+                }
+                ADD_ID => {
+                    let (_, size, np) = pos.get_frac_u64();
+                    pos = np;
+                    pos.advance(size as usize);
                 }
                 POW_ID => {
                     skip_count += 2;

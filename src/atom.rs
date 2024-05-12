@@ -1131,7 +1131,7 @@ mod test {
         let x = Atom::parse("v1+f1(v2)").unwrap();
         assert_eq!(
             format!("{:?}", x),
-            "AddView { data: [5, 15, 0, 0, 0, 1, 2, 2, 1, 12, 3, 5, 0, 0, 0, 1, 42, 2, 1, 13] }"
+            "AddView { data: [5, 17, 2, 13, 2, 1, 12, 3, 5, 0, 0, 0, 1, 42, 2, 1, 13] }"
         );
         assert_eq!(
             x.get_all_symbols(true),
@@ -1143,7 +1143,7 @@ mod test {
             .into_iter()
             .collect(),
         );
-        assert_eq!(x.as_view().get_byte_size(), 20);
+        assert_eq!(x.as_view().get_byte_size(), 17);
     }
 
     #[test]

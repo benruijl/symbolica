@@ -28,8 +28,25 @@ const NUM_MASK: u8 = 0b00001111;
 const DEN_MASK: u8 = 0b01110000;
 const SIGN: u8 = 0b10000000;
 
+const U8_NUM_U8_DEN: u8 = U8_NUM | U8_DEN;
+const U16_NUM_U8_DEN: u8 = U16_NUM | U8_DEN;
+const U32_NUM_U8_DEN: u8 = U32_NUM | U8_DEN;
+const U64_NUM_U8_DEN: u8 = U64_NUM | U8_DEN;
+const U8_NUM_U16_DEN: u8 = U8_NUM | U16_DEN;
+const U16_NUM_U16_DEN: u8 = U16_NUM | U16_DEN;
+const U32_NUM_U16_DEN: u8 = U32_NUM | U16_DEN;
+const U64_NUM_U16_DEN: u8 = U64_NUM | U16_DEN;
+const U8_NUM_U32_DEN: u8 = U8_NUM | U32_DEN;
+const U16_NUM_U32_DEN: u8 = U16_NUM | U32_DEN;
+const U32_NUM_U32_DEN: u8 = U32_NUM | U32_DEN;
+const U64_NUM_U32_DEN: u8 = U64_NUM | U32_DEN;
+const U8_NUM_U64_DEN: u8 = U8_NUM | U64_DEN;
+const U16_NUM_U64_DEN: u8 = U16_NUM | U64_DEN;
+const U32_NUM_U64_DEN: u8 = U32_NUM | U64_DEN;
+const U64_NUM_U64_DEN: u8 = U64_NUM | U64_DEN;
+
 #[inline(always)]
-fn get_size_of_natural(num_type: u8) -> u8 {
+const fn get_size_of_natural(num_type: u8) -> u8 {
     match num_type {
         0 => 0,
         U8_NUM => 1,
@@ -286,54 +303,107 @@ impl PackedRationalNumberReader for [u8] {
     fn get_frac_u64(&self) -> (u64, u64, &[u8]) {
         let mut source = self;
         let disc = source.get_u8();
-        let num;
-        (num, source) = match disc & NUM_MASK {
+        match disc & (NUM_MASK | DEN_MASK) {
             U8_NUM => {
-                let v = source.get_u8();
-                (v as u64, source)
+                let n = source.get_u8();
+                (n as u64, 1, source)
             }
             U16_NUM => {
-                let v = source.get_u16_le();
-                (v as u64, source)
+                let n = source.get_u16_le();
+                (n as u64, 1, source)
             }
             U32_NUM => {
-                let v = source.get_u32_le();
-                (v as u64, source)
+                let n = source.get_u32_le();
+                (n as u64, 1, source)
             }
             U64_NUM => {
-                let v = source.get_u64_le();
-                (v, source)
+                let n = source.get_u64_le();
+                (n, 1, source)
+            }
+            U8_NUM_U8_DEN => {
+                let n = source.get_u8();
+                let d = source.get_u8();
+                (n as u64, d as u64, source)
+            }
+            U16_NUM_U8_DEN => {
+                let n = source.get_u16_le();
+                let d = source.get_u8();
+                (n as u64, d as u64, source)
+            }
+            U32_NUM_U8_DEN => {
+                let n = source.get_u32_le();
+                let d = source.get_u8();
+                (n as u64, d as u64, source)
+            }
+            U64_NUM_U8_DEN => {
+                let n = source.get_u64_le();
+                let d = source.get_u8();
+                (n, d as u64, source)
+            }
+            U8_NUM_U16_DEN => {
+                let n = source.get_u8();
+                let d = source.get_u16_le();
+                (n as u64, d as u64, source)
+            }
+            U16_NUM_U16_DEN => {
+                let n = source.get_u16_le();
+                let d = source.get_u16_le();
+                (n as u64, d as u64, source)
+            }
+            U32_NUM_U16_DEN => {
+                let n = source.get_u32_le();
+                let d = source.get_u16_le();
+                (n as u64, d as u64, source)
+            }
+            U64_NUM_U16_DEN => {
+                let n = source.get_u64_le();
+                let d = source.get_u16_le();
+                (n, d as u64, source)
+            }
+            U8_NUM_U32_DEN => {
+                let n = source.get_u8();
+                let d = source.get_u32_le();
+                (n as u64, d as u64, source)
+            }
+            U16_NUM_U32_DEN => {
+                let n = source.get_u16_le();
+                let d = source.get_u32_le();
+                (n as u64, d as u64, source)
+            }
+            U32_NUM_U32_DEN => {
+                let n = source.get_u32_le();
+                let d = source.get_u32_le();
+                (n as u64, d as u64, source)
+            }
+            U64_NUM_U32_DEN => {
+                let n = source.get_u64_le();
+                let d = source.get_u32_le();
+                (n, d as u64, source)
+            }
+            U8_NUM_U64_DEN => {
+                let n = source.get_u8();
+                let d = source.get_u64_le();
+                (n as u64, d, source)
+            }
+            U16_NUM_U64_DEN => {
+                let n = source.get_u16_le();
+                let d = source.get_u64_le();
+                (n as u64, d, source)
+            }
+            U32_NUM_U64_DEN => {
+                let n = source.get_u32_le();
+                let d = source.get_u64_le();
+                (n as u64, d, source)
+            }
+            U64_NUM_U64_DEN => {
+                let n = source.get_u64_le();
+                let d = source.get_u64_le();
+                (n, d, source)
             }
             x => {
-                unreachable!("Unsupported numerator type {}", x)
+                unreachable!("Unsupported numerator/denominator type {}", x)
             }
-        };
-
-        let den;
-        (den, source) = match disc & DEN_MASK {
-            0 => (1u64, source),
-            U8_DEN => {
-                let v = source.get_u8();
-                (v as u64, source)
-            }
-            U16_DEN => {
-                let v = source.get_u16_le();
-                (v as u64, source)
-            }
-            U32_DEN => {
-                let v = source.get_u32_le();
-                (v as u64, source)
-            }
-            U64_DEN => {
-                let v = source.get_u64_le();
-                (v, source)
-            }
-            x => {
-                unreachable!("Unsupported denominator type {}", x)
-            }
-        };
-
-        (num, den, source)
+        }
     }
 
     #[inline(always)]
@@ -397,31 +467,65 @@ impl PackedRationalNumberReader for [u8] {
     #[inline(always)]
     fn skip_rational(&self) -> &[u8] {
         let mut dest = self;
-        let var_size = dest.get_u8();
+        let disc = dest.get_u8();
 
-        let v_num = var_size & NUM_MASK;
-        if v_num == ARB_NUM {
-            let (num_size, den_size);
-            (num_size, den_size, dest) = dest.get_frac_i64();
-            let num_size = num_size.unsigned_abs() as usize;
-            let den_size = den_size.unsigned_abs() as usize;
-            dest.advance(num_size + den_size);
-            dest
-        } else if v_num == RAT_POLY {
-            let size = dest.get_u32_le() as usize;
-            dest.advance(size);
-            dest
-        } else if v_num == FIN_NUM {
-            let var_size = dest.get_u8();
-            let size = get_size_of_natural(var_size & NUM_MASK)
-                + get_size_of_natural((var_size & DEN_MASK) >> 4);
-            dest.advance(size as usize);
-            dest
-        } else {
-            let size = get_size_of_natural(v_num) + get_size_of_natural((var_size & DEN_MASK) >> 4);
-            dest.advance(size as usize);
-            dest
+        match disc & (NUM_MASK | DEN_MASK) {
+            U8_NUM => {
+                dest.advance(1);
+            }
+            U16_NUM | U8_NUM_U8_DEN => {
+                dest.advance(2);
+            }
+            U16_NUM_U8_DEN | U8_NUM_U16_DEN => {
+                dest.advance(3);
+            }
+            U32_NUM | U16_NUM_U16_DEN => {
+                dest.advance(4);
+            }
+            U32_NUM_U8_DEN | U8_NUM_U32_DEN => {
+                dest.advance(5);
+            }
+            U32_NUM_U16_DEN | U16_NUM_U32_DEN => {
+                dest.advance(6);
+            }
+            U64_NUM | U32_NUM_U32_DEN => {
+                dest.advance(8);
+            }
+            U64_NUM_U8_DEN | U8_NUM_U64_DEN => {
+                dest.advance(9);
+            }
+            U64_NUM_U16_DEN | U16_NUM_U64_DEN => {
+                dest.advance(10);
+            }
+            U64_NUM_U32_DEN | U32_NUM_U64_DEN => {
+                dest.advance(12);
+            }
+            U64_NUM_U64_DEN => {
+                dest.advance(16);
+            }
+            x => {
+                let v_num = x & NUM_MASK;
+                if v_num == ARB_NUM {
+                    let (num_size, den_size);
+                    (num_size, den_size, dest) = dest.get_frac_i64();
+                    let num_size = num_size.unsigned_abs() as usize;
+                    let den_size = den_size.unsigned_abs() as usize;
+                    dest.advance(num_size + den_size);
+                } else if v_num == RAT_POLY {
+                    let size = dest.get_u32_le() as usize;
+                    dest.advance(size);
+                } else if v_num == FIN_NUM {
+                    let var_size = dest.get_u8();
+                    let size = get_size_of_natural(var_size & NUM_MASK)
+                        + get_size_of_natural((var_size & DEN_MASK) >> 4);
+                    dest.advance(size as usize);
+                } else {
+                    unreachable!("Unsupported numerator/denominator type {}", disc)
+                }
+            }
         }
+
+        dest
     }
 
     #[inline(always)]

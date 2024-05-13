@@ -114,13 +114,14 @@ class Expression:
     @classmethod
     def symbol(_cls, name: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Expression:
         """
-        Create a new symbol from a `name`. Can be turned into a symmetric function
-        using `is_symmetric=True` or into an antisymmetric function using `is_antisymmetric=True`.
-        The function can be made multilinear using `is_linear=True`. If no attributes
+        Create a new symbol from a `name`. Symbols carry information about their attributes.
+        The symbol can signal that it is symmetric if it is used as a function
+        using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`, and
+        multilinear using `is_linear=True`. If no attributes
         are specified, the attributes are inherited from the symbol if it was already defined,
         otherwise all attributes are set to `false`.
 
-        Once attributes are defined on a function, they cannot be redefined later.
+        Once attributes are defined on a symbol, they cannot be redefined later.
 
         Examples
         --------
@@ -130,7 +131,7 @@ class Expression:
         >>> print(e)
         x**2 + 5
 
-        Define a regular symbol and use it as a function symbol:
+        Define a regular symbol and use it as a function:
         >>> f = Expression.symbol('f')
         >>> e = f(1,2)
         >>> print(e)
@@ -154,7 +155,14 @@ class Expression:
     @classmethod
     def symbols(_cls, *names: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Sequence[Expression]:
         """
-        Create a Symbolica function for every name in `*names`.
+        Create a Symbolica symbol for every name in `*names`. See `Expression.symbol` for more information.
+
+        Examples
+        --------
+        >>> f, x = Expression.symbols('x', 'f')
+        >>> e = f(1,x)
+        >>> print(e)
+        f(1,x)
         """
 
     @overload
@@ -1360,6 +1368,19 @@ class Transformer:
 
 
 class Series:
+    """
+    A series expansion class.
+
+    Supports standard arithmetic operations, such
+    as addition and multiplication.
+
+    Examples
+    --------
+    >>> x = Expression.symbol('x')
+    >>> s = Expression.parse("(1-cos(x))/sin(x)").series(x, 0, 4)
+    >>> print(s)
+    """
+
     def __add__(self, other: Series) -> Series:
         """Add two series together, returning the result."""
 

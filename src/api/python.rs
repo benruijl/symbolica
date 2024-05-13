@@ -1280,9 +1280,10 @@ macro_rules! req_wc_cmp {
 
 #[pymethods]
 impl PythonExpression {
-    /// Create a new symbol from a `name`. Can be turned into a symmetric symbol
-    /// using `is_symmetric=True` or into an antisymmetric symbol using `is_antisymmetric=True`.
-    /// The symbol can be made multilinear using `is_linear=True`. If no attributes
+    /// Create a new symbol from a `name`. Symbols carry information about their attributes.
+    /// The symbol can signal that it is symmetric if it is used as a function
+    /// using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`, and
+    /// multilinear using `is_linear=True`. If no attributes
     /// are specified, the attributes are inherited from the symbol if it was already defined,
     /// otherwise all attributes are set to `false`.
     ///
@@ -1296,7 +1297,7 @@ impl PythonExpression {
     /// >>> print(e)
     /// x**2 + 5
     ///
-    /// Define a regular symbol and use it as a function symbol:
+    /// Define a regular symbol and use it as a function:
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2)
     /// >>> print(e)
@@ -1351,7 +1352,14 @@ impl PythonExpression {
         Ok(Atom::new_var(id).into())
     }
 
-    /// Create a Symbolica variable for every name in `*names`.
+    /// Create a Symbolica symbol for every name in `*names`. See `Expression.symbol` for more information.
+    ///
+    /// Examples
+    /// --------
+    /// >>> f, x = Expression.symbols('x', 'f')
+    /// >>> e = f(1,x)
+    /// >>> print(e)
+    /// f(1,x)
     #[pyo3(signature = (*args,is_symmetric=None,is_antisymmetric=None,is_linear=None))]
     #[classmethod]
     pub fn symbols(
@@ -3095,7 +3103,16 @@ impl PythonExpression {
     }
 }
 
-/// A Symbolica term streamer.
+/// A series expansion class.
+///
+/// Supports standard arithmetic operations, such
+/// as addition and multiplication.
+///
+/// Examples
+/// --------
+/// >>> x = Expression.symbol('x')
+/// >>> s = Expression.parse("(1-cos(x))/sin(x)").series(x, 0, 4)
+/// >>> print(s)
 #[pyclass(name = "Series", module = "symbolica")]
 pub struct PythonSeries {
     pub series: Series<AtomField>,

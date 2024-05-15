@@ -25,6 +25,7 @@ use smartstring::{LazyCompact, SmartString};
 use crate::{
     atom::{Atom, AtomType, AtomView, ListIterator, Symbol},
     domains::{
+        atom::AtomField,
         finite_field::{ToFiniteField, Zp},
         float::Complex,
         integer::{Integer, IntegerRing, Z},
@@ -49,6 +50,7 @@ use crate::{
         factor::Factorize,
         groebner::GroebnerBasis,
         polynomial::MultivariatePolynomial,
+        series::Series,
         GrevLexOrder, LexOrder, Variable, INLINED_EXPONENTS,
     },
     printer::{
@@ -80,6 +82,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonRandomNumberGenerator>()?;
     m.add_class::<PythonPatternRestriction>()?;
     m.add_class::<PythonTermStreamer>()?;
+    m.add_class::<PythonSeries>()?;
 
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_function(wrap_pyfunction!(is_licensed, m)?)?;
@@ -421,7 +424,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id, g_id = Expression.symbols('x_', 'f', 'g')
+    /// >>> x_, f_id, g_id = Expression.symbols('x__', 'f', 'g')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
     /// >>> print(e)
@@ -469,7 +472,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id = Expression.symbols('x_', 'f')
+    /// >>> x_, f_id = Expression.symbols('x__', 'f')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id))
     /// >>> print(e)
@@ -727,12 +730,14 @@ impl PythonPattern {
         return append_transformer!(self, Transformer::Derivative(id));
     }
 
-    /// Create a transformer that Taylor expands in `x` around `expansion_point` to depth `depth`.
-    pub fn taylor_series(
+    /// Create a transformer that series expands in `x` around `expansion_point` to depth `depth`.
+    #[pyo3(signature = (x, expansion_point, depth, depth_denom = 1))]
+    pub fn series(
         &self,
         x: ConvertibleToExpression,
         expansion_point: ConvertibleToExpression,
-        depth: u32,
+        depth: i64,
+        depth_denom: i64,
     ) -> PyResult<PythonPattern> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
             x.get_symbol()
@@ -744,7 +749,11 @@ impl PythonPattern {
 
         return append_transformer!(
             self,
-            Transformer::TaylorSeries(id, expansion_point.to_expression().expr.clone(), depth,)
+            Transformer::Series(
+                id,
+                expansion_point.to_expression().expr.clone(),
+                (depth, depth_denom).into(),
+            )
         );
     }
 
@@ -1271,9 +1280,10 @@ macro_rules! req_wc_cmp {
 
 #[pymethods]
 impl PythonExpression {
-    /// Create a new symbol from a `name`. Can be turned into a symmetric symbol
-    /// using `is_symmetric=True` or into an antisymmetric symbol using `is_antisymmetric=True`.
-    /// The symbol can be made multilinear using `is_linear=True`. If no attributes
+    /// Create a new symbol from a `name`. Symbols carry information about their attributes.
+    /// The symbol can signal that it is symmetric if it is used as a function
+    /// using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`, and
+    /// multilinear using `is_linear=True`. If no attributes
     /// are specified, the attributes are inherited from the symbol if it was already defined,
     /// otherwise all attributes are set to `false`.
     ///
@@ -1287,7 +1297,7 @@ impl PythonExpression {
     /// >>> print(e)
     /// x**2 + 5
     ///
-    /// Define a regular symbol and use it as a function symbol:
+    /// Define a regular symbol and use it as a function:
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2)
     /// >>> print(e)
@@ -1342,7 +1352,14 @@ impl PythonExpression {
         Ok(Atom::new_var(id).into())
     }
 
-    /// Create a Symbolica variable for every name in `*names`.
+    /// Create a Symbolica symbol for every name in `*names`. See `Expression.symbol` for more information.
+    ///
+    /// Examples
+    /// --------
+    /// >>> f, x = Expression.symbols('x', 'f')
+    /// >>> e = f(1,x)
+    /// >>> print(e)
+    /// f(1,x)
     #[pyo3(signature = (*args,is_symmetric=None,is_antisymmetric=None,is_linear=None))]
     #[classmethod]
     pub fn symbols(
@@ -1465,7 +1482,7 @@ impl PythonExpression {
     /// Return all defined symbol names (function names and variables).
     #[classmethod]
     pub fn get_all_symbol_names(_cls: &PyType) -> PyResult<Vec<String>> {
-        Ok(State::symbol_iter().map(|x| x.to_string()).collect())
+        Ok(State::symbol_iter().map(|(_, x)| x.to_string()).collect())
     }
 
     /// Parse a Symbolica expression from a string.
@@ -2547,7 +2564,7 @@ impl PythonExpression {
         Ok(b.into())
     }
 
-    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
+    /// Series expand in `x` around `expansion_point` to depth `depth`.
     ///
     /// Examples
     /// -------
@@ -2556,17 +2573,19 @@ impl PythonExpression {
     /// >>> f = Expression.symbol('f')
     /// >>>
     /// >>> e = 2* x**2 * y + f(x)
-    /// >>> e = e.taylor_series(x, 0, 2)
+    /// >>> e = e.series(x, 0, 2)
     /// >>>
     /// >>> print(e)
     ///
     /// yields `f(0)+x*der(1,f(0))+1/2*x^2*(der(2,f(0))+4*y)`.
-    pub fn taylor_series(
+    #[pyo3(signature = (x, expansion_point, depth, depth_denom = 1))]
+    pub fn series(
         &self,
         x: ConvertibleToExpression,
         expansion_point: ConvertibleToExpression,
-        depth: u32,
-    ) -> PyResult<PythonExpression> {
+        depth: i64,
+        depth_denom: i64,
+    ) -> PyResult<PythonSeries> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
             x.get_symbol()
         } else {
@@ -2575,11 +2594,14 @@ impl PythonExpression {
             ));
         };
 
-        let b = self
-            .expr
-            .taylor_series(id, expansion_point.to_expression().expr.as_view(), depth);
-
-        Ok(b.into())
+        match self.expr.series(
+            id,
+            expansion_point.to_expression().expr.as_view(),
+            (depth, depth_denom).into(),
+        ) {
+            Ok(s) => Ok(PythonSeries { series: s }),
+            Err(e) => Err(exceptions::PyValueError::new_err(format!("{}", e))),
+        }
     }
 
     /// Compute the partial fraction decomposition in `x`.
@@ -3078,6 +3100,127 @@ impl PythonExpression {
             .as_view()
             .evaluate(&constants, &functions, &mut cache);
         Ok(PyComplex::from_doubles(py, r.re, r.im))
+    }
+}
+
+/// A series expansion class.
+///
+/// Supports standard arithmetic operations, such
+/// as addition and multiplication.
+///
+/// Examples
+/// --------
+/// >>> x = Expression.symbol('x')
+/// >>> s = Expression.parse("(1-cos(x))/sin(x)").series(x, 0, 4)
+/// >>> print(s)
+#[pyclass(name = "Series", module = "symbolica")]
+pub struct PythonSeries {
+    pub series: Series<AtomField>,
+}
+
+#[pymethods]
+impl PythonSeries {
+    /// Add this series to `other`, returning the result.
+    pub fn __add__(&self, rhs: &Self) -> PyResult<Self> {
+        Ok(Self {
+            series: &self.series + &rhs.series,
+        })
+    }
+
+    pub fn __sub__(&self, rhs: &Self) -> PyResult<Self> {
+        Ok(Self {
+            series: &self.series - &rhs.series,
+        })
+    }
+
+    pub fn __mul__(&self, rhs: &Self) -> PyResult<Self> {
+        Ok(Self {
+            series: &self.series * &rhs.series,
+        })
+    }
+
+    pub fn __truediv__(&self, rhs: &Self) -> PyResult<Self> {
+        Ok(Self {
+            series: &self.series / &rhs.series,
+        })
+    }
+
+    pub fn __pow__(&self, rhs: i64, m: Option<i64>) -> PyResult<Self> {
+        if m.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Optional number argument not supported",
+            ));
+        }
+
+        Ok(Self {
+            series: self.series.rpow((rhs, 1).into()),
+        })
+    }
+
+    pub fn __neg__(&self) -> Self {
+        Self {
+            series: -self.series.clone(),
+        }
+    }
+
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.series))
+    }
+
+    pub fn sin(&self) -> PyResult<Self> {
+        Ok(Self {
+            series: self
+                .series
+                .sin()
+                .map_err(|e| exceptions::PyValueError::new_err(e))?,
+        })
+    }
+
+    pub fn cos(&self) -> PyResult<Self> {
+        Ok(Self {
+            series: self
+                .series
+                .cos()
+                .map_err(|e| exceptions::PyValueError::new_err(e))?,
+        })
+    }
+
+    pub fn exp(&self) -> PyResult<Self> {
+        Ok(Self {
+            series: self
+                .series
+                .exp()
+                .map_err(|e| exceptions::PyValueError::new_err(e))?,
+        })
+    }
+
+    pub fn log(&self) -> PyResult<Self> {
+        Ok(Self {
+            series: self
+                .series
+                .log()
+                .map_err(|e| exceptions::PyValueError::new_err(e))?,
+        })
+    }
+
+    pub fn pow(&self, num: i64, den: i64) -> PyResult<Self> {
+        Ok(Self {
+            series: self.series.rpow((num, den).into()),
+        })
+    }
+
+    pub fn spow(&self, pow: &Self) -> PyResult<Self> {
+        Ok(Self {
+            series: self
+                .series
+                .pow(&pow.series)
+                .map_err(|e| exceptions::PyValueError::new_err(e))?,
+        })
+    }
+
+    /// Convert the series into an expression.
+    pub fn to_expression(&self) -> PythonExpression {
+        self.series.to_atom().into()
     }
 }
 

@@ -4,6 +4,7 @@ pub mod gcd;
 pub mod groebner;
 pub mod polynomial;
 pub mod resultant;
+pub mod series;
 pub mod univariate;
 
 use std::borrow::Cow;
@@ -390,6 +391,14 @@ impl Variable {
             Variable::Symbol(v) => format!("{}", State::get_name(*v)),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Function(_, a) | Variable::Other(a) => format!("{}", a),
+        }
+    }
+
+    pub fn to_atom(&self) -> Atom {
+        match self {
+            Variable::Symbol(s) => Atom::new_var(*s),
+            Variable::Function(_, a) | Variable::Other(a) => a.as_ref().clone(),
+            Variable::Temporary(_) => panic!("Cannot convert a temporary variable to an atom"),
         }
     }
 

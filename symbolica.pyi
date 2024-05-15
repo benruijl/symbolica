@@ -114,13 +114,14 @@ class Expression:
     @classmethod
     def symbol(_cls, name: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Expression:
         """
-        Create a new symbol from a `name`. Can be turned into a symmetric function
-        using `is_symmetric=True` or into an antisymmetric function using `is_antisymmetric=True`.
-        The function can be made multilinear using `is_linear=True`. If no attributes
+        Create a new symbol from a `name`. Symbols carry information about their attributes.
+        The symbol can signal that it is symmetric if it is used as a function
+        using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`, and
+        multilinear using `is_linear=True`. If no attributes
         are specified, the attributes are inherited from the symbol if it was already defined,
         otherwise all attributes are set to `false`.
 
-        Once attributes are defined on a function, they cannot be redefined later.
+        Once attributes are defined on a symbol, they cannot be redefined later.
 
         Examples
         --------
@@ -130,7 +131,7 @@ class Expression:
         >>> print(e)
         x**2 + 5
 
-        Define a regular symbol and use it as a function symbol:
+        Define a regular symbol and use it as a function:
         >>> f = Expression.symbol('f')
         >>> e = f(1,2)
         >>> print(e)
@@ -154,7 +155,14 @@ class Expression:
     @classmethod
     def symbols(_cls, *names: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Sequence[Expression]:
         """
-        Create a Symbolica function for every name in `*names`.
+        Create a Symbolica symbol for every name in `*names`. See `Expression.symbol` for more information.
+
+        Examples
+        --------
+        >>> f, x = Expression.symbols('x', 'f')
+        >>> e = f(1,x)
+        >>> print(e)
+        f(1,x)
         """
 
     @overload
@@ -726,13 +734,14 @@ class Expression:
     def derivative(self, x: Expression) -> Expression:
         """Derive the expression w.r.t the variable `x`."""
 
-    def taylor_series(
+    def series(
         self,
         x: Expression,
         expansion_point: Expression | int,
         depth: int,
-    ) -> Expression:
-        """Taylor expand in `x` around `expansion_point` to depth `depth`."""
+        depth_denom: int = 1,
+    ) -> Series:
+        """Series expand in `x` around `expansion_point` to depth `depth`."""
 
     def apart(self, x: Expression) -> Expression:
         """Compute the partial fraction decomposition in `x`.
@@ -1076,7 +1085,7 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_, f_id, g_id = Expression.symbols('x_', 'f', 'g')
+        >>> x_, f_id, g_id = Expression.symbols('x__', 'f', 'g')
         >>> f = Expression.symbol('f')
         >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
         >>> print(e)
@@ -1093,7 +1102,7 @@ class Transformer:
         Examples
         --------
         >>> from symbolica import Expression, Transformer
-        >>> x_, f_id = Expression.symbols('x_', 'f')
+        >>> x_, f_id = Expression.symbols('x__', 'f')
         >>> f = Expression.symbol('f')
         >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id)
         >>> print(e)
@@ -1189,13 +1198,14 @@ class Transformer:
     def derivative(self, x: Transformer | Expression) -> Transformer:
         """Create a transformer that derives `self` w.r.t the variable `x`."""
 
-    def taylor_series(
+    def series(
         self,
         x: Expression,
         expansion_point: Expression,
         depth: int,
-    ) -> Expression:
-        """Create a transformer that Taylor expands in `x` around `expansion_point` to depth `depth`.
+        depth_denom: int = 1,
+    ) -> Transformer:
+        """Create a transformer that series expands in `x` around `expansion_point` to depth `depth`.
 
         Examples
         -------
@@ -1204,7 +1214,7 @@ class Transformer:
         >>> f = Expression.symbol('f')
         >>>
         >>> e = 2* x**2 * y + f(x)
-        >>> e = e.taylor_series(x, 0, 2)
+        >>> e = e.series(x, 0, 2)
         >>>
         >>> print(e)
 
@@ -1357,6 +1367,60 @@ class Transformer:
         """
 
 
+class Series:
+    """
+    A series expansion class.
+
+    Supports standard arithmetic operations, such
+    as addition and multiplication.
+
+    Examples
+    --------
+    >>> x = Expression.symbol('x')
+    >>> s = Expression.parse("(1-cos(x))/sin(x)").series(x, 0, 4)
+    >>> print(s)
+    """
+
+    def __add__(self, other: Series) -> Series:
+        """Add two series together, returning the result."""
+
+    def __sub__(self, other: Series) -> Series:
+        """Subtract `other` from `self`, returning the result."""
+
+    def __mul__(self, other: Series) -> Series:
+        """Multiply two series together, returning the result."""
+
+    def __truediv__(self, other: Series) -> Series:
+        """Divide `self` by `other`, returning the result."""
+
+    def __pow__(self, exp: int) -> Series:
+        """Raise the series to the power of `exp`, returning the result."""
+
+    def __neg__(self) -> Series:
+        """Negate the series."""
+
+    def sin(self) -> Series:
+        """Compute the sine of the series, returning the result."""
+
+    def cos(self) -> Series:
+        """Compute the cosine of the series, returning the result."""
+
+    def exp(self) -> Series:
+        """Compute the exponential of the series, returning the result."""
+
+    def log(self) -> Series:
+        """Compute the natural logarithm of the series, returning the result."""
+
+    def pow(self, num: int, den: int) -> Series:
+        """Raise the series to the power of `num/den`, returning the result."""
+
+    def spow(self, exp: Series) -> Series:
+        """Raise the series to the power of `exp`, returning the result."""
+
+    def to_expression(self) -> Expression:
+        """Convert the term stream into an expression. This may exceed the available memory."""
+
+
 class TermStreamer:
     def __new__(_cls, path: Optional[str] = None,
                 max_mem_bytes: Optional[int] = None,
@@ -1368,16 +1432,16 @@ class TermStreamer:
     def __add__(self, other: TermStreamer) -> TermStreamer:
         """Add two term streamers together, returning the result."""
 
-    def __iadd__(self, other: TermStreamer):
+    def __iadd__(self, other: TermStreamer) -> None:
         """Add another term streamer to this one."""
 
     def get_byte_size(self) -> int:
         """Get the byte size of the term streamer."""
 
-    def push(self, expr: Expression):
+    def push(self, expr: Expression) -> None:
         """Push an expresssion to the term streamer."""
 
-    def normalize(self):
+    def normalize(self) -> None:
         """Sort and fuse all terms in the streamer."""
 
     def to_expression(self) -> Expression:

@@ -1,9 +1,11 @@
-use std::ops::DerefMut;
+use std::{ops::DerefMut, sync::Arc};
 
 use crate::{
-    atom::{Atom, AtomView, Symbol},
-    coefficient::Coefficient,
-    domains::integer::Integer,
+    atom::{Atom, AtomView, FunctionBuilder, Symbol},
+    coefficient::{Coefficient, CoefficientView},
+    combinatorics::CombinationWithReplacementIterator,
+    domains::{atom::AtomField, integer::Integer, rational::Rational},
+    poly::{series::Series, Variable},
     state::{State, Workspace},
 };
 
@@ -20,22 +22,14 @@ impl Atom {
         self.as_view().derivative_into(x, out)
     }
 
-    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
-    pub fn taylor_series(&self, x: Symbol, expansion_point: AtomView, depth: u32) -> Atom {
-        self.as_view().taylor_series(x, expansion_point, depth)
-    }
-
-    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
-    /// Returns `true` iff the result is non-zero.
-    pub fn taylor_series_into(
+    /// Series expand in `x` around `expansion_point` to depth `depth`.
+    pub fn series(
         &self,
         x: Symbol,
         expansion_point: AtomView,
-        depth: u32,
-        out: &mut Atom,
-    ) -> bool {
-        self.as_view()
-            .taylor_series_into(x, expansion_point, depth, out)
+        depth: Rational,
+    ) -> Result<Series<AtomField>, &'static str> {
+        self.as_view().series(x, expansion_point, depth)
     }
 }
 
@@ -344,110 +338,171 @@ impl<'a> AtomView<'a> {
         }
     }
 
-    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
-    pub fn taylor_series(&self, x: Symbol, expansion_point: AtomView, depth: u32) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut out = ws.new_atom();
-            self.taylor_series_with_ws_into(x, expansion_point, depth, ws, &mut out);
-            out.into_inner()
+    /// Series expand in `x` around `expansion_point` to depth `depth`.
+    pub fn series(
+        &self,
+        x: Symbol,
+        expansion_point: AtomView,
+        depth: Rational,
+    ) -> Result<Series<AtomField>, &'static str> {
+        // heuristic current depth
+        let mut current_depth = if depth.is_negative() {
+            Rational::one()
+        } else {
+            depth.clone()
+        };
+        Workspace::get_local().with(|ws| loop {
+            let info = Series::new(
+                &AtomField::new(),
+                None,
+                if expansion_point.is_zero() {
+                    Arc::new(Variable::Symbol(x))
+                } else {
+                    Arc::new(Variable::Other(Arc::new(
+                        Atom::new_var(x) - &expansion_point.to_owned(),
+                    )))
+                },
+                &current_depth + &((1.into(), current_depth.denominator())).into(),
+            );
+
+            let mut series = self.series_with_ws(x, expansion_point, ws, &info)?;
+            if series.absolute_order() > depth {
+                series.truncate_absolute_order(&depth + &((1.into(), depth.denominator())).into());
+                break Ok(series);
+            } else {
+                // increase the expansion depth
+                // TODO: find better heuristic
+                current_depth = &current_depth * &2.into();
+            }
         })
     }
 
-    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
-    /// Returns `true` iff the result is non-zero.
-    pub fn taylor_series_into(
+    /// Series expand in `x` around `expansion_point` to depth `depth`.
+    pub fn series_with_ws(
         &self,
         x: Symbol,
         expansion_point: AtomView,
-        depth: u32,
-        out: &mut Atom,
-    ) -> bool {
-        Workspace::get_local()
-            .with(|ws| self.taylor_series_with_ws_into(x, expansion_point, depth, ws, out))
-    }
-
-    /// Taylor expand in `x` around `expansion_point` to depth `depth`.
-    /// Returns `true` iff the result is non-zero.
-    pub fn taylor_series_with_ws_into(
-        &self,
-        x: Symbol,
-        expansion_point: AtomView,
-        depth: u32,
         workspace: &Workspace,
-        out: &mut Atom,
-    ) -> bool {
-        let mut current_order = workspace.new_atom();
-        current_order.set_from_view(self);
-
-        let mut next_order = workspace.new_atom();
-
-        let var = workspace.new_var(x);
-        let var_pat = var.into_pattern();
-        let expansion_point_pat = expansion_point.into_pattern();
-
-        // construct x - expansion_point
-        // TODO: check that expansion_point does not involve `x`
-
-        let mut dist = workspace.new_atom();
-        var.as_view()
-            .sub_with_ws_into(workspace, expansion_point, &mut dist);
-
-        let mut series = workspace.new_atom();
-        let series_sum = series.to_add();
-
-        let mut series_contrib = workspace.new_atom();
-
-        for d in 0..=depth {
-            // replace x by expansion_point
-            var_pat.replace_all_with_ws_into(
-                current_order.as_view(),
-                &expansion_point_pat,
-                workspace,
-                None,
-                None,
-                &mut next_order,
-            );
-
-            if d > 0 {
-                let m = series_contrib.to_mul();
-                m.extend(next_order.as_view());
-                if d > 1 {
-                    let mut exp = workspace.new_atom();
-                    exp.to_pow(dist.as_view(), workspace.new_num(d as i64).as_view());
-                    m.extend(exp.as_view());
-                } else if d == 1 {
-                    m.extend(dist.as_view());
-                }
-
-                let mut fact = workspace.new_atom();
-                fact.to_num((Integer::one(), Integer::factorial(d)).into());
-
-                m.extend(fact.as_view());
-
-                series_sum.extend(series_contrib.as_view());
-            } else {
-                series_sum.extend(next_order.as_view());
-            }
-
-            if d < depth
-                && current_order
-                    .as_view()
-                    .derivative_with_ws_into(x, workspace, &mut next_order)
-            {
-                std::mem::swap(&mut current_order, &mut next_order);
-            } else {
-                if d == 0 {
-                    out.set_from_view(&workspace.new_num(0).as_view());
-                    return false;
-                }
-
-                break;
-            }
+        info: &Series<AtomField>,
+    ) -> Result<Series<AtomField>, &'static str> {
+        if !self.contains_symbol(x) {
+            return Ok(info.constant(self.to_owned().into()));
         }
 
-        series.as_view().normalize(workspace, out);
+        // TODO: optimize, appending a monomial using addition is slow
+        match self {
+            AtomView::Num(n) => Ok(info.constant(n.to_owned().into())),
+            AtomView::Var(v) => {
+                if v.get_symbol() == x {
+                    Ok(info.shifted_variable(expansion_point.to_owned()))
+                } else {
+                    Ok(info.constant(v.to_owned().into()))
+                }
+            }
+            AtomView::Fun(f) => {
+                let mut args_series = Vec::with_capacity(f.get_nargs());
+                for arg in f.iter() {
+                    args_series.push(arg.series_with_ws(x, expansion_point, workspace, info)?);
+                }
 
-        true
+                match f.get_symbol() {
+                    State::COS => args_series[0].cos(),
+                    State::SIN => args_series[0].sin(),
+                    State::EXP => args_series[0].exp(),
+                    State::LOG => args_series[0].log(),
+                    State::SQRT => Ok(args_series[0].rpow((1, 2).into())),
+                    _ => {
+                        // TODO: also check for log(x)?
+                        if args_series
+                            .iter()
+                            .any(|x| x.get_trailing_exponent().is_negative())
+                        {
+                            return Err("Cannot series expand custom function with poles");
+                        }
+
+                        // TODO: depth is an overestimate
+                        let order = info.absolute_order();
+                        let depth = order.numerator().to_i64().unwrap() as u32
+                            * order.denominator().to_i64().unwrap() as u32;
+
+                        // strip the constant terms
+                        let mut constants = vec![];
+                        for x in &mut args_series {
+                            if x.get_trailing_exponent().is_zero() {
+                                let c = x.get_trailing_coefficient();
+                                *x = &*x - &x.constant(c.clone());
+                                constants.push(c);
+                            } else {
+                                constants.push(Atom::new_num(0));
+                            }
+                        }
+
+                        let mut f_eval = FunctionBuilder::new(f.get_symbol());
+                        for c in &constants {
+                            f_eval = f_eval.add_arg(c);
+                        }
+                        let constant = f_eval.finish();
+
+                        let mut result = info.constant(constant.clone());
+                        for i in 0..=depth {
+                            let mut it =
+                                CombinationWithReplacementIterator::new(args_series.len(), i);
+
+                            while let Some(x) = it.next() {
+                                let mut f_der = FunctionBuilder::new(State::DERIVATIVE);
+                                let mut term = info.one();
+                                for (arg, pow) in x.iter().enumerate() {
+                                    term = &term * &args_series[arg].npow(*pow as usize);
+                                    f_der = f_der.add_arg(&Atom::new_num(*pow as i64));
+                                }
+
+                                f_der = f_der.add_arg(&constant);
+
+                                result = &result
+                                    + &term
+                                        .mul_coeff(&f_der.finish())
+                                        .mul_coeff(&Atom::new_num(Integer::multinom(x)))
+                                        .div_coeff(&Atom::new_num(Integer::factorial(i)));
+                            }
+                        }
+
+                        Ok(result)
+                    }
+                }
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+
+                let base_series = base.series_with_ws(x, expansion_point, workspace, info)?;
+
+                if let AtomView::Num(n) = exp {
+                    if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
+                        Ok(base_series.rpow((n, d).into()))
+                    } else {
+                        unimplemented!("Cannot series expand with large exponents yet")
+                    }
+                } else {
+                    let e = exp.series_with_ws(x, expansion_point, workspace, info)?;
+                    base_series.pow(&e)
+                }
+            }
+            AtomView::Mul(args) => {
+                let mut series = info.one();
+                for arg in args.iter() {
+                    series = &series * &arg.series_with_ws(x, expansion_point, workspace, info)?;
+                }
+
+                Ok(series)
+            }
+            AtomView::Add(args) => {
+                let mut series = info.zero();
+                for arg in args.iter() {
+                    series = &series + &arg.series_with_ws(x, expansion_point, workspace, info)?;
+                }
+
+                Ok(series)
+            }
+        }
     }
 }
 
@@ -457,20 +512,20 @@ mod test {
 
     #[test]
     fn derivative() {
-        let x = State::get_symbol("x");
+        let v1 = State::get_symbol("v1");
         let inputs = [
-            "(1+2*x)^(5+x)",
-            "log(2*x) + exp(3*x) + sin(4*x) + cos(y*x)",
-            "f(x^2,x)",
-            "der(0,1,f(x,x^3))",
+            "(1+2*v1)^(5+v1)",
+            "log(2*v1) + exp(3*v1) + sin(4*v1) + cos(y*v1)",
+            "f(v1^2,v1)",
+            "der(0,1,f(v1,v1^3))",
         ];
-        let r = inputs.map(|input| Atom::parse(input).unwrap().derivative(x));
+        let r = inputs.map(|input| Atom::parse(input).unwrap().derivative(v1));
 
         let res = [
-            "(2*x+1)^(x+5)*log(2*x+1)+2*(x+5)*(2*x+1)^(x+4)",
-            "2*(2*x)^-1+3*exp(3*x)+4*cos(4*x)-y*sin(x*y)",
-            "der(0,1,f(x^2,x))+2*x*der(1,0,f(x^2,x))",
-            "der(1,1,f(x,x^3))+3*x^2*der(0,2,f(x,x^3))",
+            "(2*v1+1)^(v1+5)*log(2*v1+1)+2*(v1+5)*(2*v1+1)^(v1+4)",
+            "2*(2*v1)^-1+3*exp(3*v1)+4*cos(4*v1)-y*sin(v1*y)",
+            "der(0,1,f(v1^2,v1))+2*v1*der(1,0,f(v1^2,v1))",
+            "der(1,1,f(v1,v1^3))+3*v1^2*der(0,2,f(v1,v1^3))",
         ];
         let res = res.map(|input| Atom::parse(input).unwrap());
 
@@ -478,12 +533,132 @@ mod test {
     }
 
     #[test]
-    fn taylor_series() {
-        let x = State::get_symbol("x");
-        let input = Atom::parse("cos(x^2+1)*(x+3)").unwrap();
-        let t = input.taylor_series(x, Atom::new_num(0).as_view(), 2);
+    fn series() {
+        let v1 = State::get_symbol("v1");
 
-        let res = Atom::parse("3*cos(1)+x*cos(1)-3*x^2*sin(1)").unwrap();
+        let input = Atom::parse("exp(v1^2+1)*log(v1+3)/v1/(v1+1)").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 2.into())
+            .unwrap()
+            .to_atom();
+
+        let res = Atom::parse(
+            "1/3*exp(1)+v1*(-7/18*exp(1)+2*exp(1)*log(3))+v1^2*(119/162*exp(1)-2*exp(1)*log(3))-exp(1)*log(3)+v1^-1*exp(1)*log(3)",
+        )
+        .unwrap();
         assert_eq!(t, res);
+    }
+
+    #[test]
+    fn series_shift() {
+        let v1 = State::get_symbol("v1");
+        let input = Atom::parse("1/(v1+1)").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(-1).as_view(), 5.into())
+            .unwrap()
+            .to_atom();
+
+        let res = Atom::parse("1/(v1+1)").unwrap();
+        assert_eq!(t, res);
+    }
+
+    #[test]
+    fn series_spurious_pole() {
+        let v1 = State::get_symbol("v1");
+        let input = Atom::parse("(1-cos(v1))/sin(v1)").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 5.into())
+            .unwrap()
+            .to_atom();
+
+        let res = Atom::parse("1/2*v1+1/24*v1^3+1/240*v1^5").unwrap();
+        assert_eq!(t, res);
+    }
+
+    #[test]
+    fn series_logx() {
+        let v1 = State::get_symbol("v1");
+        let input = Atom::parse("log(v1)*(1+v1)").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 4.into())
+            .unwrap()
+            .to_atom();
+
+        let res = Atom::parse("log(v1)+v1*log(v1)").unwrap();
+        assert_eq!(t, res);
+    }
+
+    #[test]
+    fn series_sqrt() {
+        let v1 = State::get_symbol("v1");
+        let input = Atom::parse("(v1^3+v1+1)^(1/2)").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 4.into())
+            .unwrap()
+            .to_atom();
+
+        let res = Atom::parse("1+1/2*v1-1/8*v1^2+9/16*v1^3-37/128*v1^4").unwrap();
+        assert_eq!(t, res);
+    }
+
+    #[test]
+    fn series_fractions() {
+        let v1 = State::get_symbol("v1");
+        let input = Atom::parse("1/v1^5").unwrap();
+
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 3.into())
+            .unwrap();
+
+        let t2 = t.rpow((1, 3).into());
+
+        assert_eq!(t2.absolute_order(), (22, 3).into());
+    }
+
+    #[test]
+    fn series_poles() {
+        let v1 = State::get_symbol("v1");
+        let input = Atom::parse("1/(v1^10+v1^20)").unwrap();
+
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), (-1).into())
+            .unwrap()
+            .to_atom();
+
+        println!("t={}", t);
+
+        assert_eq!(t, Atom::parse("v1^-10").unwrap())
+    }
+
+    #[test]
+    fn series_user_function() {
+        let v1 = State::get_symbol("v1");
+
+        let input = Atom::parse("f(exp(v1),sin(v1))").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 2.into())
+            .unwrap()
+            .to_atom();
+
+        let res = Atom::parse(
+            "der(0,0,f(1,0))+f(1,0)+v1*(der(0,1,f(1,0))+der(1,0,f(1,0)))
+            +v1^2*(1/2*der(0,2,f(1,0))+1/2*der(1,0,f(1,0))+der(1,1,f(1,0))+1/2*der(2,0,f(1,0)))",
+        )
+        .unwrap();
+        assert_eq!(t, res);
+    }
+
+    #[test]
+    fn series_exp_log() {
+        let v1 = State::get_symbol("v1");
+
+        let input = Atom::parse("1+2*log(v1^4)").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 4.into())
+            .unwrap()
+            .exp()
+            .unwrap();
+
+        assert_eq!(t.to_atom().expand(), Atom::parse("v1^8*exp(1)",).unwrap());
     }
 }

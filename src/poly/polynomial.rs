@@ -289,6 +289,18 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         }
     }
 
+    /// Constructs a polynomial with a single term that is a variable.
+    #[inline]
+    pub fn variable(&self, var: &Variable) -> Result<Self, &'static str> {
+        if let Some(pos) = self.variables.iter().position(|v| v == var) {
+            let mut exp = vec![E::zero(); self.nvars()];
+            exp[pos] = E::one();
+            Ok(self.monomial(self.field.one(), exp))
+        } else {
+            Err("Variable not found")
+        }
+    }
+
     /// Get the ith monomial
     pub fn to_monomial_view(&self, i: usize) -> MonomialView<F, E> {
         assert!(i < self.nterms());
@@ -515,6 +527,28 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             l[i * nvars..(i + 1) * nvars]
                 .swap_with_slice(&mut r[rend - (i + 1) * nvars..rend - i * nvars]);
         }
+    }
+
+    /// Add a variable to the polynomial if it is not already present.
+    pub fn add_variable(&mut self, var: &Variable) {
+        if self.variables.iter().any(|v| v == var) {
+            return;
+        }
+
+        let l = self.variables.len();
+
+        let mut new_exp = vec![E::zero(); (l + 1) * self.nterms()];
+
+        if l > 0 {
+            for (en, e) in new_exp.chunks_mut(l + 1).zip(self.exponents.chunks(l)) {
+                en[..l].copy_from_slice(e);
+            }
+        }
+
+        let mut new_vars = self.variables.as_ref().clone();
+        new_vars.push(var.clone());
+        self.variables = Arc::new(new_vars);
+        self.exponents = new_exp;
     }
 
     /// Check if the polynomial is sorted and has only non-zero coefficients

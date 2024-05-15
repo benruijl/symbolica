@@ -91,7 +91,7 @@ impl<'a, R: ReadableNamedStream> Iterator for TermInputStream<'a, R> {
 
         while self.pos <= self.file_buf.len() {
             let mut a = Atom::new();
-            if let Ok(()) = unsafe { a.read(&mut self.file_buf[self.pos - 1]) } {
+            if let Ok(()) = a.read(&mut self.file_buf[self.pos - 1]) {
                 return Some(a);
             }
 
@@ -295,6 +295,10 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
     pub fn normalize(&mut self) {
         self.sort();
 
+        if self.file_buf.is_empty() {
+            return;
+        }
+
         self.mem_buf.reverse();
 
         let mut head = vec![self.mem_buf.pop()];
@@ -311,7 +315,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
 
         for ff in &mut files {
             let mut a = Atom::new();
-            if let Ok(()) = unsafe { a.read(ff) } {
+            if let Ok(()) = a.read(ff) {
                 head.push(Some(a));
             } else {
                 head.push(None);
@@ -348,7 +352,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
                 head[0] = self.mem_buf.pop();
             } else {
                 let mut a = Atom::new();
-                if let Ok(()) = unsafe { a.read(&mut files[smallest[0] - 1]) } {
+                if let Ok(()) = a.read(&mut files[smallest[0] - 1]) {
                     head[smallest[0]] = Some(a);
                 }
             }
@@ -386,6 +390,12 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
 
         for x in self.reader() {
             add.extend(x.as_view());
+        }
+
+        if add.get_nargs() == 1 {
+            let mut b = Atom::new();
+            b.set_from_view(&add.to_add_view().iter().next().unwrap());
+            return b;
         }
 
         add.set_normalized(true);
@@ -465,8 +475,9 @@ mod test {
     use brotli::CompressorWriter;
 
     use crate::{
-        atom::Atom,
-        id::Pattern,
+        atom::{Atom, AtomType},
+        id::{Pattern, PatternRestriction},
+        state::State,
         streaming::{TermStreamer, TermStreamerConfig},
     };
 
@@ -498,6 +509,46 @@ mod test {
         let r = streamer.to_expression();
 
         let res = Atom::parse("12*v1+v2+v3+v4+11*f1(v1)").unwrap();
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn file_stream_with_rationals() {
+        let mut streamer =
+            TermStreamer::<CompressorWriter<BufWriter<File>>>::new(TermStreamerConfig {
+                n_cores: 4,
+                path: ".".to_owned(),
+                max_mem_bytes: 20,
+            });
+
+        let input = Atom::parse("v1*coeff(v2/v3+1)+v2*coeff(v3+1)+v3*coeff(1/v2)").unwrap();
+        streamer.push(input);
+
+        let pattern = Pattern::parse("v1_").unwrap();
+        let rhs = Pattern::parse("v1").unwrap();
+
+        streamer = streamer.map(|x| {
+            pattern
+                .replace_all(
+                    x.as_view(),
+                    &rhs,
+                    Some(
+                        &(
+                            State::get_symbol("v1_"),
+                            PatternRestriction::IsAtomType(AtomType::Var),
+                        )
+                            .into(),
+                    ),
+                    None,
+                )
+                .expand()
+        });
+
+        streamer.normalize();
+
+        let r = streamer.to_expression();
+
+        let res = Atom::parse("coeff((v3+2*v2*v3+v2*v3^2+v2^2)/(v2*v3))*v1").unwrap();
         assert_eq!(r, res);
     }
 

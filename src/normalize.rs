@@ -271,6 +271,80 @@ impl<'a> AtomView<'a> {
             (AtomView::Add(_), _) | (_, AtomView::Add(_)) => unreachable!("Cannot have nested add"),
         }
     }
+
+    /// Simplify logs in the argument of the exponential function.
+    fn simplify_exp_log(&self, ws: &Workspace, out: &mut Atom) -> bool {
+        if let AtomView::Fun(f) = self {
+            if f.get_symbol() == State::LOG && f.get_nargs() == 1 {
+                out.set_from_view(&f.iter().next().unwrap());
+                return true;
+            }
+        }
+
+        if let AtomView::Mul(m) = self {
+            let mut found_index = None;
+            for (i, a) in m.iter().enumerate() {
+                if a.simplify_exp_log(ws, out) {
+                    if found_index.is_some() {
+                        return false;
+                    }
+
+                    found_index = Some(i);
+                }
+            }
+
+            if let Some(i) = found_index {
+                let mut mm = ws.new_atom();
+                let mmm = mm.to_mul();
+                for (j, a) in m.iter().enumerate() {
+                    if j != i {
+                        mmm.extend(a);
+                    }
+                }
+
+                let mut b = ws.new_atom();
+                b.to_pow(out.as_view(), mm.as_view());
+
+                b.as_view().normalize(ws, out);
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        if let AtomView::Add(a) = self {
+            // all terms must simplify
+            let mut mm = ws.new_atom();
+            let m = mm.to_mul();
+
+            let mut aa = ws.new_atom();
+            let aaa = aa.to_add();
+
+            let mut changed = false;
+            for a in a.iter() {
+                if a.simplify_exp_log(ws, out) {
+                    changed = true;
+                    m.extend(out.as_view());
+                } else {
+                    aaa.extend(a);
+                }
+            }
+
+            if changed {
+                let mut new_exp = ws.new_atom();
+                // TODO: change to e^()
+                new_exp.to_fun(State::EXP).add_arg(aa.as_view());
+
+                m.extend(new_exp.as_view());
+
+                mm.as_view().normalize(ws, out);
+            }
+
+            return changed;
+        }
+
+        false
+    }
 }
 
 impl Atom {
@@ -281,11 +355,10 @@ impl Atom {
         &mut self,
         other: &mut Self,
         helper: &mut Self,
-
         workspace: &Workspace,
     ) -> bool {
-        // x^a * x^b = x^(a + b)
         if let Atom::Pow(p1) = self {
+            // x^a * x^b = x^(a + b)
             if let Atom::Pow(p2) = other {
                 let (base2, exp2) = p2.to_pow_view().get_base_exp();
 
@@ -321,6 +394,40 @@ impl Atom {
                 p1.set_normalized(true);
                 return true;
             }
+
+            // x^n * x = x^(n+1)
+            let pv = p1.to_pow_view();
+            let (base, exp) = pv.get_base_exp();
+
+            if other.as_view() == base {
+                if let AtomView::Num(n) = &exp {
+                    let new_exp = n.get_coeff_view() + 1;
+
+                    if new_exp.is_zero() {
+                        self.to_num(1.into());
+                    } else if new_exp == 1.into() {
+                        self.set_from_view(&other.as_view());
+                    } else {
+                        let num = helper.to_num(new_exp);
+                        self.to_pow(other.as_view(), AtomView::Num(num.to_num_view()));
+                    }
+                } else {
+                    other.to_num(1.into());
+
+                    let new_exp = helper.to_add();
+                    new_exp.extend(other.as_view());
+                    new_exp.extend(exp);
+                    let mut helper2 = workspace.new_atom();
+                    helper.as_view().normalize(workspace, &mut helper2);
+                    other.to_pow(base, helper2.as_view());
+                    std::mem::swap(self, other);
+                }
+
+                self.set_normalized(true);
+                return true;
+            }
+
+            return false;
         }
 
         // x * x^n = x^(n+1)
@@ -580,6 +687,7 @@ impl<'a> AtomView<'a> {
             AtomView::Mul(t) => {
                 let mut atom_test_buf: SmallVec<[_; 20]> = SmallVec::new();
 
+                let mut is_zero = false;
                 for a in t.iter() {
                     let mut handle = workspace.new_atom();
 
@@ -602,7 +710,8 @@ impl<'a> AtomView<'a> {
 
                                 if n.is_zero() {
                                     out.to_num(Coefficient::zero());
-                                    return;
+                                    is_zero = true;
+                                    continue; // do not return as we may encounter 0/0
                                 }
                             }
 
@@ -616,12 +725,17 @@ impl<'a> AtomView<'a> {
 
                             if n.is_zero() {
                                 out.to_num(Coefficient::zero());
-                                return;
+                                is_zero = true;
+                                continue;
                             }
                         }
 
                         atom_test_buf.push(handle);
                     }
+                }
+
+                if is_zero {
+                    return;
                 }
 
                 atom_test_buf.sort_by(|a, b| a.as_view().cmp_factors(&b.as_view()));
@@ -761,6 +875,18 @@ impl<'a> AtomView<'a> {
                                 return;
                             }
                         }
+                    }
+                }
+
+                if id == State::EXP && out_f.to_fun_view().get_nargs() == 1 {
+                    let arg = out_f.to_fun_view().iter().next().unwrap();
+                    // simplify logs inside exp
+                    if arg.contains_symbol(State::LOG) {
+                        let mut buffer = workspace.new_atom();
+                        if arg.simplify_exp_log(workspace, &mut buffer) {
+                            out.set_from_view(&buffer.as_view());
+                        }
+                        return;
                     }
                 }
 
@@ -949,6 +1075,11 @@ impl<'a> AtomView<'a> {
                 };
 
                 'pow_simplify: {
+                    if base_handle.is_one() {
+                        out.to_num(1.into());
+                        break 'pow_simplify;
+                    }
+
                     if let AtomView::Num(e) = exp_handle.as_view() {
                         let exp_num = e.get_coeff_view();
                         if exp_num == CoefficientView::Natural(0, 1) {
@@ -1006,29 +1137,37 @@ impl<'a> AtomView<'a> {
                                 }
                             }
                         } else if let AtomView::Pow(p_base) = base_handle.as_view() {
-                            // simplify x^2^3
-                            let (p_base_base, p_base_exp) = p_base.get_base_exp();
-                            if let AtomView::Num(n) = p_base_exp {
-                                let new_exp = n.get_coeff_view() * exp_num;
+                            if exp_num.is_integer() {
+                                // rewrite (x^y)^3 as x^(3*y)
+                                let (p_base_base, p_base_exp) = p_base.get_base_exp();
 
-                                if new_exp == 1.into() {
-                                    out.set_from_view(&p_base_base);
-                                    break 'pow_simplify;
-                                }
+                                let mut mul_h = workspace.new_atom();
+                                let mul = mul_h.to_mul();
+                                mul.extend(p_base_exp);
+                                mul.extend(exp_handle.as_view());
+                                let mut exp_h = workspace.new_atom();
+                                mul.as_view().normalize(workspace, &mut exp_h);
 
-                                exp_handle.to_num(new_exp);
-
-                                let p = out.to_pow(p_base_base, exp_handle.as_view());
-                                p.set_normalized(true);
-
+                                mul_h.to_pow(p_base_base, exp_h.as_view());
+                                mul_h.as_view().normalize(workspace, out);
                                 break 'pow_simplify;
                             }
-                        } else if let AtomView::Mul(_) = base_handle.as_view() {
-                            // TODO: turn (x*y)^2 into x^2*y^2?
-                            // for now, expand() needs to be used
+                        } else if let AtomView::Mul(m) = base_handle.as_view() {
+                            // rewrite (x*y)^2 as x^2*y^2
+                            if exp_num.is_integer() {
+                                let mut mul_h = workspace.new_atom();
+                                let mul = mul_h.to_mul();
+                                for arg in m.iter() {
+                                    let mut pow_h = workspace.new_atom();
+                                    pow_h.to_pow(arg, exp_handle.as_view());
+                                    mul.extend(pow_h.as_view());
+                                }
+
+                                mul_h.as_view().normalize(workspace, out);
+                                break 'pow_simplify;
+                            }
                         }
                     }
-
                     out.to_pow(base_handle.as_view(), exp_handle.as_view());
                 }
 
@@ -1134,6 +1273,24 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{atom::Atom, state::State};
+
+    #[test]
+    fn pow_apart() {
+        let res = Atom::parse("v1*(v1*v2*v3)^-5").unwrap();
+        let refr = Atom::parse("v1^-4*v2^-5*v3^-5").unwrap();
+        assert_eq!(res, refr);
+    }
+
+    #[test]
+    fn pow_simplify() {
+        assert_eq!(Atom::parse("1^(1/2)"), Atom::parse("1"));
+        assert_eq!(
+            format!("{}", Atom::parse("(v1^2)^v2").unwrap()),
+            "(v1^2)^v2"
+        );
+        assert_eq!(Atom::parse("(v1^v2)^2"), Atom::parse("v1^(2*v2)"));
+        assert_eq!(Atom::parse("(v1^(1/2))^2"), Atom::parse("v1"));
+    }
 
     #[test]
     fn linear_symmetric() {

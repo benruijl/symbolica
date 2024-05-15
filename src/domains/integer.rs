@@ -332,6 +332,14 @@ impl Integer {
         Integer::Natural(1)
     }
 
+    #[inline]
+    pub fn to_i64(&self) -> Option<i64> {
+        match self {
+            Integer::Natural(n) => Some(*n as i64),
+            _ => None,
+        }
+    }
+
     pub fn abs(&self) -> Integer {
         match self {
             Integer::Natural(n) => {
@@ -454,6 +462,54 @@ impl Integer {
                 }
             }
             Integer::Large(r) => Integer::Large(r.pow(e).into()),
+        }
+    }
+
+    pub fn gcd(&self, b: &Integer) -> Integer {
+        match (self, b) {
+            (Integer::Natural(n1), Integer::Natural(n2)) => {
+                let gcd = utils::gcd_signed(*n1, *n2);
+                if gcd == i64::MAX as u64 + 1 {
+                    // n1 == n2 == u64::MIN
+                    Integer::Double(gcd as i128)
+                } else {
+                    Integer::Natural(gcd as i64)
+                }
+            }
+            (Integer::Natural(n1), Integer::Large(r2))
+            | (Integer::Large(r2), Integer::Natural(n1)) => {
+                let r1 = MultiPrecisionInteger::from(*n1);
+                Integer::from_large(r1.gcd(r2))
+            }
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large(r1.clone().gcd(r2)),
+            (Integer::Natural(r1), Integer::Double(r2))
+            | (Integer::Double(r2), Integer::Natural(r1)) => {
+                Integer::from_double(utils::gcd_signed_i128(*r1 as i128, *r2) as i128)
+            }
+            (Integer::Double(r1), Integer::Double(r2)) => {
+                let gcd = utils::gcd_signed_i128(*r1, *r2);
+                if gcd == i128::MAX as u128 + 1 {
+                    Integer::Large(MultiPrecisionInteger::from(gcd))
+                } else {
+                    Integer::from_double(gcd as i128)
+                }
+            }
+            (Integer::Double(r1), Integer::Large(r2)) => {
+                Integer::from_large(MultiPrecisionInteger::from(*r1).clone().gcd(r2))
+            }
+            (Integer::Large(r1), Integer::Double(r2)) => {
+                Integer::from_large(r1.clone().gcd(&MultiPrecisionInteger::from(*r2)))
+            }
+        }
+    }
+
+    /// Compute the least common multiple of two integers.
+    pub fn lcm(&self, b: &Integer) -> Integer {
+        let g = self.gcd(b);
+        if g.is_zero() {
+            Integer::zero()
+        } else {
+            (self / &g) * b
         }
     }
 
@@ -841,41 +897,7 @@ impl EuclideanDomain for IntegerRing {
     }
 
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        match (a, b) {
-            (Integer::Natural(n1), Integer::Natural(n2)) => {
-                let gcd = utils::gcd_signed(*n1, *n2);
-                if gcd == i64::MAX as u64 + 1 {
-                    // n1 == n2 == u64::MIN
-                    Integer::Double(gcd as i128)
-                } else {
-                    Integer::Natural(gcd as i64)
-                }
-            }
-            (Integer::Natural(n1), Integer::Large(r2))
-            | (Integer::Large(r2), Integer::Natural(n1)) => {
-                let r1 = MultiPrecisionInteger::from(*n1);
-                Integer::from_large(r1.gcd(r2))
-            }
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large(r1.clone().gcd(r2)),
-            (Integer::Natural(r1), Integer::Double(r2))
-            | (Integer::Double(r2), Integer::Natural(r1)) => {
-                Integer::from_double(utils::gcd_signed_i128(*r1 as i128, *r2) as i128)
-            }
-            (Integer::Double(r1), Integer::Double(r2)) => {
-                let gcd = utils::gcd_signed_i128(*r1, *r2);
-                if gcd == i128::MAX as u128 + 1 {
-                    Integer::Large(MultiPrecisionInteger::from(gcd))
-                } else {
-                    Integer::from_double(gcd as i128)
-                }
-            }
-            (Integer::Double(r1), Integer::Large(r2)) => {
-                Integer::from_large(MultiPrecisionInteger::from(*r1).clone().gcd(r2))
-            }
-            (Integer::Large(r1), Integer::Double(r2)) => {
-                Integer::from_large(r1.clone().gcd(&MultiPrecisionInteger::from(*r2)))
-            }
-        }
+        a.gcd(b)
     }
 }
 

@@ -16,10 +16,10 @@ pub trait NumericalFloatLike:
     + std::fmt::Debug
     + std::fmt::Display
     + std::ops::Neg<Output = Self>
-    + for<'a> Add<Self, Output = Self>
-    + for<'a> Sub<Self, Output = Self>
-    + for<'a> Mul<Self, Output = Self>
-    + for<'a> Div<Self, Output = Self>
+    + Add<Self, Output = Self>
+    + Sub<Self, Output = Self>
+    + Mul<Self, Output = Self>
+    + Div<Self, Output = Self>
     + for<'a> Add<&'a Self, Output = Self>
     + for<'a> Sub<&'a Self, Output = Self>
     + for<'a> Mul<&'a Self, Output = Self>
@@ -547,6 +547,24 @@ impl<T: Real> Add<&Complex<T>> for Complex<T> {
     }
 }
 
+impl<'a, 'b, T: Real> Add<&'a Complex<T>> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn add(self, rhs: &'a Complex<T>) -> Self::Output {
+        *self + *rhs
+    }
+}
+
+impl<'b, T: Real> Add<Complex<T>> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn add(self, rhs: Complex<T>) -> Self::Output {
+        *self + rhs
+    }
+}
+
 impl<T: Real> AddAssign for Complex<T> {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
@@ -577,6 +595,24 @@ impl<T: Real> Sub<&Complex<T>> for Complex<T> {
     #[inline]
     fn sub(self, rhs: &Self) -> Self::Output {
         Complex::new(self.re - rhs.re, self.im - rhs.im)
+    }
+}
+
+impl<'a, 'b, T: Real> Sub<&'a Complex<T>> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn sub(self, rhs: &'a Complex<T>) -> Self::Output {
+        *self - *rhs
+    }
+}
+
+impl<'b, T: Real> Sub<Complex<T>> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn sub(self, rhs: Complex<T>) -> Self::Output {
+        *self - rhs
     }
 }
 
@@ -616,6 +652,24 @@ impl<T: Real> Mul<&Complex<T>> for Complex<T> {
     }
 }
 
+impl<'a, 'b, T: Real> Mul<&'a Complex<T>> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn mul(self, rhs: &'a Complex<T>) -> Self::Output {
+        *self * *rhs
+    }
+}
+
+impl<'b, T: Real> Mul<Complex<T>> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn mul(self, rhs: Complex<T>) -> Self::Output {
+        *self * rhs
+    }
+}
+
 impl<T: Real> MulAssign for Complex<T> {
     #[inline]
     fn mul_assign(&mut self, rhs: Self) {
@@ -648,6 +702,24 @@ impl<T: Real> Div<&Complex<T>> for Complex<T> {
         let re = self.re * rhs.re + self.im * rhs.im;
         let im = self.im * rhs.re - self.re * rhs.im;
         Complex::new(re / n, im / n)
+    }
+}
+
+impl<'a, 'b, T: Real> Div<&'a Complex<T>> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn div(self, rhs: &'a Complex<T>) -> Self::Output {
+        *self / *rhs
+    }
+}
+
+impl<'b, T: Real> Div<Complex<T>> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn div(self, rhs: Complex<T>) -> Self::Output {
+        *self / rhs
     }
 }
 
@@ -913,18 +985,19 @@ mod test {
         assert_eq!(r, 17293.219725825093);
     }
 
+
     #[test]
     fn complex() {
         let a = Complex::new(1., 2.);
         let b: Complex<f64> = Complex::new(3., 4.);
 
-        let r = a.sqrt() + b.log() - a.exp() + b.sin() - a.cos() + b.tan() - a.asin() + b.acos()
+        let r = &a.sqrt() + &b.log() - a.exp() + b.sin() - a.cos() + b.tan() - a.asin() + b.acos()
             - a.atan2(&b)
             + b.sinh()
             - a.cosh()
             + b.tanh()
             - a.asinh()
-            + b.acosh() / a.atanh()
+            + &b.acosh() / a.atanh()
             + b.powf(a);
         assert_eq!(r, Complex::new(0.1924131450685842, -39.83285329561913));
     }

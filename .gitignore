@@ -1,2 +1,6 @@
 Cargo.lock
 target/
+flake.lock
+flake.nix
+.envrc
+.direnv/

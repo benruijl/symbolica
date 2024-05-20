@@ -126,20 +126,6 @@ impl Clone for AtomView<'_> {
 
 impl Copy for AtomView<'_> {}
 
-impl PartialEq<AtomView<'_>> for AtomView<'_> {
-    fn eq(&self, other: &AtomView) -> bool {
-        match (self, other) {
-            (AtomView::Num(n1), AtomView::Num(n2)) => n1 == n2,
-            (AtomView::Var(v1), AtomView::Var(v2)) => v1 == v2,
-            (AtomView::Fun(f1), AtomView::Fun(f2)) => f1 == f2,
-            (AtomView::Pow(p1), AtomView::Pow(p2)) => p1 == p2,
-            (AtomView::Mul(m1), AtomView::Mul(m2)) => m1 == m2,
-            (AtomView::Add(a1), AtomView::Add(a2)) => a1 == a2,
-            _ => false,
-        }
-    }
-}
-
 impl Eq for AtomView<'_> {}
 
 impl PartialOrd for AtomView<'_> {
@@ -376,7 +362,7 @@ impl<'a> AtomView<'a> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 pub enum Atom {
     Num(Num),
     Var(Var),
@@ -384,15 +370,14 @@ pub enum Atom {
     Pow(Pow),
     Mul(Mul),
     Add(Add),
-    #[doc(hidden)]
-    Empty, // for internal use
+    Zero,
 }
 
 impl Default for Atom {
     /// Create an atom that represents the number 0.
     #[inline]
     fn default() -> Self {
-        Num::zero(RawAtom::new()).into()
+        Atom::Zero
     }
 }
 
@@ -438,6 +423,22 @@ impl From<Fun> for Atom {
     }
 }
 
+impl PartialEq for Atom {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.as_view() == other.as_view()
+    }
+}
+
+impl Eq for Atom {}
+
+impl Hash for Atom {
+    #[inline(always)]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_view().hash(state)
+    }
+}
+
 impl PartialOrd for Atom {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -468,7 +469,12 @@ impl Atom {
 
     #[inline]
     pub fn new_num<T: Into<Coefficient>>(num: T) -> Atom {
-        Num::new(num.into()).into()
+        let c = num.into();
+        if c.is_zero() {
+            return Atom::Zero;
+        } else {
+            Num::new(c).into()
+        }
     }
 
     #[inline]
@@ -483,7 +489,7 @@ impl Atom {
 
     #[inline]
     pub fn to_num(&mut self, coeff: Coefficient) -> &mut Num {
-        let buffer = std::mem::replace(self, Atom::Empty).into_raw();
+        let buffer = std::mem::replace(self, Atom::Zero).into_raw();
         *self = Atom::Num(Num::new_into(coeff, buffer));
         if let Atom::Num(n) = self {
             n
@@ -494,7 +500,7 @@ impl Atom {
 
     #[inline]
     pub fn to_var(&mut self, id: Symbol) -> &mut Var {
-        let buffer = std::mem::replace(self, Atom::Empty).into_raw();
+        let buffer = std::mem::replace(self, Atom::Zero).into_raw();
         *self = Atom::Var(Var::new_into(id, buffer));
         if let Atom::Var(n) = self {
             n
@@ -505,7 +511,7 @@ impl Atom {
 
     #[inline]
     pub fn to_fun(&mut self, id: Symbol) -> &mut Fun {
-        let buffer = std::mem::replace(self, Atom::Empty).into_raw();
+        let buffer = std::mem::replace(self, Atom::Zero).into_raw();
         *self = Atom::Fun(Fun::new_into(id, buffer));
         if let Atom::Fun(n) = self {
             n
@@ -516,7 +522,7 @@ impl Atom {
 
     #[inline]
     pub fn to_pow(&mut self, base: AtomView, exp: AtomView) -> &mut Pow {
-        let buffer = std::mem::replace(self, Atom::Empty).into_raw();
+        let buffer = std::mem::replace(self, Atom::Zero).into_raw();
         *self = Atom::Pow(Pow::new_into(base, exp, buffer));
         if let Atom::Pow(n) = self {
             n
@@ -527,7 +533,7 @@ impl Atom {
 
     #[inline]
     pub fn to_mul(&mut self) -> &mut Mul {
-        let buffer = std::mem::replace(self, Atom::Empty).into_raw();
+        let buffer = std::mem::replace(self, Atom::Zero).into_raw();
         *self = Atom::Mul(Mul::new_into(buffer));
         if let Atom::Mul(n) = self {
             n
@@ -538,7 +544,7 @@ impl Atom {
 
     #[inline]
     pub fn to_add(&mut self) -> &mut Add {
-        let buffer = std::mem::replace(self, Atom::Empty).into_raw();
+        let buffer = std::mem::replace(self, Atom::Zero).into_raw();
         *self = Atom::Add(Add::new_into(buffer));
         if let Atom::Add(n) = self {
             n
@@ -556,13 +562,13 @@ impl Atom {
             Atom::Pow(p) => p.into_raw(),
             Atom::Mul(m) => m.into_raw(),
             Atom::Add(a) => a.into_raw(),
-            Atom::Empty => unreachable!("Empty atom"),
+            Atom::Zero => RawAtom::new(),
         }
     }
 
     #[inline(always)]
     pub fn set_from_view(&mut self, view: &AtomView) {
-        let buffer = std::mem::replace(self, Atom::Empty).into_raw();
+        let buffer = std::mem::replace(self, Atom::Zero).into_raw();
         match view {
             AtomView::Num(n) => *self = Atom::Num(Num::from_view_into(n, buffer)),
             AtomView::Var(v) => *self = Atom::Var(Var::from_view_into(v, buffer)),
@@ -582,7 +588,7 @@ impl Atom {
             Atom::Pow(p) => AtomView::Pow(p.to_pow_view()),
             Atom::Mul(m) => AtomView::Mul(m.to_mul_view()),
             Atom::Add(a) => AtomView::Add(a.to_add_view()),
-            Atom::Empty => unreachable!("Empty atom"),
+            Atom::Zero => AtomView::ZERO,
         }
     }
 
@@ -605,7 +611,7 @@ impl Atom {
             Atom::Pow(a) => a.set_normalized(normalized),
             Atom::Mul(a) => a.set_normalized(normalized),
             Atom::Add(a) => a.set_normalized(normalized),
-            Atom::Empty => unreachable!("Empty atom"),
+            Atom::Zero => {}
         }
     }
 }

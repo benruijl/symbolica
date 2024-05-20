@@ -2,7 +2,9 @@ use ahash::HashSet;
 use dyn_clone::DynClone;
 
 use crate::{
-    atom::{representation::ListSlice, Atom, AtomType, AtomView, Num, SliceType, Symbol},
+    atom::{
+        representation::ListSlice, AsAtomView, Atom, AtomType, AtomView, Num, SliceType, Symbol,
+    },
     state::{State, Workspace},
     transformer::{Transformer, TransformerError},
 };
@@ -65,6 +67,12 @@ impl Atom {
     pub fn contains_symbol(&self, s: Symbol) -> bool {
         self.as_view().contains_symbol(s)
     }
+
+    /// Returns true iff `self` contains `a` literally.
+    pub fn contains<'a, T: AsAtomView<'a>>(&self, s: T) -> bool {
+        self.as_view().contains(s.as_atom_view())
+    }
+
     /// Replace all occurrences of the pattern.
     pub fn replace_all(
         &self,
@@ -150,30 +158,83 @@ impl<'a> AtomView<'a> {
         }
     }
 
+    /// Returns true iff `self` contains `a` literally.
+    pub fn contains(&self, a: AtomView) -> bool {
+        let mut stack = Vec::with_capacity(20);
+        stack.push(*self);
+
+        while let Some(c) = stack.pop() {
+            if a == c {
+                return true;
+            }
+
+            match c {
+                AtomView::Num(_) | AtomView::Var(_) => {}
+                AtomView::Fun(f) => {
+                    for arg in f.iter() {
+                        stack.push(arg);
+                    }
+                }
+                AtomView::Pow(p) => {
+                    let (base, exp) = p.get_base_exp();
+                    stack.push(base);
+                    stack.push(exp);
+                }
+                AtomView::Mul(m) => {
+                    for child in m.iter() {
+                        stack.push(child);
+                    }
+                }
+                AtomView::Add(a) => {
+                    for child in a.iter() {
+                        stack.push(child);
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     /// Returns true iff `self` contains the symbol `s`.
     pub fn contains_symbol(&self, s: Symbol) -> bool {
-        match self {
-            AtomView::Num(_) => false,
-            AtomView::Var(v) => v.get_symbol() == s,
-            AtomView::Fun(f) => {
-                if f.get_symbol() == s {
-                    return true;
-                }
-
-                for arg in f.iter() {
-                    if arg.contains_symbol(s) {
+        let mut stack = Vec::with_capacity(20);
+        stack.push(*self);
+        while let Some(c) = stack.pop() {
+            match c {
+                AtomView::Num(_) => {}
+                AtomView::Var(v) => {
+                    if v.get_symbol() == s {
                         return true;
                     }
                 }
-                false
+                AtomView::Fun(f) => {
+                    if f.get_symbol() == s {
+                        return true;
+                    }
+                    for arg in f.iter() {
+                        stack.push(arg);
+                    }
+                }
+                AtomView::Pow(p) => {
+                    let (base, exp) = p.get_base_exp();
+                    stack.push(base);
+                    stack.push(exp);
+                }
+                AtomView::Mul(m) => {
+                    for child in m.iter() {
+                        stack.push(child);
+                    }
+                }
+                AtomView::Add(a) => {
+                    for child in a.iter() {
+                        stack.push(child);
+                    }
+                }
             }
-            AtomView::Pow(p) => {
-                let (base, exp) = p.get_base_exp();
-                base.contains_symbol(s) || exp.contains_symbol(s)
-            }
-            AtomView::Mul(m) => m.iter().any(|x| x.contains_symbol(s)),
-            AtomView::Add(a) => a.iter().any(|x| x.contains_symbol(s)),
         }
+
+        false
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
@@ -308,6 +369,7 @@ impl<'a> AtomView<'a> {
         }
 
         if beyond_max_level {
+            out.set_from_view(self);
             return false;
         }
 

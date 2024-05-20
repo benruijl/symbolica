@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    atom::{Atom, AtomView, FunctionBuilder, Symbol},
+    atom::{Atom, AtomView, FunctionBuilder},
     coefficient::CoefficientView,
     domains::{
         atom::AtomField, integer::Integer, rational::Rational, EuclideanDomain, Ring, RingPrinter,
@@ -94,7 +94,7 @@ impl<F: Ring + std::fmt::Display> std::fmt::Display for Series<F> {
                     write!(f, "{}^({})", v, e)?;
                 }
             } else if e.is_integer() {
-                    write!(f, "{}*{}^{}", p, v, e)?;
+                write!(f, "{}*{}^{}", p, v, e)?;
             } else {
                 write!(f, "{}*{}^({})", p, v, e)?;
             }
@@ -747,10 +747,10 @@ impl<F: EuclideanDomain> Series<F> {
 }
 
 impl Series<AtomField> {
-    /// Extract x^a from an expression that comes from simplifying an exponential with logs
-    /// i.e.: exp(c + 3 Log[x^5]]) = exp(c)*x^15.
-    fn extract_exp_log(&self, e: AtomView, s: Symbol) -> Result<Self, &'static str> {
-        if !e.contains_symbol(s) {
+    /// Extract powers of `x` from an expression that comes from simplifying an exponential with logs
+    /// i.e.: `exp(c + 3 log(x^5)) = exp(c)*x^15`.
+    fn extract_exp_log(&self, e: AtomView, s: AtomView) -> Result<Self, &'static str> {
+        if !e.contains(s) {
             return Ok(self.constant(e.to_owned()));
         }
 
@@ -758,20 +758,15 @@ impl Series<AtomField> {
             AtomView::Pow(p) => {
                 let (b, exp) = p.get_base_exp();
 
-                if let AtomView::Var(v) = b {
-                    if v.get_symbol() == s {
-                        if let AtomView::Num(n) = exp {
-                            if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
-                                Ok(self.monomial(self.field.one(), (n, d).into()))
-                            } else {
-                                unimplemented!("Cannot series expand with large exponents yet")
-                            }
+                if b == s {
+                    if let AtomView::Num(n) = exp {
+                        if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
+                            Ok(self.monomial(self.field.one(), (n, d).into()))
                         } else {
-                            Err("Power of variable must be rational")
+                            unimplemented!("Cannot series expand with large exponents yet")
                         }
                     } else {
-                        // s appears in the power
-                        Err("Unexpected term in exp-log simplification")
+                        Err("Power of variable must be rational")
                     }
                 } else {
                     Err("Unexpected term in exp-log simplification")
@@ -809,11 +804,8 @@ impl Series<AtomField> {
         let e = FunctionBuilder::new(State::EXP).add_arg(&c).finish();
 
         // split the true constant part and the x-dependent part
-        let shift_series = if let Variable::Symbol(s) = self.variable.as_ref() {
-            self.extract_exp_log(e.as_view(), *s)?
-        } else {
-            unreachable!("Expansion variable is not a variable");
-        };
+        let var = self.variable.to_atom();
+        let shift_series = self.extract_exp_log(e.as_view(), var.as_view())?;
 
         let p = self.clone().remove_constant();
 
@@ -878,12 +870,10 @@ impl Series<AtomField> {
             Atom::new()
         };
 
-        if let Variable::Symbol(s) = self.variable.as_ref() {
-            if c.contains_symbol(*s) {
-                return Err(
-                    "Cannot compute the sin of a series with a constant term that depends on x",
-                );
-            }
+        if c.contains(&self.variable.to_atom()) {
+            return Err(
+                "Cannot compute the sine of a series with a constant term that depends on x",
+            );
         }
 
         let p = self.clone().remove_constant();
@@ -929,12 +919,10 @@ impl Series<AtomField> {
             Atom::new()
         };
 
-        if let Variable::Symbol(s) = self.variable.as_ref() {
-            if c.contains_symbol(*s) {
-                return Err(
-                    "Cannot compute the cosine of a series with a constant term that depends on x",
-                );
-            }
+        if c.contains(&self.variable.to_atom()) {
+            return Err(
+                "Cannot compute the cosine of a series with a constant term that depends on x",
+            );
         }
 
         let p = self.clone().remove_constant();

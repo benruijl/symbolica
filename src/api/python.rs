@@ -1631,7 +1631,7 @@ impl PythonExpression {
             Atom::Add(_) => PythonAtomType::Add,
             Atom::Mul(_) => PythonAtomType::Mul,
             Atom::Pow(_) => PythonAtomType::Pow,
-            Atom::Empty => unreachable!(),
+            Atom::Zero => PythonAtomType::Num,
         }
     }
 
@@ -2393,6 +2393,32 @@ impl PythonExpression {
         }
 
         let b = self.expr.as_view().set_coefficient_ring(&Arc::new(var_map));
+
+        Ok(b.into())
+    }
+
+    pub fn contract(
+        &self,
+        metric: PythonExpression,
+        dimension: PythonExpression,
+    ) -> PyResult<PythonExpression> {
+        let m = match metric.expr.as_view() {
+            AtomView::Var(v) => v.get_symbol(),
+            e => {
+                return Err(exceptions::PyValueError::new_err(format!(
+                    "Expected variable instead of {}",
+                    e
+                )));
+            }
+        };
+
+        let mut b = Atom::new();
+
+        Workspace::get_local().with(|ws| {
+            self.expr
+                .as_view()
+                .contract(m, dimension.expr.as_view(), ws, &mut b)
+        });
 
         Ok(b.into())
     }

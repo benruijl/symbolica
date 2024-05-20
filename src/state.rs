@@ -665,7 +665,7 @@ impl RecycledAtom {
 
     /// Yield the atom, which will now no longer be recycled upon dropping.
     pub fn into_inner(mut self) -> Atom {
-        std::mem::replace(&mut self.0, Atom::Empty)
+        std::mem::replace(&mut self.0, Atom::Zero)
     }
 }
 
@@ -692,7 +692,7 @@ impl AsRef<Atom> for RecycledAtom {
 impl Drop for RecycledAtom {
     #[inline]
     fn drop(&mut self) {
-        if let Atom::Empty = self.0 {
+        if let Atom::Zero = self.0 {
             return;
         }
 
@@ -701,7 +701,7 @@ impl Drop for RecycledAtom {
             |ws| {
                 if let Ok(mut a) = ws.atom_buffer.try_borrow_mut() {
                     if a.len() < Workspace::ATOM_BUFFER_MAX {
-                        a.push(std::mem::replace(&mut self.0, Atom::Empty));
+                        a.push(std::mem::replace(&mut self.0, Atom::Zero));
                     }
                 }
             },

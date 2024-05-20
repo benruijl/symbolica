@@ -18,6 +18,36 @@ pub enum Pattern {
     Transformer(Box<(Option<Pattern>, Vec<Transformer>)>),
 }
 
+/// A replacement, specified by a pattern and the right-hand side,
+/// with optional conditions and settings.
+pub struct Replacement<'a> {
+    pat: &'a Pattern,
+    rhs: &'a Pattern,
+    conditions: Option<&'a Condition<WildcardAndRestriction>>,
+    settings: Option<&'a MatchSettings>,
+}
+
+impl<'a> Replacement<'a> {
+    pub fn new(pat: &'a Pattern, rhs: &'a Pattern) -> Self {
+        Replacement {
+            pat,
+            rhs,
+            conditions: None,
+            settings: None,
+        }
+    }
+
+    pub fn with_conditions(mut self, conditions: &'a Condition<WildcardAndRestriction>) -> Self {
+        self.conditions = Some(conditions);
+        self
+    }
+
+    pub fn with_settings(mut self, settings: &'a MatchSettings) -> Self {
+        self.settings = Some(settings);
+        self
+    }
+}
+
 impl Atom {
     pub fn into_pattern(&self) -> Pattern {
         Pattern::from_view(self.as_view(), true)
@@ -34,6 +64,45 @@ impl Atom {
     /// Returns true iff `self` contains the symbol `s`.
     pub fn contains_symbol(&self, s: Symbol) -> bool {
         self.as_view().contains_symbol(s)
+    }
+    /// Replace all occurrences of the pattern.
+    pub fn replace_all(
+        &self,
+        pattern: &Pattern,
+        rhs: &Pattern,
+        conditions: Option<&Condition<WildcardAndRestriction>>,
+        settings: Option<&MatchSettings>,
+    ) -> Atom {
+        self.as_view()
+            .replace_all(pattern, rhs, conditions, settings)
+    }
+
+    /// Replace all occurrences of the pattern.
+    pub fn replace_all_into(
+        &self,
+        pattern: &Pattern,
+        rhs: &Pattern,
+        conditions: Option<&Condition<WildcardAndRestriction>>,
+        settings: Option<&MatchSettings>,
+        out: &mut Atom,
+    ) -> bool {
+        self.as_view()
+            .replace_all_into(pattern, rhs, conditions, settings, out)
+    }
+
+    /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
+    pub fn replace_all_multiple(&self, replacements: &[Replacement<'_>]) -> Atom {
+        self.as_view().replace_all_multiple(replacements)
+    }
+
+    /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
+    /// Returns `true` iff a match was found.
+    pub fn replace_all_multiple_into(
+        &self,
+        replacements: &[Replacement<'_>],
+        out: &mut Atom,
+    ) -> bool {
+        self.as_view().replace_all_multiple_into(replacements, out)
     }
 }
 
@@ -105,6 +174,240 @@ impl<'a> AtomView<'a> {
             AtomView::Mul(m) => m.iter().any(|x| x.contains_symbol(s)),
             AtomView::Add(a) => a.iter().any(|x| x.contains_symbol(s)),
         }
+    }
+
+    /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
+    pub fn replace_all(
+        &self,
+        pattern: &Pattern,
+        rhs: &Pattern,
+        conditions: Option<&Condition<WildcardAndRestriction>>,
+        settings: Option<&MatchSettings>,
+    ) -> Atom {
+        pattern.replace_all(*self, rhs, conditions, settings)
+    }
+
+    /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
+    pub fn replace_all_into(
+        &self,
+        pattern: &Pattern,
+        rhs: &Pattern,
+        conditions: Option<&Condition<WildcardAndRestriction>>,
+        settings: Option<&MatchSettings>,
+        out: &mut Atom,
+    ) -> bool {
+        pattern.replace_all_into(*self, rhs, conditions, settings, out)
+    }
+
+    /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
+    pub fn replace_all_multiple(&self, replacements: &[Replacement<'_>]) -> Atom {
+        let mut out = Atom::new();
+        self.replace_all_multiple_into(replacements, &mut out);
+        out
+    }
+
+    /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
+    /// Returns `true` iff a match was found.
+    pub fn replace_all_multiple_into(
+        &self,
+        replacements: &[Replacement<'_>],
+        out: &mut Atom,
+    ) -> bool {
+        Workspace::get_local().with(|ws| {
+            let matched = self.replace_all_no_norm(replacements, ws, 0, 0, out);
+
+            if matched {
+                let mut norm = ws.new_atom();
+                out.as_view().normalize(ws, &mut norm);
+                std::mem::swap(out, &mut norm);
+            }
+
+            matched
+        })
+    }
+
+    /// Replace all occurrences of the patterns in the target, without normalizing the output.
+    fn replace_all_no_norm(
+        &self,
+        replacements: &[Replacement<'_>],
+        workspace: &Workspace,
+        tree_level: usize,
+        fn_level: usize,
+        out: &mut Atom,
+    ) -> bool {
+        let mut beyond_max_level = true;
+        for r in replacements {
+            let def_c = Condition::default();
+            let def_s = MatchSettings::default();
+            let conditions = r.conditions.unwrap_or(&def_c);
+            let settings = r.settings.unwrap_or(&def_s);
+
+            if let Some(max_level) = settings.level_range.1 {
+                if settings.level_is_tree_depth && tree_level > max_level
+                    || !settings.level_is_tree_depth && fn_level > max_level
+                {
+                    continue;
+                }
+            }
+
+            beyond_max_level = false;
+
+            if settings.level_is_tree_depth && tree_level < settings.level_range.0
+                || !settings.level_is_tree_depth && fn_level < settings.level_range.0
+            {
+                continue;
+            }
+
+            if r.pat.could_match(*self) {
+                let mut match_stack = MatchStack::new(conditions, settings);
+
+                let mut it = AtomMatchIterator::new(r.pat, *self);
+                if let Some((_, used_flags)) = it.next(&mut match_stack) {
+                    let mut rhs_subs = workspace.new_atom();
+                    r.rhs
+                        .substitute_wildcards(workspace, &mut rhs_subs, &match_stack)
+                        .unwrap(); // TODO: escalate?
+
+                    if used_flags.iter().all(|x| *x) {
+                        // all used, return rhs
+                        out.set_from_view(&rhs_subs.as_view());
+                        return true;
+                    }
+
+                    match self {
+                        AtomView::Mul(m) => {
+                            let out = out.to_mul();
+
+                            for (child, used) in m.iter().zip(used_flags) {
+                                if !used {
+                                    out.extend(child);
+                                }
+                            }
+
+                            out.extend(rhs_subs.as_view());
+                        }
+                        AtomView::Add(a) => {
+                            let out = out.to_add();
+
+                            for (child, used) in a.iter().zip(used_flags) {
+                                if !used {
+                                    out.extend(child);
+                                }
+                            }
+
+                            out.extend(rhs_subs.as_view());
+                        }
+                        _ => {
+                            out.set_from_view(&rhs_subs.as_view());
+                        }
+                    }
+
+                    return true;
+                }
+            }
+        }
+
+        if beyond_max_level {
+            return false;
+        }
+
+        // no match found at this level, so check the children
+        let submatch = match self {
+            AtomView::Fun(f) => {
+                let out = out.to_fun(f.get_symbol());
+
+                let mut submatch = false;
+
+                for child in f.iter() {
+                    let mut child_buf = workspace.new_atom();
+
+                    submatch |= child.replace_all_no_norm(
+                        replacements,
+                        workspace,
+                        fn_level + 1,
+                        tree_level + 1,
+                        &mut child_buf,
+                    );
+
+                    out.add_arg(child_buf.as_view());
+                }
+
+                out.set_normalized(!submatch && f.is_normalized());
+                submatch
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+
+                let mut base_out = workspace.new_atom();
+                let mut submatch = base.replace_all_no_norm(
+                    replacements,
+                    workspace,
+                    tree_level + 1,
+                    fn_level,
+                    &mut base_out,
+                );
+
+                let mut exp_out = workspace.new_atom();
+                submatch |= exp.replace_all_no_norm(
+                    replacements,
+                    workspace,
+                    tree_level + 1,
+                    fn_level,
+                    &mut exp_out,
+                );
+
+                let out = out.to_pow(base_out.as_view(), exp_out.as_view());
+                out.set_normalized(!submatch && p.is_normalized());
+                submatch
+            }
+            AtomView::Mul(m) => {
+                let mul = out.to_mul();
+
+                let mut submatch = false;
+                for child in m.iter() {
+                    let mut child_buf = workspace.new_atom();
+
+                    submatch |= child.replace_all_no_norm(
+                        replacements,
+                        workspace,
+                        tree_level + 1,
+                        fn_level,
+                        &mut child_buf,
+                    );
+
+                    mul.extend(child_buf.as_view());
+                }
+
+                mul.set_has_coefficient(m.has_coefficient());
+                mul.set_normalized(!submatch && m.is_normalized());
+                submatch
+            }
+            AtomView::Add(a) => {
+                let out = out.to_add();
+                let mut submatch = false;
+                for child in a.iter() {
+                    let mut child_buf = workspace.new_atom();
+
+                    submatch |= child.replace_all_no_norm(
+                        replacements,
+                        workspace,
+                        tree_level + 1,
+                        fn_level,
+                        &mut child_buf,
+                    );
+
+                    out.extend(child_buf.as_view());
+                }
+                out.set_normalized(!submatch && a.is_normalized());
+                submatch
+            }
+            _ => {
+                out.set_from_view(self); // no children
+                false
+            }
+        };
+
+        submatch
     }
 }
 
@@ -699,15 +1002,15 @@ impl Pattern {
         settings: Option<&MatchSettings>,
         out: &mut Atom,
     ) -> bool {
-        let matched = self.replace_all_no_norm(
-            target,
-            rhs,
-            workspace,
-            conditions.unwrap_or(&Condition::default()),
-            settings.unwrap_or(&MatchSettings::default()),
-            0,
-            out,
-        );
+        let mut rep = Replacement::new(self, rhs);
+        if let Some(c) = conditions {
+            rep = rep.with_conditions(c);
+        }
+        if let Some(s) = settings {
+            rep = rep.with_settings(s);
+        }
+
+        let matched = target.replace_all_no_norm(std::slice::from_ref(&rep), workspace, 0, 0, out);
 
         if matched {
             let mut norm = workspace.new_atom();
@@ -716,197 +1019,6 @@ impl Pattern {
         }
 
         matched
-    }
-
-    /// Replace all occurrences of the pattern in the target, without normalizing the output.
-    fn replace_all_no_norm(
-        &self,
-        target: AtomView<'_>,
-        rhs: &Pattern,
-        workspace: &Workspace,
-        conditions: &Condition<WildcardAndRestriction>,
-        settings: &MatchSettings,
-        level: usize,
-        out: &mut Atom,
-    ) -> bool {
-        if let Some(max_level) = settings.level_range.1 {
-            if level > max_level {
-                out.set_from_view(&target);
-                return false;
-            }
-        }
-
-        if level >= settings.level_range.0 && self.could_match(target) {
-            let mut match_stack = MatchStack::new(conditions, settings);
-
-            let mut it = AtomMatchIterator::new(self, target);
-            //let mut it = SubSliceIterator::new(self, target, &match_stack, true);
-            if let Some((_, used_flags)) = it.next(&mut match_stack) {
-                let mut rhs_subs = workspace.new_atom();
-                rhs.substitute_wildcards(workspace, &mut rhs_subs, &match_stack)
-                    .unwrap(); // TODO: escalate?
-
-                if used_flags.iter().all(|x| *x) {
-                    // all used, return rhs
-                    out.set_from_view(&rhs_subs.as_view());
-                    return true;
-                }
-
-                match target {
-                    AtomView::Mul(m) => {
-                        let out = out.to_mul();
-
-                        for (child, used) in m.iter().zip(used_flags) {
-                            if !used {
-                                out.extend(child);
-                            }
-                        }
-
-                        out.extend(rhs_subs.as_view());
-                    }
-                    AtomView::Add(a) => {
-                        let out = out.to_add();
-
-                        for (child, used) in a.iter().zip(used_flags) {
-                            if !used {
-                                out.extend(child);
-                            }
-                        }
-
-                        out.extend(rhs_subs.as_view());
-                    }
-                    _ => {
-                        out.set_from_view(&rhs_subs.as_view());
-                    }
-                }
-
-                return true;
-            }
-        }
-
-        // no match found at this level, so check the children
-        let submatch = match target {
-            AtomView::Fun(f) => {
-                let out = out.to_fun(f.get_symbol());
-
-                let mut submatch = false;
-
-                for child in f.iter() {
-                    let mut child_buf = workspace.new_atom();
-
-                    submatch |= self.replace_all_no_norm(
-                        child,
-                        rhs,
-                        workspace,
-                        conditions,
-                        settings,
-                        level + 1,
-                        &mut child_buf,
-                    );
-
-                    out.add_arg(child_buf.as_view());
-                }
-
-                out.set_normalized(!submatch && f.is_normalized());
-                submatch
-            }
-            AtomView::Pow(p) => {
-                let (base, exp) = p.get_base_exp();
-
-                let mut base_out = workspace.new_atom();
-                let mut submatch = self.replace_all_no_norm(
-                    base,
-                    rhs,
-                    workspace,
-                    conditions,
-                    settings,
-                    if settings.level_is_tree_depth {
-                        level + 1
-                    } else {
-                        level
-                    },
-                    &mut base_out,
-                );
-
-                let mut exp_out = workspace.new_atom();
-                submatch |= self.replace_all_no_norm(
-                    exp,
-                    rhs,
-                    workspace,
-                    conditions,
-                    settings,
-                    if settings.level_is_tree_depth {
-                        level + 1
-                    } else {
-                        level
-                    },
-                    &mut exp_out,
-                );
-
-                let out = out.to_pow(base_out.as_view(), exp_out.as_view());
-                out.set_normalized(!submatch && p.is_normalized());
-                submatch
-            }
-            AtomView::Mul(m) => {
-                let mul = out.to_mul();
-
-                let mut submatch = false;
-                for child in m.iter() {
-                    let mut child_buf = workspace.new_atom();
-
-                    submatch |= self.replace_all_no_norm(
-                        child,
-                        rhs,
-                        workspace,
-                        conditions,
-                        settings,
-                        if settings.level_is_tree_depth {
-                            level + 1
-                        } else {
-                            level
-                        },
-                        &mut child_buf,
-                    );
-
-                    mul.extend(child_buf.as_view());
-                }
-
-                mul.set_has_coefficient(m.has_coefficient());
-                mul.set_normalized(!submatch && m.is_normalized());
-                submatch
-            }
-            AtomView::Add(a) => {
-                let out = out.to_add();
-                let mut submatch = false;
-                for child in a.iter() {
-                    let mut child_buf = workspace.new_atom();
-
-                    submatch |= self.replace_all_no_norm(
-                        child,
-                        rhs,
-                        workspace,
-                        conditions,
-                        settings,
-                        if settings.level_is_tree_depth {
-                            level + 1
-                        } else {
-                            level
-                        },
-                        &mut child_buf,
-                    );
-
-                    out.extend(child_buf.as_view());
-                }
-                out.set_normalized(!submatch && a.is_normalized());
-                submatch
-            }
-            _ => {
-                out.set_from_view(&target); // no children
-                false
-            }
-        };
-
-        submatch
     }
 
     pub fn pattern_match<'a>(
@@ -1299,7 +1411,7 @@ impl<'a> Match<'a> {
 }
 
 /// Settings related to pattern matching.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct MatchSettings {
     /// Specifies wildcards that try to match as little as possible.
     pub non_greedy_wildcards: Vec<Symbol>,
@@ -2430,18 +2542,34 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 
 #[cfg(test)]
 mod test {
-    use crate::atom::Atom;
+    use crate::{atom::Atom, id::Replacement};
 
     use super::Pattern;
 
     #[test]
     fn overlap() {
-        let a = Atom::parse("(x*(y+y^2+1)+y^2 + y)").unwrap();
-        let p = Pattern::parse("y+y^x_").unwrap();
-        let rhs = Pattern::parse("y*(1+y^(x_-1))").unwrap();
+        let a = Atom::parse("(v1*(v2+v2^2+1)+v2^2 + v2)").unwrap();
+        let p = Pattern::parse("v2+v2^v1_").unwrap();
+        let rhs = Pattern::parse("v2*(1+v2^(v1_-1))").unwrap();
 
         let r = p.replace_all(a.as_view(), &rhs, None, None);
-        let res = Atom::parse("x*(y+y^2+1)+y*(y+1)").unwrap();
+        let res = Atom::parse("v1*(v2+v2^2+1)+v2*(v2+1)").unwrap();
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn multiple() {
+        let a = Atom::parse("f(v1,v2)").unwrap();
+        let p1 = Pattern::parse("v1").unwrap();
+        let rhs1 = Pattern::parse("v2").unwrap();
+
+        let p2 = Pattern::parse("v2").unwrap();
+        let rhs2 = Pattern::parse("v1").unwrap();
+
+        let r =
+            a.replace_all_multiple(&[Replacement::new(&p1, &rhs1), Replacement::new(&p2, &rhs2)]);
+
+        let res = Atom::parse("f(v2,v1)").unwrap();
         assert_eq!(r, res);
     }
 }

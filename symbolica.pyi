@@ -892,6 +892,29 @@ class Expression:
         repeat: If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
+    def replace_all_multiple(self, replacements: Sequence[Replacement],  repeat: Optional[bool] = False) -> Expression:
+        """
+        Replace all atoms matching the patterns. See `replace_all` for more information.
+
+        The entire operation can be repeated until there are no more matches using `repeat=True`.
+
+        Examples
+        --------
+
+        >>> x, y, f = Expression.symbols('x', 'y', 'f')
+        >>> e = f(x,y)
+        >>> r = e.replace_all_multiple(Replacement(x, y), Replacement(y, x))
+        >>> print(r)
+        f(y,x)
+
+        Parameters
+        ----------
+        replacements: Sequence[Replacement]
+            The list of replacements to apply.
+        repeat: bool, optional
+            If set to `True`, the entire operation will be repeated until there are no more matches.
+       """
+
     @classmethod
     def solve_linear_system(
         _cls,
@@ -938,6 +961,20 @@ class Expression:
         >>> e = Expression.parse('sqrt(x)')*y
         >>> print(e.evaluate_complex({x: 1 + 2j, y: 4 + 3j}, {}))
         """
+
+
+class Replacement:
+    """A replacement of a pattern by a right-hand side."""
+
+    def __new__(
+            cls,
+            pattern: Transformer | Expression | int,
+            rhs: Transformer | Expression | int,
+            cond: Optional[PatternRestriction] = None,
+            non_greedy_wildcards: Optional[Sequence[Expression]] = None,
+            level_range: Optional[Tuple[int, Optional[int]]] = None,
+            level_is_tree_depth: Optional[bool] = False) -> Replacement:
+        """Create a new replacement. See `replace_all` for more information."""
 
 
 class PatternRestriction:
@@ -1253,6 +1290,19 @@ class Transformer:
         repeat: If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
+    def replace_all_multiple(self, replacements: Sequence[Replacement]) -> Transformer:
+        """
+        Create a transformer that replaces all atoms matching the patterns. See `replace_all` for more information.
+
+        Examples
+        --------
+
+        >>> x, y, f = Expression.symbols('x', 'y', 'f')
+        >>> e = f(x,y)
+        >>> r = e.transform().replace_all_multiple(Replacement(x, y), Replacement(y, x))
+        >>> print(r)
+        """
+
     def print(
         self,
         terms_on_new_line: bool = False,
@@ -1418,10 +1468,15 @@ class Series:
         """Raise the series to the power of `exp`, returning the result."""
 
     def to_expression(self) -> Expression:
-        """Convert the term stream into an expression. This may exceed the available memory."""
+        """Convert the series to an expression"""
 
 
 class TermStreamer:
+    """
+    A term streamer that can handle large expressions, by
+    streaming terms to and from disk.
+    """
+
     def __new__(_cls, path: Optional[str] = None,
                 max_mem_bytes: Optional[int] = None,
                 n_cores: Optional[int] = None) -> TermStreamer:
@@ -2325,6 +2380,8 @@ class FiniteFieldRationalPolynomial:
 
 
 class Matrix:
+    """A matrix with rational polynomial coefficients."""
+
     def __new__(cls, nrows: int, ncols: int) -> Matrix:
         """Create a new zeroed matrix with `nrows` rows and `ncols` columns."""
 
@@ -2419,11 +2476,15 @@ class Matrix:
 
 
 class Evaluator:
+    """An optimized evaluator of an expression."""
+
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[float]:
         """Evaluate the polynomial for multiple inputs and return the result."""
 
 
 class NumericalIntegrator:
+    """A numerical integrator for high-dimensional integrals."""
+
     @classmethod
     def continuous(
         _cls,

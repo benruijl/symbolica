@@ -5,7 +5,7 @@ use crate::{
     coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
     domains::rational::Rational,
-    id::{Condition, MatchSettings, Pattern, WildcardAndRestriction},
+    id::{Condition, MatchSettings, Pattern, Replacement, WildcardAndRestriction},
     printer::{AtomPrinter, PrintOptions},
     state::{State, Workspace},
 };
@@ -67,12 +67,21 @@ pub enum Transformer {
     Derivative(Symbol),
     /// Derive the rhs w.r.t a variable.
     Series(Symbol, Atom, Rational),
-    /// Apply find-and-replace on the rhs.
+    /// Apply find-and-replace on the lhs.
     ReplaceAll(
         Pattern,
         Pattern,
         Condition<WildcardAndRestriction>,
         MatchSettings,
+    ),
+    /// Apply multiple find-and-replace on the lhs.
+    ReplaceAllMultiple(
+        Vec<(
+            Pattern,
+            Pattern,
+            Condition<WildcardAndRestriction>,
+            MatchSettings,
+        )>,
     ),
     /// Take the product of a list of arguments in the rhs.
     Product,
@@ -107,6 +116,9 @@ impl std::fmt::Debug for Transformer {
             Transformer::Derivative(x) => f.debug_tuple("Derivative").field(x).finish(),
             Transformer::ReplaceAll(pat, rhs, ..) => {
                 f.debug_tuple("ReplaceAll").field(pat).field(rhs).finish()
+            }
+            Transformer::ReplaceAllMultiple(pats) => {
+                f.debug_tuple("ReplaceAllMultiple").field(pats).finish()
             }
             Transformer::Product => f.debug_tuple("Product").finish(),
             Transformer::Sum => f.debug_tuple("Sum").finish(),
@@ -216,6 +228,17 @@ impl Transformer {
                         settings.into(),
                         out,
                     );
+                }
+                Transformer::ReplaceAllMultiple(replacements) => {
+                    let reps = replacements
+                        .iter()
+                        .map(|(pat, rhs, cond, settings)| {
+                            Replacement::new(&pat, &rhs)
+                                .with_conditions(&cond)
+                                .with_settings(&settings)
+                        })
+                        .collect::<Vec<_>>();
+                    input.replace_all_multiple_into(&reps, out);
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = input {

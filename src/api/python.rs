@@ -38,7 +38,7 @@ use crate::{
     evaluate::EvaluationFn,
     id::{
         Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
-        PatternRestriction, ReplaceIterator, WildcardAndRestriction,
+        PatternRestriction, ReplaceIterator, Replacement, WildcardAndRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
     parser::Token,
@@ -78,6 +78,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonSample>()?;
     m.add_class::<PythonAtomType>()?;
     m.add_class::<PythonAtomTree>()?;
+    m.add_class::<PythonReplacement>()?;
     m.add_class::<PythonInstructionEvaluator>()?;
     m.add_class::<PythonRandomNumberGenerator>()?;
     m.add_class::<PythonPatternRestriction>()?;
@@ -772,7 +773,6 @@ impl PythonPattern {
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,x)
     /// >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
-    /// >>> print(r)
     pub fn replace_all(
         &self,
         lhs: ConvertibleToPattern,
@@ -817,6 +817,29 @@ impl PythonPattern {
                 rhs.to_pattern()?.expr.clone(),
                 cond.map(|r| r.condition.clone()).unwrap_or_default(),
                 settings,
+            )
+        );
+    }
+
+    /// Create a transformer that replaces all atoms matching the patterns. See `replace_all` for more information.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> x, y, f = Expression.symbols('x', 'y', 'f')
+    /// >>> e = f(x,y)
+    /// >>> r = e.transform().replace_all_multiple(Replacement(x, y), Replacement(y, x))
+    pub fn replace_all_multiple(
+        &self,
+        replacements: Vec<PythonReplacement>,
+    ) -> PyResult<PythonPattern> {
+        return append_transformer!(
+            self,
+            Transformer::ReplaceAllMultiple(
+                replacements
+                    .into_iter()
+                    .map(|r| (r.pattern, r.rhs, r.cond, r.settings))
+                    .collect()
             )
         );
     }
@@ -2351,7 +2374,7 @@ impl PythonExpression {
 
     /// Set the coefficient ring to contain the variables in the `vars` list.
     /// This will move all variables into a rational polynomial function.
-
+    ///
     /// Parameters
     /// ----------
     /// vars: List[Expression] A list of variables
@@ -2947,6 +2970,55 @@ impl PythonExpression {
         Ok(out.into_inner().into())
     }
 
+    /// Replace all atoms matching the patterns. See `replace_all` for more information.
+    ///
+    /// The entire operation can be repeated until there are no more matches using `repeat=True`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> x, y, f = Expression.symbols('x', 'y', 'f')
+    /// >>> e = f(x,y)
+    /// >>> r = e.replace_all_multiple(Replacement(x, y), Replacement(y, x))
+    /// >>> print(r)
+    /// f(y,x)
+    ///
+    /// Parameters
+    /// ----------
+    /// replacements: Sequence[Replacement]
+    ///     The list of replacements to apply.
+    /// repeat: bool, optional
+    ///     If set to `True`, the entire operation will be repeated until there are no more matches.
+    pub fn replace_all_multiple(
+        &self,
+        replacements: Vec<PythonReplacement>,
+        repeat: Option<bool>,
+    ) -> PyResult<PythonExpression> {
+        let reps = replacements
+            .iter()
+            .map(|x| {
+                Replacement::new(&x.pattern, &x.rhs)
+                    .with_conditions(&x.cond)
+                    .with_settings(&x.settings)
+            })
+            .collect::<Vec<_>>();
+
+        let mut expr_ref = self.expr.as_view();
+
+        let mut out = RecycledAtom::new();
+        let mut out2 = RecycledAtom::new();
+        while expr_ref.replace_all_multiple_into(&reps, &mut out) {
+            if !repeat.unwrap_or(false) {
+                break;
+            }
+
+            std::mem::swap(&mut out, &mut out2);
+            expr_ref = out2.as_view();
+        }
+
+        Ok(out.into_inner().into())
+    }
+
     /// Solve a linear system in the variables `variables`, where each expression
     /// in the system is understood to yield 0.
     ///
@@ -3103,6 +3175,72 @@ impl PythonExpression {
     }
 }
 
+/// A raplacement, which is a pattern and a right-hand side, with optional conditions and settings.
+#[pyclass(name = "Replacement", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonReplacement {
+    pattern: Pattern,
+    rhs: Pattern,
+    cond: Condition<WildcardAndRestriction>,
+    settings: MatchSettings,
+}
+
+#[pymethods]
+impl PythonReplacement {
+    #[new]
+    pub fn new(
+        pattern: ConvertibleToPattern,
+        rhs: ConvertibleToPattern,
+        cond: Option<PythonPatternRestriction>,
+        non_greedy_wildcards: Option<Vec<PythonExpression>>,
+        level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
+    ) -> PyResult<Self> {
+        let pattern = pattern.to_pattern()?.expr;
+        let rhs = rhs.to_pattern()?.expr;
+
+        let mut settings = MatchSettings::default();
+
+        if let Some(ngw) = non_greedy_wildcards {
+            settings.non_greedy_wildcards = ngw
+                .iter()
+                .map(|x| match x.expr.as_view() {
+                    AtomView::Var(v) => {
+                        let name = v.get_symbol();
+                        if v.get_wildcard_level() == 0 {
+                            return Err(exceptions::PyTypeError::new_err(
+                                "Only wildcards can be restricted.",
+                            ));
+                        }
+                        Ok(name)
+                    }
+                    _ => Err(exceptions::PyTypeError::new_err(
+                        "Only wildcards can be restricted.",
+                    )),
+                })
+                .collect::<Result<_, _>>()?;
+        }
+        if let Some(level_range) = level_range {
+            settings.level_range = level_range;
+        }
+        if let Some(level_is_tree_depth) = level_is_tree_depth {
+            settings.level_is_tree_depth = level_is_tree_depth;
+        }
+
+        let cond = cond
+            .as_ref()
+            .map(|r| r.condition.clone())
+            .unwrap_or(Condition::default());
+
+        Ok(Self {
+            pattern,
+            rhs,
+            cond,
+            settings,
+        })
+    }
+}
+
 /// A series expansion class.
 ///
 /// Supports standard arithmetic operations, such
@@ -3224,7 +3362,8 @@ impl PythonSeries {
     }
 }
 
-/// A Symbolica term streamer.
+/// A term streamer that can handle large expressions, by
+/// streaming terms to and from disk.
 #[pyclass(name = "TermStreamer", module = "symbolica")]
 pub struct PythonTermStreamer {
     pub stream: TermStreamer<CompressorWriter<BufWriter<File>>>,

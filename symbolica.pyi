@@ -766,6 +766,31 @@ class Expression:
         >>> print(p.together())
         """
 
+    def cancel(self) -> Expression:
+        """Cancel common factors between numerators and denominators.
+        Any non-canceling parts of the expression will not be rewritten.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('1+(y+1)^10*(x+1)/(x^2+2x+1)')
+        >>> print(p.cancel())
+        1+(y+1)**10/(x+1)
+        """
+
+    def factor(self) -> Expression:
+        """Factor the expression over the rationals.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('(6 + x)/(7776 + 6480*x + 2160*x^2 + 360*x^3 + 30*x^4 + x^5)')
+        >>> print(p.factor())
+        (x+6)**-4
+        """
+
     def to_polynomial(self, vars: Optional[Sequence[Expression]] = None) -> Polynomial:
         """Convert the expression to a polynomial, optionally, with the variable ordering specified in `vars`.
         All non-polynomial parts will be converted to new, independent variables.

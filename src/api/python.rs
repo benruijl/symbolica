@@ -2706,6 +2706,33 @@ impl PythonExpression {
         Ok(poly.to_expression().into())
     }
 
+    /// Cancel common factors between numerators and denominators.
+    /// Any non-canceling parts of the expression will not be rewritten.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('1+(y+1)^10*(x+1)/(x^2+2x+1)')
+    /// >>> print(p.cancel())
+    /// 1+(y+1)**10/(x+1)
+    pub fn cancel(&self) -> PyResult<PythonExpression> {
+        Ok(self.expr.cancel().into())
+    }
+
+    /// Factor the expression over the rationals.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('(6 + x)/(7776 + 6480*x + 2160*x^2 + 360*x^3 + 30*x^4 + x^5)')
+    /// >>> print(p.factor())
+    /// (x+6)**-4
+    pub fn factor(&self) -> PyResult<PythonExpression> {
+        Ok(self.expr.factor().into())
+    }
+
     /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
     /// All non-polynomial elements will be converted to new independent variables.
     pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {

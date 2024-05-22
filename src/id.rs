@@ -380,9 +380,8 @@ impl<'a> AtomView<'a> {
 
                 let mut submatch = false;
 
+                let mut child_buf = workspace.new_atom();
                 for child in f.iter() {
-                    let mut child_buf = workspace.new_atom();
-
                     submatch |= child.replace_all_no_norm(
                         replacements,
                         workspace,
@@ -426,9 +425,8 @@ impl<'a> AtomView<'a> {
                 let mul = out.to_mul();
 
                 let mut submatch = false;
+                let mut child_buf = workspace.new_atom();
                 for child in m.iter() {
-                    let mut child_buf = workspace.new_atom();
-
                     submatch |= child.replace_all_no_norm(
                         replacements,
                         workspace,
@@ -447,9 +445,8 @@ impl<'a> AtomView<'a> {
             AtomView::Add(a) => {
                 let out = out.to_add();
                 let mut submatch = false;
+                let mut child_buf = workspace.new_atom();
                 for child in a.iter() {
-                    let mut child_buf = workspace.new_atom();
-
                     submatch |= child.replace_all_no_norm(
                         replacements,
                         workspace,

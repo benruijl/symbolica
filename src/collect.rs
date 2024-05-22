@@ -2,7 +2,9 @@ use ahash::HashMap;
 
 use crate::{
     atom::{Add, AsAtomView, Atom, AtomView, Symbol},
+    coefficient::CoefficientView,
     domains::{integer::Z, rational::Q},
+    poly::{factor::Factorize, polynomial::MultivariatePolynomial},
     state::Workspace,
 };
 
@@ -61,6 +63,17 @@ impl Atom {
     /// Write the expression as a sum of terms with minimal denominators.
     pub fn apart(&self, x: Symbol) -> Atom {
         self.as_view().apart(x)
+    }
+
+    /// Cancel all common factors between numerators and denominators.
+    /// Any non-canceling parts of the expression will not be rewritten.
+    pub fn cancel(&self) -> Atom {
+        self.as_view().cancel()
+    }
+
+    /// Factor the expression over the rationals.
+    pub fn factor(&self) -> Atom {
+        self.as_view().factor()
     }
 }
 
@@ -427,6 +440,186 @@ impl<'a> AtomView<'a> {
             out.set_from_view(self);
         }
     }
+
+    /// Cancel all common factors between numerators and denominators.
+    /// Any non-canceling parts of the expression will not be rewritten.
+    pub fn cancel(&self) -> Atom {
+        let mut out = Atom::new();
+        self.cancel_into(&mut out);
+        out
+    }
+
+    /// Cancel all common factors between numerators and denominators.
+    /// Any non-canceling parts of the expression will not be rewritten.
+    pub fn cancel_into(&self, out: &mut Atom) {
+        Workspace::get_local().with(|ws| {
+            self.cancel_with_ws_into(ws, out);
+        });
+    }
+
+    fn cancel_with_ws_into(&self, ws: &Workspace, out: &mut Atom) -> bool {
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) | AtomView::Fun(_) | AtomView::Pow(_) => {
+                out.set_from_view(self);
+                false
+            }
+            AtomView::Mul(m) => {
+                // split between numerator, denominator and rest
+                // any numerator or denominator part that does not cancel will be kept as is
+                let mut numerators = vec![];
+                let mut denominators = vec![];
+                let mut num_changed = vec![];
+                let mut den_changed = vec![];
+                let mut rest = vec![];
+
+                for a in m.iter() {
+                    if let AtomView::Pow(p) = a {
+                        let (b, e) = p.get_base_exp();
+                        if let AtomView::Num(n) = e {
+                            if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
+                                if n < 0 && d == 1 {
+                                    denominators.push(
+                                        b.to_polynomial::<_, u16>(&Q, None).pow(n.abs() as usize),
+                                    );
+                                    den_changed.push((a, false));
+                                    continue;
+                                } else if n > 0 && d == 1 {
+                                    numerators.push(a.to_polynomial::<_, u16>(&Q, None));
+                                    num_changed.push((a, false));
+                                    continue;
+                                }
+                            }
+                        }
+
+                        rest.push(a);
+                    } else {
+                        numerators.push(a.to_polynomial(&Q, None));
+                        num_changed.push((a, false));
+                    }
+                }
+
+                if numerators.is_empty() || denominators.is_empty() {
+                    out.set_from_view(self);
+                    return false;
+                }
+
+                MultivariatePolynomial::unify_variables_list(&mut numerators);
+                MultivariatePolynomial::unify_variables_list(&mut denominators);
+                numerators[0].unify_variables(&mut denominators[0]);
+                MultivariatePolynomial::unify_variables_list(&mut numerators);
+                MultivariatePolynomial::unify_variables_list(&mut denominators);
+
+                let mut changed = false;
+                for (d, ds) in denominators.iter_mut().zip(&mut den_changed) {
+                    for (n, ns) in numerators.iter_mut().zip(&mut num_changed) {
+                        let g = n.gcd(d);
+                        if !g.is_one() {
+                            changed = true;
+                            ds.1 = true;
+                            ns.1 = true;
+                            *n = &*n / &g;
+                            *d = &*d / &g;
+                        }
+                    }
+                }
+
+                if !changed {
+                    out.set_from_view(self);
+                    return false;
+                }
+
+                let mut mul = ws.new_atom();
+                let mul_view = mul.to_mul();
+
+                let mut tmp = ws.new_atom();
+                for (n, (orig, changed)) in numerators.iter().zip(num_changed) {
+                    if changed {
+                        n.to_expression_into(&mut tmp);
+                        mul_view.extend(tmp.as_view());
+                    } else {
+                        mul_view.extend(orig);
+                    }
+                }
+
+                for (d, (orig, changed)) in denominators.iter().zip(den_changed) {
+                    if changed {
+                        d.to_expression_into(&mut tmp);
+
+                        let mut pow = ws.new_atom();
+                        let exp = ws.new_num(-1);
+                        pow.to_pow(tmp.as_view(), exp.as_view());
+
+                        mul_view.extend(pow.as_view());
+                    } else {
+                        mul_view.extend(orig);
+                    }
+                }
+
+                for r in rest {
+                    mul_view.extend(r);
+                }
+
+                mul_view.as_view().normalize(ws, out);
+                true
+            }
+            AtomView::Add(a) => {
+                let mut add = ws.new_atom();
+                let add_view = add.to_add();
+
+                let mut changed = false;
+                let mut tmp = ws.new_atom();
+                for arg in a.iter() {
+                    if arg.cancel_with_ws_into(ws, &mut tmp) {
+                        changed = true;
+                        add_view.extend(tmp.as_view());
+                    } else {
+                        add_view.extend(arg);
+                    }
+                }
+
+                if changed {
+                    add_view.as_view().normalize(ws, out);
+                    true
+                } else {
+                    out.set_from_view(self);
+                    false
+                }
+            }
+        }
+    }
+
+    /// Factor the expression over the rationals.
+    pub fn factor(&self) -> Atom {
+        let r = self.to_rational_polynomial::<_, _, u16>(&Q, &Z, None);
+        let f_n = r.numerator.factor();
+        let f_d = r.denominator.factor();
+
+        let mut out = Atom::new();
+        let mul = out.to_mul();
+
+        let mut pow = Atom::new();
+        for (k, v) in f_n {
+            if v > 1 {
+                let exp = Atom::new_num(v as i64);
+                pow.to_pow(k.to_expression().as_view(), exp.as_view());
+                mul.extend(pow.as_view());
+            } else {
+                mul.extend(k.to_expression().as_view());
+            }
+        }
+
+        for (k, v) in f_d {
+            let exp = Atom::new_num(-(v as i64));
+            pow.to_pow(k.to_expression().as_view(), exp.as_view());
+            mul.extend(pow.as_view());
+        }
+
+        Workspace::get_local().with(|ws| {
+            out.as_view().normalize(ws, &mut pow);
+        });
+
+        pow
+    }
 }
 
 #[cfg(test)]
@@ -532,6 +725,30 @@ mod test {
         let out = input.apart(State::get_symbol("v4"));
 
         let ref_out = Atom::parse("1/2*v1^2+v3*(v4+1)^-1+v1^3*v2*v4^-1").unwrap();
+
+        assert_eq!(out, ref_out);
+    }
+
+    #[test]
+    fn cancel() {
+        let input =
+            Atom::parse("1/(v1+1)^2 + (v1^2 - 1)*(v2+1)^10/(v1 - 1)+ 5 + (v1+1)/(v1^2+2v1+1)")
+                .unwrap();
+        let out = input.cancel();
+
+        let ref_out = Atom::parse("(v1+1)^-2+(v1+1)^-1+(v1+1)*(v2+1)^10+5").unwrap();
+
+        assert_eq!(out, ref_out);
+    }
+
+    #[test]
+    fn factor() {
+        let input =
+            Atom::parse("(6 + v1)/(7776 + 6480*v1 + 2160*v1^2 + 360*v1^3 + 30*v1^4 + v1^5)")
+                .unwrap();
+        let out = input.factor();
+
+        let ref_out = Atom::parse("(v1+6)^-4").unwrap();
 
         assert_eq!(out, ref_out);
     }

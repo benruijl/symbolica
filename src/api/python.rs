@@ -254,6 +254,21 @@ impl ConvertibleToPattern {
     }
 }
 
+#[derive(FromPyObject)]
+pub enum OneOrMultiple<T> {
+    One(T),
+    Multiple(Vec<T>),
+}
+
+impl<T> OneOrMultiple<T> {
+    pub fn to_iter(&self) -> impl Iterator<Item = &T> {
+        match self {
+            OneOrMultiple::One(a) => std::slice::from_ref(a).iter(),
+            OneOrMultiple::Multiple(m) => m.iter(),
+        }
+    }
+}
+
 /// Operations that transform an expression.
 #[pyclass(name = "Transformer", module = "symbolica")]
 #[derive(Clone)]
@@ -2397,32 +2412,6 @@ impl PythonExpression {
         Ok(b.into())
     }
 
-    pub fn contract(
-        &self,
-        metric: PythonExpression,
-        dimension: PythonExpression,
-    ) -> PyResult<PythonExpression> {
-        let m = match metric.expr.as_view() {
-            AtomView::Var(v) => v.get_symbol(),
-            e => {
-                return Err(exceptions::PyValueError::new_err(format!(
-                    "Expected variable instead of {}",
-                    e
-                )));
-            }
-        };
-
-        let mut b = Atom::new();
-
-        Workspace::get_local().with(|ws| {
-            self.expr
-                .as_view()
-                .contract(m, dimension.expr.as_view(), ws, &mut b)
-        });
-
-        Ok(b.into())
-    }
-
     /// Expand the expression. Optionally, expand in `var` only.
     pub fn expand(&self, var: Option<ConvertibleToExpression>) -> PyResult<PythonExpression> {
         if let Some(var) = var {
@@ -4373,7 +4362,7 @@ macro_rules! generate_methods {
                 Ok(Self { poly: self.poly.constant(self.poly.content())})
             }
 
-            /// Get the coefficient list in `x`.
+            /// Get the coefficient list, optionally in the variables `vars`.
             ///
             /// Examples
             /// --------
@@ -4383,18 +4372,46 @@ macro_rules! generate_methods {
             /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
             /// >>> for n, pp in p.coefficient_list(x):
             /// >>>     print(n, pp)
-            pub fn coefficient_list(&self, var: PythonExpression) -> PyResult<Vec<(usize, Self)>> {
-                let x = self.poly.get_vars_ref().iter().position(|v| match (v, var.expr.as_view()) {
-                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
-                    _ => false,
-                }).ok_or(exceptions::PyValueError::new_err(format!(
-                    "Variable {} not found in polynomial",
-                    var.__str__()?
-                )))?;
+            pub fn coefficient_list(&self, vars: Option<OneOrMultiple<PythonExpression>>) -> PyResult<Vec<(Vec<usize>, Self)>> {
+                if let Some(vv) = vars {
+                    let mut vars = vec![];
 
-                Ok(self.poly.to_univariate_polynomial_list(x).into_iter()
-                    .map(|(f, p)| (p as usize, Self { poly: f })).collect())
+                    for vvv in vv.to_iter() {
+                        let x = self.poly.get_vars_ref().iter().position(|v| match (v, vvv.expr.as_view()) {
+                            (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                            (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                            _ => false,
+                        }).ok_or(exceptions::PyValueError::new_err(format!(
+                            "Variable {} not found in polynomial",
+                            vvv.__str__()?
+                        )))?;
+
+                        vars.push(x);
+                    }
+
+                    if vars.is_empty() {
+                        return Ok(self.poly.into_iter().map(|t| {
+                            (t.exponents.iter().map(|x| *x as usize).collect(), Self { poly: self.poly.constant(t.coefficient.clone()) })
+                       }).collect());
+                    }
+
+                    if vars.len() == 1 {
+                        return Ok(self.poly.to_univariate_polynomial_list(vars[0]).into_iter()
+                        .map(|(f, p)| (vec![p as usize], Self { poly: f })).collect());
+                    }
+
+                    // sort the exponents wrt the var map
+                    let mut r: Vec<(Vec<_>, _)> = self.poly.to_multivariate_polynomial_list(&vars, true).into_iter()
+                        .map(|(f, p)| (vars.iter().map(|v| f[*v] as usize).collect(), Self { poly: p })).collect();
+                    r.sort_by(|a, b| a.0.cmp(&b.0));
+
+                    Ok(r)
+
+                } else {
+                    Ok(self.poly.into_iter().map(|t| {
+                         (t.exponents.iter().map(|x| *x as usize).collect(), Self { poly: self.poly.constant(t.coefficient.clone()) })
+                    }).collect())
+                }
             }
 
             /// Replace the variable `x` with a polynomial `v`.

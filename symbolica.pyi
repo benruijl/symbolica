@@ -1713,8 +1713,8 @@ class Polynomial:
         >>> print(p.content())
         """
 
-    def coefficient_list(self, x: Expression) -> list[Tuple[int, Polynomial]]:
-        """Get the coefficient list in `x`.
+    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]]) -> list[Tuple[list[int], Polynomial]]:
+        """Get the coefficient list, optionally in the variables `xs`.
 
         Examples
         --------
@@ -1913,8 +1913,8 @@ class IntegerPolynomial:
         >>> print(p.content())
         """
 
-    def coefficient_list(self, x: Expression) -> list[Tuple[int, IntegerPolynomial]]:
-        """Get the coefficient list in `x`.
+    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]]) -> list[Tuple[list[int], IntegerPolynomial]]:
+        """Get the coefficient list, optionally in the variables `xs`.
 
         Examples
         --------
@@ -2110,8 +2110,8 @@ class FiniteFieldPolynomial:
         >>> print(p.content())
         """
 
-    def coefficient_list(self, x: Expression) -> list[Tuple[int, FiniteFieldPolynomial]]:
-        """Get the coefficient list in `x`.
+    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]]) -> list[Tuple[list[int], FiniteFieldPolynomial]]:
+        """Get the coefficient list, optionally in the variables `xs`.
 
         Examples
         --------

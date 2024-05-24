@@ -378,6 +378,11 @@ impl<F: Ring> Series<F> {
         self.get_exponent(0)
     }
 
+    #[inline]
+    pub fn get_ramification(&self) -> usize {
+        self.ramification
+    }
+
     /// Get a copy of the variable/
     pub fn get_variable(&self) -> Arc<Variable> {
         self.variable.clone()

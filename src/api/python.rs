@@ -3454,6 +3454,36 @@ impl PythonSeries {
         })
     }
 
+    /// Shift the series by `e` units of the ramification.
+    pub fn shift(&self, e: isize) -> Self {
+        Self {
+            series: self.series.clone().mul_exp_units(e),
+        }
+    }
+
+    /// Get the ramification.
+    pub fn get_ramification(&self) -> usize {
+        self.series.get_ramification()
+    }
+
+    /// Get the trailing exponent; the exponent of the first non-zero term.
+    pub fn get_trailing_exponent(&self) -> PyResult<(i64, i64)> {
+        if let Rational::Natural(n, d) = self.series.get_trailing_exponent() {
+            Ok((n, d))
+        } else {
+            Err(exceptions::PyValueError::new_err("Order is too large"))
+        }
+    }
+
+    /// Get the absolute order.
+    pub fn get_absolute_order(&self) -> PyResult<(i64, i64)> {
+        if let Rational::Natural(n, d) = self.series.absolute_order() {
+            Ok((n, d))
+        } else {
+            Err(exceptions::PyValueError::new_err("Order is too large"))
+        }
+    }
+
     /// Convert the series into an expression.
     pub fn to_expression(&self) -> PythonExpression {
         self.series.to_atom().into()

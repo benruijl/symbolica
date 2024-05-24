@@ -1504,6 +1504,18 @@ class Series:
     def spow(self, exp: Series) -> Series:
         """Raise the series to the power of `exp`, returning the result."""
 
+    def shift(self, e: int) -> Series:
+        """Shift the series by `e` units of the ramification."""
+
+    def get_ramification(self) -> int:
+        """Get the ramification."""
+
+    def get_trailing_exponent(self) -> Tuple[int, int]:
+        """Get the trailing exponent; the exponent of the first non-zero term."""
+
+    def get_absolute_order(self) -> Tuple[int, int]:
+        """Get the absolute order."""
+
     def to_expression(self) -> Expression:
         """Convert the series to an expression"""
 

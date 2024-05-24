@@ -71,7 +71,6 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonIntegerPolynomial>()?;
     m.add_class::<PythonFiniteFieldPolynomial>()?;
     m.add_class::<PythonRationalPolynomial>()?;
-    m.add_class::<PythonRationalPolynomialSmallExponent>()?;
     m.add_class::<PythonFiniteFieldRationalPolynomial>()?;
     m.add_class::<PythonMatrix>()?;
     m.add_class::<PythonNumericalIntegrator>()?;
@@ -2791,37 +2790,6 @@ impl PythonExpression {
         })
     }
 
-    /// Similar to [PythonExpression::to_rational_polynomial()], but the power of each variable limited to 255.
-    pub fn to_rational_polynomial_small_exponent(
-        &self,
-        vars: Option<Vec<PythonExpression>>,
-    ) -> PyResult<PythonRationalPolynomialSmallExponent> {
-        let mut var_map = vec![];
-        if let Some(vm) = vars {
-            for v in vm {
-                match v.expr.as_view() {
-                    AtomView::Var(v) => var_map.push(v.get_symbol().into()),
-                    e => {
-                        Err(exceptions::PyValueError::new_err(format!(
-                            "Expected variable instead of {}",
-                            e
-                        )))?;
-                    }
-                }
-            }
-        }
-
-        let var_map = if var_map.is_empty() {
-            None
-        } else {
-            Some(Arc::new(var_map))
-        };
-
-        Ok(PythonRationalPolynomialSmallExponent {
-            poly: self.expr.to_rational_polynomial(&Q, &Z, var_map),
-        })
-    }
-
     /// Return an iterator over the pattern `self` matching to `lhs`.
     /// Restrictions on pattern can be supplied through `cond`.
     ///
@@ -4306,11 +4274,12 @@ macro_rules! generate_methods {
             }
 
             /// Divide `self` by `rhs`, returning the quotient and remainder.
-            pub fn quot_rem(&self, rhs: Self) -> (Self, Self) {
-                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+                if rhs.poly.is_zero() {
+                    Err(exceptions::PyValueError::new_err("Division by zero"))
+                } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
                     let (q, r) = self.poly.quot_rem(&rhs.poly, false);
-
-                    (Self { poly: q }, Self { poly: r })
+                    Ok((Self { poly: q }, Self { poly: r }))
                 } else {
                     let mut new_self = self.poly.clone();
                     let mut new_rhs = rhs.poly.clone();
@@ -4318,7 +4287,7 @@ macro_rules! generate_methods {
 
                     let (q, r) = new_self.quot_rem(&new_rhs, false);
 
-                    (Self { poly: q }, Self { poly: r })
+                    Ok((Self { poly: q }, Self { poly: r }))
                 }
             }
 
@@ -4326,6 +4295,25 @@ macro_rules! generate_methods {
             pub fn __neg__(&self) -> Self {
                 Self {
                     poly: self.poly.clone().neg(),
+                }
+            }
+
+            /// Compute the remainder `self % rhs.
+            pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
+                if rhs.poly.is_zero() {
+                    Err(exceptions::PyValueError::new_err("Division by zero"))
+                } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+                    Ok(Self {
+                        poly: self.poly.rem(&rhs.poly),
+                    })
+                } else {
+                    let mut new_self = self.poly.clone();
+                    let mut new_rhs = rhs.poly.clone();
+                    new_self.unify_variables(&mut new_rhs);
+
+                    Ok(Self {
+                        poly: new_self.rem(&new_rhs),
+                    })
                 }
             }
 
@@ -4590,13 +4578,6 @@ impl PythonRationalPolynomial {
     }
 }
 
-/// A Symbolica rational polynomial with variable powers limited to 255.
-#[pyclass(name = "RationalPolynomialSmallExponent", module = "symbolica")]
-#[derive(Clone)]
-pub struct PythonRationalPolynomialSmallExponent {
-    pub poly: RationalPolynomial<IntegerRing, u8>,
-}
-
 macro_rules! generate_rat_parse {
     ($type:ty) => {
         #[pymethods]
@@ -4651,7 +4632,6 @@ macro_rules! generate_rat_parse {
 }
 
 generate_rat_parse!(PythonRationalPolynomial);
-generate_rat_parse!(PythonRationalPolynomialSmallExponent);
 
 /// A Symbolica rational polynomial over finite fields.
 #[pyclass(name = "FiniteFieldRationalPolynomial", module = "symbolica")]
@@ -4904,7 +4884,6 @@ macro_rules! generate_rat_methods {
 }
 
 generate_rat_methods!(PythonRationalPolynomial);
-generate_rat_methods!(PythonRationalPolynomialSmallExponent);
 generate_rat_methods!(PythonFiniteFieldRationalPolynomial);
 
 #[derive(FromPyObject)]

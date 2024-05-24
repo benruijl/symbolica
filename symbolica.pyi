@@ -1653,6 +1653,9 @@ class Polynomial:
     def quot_rem(self, rhs: Polynomial) -> Tuple[Polynomial, Polynomial]:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
 
+    def __mod__(self, rhs: Polynomial) -> Polynomial:
+        """Compute the remainder of the division of `self` by `rhs`."""
+
     def __neg__(self) -> Polynomial:
         """Negate the polynomial."""
 
@@ -1877,6 +1880,9 @@ class IntegerPolynomial:
     def quot_rem(self, rhs: IntegerPolynomial) -> Tuple[IntegerPolynomial, IntegerPolynomial]:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
 
+    def __mod__(self, rhs: IntegerPolynomial) -> IntegerPolynomial:
+        """Compute the remainder of the division of `self` by `rhs`."""
+
     def __neg__(self) -> IntegerPolynomial:
         """Negate the polynomial."""
 
@@ -2053,6 +2059,9 @@ class FiniteFieldPolynomial:
 
     def quot_rem(self, rhs: FiniteFieldPolynomial) -> Tuple[FiniteFieldPolynomial, FiniteFieldPolynomial]:
         """Divide `self` by `rhs`, returning the quotient and remainder."""
+
+    def __mod__(self, rhs: FiniteFieldPolynomial) -> FiniteFieldPolynomial:
+        """Compute the remainder of the division of `self` by `rhs`."""
 
     def __neg__(self) -> FiniteFieldPolynomial:
         """Negate the polynomial."""

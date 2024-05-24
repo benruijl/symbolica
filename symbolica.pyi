@@ -1452,21 +1452,33 @@ class Series:
     Examples
     --------
     >>> x = Expression.symbol('x')
-    >>> s = Expression.parse("(1-cos(x))/sin(x)").series(x, 0, 4)
+    >>> s = Expression.parse("(1-cos(x))/sin(x)").series(x, 0, 4) * x
     >>> print(s)
     """
 
-    def __add__(self, other: Series) -> Series:
+    def __add__(self, other: Series | Expression) -> Series:
+        """Add another series or expression to this series, returning the result."""
+
+    def __radd__(self, other: Expression) -> Series:
         """Add two series together, returning the result."""
 
-    def __sub__(self, other: Series) -> Series:
+    def __sub__(self, other: Series | Expression) -> Series:
         """Subtract `other` from `self`, returning the result."""
 
-    def __mul__(self, other: Series) -> Series:
+    def __rsub__(self, other: Expression) -> Series:
+        """Subtract `self` from `other`, returning the result."""
+
+    def __mul__(self, other: Series | Expression) -> Series:
+        """Multiply another series or expression to this series, returning the result."""
+
+    def __rmul__(self, other: Expression) -> Series:
         """Multiply two series together, returning the result."""
 
-    def __truediv__(self, other: Series) -> Series:
+    def __truediv__(self, other: Series | Expression) -> Series:
         """Divide `self` by `other`, returning the result."""
+
+    def __rtruediv__(self, other: Expression) -> Series:
+        """Divide `other` by `self`, returning the result."""
 
     def __pow__(self, exp: int) -> Series:
         """Raise the series to the power of `exp`, returning the result."""

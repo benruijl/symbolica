@@ -24,6 +24,7 @@ use super::Variable;
 pub struct Series<F: Ring> {
     coefficients: Vec<F::Element>,
     variable: Arc<Variable>,
+    expansion_point: F::Element,
     field: F,
     shift: isize, // a shift in units of the ramification that indicates the starting power of the series
     order: usize, // the order of truncation in units of the ramification
@@ -114,13 +115,20 @@ impl<F: Ring> Series<F> {
     /// prefer to create new series from existing ones, so that the
     /// variable map and field are inherited.
     #[inline]
-    pub fn new(field: &F, cap: Option<usize>, variable: Arc<Variable>, order: Rational) -> Self {
+    pub fn new(
+        field: &F,
+        cap: Option<usize>,
+        variable: Arc<Variable>,
+        expansion_point: F::Element,
+        order: Rational,
+    ) -> Self {
         if order.is_negative() {
             panic!("The order of the series must be positive.");
         }
 
         Self {
             coefficients: Vec::with_capacity(cap.unwrap_or(0)),
+            expansion_point,
             field: field.clone(),
             variable,
             shift: 0,
@@ -137,6 +145,7 @@ impl<F: Ring> Series<F> {
             coefficients: vec![],
             field: self.field.clone(),
             variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
             shift: 0,
             order: self.order,
             ramification: 1,
@@ -151,6 +160,7 @@ impl<F: Ring> Series<F> {
             coefficients: Vec::with_capacity(cap),
             field: self.field.clone(),
             variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
             shift: 0,
             order: self.order,
             ramification: 1,
@@ -169,6 +179,7 @@ impl<F: Ring> Series<F> {
             coefficients: vec![coeff],
             field: self.field.clone(),
             variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
             shift: 0,
             order: self.order,
             ramification: 1,
@@ -182,6 +193,7 @@ impl<F: Ring> Series<F> {
             coefficients: vec![self.field.one()],
             field: self.field.clone(),
             variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
             shift: 0,
             order: self.order,
             ramification: 1,
@@ -207,6 +219,7 @@ impl<F: Ring> Series<F> {
             coefficients: vec![coeff],
             field: self.field.clone(),
             variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
             shift: n * d as isize,
             order: self.order * ram / d,
             ramification: ram,
@@ -224,6 +237,7 @@ impl<F: Ring> Series<F> {
             coefficients: vec![coeff, self.field.one()],
             field: self.field.clone(),
             variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
             shift: 0,
             order: self.order,
             ramification: 1,
@@ -264,6 +278,12 @@ impl<F: Ring> Series<F> {
             .into()
     }
 
+    /// Get the expansion point.
+    #[inline]
+    pub fn get_expansion_point(&self) -> F::Element {
+        self.expansion_point.clone()
+    }
+
     fn change_ramification(&mut self, ram: usize) {
         let ram = Integer::from(self.ramification as i64)
             .lcm(&Integer::from(ram as i64))
@@ -281,6 +301,7 @@ impl<F: Ring> Series<F> {
             ],
             field: self.field.clone(),
             variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
             shift: self.shift * (ram / self.ramification) as isize,
             order: self.order * (ram / self.ramification),
             ramification: ram,
@@ -358,7 +379,7 @@ impl<F: Ring> Series<F> {
     }
 
     /// Get a copy of the variable/
-    pub fn get_vars(&self) -> Arc<Variable> {
+    pub fn get_variable(&self) -> Arc<Variable> {
         self.variable.clone()
     }
 
@@ -424,25 +445,6 @@ impl<F: Ring> Series<F> {
         self.truncate(); // zeros may have occurred
 
         self
-    }
-
-    /// Map a coefficient using the function `f`.
-    pub fn map_coeff<U: Ring, T: Fn(&F::Element) -> U::Element>(
-        &self,
-        f: T,
-        field: U,
-    ) -> Series<U> {
-        let mut r = Series {
-            coefficients: vec![],
-            field,
-            variable: self.variable.clone(),
-            shift: self.shift,
-            order: self.order,
-            ramification: self.ramification,
-        };
-        r.coefficients = self.coefficients.iter().map(f).collect::<Vec<_>>();
-        r.truncate();
-        r
     }
 
     /// Truncate the leading and trailing non-zeroes.
@@ -577,6 +579,7 @@ impl<F: Ring> Add for Series<F> {
             let mut s = Self {
                 coefficients: vec![],
                 variable: self.variable.clone(),
+                expansion_point: self.expansion_point.clone(),
                 field: self.field.clone(),
                 shift,
                 order: (order_s.min(order_o) - shift) as usize,
@@ -654,6 +657,7 @@ impl<'a, 'b, F: Ring> Mul<&'a Series<F>> for &'b Series<F> {
             coefficients: vec![],
             field: self.field.clone(),
             variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
             shift: self.shift * r_d_s as isize + rhs.shift * r_d_o as isize,
             order: (self.order * r_d_s).min(rhs.order * r_d_o),
             ramification: r,
@@ -804,7 +808,7 @@ impl Series<AtomField> {
         let e = FunctionBuilder::new(State::EXP).add_arg(&c).finish();
 
         // split the true constant part and the x-dependent part
-        let var = self.variable.to_atom();
+        let var = self.variable.to_atom() - &self.expansion_point;
         let shift_series = self.extract_exp_log(e.as_view(), var.as_view())?;
 
         let p = self.clone().remove_constant();
@@ -830,7 +834,8 @@ impl Series<AtomField> {
         }
 
         // construct the log argument, which may contain x
-        let c = self.variable.to_atom().npow(self.get_exponent(0)) * &self.coefficients[0];
+        let c = (self.variable.to_atom() - &self.expansion_point).npow(self.get_exponent(0))
+            * &self.coefficients[0];
         // normalize the series to 1 + ..
         let p = self
             .clone()
@@ -1023,7 +1028,7 @@ impl Series<AtomField> {
             return;
         }
 
-        let v = self.variable.to_atom();
+        let v = self.variable.to_atom() - &self.expansion_point;
         for (e, c) in self.coefficients.iter().enumerate() {
             let p = self.get_exponent(e);
             if !c.is_zero() {

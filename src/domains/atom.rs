@@ -115,9 +115,13 @@ impl Ring for AtomField {
         &self,
         element: &Self::Element,
         _opts: &crate::printer::PrintOptions,
-        in_product: bool, // can be used to add parentheses
+        mut in_product: bool, // can be used to add parentheses
         f: &mut std::fmt::Formatter<'_>,
     ) -> Result<(), std::fmt::Error> {
+        if !matches!(element.as_view(), AtomView::Add(_)) {
+            in_product = false;
+        }
+
         if in_product {
             write!(f, "(")?;
         }

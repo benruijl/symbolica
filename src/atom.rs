@@ -625,7 +625,7 @@ impl Atom {
 /// #     state::{FunctionAttribute, State},
 /// # };
 /// # fn main() {
-/// let f_id = State::get_symbol_with_attributes("f", vec![FunctionAttribute::Symmetric]).unwrap();
+/// let f_id = State::get_symbol_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
 /// let fb = FunctionBuilder::new(f_id);
 /// let a = fb
 ///     .add_arg(&Atom::new_num(3))

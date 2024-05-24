@@ -160,9 +160,10 @@ impl State {
     ///
     /// Example:
     /// ```
-    /// State::get_symbol_with_attributes("f", vec![FunctionAttribute::Symmetric]).unwrap();
+    /// # use symbolica::state::{State, FunctionAttribute};
+    /// State::get_symbol_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
     /// unsafe { State::reset(); }
-    /// State::get_symbol_with_attributes("f", vec![FunctionAttribute::Antisymmetric]).unwrap();
+    /// State::get_symbol_with_attributes("f", &[FunctionAttribute::Antisymmetric]).unwrap();
     /// ```
     pub unsafe fn reset() {
         let mut state = STATE.write().unwrap();

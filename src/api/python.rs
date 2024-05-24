@@ -3283,6 +3283,12 @@ impl PythonReplacement {
     }
 }
 
+#[derive(FromPyObject)]
+pub enum SeriesOrExpression {
+    Series(PythonSeries),
+    Expression(PythonExpression),
+}
+
 /// A series expansion class.
 ///
 /// Supports standard arithmetic operations, such
@@ -3294,34 +3300,84 @@ impl PythonReplacement {
 /// >>> s = Expression.parse("(1-cos(x))/sin(x)").series(x, 0, 4)
 /// >>> print(s)
 #[pyclass(name = "Series", module = "symbolica")]
+#[derive(Clone)]
 pub struct PythonSeries {
     pub series: Series<AtomField>,
 }
 
 #[pymethods]
 impl PythonSeries {
-    /// Add this series to `other`, returning the result.
-    pub fn __add__(&self, rhs: &Self) -> PyResult<Self> {
+    /// Add this series to `rhs`, returning the result.
+    pub fn __add__(&self, rhs: SeriesOrExpression) -> PyResult<Self> {
+        match rhs {
+            SeriesOrExpression::Series(rhs) => Ok(Self {
+                series: &self.series + &rhs.series,
+            }),
+            SeriesOrExpression::Expression(rhs) => Ok(Self {
+                series: (&self.series + &rhs.expr)
+                    .map_err(|e| exceptions::PyValueError::new_err(e))?,
+            }),
+        }
+    }
+
+    /// Add this series to `rhs`, returning the result.
+    pub fn __radd__(&self, rhs: &PythonExpression) -> PyResult<Self> {
         Ok(Self {
-            series: &self.series + &rhs.series,
+            series: (&self.series + &rhs.expr).map_err(|e| exceptions::PyValueError::new_err(e))?,
         })
     }
 
-    pub fn __sub__(&self, rhs: &Self) -> PyResult<Self> {
+    pub fn __sub__(&self, rhs: SeriesOrExpression) -> PyResult<Self> {
+        match rhs {
+            SeriesOrExpression::Series(rhs) => Ok(Self {
+                series: &self.series - &rhs.series,
+            }),
+            SeriesOrExpression::Expression(rhs) => Ok(Self {
+                series: (&self.series - &rhs.expr)
+                    .map_err(|e| exceptions::PyValueError::new_err(e))?,
+            }),
+        }
+    }
+
+    pub fn __rsub__(&self, lhs: &PythonExpression) -> PyResult<Self> {
         Ok(Self {
-            series: &self.series - &rhs.series,
+            series: (&lhs.expr - &self.series).map_err(|e| exceptions::PyValueError::new_err(e))?,
         })
     }
 
-    pub fn __mul__(&self, rhs: &Self) -> PyResult<Self> {
+    pub fn __mul__(&self, rhs: SeriesOrExpression) -> PyResult<Self> {
+        match rhs {
+            SeriesOrExpression::Series(rhs) => Ok(Self {
+                series: &self.series * &rhs.series,
+            }),
+            SeriesOrExpression::Expression(rhs) => Ok(Self {
+                series: (&self.series * &rhs.expr)
+                    .map_err(|e| exceptions::PyValueError::new_err(e))?,
+            }),
+        }
+    }
+
+    pub fn __rmul__(&self, lhs: &PythonExpression) -> PyResult<Self> {
         Ok(Self {
-            series: &self.series * &rhs.series,
+            series: (&self.series * &lhs.expr).map_err(|e| exceptions::PyValueError::new_err(e))?,
         })
     }
 
-    pub fn __truediv__(&self, rhs: &Self) -> PyResult<Self> {
+    pub fn __truediv__(&self, rhs: SeriesOrExpression) -> PyResult<Self> {
+        match rhs {
+            SeriesOrExpression::Series(rhs) => Ok(Self {
+                series: &self.series / &rhs.series,
+            }),
+            SeriesOrExpression::Expression(rhs) => Ok(Self {
+                series: (&self.series / &rhs.expr)
+                    .map_err(|e| exceptions::PyValueError::new_err(e))?,
+            }),
+        }
+    }
+
+    pub fn __rtruediv__(&self, lhs: &PythonExpression) -> PyResult<Self> {
         Ok(Self {
-            series: &self.series / &rhs.series,
+            series: (&lhs.expr / &self.series).map_err(|e| exceptions::PyValueError::new_err(e))?,
         })
     }
 

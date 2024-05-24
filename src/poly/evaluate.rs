@@ -1295,7 +1295,7 @@ enum InstructionRange {
 }
 /// A fast polynomial evaluator that evaluates polynomials written
 /// in the form:
-/// ```
+/// ```text
 /// Z0 = x
 /// Z1 = y
 /// Z2 = 2.
@@ -1732,11 +1732,13 @@ impl ExpressionEvaluator {
     /// ```
     /// can be represented by:
     /// ```
+    /// # use symbolica::atom::Atom;
+    /// # use symbolica::state::State;
     /// vec![
-    ///       vec![(x0, vec![Atom.parse("p1"), Atom.parse("p2")])],
-    ///       vec![(x1, vec![Atom.parse("x0(0) * x0(1) + 2")])],
-    ///       vec![(x2, vec![Atom.parse("x1(0) * 2 * x0(1)")])]
-    /// ]
+    ///       vec![(State::get_symbol("x0"), vec![Atom::parse("p1"), Atom::parse("p2")])],
+    ///       vec![(State::get_symbol("x1"), vec![Atom::parse("x0(0) * x0(1) + 2")])],
+    ///       vec![(State::get_symbol("x2"), vec![Atom::parse("x1(0) * 2 * x0(1)")])]
+    /// ];
     /// ```
     ///
     /// Each expression will be converted to a polynomial and optimized by writing it in a near-optimal Horner scheme and by performing

@@ -175,11 +175,12 @@ fn unique_permutations_impl<T: Clone>(
 ///
 /// For example:
 /// ```
+/// # use symbolica::combinatorics::partitions;
 /// partitions(&[1, 1, 1, 2, 2],
 ///     &[('f', 2), ('g', 2), ('f', 1)],
 ///     false,
 ///     false
-/// )
+/// );
 /// ```
 /// generates all possible ways to partition the elements of three sets
 /// and yields:

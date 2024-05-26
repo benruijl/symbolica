@@ -152,10 +152,11 @@ pub enum Token {
     ID(SmartString<LazyCompact>),
     RationalPolynomial(SmartString<LazyCompact>),
     Op(bool, bool, Operator, Vec<Token>),
-    Fn(bool, Vec<Token>),
+    Fn(bool, bool, Vec<Token>),
     Start,
     OpenParenthesis,
     CloseParenthesis,
+    CloseBracket,
     EOF,
 }
 
@@ -194,7 +195,7 @@ impl std::fmt::Display for Token {
                 }
                 f.write_char(')')
             }
-            Token::Fn(_, args) => {
+            Token::Fn(_, _, args) => {
                 let mut first = true;
 
                 match &args[0] {
@@ -216,6 +217,7 @@ impl std::fmt::Display for Token {
             Token::Start => f.write_str("START"),
             Token::OpenParenthesis => f.write_char('('),
             Token::CloseParenthesis => f.write_char(')'),
+            Token::CloseBracket => f.write_char(']'),
             Token::EOF => f.write_str("EOF"),
         }
     }
@@ -229,7 +231,7 @@ impl Token {
             Token::ID(_) => true,
             Token::RationalPolynomial(_) => true,
             Token::Op(more_left, more_right, _, _) => !more_left && !more_right,
-            Token::Fn(more_right, _) => !more_right,
+            Token::Fn(more_right, _, _) => !more_right,
             _ => false,
         }
     }
@@ -242,7 +244,10 @@ impl Token {
             Token::ID(_) => 11,
             Token::RationalPolynomial(_) => 11,
             Token::Op(_, _, o, _) => o.get_precedence(),
-            Token::Fn(_, _) | Token::OpenParenthesis | Token::CloseParenthesis => 5,
+            Token::Fn(_, _, _)
+            | Token::OpenParenthesis
+            | Token::CloseParenthesis
+            | Token::CloseBracket => 5,
             Token::Start | Token::EOF => 4,
         }
     }
@@ -440,7 +445,7 @@ impl Token {
                     out.to_pow(base.as_view(), num.as_view());
                 }
             },
-            Token::Fn(_, args) => {
+            Token::Fn(_, _, args) => {
                 let name = match &args[0] {
                     Token::ID(s) => s,
                     _ => unreachable!(),
@@ -453,6 +458,10 @@ impl Token {
                     fun.add_arg(atom.as_view());
                 }
             }
+            Token::RationalPolynomial(_) => Err(format!(
+                "Optimized rational polynomial input cannot be parsed yet as atom: {}",
+                self
+            ))?,
             x => return Err(format!("Unexpected token {}", x)),
         }
 
@@ -576,7 +585,7 @@ impl Token {
                     pow_h.as_view().normalize(workspace, out);
                 }
             },
-            Token::Fn(_, args) => {
+            Token::Fn(_, _, args) => {
                 let name = match &args[0] {
                     Token::ID(s) => s,
                     _ => unreachable!(),
@@ -664,9 +673,16 @@ impl Token {
                     let mut s = SmartString::new();
                     s.push(c);
 
-                    while c != ']' {
+                    while c != ']' && c != '\0' {
                         pos += 1;
                         c = char_iter.next().unwrap_or('\0');
+                    }
+
+                    if c == '\0' {
+                        Err(format!(
+                            "Missing ] of bracket started at line {} and column {}",
+                            line_counter, column_counter
+                        ))?;
                     }
 
                     s.push_str(&start.as_str()[..pos - 1]);
@@ -699,7 +715,7 @@ impl Token {
                             unsafe { stack.last().unwrap_unchecked() },
                             Token::Start
                                 | Token::OpenParenthesis
-                                | Token::Fn(true, _)
+                                | Token::Fn(true, _, _)
                                 | Token::Op(_, true, _, _)
                         ) {
                             // unary + operator, can be ignored as plus is the default
@@ -714,7 +730,7 @@ impl Token {
                             unsafe { stack.last().unwrap_unchecked() },
                             Token::Start
                                 | Token::OpenParenthesis
-                                | Token::Fn(true, _)
+                                | Token::Fn(true, _, _)
                                 | Token::Op(_, true, _, _)
                         ) {
                             // unary minus only requires an argument to the right
@@ -729,7 +745,7 @@ impl Token {
                         if let Some(Token::ID(_)) = stack.last() {
                             let name = unsafe { stack.pop().unwrap_unchecked() };
                             if let Token::ID(_) = name {
-                                stack.push(Token::Fn(true, vec![name])); // serves as open paren
+                                stack.push(Token::Fn(true, false, vec![name])); // serves as open paren
                             }
                         } else if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
                             // insert multiplication: x(...) -> x*(...)
@@ -745,7 +761,7 @@ impl Token {
                             stack.last().unwrap(),
                             Token::Start
                                 | Token::OpenParenthesis
-                                | Token::Fn(true, _)
+                                | Token::Fn(true, _, _)
                                 | Token::Op(_, true, _, _)
                         ) {
                             // unary inv only requires an argument to the right
@@ -759,13 +775,21 @@ impl Token {
                     '\0' => stack.push(Token::EOF),
                     '[' => {
                         if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
-                            // insert multiplication: x[3,4] -> x*[3,4]
-                            stack.push(Token::Op(true, true, Operator::Mul, vec![]));
-                            extra_ops.push(c);
+                            if let Token::ID(_) = unsafe { stack.last().unwrap_unchecked() } {
+                                let name = unsafe { stack.pop().unwrap_unchecked() };
+                                if let Token::ID(_) = name {
+                                    stack.push(Token::Fn(true, true, vec![name]));
+                                }
+                            } else {
+                                // insert multiplication: f(x)[3,4] -> f(x)*[3,4]
+                                stack.push(Token::Op(true, true, Operator::Mul, vec![]));
+                                extra_ops.push(c);
+                            }
                         } else {
                             state = ParseState::RationalPolynomial;
                         }
                     }
+                    ']' => stack.push(Token::CloseBracket),
                     _ => {
                         if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
                             // insert multiplication: x y -> x*y
@@ -801,16 +825,40 @@ impl Token {
                         ))?;
                         }
 
-                        Token::CloseParenthesis => {
+                        x @ Token::CloseParenthesis | x @ Token::CloseBracket => {
+                            let c = x.clone();
                             let pos = stack.len() - 2;
                             // check if we have an empty function
-                            if let Token::Fn(f, _) = unsafe { stack.get_unchecked_mut(pos) } {
-                                *f = false;
-                                stack.pop();
+                            if let Token::Fn(f, bracket, _) =
+                                unsafe { stack.get_unchecked_mut(pos) }
+                            {
+                                if c == Token::CloseParenthesis && !*bracket
+                                    || c == Token::CloseBracket && *bracket
+                                {
+                                    *f = false;
+                                    stack.pop();
+                                } else {
+                                    Err(format!(
+                                        "Error at line {} and position {}: unexpected '{}'",
+                                        line_counter,
+                                        column_counter,
+                                        if c == Token::CloseParenthesis {
+                                            ")"
+                                        } else {
+                                            "]"
+                                        }
+                                    ))?;
+                                }
                             } else {
                                 Err(format!(
-                                    "Error at line {} and position {}: unexpected ')'",
-                                    line_counter, column_counter,
+                                    "Error at line {} and position {}: unexpected '{}'",
+                                    line_counter,
+                                    column_counter,
+                                    if c == Token::CloseParenthesis {
+                                        ")"
+                                    } else {
+                                        "]"
+                                    }
                                 ))?;
                             }
                         }
@@ -851,9 +899,28 @@ impl Token {
                             (Token::Start, mid, Token::EOF) => {
                                 *first = mid;
                             }
-                            (Token::Fn(mr, args), mid, Token::CloseParenthesis) => {
+                            (
+                                Token::Fn(mr, bracket, args),
+                                mid,
+                                x @ Token::CloseParenthesis | x @ Token::CloseBracket,
+                            ) => {
                                 debug_assert!(*mr);
                                 *mr = false;
+
+                                if x == Token::CloseParenthesis && *bracket
+                                    || x == Token::CloseBracket && !*bracket
+                                {
+                                    Err(format!(
+                                        "Error at line {} and position {}: unexpected '{}'",
+                                        line_counter,
+                                        column_counter,
+                                        if x == Token::CloseParenthesis {
+                                            ")"
+                                        } else {
+                                            "]"
+                                        }
+                                    ))?;
+                                }
 
                                 if let Token::Op(_, _, Operator::Argument, arg2) = mid {
                                     args.extend(arg2);
@@ -934,7 +1001,7 @@ impl Token {
                     Err("Unexpected end of input: open parenthesis is not closed".to_string())
                 }
 
-                Some(Token::Fn(true, args)) => Err(format!(
+                Some(Token::Fn(true, _, args)) => Err(format!(
                     "Unexpected end of input: Missing closing parenthesis for function '{}'",
                     args[0]
                 )),
@@ -1186,6 +1253,13 @@ mod test {
         )
         .unwrap();
         let res = Atom::parse("8923321837281*x^2*y^-1+5").unwrap();
+        assert_eq!(input, res);
+    }
+
+    #[test]
+    fn square_bracket_function() {
+        let input = Atom::parse("v1  [v1, v2]+5 + v1[]").unwrap();
+        let res = Atom::parse("v1(v1,v2)+5+v1()").unwrap();
         assert_eq!(input, res);
     }
 

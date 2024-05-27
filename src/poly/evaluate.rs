@@ -1133,7 +1133,25 @@ impl InstructionList {
                         }
                     }
 
-                    if same_op {
+                    if !same_op {
+                        continue;
+                    }
+
+                    if idx1 == idx2 {
+                        let count = a.iter().filter(|x| *x == &idx1).count();
+                        let pairs = count / 2;
+                        if pairs > 0 {
+                            a.retain(|x| x != &idx1);
+
+                            // add back removed indices when the count is odd
+                            if count > 2 * pairs {
+                                a.extend(std::iter::repeat(idx1).take(count - 2 * pairs));
+                            }
+
+                            a.extend(std::iter::repeat(insert_index).take(pairs));
+                            a.sort();
+                        }
+                    } else {
                         let mut idx1_count = 0;
                         let mut idx2_count = 0;
                         for v in &*a {

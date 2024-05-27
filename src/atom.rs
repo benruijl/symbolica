@@ -457,7 +457,7 @@ impl Atom {
         Atom::default()
     }
 
-    /// Parse and atom from a string.
+    /// Parse an atom from a string.
     pub fn parse(input: &str) -> Result<Atom, String> {
         Workspace::get_local().with(|ws| Token::parse(input)?.to_atom(ws))
     }

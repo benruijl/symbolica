@@ -2791,7 +2791,7 @@ impl PythonExpression {
     }
 
     /// Return an iterator over the pattern `self` matching to `lhs`.
-    /// Restrictions on pattern can be supplied through `cond`.
+    /// Restrictions on the pattern can be supplied through `cond`.
     ///
     /// Examples
     /// --------
@@ -2829,6 +2829,39 @@ impl PythonExpression {
                 PatternAtomTreeIterator::new(lhs, target.as_view(), res, settings)
             },
         ))
+    }
+
+    /// Test whether the pattern is found in the expression.
+    /// Restrictions on the pattern can be supplied through `cond`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> f = Expression.symbol('f')
+    /// >>> if f(1).matches(f(2)):
+    /// >>>    print('match')
+    pub fn matches(
+        &self,
+        lhs: ConvertibleToPattern,
+        cond: Option<PythonPatternRestriction>,
+        level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
+    ) -> PyResult<bool> {
+        let pat = lhs.to_pattern()?.expr;
+        let conditions = cond
+            .map(|r| r.condition.clone())
+            .unwrap_or(Condition::default());
+        let settings = MatchSettings {
+            level_range: level_range.unwrap_or((0, None)),
+            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
+            ..MatchSettings::default()
+        };
+
+        Ok(
+            PatternAtomTreeIterator::new(&pat, self.expr.as_view(), &conditions, &settings)
+                .next()
+                .is_some(),
+        )
     }
 
     /// Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
@@ -3497,16 +3530,27 @@ impl PythonTermStreamer {
         self.stream += &mut rhs.stream;
     }
 
+    /// Get the total number of bytes of the stream.
     pub fn get_byte_size(&self) -> usize {
         self.stream.get_byte_size()
     }
 
-    /// Add an expression to the term streamer.
+    /// Return true iff the stream fits in memory.
+    pub fn fits_in_memory(&self) -> bool {
+        self.stream.fits_in_memory()
+    }
+
+    /// Get the number of terms in the stream.
+    pub fn get_num_terms(&self) -> usize {
+        self.stream.get_num_terms()
+    }
+
+    /// Add an expression to the term stream.
     pub fn push(&mut self, expr: PythonExpression) {
         self.stream.push(expr.expr.clone());
     }
 
-    /// Sort and fuse all terms in the streamer.
+    /// Sort and fuse all terms in the stream.
     pub fn normalize(&mut self) {
         self.stream.normalize();
     }
@@ -3516,7 +3560,7 @@ impl PythonTermStreamer {
         self.stream.to_expression().into()
     }
 
-    /// Map the transformations to every term in the streamer.
+    /// Map the transformations to every term in the stream.
     pub fn map(&mut self, op: PythonPattern, py: Python) -> PyResult<Self> {
         let t = match &op.expr {
             Pattern::Transformer(t) => {
@@ -3552,6 +3596,38 @@ impl PythonTermStreamer {
             Ok::<_, PyErr>(m)
         })
         .map(|x| PythonTermStreamer { stream: x })
+    }
+
+    /// Map the transformations to every term in the stream using a single thread.
+    pub fn map_single_thread(&mut self, op: PythonPattern) -> PyResult<Self> {
+        let t = match &op.expr {
+            Pattern::Transformer(t) => {
+                if t.0.is_some() {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Transformer is bound to expression. Use Transformer() instead."
+                            .to_string(),
+                    ));
+                }
+                &t.1
+            }
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Operation must of a transformer".to_string(),
+                ));
+            }
+        };
+
+        // map every term in the expression
+        let s = self.stream.map_single_thread(|x| {
+            let mut out = Atom::default();
+            Workspace::get_local().with(|ws| {
+                Transformer::execute(x.as_view(), &t, ws, &mut out)
+                    .unwrap_or_else(|e| panic!("Transformer failed during execution: {:?}", e));
+            });
+            out
+        });
+
+        Ok(PythonTermStreamer { stream: s })
     }
 }
 

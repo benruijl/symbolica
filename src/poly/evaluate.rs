@@ -1143,9 +1143,8 @@ impl InstructionList {
                         if pairs > 0 {
                             a.retain(|x| x != &idx1);
 
-                            // add back removed indices when the count is odd
-                            if count > 2 * pairs {
-                                a.extend(std::iter::repeat(idx1).take(count - 2 * pairs));
+                            if count % 2 == 1 {
+                                a.push(idx1);
                             }
 
                             a.extend(std::iter::repeat(insert_index).take(pairs));

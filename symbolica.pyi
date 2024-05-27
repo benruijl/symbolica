@@ -828,7 +828,7 @@ class Expression:
     ) -> MatchIterator:
         """
         Return an iterator over the pattern `self` matching to `lhs`.
-        Restrictions on pattern can be supplied through `cond`.
+        Restrictions on the pattern can be supplied through `cond`.
 
         The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
         The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
@@ -843,6 +843,25 @@ class Expression:
         >>> for match in e.match(f(x_)):
         >>>    for map in match:
         >>>        print(map[0],'=', map[1])
+        """
+
+    def matches(
+        self,
+        lhs: Transformer | Expression | int,
+        cond: Optional[PatternRestriction] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
+    ) -> bool:
+        """
+        Test whether the pattern is found in the expression.
+        Restrictions on the pattern can be supplied through `cond`.
+
+        Examples
+        --------
+
+        >>> f = Expression.symbol('f')
+        >>> if f(1).matches(f(2)):
+        >>>    print('match')
         """
 
     def replace(
@@ -1540,19 +1559,28 @@ class TermStreamer:
         """Add another term streamer to this one."""
 
     def get_byte_size(self) -> int:
-        """Get the byte size of the term streamer."""
+        """Get the byte size of the term stream."""
+
+    def get_num_terms(self) -> int:
+        """Get the number of terms in the stream."""
+
+    def fits_in_memory(self) -> bool:
+        """Check if the term stream fits in memory."""
 
     def push(self, expr: Expression) -> None:
-        """Push an expresssion to the term streamer."""
+        """Push an expresssion to the term stream."""
 
     def normalize(self) -> None:
-        """Sort and fuse all terms in the streamer."""
+        """Sort and fuse all terms in the stream."""
 
     def to_expression(self) -> Expression:
         """Convert the term stream into an expression. This may exceed the available memory."""
 
     def map(self, f: Transformer) -> TermStreamer:
-        """Apply a transformer to all terms in the streamer."""
+        """Apply a transformer to all terms in the stream."""
+
+    def map_single_thread(self, f: Transformer) -> TermStreamer:
+        """Apply a transformer to all terms in the stream using a single thread."""
 
 
 class MatchIterator:

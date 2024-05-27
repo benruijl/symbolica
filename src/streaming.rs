@@ -106,6 +106,7 @@ impl<'a, R: ReadableNamedStream> Iterator for TermInputStream<'a, R> {
 pub struct TermStreamer<W: WriteableNamedStream> {
     mem_buf: Vec<Atom>,
     mem_size: usize,
+    num_terms: usize,
     total_size: usize,
     file_buf: Vec<W>,
     config: TermStreamerConfig,
@@ -178,6 +179,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         Self {
             mem_buf: vec![],
             mem_size: 0,
+            num_terms: 0,
             total_size: 0,
             file_buf: vec![],
             filename,
@@ -196,6 +198,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         Self {
             mem_buf: vec![],
             mem_size: 0,
+            num_terms: 0,
             total_size: 0,
             file_buf: vec![],
             filename: self.filename.clone(),
@@ -203,6 +206,16 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
             thread_pool: self.thread_pool.clone(),
             generation: self.generation + 1,
         }
+    }
+
+    /// Returns true iff the stream fits in memory.
+    pub fn fits_in_memory(&self) -> bool {
+        self.file_buf.is_empty()
+    }
+
+    /// Get the number of terms in the stream.
+    pub fn get_num_terms(&self) -> usize {
+        self.num_terms
     }
 
     /// Add terms to the buffer.
@@ -220,6 +233,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         let size = a.as_view().get_byte_size();
         self.mem_buf.push(a);
         self.mem_size += size;
+        self.num_terms += 1;
         self.total_size += size;
 
         if self.mem_size >= self.config.max_mem_bytes {
@@ -248,6 +262,7 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
             .par_sort_by(|a, b| a.as_view().cmp_terms(&b.as_view()));
 
         let mut out = Vec::with_capacity(self.mem_buf.len());
+        let old_size = self.mem_buf.len();
         let mut new_size = 0;
 
         if !self.mem_buf.is_empty() {
@@ -286,6 +301,8 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         }
 
         self.mem_buf = out;
+        self.num_terms += self.mem_buf.len();
+        self.num_terms -= old_size;
         self.total_size += new_size;
         self.total_size -= self.mem_size;
         self.mem_size = new_size;
@@ -442,9 +459,9 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
         out_wrap.into_inner().unwrap()
     }
 
-    /// Map every term in the stream using the function `f` using a single core. The resulting terms
+    /// Map every term in the stream using the function `f` using a single thread. The resulting terms
     /// are a stream as well, which is returned by this function.
-    pub fn map_single_core(mut self, f: impl Fn(Atom) -> Atom) -> Self {
+    pub fn map_single_thread(&mut self, f: impl Fn(Atom) -> Atom) -> Self {
         let mut new_out = self.next_generation();
 
         let reader = self.reader();

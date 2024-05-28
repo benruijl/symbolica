@@ -349,11 +349,12 @@ impl<'a> AtomView<'a> {
         depth: Rational,
     ) -> Result<Series<AtomField>, &'static str> {
         // heuristic current depth
-        let mut current_depth = if depth.is_negative() {
+        let mut current_depth = if depth.is_negative() || depth.is_zero() {
             Rational::one()
         } else {
             depth.clone()
         };
+
         Workspace::get_local().with(|ws| loop {
             let info = Series::new(
                 &AtomField::new(),
@@ -820,6 +821,18 @@ mod test {
         let t2 = t.rpow((1, 3).into());
 
         assert_eq!(t2.absolute_order(), (22, 3).into());
+    }
+
+    #[test]
+    fn series_zero() {
+        let v1 = State::get_symbol("v1");
+
+        let input = Atom::parse("1/v1^2+1/v1+v1").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 0.into())
+            .unwrap();
+
+        assert_eq!(t.to_atom().expand(), Atom::parse("v1^-2+v1^-1").unwrap());
     }
 
     #[test]

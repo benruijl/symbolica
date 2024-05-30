@@ -385,8 +385,8 @@ impl<'a> AtomView<'a> {
                     submatch |= child.replace_all_no_norm(
                         replacements,
                         workspace,
-                        fn_level + 1,
                         tree_level + 1,
+                        fn_level + 1,
                         &mut child_buf,
                     );
 
@@ -2601,7 +2601,10 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 
 #[cfg(test)]
 mod test {
-    use crate::{atom::Atom, id::Replacement};
+    use crate::{
+        atom::Atom,
+        id::{MatchSettings, Replacement},
+    };
 
     use super::Pattern;
 
@@ -2613,6 +2616,25 @@ mod test {
 
         let r = p.replace_all(a.as_view(), &rhs, None, None);
         let res = Atom::parse("v1*(v2+v2^2+1)+v2*(v2+1)").unwrap();
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn level_restriction() {
+        let a = Atom::parse("v1*f1(v1,f1(v1))").unwrap();
+        let p = Pattern::parse("v1").unwrap();
+        let rhs = Pattern::parse("1").unwrap();
+
+        let r = p.replace_all(
+            a.as_view(),
+            &rhs,
+            None,
+            Some(&MatchSettings {
+                level_range: (1, Some(1)),
+                ..Default::default()
+            }),
+        );
+        let res = Atom::parse("v1*f1(1,f1(v1))").unwrap();
         assert_eq!(r, res);
     }
 

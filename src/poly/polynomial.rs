@@ -2026,7 +2026,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             return self.heap_mul_packed_exp(rhs, pack_u8);
         }
 
-        let mut res = self.zero_with_capacity(self.nterms());
+        let mut res = self.zero_with_capacity(self.nterms().max(rhs.nterms()));
 
         let mut cache: BTreeMap<Vec<E>, Vec<(usize, usize)>> = BTreeMap::new();
         let mut q_cache: Vec<Vec<(usize, usize)>> = vec![];
@@ -2135,7 +2135,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         other: &MultivariatePolynomial<F, E, LexOrder>,
         pack_u8: bool,
     ) -> MultivariatePolynomial<F, E, LexOrder> {
-        let mut res = self.zero_with_capacity(self.nterms() * other.nterms());
+        let mut res = self.zero_with_capacity(self.nterms().max(other.nterms()));
 
         let pack_a: Vec<_> = if pack_u8 {
             self.exponents_iter().map(|c| E::pack(c)).collect()

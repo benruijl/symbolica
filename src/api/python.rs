@@ -4887,7 +4887,7 @@ macro_rules! generate_rat_methods {
             pub fn __truediv__(&self, rhs: Self) -> Self {
                 if self.poly.get_variables() == rhs.poly.get_variables() {
                     Self {
-                        poly: &self.poly * &rhs.poly,
+                        poly: &self.poly / &rhs.poly,
                     }
                 } else {
                     let mut new_self = self.poly.clone();

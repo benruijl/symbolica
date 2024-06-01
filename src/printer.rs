@@ -563,7 +563,15 @@ impl<'a> FormattedPrintPow for PowView<'a> {
         let base_needs_parentheses =
             matches!(b, AtomView::Add(_) | AtomView::Mul(_) | AtomView::Pow(_))
                 || if let AtomView::Num(n) = b {
-                    !n.get_coeff_view().is_integer()
+                    match n.get_coeff_view() {
+                        CoefficientView::Natural(n, d) => n < 0 || d != 1,
+                        CoefficientView::Large(r) => r.is_negative() || !r.to_rat().is_integer(),
+                        CoefficientView::FiniteField(n, i) => {
+                            opts.symmetric_representation_for_finite_field
+                                && n.0 * 2 > State::get_finite_field(i).get_prime()
+                        }
+                        CoefficientView::RationalPolynomial(_) => true,
+                    }
                 } else {
                     false
                 };
@@ -1417,5 +1425,32 @@ mod test {
             format!("{}", a) == "3*(2+5*x^2)/((1+x)(2+x))"
                 || format!("{}", a) == "3*(2+5*x^2)/((2+x)(1+x))"
         );
+    }
+
+    #[test]
+    fn base_parentheses() {
+        let a = Atom::parse("(-1)^(x+1)-(1/2)^x").unwrap();
+        assert_eq!(
+            format!(
+                "{}",
+                AtomPrinter::new_with_options(
+                    a.as_view(),
+                    PrintOptions {
+                        terms_on_new_line: false,
+                        color_top_level_sum: false,
+                        color_builtin_symbols: false,
+                        print_finite_field: true,
+                        symmetric_representation_for_finite_field: true,
+                        explicit_rational_polynomial: false,
+                        number_thousands_separator: None,
+                        multiplication_operator: '*',
+                        square_brackets_for_function: false,
+                        num_exp_as_superscript: false,
+                        latex: false
+                    }
+                )
+            ),
+            "(-1)^(x+1)-(1/2)^x"
+        )
     }
 }

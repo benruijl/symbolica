@@ -90,7 +90,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(request_hobbyist_license, m)?)?;
     m.add_function(wrap_pyfunction!(request_trial_license, m)?)?;
     m.add_function(wrap_pyfunction!(request_sublicense, m)?)?;
-    m.add_function(wrap_pyfunction!(get_offline_license_key, m)?)?;
+    m.add_function(wrap_pyfunction!(get_license_key, m)?)?;
 
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
@@ -147,10 +147,12 @@ fn request_sublicense(
         .map_err(exceptions::PyConnectionError::new_err)
 }
 
-/// Get a license key for offline use, generated from a licensed Symbolica session. The key will remain valid for 24 hours.
+/// Get the license key for the account registered with the provided email address.
 #[pyfunction]
-fn get_offline_license_key() -> PyResult<String> {
-    LicenseManager::get_offline_license_key().map_err(exceptions::PyValueError::new_err)
+fn get_license_key(email: String) -> PyResult<()> {
+    LicenseManager::get_license_key(&email)
+        .map(|_| println!("A license key was sent to your e-mail address."))
+        .map_err(exceptions::PyConnectionError::new_err)
 }
 
 /// Specifies the type of the atom.

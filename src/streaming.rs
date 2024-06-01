@@ -12,6 +12,7 @@ use rayon::prelude::*;
 use crate::{
     atom::{Atom, AtomView},
     state::RecycledAtom,
+    LicenseManager,
 };
 
 pub trait ReadableNamedStream: Read + Send {
@@ -185,7 +186,11 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
             filename,
             thread_pool: Arc::new(
                 rayon::ThreadPoolBuilder::new()
-                    .num_threads(config.n_cores)
+                    .num_threads(if LicenseManager::is_licensed() {
+                        config.n_cores
+                    } else {
+                        1
+                    })
                     .build()
                     .unwrap(),
             ),
@@ -439,6 +444,10 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
     /// Map every term in the stream using the function `f`. The resulting terms
     /// are a stream as well, which is returned by this function.
     pub fn map(&mut self, f: impl Fn(Atom) -> Atom + Send + Sync) -> Self {
+        if self.thread_pool.current_num_threads() == 1 {
+            return self.map_single_thread(f);
+        }
+
         let t = self.thread_pool.clone();
 
         let new_out = self.next_generation();

@@ -1,6 +1,8 @@
 mod coefficient;
 pub mod representation;
 
+use representation::{InlineNum, InlineVar};
+
 use crate::{
     coefficient::Coefficient,
     parser::Token,
@@ -200,6 +202,18 @@ pub trait AsAtomView<'a>: Sized {
 impl<'a> AsAtomView<'a> for AtomView<'a> {
     fn as_atom_view(self) -> AtomView<'a> {
         self
+    }
+}
+
+impl<'a> AsAtomView<'a> for &'a InlineVar {
+    fn as_atom_view(self) -> AtomView<'a> {
+        self.as_view()
+    }
+}
+
+impl<'a> AsAtomView<'a> for &'a InlineNum {
+    fn as_atom_view(self) -> AtomView<'a> {
+        self.as_view()
     }
 }
 

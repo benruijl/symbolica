@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, CStr};
 use std::fmt::Write;
 use std::os::raw::c_ulonglong;
 use std::sync::Arc;
@@ -28,6 +28,7 @@ struct LocalState {
 
 struct Symbolica {
     local_state: LocalState,
+    is_licensed: bool,
 }
 
 /// Set the Symbolica license key for this computer. Can only be called before calling any other Symbolica functions.
@@ -79,13 +80,11 @@ unsafe extern "C" fn request_trial_license(
 /// Get a license key for offline use, generated from a licensed Symbolica session. The key will remain valid for 24 hours.
 /// The key is written into `key`, which must be a buffer of at least 100 bytes.
 #[no_mangle]
-unsafe extern "C" fn get_offline_license_key(key: *mut c_char) -> bool {
-    match LicenseManager::get_offline_license_key() {
-        Ok(k) => {
-            let cs = CString::new(k).unwrap();
-            key.copy_from_nonoverlapping(cs.as_ptr(), cs.as_bytes_with_nul().len());
-            true
-        }
+unsafe extern "C" fn get_license_key(email: *const c_char) -> bool {
+    let email = unsafe { CStr::from_ptr(email) }.to_str().unwrap();
+
+    match LicenseManager::get_license_key(email) {
+        Ok(()) => true,
         Err(e) => {
             eprintln!("{}", e);
             false
@@ -96,6 +95,8 @@ unsafe extern "C" fn get_offline_license_key(key: *mut c_char) -> bool {
 /// Create a new Symbolica handle.
 #[no_mangle]
 unsafe extern "C" fn init() -> *mut Symbolica {
+    LicenseManager::check();
+
     let s = Symbolica {
         local_state: LocalState {
             buffer: String::with_capacity(2048),
@@ -104,6 +105,7 @@ unsafe extern "C" fn init() -> *mut Symbolica {
             input_has_rational_numbers: false,
             exp_fits_in_u8: false,
         },
+        is_licensed: LicenseManager::is_licensed(),
     };
 
     Box::into_raw(Box::new(s))
@@ -153,6 +155,10 @@ unsafe extern "C" fn simplify(
     let cstr = c.to_str().unwrap();
 
     let symbolica = unsafe { &mut *symbolica };
+
+    if !symbolica.is_licensed {
+        LicenseManager::check();
+    }
 
     let token = Token::parse(cstr).unwrap();
 

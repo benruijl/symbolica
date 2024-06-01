@@ -12,6 +12,7 @@ use crate::{
     domains::{integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
     state::{State, Workspace},
+    LicenseManager,
 };
 
 const HEX_DIGIT_MASK: [bool; 255] = [
@@ -622,6 +623,8 @@ impl Token {
 
     /// Parse a Symbolica expression.
     pub fn parse(input: &str) -> Result<Token, String> {
+        LicenseManager::check();
+
         let mut stack: Vec<_> = Vec::with_capacity(20);
         stack.push(Token::Start);
         let mut state = ParseState::Any;

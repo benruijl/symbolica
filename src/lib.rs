@@ -25,6 +25,7 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     process::abort,
+    sync::atomic::{AtomicBool, Ordering::Relaxed},
     thread::ThreadId,
     time::{Duration, SystemTime},
 };
@@ -61,6 +62,7 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 static LICENSE_KEY: OnceCell<String> = OnceCell::new();
 static LICENSE_MANAGER: OnceCell<LicenseManager> = OnceCell::new();
+static LICENSED: AtomicBool = LicenseManager::init();
 
 #[allow(dead_code)]
 pub struct LicenseManager {
@@ -112,36 +114,41 @@ impl LicenseManager {
                 };
             }
             Err(e) => {
-                eprintln!("{}", e);
+                if !e.contains("missing") {
+                    eprintln!("{}", e);
+                }
             }
         }
 
-        println!(
-            "┌────────────────────────────────────────────────────────┐
-│ You are running an unlicensed Symbolica instance.      │
+        if env::var("SYMBOLICA_HIDE_BANNER").is_err() {
+            println!(
+                "┌────────────────────────────────────────────────────────┐
+│ You are running a restricted Symbolica instance.       │
 │                                                        │
-│ This mode is only allowed for non-professional use and │
-│ is limited to one instance and core.                   │
+│ This mode is only permitted for non-commercial use and │
+│ is limited to one instance and core per machine.       │
 │                                                        │
-│ {} can easily acquire a free license to unlock  │
-│ all cores and to remove this banner:                   │
+│ {} can easily acquire a {} license key        │
+│ that unlocks all cores and removes this banner:        │
 │                                                        │
 │   from symbolica import *                              │
 │   request_hobbyist_license('YOUR_NAME', 'YOUR_EMAIL')  │
 │                                                        │
-│ {} users must obtain an appropriate license, │
-│ or can get a free 30-day trial license:                │
+│ All other users can obtain a free 30-day trial key:    │
 │                                                        │
 │   from symbolica import *                              │
 │   request_trial_license('NAME', 'EMAIL', 'EMPLOYER')   │
 │                                                        │
 │ See https://symbolica.io/docs/get_started.html#license │
 └────────────────────────────────────────────────────────┘",
-            "Hobbyists".bold(),
-            "Professional".bold(),
-        );
+                "Hobbyists".bold(),
+                "free".bold(),
+            );
+        }
 
-        match TcpListener::bind("127.0.0.1:12011") {
+        let port = env::var("SYMBOLICA_PORT").unwrap_or_else(|_| "12011".to_owned());
+
+        match TcpListener::bind(&format!("127.0.0.1:{}", port)) {
             Ok(o) => {
                 rayon::ThreadPoolBuilder::new()
                     .num_threads(1)
@@ -150,8 +157,16 @@ impl LicenseManager {
 
                 drop(o);
 
-                std::thread::spawn(|| loop {
-                    match TcpListener::bind("127.0.0.1:12011") {
+                std::thread::spawn(move || loop {
+                    let new_port =
+                        env::var("SYMBOLICA_PORT").unwrap_or_else(|_| "12011".to_owned());
+
+                    if port != new_port {
+                        println!("{}", MULTIPLE_INSTANCE_WARNING);
+                        abort();
+                    }
+
+                    match TcpListener::bind(&format!("127.0.0.1:{}", port)) {
                         Ok(_) => {
                             std::thread::sleep(Duration::from_secs(1));
                         }
@@ -177,20 +192,38 @@ impl LicenseManager {
         }
     }
 
+    const fn init() -> AtomicBool {
+        AtomicBool::new(false)
+    }
+
     fn check_license_key() -> Result<(), String> {
         let key = LICENSE_KEY
             .get()
             .cloned()
             .or(env::var("SYMBOLICA_LICENSE").ok());
 
-        let Some(key) = key else {
+        let Some(mut key) = key else {
+            std::thread::spawn(|| {
+                let mut m: HashMap<String, JsonValue> = HashMap::default();
+                m.insert(
+                    "version".to_owned(),
+                    env!("CARGO_PKG_VERSION").to_owned().into(),
+                );
+                let mut v = JsonValue::from(m).stringify().unwrap();
+                v.push('\n');
+
+                if let Ok(mut stream) = TcpStream::connect(&"symbolica.io:12012") {
+                    let _ = stream.write_all(v.as_bytes());
+                };
+            });
+
             return Err(MISSING_LICENSE_ERROR.to_owned());
         };
 
-        if key.contains('@') {
-            let mut a = key.split('@');
-            let f1 = a.next().unwrap();
-            let f2 = a.next().unwrap();
+        if key.contains('#') {
+            let mut a = key.split('#');
+            let f1 = a.next().ok_or_else(|| ACTIVATION_ERROR.to_owned())?;
+            let f2 = a.next().ok_or_else(|| ACTIVATION_ERROR.to_owned())?;
             let f3 = a.next().ok_or_else(|| ACTIVATION_ERROR.to_owned())?;
 
             let mut h: u32 = 5381;
@@ -201,6 +234,7 @@ impl LicenseManager {
                 h = h.wrapping_mul(33).wrapping_add(*b as u32);
             }
 
+            let h = format!("{:x}", h);
             if f1 != h.to_string() {
                 Err(ACTIVATION_ERROR.to_owned())?;
             }
@@ -210,20 +244,40 @@ impl LicenseManager {
                 .unwrap()
                 .as_secs();
 
-            let t2 = f2.parse::<u64>().map_err(|_| ACTIVATION_ERROR.to_owned())?;
+            let t2 = u64::from_str_radix(f2, 16)
+                .map_err(|_| ACTIVATION_ERROR.to_owned())
+                .unwrap();
 
-            if t < t2 || t - t2 > 24 * 60 * 60 {
-                Err("┌───────────────────────────────────────────┐
-│ The offline Symbolica license has expired │
-└───────────────────────────────────────────┘"
+            if t > t2 {
+                Err("┌───────────────────────────────────┐
+│ The Symbolica license has expired │
+└───────────────────────────────────┘"
                     .to_owned())?;
             }
 
-            return Ok(());
+            key = f3.to_owned();
+            std::thread::spawn(|| {
+                if let Err(e) = Self::check_registration(key) {
+                    if e.contains("expired") {
+                        println!("{}", e);
+                        abort();
+                    }
+                }
+            });
+        } else {
+            Self::check_registration(key)?;
         }
 
-        let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") else {
-            return Err(NETWORK_ERROR.to_owned());
+        LICENSED.store(true, Relaxed);
+        Ok(())
+    }
+
+    fn check_registration(key: String) -> Result<(), String> {
+        let mut stream = match TcpStream::connect("symbolica.io:12012") {
+            Ok(stream) => stream,
+            Err(_) => {
+                return Err(NETWORK_ERROR.to_owned());
+            }
         };
 
         let mut m: HashMap<String, JsonValue> = HashMap::default();
@@ -275,15 +329,26 @@ Error: {}",
         }
     }
 
-    fn check(&self) {
-        if self.has_license {
+    #[inline(always)]
+    fn check() {
+        if LICENSED.load(Relaxed) {
+            return;
+        }
+
+        Self::check_impl();
+    }
+
+    fn check_impl() {
+        let manager = LICENSE_MANAGER.get_or_init(LicenseManager::new);
+
+        if manager.has_license {
             return;
         }
 
         let pid = std::process::id();
         let thread_id = std::thread::current().id();
 
-        if self.pid != pid || self.thread_id != thread_id {
+        if manager.pid != pid || manager.thread_id != thread_id {
             println!("{}", MULTIPLE_INSTANCE_WARNING);
             abort();
         }
@@ -300,7 +365,7 @@ Error: {}",
 
     /// Returns `true` iff this instance has a valid license key set.
     pub fn is_licensed() -> bool {
-        Self::check_license_key().is_ok()
+        LICENSED.load(Relaxed) || Self::check_license_key().is_ok()
     }
 
     /// Get the current Symbolica version.
@@ -412,38 +477,32 @@ Error: {}",
         }
     }
 
-    /// Get a license key for offline use, generated from a licensed Symbolica session. The key will remain valid for 24 hours.
-    pub fn get_offline_license_key() -> Result<String, String> {
-        if Self::check_license_key().is_err() {
-            Err("Cannot request offline license from an unlicensed session".to_owned())?;
-        }
-        let key = LICENSE_KEY
-            .get()
-            .cloned()
-            .or(env::var("SYMBOLICA_LICENSE").ok());
+    /// Get the license key for the account registered with the provided email address.
+    pub fn get_license_key(email: &str) -> Result<(), String> {
+        if let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") {
+            let mut m: HashMap<String, JsonValue> = HashMap::default();
+            m.insert("email".to_owned(), email.to_owned().into());
+            let mut v = JsonValue::from(m).stringify().unwrap();
+            v.push('\n');
 
-        let Some(key) = key else {
-            return Err(ACTIVATION_ERROR.to_owned());
-        };
+            stream.write_all(v.as_bytes()).unwrap();
 
-        if !key.contains('@') {
-            let t = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                .to_string();
+            let mut buf = Vec::new();
+            stream.read_to_end(&mut buf).unwrap();
+            let read_str = std::str::from_utf8(&buf).unwrap();
 
-            let mut h: u32 = 5381;
-            for b in t.as_bytes() {
-                h = h.wrapping_mul(33).wrapping_add(*b as u32);
+            if read_str == "{\"status\":\"email sent\"}\n" {
+                Ok(())
+            } else if read_str.is_empty() {
+                Err("Empty response".to_owned())
+            } else {
+                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
+                let message_parsed: &HashMap<_, _> = message.get().unwrap();
+                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+                Err(status.clone())
             }
-            for b in key.as_bytes() {
-                h = h.wrapping_mul(33).wrapping_add(*b as u32);
-            }
-
-            Ok(format!("{}@{}@{}", h, t, key))
         } else {
-            Err("Cannot request offline license key from an offline session".to_owned())
+            Err("Could not connect to the license server".to_owned())
         }
     }
 }

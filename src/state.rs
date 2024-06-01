@@ -23,7 +23,7 @@ use crate::{
     atom::{Atom, Symbol},
     coefficient::Coefficient,
     domains::finite_field::FiniteFieldCore,
-    LicenseManager, LICENSE_MANAGER,
+    LicenseManager,
 };
 
 pub const EXPORT_FORMAT_VERSION: u16 = 1;
@@ -96,7 +96,7 @@ impl State {
     ];
 
     fn new() -> State {
-        LICENSE_MANAGER.get_or_init(LicenseManager::new).check();
+        LicenseManager::check();
 
         let mut state = State {
             str_to_id: HashMap::new(),
@@ -575,7 +575,9 @@ impl Workspace {
 
     /// Get a thread-local workspace.
     #[inline]
-    pub const fn get_local() -> &'static LocalKey<ManuallyDrop<Workspace>> {
+    pub fn get_local() -> &'static LocalKey<ManuallyDrop<Workspace>> {
+        LicenseManager::check();
+
         &WORKSPACE
     }
 

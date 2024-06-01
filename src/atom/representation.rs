@@ -37,6 +37,98 @@ const ZERO_DATA: [u8; 3] = [NUM_ID, 1, 0];
 
 pub type RawAtom = Vec<u8>;
 
+/// An inline variable.
+pub struct InlineVar {
+    data: [u8; 16],
+    size: u8,
+}
+
+impl InlineVar {
+    /// Create a new inline variable.
+    pub fn new(symbol: Symbol) -> InlineVar {
+        let mut data = [0; 16];
+        let mut flags = VAR_ID;
+        match symbol.wildcard_level {
+            0 => {}
+            1 => flags |= VAR_WILDCARD_LEVEL_1,
+            2 => flags |= VAR_WILDCARD_LEVEL_2,
+            _ => flags |= VAR_WILDCARD_LEVEL_3,
+        }
+
+        if symbol.is_symmetric {
+            flags |= FUN_SYMMETRIC_FLAG;
+        }
+        if symbol.is_linear {
+            flags |= FUN_LINEAR_FLAG;
+        }
+        if symbol.is_antisymmetric {
+            flags |= VAR_ANTISYMMETRIC_FLAG;
+        }
+
+        data[0] = flags;
+
+        let size = 1 + (symbol.id as u64, 1).get_packed_size() as u8;
+        (symbol.id as u64, 1).write_packed_fixed(&mut data[1..]);
+        InlineVar { data, size }
+    }
+
+    pub fn get_data(&self) -> &[u8] {
+        &self.data[..self.size as usize]
+    }
+
+    pub fn as_var_view(&self) -> VarView {
+        VarView {
+            data: &self.data[..self.size as usize],
+        }
+    }
+
+    pub fn as_view(&self) -> AtomView {
+        AtomView::Var(VarView {
+            data: &self.data[..self.size as usize],
+        })
+    }
+}
+
+impl From<Symbol> for InlineVar {
+    fn from(symbol: Symbol) -> InlineVar {
+        InlineVar::new(symbol)
+    }
+}
+
+/// An inline rational number that has 64-bit components.
+pub struct InlineNum {
+    data: [u8; 24],
+    size: u8,
+}
+
+impl InlineNum {
+    /// Create a new inline number. The gcd of num and den should be 1.
+    pub fn new(num: i64, den: i64) -> InlineNum {
+        let mut data = [0; 24];
+        data[0] = NUM_ID;
+
+        let size = 1 + (num, den).get_packed_size() as u8;
+        (num, den).write_packed_fixed(&mut data[1..]);
+        InlineNum { data, size }
+    }
+
+    pub fn get_data(&self) -> &[u8] {
+        &self.data[..self.size as usize]
+    }
+
+    pub fn as_num_view(&self) -> NumView {
+        NumView {
+            data: &self.data[..self.size as usize],
+        }
+    }
+
+    pub fn as_view(&self) -> AtomView {
+        AtomView::Num(NumView {
+            data: &self.data[..self.size as usize],
+        })
+    }
+}
+
 impl Atom {
     /// Read from a binary stream. The format is the byte-length first
     /// followed by the data.

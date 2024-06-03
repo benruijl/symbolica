@@ -1329,7 +1329,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// Define a regular symbol and use it as a variable:
-    /// >>> f = Expression.symbol('x')
+    /// >>> x = Expression.symbol('x')
     /// >>> e = x**2 + 5
     /// >>> print(e)
     /// x**2 + 5
@@ -3151,8 +3151,7 @@ impl PythonExpression {
 
         Ok(self
             .expr
-            .as_view()
-            .evaluate(&constants, &functions, &mut cache))
+            .evaluate(|x| x.into(), &constants, &functions, &mut cache))
     }
 
     /// Evaluate the expression, using a map of all the variables and
@@ -3212,8 +3211,7 @@ impl PythonExpression {
 
         let r = self
             .expr
-            .as_view()
-            .evaluate(&constants, &functions, &mut cache);
+            .evaluate(|x| x.into(), &constants, &functions, &mut cache);
         Ok(PyComplex::from_doubles(py, r.re, r.im))
     }
 }

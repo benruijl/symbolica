@@ -126,7 +126,7 @@ class Expression:
         Examples
         --------
         Define a regular symbol and use it as a variable:
-        >>> f = Expression.symbol('x')
+        >>> x = Expression.symbol('x')
         >>> e = x**2 + 5
         >>> print(e)
         x**2 + 5
@@ -812,12 +812,6 @@ class Expression:
         >>> a = Expression.parse('(1 + 3*x1 + 5*x2 + 7*x3 + 9*x4 + 11*x5 + 13*x6 + 15*x7)^2 - 1').to_rational_polynomial()
         >>> print(a)
         """
-
-    def to_rational_polynomial_small_exponent(
-        self,
-        vars: Optional[Sequence[Expression]] = None,
-    ) -> RationalPolynomial:
-        """Similar to `to_rational_polynomial()`, but the power of each variable is limited to 255."""
 
     def match(
         self,
@@ -2297,93 +2291,6 @@ class RationalPolynomial:
         """
 
     def apart(self, x: Expression) -> List[RationalPolynomial]:
-        """Compute the partial fraction decomposition in `x`.
-
-        Examples
-        --------
-
-        >>> from symbolica import Expression
-        >>> x = Expression.symbol('x')
-        >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
-        >>> for pp in p.apart(x):
-        >>>     print(pp)
-        """
-
-
-class RationalPolynomialSmallExponent:
-    """A Symbolica rational polynomial with variable powers limited to 255."""
-
-    @classmethod
-    def parse(_cls, input: str, vars: Sequence[str]) -> RationalPolynomial:
-        """
-        Parse a rational polynomial from a string.
-        The list of all the variables must be provided.
-
-        If this requirements is too strict, use `Expression.to_polynomial()` instead.
-
-        Examples
-        --------
-        >>> e = RationalPolynomialSmallExponent.parse('(3/4*x^2+y+y*4)/(1+x)', ['x', 'y'])
-
-        Raises
-        ------
-        ValueError
-            If the input is not a valid Symbolica rational polynomial.
-        """
-
-    def __copy__(self) -> RationalPolynomialSmallExponent:
-        """Copy the rational polynomial."""
-
-    def __str__(self) -> str:
-        """Print the rational polynomial in a human-readable format."""
-
-    def to_latex(self) -> str:
-        """Convert the rational polynomial into a LaTeX string."""
-
-    def get_var_list(self) -> Sequence[Expression]:
-        """Get the list of variables in the internal ordering of the polynomial."""
-
-    def __add__(
-        self, rhs: RationalPolynomialSmallExponent
-    ) -> RationalPolynomialSmallExponent:
-        """Add two rational polynomials `self` and `rhs`, returning the result."""
-
-    def __sub__(
-        self, rhs: RationalPolynomialSmallExponent
-    ) -> RationalPolynomialSmallExponent:
-        """Subtract rational polynomials `rhs` from `self`, returning the result."""
-
-    def __mul__(
-        self, rhs: RationalPolynomialSmallExponent
-    ) -> RationalPolynomialSmallExponent:
-        """Multiply two rational polynomials `self` and `rhs`, returning the result."""
-
-    def __truediv__(
-        self, rhs: RationalPolynomialSmallExponent
-    ) -> RationalPolynomialSmallExponent:
-        """Divide the rational polynomial `self` by `rhs` if possible, returning the result."""
-
-    def __neg__(self) -> RationalPolynomialSmallExponent:
-        """Negate the rational polynomial."""
-
-    def gcd(
-        self, rhs: RationalPolynomialSmallExponent
-    ) -> RationalPolynomialSmallExponent:
-        """Compute the greatest common divisor (GCD) of two rational polynomials."""
-
-    def to_expression(self) -> Expression:
-        """ Convert the polynomial to an expression.
-
-        Examples
-        --------
-
-        >>> from symbolica import Expression
-        >>> e = Expression.parse('(x*y+2*x+x^2)/(x^7+y+1)')
-        >>> p = e.to_polynomial()
-        >>> print((e - p.to_expression()).expand())
-        """
-
-    def apart(self, x: Expression) -> List[RationalPolynomialSmallExponent]:
         """Compute the partial fraction decomposition in `x`.
 
         Examples

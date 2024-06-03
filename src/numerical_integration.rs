@@ -2,7 +2,7 @@ use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use serde::{Deserialize, Serialize};
 
-use crate::domains::float::{NumericalFloatComparison, Real};
+use crate::domains::float::{ConstructibleFloat, NumericalFloatComparison, Real};
 
 /// Keep track of statistical quantities, such as the average,
 /// the error and the chi-squared of samples added over multiple
@@ -20,7 +20,7 @@ use crate::domains::float::{NumericalFloatComparison, Real};
 /// The accumulator also stores which samples yielded the highest weight thus far.
 /// This can be used to study the input that impacted the average and error the most.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct StatisticsAccumulator<T: Real + NumericalFloatComparison> {
+pub struct StatisticsAccumulator<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
     sum: T,
     sum_sq: T,
     weight_sum: T,
@@ -42,27 +42,27 @@ pub struct StatisticsAccumulator<T: Real + NumericalFloatComparison> {
     pub num_zero_evaluations: usize,
 }
 
-impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
+impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> StatisticsAccumulator<T> {
     /// Create a new [StatisticsAccumulator].
     pub fn new() -> StatisticsAccumulator<T> {
         StatisticsAccumulator {
-            sum: T::zero(),
-            sum_sq: T::zero(),
-            weight_sum: T::zero(),
-            avg_sum: T::zero(),
-            avg: T::zero(),
-            err: T::zero(),
-            guess: T::zero(),
-            chi_sq: T::zero(),
-            chi_sum: T::zero(),
-            chi_sq_sum: T::zero(),
+            sum: T::new_zero(),
+            sum_sq: T::new_zero(),
+            weight_sum: T::new_zero(),
+            avg_sum: T::new_zero(),
+            avg: T::new_zero(),
+            err: T::new_zero(),
+            guess: T::new_zero(),
+            chi_sq: T::new_zero(),
+            chi_sum: T::new_zero(),
+            chi_sq_sum: T::new_zero(),
             new_samples: 0,
             new_zero_evaluations: 0,
             cur_iter: 0,
             processed_samples: 0,
-            max_eval_positive: T::zero(),
+            max_eval_positive: T::new_zero(),
             max_eval_positive_xs: None,
-            max_eval_negative: T::zero(),
+            max_eval_negative: T::new_zero(),
             max_eval_negative_xs: None,
             num_zero_evaluations: 0,
         }
@@ -103,7 +103,7 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
         self.sum_sq += eval * eval;
         self.new_samples += 1;
 
-        if eval == T::zero() {
+        if eval == T::new_zero() {
             self.new_zero_evaluations += 1;
         }
 
@@ -124,8 +124,8 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
         self.merge_samples_no_reset(other);
 
         // reset the other
-        other.sum = T::zero();
-        other.sum_sq = T::zero();
+        other.sum = T::new_zero();
+        other.sum_sq = T::new_zero();
         other.new_samples = 0;
         other.new_zero_evaluations = 0;
     }
@@ -160,16 +160,16 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
 
         self.processed_samples += self.new_samples;
         self.num_zero_evaluations += self.new_zero_evaluations;
-        let n = T::from_usize(self.new_samples);
+        let n = T::new_from_usize(self.new_samples);
         self.sum /= &n;
         self.sum_sq /= n * n;
         let mut w = (self.sum_sq * n).sqrt();
 
-        w = ((w + self.sum) * (w - self.sum)) / (n - T::one());
-        if w == T::zero() {
+        w = ((w + self.sum) * (w - self.sum)) / (n - T::new_one());
+        if w == T::new_zero() {
             // all sampled points are the same
             // set the weight to a large number
-            w = T::from_usize(usize::MAX);
+            w = T::new_from_usize(usize::MAX);
         } else {
             w = w.inv();
         }
@@ -188,8 +188,8 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
         self.chi_sq = self.chi_sq_sum - self.avg * self.chi_sum;
 
         // reset
-        self.sum = T::zero();
-        self.sum_sq = T::zero();
+        self.sum = T::new_zero();
+        self.sum_sq = T::new_zero();
         self.new_samples = 0;
         self.new_zero_evaluations = 0;
         self.cur_iter += 1;
@@ -304,21 +304,21 @@ impl<T: Real + NumericalFloatComparison> StatisticsAccumulator<T> {
 /// If the sample comes from a [DiscreteGrid], it is the variant [Discrete](Sample::Discrete) and contains
 /// the weight, the bin and the subsample if the bin has a nested grid.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Sample<T: Real + NumericalFloatComparison> {
+pub enum Sample<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
     Continuous(T, Vec<T>),
     Discrete(T, usize, Option<Box<Sample<T>>>),
 }
 
-impl<T: Real + NumericalFloatComparison> Default for Sample<T> {
+impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Default for Sample<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Real + NumericalFloatComparison> Sample<T> {
+impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Sample<T> {
     /// Construct a new empty sample that can be handed over to [`Grid::sample()`].
     pub fn new() -> Sample<T> {
-        Sample::Continuous(T::zero(), vec![])
+        Sample::Continuous(T::new_zero(), vec![])
     }
 
     /// Get the weight of the sample.
@@ -331,7 +331,7 @@ impl<T: Real + NumericalFloatComparison> Sample<T> {
     /// Transform the sample to a discrete grid, used for recycling memory.
     fn to_discrete_grid(&mut self) -> (&mut T, &mut usize, &mut Option<Box<Sample<T>>>) {
         if let Sample::Continuous(..) = self {
-            *self = Sample::Discrete(T::zero(), 0, None);
+            *self = Sample::Discrete(T::new_zero(), 0, None);
         }
 
         match self {
@@ -343,7 +343,7 @@ impl<T: Real + NumericalFloatComparison> Sample<T> {
     /// Transform the sample to a continuous, used for recycling memory.
     fn to_continuous_grid(&mut self) -> (&mut T, &mut Vec<T>) {
         if let Sample::Continuous(..) = self {
-            *self = Sample::Continuous(T::zero(), vec![])
+            *self = Sample::Continuous(T::new_zero(), vec![])
         }
 
         match self {
@@ -357,12 +357,12 @@ impl<T: Real + NumericalFloatComparison> Sample<T> {
 /// It supports discrete and continuous dimensions. The discrete dimensions
 /// can have a nested grid.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Grid<T: Real + NumericalFloatComparison> {
+pub enum Grid<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
     Continuous(ContinuousGrid<T>),
     Discrete(DiscreteGrid<T>),
 }
 
-impl<T: Real + NumericalFloatComparison> Grid<T> {
+impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Grid<T> {
     /// Sample a position in the grid. The sample is more likely to land in a region
     /// where the function the grid is based on is changing rapidly.
     pub fn sample<R: Rng + ?Sized>(&mut self, rng: &mut R, sample: &mut Sample<T>) {
@@ -428,13 +428,13 @@ impl<T: Real + NumericalFloatComparison> Grid<T> {
 }
 /// A bin of a discrete grid, which may contain a subgrid.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Bin<T: Real + NumericalFloatComparison> {
+pub struct Bin<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
     pub pdf: T,
     pub accumulator: StatisticsAccumulator<T>,
     pub sub_grid: Option<Grid<T>>,
 }
 
-impl<T: Real + NumericalFloatComparison> Bin<T> {
+impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Bin<T> {
     /// Returns `Ok` when this grid can be merged with another grid,
     /// and `Err` when the grids have a different shape.
     pub fn is_mergeable(&self, other: &Bin<T>) -> Result<(), String> {
@@ -467,14 +467,14 @@ impl<T: Real + NumericalFloatComparison> Bin<T> {
 /// average value if training happens on the average, or to its
 /// variance (recommended).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiscreteGrid<T: Real + NumericalFloatComparison> {
+pub struct DiscreteGrid<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
     pub bins: Vec<Bin<T>>,
     pub accumulator: StatisticsAccumulator<T>,
     max_prob_ratio: T,
     train_on_avg: bool,
 }
 
-impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
+impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> DiscreteGrid<T> {
     /// Create a new discrete grid with `bins.len()` number of bins, where
     /// each bin may have a sub-grid.
     ///
@@ -487,7 +487,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
         max_prob_ratio: T,
         train_on_avg: bool,
     ) -> DiscreteGrid<T> {
-        let pdf = T::from_usize(1) / T::from_usize(bins.len());
+        let pdf = T::new_from_usize(1) / T::new_from_usize(bins.len());
         DiscreteGrid {
             bins: bins
                 .into_iter()
@@ -505,9 +505,9 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
 
     /// Sample a bin from all bins based on the bin pdfs.
     fn sample_bin<R: Rng + ?Sized>(&self, rng: &mut R) -> (usize, T) {
-        let r: T = T::sample_unit(rng);
+        let r: T = T::new_sample_unit(rng);
 
-        let mut cdf = T::zero();
+        let mut cdf = T::new_zero();
         for (i, bin) in self.bins.iter().enumerate() {
             cdf += bin.pdf;
             if r <= cdf {
@@ -526,7 +526,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
     ///
     /// If `learning_rate` is set to 0, no training happens.
     pub fn update(&mut self, learning_rate: T) {
-        let mut err_sum = T::zero();
+        let mut err_sum = T::new_zero();
         for bin in &mut self.bins {
             if let Some(sub_grid) = &mut bin.sub_grid {
                 sub_grid.update(learning_rate);
@@ -536,32 +536,32 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
             acc.update_iter();
 
             if acc.processed_samples > 1 {
-                err_sum += acc.err * T::from_usize(acc.processed_samples - 1).sqrt();
+                err_sum += acc.err * T::new_from_usize(acc.processed_samples - 1).sqrt();
             }
         }
 
         if learning_rate.is_zero()
             || self.bins.iter().all(|x| {
                 if self.train_on_avg {
-                    x.accumulator.avg == T::zero()
+                    x.accumulator.avg == T::new_zero()
                 } else {
-                    x.accumulator.err == T::zero() || x.accumulator.processed_samples < 2
+                    x.accumulator.err == T::new_zero() || x.accumulator.processed_samples < 2
                 }
             })
         {
             return;
         }
 
-        let mut max_per_bin = T::zero();
+        let mut max_per_bin = T::new_zero();
         for bin in &mut self.bins {
             let acc = &mut bin.accumulator;
 
             if self.train_on_avg {
                 bin.pdf = acc.avg.norm()
             } else if acc.processed_samples < 2 {
-                bin.pdf = T::zero();
+                bin.pdf = T::new_zero();
             } else {
-                let n_samples = T::from_usize(acc.processed_samples - 1);
+                let n_samples = T::new_from_usize(acc.processed_samples - 1);
                 let var = acc.err * n_samples.sqrt();
                 bin.pdf = var;
             }
@@ -571,7 +571,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
             }
         }
 
-        let mut sum = T::zero();
+        let mut sum = T::new_zero();
         for bin in &mut self.bins {
             bin.pdf = bin.pdf.max(&(max_per_bin / self.max_prob_ratio));
             sum += bin.pdf;
@@ -588,7 +588,7 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
     pub fn sample<R: Rng + ?Sized>(&mut self, rng: &mut R, sample: &mut Sample<T>) {
         let (weight, vs, child) = sample.to_discrete_grid();
 
-        *weight = T::one();
+        *weight = T::new_one();
         let (v, w) = self.sample_bin(rng);
         *weight *= &w;
         *vs = v;
@@ -683,12 +683,12 @@ impl<T: Real + NumericalFloatComparison> DiscreteGrid<T> {
 /// average value if training happens on the average, or to its
 /// variance (recommended).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContinuousGrid<T: Real + NumericalFloatComparison> {
+pub struct ContinuousGrid<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
     pub continuous_dimensions: Vec<ContinuousDimension<T>>,
     pub accumulator: StatisticsAccumulator<T>,
 }
 
-impl<T: Real + NumericalFloatComparison> ContinuousGrid<T> {
+impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> ContinuousGrid<T> {
     /// Create a new grid with `n_dims` dimensions and `n_bins` bins
     /// per dimension.
     ///
@@ -724,9 +724,9 @@ impl<T: Real + NumericalFloatComparison> ContinuousGrid<T> {
     /// Sample a point in the grid, writing the result in `sample`.
     pub fn sample<R: Rng + ?Sized>(&mut self, rng: &mut R, sample: &mut Sample<T>) {
         let (weight, vs) = sample.to_continuous_grid();
-        *weight = T::one();
+        *weight = T::new_one();
         vs.clear();
-        vs.resize(self.continuous_dimensions.len(), T::zero());
+        vs.resize(self.continuous_dimensions.len(), T::new_zero());
         for (vs, d) in vs.iter_mut().zip(&self.continuous_dimensions) {
             let (v, w) = d.sample(rng);
             *weight *= &w;
@@ -810,7 +810,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousGrid<T> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContinuousDimension<T: Real + NumericalFloatComparison> {
+pub struct ContinuousDimension<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
     pub partitioning: Vec<T>,
     bin_accumulator: Vec<StatisticsAccumulator<T>>,
     bin_importance: Vec<T>,
@@ -821,7 +821,7 @@ pub struct ContinuousDimension<T: Real + NumericalFloatComparison> {
     train_on_avg: bool,
 }
 
-impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
+impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> ContinuousDimension<T> {
     /// Create a new dimension with `n_bins` bins.
     ///
     /// With `min_samples_for_update` grid updates can be prevented if
@@ -840,9 +840,9 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
     ) -> ContinuousDimension<T> {
         ContinuousDimension {
             partitioning: (0..=n_bins)
-                .map(|i| T::from_usize(i) / T::from_usize(n_bins))
+                .map(|i| T::new_from_usize(i) / T::new_from_usize(n_bins))
                 .collect(),
-            bin_importance: vec![T::zero(); n_bins],
+            bin_importance: vec![T::new_zero(); n_bins],
             bin_accumulator: vec![StatisticsAccumulator::new(); n_bins],
             counter: vec![0; n_bins],
             min_samples_for_update,
@@ -854,16 +854,16 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
 
     /// Sample a point in this dimension, writing the result in `sample`.
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> (T, T) {
-        let r: T = T::sample_unit(rng);
+        let r: T = T::new_sample_unit(rng);
 
         // map the point to a bin
-        let n_bins = T::from_usize(self.partitioning.len() - 1);
+        let n_bins = T::new_from_usize(self.partitioning.len() - 1);
         let bin_index = (n_bins * r).to_usize_clamped();
         let bin_width = self.partitioning[bin_index + 1] - self.partitioning[bin_index];
 
         // rescale the point in the bin
         let sample =
-            self.partitioning[bin_index] + (n_bins * r - T::from_usize(bin_index)) * bin_width;
+            self.partitioning[bin_index] + (n_bins * r - T::new_from_usize(bin_index)) * bin_width;
         let weight = n_bins as T * bin_width; // d_sample / d_r
 
         (sample, weight)
@@ -871,7 +871,11 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
 
     /// Add a training sample with its corresponding evaluation, i.e. `f(sample)`, to the proper bin.
     fn add_training_sample(&mut self, sample: T, weight: T, eval: T) -> Result<(), String> {
-        if sample < T::zero() || sample > T::one() || !eval.is_finite() || !weight.is_finite() {
+        if sample < T::new_zero()
+            || sample > T::new_one()
+            || !eval.is_finite()
+            || !weight.is_finite()
+        {
             return Err(format!(
                 "Malformed sample point: sample={}, weight={}, fx={}",
                 sample, weight, eval
@@ -915,7 +919,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
                 .resize(self.partitioning.len() - 1, StatisticsAccumulator::new());
             self.bin_importance.clear();
             self.bin_importance
-                .resize(self.partitioning.len() - 1, T::zero());
+                .resize(self.partitioning.len() - 1, T::new_zero());
             self.counter.clear();
             self.counter.resize(self.partitioning.len() - 1, 0);
             return;
@@ -930,7 +934,7 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
         // normalize the average
         for (avg, &c) in self.bin_importance.iter_mut().zip(&self.counter) {
             if c > 0 {
-                *avg /= T::from_usize(c);
+                *avg /= T::new_from_usize(c);
             }
         }
 
@@ -938,25 +942,30 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
         if self.partitioning.len() > 2 {
             let mut prev = self.bin_importance[0];
             let mut cur = self.bin_importance[1];
-            self.bin_importance[0] = (T::from_usize(3) * prev + cur) / T::from_usize(4);
+            self.bin_importance[0] = (T::new_from_usize(3) * prev + cur) / T::new_from_usize(4);
             for bin in 1..n_bins - 1 {
-                let s = prev + cur * T::from_usize(6);
+                let s = prev + cur * T::new_from_usize(6);
                 prev = cur;
                 cur = self.bin_importance[bin + 1];
-                self.bin_importance[bin] = (s + cur) / T::from_usize(8);
+                self.bin_importance[bin] = (s + cur) / T::new_from_usize(8);
             }
-            self.bin_importance[n_bins - 1] = (prev + T::from_usize(3) * cur) / T::from_usize(4);
+            self.bin_importance[n_bins - 1] =
+                (prev + T::new_from_usize(3) * cur) / T::new_from_usize(4);
         }
 
-        let sum: T = self.bin_importance.iter().sum();
-        let mut imp_sum = T::zero();
+        let mut sum = T::new_zero();
+        for x in &self.bin_importance {
+            sum += x;
+        }
+
+        let mut imp_sum = T::new_zero();
         for bi in self.bin_importance.iter_mut() {
             let m = if *bi == sum {
-                T::one()
-            } else if *bi == T::zero() {
-                T::zero()
+                T::new_one()
+            } else if *bi == T::new_zero() {
+                T::new_zero()
             } else {
-                ((*bi / sum - T::one()) / (*bi / sum).log()).powf(learning_rate)
+                ((*bi / sum - T::new_one()) / (*bi / sum).log()).powf(learning_rate)
             };
             *bi = m;
             imp_sum += m;
@@ -968,15 +977,15 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
             .or(self.bin_number_evolution.last())
             .unwrap_or(&self.bin_accumulator.len());
         self.update_counter += 1;
-        let new_weight_per_bin = imp_sum / T::from_usize(new_number_of_bins);
+        let new_weight_per_bin = imp_sum / T::new_from_usize(new_number_of_bins);
 
         // resize the bins using their importance measure
-        let mut new_partitioning = vec![T::zero(); new_number_of_bins + 1];
+        let mut new_partitioning = vec![T::new_zero(); new_number_of_bins + 1];
 
         // evenly distribute the bins such that each has weight_per_bin weight
-        let mut acc = T::zero();
+        let mut acc = T::new_zero();
         let mut j = 0;
-        let mut target = T::zero();
+        let mut target = T::new_zero();
         for nb in &mut new_partitioning[1..].iter_mut() {
             target += new_weight_per_bin;
             // find the bin that has the accumulated weight we are looking for
@@ -998,12 +1007,12 @@ impl<T: Real + NumericalFloatComparison> ContinuousDimension<T> {
 
         // it could be that all the weights are distributed before we reach 1, for example if the first bin
         // has all the weights. we still force to have the complete input range
-        new_partitioning[new_number_of_bins] = T::one();
+        new_partitioning[new_number_of_bins] = T::new_one();
         self.partitioning = new_partitioning;
 
         self.bin_importance.clear();
         self.bin_importance
-            .resize(self.partitioning.len() - 1, T::zero());
+            .resize(self.partitioning.len() - 1, T::new_zero());
         self.counter.clear();
         self.counter.resize(self.partitioning.len() - 1, 0);
         self.bin_accumulator.clear();

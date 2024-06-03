@@ -297,6 +297,14 @@ impl Integer {
         }
     }
 
+    pub fn to_multi_prec(self) -> MultiPrecisionInteger {
+        match self {
+            Integer::Natural(n) => n.into(),
+            Integer::Double(d) => d.into(),
+            Integer::Large(l) => l,
+        }
+    }
+
     #[inline]
     pub fn is_zero(&self) -> bool {
         match self {

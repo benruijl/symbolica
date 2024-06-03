@@ -363,7 +363,7 @@ impl State {
 
         for (s, n) in State::symbol_iter() {
             dest.write_u32::<LittleEndian>(n.as_bytes().len() as u32)?;
-            dest.write(n.as_bytes())?;
+            dest.write_all(n.as_bytes())?;
             dest.write_u8(s.get_wildcard_level())?;
             dest.write_u8(s.is_symmetric() as u8)?;
             dest.write_u8(s.is_antisymmetric() as u8)?;

@@ -1,5 +1,6 @@
+use core::fmt;
 use std::{
-    fmt::Display,
+    fmt::{Display, LowerExp},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
@@ -7,12 +8,16 @@ use rand::Rng;
 use wide::{f64x2, f64x4};
 
 use super::rational::Rational;
-use rug::{ops::CompleteRound, Float as MultiPrecisionFloat, Rational as MultiPrecisionRational};
+use rug::{
+    ops::{CompleteRound, Pow},
+    Float as MultiPrecisionFloat, Rational as MultiPrecisionRational,
+};
 
 pub trait NumericalFloatLike:
     PartialEq
     + Clone
     + std::fmt::Debug
+    + std::fmt::LowerExp
     + std::fmt::Display
     + std::ops::Neg<Output = Self>
     + Add<Self, Output = Self>
@@ -45,6 +50,9 @@ pub trait NumericalFloatLike:
 
     fn from_usize(&self, a: usize) -> Self;
     fn from_i64(&self, a: i64) -> Self;
+
+    /// Get the number of precise binary digits.
+    fn get_precision(&self) -> u32;
 
     /// Sample a point on the interval [0, 1].
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self;
@@ -139,6 +147,10 @@ impl NumericalFloatLike for f64 {
     #[inline(always)]
     fn from_i64(&self, a: i64) -> Self {
         a as f64
+    }
+
+    fn get_precision(&self) -> u32 {
+        53
     }
 
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
@@ -344,6 +356,10 @@ impl NumericalFloatLike for MultiPrecisionFloat {
         MultiPrecisionFloat::with_val(self.prec(), a)
     }
 
+    fn get_precision(&self) -> u32 {
+        self.prec()
+    }
+
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
         let f: f64 = rng.gen();
         MultiPrecisionFloat::with_val(self.prec(), f)
@@ -474,6 +490,488 @@ impl Rational {
     }
 }
 
+/// A float that does linear error propagation.
+#[derive(Copy, Clone)]
+pub struct ErrorPropagatingFloat<T: NumericalFloatLike> {
+    value: T,
+    prec: f64,
+}
+
+impl<T: NumericalFloatLike> Neg for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        ErrorPropagatingFloat {
+            value: -self.value,
+            prec: self.prec,
+        }
+    }
+}
+
+impl<T: NumericalFloatComparison> Add<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: &Self) -> Self::Output {
+        // TODO: handle r = 0
+        let r = self.value.clone() + &rhs.value;
+        ErrorPropagatingFloat {
+            prec: (self.get_num().to_f64().abs() * self.prec
+                + rhs.get_num().to_f64().abs() * rhs.prec)
+                / r.clone().to_f64().abs(),
+            value: r,
+        }
+    }
+}
+
+impl<T: NumericalFloatComparison> Add<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        self + &rhs
+    }
+}
+
+impl<T: NumericalFloatComparison> Sub<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: &Self) -> Self::Output {
+        self - rhs.clone()
+    }
+}
+
+impl<T: NumericalFloatComparison> Sub<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        self + (-rhs)
+    }
+}
+
+impl<T: NumericalFloatComparison> Mul<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: &Self) -> Self::Output {
+        ErrorPropagatingFloat {
+            value: self.value.clone() * &rhs.value,
+            prec: self.prec + rhs.prec,
+        }
+    }
+}
+
+impl<T: NumericalFloatComparison> Mul<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl<T: NumericalFloatComparison> Div<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: &Self) -> Self::Output {
+        ErrorPropagatingFloat {
+            value: self.value.clone() / &rhs.value,
+            prec: self.prec + rhs.prec, // TODO: check
+        }
+    }
+}
+
+impl<T: NumericalFloatComparison> Div<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: Self) -> Self::Output {
+        self / &rhs
+    }
+}
+
+impl<T: NumericalFloatComparison> AddAssign<&ErrorPropagatingFloat<T>>
+    for ErrorPropagatingFloat<T>
+{
+    #[inline]
+    fn add_assign(&mut self, rhs: &ErrorPropagatingFloat<T>) {
+        // TODO: optimize
+        *self = self.clone() + rhs;
+    }
+}
+
+impl<T: NumericalFloatComparison> AddAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    #[inline]
+    fn add_assign(&mut self, rhs: ErrorPropagatingFloat<T>) {
+        self.add_assign(&rhs)
+    }
+}
+
+impl<T: NumericalFloatComparison> SubAssign<&ErrorPropagatingFloat<T>>
+    for ErrorPropagatingFloat<T>
+{
+    #[inline]
+    fn sub_assign(&mut self, rhs: &ErrorPropagatingFloat<T>) {
+        // TODO: optimize
+        *self = self.clone() - rhs;
+    }
+}
+
+impl<T: NumericalFloatComparison> SubAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    #[inline]
+    fn sub_assign(&mut self, rhs: ErrorPropagatingFloat<T>) {
+        self.sub_assign(&rhs)
+    }
+}
+
+impl<T: NumericalFloatComparison> MulAssign<&ErrorPropagatingFloat<T>>
+    for ErrorPropagatingFloat<T>
+{
+    #[inline]
+    fn mul_assign(&mut self, rhs: &ErrorPropagatingFloat<T>) {
+        // TODO: optimize
+        *self = self.clone() * rhs;
+    }
+}
+
+impl<T: NumericalFloatComparison> MulAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    #[inline]
+    fn mul_assign(&mut self, rhs: ErrorPropagatingFloat<T>) {
+        self.mul_assign(&rhs)
+    }
+}
+
+impl<T: NumericalFloatComparison> DivAssign<&ErrorPropagatingFloat<T>>
+    for ErrorPropagatingFloat<T>
+{
+    #[inline]
+    fn div_assign(&mut self, rhs: &ErrorPropagatingFloat<T>) {
+        // TODO: optimize
+        *self = self.clone() / rhs;
+    }
+}
+
+impl<T: NumericalFloatComparison> DivAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+    #[inline]
+    fn div_assign(&mut self, rhs: ErrorPropagatingFloat<T>) {
+        self.div_assign(&rhs)
+    }
+}
+
+impl<T: NumericalFloatLike> ErrorPropagatingFloat<T> {
+    /// Create a new precision tracking float with a number of precise decimal digits `prec`.
+    /// The `prec` must be smaller than the precision of the underlying float.
+    pub fn new(value: T, prec: f64) -> Self {
+        ErrorPropagatingFloat {
+            value,
+            prec: 10f64.pow(-prec),
+        }
+    }
+
+    /// Get the number.
+    pub fn get_num(&self) -> T {
+        self.value.clone()
+    }
+
+    /// Get the precision in number of decimal digits.
+    pub fn get_precision(&self) -> f64 {
+        -self.prec.log10()
+    }
+}
+
+impl<T: NumericalFloatLike> fmt::Display for ErrorPropagatingFloat<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let p = self.get_precision() as usize;
+
+        if p == 0 {
+            return f.write_fmt(format_args!("0"));
+        } else {
+            f.write_fmt(format_args!(
+                "{0:.1$e}",
+                self.value,
+                self.get_precision() as usize - 1
+            ))
+        }
+    }
+}
+
+impl<T: NumericalFloatLike> fmt::Debug for ErrorPropagatingFloat<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{}`{}", self.value, self.get_precision()))
+    }
+}
+
+impl<T: NumericalFloatLike> fmt::LowerExp for ErrorPropagatingFloat<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as Display>::fmt(&self, f)
+    }
+}
+
+impl<T: NumericalFloatLike> PartialEq for ErrorPropagatingFloat<T> {
+    fn eq(&self, other: &Self) -> bool {
+        // TODO: ignore precision for partial equality?
+        self.value == other.value
+    }
+}
+
+impl<T: NumericalFloatLike + PartialOrd> PartialOrd for ErrorPropagatingFloat<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.value.partial_cmp(&other.value)
+    }
+}
+
+impl<T: NumericalFloatComparison> NumericalFloatLike for ErrorPropagatingFloat<T> {
+    fn mul_add(&self, a: &Self, b: &Self) -> Self {
+        a.clone() * b + self
+    }
+
+    fn neg(&self) -> Self {
+        -self.clone()
+    }
+
+    fn norm(&self) -> Self {
+        todo!()
+    }
+
+    fn zero(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.zero(),
+            prec: 2f64.pow(-(self.value.get_precision() as f64)),
+        }
+    }
+
+    fn new_zero() -> Self {
+        ErrorPropagatingFloat {
+            value: T::new_zero(),
+            prec: 2f64.powi(-53),
+        }
+    }
+
+    fn one(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.one(),
+            prec: 2f64.pow(-(self.value.get_precision() as f64)),
+        }
+    }
+
+    fn pow(&self, e: u64) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.pow(e),
+            prec: self.prec * e as f64,
+        }
+    }
+
+    fn inv(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.inv(),
+            prec: self.prec,
+        }
+    }
+
+    fn from_usize(&self, a: usize) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.from_usize(a),
+            prec: self.prec,
+        }
+    }
+
+    fn from_i64(&self, a: i64) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.from_i64(a),
+            prec: self.prec,
+        }
+    }
+
+    fn get_precision(&self) -> u32 {
+        // return the precision of the underlying float instead
+        // of the current tracked precision
+        self.value.get_precision()
+    }
+
+    fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.sample_unit(rng),
+            prec: self.prec,
+        }
+    }
+}
+
+impl<T: NumericalFloatComparison + Into<f64>> NumericalFloatComparison
+    for ErrorPropagatingFloat<T>
+{
+    fn is_zero(&self) -> bool {
+        self.value.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.value.is_one()
+    }
+
+    fn is_finite(&self) -> bool {
+        self.value.is_finite()
+    }
+
+    fn max(&self, other: &Self) -> Self {
+        if self.value > other.value {
+            self.clone()
+        } else {
+            other.clone()
+        }
+    }
+
+    fn to_usize_clamped(&self) -> usize {
+        self.value.to_usize_clamped()
+    }
+
+    fn to_f64(&self) -> f64 {
+        self.value.to_f64()
+    }
+}
+
+impl<T: Real + NumericalFloatComparison> Real for ErrorPropagatingFloat<T> {
+    fn sqrt(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.sqrt(),
+            prec: self.prec / 2.,
+        }
+    }
+
+    fn log(&self) -> Self {
+        let r = self.value.log();
+        ErrorPropagatingFloat {
+            prec: self.prec / r.clone().to_f64().abs(),
+            value: r,
+        }
+    }
+
+    fn exp(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.exp(),
+            prec: self.value.clone().to_f64().abs() * self.prec,
+        }
+    }
+
+    fn sin(&self) -> Self {
+        ErrorPropagatingFloat {
+            prec: self.prec * self.value.clone().to_f64().abs() / self.value.tan().to_f64().abs(),
+            value: self.value.sin(),
+        }
+    }
+
+    fn cos(&self) -> Self {
+        ErrorPropagatingFloat {
+            prec: self.prec * self.value.clone().to_f64().abs() * self.value.tan().to_f64().abs(),
+            value: self.value.cos(),
+        }
+    }
+
+    fn tan(&self) -> Self {
+        let t = self.value.tan();
+        let tt = t.clone().to_f64();
+        ErrorPropagatingFloat {
+            prec: self.prec * self.value.clone().to_f64().abs() * (tt.inv() + tt),
+            value: t,
+        }
+    }
+
+    fn asin(&self) -> Self {
+        let v = self.value.clone().to_f64();
+        let t = self.value.asin();
+        let tt = (1. - v * v).sqrt() * t.clone().to_f64().abs();
+        ErrorPropagatingFloat {
+            prec: self.prec * v.abs() / tt,
+            value: t,
+        }
+    }
+
+    fn acos(&self) -> Self {
+        let v = self.value.clone().to_f64();
+        let t = self.value.acos();
+        let tt = (1. - v * v).sqrt() * t.clone().to_f64().abs();
+        ErrorPropagatingFloat {
+            prec: self.prec * v.abs() / tt,
+            value: t,
+        }
+    }
+
+    fn atan2(&self, x: &Self) -> Self {
+        let t = self.value.atan2(&x.value);
+        let r = self.clone() / x;
+        let r2 = r.value.to_f64().abs();
+
+        let tt = (1. + r2 * r2) * t.clone().to_f64().abs();
+        ErrorPropagatingFloat {
+            prec: r.prec * r2 / tt,
+            value: t,
+        }
+    }
+
+    fn sinh(&self) -> Self {
+        ErrorPropagatingFloat {
+            prec: self.prec * self.value.clone().to_f64().abs() / self.value.tanh().to_f64().abs(),
+            value: self.value.sinh(),
+        }
+    }
+
+    fn cosh(&self) -> Self {
+        ErrorPropagatingFloat {
+            prec: self.prec * self.value.clone().to_f64().abs() * self.value.tanh().to_f64().abs(),
+            value: self.value.cosh(),
+        }
+    }
+
+    fn tanh(&self) -> Self {
+        let t = self.value.tanh();
+        let tt = t.clone().to_f64();
+        ErrorPropagatingFloat {
+            prec: self.prec * self.value.clone().to_f64().abs() * (tt.inv() - tt),
+            value: t,
+        }
+    }
+
+    fn asinh(&self) -> Self {
+        let v = self.value.clone().to_f64();
+        let t = self.value.asinh();
+        let tt = (1. + v * v).sqrt() * t.clone().to_f64().abs();
+        ErrorPropagatingFloat {
+            prec: self.prec * v.abs() / tt,
+            value: t,
+        }
+    }
+
+    fn acosh(&self) -> Self {
+        let v = self.value.clone().to_f64();
+        let t = self.value.acosh();
+        let tt = (v * v - 1.).sqrt() * t.clone().to_f64().abs();
+        ErrorPropagatingFloat {
+            prec: self.prec * v.abs() / tt,
+            value: t,
+        }
+    }
+
+    fn atanh(&self) -> Self {
+        let v = self.value.clone().to_f64();
+        let t = self.value.atanh();
+        let tt = (1. - v * v) * t.clone().to_f64().abs();
+        ErrorPropagatingFloat {
+            prec: self.prec * v.abs() / tt,
+            value: t,
+        }
+    }
+
+    fn powf(&self, e: Self) -> Self {
+        let v = self.value.clone().to_f64().abs();
+        ErrorPropagatingFloat {
+            value: self.value.powf(e.value.clone()),
+            prec: (self.prec + e.prec * v.ln().abs()) * e.value.clone().to_f64().abs(),
+        }
+    }
+}
+
 macro_rules! simd_impl {
     ($t:ty, $p:ident) => {
         impl NumericalFloatLike for $t {
@@ -527,6 +1025,10 @@ macro_rules! simd_impl {
             #[inline(always)]
             fn from_i64(&self, a: i64) -> Self {
                 Self::from(a as f64)
+            }
+
+            fn get_precision(&self) -> u32 {
+                53
             }
 
             fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
@@ -630,6 +1132,13 @@ macro_rules! simd_impl {
 simd_impl!(f64x2, pow_f64x2);
 simd_impl!(f64x4, pow_f64x4);
 
+impl LowerExp for Rational {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // lower-exp is ignored for integers
+        f.write_fmt(format_args!("{}", self))
+    }
+}
+
 impl NumericalFloatLike for Rational {
     fn mul_add(&self, a: &Self, c: &Self) -> Self {
         &(self * a) + c
@@ -673,6 +1182,10 @@ impl NumericalFloatLike for Rational {
 
     fn from_i64(&self, a: i64) -> Self {
         Rational::Natural(a, 1)
+    }
+
+    fn get_precision(&self) -> u32 {
+        u32::MAX
     }
 
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
@@ -988,6 +1501,12 @@ impl<T: Real> std::fmt::Debug for Complex<T> {
     }
 }
 
+impl<T: Real> LowerExp for Complex<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("({:e}+{:e}i)", self.re, self.im))
+    }
+}
+
 impl<T: Real> NumericalFloatLike for Complex<T> {
     #[inline]
     fn mul_add(&self, a: &Self, b: &Self) -> Self {
@@ -1055,6 +1574,10 @@ impl<T: Real> NumericalFloatLike for Complex<T> {
             re: self.re.from_i64(a),
             im: self.im.zero(),
         }
+    }
+
+    fn get_precision(&self) -> u32 {
+        self.re.get_precision().min(self.im.get_precision())
     }
 
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
@@ -1213,6 +1736,35 @@ mod test {
             + b.acosh() / 0.4.atanh()
             + b.powf(a);
         assert_eq!(r, 17293.219725825093);
+    }
+
+    #[test]
+    fn error_propagation() {
+        let a = ErrorPropagatingFloat::new(5., 16.);
+        let b = ErrorPropagatingFloat::new(7., 16.);
+        let c = ErrorPropagatingFloat::new(0.3, 16.);
+        let d = ErrorPropagatingFloat::new(0.5, 16.);
+        let e = ErrorPropagatingFloat::new(0.7, 16.);
+        let f = ErrorPropagatingFloat::new(0.4, 16.);
+
+        let r = a.sqrt() + b.log() + b.sin() - a.cos() + b.tan() - c.asin() + d.acos()
+            - a.atan2(&b)
+            + b.sinh()
+            - a.cosh()
+            + b.tanh()
+            - e.asinh()
+            + b.acosh() / f.atanh()
+            + b.powf(a);
+        assert_eq!(r.value, 17293.219725825093);
+        assert_eq!(r.get_precision(), 14.836811363436391);
+    }
+
+    #[test]
+    fn large_cancellation() {
+        let a = ErrorPropagatingFloat::new(rug::Float::with_val(200, 1e-50), 60.);
+        let r = (a.exp() - a.one()) / a;
+        assert_eq!(format!("{}", r), "1.00000000e0");
+        assert_eq!(r.get_precision(), 10.205999132780295);
     }
 
     #[test]

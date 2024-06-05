@@ -5,6 +5,7 @@ Symbolica Python API.
 from __future__ import annotations
 from enum import Enum
 from typing import Any, Callable, overload, Iterator, Optional, Sequence, Tuple, List
+from decimal import Decimal
 
 
 def get_version() -> str:
@@ -984,6 +985,28 @@ class Expression:
         >>> f = Expression.symbol('f')
         >>> e = Expression.parse('cos(x)')*3 + f(x,2)
         >>> print(e.evaluate({x: 1}, {f: lambda args: args[0]+args[1]}))
+        """
+
+    def evaluate_with_prec(
+        self,
+        constants: dict[Expression, float | str | Decimal],
+        funs: dict[Expression, Callable[[Sequence[Decimal]], float | str | Decimal]],
+        decimal_digit_precision: int
+    ) -> Decimal:
+        """Evaluate the expression, using a map of all the constants and
+        user functions using arbitrary precision arithmetic.
+        The user has to specify the number of decimal digits of precision
+        and provide all input numbers as floats, strings or `Decimal`.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> from decimal import Decimal, getcontext
+        >>> x = Expression.symbols('x', 'f')
+        >>> e = Expression.parse('cos(x)')*3 + f(x, 2)
+        >>> getcontext().prec = 100
+        >>> a = e.evaluate_with_prec({x: Decimal('1.123456789')}, {
+        >>>                         f: lambda args: args[0] + args[1]}, 100)
         """
 
     def evaluate_complex(

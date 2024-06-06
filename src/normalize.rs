@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 use crate::{
     atom::{Atom, AtomView, Fun, Symbol},
     coefficient::{Coefficient, CoefficientView},
-    domains::{integer::Z, rational::Q},
+    domains::{float::Real, integer::Z, rational::Q},
     poly::Variable,
     state::{RecycledAtom, State, Workspace},
 };
@@ -866,13 +866,37 @@ impl<'a> AtomView<'a> {
                     if let AtomView::Num(n) = arg {
                         if n.is_zero() && id != State::LOG || n.is_one() && id == State::LOG {
                             if id == State::COS || id == State::EXP {
-                                let buffer = workspace.new_num(Coefficient::one());
-                                out.set_from_view(&buffer.as_view());
+                                out.to_num(Coefficient::one());
                                 return;
                             } else if id == State::SIN || id == State::LOG {
-                                let buffer = workspace.new_num(Coefficient::zero());
-                                out.set_from_view(&buffer.as_view());
+                                out.to_num(Coefficient::zero());
                                 return;
+                            }
+                        }
+
+                        if let CoefficientView::Float(f) = n.get_coeff_view() {
+                            match id {
+                                State::COS => {
+                                    let r = f.to_float().cos();
+                                    out.to_num(Coefficient::Float(r));
+                                    return;
+                                }
+                                State::SIN => {
+                                    let r = f.to_float().sin();
+                                    out.to_num(Coefficient::Float(r));
+                                    return;
+                                }
+                                State::EXP => {
+                                    let r = f.to_float().exp();
+                                    out.to_num(Coefficient::Float(r));
+                                    return;
+                                }
+                                State::LOG => {
+                                    let r = f.to_float().log();
+                                    out.to_num(Coefficient::Float(r));
+                                    return;
+                                }
+                                _ => {}
                             }
                         }
                     }

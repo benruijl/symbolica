@@ -1230,9 +1230,8 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
         if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
             let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
-            Ok(Float::parse(a, None).unwrap().into())
+            Ok(Float::parse(a, Some(a.len() as u32)).unwrap().into())
         } else if let Ok(a) = ob.extract::<&str>() {
-            // convert without loss of precision by setting the precision to the string length
             Ok(Float::parse(a, None).unwrap().into())
         } else if let Ok(a) = ob.extract::<f64>() {
             Ok(Float::with_val(53, a).into())

@@ -103,6 +103,12 @@ impl From<Rational> for Coefficient {
     }
 }
 
+impl From<Float> for Coefficient {
+    fn from(value: Float) -> Self {
+        Coefficient::Float(value)
+    }
+}
+
 impl Default for Coefficient {
     fn default() -> Self {
         Coefficient::zero()
@@ -519,6 +525,45 @@ impl CoefficientView<'_> {
                 } else {
                     (r.to_rat().pow(n2 as u32).into(), (1, d2).into())
                 }
+            }
+            (&CoefficientView::Float(f), &CoefficientView::Natural(n2, d2)) => {
+                let f = f.to_float();
+                let p = f.prec();
+                (
+                    f.pow(Rational::new(n2, d2).to_multi_prec_float(p)).into(),
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::Float(f), &CoefficientView::Large(r)) => {
+                let f = f.to_float();
+                let p = f.prec();
+                (
+                    f.pow(Rational::from_large(r.to_rat()).to_multi_prec_float(p))
+                        .into(),
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::Natural(n2, d2), &CoefficientView::Float(f)) => {
+                let f = f.to_float();
+                let p = f.prec();
+                (
+                    Rational::new(n2, d2).to_multi_prec_float(p).pow(f).into(),
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::Large(r), &CoefficientView::Float(f)) => {
+                let f = f.to_float();
+                let p = f.prec();
+                (
+                    Rational::from_large(r.to_rat())
+                        .to_multi_prec_float(p)
+                        .pow(f)
+                        .into(),
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::Float(f1), &CoefficientView::Float(f2)) => {
+                (f1.to_float().pow(f2.to_float()).into(), Coefficient::one())
             }
             _ => {
                 unimplemented!(

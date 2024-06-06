@@ -66,6 +66,12 @@ impl From<i32> for Coefficient {
     }
 }
 
+impl From<f64> for Coefficient {
+    fn from(value: f64) -> Self {
+        Coefficient::Float(Float::with_val(53, value))
+    }
+}
+
 impl From<(i64, i64)> for Coefficient {
     #[inline]
     fn from(r: (i64, i64)) -> Self {
@@ -100,6 +106,12 @@ impl From<MultiPrecisionRational> for Coefficient {
 impl From<Rational> for Coefficient {
     fn from(value: Rational) -> Self {
         Coefficient::Rational(value)
+    }
+}
+
+impl From<Float> for Coefficient {
+    fn from(value: Float) -> Self {
+        Coefficient::Float(value)
     }
 }
 
@@ -520,6 +532,45 @@ impl CoefficientView<'_> {
                     (r.to_rat().pow(n2 as u32).into(), (1, d2).into())
                 }
             }
+            (&CoefficientView::Float(f), &CoefficientView::Natural(n2, d2)) => {
+                let f = f.to_float();
+                let p = f.prec();
+                (
+                    f.powf(Rational::new(n2, d2).to_multi_prec_float(p)).into(),
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::Float(f), &CoefficientView::Large(r)) => {
+                let f = f.to_float();
+                let p = f.prec();
+                (
+                    f.powf(Rational::from_large(r.to_rat()).to_multi_prec_float(p))
+                        .into(),
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::Natural(n2, d2), &CoefficientView::Float(f)) => {
+                let f = f.to_float();
+                let p = f.prec();
+                (
+                    Rational::new(n2, d2).to_multi_prec_float(p).powf(f).into(),
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::Large(r), &CoefficientView::Float(f)) => {
+                let f = f.to_float();
+                let p = f.prec();
+                (
+                    Rational::from_large(r.to_rat())
+                        .to_multi_prec_float(p)
+                        .powf(f)
+                        .into(),
+                    Coefficient::one(),
+                )
+            }
+            (&CoefficientView::Float(f1), &CoefficientView::Float(f2)) => {
+                (f1.to_float().powf(f2.to_float()).into(), Coefficient::one())
+            }
             _ => {
                 unimplemented!(
                     "Power of configuration {:?}^{:?} is not implemented",
@@ -818,6 +869,11 @@ impl Atom {
     pub fn to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
         self.as_view().to_float_into(decimal_prec, out);
     }
+
+    /// Map all floating point coefficients to rational numbers, using a given maximum denominator.
+    pub fn float_to_rat(&self, max_denominator: &Integer) -> Atom {
+        self.as_view().float_to_rat(max_denominator)
+    }
 }
 
 impl<'a> AtomView<'a> {
@@ -1006,13 +1062,14 @@ impl<'a> AtomView<'a> {
     pub fn to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
         let binary_prec = (decimal_prec as f64 * LOG2_10).ceil() as u32;
 
-        Workspace::get_local().with(|ws| self.to_float_impl(binary_prec, true, ws, out))
+        Workspace::get_local().with(|ws| self.to_float_impl(binary_prec, true, false, ws, out))
     }
 
     fn to_float_impl(
         &self,
         binary_prec: u32,
         enter_function: bool,
+        enter_exponent: bool,
         ws: &Workspace,
         out: &mut Atom,
     ) {
@@ -1069,7 +1126,7 @@ impl<'a> AtomView<'a> {
 
                     let mut na = ws.new_atom();
                     for a in f.iter() {
-                        a.to_float_impl(binary_prec, enter_function, ws, &mut na);
+                        a.to_float_impl(binary_prec, enter_function, enter_exponent, ws, &mut na);
                         ff.add_arg(na.as_view());
                     }
 
@@ -1082,13 +1139,17 @@ impl<'a> AtomView<'a> {
                 let (base, exp) = p.get_base_exp();
 
                 let mut nb = ws.new_atom();
-                base.to_float_impl(binary_prec, enter_function, ws, &mut nb);
-
-                let mut ne = ws.new_atom();
-                exp.to_float_impl(binary_prec, enter_function, ws, &mut ne);
+                base.to_float_impl(binary_prec, enter_function, enter_exponent, ws, &mut nb);
 
                 let mut o = ws.new_atom();
-                o.to_pow(nb.as_view(), ne.as_view());
+
+                if enter_exponent {
+                    let mut ne = ws.new_atom();
+                    exp.to_float_impl(binary_prec, enter_function, enter_exponent, ws, &mut ne);
+                    o.to_pow(nb.as_view(), ne.as_view());
+                } else {
+                    o.to_pow(nb.as_view(), exp);
+                }
 
                 o.as_view().normalize(ws, out);
             }
@@ -1098,7 +1159,7 @@ impl<'a> AtomView<'a> {
 
                 let mut na = ws.new_atom();
                 for a in m.iter() {
-                    a.to_float_impl(binary_prec, enter_function, ws, &mut na);
+                    a.to_float_impl(binary_prec, enter_function, enter_exponent, ws, &mut na);
                     mm.extend(na.as_view());
                 }
 
@@ -1110,7 +1171,126 @@ impl<'a> AtomView<'a> {
 
                 let mut na = ws.new_atom();
                 for a in a.iter() {
-                    a.to_float_impl(binary_prec, enter_function, ws, &mut na);
+                    a.to_float_impl(binary_prec, enter_function, enter_exponent, ws, &mut na);
+                    aa.extend(na.as_view());
+                }
+
+                o.as_view().normalize(ws, out);
+            }
+        }
+    }
+
+    /// Map all floating point coefficients to rational numbers, using a given maximum denominator.
+    pub fn float_to_rat(&self, max_denominator: &Integer) -> Atom {
+        let mut a = Atom::new();
+        self.map_coefficient_into(
+            |c| match c {
+                CoefficientView::Float(f) => f
+                    .to_float()
+                    .to_rational()
+                    .truncate_denominator(max_denominator)
+                    .into(),
+                _ => c.to_owned(),
+            },
+            &mut a,
+        );
+        a
+    }
+
+    /// Map all coefficients using a given function.
+    pub fn map_coefficient<F: Fn(CoefficientView) -> Coefficient + Copy>(&self, f: F) -> Atom {
+        let mut a = Atom::new();
+        self.map_coefficient_into(f, &mut a);
+        a
+    }
+
+    /// Map all coefficients using a given function.
+    pub fn map_coefficient_into<F: Fn(CoefficientView) -> Coefficient + Copy>(
+        &self,
+        f: F,
+        out: &mut Atom,
+    ) {
+        Workspace::get_local().with(|ws| self.map_coefficient_impl(f, true, true, ws, out))
+    }
+
+    fn map_coefficient_impl<F: Fn(CoefficientView) -> Coefficient + Copy>(
+        &self,
+        coeff_map: F,
+        enter_function: bool,
+        enter_exponent: bool,
+        ws: &Workspace,
+        out: &mut Atom,
+    ) {
+        match self {
+            AtomView::Num(n) => {
+                out.to_num(coeff_map(n.get_coeff_view()));
+            }
+            AtomView::Var(_) => out.set_from_view(self),
+            AtomView::Fun(f) => {
+                if enter_function {
+                    let mut o = ws.new_atom();
+                    let ff = o.to_fun(f.get_symbol());
+
+                    let mut na = ws.new_atom();
+                    for a in f.iter() {
+                        a.map_coefficient_impl(
+                            coeff_map,
+                            enter_function,
+                            enter_exponent,
+                            ws,
+                            &mut na,
+                        );
+                        ff.add_arg(na.as_view());
+                    }
+
+                    o.as_view().normalize(ws, out);
+                } else {
+                    out.set_from_view(self);
+                }
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+
+                let mut nb = ws.new_atom();
+                base.map_coefficient_impl(coeff_map, enter_function, enter_exponent, ws, &mut nb);
+
+                let mut o = ws.new_atom();
+
+                if enter_exponent {
+                    let mut ne = ws.new_atom();
+                    exp.map_coefficient_impl(
+                        coeff_map,
+                        enter_function,
+                        enter_exponent,
+                        ws,
+                        &mut ne,
+                    );
+                    o.to_pow(nb.as_view(), ne.as_view());
+                } else {
+                    o.to_pow(nb.as_view(), exp);
+                }
+
+                o.as_view().normalize(ws, out);
+            }
+            AtomView::Mul(m) => {
+                let mut o = ws.new_atom();
+                let mm = o.to_mul();
+
+                let mut na = ws.new_atom();
+                for a in m.iter() {
+                    a.map_coefficient_impl(coeff_map, enter_function, enter_exponent, ws, &mut na);
+                    mm.extend(na.as_view());
+                }
+
+                o.as_view().normalize(ws, out);
+            }
+            AtomView::Add(a) => {
+                let mut o = ws.new_atom();
+                let aa = o.to_add();
+
+                let mut na = ws.new_atom();
+                for a in a.iter() {
+                    a.map_coefficient_impl(coeff_map, enter_function, enter_exponent, ws, &mut na);
                     aa.extend(na.as_view());
                 }
 
@@ -1207,5 +1387,13 @@ mod test {
             AtomPrinter::new_with_options(expr.as_view(), PrintOptions::file())
         );
         assert_eq!(r, "5.0000000000000000000000000000000000000000000000000000000000000e-1*x+6.8164061370918581635917066956651198726148569775622233288512875e-1");
+    }
+
+    #[test]
+    fn float_to_rat() {
+        let expr = Atom::parse("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
+        let expr = expr.to_float(60);
+        let expr = expr.float_to_rat(&1000.into());
+        assert_eq!(expr, Atom::parse("1/2*x+349/512").unwrap());
     }
 }

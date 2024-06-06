@@ -1157,6 +1157,24 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             let a = format!("{}", num);
             let i = Integer::from_large(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(Atom::new_num(i).into()))
+        } else if let Ok(f) = ob.extract::<f64>() {
+            if !f.is_finite() {
+                return Err(exceptions::PyValueError::new_err("Number must be finite"));
+            }
+
+            Ok(ConvertibleToExpression(
+                Atom::new_num(rug::Float::with_val(53, f)).into(),
+            ))
+        } else if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
+            let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
+            Ok(ConvertibleToExpression(
+                Atom::new_num(
+                    Float::parse(a)
+                        .unwrap()
+                        .complete((a.len() as f64 * LOG2_10).ceil() as u32),
+                )
+                .into(),
+            ))
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Cannot convert to expression",
@@ -1184,6 +1202,21 @@ impl<'a> FromPyObject<'a> for Symbol {
 impl<'a> FromPyObject<'a> for Variable {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
         Ok(Variable::Symbol(Symbol::extract(ob)?))
+    }
+}
+
+impl<'a> FromPyObject<'a> for Integer {
+    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+        if let Ok(num) = ob.extract::<i64>() {
+            Ok(num.into())
+        } else if let Ok(num) = ob.extract::<&PyLong>() {
+            let a = format!("{}", num);
+            Ok(Integer::from_large(
+                rug::Integer::parse(&a).unwrap().complete(),
+            ))
+        } else {
+            Err(exceptions::PyValueError::new_err("Not a valid integer"))
+        }
     }
 }
 
@@ -1489,8 +1522,8 @@ impl PythonExpression {
         Ok(result)
     }
 
-    /// Create a new Symbolica number from an int or a float.
-    /// A floating point number is converted to its rational number equivalent,
+    /// Create a new Symbolica number from an int, a float, or a string.
+    /// A floating point number is kept as a float with the same precision as the input,
     /// but it can also be truncated by specifying the maximal denominator value.
     ///
     /// Examples
@@ -1499,9 +1532,9 @@ impl PythonExpression {
     /// >>> print(e)
     /// 1/2
     ///
-    /// >>> print(Expression.num(0.33))
+    /// >>> print(Expression.num(1/3))
     /// >>> print(Expression.num(0.33, 5))
-    /// 5944751508129055/18014398509481984
+    /// 3.3333333333333331e-1
     /// 1/3
     #[classmethod]
     pub fn num(
@@ -1520,12 +1553,17 @@ impl PythonExpression {
                 return Err(exceptions::PyValueError::new_err("Number must be finite"));
             }
 
-            let mut r: Rational = f.into();
             if let Some(max_denom) = max_denom {
-                r = r.truncate_denominator(&(max_denom as u64).into())
+                let mut r: Rational = f.into();
+                r = r.truncate_denominator(&(max_denom as u64).into());
+                Ok(Atom::new_num(r).into())
+            } else {
+                Ok(Atom::new_num(rug::Float::with_val(53, f)).into())
             }
-
-            Ok(Atom::new_num(r).into())
+        } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
+            Ok(Atom::new_num(f.0.clone()).into())
+        } else if let Ok(a) = num.extract::<&str>(py) {
+            PythonExpression::parse(_cls, a)
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid number"))
         }
@@ -1968,6 +2006,16 @@ impl PythonExpression {
                 slice.len(),
             )))
         }
+    }
+
+    /// Convert all coefficients to floats, with a given decimal precision.
+    pub fn to_float(&self, decimal_prec: u32) -> PythonExpression {
+        self.expr.to_float(decimal_prec).into()
+    }
+
+    /// Convert all floating point coefficients to rationals, with a given maximal denominator.
+    pub fn float_to_rat(&self, max_denominator: Integer) -> PythonExpression {
+        self.expr.float_to_rat(&max_denominator).into()
     }
 
     /// Create a pattern restriction based on the wildcard length before downcasting.

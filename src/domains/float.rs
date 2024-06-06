@@ -598,8 +598,15 @@ impl Float {
         }
     }
 
-    pub fn serialize(&self) -> String {
-        self.0.to_string_radix(16, None)
+    pub fn serialize(&self) -> Vec<u8> {
+        self.0.to_string_radix(16, None).into_bytes()
+    }
+
+    pub fn deserialize(d: &[u8], prec: u32) -> Float {
+        MultiPrecisionFloat::parse_radix(&d, 16)
+            .unwrap()
+            .complete(prec)
+            .into()
     }
 
     pub fn to_rational(&self) -> Rational {
@@ -1609,21 +1616,33 @@ pub struct Complex<T: Real> {
     pub im: T,
 }
 
-impl<T: ConstructibleFloat+Real> ConstructibleFloat for Complex<T>{
+impl<T: ConstructibleFloat + Real> ConstructibleFloat for Complex<T> {
     fn new_from_i64(a: i64) -> Self {
-        Complex { re: T::new_from_i64(a), im: T::new_zero() }
+        Complex {
+            re: T::new_from_i64(a),
+            im: T::new_zero(),
+        }
     }
 
     fn new_from_usize(a: usize) -> Self {
-        Complex { re: T::new_from_usize(a), im: T::new_zero() }
+        Complex {
+            re: T::new_from_usize(a),
+            im: T::new_zero(),
+        }
     }
 
     fn new_one() -> Self {
-        Complex { re: T::new_one(), im: T::new_zero() }
+        Complex {
+            re: T::new_one(),
+            im: T::new_zero(),
+        }
     }
 
     fn new_sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        Complex { re: T::new_sample_unit(rng), im: T::new_zero() }
+        Complex {
+            re: T::new_sample_unit(rng),
+            im: T::new_zero(),
+        }
     }
 }
 impl<T: Real> Complex<T> {
@@ -1678,7 +1697,10 @@ impl<T: Real> Complex<T> {
         }
     }
 
-    pub fn is_zero(&self) -> bool where T: NumericalFloatComparison{
+    pub fn is_zero(&self) -> bool
+    where
+        T: NumericalFloatComparison,
+    {
         self.re.is_zero() && self.im.is_zero()
     }
 

@@ -339,6 +339,10 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                     f.write_fmt(format_args!("{}", num.unsigned_abs()))
                 }
             }
+            CoefficientView::Float(fl) => {
+                let float = fl.to_float();
+                f.write_fmt(format_args!("{}", float))
+            }
             CoefficientView::Large(r) => {
                 let rat = r.to_rat().abs();
                 if !opts.latex
@@ -565,6 +569,7 @@ impl<'a> FormattedPrintPow for PowView<'a> {
                 || if let AtomView::Num(n) = b {
                     match n.get_coeff_view() {
                         CoefficientView::Natural(n, d) => n < 0 || d != 1,
+                        CoefficientView::Float(_) => true, // TODO
                         CoefficientView::Large(r) => r.is_negative() || !r.to_rat().is_integer(),
                         CoefficientView::FiniteField(n, i) => {
                             opts.symmetric_representation_for_finite_field

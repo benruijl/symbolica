@@ -68,6 +68,9 @@ impl<'a> AtomView<'a> {
             AtomView::Num(n) => match n.get_coeff_view() {
                 CoefficientView::Natural(n, d) => coeff_map(&Rational::Natural(n, d)),
                 CoefficientView::Large(l) => coeff_map(&Rational::Large(l.to_rat())),
+                CoefficientView::Float(_) => {
+                    unimplemented!("Float not yet supported for evaluation")
+                }
                 CoefficientView::FiniteField(_, _) => {
                     unimplemented!("Finite field not yet supported for evaluation")
                 }
@@ -162,7 +165,7 @@ impl<'a> AtomView<'a> {
 mod test {
     use ahash::HashMap;
 
-    use crate::{atom::Atom, evaluate::EvaluationFn, state::State};
+    use crate::{atom::Atom, domains::float::Float, evaluate::EvaluationFn, state::State};
 
     #[test]
     fn evaluate() {
@@ -209,7 +212,7 @@ mod test {
         let mut const_map = HashMap::default();
 
         let v = Atom::new_var(x);
-        const_map.insert(v.as_view(), rug::Float::with_val(200, 6).into());
+        const_map.insert(v.as_view(), Float::with_val(200, 6));
 
         let r = a.evaluate(
             |r| r.to_multi_prec_float(200),

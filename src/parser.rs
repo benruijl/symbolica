@@ -8,8 +8,8 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     atom::Atom,
-    coefficient::ConvertToRing,
-    domains::{integer::Integer, Ring},
+    coefficient::{Coefficient, ConvertToRing},
+    domains::{float::Float, integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
     state::{State, Workspace},
     LicenseManager,
@@ -384,7 +384,13 @@ impl Token {
                 Ok(x) => {
                     out.to_num(x.into());
                 }
-                Err(e) => return Err(format!("Could not parse number: {}", e)),
+                Err(_) => match Float::parse(n, None) {
+                    Ok(f) => {
+                        // derive precision from string length, should be overestimate
+                        out.to_num(Coefficient::Float(f));
+                    }
+                    Err(e) => Err(format!("Error parsing number: {}", e))?,
+                },
             },
             Token::ID(x) => {
                 out.to_var(state.get_symbol_impl(x));
@@ -478,9 +484,18 @@ impl Token {
         out: &mut Atom,
     ) -> Result<(), String> {
         match self {
-            Token::Number(n) => {
-                out.to_num(n.parse::<Integer>()?.into());
-            }
+            Token::Number(n) => match n.parse::<Integer>() {
+                Ok(x) => {
+                    out.to_num(x.into());
+                }
+                Err(_) => match Float::parse(n, None) {
+                    Ok(f) => {
+                        // derive precision from string length, should be overestimate
+                        out.to_num(Coefficient::Float(f));
+                    }
+                    Err(e) => Err(format!("Error parsing number: {}", e))?,
+                },
+            },
             Token::ID(name) => {
                 let index = var_name_map
                     .iter()
@@ -661,7 +676,7 @@ impl Token {
                     }
                 }
                 ParseState::Number => {
-                    if c != '_' && c != ' ' && !c.is_ascii_digit() {
+                    if c != '_' && c != ' ' && c != '.' && !c.is_ascii_digit() {
                         state = ParseState::Any;
                         stack.push(Token::Number(id_buffer.as_str().into()));
                         id_buffer.clear();

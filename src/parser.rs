@@ -1,14 +1,14 @@
-use std::{fmt::Write, string::String, sync::Arc};
+use std::{f64::consts::LOG2_10, fmt::Write, string::String, sync::Arc};
 
 use bytes::Buf;
-use rug::Integer as MultiPrecisionInteger;
+use rug::{ops::CompleteRound, Integer as MultiPrecisionInteger};
 
 use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     atom::Atom,
-    coefficient::ConvertToRing,
+    coefficient::{Coefficient, ConvertToRing},
     domains::{integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
     state::{State, Workspace},
@@ -384,7 +384,15 @@ impl Token {
                 Ok(x) => {
                     out.to_num(x.into());
                 }
-                Err(e) => return Err(format!("Could not parse number: {}", e)),
+                Err(_) => match rug::Float::parse(n) {
+                    Ok(f) => {
+                        // derive precision from string length, should be overestimate
+                        out.to_num(Coefficient::Float(
+                            f.complete((n.len() as f64 * LOG2_10).ceil() as u32),
+                        ));
+                    }
+                    Err(e) => Err(format!("Error parsing number: {}", e))?,
+                },
             },
             Token::ID(x) => {
                 out.to_var(state.get_symbol_impl(x));
@@ -478,9 +486,20 @@ impl Token {
         out: &mut Atom,
     ) -> Result<(), String> {
         match self {
-            Token::Number(n) => {
-                out.to_num(n.parse::<Integer>()?.into());
-            }
+            Token::Number(n) => match n.parse::<Integer>() {
+                Ok(x) => {
+                    out.to_num(x.into());
+                }
+                Err(_) => match rug::Float::parse(n) {
+                    Ok(f) => {
+                        // derive precision from string length, should be overestimate
+                        out.to_num(Coefficient::Float(
+                            f.complete((n.len() as f64 * LOG2_10).ceil() as u32),
+                        ));
+                    }
+                    Err(e) => Err(format!("Error parsing number: {}", e))?,
+                },
+            },
             Token::ID(name) => {
                 let index = var_name_map
                     .iter()
@@ -661,7 +680,7 @@ impl Token {
                     }
                 }
                 ParseState::Number => {
-                    if c != '_' && c != ' ' && !c.is_ascii_digit() {
+                    if c != '_' && c != ' ' && c != '.' && !c.is_ascii_digit() {
                         state = ParseState::Any;
                         stack.push(Token::Number(id_buffer.as_str().into()));
                         id_buffer.clear();

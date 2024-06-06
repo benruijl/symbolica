@@ -1194,10 +1194,10 @@ impl ConvertibleToExpression {
     }
 }
 
-pub struct PythonMultiPrecisionFloat(rug::Float);
+pub struct PythonMultiPrecisionFloat(Float);
 
-impl From<rug::Float> for PythonMultiPrecisionFloat {
-    fn from(f: rug::Float) -> Self {
+impl From<Float> for PythonMultiPrecisionFloat {
+    fn from(f: Float) -> Self {
         PythonMultiPrecisionFloat(f)
     }
 }
@@ -1229,18 +1229,18 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
         if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
             let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
-            Ok(rug::Float::parse(a)
+            Ok(Float::parse(a)
                 .unwrap()
                 .complete((a.len() as f64 * LOG2_10).ceil() as u32)
                 .into())
         } else if let Ok(a) = ob.extract::<&str>() {
             // convert without loss of precision by setting the precision to the string length
-            Ok(rug::Float::parse(a)
+            Ok(Float::parse(a)
                 .unwrap()
                 .complete((a.len() as f64 * LOG2_10).ceil() as u32)
                 .into())
         } else if let Ok(a) = ob.extract::<f64>() {
-            Ok(rug::Float::with_val(53, a).into())
+            Ok(Float::with_val(53, a).into())
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Not a valid multi-precision float",
@@ -1263,15 +1263,15 @@ impl<'a> FromPyObject<'a> for Complex<f64> {
     }
 }
 
-impl<'a> FromPyObject<'a> for Complex<rug::Float> {
+impl<'a> FromPyObject<'a> for Complex<Float> {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonMultiPrecisionFloat>() {
-            let zero = rug::Float::new(a.0.prec());
+            let zero = Float::new(a.0.prec());
             Ok(Complex::new(a.0, zero))
         } else if let Ok(a) = ob.extract::<&PyComplex>() {
             Ok(Complex::new(
-                rug::Float::with_val(53, a.real()).into(),
-                rug::Float::with_val(53, a.imag()).into(),
+                Float::with_val(53, a.real()).into(),
+                Float::with_val(53, a.imag()).into(),
             ))
         } else {
             Err(exceptions::PyValueError::new_err(
@@ -3257,7 +3257,7 @@ impl PythonExpression {
 
         let mut cache = HashMap::default();
 
-        let constants: HashMap<AtomView, rug::Float> = constants
+        let constants: HashMap<AtomView, Float> = constants
             .iter()
             .map(|(k, v)| {
                 Ok((k.expr.as_view(), {
@@ -3282,7 +3282,7 @@ impl PythonExpression {
 
                 Ok((
                     id,
-                    EvaluationFn::new(Box::new(move |args: &[rug::Float], _, _, _| {
+                    EvaluationFn::new(Box::new(move |args: &[Float], _, _, _| {
                         Python::with_gil(|py| {
                             let mut vv = v
                                 .call(

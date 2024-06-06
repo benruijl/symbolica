@@ -10,8 +10,10 @@ use wide::{f64x2, f64x4};
 use super::rational::Rational;
 use rug::{
     ops::{CompleteRound, Pow},
-    Float as MultiPrecisionFloat, Rational as MultiPrecisionRational,
+    Rational as MultiPrecisionRational,
 };
+
+pub type Float = rug::Float;
 
 pub trait NumericalFloatLike:
     PartialEq
@@ -305,7 +307,7 @@ impl From<Rational> for f64 {
     }
 }
 
-impl NumericalFloatLike for MultiPrecisionFloat {
+impl NumericalFloatLike for Float {
     #[inline(always)]
     fn mul_add(&self, a: &Self, b: &Self) -> Self {
         self.mul_add_ref(a, b).complete(self.prec())
@@ -323,17 +325,17 @@ impl NumericalFloatLike for MultiPrecisionFloat {
 
     #[inline(always)]
     fn zero(&self) -> Self {
-        MultiPrecisionFloat::new(self.prec())
+        Float::new(self.prec())
     }
 
     #[inline(always)]
     fn new_zero() -> Self {
-        MultiPrecisionFloat::new(1)
+        Float::new(1)
     }
 
     #[inline(always)]
     fn one(&self) -> Self {
-        MultiPrecisionFloat::with_val(self.prec(), 1.)
+        Float::with_val(self.prec(), 1.)
     }
 
     #[inline]
@@ -348,12 +350,12 @@ impl NumericalFloatLike for MultiPrecisionFloat {
 
     #[inline(always)]
     fn from_usize(&self, a: usize) -> Self {
-        MultiPrecisionFloat::with_val(self.prec(), a)
+        Float::with_val(self.prec(), a)
     }
 
     #[inline(always)]
     fn from_i64(&self, a: i64) -> Self {
-        MultiPrecisionFloat::with_val(self.prec(), a)
+        Float::with_val(self.prec(), a)
     }
 
     fn get_precision(&self) -> u32 {
@@ -362,11 +364,11 @@ impl NumericalFloatLike for MultiPrecisionFloat {
 
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
         let f: f64 = rng.gen();
-        MultiPrecisionFloat::with_val(self.prec(), f)
+        Float::with_val(self.prec(), f)
     }
 }
 
-impl NumericalFloatComparison for MultiPrecisionFloat {
+impl NumericalFloatComparison for Float {
     #[inline(always)]
     fn is_zero(&self) -> bool {
         *self == 0.
@@ -395,7 +397,7 @@ impl NumericalFloatComparison for MultiPrecisionFloat {
     }
 }
 
-impl Real for MultiPrecisionFloat {
+impl Real for Float {
     #[inline(always)]
     fn sqrt(&self) -> Self {
         self.clone().sqrt()
@@ -479,8 +481,8 @@ impl Real for MultiPrecisionFloat {
 
 impl Rational {
     // Convert the rational number to a multi-precision float with precision `prec`.
-    pub fn to_multi_prec_float(&self, prec: u32) -> MultiPrecisionFloat {
-        MultiPrecisionFloat::with_val(
+    pub fn to_multi_prec_float(&self, prec: u32) -> Float {
+        Float::with_val(
             prec,
             rug::Rational::from((
                 self.numerator().to_multi_prec(),
@@ -1761,7 +1763,7 @@ mod test {
 
     #[test]
     fn large_cancellation() {
-        let a = ErrorPropagatingFloat::new(rug::Float::with_val(200, 1e-50), 60.);
+        let a = ErrorPropagatingFloat::new(Float::with_val(200, 1e-50), 60.);
         let r = (a.exp() - a.one()) / a;
         assert_eq!(format!("{}", r), "1.00000000e0");
         assert_eq!(r.get_precision(), 10.205999132780295);

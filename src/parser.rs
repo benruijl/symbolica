@@ -9,7 +9,7 @@ use smartstring::{LazyCompact, SmartString};
 use crate::{
     atom::Atom,
     coefficient::{Coefficient, ConvertToRing},
-    domains::{integer::Integer, Ring},
+    domains::{float::Float, integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
     state::{State, Workspace},
     LicenseManager,
@@ -384,7 +384,7 @@ impl Token {
                 Ok(x) => {
                     out.to_num(x.into());
                 }
-                Err(_) => match rug::Float::parse(n) {
+                Err(_) => match Float::parse(n) {
                     Ok(f) => {
                         // derive precision from string length, should be overestimate
                         out.to_num(Coefficient::Float(
@@ -490,7 +490,7 @@ impl Token {
                 Ok(x) => {
                     out.to_num(x.into());
                 }
-                Err(_) => match rug::Float::parse(n) {
+                Err(_) => match Float::parse(n) {
                     Ok(f) => {
                         // derive precision from string length, should be overestimate
                         out.to_num(Coefficient::Float(

@@ -1,5 +1,6 @@
 use std::{
     cmp::Ordering,
+    f64::consts::LOG2_10,
     ops::{Add, Div, Mul},
     sync::Arc,
 };
@@ -19,6 +20,7 @@ use crate::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
         },
+        float::Float,
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, RationalField},
         rational_polynomial::RationalPolynomial,
@@ -45,7 +47,7 @@ pub trait ConvertToRing: Ring {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Coefficient {
     Rational(Rational),
-    Float(rug::Float),
+    Float(Float),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
     RationalPolynomial(RationalPolynomial<IntegerRing, u16>),
 }
@@ -276,10 +278,10 @@ pub struct SerializedRationalPolynomial<'a>(pub &'a [u8]);
 pub struct SerializedFloat<'a>(pub &'a [u8]);
 
 impl<'a> SerializedFloat<'a> {
-    pub fn to_float(&self) -> rug::Float {
+    pub fn to_float(&self) -> Float {
         let mut d = self.0;
         let prec = d.get_u32_le();
-        rug::Float::parse_radix(&d, 16).unwrap().complete(prec)
+        Float::parse_radix(&d, 16).unwrap().complete(prec)
     }
 }
 
@@ -800,12 +802,26 @@ impl Add<i64> for CoefficientView<'_> {
 }
 
 impl Atom {
+    /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
     pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
         self.as_view().set_coefficient_ring(vars)
+    }
+
+    /// Convert all coefficients to floats with a given precision.
+    pub fn to_float(&self, decimal_prec: u32) -> Atom {
+        let mut a = Atom::new();
+        self.as_view().to_float_into(decimal_prec, &mut a);
+        a
+    }
+
+    /// Convert all coefficients to floats with a given precision.
+    pub fn to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
+        self.as_view().to_float_into(decimal_prec, out);
     }
 }
 
 impl<'a> AtomView<'a> {
+    /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
     pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut out = ws.new_atom();
@@ -814,6 +830,7 @@ impl<'a> AtomView<'a> {
         })
     }
 
+    /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
     pub fn set_coefficient_ring_with_ws_into(
         &self,
         vars: &Arc<Vec<Variable>>,
@@ -977,13 +994,142 @@ impl<'a> AtomView<'a> {
             }
         }
     }
+
+    /// Convert all coefficients to floats with a given precision.
+    pub fn to_float(&self, decimal_prec: u32) -> Atom {
+        let mut a = Atom::new();
+        self.to_float_into(decimal_prec, &mut a);
+        a
+    }
+
+    /// Convert all coefficients to floats with a given precision.
+    pub fn to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
+        let binary_prec = (decimal_prec as f64 * LOG2_10).ceil() as u32;
+
+        Workspace::get_local().with(|ws| self.to_float_impl(binary_prec, true, ws, out))
+    }
+
+    fn to_float_impl(
+        &self,
+        binary_prec: u32,
+        enter_function: bool,
+        ws: &Workspace,
+        out: &mut Atom,
+    ) {
+        match self {
+            AtomView::Num(n) => match n.get_coeff_view() {
+                CoefficientView::Natural(n, d) => {
+                    out.to_num(Coefficient::Float(
+                        Float::with_val(binary_prec, n) / Float::with_val(binary_prec, d),
+                    ));
+                }
+                CoefficientView::Float(f) => {
+                    let mut f = f.to_float();
+                    if f.prec() != binary_prec {
+                        f.set_prec(binary_prec);
+                        out.to_num(Coefficient::Float(f));
+                    } else {
+                        out.set_from_view(self);
+                    }
+                }
+                CoefficientView::Large(r) => {
+                    out.to_num(Coefficient::Float(
+                        Rational::from_large(r.to_rat()).to_multi_prec_float(binary_prec),
+                    ));
+                }
+                CoefficientView::FiniteField(_, _) => {
+                    panic!("Cannot convert finite field to float");
+                }
+                CoefficientView::RationalPolynomial(_) => {
+                    panic!("Cannot convert rational polynomial to float");
+                }
+            },
+            AtomView::Var(v) => {
+                let s = v.get_symbol();
+
+                match s {
+                    State::PI => {
+                        out.to_num(Coefficient::Float(Float::with_val(
+                            binary_prec,
+                            rug::float::Constant::Pi,
+                        )));
+                    }
+                    State::E => {
+                        out.to_num(Coefficient::Float(Float::with_val(binary_prec, 1).exp()));
+                    }
+                    _ => {
+                        out.set_from_view(self);
+                    }
+                }
+            }
+            AtomView::Fun(f) => {
+                if enter_function {
+                    let mut o = ws.new_atom();
+                    let ff = o.to_fun(f.get_symbol());
+
+                    let mut na = ws.new_atom();
+                    for a in f.iter() {
+                        a.to_float_impl(binary_prec, enter_function, ws, &mut na);
+                        ff.add_arg(na.as_view());
+                    }
+
+                    o.as_view().normalize(ws, out);
+                } else {
+                    out.set_from_view(self);
+                }
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+
+                let mut nb = ws.new_atom();
+                base.to_float_impl(binary_prec, enter_function, ws, &mut nb);
+
+                let mut ne = ws.new_atom();
+                exp.to_float_impl(binary_prec, enter_function, ws, &mut ne);
+
+                let mut o = ws.new_atom();
+                o.to_pow(nb.as_view(), ne.as_view());
+
+                o.as_view().normalize(ws, out);
+            }
+            AtomView::Mul(m) => {
+                let mut o = ws.new_atom();
+                let mm = o.to_mul();
+
+                let mut na = ws.new_atom();
+                for a in m.iter() {
+                    a.to_float_impl(binary_prec, enter_function, ws, &mut na);
+                    mm.extend(na.as_view());
+                }
+
+                o.as_view().normalize(ws, out);
+            }
+            AtomView::Add(a) => {
+                let mut o = ws.new_atom();
+                let aa = o.to_add();
+
+                let mut na = ws.new_atom();
+                for a in a.iter() {
+                    a.to_float_impl(binary_prec, enter_function, ws, &mut na);
+                    aa.extend(na.as_view());
+                }
+
+                o.as_view().normalize(ws, out);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
 
-    use crate::{atom::Atom, domains::rational::Rational, state::State};
+    use crate::{
+        atom::Atom,
+        domains::{float::Float, rational::Rational},
+        printer::{AtomPrinter, PrintOptions},
+        state::State,
+    };
 
     use super::Coefficient;
 
@@ -1039,9 +1185,27 @@ mod test {
 
     #[test]
     fn float() {
-        let expr = Atom::parse("1/2 x + 5.8912734891723").unwrap();
-        let c = Coefficient::Float(rug::Float::with_val(200, rug::float::Constant::Pi));
+        let expr = Atom::parse("1/2 x + 5.8912734891723 + sin(1.2334)").unwrap();
+        let c = Coefficient::Float(Float::with_val(200, rug::float::Constant::Pi));
         let expr = expr * &Atom::new_num(c);
-        println!("{}", expr.expand());
+        let r = format!(
+            "{}",
+            AtomPrinter::new_with_options(expr.expand().as_view(), PrintOptions::file())
+        );
+        assert_eq!(
+            r,
+            "1.5707963267948966192313216916397514420985846996875529104874722*x+21.472450319416851"
+        );
+    }
+
+    #[test]
+    fn float_convert() {
+        let expr = Atom::parse("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
+        let expr = expr.to_float(60);
+        let r = format!(
+            "{}",
+            AtomPrinter::new_with_options(expr.as_view(), PrintOptions::file())
+        );
+        assert_eq!(r, "5.0000000000000000000000000000000000000000000000000000000000000e-1*x+6.8164061370918581635917066956651198726148569775622233288512875e-1");
     }
 }

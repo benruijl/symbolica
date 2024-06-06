@@ -5,9 +5,10 @@ use std::{
 };
 
 use ahash::HashMap;
+use bytes::Buf;
 use rug::{
     integer::Order,
-    ops::{NegAssign, Pow as RPow},
+    ops::{CompleteRound, NegAssign, Pow as RPow},
     Integer as MultiPrecisionInteger, Rational as MultiPrecisionRational,
 };
 use smallvec::{smallvec, SmallVec};
@@ -41,12 +42,15 @@ pub trait ConvertToRing: Ring {
 /// A coefficient that can appear in a Symbolica expression.
 /// In most cases, this is a rational number but it can also be a finite field element or
 /// a rational polynomial.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Coefficient {
     Rational(Rational),
+    Float(rug::Float),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
     RationalPolynomial(RationalPolynomial<IntegerRing, u16>),
 }
+
+impl Eq for Coefficient {}
 
 impl From<i64> for Coefficient {
     fn from(value: i64) -> Self {
@@ -119,6 +123,7 @@ impl Coefficient {
     pub fn is_zero(&self) -> bool {
         match self {
             Coefficient::Rational(r) => r.is_zero(),
+            Coefficient::Float(f) => f.is_zero(),
             Coefficient::FiniteField(num, _field) => num.0 == 0,
             Coefficient::RationalPolynomial(r) => r.numerator.is_zero(),
         }
@@ -144,10 +149,7 @@ impl Add for Coefficient {
                 let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.add(&n1, &n2), i1)
             }
-            (Coefficient::FiniteField(_, _), _) => {
-                panic!("Cannot add finite field to non-finite number. Convert other number first?");
-            }
-            (_, Coefficient::FiniteField(_, _)) => {
+            (Coefficient::FiniteField(_, _), _) | (_, Coefficient::FiniteField(_, _)) => {
                 panic!("Cannot add finite field to non-finite number. Convert other number first?");
             }
             (Coefficient::Rational(r), Coefficient::RationalPolynomial(rp))
@@ -170,6 +172,14 @@ impl Add for Coefficient {
                 } else {
                     Coefficient::RationalPolynomial(r)
                 }
+            }
+            (Coefficient::Rational(r), Coefficient::Float(f))
+            | (Coefficient::Float(f), Coefficient::Rational(r)) => {
+                Coefficient::Float(r.to_multi_prec_float(f.prec()) + f)
+            }
+            (Coefficient::Float(f1), Coefficient::Float(f2)) => Coefficient::Float(f1 + f2),
+            (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
+                panic!("Cannot add float to finite-field number or rational polynomial");
             }
         }
     }
@@ -194,10 +204,7 @@ impl Mul for Coefficient {
                 let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.mul(&n1, &n2), i1)
             }
-            (Coefficient::FiniteField(_, _), _) => {
-                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
-            }
-            (_, Coefficient::FiniteField(_, _)) => {
+            (Coefficient::FiniteField(_, _), _) | (_, Coefficient::FiniteField(_, _)) => {
                 panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
             }
             (Coefficient::Rational(r), Coefficient::RationalPolynomial(mut rp))
@@ -226,6 +233,14 @@ impl Mul for Coefficient {
                 } else {
                     Coefficient::RationalPolynomial(r)
                 }
+            }
+            (Coefficient::Rational(r), Coefficient::Float(f))
+            | (Coefficient::Float(f), Coefficient::Rational(r)) => {
+                Coefficient::Float(r.to_multi_prec_float(f.prec()) * f)
+            }
+            (Coefficient::Float(f1), Coefficient::Float(f2)) => Coefficient::Float(f1 * f2),
+            (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
+                panic!("Cannot add float to finite-field number or rational polynomial");
             }
         }
     }
@@ -257,10 +272,22 @@ impl<'a> SerializedRational<'a> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct SerializedRationalPolynomial<'a>(pub &'a [u8]);
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct SerializedFloat<'a>(pub &'a [u8]);
+
+impl<'a> SerializedFloat<'a> {
+    pub fn to_float(&self) -> rug::Float {
+        let mut d = self.0;
+        let prec = d.get_u32_le();
+        rug::Float::parse_radix(&d, 16).unwrap().complete(prec)
+    }
+}
+
 /// A view of a coefficient that keeps GMP rationals serialized.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CoefficientView<'a> {
     Natural(i64, i64),
+    Float(SerializedFloat<'a>),
     Large(SerializedRational<'a>),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
     RationalPolynomial(SerializedRationalPolynomial<'a>),
@@ -276,6 +303,7 @@ impl ConvertToRing for RationalField {
     fn element_from_coefficient(&self, number: Coefficient) -> Self::Element {
         match number {
             Coefficient::Rational(r) => r,
+            Coefficient::Float(_) => panic!("Cannot convert float to rational"),
             Coefficient::FiniteField(_, _) => panic!("Cannot convert finite field to rational"),
             Coefficient::RationalPolynomial(_) => {
                 panic!("Cannot convert rational polynomial to rational")
@@ -288,6 +316,9 @@ impl ConvertToRing for RationalField {
         match number {
             CoefficientView::Natural(r, d) => Rational::Natural(r, d),
             CoefficientView::Large(r) => Rational::Large(r.to_rat()),
+            CoefficientView::Float(_) => {
+                panic!("Cannot convert float to rational")
+            }
             CoefficientView::FiniteField(_, _) => {
                 panic!("Cannot convert finite field to rational")
             }
@@ -311,6 +342,7 @@ impl ConvertToRing for IntegerRing {
                 debug_assert!(r.is_integer());
                 r.numerator()
             }
+            Coefficient::Float(_) => panic!("Cannot convert float to integer"),
             Coefficient::FiniteField(_, _) => panic!("Cannot convert finite field to integer"),
             Coefficient::RationalPolynomial(_) => {
                 panic!("Cannot convert rational polynomial to rational")
@@ -329,6 +361,9 @@ impl ConvertToRing for IntegerRing {
                 let r = r.to_rat();
                 debug_assert!(r.denom() == &1);
                 Integer::from_large(r.numer().clone())
+            }
+            CoefficientView::Float(_) => {
+                panic!("Cannot convert float to integer")
             }
             CoefficientView::FiniteField(_, _) => {
                 panic!("Cannot convert finite field to integer")
@@ -360,6 +395,7 @@ where
                 &r.numerator().to_finite_field(self),
                 &r.denominator().to_finite_field(self),
             ),
+            Coefficient::Float(_) => panic!("Cannot convert float to finite field"),
             Coefficient::FiniteField(_, _) => panic!("Cannot convert finite field to other one"),
             Coefficient::RationalPolynomial(_) => {
                 panic!("Cannot convert rational polynomial to finite field")
@@ -384,6 +420,9 @@ where
                     &Integer::Large(d).to_finite_field(self),
                 )
             }
+            CoefficientView::Float(_) => {
+                panic!("Cannot convert float to finite field")
+            }
             CoefficientView::FiniteField(_, _) => {
                 panic!("Cannot convert finite field to other one")
             }
@@ -401,7 +440,8 @@ impl CoefficientView<'_> {
                 Rational::Natural(n, d) => Coefficient::Rational((n, d).into()),
                 Rational::Large(l) => Coefficient::Rational(l.into()),
             },
-            CoefficientView::Large(_)
+            CoefficientView::Float(_)
+            | CoefficientView::Large(_)
             | CoefficientView::FiniteField(_, _)
             | CoefficientView::RationalPolynomial(_) => self.to_owned(),
         }
@@ -411,6 +451,7 @@ impl CoefficientView<'_> {
         match self {
             CoefficientView::Natural(num, den) => Coefficient::Rational((*num, *den).into()),
             CoefficientView::Large(r) => Coefficient::Rational(r.to_rat().into()),
+            CoefficientView::Float(f) => Coefficient::Float(f.to_float().into()),
             CoefficientView::FiniteField(num, field) => Coefficient::FiniteField(*num, *field),
             CoefficientView::RationalPolynomial(p) => {
                 Coefficient::RationalPolynomial(p.deserialize())
@@ -490,6 +531,7 @@ impl CoefficientView<'_> {
     pub fn is_integer(&self) -> bool {
         match self {
             CoefficientView::Natural(_, d) => *d == 1,
+            CoefficientView::Float(_) => false,
             CoefficientView::Large(r) => r.to_rat().is_integer(),
             CoefficientView::FiniteField(_, _) => true,
             CoefficientView::RationalPolynomial(_) => false,
@@ -611,6 +653,26 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
                     Coefficient::RationalPolynomial(r)
                 }
             }
+            (CoefficientView::Natural(n, d), CoefficientView::Float(f))
+            | (CoefficientView::Float(f), CoefficientView::Natural(n, d)) => {
+                let f = f.to_float();
+                Coefficient::Float(Rational::from((n, d)).to_multi_prec_float(f.prec()) + f)
+            }
+            (CoefficientView::Large(r), CoefficientView::Float(f))
+            | (CoefficientView::Float(f), CoefficientView::Large(r)) => {
+                let r = r.to_rat();
+                let f = f.to_float();
+                Coefficient::Float(Rational::from_large(r).to_multi_prec_float(f.prec()) + f)
+            }
+            (CoefficientView::Float(f1), CoefficientView::Float(f2)) => {
+                Coefficient::Float(f1.to_float() + f2.to_float())
+            }
+            (CoefficientView::Float(_), CoefficientView::RationalPolynomial(_)) => {
+                panic!("Cannot add float to rational polynomial");
+            }
+            (CoefficientView::RationalPolynomial(_), CoefficientView::Float(_)) => {
+                panic!("Cannot add float to rational polynomial");
+            }
         }
     }
 }
@@ -686,6 +748,26 @@ impl Mul for CoefficientView<'_> {
                     Coefficient::RationalPolynomial(r)
                 }
             }
+            (CoefficientView::Natural(n, d), CoefficientView::Float(f))
+            | (CoefficientView::Float(f), CoefficientView::Natural(n, d)) => {
+                let f = f.to_float();
+                Coefficient::Float(Rational::from((n, d)).to_multi_prec_float(f.prec()) * f)
+            }
+            (CoefficientView::Large(r), CoefficientView::Float(f))
+            | (CoefficientView::Float(f), CoefficientView::Large(r)) => {
+                let r = r.to_rat();
+                let f = f.to_float();
+                Coefficient::Float(Rational::from_large(r).to_multi_prec_float(f.prec()) * f)
+            }
+            (CoefficientView::Float(f1), CoefficientView::Float(f2)) => {
+                Coefficient::Float(f1.to_float() * f2.to_float())
+            }
+            (CoefficientView::Float(_), CoefficientView::RationalPolynomial(_)) => {
+                panic!("Cannot multiply float to rational polynomial");
+            }
+            (CoefficientView::RationalPolynomial(_), CoefficientView::Float(_)) => {
+                panic!("Cannot multiply float to rational polynomial");
+            }
         }
     }
 }
@@ -698,6 +780,7 @@ impl Add<i64> for CoefficientView<'_> {
             CoefficientView::Natural(n1, d1) => {
                 Coefficient::Rational(Rational::Natural(n1, d1) + &other.into())
             }
+            CoefficientView::Float(f) => Coefficient::Float(f.to_float() + other),
             CoefficientView::Large(r1) => (r1.to_rat() + other).into(),
             CoefficientView::FiniteField(n1, i1) => {
                 let f = State::get_finite_field(i1);
@@ -902,6 +985,8 @@ mod test {
 
     use crate::{atom::Atom, domains::rational::Rational, state::State};
 
+    use super::Coefficient;
+
     #[test]
     fn coeff_conversion() {
         let expr = Atom::parse("v1*coeff(v2+v3/v4)+v1*coeff(v2)").unwrap();
@@ -950,5 +1035,13 @@ mod test {
             .expand();
 
         assert_eq!(a, expr);
+    }
+
+    #[test]
+    fn float() {
+        let expr = Atom::parse("1/2 x + 5.8912734891723").unwrap();
+        let c = Coefficient::Float(rug::Float::with_val(200, rug::float::Constant::Pi));
+        let expr = expr * &Atom::new_num(c);
+        println!("{}", expr.expand());
     }
 }

@@ -1,8 +1,13 @@
+use std::io::Write;
+
 use bytes::{Buf, BufMut};
 use rug::{integer::Order, Integer as MultiPrecisionInteger};
 
 use crate::{
-    coefficient::{Coefficient, CoefficientView, SerializedRational, SerializedRationalPolynomial},
+    coefficient::{
+        Coefficient, CoefficientView, SerializedFloat, SerializedRational,
+        SerializedRationalPolynomial,
+    },
     domains::{
         finite_field::FiniteFieldElement,
         integer::{Integer, IntegerRing, Z},
@@ -19,6 +24,7 @@ const U64_NUM: u8 = 0b00000100;
 const FIN_NUM: u8 = 0b00000101;
 const ARB_NUM: u8 = 0b00000111;
 const RAT_POLY: u8 = 0b00001000;
+const FLOAT: u8 = 0b00001001;
 const U8_DEN: u8 = 0b00010000;
 const U16_DEN: u8 = 0b00100000;
 const U32_DEN: u8 = 0b00110000;
@@ -152,6 +158,15 @@ impl PackedRationalNumberWriter for Coefficient {
                         .write_digits(&mut dest[old_len + num_digits..], Order::Lsf);
                 }
             },
+            Coefficient::Float(f) => {
+                dest.put_u8(FLOAT);
+
+                // TODO: improve serialization
+                let s = f.to_string_radix(16, None);
+                dest.put_u64_le(s.len() as u64 + 4);
+                dest.put_u32_le(f.prec());
+                dest.write_all(s.as_bytes()).unwrap();
+            }
             Coefficient::FiniteField(num, f) => {
                 dest.put_u8(FIN_NUM);
                 (num.0, f.0 as u64).write_packed(dest); // this adds an extra tag
@@ -216,6 +231,7 @@ impl PackedRationalNumberWriter for Coefficient {
                 Rational::Natural(num, den) => (*num, *den).write_packed_fixed(dest),
                 Rational::Large(_) => todo!("Writing large packed rational not implemented"),
             },
+            Coefficient::Float(_) => todo!("Writing large packed rational not implemented"),
             Coefficient::RationalPolynomial(_) => {
                 todo!("Writing packed rational polynomial not implemented")
             }
@@ -236,6 +252,10 @@ impl PackedRationalNumberWriter for Coefficient {
                     1 + (n, d).get_packed_size() + n as u64 + d as u64
                 }
             },
+            Coefficient::Float(f) => {
+                let s = f.to_string_radix(16, None);
+                1 + 8 + 4 + s.len() as u64
+            }
             Coefficient::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),
             Coefficient::RationalPolynomial(_) => {
                 unimplemented!("Cannot get the packed size of a rational polynomial")
@@ -265,6 +285,14 @@ impl PackedRationalNumberReader for [u8] {
             source.advance(len);
             (
                 CoefficientView::RationalPolynomial(SerializedRationalPolynomial(&start[..len])),
+                source,
+            )
+        } else if disc == FLOAT {
+            let len = source.get_u64_le() as usize;
+            let start = source;
+            source.advance(len);
+            (
+                CoefficientView::Float(SerializedFloat(&start[..len])),
                 source,
             )
         } else if (disc & NUM_MASK) == ARB_NUM {
@@ -519,6 +547,9 @@ impl PackedRationalNumberReader for [u8] {
                     let size = get_size_of_natural(var_size & NUM_MASK)
                         + get_size_of_natural((var_size & DEN_MASK) >> 4);
                     dest.advance(size as usize);
+                } else if v_num == FLOAT {
+                    let size = dest.get_u64_le() as usize;
+                    dest.advance(size);
                 } else {
                     unreachable!("Unsupported numerator/denominator type {}", disc)
                 }

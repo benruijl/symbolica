@@ -1157,6 +1157,24 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             let a = format!("{}", num);
             let i = Integer::from_large(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(Atom::new_num(i).into()))
+        } else if let Ok(f) = ob.extract::<f64>() {
+            if !f.is_finite() {
+                return Err(exceptions::PyValueError::new_err("Number must be finite"));
+            }
+
+            Ok(ConvertibleToExpression(
+                Atom::new_num(rug::Float::with_val(53, f)).into(),
+            ))
+        } else if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
+            let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
+            Ok(ConvertibleToExpression(
+                Atom::new_num(
+                    Float::parse(a)
+                        .unwrap()
+                        .complete((a.len() as f64 * LOG2_10).ceil() as u32),
+                )
+                .into(),
+            ))
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Cannot convert to expression",
@@ -1489,8 +1507,8 @@ impl PythonExpression {
         Ok(result)
     }
 
-    /// Create a new Symbolica number from an int or a float.
-    /// A floating point number is converted to its rational number equivalent,
+    /// Create a new Symbolica number from an int, a float, or a string.
+    /// A floating point number is kept as a float with the same precision as the input,
     /// but it can also be truncated by specifying the maximal denominator value.
     ///
     /// Examples
@@ -1499,9 +1517,9 @@ impl PythonExpression {
     /// >>> print(e)
     /// 1/2
     ///
-    /// >>> print(Expression.num(0.33))
+    /// >>> print(Expression.num(1/3))
     /// >>> print(Expression.num(0.33, 5))
-    /// 5944751508129055/18014398509481984
+    /// 3.3333333333333331e-1
     /// 1/3
     #[classmethod]
     pub fn num(
@@ -1520,12 +1538,17 @@ impl PythonExpression {
                 return Err(exceptions::PyValueError::new_err("Number must be finite"));
             }
 
-            let mut r: Rational = f.into();
             if let Some(max_denom) = max_denom {
-                r = r.truncate_denominator(&(max_denom as u64).into())
+                let mut r: Rational = f.into();
+                r = r.truncate_denominator(&(max_denom as u64).into());
+                Ok(Atom::new_num(r).into())
+            } else {
+                Ok(Atom::new_num(rug::Float::with_val(53, f)).into())
             }
-
-            Ok(Atom::new_num(r).into())
+        } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
+            Ok(Atom::new_num(f.0.clone()).into())
+        } else if let Ok(a) = num.extract::<&str>(py) {
+            PythonExpression::parse(_cls, a)
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid number"))
         }

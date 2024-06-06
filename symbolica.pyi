@@ -167,7 +167,7 @@ class Expression:
         """
 
     @overload
-    def __call__(self, *args: Expression | int) -> Expression:
+    def __call__(self, *args: Expression | int | float | Decimal) -> Expression:
         """
         Create a Symbolica expression or transformer by calling the function with appropriate arguments.
 
@@ -180,7 +180,7 @@ class Expression:
         """
 
     @overload
-    def __call__(self, *args: Transformer | Expression | int) -> Transformer:
+    def __call__(self, *args: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Create a Symbolica expression or transformer by calling the function with appropriate arguments.
 
@@ -193,9 +193,9 @@ class Expression:
         """
 
     @classmethod
-    def num(_cls, num: int | float, max_denom: Optional[int] = None) -> Expression:
-        """Create a new Symbolica number from an int or a float.
-        A floating point number is converted to its rational number equivalent,
+    def num(_cls, num: int | float | str | Decimal, max_denom: Optional[int] = None) -> Expression:
+        """Create a new Symbolica number from an int, a float, or a string.
+        A floating point number is kept as a float with the same precision as the input,
         but it can also be truncated by specifying the maximal denominator value.
 
         Examples
@@ -204,9 +204,9 @@ class Expression:
         >>> print(e)
         1/2
 
-        >>> print(Expression.num(0.33))
+        >>> print(Expression.num(1/3))
         >>> print(Expression.num(0.33, 5))
-        5944751508129055/18014398509481984
+        3.3333333333333331e-1
         1/3
         """
 
@@ -306,52 +306,52 @@ class Expression:
         is a variable or function.
         """
 
-    def __add__(self, other: Expression | int) -> Expression:
+    def __add__(self, other: Expression | int | float | Decimal) -> Expression:
         """
         Add this expression to `other`, returning the result.
         """
 
-    def __radd__(self, other: Expression | int) -> Expression:
+    def __radd__(self, other: Expression | int | float | Decimal) -> Expression:
         """
         Add this expression to `other`, returning the result.
         """
 
-    def __sub__(self, other: Expression | int) -> Expression:
+    def __sub__(self, other: Expression | int | float | Decimal) -> Expression:
         """
         Subtract `other` from this expression, returning the result.
         """
 
-    def __rsub__(self, other: Expression | int) -> Expression:
+    def __rsub__(self, other: Expression | int | float | Decimal) -> Expression:
         """
         Subtract this expression from `other`, returning the result.
         """
 
-    def __mul__(self, other: Expression | int) -> Expression:
+    def __mul__(self, other: Expression | int | float | Decimal) -> Expression:
         """
         Multiply this expression with `other`, returning the result.
         """
 
-    def __rmul__(self, other: Expression | int) -> Expression:
+    def __rmul__(self, other: Expression | int | float | Decimal) -> Expression:
         """
         Multiply this expression with `other`, returning the result.
         """
 
-    def __truediv__(self, other: Expression | int) -> Expression:
+    def __truediv__(self, other: Expression | int | float | Decimal) -> Expression:
         """
         Divide this expression by `other`, returning the result.
         """
 
-    def __rtruediv__(self, other: Expression | int) -> Expression:
+    def __rtruediv__(self, other: Expression | int | float | Decimal) -> Expression:
         """
         Divide `other` by this expression, returning the result.
         """
 
-    def __pow__(self, exp: Expression | int) -> Expression:
+    def __pow__(self, exp: Expression | int | float | Decimal) -> Expression:
         """
         Take `self` to power `exp`, returning the result.
         """
 
-    def __rpow__(self, base: Expression | int) -> Expression:
+    def __rpow__(self, base: Expression | int | float | Decimal) -> Expression:
         """
         Take `base` to power `self`, returning the result.
         """
@@ -428,7 +428,7 @@ class Expression:
 
     def req_cmp(
         self,
-        other: Expression | int,
+        other: Expression | int | float | Decimal,
         cmp_fn: Callable[[Expression, Expression], bool],
     ) -> PatternRestriction:
         """
@@ -444,7 +444,7 @@ class Expression:
         >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
         """
 
-    def req_lt(self, num: Expression | int, cmp_any_atom=False) -> PatternRestriction:
+    def req_lt(self, num: Expression | int | float | Decimal, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is smaller than a number `num`.
         If the matched wildcard is not a number, the pattern fails.
 
@@ -461,7 +461,7 @@ class Expression:
         >>> e = e.replace_all(f(x_), 1, x_.req_lt(2))
         """
 
-    def req_gt(self, num: Expression | int, cmp_any_atom=False) -> PatternRestriction:
+    def req_gt(self, num: Expression | int | float | Decimal, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is greater than a number `num`.
         If the matched wildcard is not a number, the pattern fails.
 
@@ -478,7 +478,7 @@ class Expression:
         >>> e = e.replace_all(f(x_), 1, x_.req_gt(2))
         """
 
-    def req_le(self, num: Expression | int, cmp_any_atom=False) -> PatternRestriction:
+    def req_le(self, num: Expression | int | float | Decimal, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is smaller than or equal to a number `num`.
         If the matched wildcard is not a number, the pattern fails.
 
@@ -495,7 +495,7 @@ class Expression:
         >>> e = e.replace_all(f(x_), 1, x_.req_le(2))
         """
 
-    def req_ge(self, num: Expression | int, cmp_any_atom=False) -> PatternRestriction:
+    def req_ge(self, num: Expression | int | float | Decimal, cmp_any_atom=False) -> PatternRestriction:
         """Create a pattern restriction that passes when the wildcard is greater than or equal to a number `num`.
         If the matched wildcard is not a number, the pattern fails.
 
@@ -580,32 +580,32 @@ class Expression:
         >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_ge(y_))
         """
 
-    def __eq__(self, other: Expression | int) -> bool:
+    def __eq__(self, other: Expression | int | float | Decimal) -> bool:
         """
         Compare two expressions.
         """
 
-    def __neq__(self, other: Expression | int) -> bool:
+    def __neq__(self, other: Expression | int | float | Decimal) -> bool:
         """
         Compare two expressions.
         """
 
-    def __lt__(self, other: Expression | int) -> bool:
+    def __lt__(self, other: Expression | int | float | Decimal) -> bool:
         """
         Compare two expressions. Both expressions must be a number.
         """
 
-    def __le__(self, other: Expression | int) -> bool:
+    def __le__(self, other: Expression | int | float | Decimal) -> bool:
         """
         Compare two expressions. Both expressions must be a number.
         """
 
-    def __gt__(self, other: Expression | int) -> bool:
+    def __gt__(self, other: Expression | int | float | Decimal) -> bool:
         """
         Compare two expressions. Both expressions must be a number.
         """
 
-    def __ge__(self, other: Expression | int) -> bool:
+    def __ge__(self, other: Expression | int | float | Decimal) -> bool:
         """
         Compare two expressions. Both expressions must be a number.
         """
@@ -742,7 +742,7 @@ class Expression:
     def series(
         self,
         x: Expression,
-        expansion_point: Expression | int,
+        expansion_point: Expression | int | float | Decimal,
         depth: int,
         depth_denom: int = 1,
         depth_is_absolute: bool = True
@@ -821,7 +821,7 @@ class Expression:
 
     def match(
         self,
-        lhs: Transformer | Expression | int,
+        lhs: Transformer | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -847,7 +847,7 @@ class Expression:
 
     def matches(
         self,
-        lhs: Transformer | Expression | int,
+        lhs: Transformer | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -866,8 +866,8 @@ class Expression:
 
     def replace(
         self,
-        lhs: Transformer | Expression | int,
-        rhs: Transformer | Expression | int,
+        lhs: Transformer | Expression | int | float | Decimal,
+        rhs: Transformer | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -904,8 +904,8 @@ class Expression:
 
     def replace_all(
         self,
-        pattern: Transformer | Expression | int,
-        rhs: Transformer | Expression | int,
+        pattern: Transformer | Expression | int | float | Decimal,
+        rhs: Transformer | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1034,8 +1034,8 @@ class Replacement:
 
     def __new__(
             cls,
-            pattern: Transformer | Expression | int,
-            rhs: Transformer | Expression | int,
+            pattern: Transformer | Expression | int | float | Decimal,
+            rhs: Transformer | Expression | int | float | Decimal,
             cond: Optional[PatternRestriction] = None,
             non_greedy_wildcards: Optional[Sequence[Expression]] = None,
             level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1216,7 +1216,7 @@ class Transformer:
         ```
         """
 
-    def map(self, f: Callable[[Expression], Expression | int]) -> Transformer:
+    def map(self, f: Callable[[Expression], Expression | int | float | Decimal]) -> Transformer:
         """Create a transformer that applies a Python function.
 
         Examples
@@ -1327,8 +1327,8 @@ class Transformer:
 
     def replace_all(
         self,
-        pat: Transformer | Expression | int,
-        rhs: Transformer | Expression | int,
+        pat: Transformer | Expression | int | float | Decimal,
+        rhs: Transformer | Expression | int | float | Decimal,
         cond: Optional[PatternRestriction] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1418,52 +1418,52 @@ class Transformer:
         ```
         """
 
-    def __add__(self, other: Transformer | Expression | int) -> Transformer:
+    def __add__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Add this transformer to `other`, returning the result.
         """
 
-    def __radd__(self, other: Transformer | Expression | int) -> Transformer:
+    def __radd__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Add this transformer to `other`, returning the result.
         """
 
-    def __sub__(self, other: Transformer | Expression | int) -> Transformer:
+    def __sub__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Subtract `other` from this transformer, returning the result.
         """
 
-    def __rsub__(self, other: Transformer | Expression | int) -> Transformer:
+    def __rsub__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Subtract this transformer from `other`, returning the result.
         """
 
-    def __mul__(self, other: Transformer | Expression | int) -> Transformer:
+    def __mul__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Add this transformer to `other`, returning the result.
         """
 
-    def __rmul__(self, other: Transformer | Expression | int) -> Transformer:
+    def __rmul__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Add this transformer to `other`, returning the result.
         """
 
-    def __truediv__(self, other: Transformer | Expression | int) -> Transformer:
+    def __truediv__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Divide this transformer by `other`, returning the result.
         """
 
-    def __rtruediv__(self, other: Transformer | Expression | int) -> Transformer:
+    def __rtruediv__(self, other: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Divide `other` by this transformer, returning the result.
         """
 
-    def __pow__(self, exp: Transformer | Expression | int) -> Transformer:
+    def __pow__(self, exp: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Take `self` to power `exp`, returning the result.
         """
 
-    def __rpow__(self, base: Transformer | Expression | int) -> Transformer:
+    def __rpow__(self, base: Transformer | Expression | int | float | Decimal) -> Transformer:
         """
         Take `base` to power `self`, returning the result.
         """

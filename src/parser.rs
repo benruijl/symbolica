@@ -490,7 +490,6 @@ impl Token {
                 }
                 Err(_) => match Float::parse(n, None) {
                     Ok(f) => {
-                        // derive precision from string length, should be overestimate
                         out.to_num(Coefficient::Float(f));
                     }
                     Err(e) => Err(format!("Error parsing number: {}", e))?,
@@ -646,7 +645,7 @@ impl Token {
 
         let ops = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
         let whitespace = [' ', '\t', '\n', '\r', '\\'];
-        let forbidden = [';', ':', '&', '!', '%'];
+        let forbidden = [';', ':', '&', '!', '%', '.'];
 
         let mut char_iter = input.chars();
         let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token
@@ -676,12 +675,55 @@ impl Token {
                     }
                 }
                 ParseState::Number => {
-                    if c != '_' && c != ' ' && c != '.' && !c.is_ascii_digit() {
+                    let mut last_digit_is_exp = false;
+                    loop {
+                        if c.is_ascii_digit() {
+                            id_buffer.push(c);
+                            c = char_iter.next().unwrap_or('\0');
+                            last_digit_is_exp = false;
+                            continue;
+                        }
+
+                        if last_digit_is_exp && c != '-' && c != '+' {
+                            // input cannot be a floating point number
+                            // add a multiplication operator, e.g 2.2ex => 2.2*ex
+
+                            let e = id_buffer.pop().unwrap();
+                            state = ParseState::Any;
+                            stack.push(Token::Number(id_buffer.as_str().into()));
+                            id_buffer.clear();
+
+                            extra_ops.push(e);
+                            extra_ops.push(c);
+                            c = '*';
+
+                            break;
+                        }
+
+                        if c == '\0' {
+                            last_digit_is_exp = false;
+                            break;
+                        }
+
+                        let digit_is_exp = c == 'e' || c == 'E';
+
+                        if c != '_' && c != ' ' {
+                            if !digit_is_exp && !last_digit_is_exp && c != '.' && c != '`' {
+                                break;
+                            }
+
+                            id_buffer.push(c);
+                        }
+
+                        last_digit_is_exp = digit_is_exp;
+
+                        c = char_iter.next().unwrap_or('\0');
+                    }
+
+                    if !last_digit_is_exp {
                         state = ParseState::Any;
                         stack.push(Token::Number(id_buffer.as_str().into()));
                         id_buffer.clear();
-                    } else if c != '_' && c != ' ' {
-                        id_buffer.push(c);
                     }
                 }
                 ParseState::RationalPolynomial => {
@@ -1243,7 +1285,13 @@ impl Token {
 mod test {
     use std::sync::Arc;
 
-    use crate::{atom::Atom, domains::integer::Z, parser::Token, state::State};
+    use crate::{
+        atom::Atom,
+        domains::integer::Z,
+        parser::Token,
+        printer::{AtomPrinter, PrintOptions},
+        state::State,
+    };
 
     #[test]
     fn pow() {
@@ -1267,11 +1315,25 @@ mod test {
     fn liberal() {
         let input = Atom::parse(
             "89233_21837281 x   
-            ^2 / y + 5",
+            ^2 / y + 5 + 5x",
         )
         .unwrap();
-        let res = Atom::parse("8923321837281*x^2*y^-1+5").unwrap();
+        let res = Atom::parse("8923321837281*x^2*y^-1+5+5x").unwrap();
         assert_eq!(input, res);
+    }
+
+    #[test]
+    fn float() {
+        let input = Atom::parse("1.2`20x+1e-5`20+1e+5 1.1234e23 +2exp(5)").unwrap();
+
+        let r = format!(
+            "{}",
+            AtomPrinter::new_with_options(input.as_view(), PrintOptions::file())
+        );
+        assert_eq!(
+            r,
+            "1.200000000000000000003*x+2*exp(5)+1.123400000000000019270e28"
+        );
     }
 
     #[test]

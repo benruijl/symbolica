@@ -1085,14 +1085,35 @@ impl InstructionList {
         let mut pair_count = HashMap::default();
         let mut last_init = 0;
 
+        let mut d = vec![];
+        let mut rep = vec![];
         for (i, x) in self.instr.iter().enumerate() {
             match x {
                 Instruction::Add(m) | Instruction::Mul(m) => {
-                    for i in 0..m.len() - 1 {
-                        for j in &m[i + 1..] {
+                    d.clone_from(m);
+                    d.dedup();
+                    rep.clear();
+                    rep.resize(d.len(), 0);
+
+                    for (c, v) in rep.iter_mut().zip(&d) {
+                        for v2 in m {
+                            if v == v2 {
+                                *c += 1;
+                            }
+                        }
+                    }
+
+                    for i in 0..d.len() - 1 {
+                        if rep[i] > 2 {
                             *pair_count
-                                .entry((matches!(x, Instruction::Add(_)), m[i], *j))
-                                .or_insert(0) += 1;
+                                .entry((matches!(x, Instruction::Add(_)), d[i], d[i]))
+                                .or_insert(0) += rep[i] / 2;
+                        }
+
+                        for j in i + 1..d.len() {
+                            *pair_count
+                                .entry((matches!(x, Instruction::Add(_)), d[i], d[j]))
+                                .or_insert(0) += rep[i].min(rep[j]);
                         }
                     }
                 }

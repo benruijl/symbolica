@@ -66,7 +66,7 @@ pub enum Transformer {
     /// Derive the rhs w.r.t a variable.
     Derivative(Symbol),
     /// Derive the rhs w.r.t a variable.
-    Series(Symbol, Atom, Rational),
+    Series(Symbol, Atom, Rational, bool),
     /// Apply find-and-replace on the lhs.
     ReplaceAll(
         Pattern,
@@ -135,11 +135,12 @@ impl std::fmt::Debug for Transformer {
             Transformer::Sort => f.debug_tuple("Sort").finish(),
             Transformer::Deduplicate => f.debug_tuple("Deduplicate").finish(),
             Transformer::Permutations(i) => f.debug_tuple("Permutations").field(i).finish(),
-            Transformer::Series(x, point, d) => f
+            Transformer::Series(x, point, d, depth_is_absolute) => f
                 .debug_tuple("TaylorSeries")
                 .field(x)
                 .field(point)
                 .field(d)
+                .field(depth_is_absolute)
                 .finish(),
             Transformer::Repeat(r) => f.debug_tuple("Repeat").field(r).finish(),
             Transformer::Print(p) => f.debug_tuple("Print").field(p).finish(),
@@ -212,8 +213,13 @@ impl Transformer {
                 Transformer::Derivative(x) => {
                     input.derivative_with_ws_into(*x, workspace, out);
                 }
-                Transformer::Series(x, expansion_point, depth) => {
-                    if let Ok(s) = input.series(*x, expansion_point.as_view(), depth.clone()) {
+                Transformer::Series(x, expansion_point, depth, depth_is_absolute) => {
+                    if let Ok(s) = input.series(
+                        *x,
+                        expansion_point.as_view(),
+                        depth.clone(),
+                        *depth_is_absolute,
+                    ) {
                         s.to_atom_into(out);
                     } else {
                         out.set_from_view(&input);
@@ -588,7 +594,7 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::Product,
-                    Transformer::Series(State::get_symbol("v1"), Atom::new_num(1), 3.into()),
+                    Transformer::Series(State::get_symbol("v1"), Atom::new_num(1), 3.into(), true),
                 ],
                 ws,
                 &mut out,

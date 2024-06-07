@@ -33,7 +33,7 @@ pub struct Series<F: Ring> {
 
 impl<F: Ring + std::fmt::Debug> std::fmt::Debug for Series<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        if self.is_zero() {
+        if self.order == 0 {
             return write!(f, "[]");
         }
         let mut first = true;
@@ -54,9 +54,8 @@ impl<F: Ring + std::fmt::Display> std::fmt::Display for Series<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let v = self.variable.to_string();
 
-        if self.is_zero() {
-            write!(f, "0")?;
-            return write!(f, "+O({}^{})", v, self.absolute_order());
+        if self.coefficients.is_empty() {
+            return write!(f, "O({}^{})", v, self.absolute_order());
         }
 
         let mut first = true;
@@ -111,7 +110,7 @@ impl<F: Ring + std::fmt::Display> std::fmt::Display for Series<F> {
 }
 
 impl<F: Ring> Series<F> {
-    /// Constructs a zero series. Instead of using this constructor,
+    /// Constructs a zero series with fixed order. Instead of using this constructor,
     /// prefer to create new series from existing ones, so that the
     /// variable map and field are inherited.
     #[inline]
@@ -138,7 +137,7 @@ impl<F: Ring> Series<F> {
         }
     }
 
-    /// Constructs a zero series, inheriting the field and variable from `self`.
+    /// Constructs a finite-precision zero series, inheriting the field and variable from `self`.
     #[inline]
     pub fn zero(&self) -> Self {
         Self {
@@ -152,22 +151,7 @@ impl<F: Ring> Series<F> {
         }
     }
 
-    /// Constructs a zero series with the given number of variables and capacity,
-    /// inheriting the field and variable from `self`.
-    #[inline]
-    pub fn zero_with_capacity(&self, cap: usize) -> Self {
-        Self {
-            coefficients: Vec::with_capacity(cap),
-            field: self.field.clone(),
-            variable: self.variable.clone(),
-            expansion_point: self.expansion_point.clone(),
-            shift: 0,
-            order: self.order,
-            ramification: 1,
-        }
-    }
-
-    /// Constructs a constant series,
+    /// Constructs a finite-precision constant series,
     /// inheriting the field and variable from `self`.
     #[inline]
     pub fn constant(&self, coeff: F::Element) -> Self {
@@ -186,7 +170,7 @@ impl<F: Ring> Series<F> {
         }
     }
 
-    /// Constructs a series that is one, inheriting the field and variable map from `self`.
+    /// Constructs a finite-precision series that is one, inheriting the field and variable from `self`.
     #[inline]
     pub fn one(&self) -> Self {
         Self {
@@ -196,6 +180,21 @@ impl<F: Ring> Series<F> {
             expansion_point: self.expansion_point.clone(),
             shift: 0,
             order: self.order,
+            ramification: 1,
+        }
+    }
+
+    /// Constructs a series that is one with infinite digits.
+    /// Must be added or multiplied with another finite series.
+    #[inline]
+    fn one_inf_prec(&self) -> Self {
+        Self {
+            coefficients: vec![self.field.one()],
+            field: self.field.clone(),
+            variable: self.variable.clone(),
+            expansion_point: self.expansion_point.clone(),
+            shift: 0,
+            order: i64::MAX as usize, // considered infinity
             ramification: 1,
         }
     }
@@ -265,12 +264,14 @@ impl<F: Ring> Series<F> {
     /// Get the relative order of the series expansion.
     #[inline]
     pub fn relative_order(&self) -> Rational {
+        assert!(self.order < i64::MAX as usize);
         (self.order as i64, self.ramification as i64).into()
     }
 
     /// Get the absolute order of the series expansion.
     #[inline]
     pub fn absolute_order(&self) -> Rational {
+        assert!(self.order < i64::MAX as usize);
         (
             self.order as i64 + self.shift as i64,
             self.ramification as i64,
@@ -318,7 +319,28 @@ impl<F: Ring> Series<F> {
         *self = s;
     }
 
-    /// Truncate the series to the desired order.
+    /// Truncate the series to the desired relative order.
+    /// If the new order is larger, nothing happens.
+    #[inline]
+    pub fn truncate_relative_order(&mut self, order: Rational) {
+        if self.relative_order() < order {
+            return;
+        }
+
+        if order.is_negative() {
+            panic!("Cannot series expand to negative depth");
+        }
+
+        let ram = order.denominator().to_i64().unwrap() as usize;
+        self.change_ramification(ram);
+        let new_order = (order.numerator().to_i64().unwrap() as usize) * self.ramification / ram;
+
+        self.coefficients.truncate(new_order);
+        self.order = new_order;
+        self.truncate();
+    }
+
+    /// Truncate the series to the desired absolute order.
     /// If the new order is larger, nothing happens.
     #[inline]
     pub fn truncate_absolute_order(&mut self, order: Rational) {
@@ -336,8 +358,11 @@ impl<F: Ring> Series<F> {
             }
         }
 
-        self.order = self.get_index(order);
-        self.truncate();
+        if self.coefficients.is_empty() {
+            self.order = 0;
+        } else {
+            self.order = self.get_index(order);
+        }
     }
 
     #[inline]
@@ -346,11 +371,6 @@ impl<F: Ring> Series<F> {
             .lcm(&Integer::from(other.ramification as i64))
             .to_i64()
             .unwrap() as usize
-    }
-
-    #[inline]
-    pub fn is_zero(&self) -> bool {
-        self.coefficients.is_empty()
     }
 
     #[inline]
@@ -402,21 +422,21 @@ impl<F: Ring> Series<F> {
     }
 
     pub fn degree(&self) -> Rational {
-        if self.is_zero() {
+        if self.order == 0 {
             return 0.into();
         }
 
         self.get_exponent(self.coefficients.len() - 1)
     }
 
-    /// Compute `self^pow`.
+    /// Compute `self^pow`. `pow` must be a positive integer.
     pub fn npow(&self, mut pow: usize) -> Self {
         if pow == 0 {
-            return self.one();
+            panic!("Cannot create one with infinite precision");
         }
 
         let mut x = self.clone();
-        let mut y = self.one();
+        let mut y = self.one_inf_prec();
         while pow != 1 {
             if pow % 2 == 1 {
                 y = &y * &x;
@@ -432,10 +452,6 @@ impl<F: Ring> Series<F> {
 
     /// Multiply the exponents `exp` units of the ramification.
     pub fn mul_exp_units(mut self, exp: isize) -> Self {
-        if exp == 0 || self.is_zero() {
-            return self.clone();
-        }
-
         self.shift += exp;
         self
     }
@@ -468,8 +484,8 @@ impl<F: Ring> Series<F> {
         self.coefficients.truncate(self.coefficients.len() - d);
 
         if self.coefficients.is_empty() {
-            self.order = (self.order as isize + self.shift) as usize;
-            self.shift = 0;
+            self.shift += self.order as isize;
+            self.order = 0;
             return;
         }
 
@@ -486,7 +502,7 @@ impl<F: Ring> Series<F> {
 
     /// Remove the constant term, if it is first and it exists.
     fn remove_constant(mut self) -> Self {
-        if !self.is_zero() && self.shift == 0 {
+        if self.order > 0 && self.shift == 0 {
             self.coefficients[0] = self.field.zero();
             self.truncate();
         }
@@ -503,11 +519,12 @@ impl<F: Ring> PartialEq for Series<F> {
                 return false;
             }
 
-            if self.is_zero() != other.is_zero() {
+            if self.order != other.order {
+                // TODO: compare the common orders?
                 return false;
             }
 
-            if self.is_zero() {
+            if self.order == 0 {
                 return true;
             }
 
@@ -549,13 +566,6 @@ impl<F: Ring> Add for Series<F> {
         assert_eq!(self.field, other.field);
         assert_eq!(self.variable, other.variable);
 
-        if self.is_zero() {
-            return other;
-        }
-        if other.is_zero() {
-            return self;
-        }
-
         if self.shift == other.shift && self.ramification == other.ramification {
             if self.coefficients.len() < other.coefficients.len() {
                 std::mem::swap(&mut self, &mut other);
@@ -591,16 +601,24 @@ impl<F: Ring> Add for Series<F> {
                 ramification: r,
             };
 
-            s.coefficients = vec![self.field.zero(); s.order]; // TODO: tighten bound
+            s.coefficients =
+                vec![self.field.zero(); self.coefficients.len().max(other.coefficients.len())];
             for (i, c) in self.coefficients.iter().enumerate() {
                 let index = s.get_index(self.get_exponent(i));
                 if index < s.order {
+                    if index >= s.coefficients.len() {
+                        s.coefficients.resize(index * 2, self.field.zero());
+                    }
                     s.coefficients[index] = c.clone(); // TODO: prevent copy
                 }
             }
             for (i, c) in other.coefficients.iter().enumerate() {
                 let index = s.get_index(other.get_exponent(i));
                 if index < s.order {
+                    if index >= s.coefficients.len() {
+                        s.coefficients.resize(index * 2, self.field.zero());
+                    }
+
                     s.field.add_assign(&mut s.coefficients[index], c);
                 }
             }
@@ -651,9 +669,8 @@ impl<'a, 'b, F: Ring> Mul<&'a Series<F>> for &'b Series<F> {
 
     #[inline]
     fn mul(self, rhs: &'a Series<F>) -> Self::Output {
-        if self.is_zero() || rhs.is_zero() {
-            return self.zero();
-        }
+        assert_eq!(self.field, rhs.field);
+        assert_eq!(self.variable, rhs.variable);
 
         let r = self.joint_ramification(&rhs);
         let r_d_s = r / self.ramification;
@@ -668,7 +685,8 @@ impl<'a, 'b, F: Ring> Mul<&'a Series<F>> for &'b Series<F> {
             ramification: r,
         };
 
-        res.coefficients = vec![self.field.zero(); res.order as usize];
+        res.coefficients =
+            vec![self.field.zero(); self.coefficients.len().max(rhs.coefficients.len())];
 
         for (e1, c1) in self.coefficients.iter().enumerate() {
             if F::is_zero(c1) {
@@ -682,7 +700,11 @@ impl<'a, 'b, F: Ring> Mul<&'a Series<F>> for &'b Series<F> {
 
                 if !F::is_zero(c2) {
                     let index = res.get_index(p);
-                    if index < res.coefficients.len() {
+                    if index < res.order {
+                        if index >= res.coefficients.len() {
+                            res.coefficients.resize(index * 2, self.field.zero());
+                        }
+
                         self.field
                             .add_mul_assign(&mut res.coefficients[index], c1, c2);
                     }
@@ -708,7 +730,7 @@ impl<'a, 'b> Div<&'a Series<AtomField>> for &'b Series<AtomField> {
     type Output = Series<AtomField>;
 
     fn div(self, other: &'a Series<AtomField>) -> Self::Output {
-        other.rpow((-1, 1).into()) * self
+        other.rpow((-1, 1).into()).unwrap() * self
     }
 }
 
@@ -783,7 +805,7 @@ impl Series<AtomField> {
             }
             AtomView::Var(_) => Ok(self.monomial(self.field.one(), (1, 1).into())),
             AtomView::Mul(m) => {
-                let mut shift_series = self.one();
+                let mut shift_series = self.one_inf_prec();
                 for a in m.iter() {
                     shift_series = &shift_series * &self.extract_exp_log(a, s)?;
                 }
@@ -799,11 +821,18 @@ impl Series<AtomField> {
             return Err("Cannot compute the exponential of a series with poles");
         }
 
-        if self.is_zero() {
-            return Ok(self.one());
+        if self.order == 0 {
+            return Ok(self.one_inf_prec()
+                + Series::new(
+                    &self.field,
+                    Some(1),
+                    self.variable.clone(),
+                    self.expansion_point.clone(),
+                    (self.shift as i64, 1).into(),
+                ));
         }
 
-        let c = if self.shift == 0 {
+        let c = if self.shift == 0 && self.order > 0 {
             self.coefficients[0].clone()
         } else {
             Atom::new()
@@ -814,11 +843,11 @@ impl Series<AtomField> {
 
         // split the true constant part and the x-dependent part
         let var = self.variable.to_atom() - &self.expansion_point;
-        let shift_series = self.extract_exp_log(e.as_view(), var.as_view())?;
+        let shift_series = self.extract_exp_log(e.as_view(), var.as_view())?; // FIXME: needs to be inf prec!
 
         let p = self.clone().remove_constant();
 
-        let mut r = self.one();
+        let mut r = self.one_inf_prec();
         let mut sp = p.clone();
         for i in 1..=self.order {
             let s = sp
@@ -834,8 +863,8 @@ impl Series<AtomField> {
     }
 
     pub fn log(&self) -> Result<Self, &'static str> {
-        if self.is_zero() {
-            return Err("Log yields minus infinity");
+        if self.order == 0 {
+            return Err("Log argument needs to have a coefficient");
         }
 
         // construct the log argument, which may contain x
@@ -870,8 +899,14 @@ impl Series<AtomField> {
             return Err("Cannot compute the sine of a series with poles");
         }
 
-        if self.is_zero() {
-            return Ok(self.zero());
+        if self.order == 0 {
+            return Ok(Series::new(
+                &self.field,
+                Some(1),
+                self.variable.clone(),
+                self.expansion_point.clone(),
+                (self.shift as i64, 1).into(),
+            ));
         }
 
         let c = if self.shift == 0 {
@@ -919,8 +954,15 @@ impl Series<AtomField> {
             return Err("Cannot compute the sine of a series with poles");
         }
 
-        if self.is_zero() {
-            return Ok(self.zero());
+        if self.order == 0 {
+            return Ok(self.one_inf_prec()
+                + Series::new(
+                    &self.field,
+                    Some(1),
+                    self.variable.clone(),
+                    self.expansion_point.clone(),
+                    (self.shift as i64 * 2, 1).into(),
+                ));
         }
 
         let c = if self.shift == 0 {
@@ -969,21 +1011,21 @@ impl Series<AtomField> {
     }
 
     /// Take the series to the power of a rational number.
-    pub fn rpow(&self, pow: Rational) -> Self {
+    pub fn rpow(&self, pow: Rational) -> Result<Self, &'static str> {
         if pow.is_zero() {
-            return self.one();
+            Err(
+                "Cannot raise series to the power of zero, as this generates infinite precision 1",
+            )?;
         }
 
         if pow.is_integer() && !pow.is_negative() {
-            return self.npow(pow.numerator().to_i64().unwrap() as usize);
+            return Ok(self.npow(pow.numerator().to_i64().unwrap() as usize));
         }
 
-        if pow.is_negative() && self.is_zero() {
-            panic!("Cannot invert series with a zero constant term");
-        }
+        let c = self.get_trailing_coefficient();
 
-        if self.is_zero() {
-            return self.zero();
+        if pow.is_negative() && c.is_zero() {
+            Err("Cannot invert series with a zero constant term")?;
         }
 
         let c = self.coefficients[0].clone();
@@ -1017,7 +1059,7 @@ impl Series<AtomField> {
         let shift = p.numerator().to_i64().unwrap() as isize
             * (r.ramification / p.denominator().to_i64().unwrap() as usize) as isize;
 
-        r.mul_coeff(&c.npow(pow)).mul_exp_units(shift)
+        Ok(r.mul_coeff(&c.npow(pow)).mul_exp_units(shift))
     }
 
     pub fn to_atom(&self) -> Atom {
@@ -1029,7 +1071,7 @@ impl Series<AtomField> {
     pub fn to_atom_into(&self, out: &mut Atom) {
         out.to_num(0.into());
 
-        if self.is_zero() {
+        if self.order == 0 {
             return;
         }
 

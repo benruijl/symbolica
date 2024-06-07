@@ -751,13 +751,14 @@ impl PythonPattern {
     }
 
     /// Create a transformer that series expands in `x` around `expansion_point` to depth `depth`.
-    #[pyo3(signature = (x, expansion_point, depth, depth_denom = 1))]
+    #[pyo3(signature = (x, expansion_point, depth, depth_denom = 1, depth_is_absolute = true))]
     pub fn series(
         &self,
         x: ConvertibleToExpression,
         expansion_point: ConvertibleToExpression,
         depth: i64,
         depth_denom: i64,
+        depth_is_absolute: bool,
     ) -> PyResult<PythonPattern> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
             x.get_symbol()
@@ -773,6 +774,7 @@ impl PythonPattern {
                 id,
                 expansion_point.to_expression().expr.clone(),
                 (depth, depth_denom).into(),
+                depth_is_absolute
             )
         );
     }
@@ -2693,13 +2695,14 @@ impl PythonExpression {
     /// >>> print(e)
     ///
     /// yields `f(0)+x*der(1,f(0))+1/2*x^2*(der(2,f(0))+4*y)`.
-    #[pyo3(signature = (x, expansion_point, depth, depth_denom = 1))]
+    #[pyo3(signature = (x, expansion_point, depth, depth_denom = 1, depth_is_absolute = true))]
     pub fn series(
         &self,
         x: ConvertibleToExpression,
         expansion_point: ConvertibleToExpression,
         depth: i64,
         depth_denom: i64,
+        depth_is_absolute: bool,
     ) -> PyResult<PythonSeries> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
             x.get_symbol()
@@ -2713,6 +2716,7 @@ impl PythonExpression {
             id,
             expansion_point.to_expression().expr.as_view(),
             (depth, depth_denom).into(),
+            depth_is_absolute,
         ) {
             Ok(s) => Ok(PythonSeries { series: s }),
             Err(e) => Err(exceptions::PyValueError::new_err(format!("{}", e))),
@@ -3552,7 +3556,10 @@ impl PythonSeries {
         }
 
         Ok(Self {
-            series: self.series.rpow((rhs, 1).into()),
+            series: self
+                .series
+                .rpow((rhs, 1).into())
+                .map_err(|e| exceptions::PyValueError::new_err(e))?,
         })
     }
 
@@ -3604,7 +3611,10 @@ impl PythonSeries {
 
     pub fn pow(&self, num: i64, den: i64) -> PyResult<Self> {
         Ok(Self {
-            series: self.series.rpow((num, den).into()),
+            series: self
+                .series
+                .rpow((num, den).into())
+                .map_err(|e| exceptions::PyValueError::new_err(e))?,
         })
     }
 
@@ -3632,6 +3642,15 @@ impl PythonSeries {
     /// Get the trailing exponent; the exponent of the first non-zero term.
     pub fn get_trailing_exponent(&self) -> PyResult<(i64, i64)> {
         if let Rational::Natural(n, d) = self.series.get_trailing_exponent() {
+            Ok((n, d))
+        } else {
+            Err(exceptions::PyValueError::new_err("Order is too large"))
+        }
+    }
+
+    /// Get the relative order.
+    pub fn get_relative_order(&self) -> PyResult<(i64, i64)> {
+        if let Rational::Natural(n, d) = self.series.relative_order() {
             Ok((n, d))
         } else {
             Err(exceptions::PyValueError::new_err("Order is too large"))

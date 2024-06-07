@@ -31,8 +31,10 @@ impl Atom {
         x: Symbol,
         expansion_point: AtomView,
         depth: Rational,
+        depth_is_absolute: bool,
     ) -> Result<Series<AtomField>, &'static str> {
-        self.as_view().series(x, expansion_point, depth)
+        self.as_view()
+            .series(x, expansion_point, depth, depth_is_absolute)
     }
 }
 
@@ -347,7 +349,12 @@ impl<'a> AtomView<'a> {
         x: Symbol,
         expansion_point: AtomView,
         depth: Rational,
+        depth_is_absolute: bool,
     ) -> Result<Series<AtomField>, &'static str> {
+        if !depth_is_absolute && (depth.is_negative() || depth.is_zero()) {
+            return Err("Cannot series expand to negative or zero depth");
+        }
+
         // heuristic current depth
         let mut current_depth = if depth.is_negative() || depth.is_zero() {
             Rational::one()
@@ -365,7 +372,10 @@ impl<'a> AtomView<'a> {
             );
 
             let mut series = self.series_with_ws(x, expansion_point, ws, &info)?;
-            if series.absolute_order() > depth {
+            if !depth_is_absolute && series.relative_order() >= depth {
+                series.truncate_relative_order(depth);
+                break Ok(series);
+            } else if depth_is_absolute && series.absolute_order() > depth {
                 series.truncate_absolute_order(&depth + &((1.into(), depth.denominator())).into());
                 break Ok(series);
             } else {
@@ -404,12 +414,16 @@ impl<'a> AtomView<'a> {
                     args_series.push(arg.series_with_ws(x, expansion_point, workspace, info)?);
                 }
 
+                if args_series.is_empty() {
+                    return Ok(info.constant(f.to_owned().into()));
+                }
+
                 match f.get_symbol() {
                     State::COS => args_series[0].cos(),
                     State::SIN => args_series[0].sin(),
                     State::EXP => args_series[0].exp(),
                     State::LOG => args_series[0].log(),
-                    State::SQRT => Ok(args_series[0].rpow((1, 2).into())),
+                    State::SQRT => args_series[0].rpow((1, 2).into()),
                     _ => {
                         // TODO: also check for log(x)?
                         if args_series
@@ -451,7 +465,9 @@ impl<'a> AtomView<'a> {
                                 let mut f_der = FunctionBuilder::new(State::DERIVATIVE);
                                 let mut term = info.one();
                                 for (arg, pow) in x.iter().enumerate() {
-                                    term = &term * &args_series[arg].npow(*pow as usize);
+                                    if *pow > 0 {
+                                        term = &term * &args_series[arg].npow(*pow as usize);
+                                    }
                                     f_der = f_der.add_arg(&Atom::new_num(*pow as i64));
                                 }
 
@@ -476,7 +492,8 @@ impl<'a> AtomView<'a> {
 
                 if let AtomView::Num(n) = exp {
                     if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
-                        Ok(base_series.rpow((n, d).into()))
+                        let r = base_series.rpow((n, d).into());
+                        r
                     } else {
                         unimplemented!("Cannot series expand with large exponents yet")
                     }
@@ -486,16 +503,24 @@ impl<'a> AtomView<'a> {
                 }
             }
             AtomView::Mul(args) => {
-                let mut series = info.one();
-                for arg in args.iter() {
+                let mut iter = args.iter();
+                let mut series =
+                    iter.next()
+                        .unwrap()
+                        .series_with_ws(x, expansion_point, workspace, info)?;
+                for arg in iter {
                     series = &series * &arg.series_with_ws(x, expansion_point, workspace, info)?;
                 }
 
                 Ok(series)
             }
             AtomView::Add(args) => {
-                let mut series = info.zero();
-                for arg in args.iter() {
+                let mut iter = args.iter();
+                let mut series =
+                    iter.next()
+                        .unwrap()
+                        .series_with_ws(x, expansion_point, workspace, info)?;
+                for arg in iter {
                     series = &series + &arg.series_with_ws(x, expansion_point, workspace, info)?;
                 }
 
@@ -537,10 +562,12 @@ impl Mul<&Atom> for &Series<AtomField> {
             panic!("Series variable is not a symbol");
         };
 
-        let order = self.relative_order();
         let expansion_point = self.get_expansion_point();
+        let mut current_depth = self.relative_order();
 
-        let mut current_depth = order.clone();
+        if current_depth.is_zero() {
+            current_depth = (2, 1).into();
+        }
 
         Workspace::get_local().with(|ws| loop {
             let info = Series::new(
@@ -553,12 +580,12 @@ impl Mul<&Atom> for &Series<AtomField> {
 
             let series = rhs
                 .as_view()
-                .series_with_ws(x, expansion_point.as_view(), ws, &info)?;
-            if series.relative_order() >= order {
-                return Ok(series * self);
+                .series_with_ws(x, expansion_point.as_view(), ws, &info)?
+                * self;
+            if series.relative_order() >= self.relative_order() {
+                return Ok(series);
             } else {
                 // increase the expansion depth
-                // TODO: is this ever needed?
                 current_depth = &current_depth * &2.into();
             }
         })
@@ -598,8 +625,11 @@ impl Add<&Atom> for &Series<AtomField> {
         };
 
         let expansion_point = self.get_expansion_point();
+        let mut current_depth = self.relative_order();
 
-        let mut current_depth = self.relative_order().clone();
+        if current_depth.is_zero() {
+            current_depth = (2, 1).into();
+        }
 
         Workspace::get_local().with(|ws| loop {
             let info = Series::new(
@@ -612,9 +642,10 @@ impl Add<&Atom> for &Series<AtomField> {
 
             let series = rhs
                 .as_view()
-                .series_with_ws(x, expansion_point.as_view(), ws, &info)?;
+                .series_with_ws(x, expansion_point.as_view(), ws, &info)?
+                + self.clone();
             if series.absolute_order() >= self.absolute_order() {
-                return Ok(&series + self);
+                return Ok(series);
             } else {
                 // increase the expansion depth
                 current_depth = &current_depth * &2.into();
@@ -635,7 +666,7 @@ impl Div<&Series<AtomField>> for &Atom {
     type Output = Result<Series<AtomField>, &'static str>;
 
     fn div(self, rhs: &Series<AtomField>) -> Result<Series<AtomField>, &'static str> {
-        rhs.rpow((-1, 1).into()) * self
+        rhs.rpow((-1, 1).into()).unwrap() * self
     }
 }
 
@@ -643,7 +674,7 @@ impl Div<&Series<AtomField>> for Atom {
     type Output = Result<Series<AtomField>, &'static str>;
 
     fn div(self, rhs: &Series<AtomField>) -> Result<Series<AtomField>, &'static str> {
-        rhs.rpow((-1, 1).into()) * &self
+        rhs.rpow((-1, 1).into()).unwrap() * &self
     }
 }
 
@@ -655,10 +686,12 @@ impl Div<&Atom> for &Series<AtomField> {
             panic!("Series variable is not a symbol");
         };
 
-        let order = self.relative_order();
         let expansion_point = self.get_expansion_point();
+        let mut current_depth = self.relative_order();
 
-        let mut current_depth = order.clone();
+        if current_depth.is_zero() {
+            current_depth = (2, 1).into();
+        }
 
         Workspace::get_local().with(|ws| loop {
             let info = Series::new(
@@ -669,11 +702,12 @@ impl Div<&Atom> for &Series<AtomField> {
                 current_depth.clone(),
             );
 
-            let series = rhs
-                .as_view()
-                .series_with_ws(x, expansion_point.as_view(), ws, &info)?;
-            if series.relative_order() >= order {
-                return Ok(self / &series);
+            let series = self
+                / &rhs
+                    .as_view()
+                    .series_with_ws(x, expansion_point.as_view(), ws, &info)?;
+            if series.relative_order() >= self.relative_order() {
+                return Ok(series);
             } else {
                 // increase the expansion depth
                 current_depth = &current_depth * &2.into();
@@ -746,7 +780,7 @@ mod test {
 
         let input = Atom::parse("exp(v1^2+1)*log(v1+3)/v1/(v1+1)").unwrap();
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 2.into())
+            .series(v1, Atom::new_num(0).as_view(), 2.into(), true)
             .unwrap()
             .to_atom();
 
@@ -762,7 +796,7 @@ mod test {
         let v1 = State::get_symbol("v1");
         let input = Atom::parse("1/(v1+1)").unwrap();
         let t = input
-            .series(v1, Atom::new_num(-1).as_view(), 5.into())
+            .series(v1, Atom::new_num(-1).as_view(), 5.into(), true)
             .unwrap()
             .to_atom();
 
@@ -775,7 +809,7 @@ mod test {
         let v1 = State::get_symbol("v1");
         let input = Atom::parse("(1-cos(v1))/sin(v1)").unwrap();
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 5.into())
+            .series(v1, Atom::new_num(0).as_view(), 5.into(), true)
             .unwrap()
             .to_atom();
 
@@ -788,7 +822,7 @@ mod test {
         let v1 = State::get_symbol("v1");
         let input = Atom::parse("log(v1)*(1+v1)").unwrap();
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into())
+            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
             .unwrap()
             .to_atom();
 
@@ -801,7 +835,7 @@ mod test {
         let v1 = State::get_symbol("v1");
         let input = Atom::parse("(v1^3+v1+1)^(1/2)").unwrap();
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into())
+            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
             .unwrap()
             .to_atom();
 
@@ -815,10 +849,10 @@ mod test {
         let input = Atom::parse("1/v1^5").unwrap();
 
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 3.into())
+            .series(v1, Atom::new_num(0).as_view(), 3.into(), true)
             .unwrap();
 
-        let t2 = t.rpow((1, 3).into());
+        let t2 = t.rpow((1, 3).into()).unwrap();
 
         assert_eq!(t2.absolute_order(), (22, 3).into());
     }
@@ -829,7 +863,7 @@ mod test {
 
         let input = Atom::parse("1/v1^2+1/v1+v1").unwrap();
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 0.into())
+            .series(v1, Atom::new_num(0).as_view(), 0.into(), true)
             .unwrap();
 
         assert_eq!(t.to_atom().expand(), Atom::parse("v1^-2+v1^-1").unwrap());
@@ -841,7 +875,7 @@ mod test {
         let input = Atom::parse("1/(v1^10+v1^20)").unwrap();
 
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), (-1).into())
+            .series(v1, Atom::new_num(0).as_view(), (-1).into(), true)
             .unwrap()
             .to_atom();
 
@@ -854,7 +888,7 @@ mod test {
 
         let input = Atom::parse("f(exp(v1),sin(v1))").unwrap();
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 2.into())
+            .series(v1, Atom::new_num(0).as_view(), 2.into(), true)
             .unwrap()
             .to_atom();
 
@@ -872,7 +906,7 @@ mod test {
 
         let input = Atom::parse("1+2*log(v1^4)").unwrap();
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into())
+            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
             .unwrap()
             .exp()
             .unwrap();
@@ -881,21 +915,20 @@ mod test {
     }
 
     #[test]
-    fn series_mul_atom() {
+    fn series_sub_atom() {
         let v1 = State::get_symbol("v1");
 
         let input = Atom::parse("1/(1-v1)").unwrap();
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into())
+            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
             .unwrap();
 
-        let r = (t * &Atom::parse("1/v1+1").unwrap()).unwrap();
+        let r = (t - &Atom::parse("1/v1+1").unwrap()).unwrap();
 
-        assert_eq!(r.absolute_order(), (4, 1).into());
-
+        assert_eq!(r.absolute_order(), (5, 1).into());
         assert_eq!(
             r.to_atom(),
-            Atom::parse("2*v1+v1^-1+2*v1^2+2*v1^3+2").unwrap()
+            Atom::parse("-1*v1^-1+v1+v1^2+v1^3+v1^4").unwrap()
         );
     }
 
@@ -905,13 +938,79 @@ mod test {
 
         let input = Atom::parse("v1").unwrap();
         let t = input
-            .series(v1, Atom::new_num(0).as_view(), 4.into())
+            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
             .unwrap();
 
-        let r = (t / &Atom::parse("v1+1").unwrap()).unwrap();
+        let r = ((t / &Atom::parse("exp(v1)-1").unwrap()).unwrap() * &Atom::parse("v1").unwrap())
+            .unwrap();
 
+        assert_eq!(r.relative_order(), (4, 1).into());
+        assert_eq!(r.to_atom(), Atom::parse("v1+-1/2*v1^2+1/12*v1^3").unwrap());
+    }
+
+    #[test]
+    fn series_relative_order() {
+        let v1 = State::get_symbol("v1");
+
+        let input = Atom::parse("exp(v1)/v1-1/6*v1^2").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 4.into(), false)
+            .unwrap();
+
+        assert_eq!(t.relative_order(), (4, 1).into());
+        assert_eq!(t.to_atom(), Atom::parse("v1^-1+1+1/2*v1").unwrap());
+    }
+
+    #[test]
+    fn series_truncate() {
+        let v1 = State::get_symbol("v1");
+
+        let input = Atom::parse("v1^10").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
+            .unwrap();
+        assert_eq!(t.absolute_order(), (10, 1).into());
+        assert_eq!(t.relative_order(), (0, 1).into());
+        assert_eq!(t.to_atom(), Atom::parse("0").unwrap());
+
+        let r = (&t * &input).unwrap();
+        assert_eq!(r.absolute_order(), (20, 1).into());
+    }
+
+    #[test]
+    fn series_empty() {
+        let v1 = State::get_symbol("v1");
+
+        let input = Atom::parse("v1").unwrap();
+        let t = input
+            .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
+            .unwrap();
+
+        let r = &t - &t;
+
+        let t2 = Atom::parse("v1^6")
+            .unwrap()
+            .series(v1, Atom::new_num(0).as_view(), 4.into(), false)
+            .unwrap();
+
+        let x = (&r + &Atom::parse("v1^6").unwrap()).unwrap();
         assert_eq!(r.absolute_order(), (5, 1).into());
 
-        assert_eq!(r.to_atom(), Atom::parse("v1-v1^2+v1^3-v1^4").unwrap());
+        let c = x.cos().unwrap();
+        assert_eq!(c.absolute_order(), (10, 1).into());
+        assert_eq!(c.relative_order(), (10, 1).into());
+
+        let s = x.sin().unwrap();
+        assert_eq!(s.absolute_order(), (5, 1).into());
+        assert_eq!(s.relative_order(), (5, 1).into());
+
+        let e = x.exp().unwrap();
+        assert_eq!(e.absolute_order(), (5, 1).into());
+        assert_eq!(e.relative_order(), (5, 1).into());
+
+        let add = &r + &t2;
+        assert_eq!(add.absolute_order(), (5, 1).into());
+        let mul = &r * &t2;
+        assert_eq!(mul.absolute_order(), (11, 1).into());
     }
 }

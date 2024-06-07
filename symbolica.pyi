@@ -741,6 +741,7 @@ class Expression:
         expansion_point: Expression | int,
         depth: int,
         depth_denom: int = 1,
+        depth_is_absolute: bool = True
     ) -> Series:
         """Series expand in `x` around `expansion_point` to depth `depth`."""
 
@@ -1302,6 +1303,7 @@ class Transformer:
         expansion_point: Expression,
         depth: int,
         depth_denom: int = 1,
+        depth_is_absolute: bool = True
     ) -> Transformer:
         """Create a transformer that series expands in `x` around `expansion_point` to depth `depth`.
 
@@ -1548,6 +1550,9 @@ class Series:
 
     def get_trailing_exponent(self) -> Tuple[int, int]:
         """Get the trailing exponent; the exponent of the first non-zero term."""
+
+    def get_relative_order(self) -> Tuple[int, int]:
+        """Get the relative order."""
 
     def get_absolute_order(self) -> Tuple[int, int]:
         """Get the absolute order."""

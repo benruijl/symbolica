@@ -379,6 +379,12 @@ class Expression:
         transformations can be applied.
         """
 
+    def to_float(self, decimal_prec: int) -> Expression:
+        """Convert all coefficients to floats, with a given decimal precision."""
+
+    def float_to_rat(self, max_denominator: int) -> Expression:
+        """Convert all floating point coefficients to rationals, with a given maximal denominator."""
+
     def req_len(self, min_length: int, max_length: int | None) -> PatternRestriction:
         """
         Create a pattern restriction based on the wildcard length before downcasting.

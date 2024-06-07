@@ -388,7 +388,7 @@ impl Token {
                     Ok(f) => {
                         // derive precision from string length, should be overestimate
                         out.to_num(Coefficient::Float(
-                            f.complete((n.len() as f64 * LOG2_10).ceil() as u32),
+                            f.complete(((n.len() as f64 * LOG2_10).ceil() as u32).max(53)),
                         ));
                     }
                     Err(e) => Err(format!("Error parsing number: {}", e))?,

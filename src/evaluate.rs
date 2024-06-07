@@ -68,8 +68,9 @@ impl<'a> AtomView<'a> {
             AtomView::Num(n) => match n.get_coeff_view() {
                 CoefficientView::Natural(n, d) => coeff_map(&Rational::Natural(n, d)),
                 CoefficientView::Large(l) => coeff_map(&Rational::Large(l.to_rat())),
-                CoefficientView::Float(_) => {
-                    unimplemented!("Float not yet supported for evaluation")
+                CoefficientView::Float(f) => {
+                    // TODO: converting back to rational is slow
+                    coeff_map(&Rational::from_large(f.to_float().to_rational().unwrap()))
                 }
                 CoefficientView::FiniteField(_, _) => {
                     unimplemented!("Finite field not yet supported for evaluation")

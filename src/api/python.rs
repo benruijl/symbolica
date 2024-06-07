@@ -1204,6 +1204,21 @@ impl<'a> FromPyObject<'a> for Variable {
     }
 }
 
+impl<'a> FromPyObject<'a> for Integer {
+    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+        if let Ok(num) = ob.extract::<i64>() {
+            Ok(num.into())
+        } else if let Ok(num) = ob.extract::<&PyLong>() {
+            let a = format!("{}", num);
+            Ok(Integer::from_large(
+                rug::Integer::parse(&a).unwrap().complete(),
+            ))
+        } else {
+            Err(exceptions::PyValueError::new_err("Not a valid integer"))
+        }
+    }
+}
+
 pub struct ConvertibleToExpression(PythonExpression);
 
 impl ConvertibleToExpression {
@@ -1973,6 +1988,16 @@ impl PythonExpression {
                 slice.len(),
             )))
         }
+    }
+
+    /// Convert all coefficients to floats, with a given decimal precision.
+    pub fn to_float(&self, decimal_prec: u32) -> PythonExpression {
+        self.expr.to_float(decimal_prec).into()
+    }
+
+    /// Convert all floating point coefficients to rationals, with a given maximal denominator.
+    pub fn float_to_rat(&self, max_denominator: Integer) -> PythonExpression {
+        self.expr.float_to_rat(&max_denominator).into()
     }
 
     /// Create a pattern restriction based on the wildcard length before downcasting.

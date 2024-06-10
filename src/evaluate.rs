@@ -209,7 +209,7 @@ mod test {
         let mut const_map = HashMap::default();
 
         let v = Atom::new_var(x);
-        const_map.insert(v.as_view(), rug::Float::with_val(200, 6));
+        const_map.insert(v.as_view(), rug::Float::with_val(200, 6).into());
 
         let r = a.evaluate(
             |r| r.to_multi_prec_float(200),

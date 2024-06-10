@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 use crate::{
     atom::{Atom, AtomView, Fun, Symbol},
     coefficient::{Coefficient, CoefficientView},
-    domains::{integer::Z, rational::Q},
+    domains::{float::Real, integer::Z, rational::Q},
     poly::Variable,
     state::{RecycledAtom, State, Workspace},
 };
@@ -892,7 +892,7 @@ impl<'a> AtomView<'a> {
                                     return;
                                 }
                                 State::LOG => {
-                                    let r = f.to_float().ln();
+                                    let r = f.to_float().log();
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }

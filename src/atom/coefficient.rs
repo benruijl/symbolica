@@ -162,7 +162,7 @@ impl PackedRationalNumberWriter for Coefficient {
                 dest.put_u8(FLOAT);
 
                 // TODO: improve serialization
-                let s = f.to_string_radix(16, None);
+                let s = f.serialize();
                 dest.put_u64_le(s.len() as u64 + 4);
                 dest.put_u32_le(f.prec());
                 dest.write_all(s.as_bytes()).unwrap();
@@ -253,7 +253,7 @@ impl PackedRationalNumberWriter for Coefficient {
                 }
             },
             Coefficient::Float(f) => {
-                let s = f.to_string_radix(16, None);
+                let s = f.serialize();
                 1 + 8 + 4 + s.len() as u64
             }
             Coefficient::FiniteField(m, i) => 2 + (m.0, i.0 as u64).get_packed_size(),

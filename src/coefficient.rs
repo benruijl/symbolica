@@ -20,7 +20,7 @@ use crate::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
         },
-        float::Float,
+        float::{Float, NumericalFloatComparison, Real},
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, RationalField},
         rational_polynomial::RationalPolynomial,
@@ -293,7 +293,10 @@ impl<'a> SerializedFloat<'a> {
     pub fn to_float(&self) -> Float {
         let mut d = self.0;
         let prec = d.get_u32_le();
-        Float::parse_radix(&d, 16).unwrap().complete(prec)
+        rug::Float::parse_radix(&d, 16)
+            .unwrap()
+            .complete(prec)
+            .into()
     }
 }
 
@@ -536,7 +539,7 @@ impl CoefficientView<'_> {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    f.pow(Rational::new(n2, d2).to_multi_prec_float(p)).into(),
+                    f.powf(Rational::new(n2, d2).to_multi_prec_float(p)).into(),
                     Coefficient::one(),
                 )
             }
@@ -544,7 +547,7 @@ impl CoefficientView<'_> {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    f.pow(Rational::from_large(r.to_rat()).to_multi_prec_float(p))
+                    f.powf(Rational::from_large(r.to_rat()).to_multi_prec_float(p))
                         .into(),
                     Coefficient::one(),
                 )
@@ -553,7 +556,7 @@ impl CoefficientView<'_> {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    Rational::new(n2, d2).to_multi_prec_float(p).pow(f).into(),
+                    Rational::new(n2, d2).to_multi_prec_float(p).powf(f).into(),
                     Coefficient::one(),
                 )
             }
@@ -563,13 +566,13 @@ impl CoefficientView<'_> {
                 (
                     Rational::from_large(r.to_rat())
                         .to_multi_prec_float(p)
-                        .pow(f)
+                        .powf(f)
                         .into(),
                     Coefficient::one(),
                 )
             }
             (&CoefficientView::Float(f1), &CoefficientView::Float(f2)) => {
-                (f1.to_float().pow(f2.to_float()).into(), Coefficient::one())
+                (f1.to_float().powf(f2.to_float()).into(), Coefficient::one())
             }
             _ => {
                 unimplemented!(
@@ -1180,12 +1183,11 @@ impl<'a> AtomView<'a> {
         let mut a = Atom::new();
         self.map_coefficient_into(
             |c| match c {
-                CoefficientView::Float(f) => {
-                    let r = f.to_float().to_rational().unwrap();
-                    Rational::from_large(r)
-                        .truncate_denominator(max_denominator)
-                        .into()
-                }
+                CoefficientView::Float(f) => f
+                    .to_float()
+                    .to_rational()
+                    .truncate_denominator(max_denominator)
+                    .into(),
                 _ => c.to_owned(),
             },
             &mut a,
@@ -1353,7 +1355,7 @@ mod test {
         );
         assert_eq!(
             r,
-            "1.5707963267948966192313216916397514420985846996875529104874722*x+21.472450421034925"
+            "1.5707963267948966192313216916397514420985846996875529104874722*x+21.472450421034924682062764237715547275896106906504257500510430"
         );
     }
 

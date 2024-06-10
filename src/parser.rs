@@ -1,7 +1,7 @@
-use std::{f64::consts::LOG2_10, fmt::Write, string::String, sync::Arc};
+use std::{fmt::Write, string::String, sync::Arc};
 
 use bytes::Buf;
-use rug::{ops::CompleteRound, Integer as MultiPrecisionInteger};
+use rug::Integer as MultiPrecisionInteger;
 
 use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
@@ -384,12 +384,10 @@ impl Token {
                 Ok(x) => {
                     out.to_num(x.into());
                 }
-                Err(_) => match Float::parse(n) {
+                Err(_) => match Float::parse(n, None) {
                     Ok(f) => {
                         // derive precision from string length, should be overestimate
-                        out.to_num(Coefficient::Float(
-                            f.complete(((n.len() as f64 * LOG2_10).ceil() as u32).max(53)),
-                        ));
+                        out.to_num(Coefficient::Float(f));
                     }
                     Err(e) => Err(format!("Error parsing number: {}", e))?,
                 },
@@ -490,12 +488,9 @@ impl Token {
                 Ok(x) => {
                     out.to_num(x.into());
                 }
-                Err(_) => match Float::parse(n) {
+                Err(_) => match Float::parse(n, None) {
                     Ok(f) => {
-                        // derive precision from string length, should be overestimate
-                        out.to_num(Coefficient::Float(
-                            f.complete((n.len() as f64 * LOG2_10).ceil() as u32),
-                        ));
+                        out.to_num(Coefficient::Float(f));
                     }
                     Err(e) => Err(format!("Error parsing number: {}", e))?,
                 },

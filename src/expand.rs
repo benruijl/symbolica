@@ -107,7 +107,7 @@ impl<'a> AtomView<'a> {
                 if let AtomView::Add(a) = new_base.as_view() {
                     // expand (a+b+c+..)^n
                     let mut args: SmallVec<[AtomView; 10]> = SmallVec::with_capacity(a.get_nargs());
-                    for arg in a.iter() {
+                    for arg in a {
                         args.push(arg);
                     }
 
@@ -184,7 +184,7 @@ impl<'a> AtomView<'a> {
                         exp_h.to_num((num as i64).into());
                     }
 
-                    for arg in m.iter() {
+                    for arg in m {
                         let mut pow_h = workspace.new_atom();
                         pow_h.to_pow(arg, exp_h.as_view());
                         mul.extend(pow_h.as_view());
@@ -207,7 +207,7 @@ impl<'a> AtomView<'a> {
                 let mut sum: SmallVec<[RecycledAtom; 10]> = SmallVec::new();
                 let mut new_sum: SmallVec<[RecycledAtom; 10]> = SmallVec::new();
 
-                for arg in m.iter() {
+                for arg in m {
                     let mut new_arg = workspace.new_atom();
                     changed |= arg.expand_with_ws_into(workspace, var, &mut new_arg);
 
@@ -215,7 +215,7 @@ impl<'a> AtomView<'a> {
                     if let AtomView::Add(a) = new_arg.as_view() {
                         changed = true;
 
-                        for child in a.iter() {
+                        for child in a {
                             for s in &sum {
                                 let mut b = workspace.new_atom();
                                 b.set_from_view(&s.as_view());
@@ -282,7 +282,7 @@ impl<'a> AtomView<'a> {
                 let add = out.to_add();
 
                 let mut new_arg = workspace.new_atom();
-                for arg in a.iter() {
+                for arg in a {
                     changed |= arg.expand_no_norm(workspace, var, &mut new_arg);
                     add.extend(new_arg.as_view());
                 }

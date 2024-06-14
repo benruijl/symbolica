@@ -806,7 +806,7 @@ impl Series<AtomField> {
             AtomView::Var(_) => Ok(self.monomial(self.field.one(), (1, 1).into())),
             AtomView::Mul(m) => {
                 let mut shift_series = self.one_inf_prec();
-                for a in m.iter() {
+                for a in m {
                     shift_series = &shift_series * &self.extract_exp_log(a, s)?;
                 }
 

@@ -850,7 +850,7 @@ impl<'a> AtomView<'a> {
                 let mut changed = false;
 
                 let mut arg_o = workspace.new_atom();
-                for arg in m.iter() {
+                for arg in m {
                     changed |= arg.set_coefficient_ring_with_ws_into(vars, workspace, &mut arg_o);
                     mul.extend(arg_o.as_view());
                 }
@@ -872,7 +872,7 @@ impl<'a> AtomView<'a> {
                 let mut changed = false;
 
                 let mut arg_o = workspace.new_atom();
-                for arg in a.iter() {
+                for arg in a {
                     changed |= arg.set_coefficient_ring_with_ws_into(vars, workspace, &mut arg_o);
                     mul.extend(arg_o.as_view());
                 }

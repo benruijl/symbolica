@@ -101,7 +101,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 let mut args = Vec::with_capacity(f.get_nargs());
-                for arg in f.iter() {
+                for arg in f {
                     args.push(arg.evaluate(coeff_map, const_map, function_map, cache));
                 }
 

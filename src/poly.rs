@@ -581,7 +581,7 @@ impl<'a> AtomView<'a> {
         ) -> Result<(), &'static str> {
             match term {
                 AtomView::Mul(m) => {
-                    for factor in m.iter() {
+                    for factor in m {
                         check_factor(&factor, vars, allow_new_vars)?;
                     }
                     Ok(())
@@ -595,7 +595,7 @@ impl<'a> AtomView<'a> {
         let mut n_terms = 0;
         match self {
             AtomView::Add(a) => {
-                for term in a.iter() {
+                for term in a {
                     check_term(&term, &mut vars, allow_new_vars)?;
                     n_terms += 1;
                 }
@@ -664,7 +664,7 @@ impl<'a> AtomView<'a> {
 
             match term {
                 AtomView::Mul(m) => {
-                    for factor in m.iter() {
+                    for factor in m {
                         parse_factor(&factor, vars, &mut coefficient, &mut exponents, field);
                     }
                 }
@@ -679,7 +679,7 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Add(a) => {
-                for term in a.iter() {
+                for term in a {
                     parse_term(&term, &vars, &mut poly, field);
                 }
             }
@@ -780,7 +780,7 @@ impl<'a> AtomView<'a> {
             AtomView::Mul(m) => {
                 let mut r =
                     MultivariatePolynomial::new(field, None, var_map.clone()).constant(field.one());
-                for arg in m.iter() {
+                for arg in m {
                     let mut arg_r = arg.to_polynomial_impl(field, &r.variables);
                     r.unify_variables(&mut arg_r);
                     r = &r * &arg_r;
@@ -789,7 +789,7 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Add(a) => {
                 let mut r = MultivariatePolynomial::new(field, None, var_map.clone());
-                for arg in a.iter() {
+                for arg in a {
                     let mut arg_r = arg.to_polynomial_impl(field, &r.variables);
                     r.unify_variables(&mut arg_r);
                     r = &r + &arg_r;
@@ -926,7 +926,7 @@ impl<'a> AtomView<'a> {
             AtomView::Mul(m) => {
                 let mut r = RationalPolynomial::new(out_field, var_map.clone());
                 r.numerator = r.numerator.add_constant(out_field.one());
-                for arg in m.iter() {
+                for arg in m {
                     let mut arg_r = arg.to_rational_polynomial_impl(
                         workspace,
                         field,
@@ -940,7 +940,7 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Add(a) => {
                 let mut r = RationalPolynomial::new(out_field, var_map.clone());
-                for arg in a.iter() {
+                for arg in a {
                     let mut arg_r = arg.to_rational_polynomial_impl(
                         workspace,
                         field,
@@ -1081,7 +1081,7 @@ impl<'a> AtomView<'a> {
                 let mut r = FactorizedRationalPolynomial::new(out_field, var_map.clone());
                 r.numerator = r.numerator.add_constant(out_field.one());
                 r.numer_coeff = out_field.one();
-                for arg in m.iter() {
+                for arg in m {
                     let mut arg_r = arg.to_factorized_rational_polynomial_impl(
                         workspace,
                         field,
@@ -1095,7 +1095,7 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Add(a) => {
                 let mut r = FactorizedRationalPolynomial::new(out_field, var_map.clone());
-                for arg in a.iter() {
+                for arg in a {
                     let mut arg_r = arg.to_factorized_rational_polynomial_impl(
                         workspace,
                         field,

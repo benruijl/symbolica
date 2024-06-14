@@ -321,7 +321,7 @@ impl<'a> AtomView<'a> {
             let aaa = aa.to_add();
 
             let mut changed = false;
-            for a in a.iter() {
+            for a in a {
                 if a.simplify_exp_log(ws, out) {
                     changed = true;
                     m.extend(out.as_view());
@@ -848,7 +848,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 let mut handle = workspace.new_atom();
-                for a in f.iter() {
+                for a in f {
                     if a.needs_normalization() {
                         a.normalize(workspace, &mut handle);
                         add_arg(out_f, handle.as_view());
@@ -971,7 +971,7 @@ impl<'a> AtomView<'a> {
                                     let mut stripped = workspace.new_atom();
                                     let mul = stripped.to_mul();
 
-                                    for a in m.iter() {
+                                    for a in m {
                                         if let AtomView::Num(n) = a {
                                             coeff = coeff * n.get_coeff_view().to_owned();
                                         } else {
@@ -1157,7 +1157,7 @@ impl<'a> AtomView<'a> {
                             if exp_num.is_integer() {
                                 let mut mul_h = workspace.new_atom();
                                 let mul = mul_h.to_mul();
-                                for arg in m.iter() {
+                                for arg in m {
                                     let mut pow_h = workspace.new_atom();
                                     pow_h.to_pow(arg, exp_handle.as_view());
                                     mul.extend(pow_h.as_view());
@@ -1180,7 +1180,7 @@ impl<'a> AtomView<'a> {
                 let mut atom_sort_buf: SmallVec<[_; 20]> = SmallVec::new();
 
                 let mut norm_arg = workspace.new_atom();
-                for a in a.iter() {
+                for a in a {
                     let r = if a.needs_normalization() {
                         // TODO: if a is a nested addition, prevent a sort
                         a.normalize(workspace, &mut norm_arg);

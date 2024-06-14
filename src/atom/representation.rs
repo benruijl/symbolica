@@ -941,6 +941,26 @@ impl<'a, 'b> PartialEq<FunView<'b>> for FunView<'a> {
     }
 }
 
+impl<'a> IntoIterator for FunView<'a> {
+    type Item = AtomView<'a>;
+    type IntoIter = ListIterator<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &FunView<'a> {
+    type Item = AtomView<'a>;
+    type IntoIter = ListIterator<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl<'a> FunView<'a> {
     pub fn to_owned(&self) -> Fun {
         Fun::from_view_into(self, Vec::new())
@@ -1191,6 +1211,26 @@ impl<'a, 'b> PartialEq<MulView<'b>> for MulView<'a> {
     }
 }
 
+impl<'a> IntoIterator for MulView<'a> {
+    type Item = AtomView<'a>;
+    type IntoIter = ListIterator<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &MulView<'a> {
+    type Item = AtomView<'a>;
+    type IntoIter = ListIterator<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl<'a> MulView<'a> {
     #[inline]
     pub fn to_owned(&self) -> Mul {
@@ -1272,6 +1312,26 @@ impl<'a, 'b> PartialEq<AddView<'b>> for AddView<'a> {
     #[inline]
     fn eq(&self, other: &AddView<'b>) -> bool {
         self.data == other.data
+    }
+}
+
+impl<'a> IntoIterator for AddView<'a> {
+    type Item = AtomView<'a>;
+    type IntoIter = ListIterator<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &AddView<'a> {
+    type Item = AtomView<'a>;
+    type IntoIter = ListIterator<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
@@ -1421,7 +1481,7 @@ impl<'a> AtomView<'a> {
                     let nf = out.to_fun(*s);
 
                     let mut na = ws.new_atom();
-                    for a in f.iter() {
+                    for a in f {
                         a.rename_no_norm(state_map, ws, &mut na);
                         nf.add_arg(na.as_view());
                     }
@@ -1443,7 +1503,7 @@ impl<'a> AtomView<'a> {
                 let nm = out.to_mul();
 
                 let mut na = ws.new_atom();
-                for a in m.iter() {
+                for a in m {
                     a.rename_no_norm(state_map, ws, &mut na);
                     nm.extend(na.as_view());
                 }
@@ -1452,7 +1512,7 @@ impl<'a> AtomView<'a> {
                 let nm = out.to_add();
 
                 let mut na = ws.new_atom();
-                for a in add.iter() {
+                for a in add {
                     a.rename_no_norm(state_map, ws, &mut na);
                     nm.extend(na.as_view());
                 }

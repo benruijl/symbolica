@@ -136,7 +136,7 @@ impl<'a> AtomView<'a> {
                 if include_function_symbols {
                     out.insert(f.get_symbol());
                 }
-                for arg in f.iter() {
+                for arg in f {
                     arg.get_all_symbols_impl(include_function_symbols, out);
                 }
             }
@@ -146,12 +146,12 @@ impl<'a> AtomView<'a> {
                 exp.get_all_symbols_impl(include_function_symbols, out);
             }
             AtomView::Mul(m) => {
-                for child in m.iter() {
+                for child in m {
                     child.get_all_symbols_impl(include_function_symbols, out);
                 }
             }
             AtomView::Add(a) => {
-                for child in a.iter() {
+                for child in a {
                     child.get_all_symbols_impl(include_function_symbols, out);
                 }
             }
@@ -171,7 +171,7 @@ impl<'a> AtomView<'a> {
             match c {
                 AtomView::Num(_) | AtomView::Var(_) => {}
                 AtomView::Fun(f) => {
-                    for arg in f.iter() {
+                    for arg in f {
                         stack.push(arg);
                     }
                 }
@@ -181,12 +181,12 @@ impl<'a> AtomView<'a> {
                     stack.push(exp);
                 }
                 AtomView::Mul(m) => {
-                    for child in m.iter() {
+                    for child in m {
                         stack.push(child);
                     }
                 }
                 AtomView::Add(a) => {
-                    for child in a.iter() {
+                    for child in a {
                         stack.push(child);
                     }
                 }
@@ -212,7 +212,7 @@ impl<'a> AtomView<'a> {
                     if f.get_symbol() == s {
                         return true;
                     }
-                    for arg in f.iter() {
+                    for arg in f {
                         stack.push(arg);
                     }
                 }
@@ -222,12 +222,12 @@ impl<'a> AtomView<'a> {
                     stack.push(exp);
                 }
                 AtomView::Mul(m) => {
-                    for child in m.iter() {
+                    for child in m {
                         stack.push(child);
                     }
                 }
                 AtomView::Add(a) => {
-                    for child in a.iter() {
+                    for child in a {
                         stack.push(child);
                     }
                 }
@@ -381,7 +381,7 @@ impl<'a> AtomView<'a> {
                 let mut submatch = false;
 
                 let mut child_buf = workspace.new_atom();
-                for child in f.iter() {
+                for child in f {
                     submatch |= child.replace_all_no_norm(
                         replacements,
                         workspace,
@@ -426,7 +426,7 @@ impl<'a> AtomView<'a> {
 
                 let mut submatch = false;
                 let mut child_buf = workspace.new_atom();
-                for child in m.iter() {
+                for child in m {
                     submatch |= child.replace_all_no_norm(
                         replacements,
                         workspace,
@@ -446,7 +446,7 @@ impl<'a> AtomView<'a> {
                 let out = out.to_add();
                 let mut submatch = false;
                 let mut child_buf = workspace.new_atom();
-                for child in a.iter() {
+                for child in a {
                     submatch |= child.replace_all_no_norm(
                         replacements,
                         workspace,
@@ -728,7 +728,7 @@ impl Pattern {
                     return true;
                 }
 
-                for arg in f.iter() {
+                for arg in f {
                     if Self::has_wildcard(arg) {
                         return true;
                     }
@@ -741,7 +741,7 @@ impl Pattern {
                 Self::has_wildcard(base) || Self::has_wildcard(exp)
             }
             AtomView::Mul(m) => {
-                for child in m.iter() {
+                for child in m {
                     if Self::has_wildcard(child) {
                         return true;
                     }
@@ -749,7 +749,7 @@ impl Pattern {
                 false
             }
             AtomView::Add(a) => {
-                for child in a.iter() {
+                for child in a {
                     if Self::has_wildcard(child) {
                         return true;
                     }
@@ -771,7 +771,7 @@ impl Pattern {
                     let name = f.get_symbol();
 
                     let mut args = Vec::with_capacity(f.get_nargs());
-                    for arg in f.iter() {
+                    for arg in f {
                         args.push(Self::from_view(arg, false));
                     }
 
@@ -788,7 +788,7 @@ impl Pattern {
                 AtomView::Mul(m) => {
                     let mut args = Vec::with_capacity(m.get_nargs());
 
-                    for child in m.iter() {
+                    for child in m {
                         args.push(Self::from_view(child, false));
                     }
 
@@ -796,7 +796,7 @@ impl Pattern {
                 }
                 AtomView::Add(a) => {
                     let mut args = Vec::with_capacity(a.get_nargs());
-                    for child in a.iter() {
+                    for child in a {
                         args.push(Self::from_view(child, false));
                     }
 
@@ -2059,14 +2059,14 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                     match self.target.get(w.indices[0] as usize) {
                                         AtomView::Mul(m) => Match::Multiple(SliceType::Mul, {
                                             let mut v = Vec::new();
-                                            for x in m.iter() {
+                                            for x in m {
                                                 v.push(x);
                                             }
                                             v
                                         }),
                                         AtomView::Add(a) => Match::Multiple(SliceType::Add, {
                                             let mut v = Vec::new();
-                                            for x in a.iter() {
+                                            for x in a {
                                                 v.push(x);
                                             }
                                             v

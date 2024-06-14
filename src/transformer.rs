@@ -195,7 +195,7 @@ impl Transformer {
                             let ff = ff.to_fun(State::ARG);
 
                             let mut a = workspace.new_atom();
-                            for arg in f.iter() {
+                            for arg in f {
                                 Self::execute(arg, t, workspace, &mut a)?;
                                 ff.add_arg(a.as_view());
                             }
@@ -252,7 +252,7 @@ impl Transformer {
                             let mut mul_h = workspace.new_atom();
                             let mul = mul_h.to_mul();
 
-                            for arg in f.iter() {
+                            for arg in f {
                                 mul.extend(arg);
                             }
 
@@ -269,7 +269,7 @@ impl Transformer {
                             let mut add_h = workspace.new_atom();
                             let add = add_h.to_add();
 
-                            for arg in f.iter() {
+                            for arg in f {
                                 add.extend(arg);
                             }
 
@@ -299,7 +299,7 @@ impl Transformer {
                         let mut arg_h = workspace.new_atom();
                         let arg = arg_h.to_fun(State::ARG);
 
-                        for factor in m.iter() {
+                        for factor in m {
                             arg.add_arg(factor);
                         }
 
@@ -310,7 +310,7 @@ impl Transformer {
                         let mut arg_h = workspace.new_atom();
                         let arg = arg_h.to_fun(State::ARG);
 
-                        for summand in a.iter() {
+                        for summand in a {
                             arg.add_arg(summand);
                         }
 

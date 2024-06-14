@@ -346,10 +346,12 @@ where
             .map(|v| variables.iter().position(|vv| vv == v))
             .collect();
 
-        for e in self.denominator.exponents_iter() {
-            for (c, p) in index_mask.iter().zip(e) {
-                if c.is_some() && *p > E::zero() {
-                    return Err("Not a polynomial");
+        if self.denominator.nvars() > 0 {
+            for e in self.denominator.exponents_iter() {
+                for (c, p) in index_mask.iter().zip(e) {
+                    if c.is_some() && *p > E::zero() {
+                        return Err("Not a polynomial");
+                    }
                 }
             }
         }

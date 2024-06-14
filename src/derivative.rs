@@ -410,7 +410,7 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Fun(f) => {
                 let mut args_series = Vec::with_capacity(f.get_nargs());
-                for arg in f.iter() {
+                for arg in f {
                     args_series.push(arg.series_with_ws(x, expansion_point, workspace, info)?);
                 }
 

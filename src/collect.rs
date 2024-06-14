@@ -210,7 +210,7 @@ impl<'a> AtomView<'a> {
 
         match expanded.as_view() {
             AtomView::Add(a) => {
-                for arg in a.iter() {
+                for arg in a {
                     arg.collect_factor_list(x, workspace, &mut h, &mut rest_add)
                 }
             }
@@ -281,7 +281,7 @@ impl<'a> AtomView<'a> {
                     // we then only collect on the first hit
                     let mut bracket = None;
 
-                    for a in m.iter() {
+                    for a in m {
                         if bracket.is_none() && a.has_key(x) {
                             bracket = Some(a);
                         } else {
@@ -335,7 +335,7 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Add(a) => {
-                for arg in a.iter() {
+                for arg in a {
                     arg.collect_factor(x, workspace, &mut coeff_add)
                 }
             }
@@ -359,7 +359,7 @@ impl<'a> AtomView<'a> {
                     // we then only collect on the first hit
                     let mut bracket = None;
 
-                    for a in m.iter() {
+                    for a in m {
                         if bracket.is_none() && a == x {
                             bracket = Some(a);
                         } else {
@@ -381,7 +381,7 @@ impl<'a> AtomView<'a> {
                     let mut collected = workspace.new_atom();
                     let mul = collected.to_mul();
 
-                    for xx in m.iter() {
+                    for xx in m {
                         if !y.iter().any(|a| a == xx) {
                             mul.extend(xx);
                         }
@@ -474,7 +474,7 @@ impl<'a> AtomView<'a> {
                 let mut den_changed = vec![];
                 let mut rest = vec![];
 
-                for a in m.iter() {
+                for a in m {
                     if let AtomView::Pow(p) = a {
                         let (b, e) = p.get_base_exp();
                         if let AtomView::Num(n) = e {
@@ -570,7 +570,7 @@ impl<'a> AtomView<'a> {
 
                 let mut changed = false;
                 let mut tmp = ws.new_atom();
-                for arg in a.iter() {
+                for arg in a {
                     if arg.cancel_with_ws_into(ws, &mut tmp) {
                         changed = true;
                         add_view.extend(tmp.as_view());

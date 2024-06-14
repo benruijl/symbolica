@@ -108,6 +108,10 @@ impl<R: Ring> AlgebraicNumber<R> {
                 .map_coeff(|c| c.to_finite_field(field), field.clone()),
         }
     }
+
+    pub fn into_poly(self) -> MultivariatePolynomial<R, u8> {
+        self.poly
+    }
 }
 
 impl<R: Ring> Ring for AlgebraicNumberRing<R> {

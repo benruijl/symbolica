@@ -587,14 +587,37 @@ impl Float {
         self.0.set_prec(prec);
     }
 
-    /// Parse a float from a string. If `prec` is `None`, the precision is derived from the string, with
-    /// a minimum of 53 bits (f64 precision).
-    pub fn parse(s: &str, prec: Option<u32>) -> Result<Self, rug::float::ParseFloatError> {
+    /// Parse a float from a string.
+    /// Precision can be specified by a trailing backtick followed by the precision.
+    /// For example: ```1.234`20``` for a precision of 20 decimal digits.
+    /// The precision is allowed to be a floating point number.
+    ///  If `prec` is `None` and no precision is specified, the precision is derived from the string, with
+    /// a minimum of 53 bits (`f64` precision).
+    pub fn parse(s: &str, prec: Option<u32>) -> Result<Self, String> {
         if let Some(prec) = prec {
-            return Ok(Float(MultiPrecisionFloat::parse(s)?.complete(prec)));
+            Ok(Float(
+                MultiPrecisionFloat::parse(s)
+                    .map_err(|e| e.to_string())?
+                    .complete(prec),
+            ))
+        } else if let Some((f, p)) = s.split_once('`') {
+            let prec = (p
+                .parse::<f64>()
+                .map_err(|e| format!("Invalid precision: {}", e))?
+                * LOG2_10)
+                .ceil() as u32;
+            Ok(Float(
+                MultiPrecisionFloat::parse(f)
+                    .map_err(|e| e.to_string())?
+                    .complete(prec),
+            ))
         } else {
             let prec = ((s.len() as f64 * LOG2_10).ceil() as u32).max(53);
-            Ok(Float(MultiPrecisionFloat::parse(s)?.complete(prec)))
+            Ok(Float(
+                MultiPrecisionFloat::parse(s)
+                    .map_err(|e| e.to_string())?
+                    .complete(prec),
+            ))
         }
     }
 

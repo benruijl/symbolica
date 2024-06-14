@@ -708,7 +708,7 @@ impl Token {
                         let digit_is_exp = c == 'e' || c == 'E';
 
                         if c != '_' && c != ' ' {
-                            if !digit_is_exp && !last_digit_is_exp && c != '.' {
+                            if !digit_is_exp && !last_digit_is_exp && c != '.' && c != '`' {
                                 break;
                             }
 
@@ -1324,13 +1324,16 @@ mod test {
 
     #[test]
     fn float() {
-        let input = Atom::parse("1.2x+1e-5+1e+5 1.1234e23 +2exp(5)").unwrap();
+        let input = Atom::parse("1.2`20x+1e-5`20+1e+5 1.1234e23 +2exp(5)").unwrap();
 
         let r = format!(
             "{}",
             AtomPrinter::new_with_options(input.as_view(), PrintOptions::file())
         );
-        assert_eq!(r, "1.2000000000000000*x+2*exp(5)+1.1234000000000000e28");
+        assert_eq!(
+            r,
+            "1.200000000000000000003*x+2*exp(5)+1.123400000000000019270e28"
+        );
     }
 
     #[test]

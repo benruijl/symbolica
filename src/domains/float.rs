@@ -38,7 +38,7 @@ pub trait NumericalFloatLike:
     + MulAssign<Self>
     + DivAssign<Self>
 {
-    fn mul_add(&self, a: &Self, a: &Self) -> Self;
+    fn mul_add(&self, a: &Self, b: &Self) -> Self;
     fn neg(&self) -> Self;
     fn norm(&self) -> Self;
     fn zero(&self) -> Self;
@@ -1609,10 +1609,77 @@ pub struct Complex<T: Real> {
     pub im: T,
 }
 
+impl<T: ConstructibleFloat+Real> ConstructibleFloat for Complex<T>{
+    fn new_from_i64(a: i64) -> Self {
+        Complex { re: T::new_from_i64(a), im: T::new_zero() }
+    }
+
+    fn new_from_usize(a: usize) -> Self {
+        Complex { re: T::new_from_usize(a), im: T::new_zero() }
+    }
+
+    fn new_one() -> Self {
+        Complex { re: T::new_one(), im: T::new_zero() }
+    }
+
+    fn new_sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self {
+        Complex { re: T::new_sample_unit(rng), im: T::new_zero() }
+    }
+}
 impl<T: Real> Complex<T> {
     #[inline]
     pub fn new(re: T, im: T) -> Complex<T> {
         Complex { re, im }
+    }
+
+    #[inline]
+    pub fn new_zero() -> Self
+    where
+        T: ConstructibleFloat,
+    {
+        Complex {
+            re: T::new_zero(),
+            im: T::new_zero(),
+        }
+    }
+
+    #[inline]
+    pub fn new_i() -> Self
+    where
+        T: ConstructibleFloat,
+    {
+        Complex {
+            re: T::new_zero(),
+            im: T::new_one(),
+        }
+    }
+
+    #[inline]
+    pub fn one(&self) -> Self {
+        Complex {
+            re: self.re.one(),
+            im: self.im.zero(),
+        }
+    }
+
+    #[inline]
+    pub fn conj(&self) -> Self {
+        Complex {
+            re: self.re.clone(),
+            im: -self.im.clone(),
+        }
+    }
+
+    #[inline]
+    pub fn zero(&self) -> Self {
+        Complex {
+            re: self.re.zero(),
+            im: self.im.zero(),
+        }
+    }
+
+    pub fn is_zero(&self) -> bool where T: NumericalFloatComparison{
+        self.re.is_zero() && self.im.is_zero()
     }
 
     #[inline]
@@ -1653,6 +1720,15 @@ impl<T: Real> Add<Complex<T>> for Complex<T> {
     }
 }
 
+impl<T: Real> Add<T> for Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn add(self, rhs: T) -> Self::Output {
+        Complex::new(self.re + rhs, self.im)
+    }
+}
+
 impl<T: Real> Add<&Complex<T>> for Complex<T> {
     type Output = Self;
 
@@ -1662,11 +1738,29 @@ impl<T: Real> Add<&Complex<T>> for Complex<T> {
     }
 }
 
+impl<T: Real> Add<&T> for Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn add(self, rhs: &T) -> Self::Output {
+        Complex::new(self.re + rhs, self.im)
+    }
+}
+
 impl<'a, 'b, T: Real> Add<&'a Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
     fn add(self, rhs: &'a Complex<T>) -> Self::Output {
+        self.clone() + rhs
+    }
+}
+
+impl<'a, T: Real> Add<&T> for &'a Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn add(self, rhs: &T) -> Self::Output {
         self.clone() + rhs
     }
 }
@@ -1680,10 +1774,26 @@ impl<'b, T: Real> Add<Complex<T>> for &'b Complex<T> {
     }
 }
 
+impl<'b, T: Real> Add<T> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn add(self, rhs: T) -> Self::Output {
+        self.clone() + rhs
+    }
+}
+
 impl<T: Real> AddAssign for Complex<T> {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
         self.add_assign(&rhs)
+    }
+}
+
+impl<T: Real> AddAssign<T> for Complex<T> {
+    #[inline]
+    fn add_assign(&mut self, rhs: T) {
+        self.re += rhs;
     }
 }
 
@@ -1692,6 +1802,13 @@ impl<T: Real> AddAssign<&Complex<T>> for Complex<T> {
     fn add_assign(&mut self, rhs: &Self) {
         self.re += &rhs.re;
         self.im += &rhs.im;
+    }
+}
+
+impl<T: Real> AddAssign<&T> for Complex<T> {
+    #[inline]
+    fn add_assign(&mut self, rhs: &T) {
+        self.re += rhs;
     }
 }
 
@@ -1704,6 +1821,15 @@ impl<T: Real> Sub for Complex<T> {
     }
 }
 
+impl<T: Real> Sub<T> for Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn sub(self, rhs: T) -> Self::Output {
+        Complex::new(self.re - rhs, self.im)
+    }
+}
+
 impl<T: Real> Sub<&Complex<T>> for Complex<T> {
     type Output = Self;
 
@@ -1713,11 +1839,29 @@ impl<T: Real> Sub<&Complex<T>> for Complex<T> {
     }
 }
 
+impl<T: Real> Sub<&T> for Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn sub(self, rhs: &T) -> Self::Output {
+        Complex::new(self.re - rhs, self.im)
+    }
+}
+
 impl<'a, 'b, T: Real> Sub<&'a Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
     fn sub(self, rhs: &'a Complex<T>) -> Self::Output {
+        self.clone() - rhs
+    }
+}
+
+impl<'a, T: Real> Sub<&T> for &'a Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn sub(self, rhs: &T) -> Self::Output {
         self.clone() - rhs
     }
 }
@@ -1731,10 +1875,26 @@ impl<'b, T: Real> Sub<Complex<T>> for &'b Complex<T> {
     }
 }
 
+impl<'b, T: Real> Sub<T> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn sub(self, rhs: T) -> Self::Output {
+        self.clone() - rhs
+    }
+}
+
 impl<T: Real> SubAssign for Complex<T> {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
         self.sub_assign(&rhs)
+    }
+}
+
+impl<T: Real> SubAssign<T> for Complex<T> {
+    #[inline]
+    fn sub_assign(&mut self, rhs: T) {
+        self.re -= rhs;
     }
 }
 
@@ -1746,12 +1906,28 @@ impl<T: Real> SubAssign<&Complex<T>> for Complex<T> {
     }
 }
 
+impl<T: Real> SubAssign<&T> for Complex<T> {
+    #[inline]
+    fn sub_assign(&mut self, rhs: &T) {
+        self.re -= rhs;
+    }
+}
+
 impl<T: Real> Mul for Complex<T> {
     type Output = Self;
 
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
         self.mul(&rhs)
+    }
+}
+
+impl<T: Real> Mul<T> for Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn mul(self, rhs: T) -> Self::Output {
+        Complex::new(self.re * &rhs, self.im * &rhs)
     }
 }
 
@@ -1767,11 +1943,29 @@ impl<T: Real> Mul<&Complex<T>> for Complex<T> {
     }
 }
 
+impl<T: Real> Mul<&T> for Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn mul(self, rhs: &T) -> Self::Output {
+        Complex::new(self.re * rhs, self.im * rhs)
+    }
+}
+
 impl<'a, 'b, T: Real> Mul<&'a Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
     fn mul(self, rhs: &'a Complex<T>) -> Self::Output {
+        self.clone() * rhs
+    }
+}
+
+impl<'a, T: Real> Mul<&T> for &'a Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn mul(self, rhs: &T) -> Self::Output {
         self.clone() * rhs
     }
 }
@@ -1785,9 +1979,25 @@ impl<'b, T: Real> Mul<Complex<T>> for &'b Complex<T> {
     }
 }
 
+impl<'b, T: Real> Mul<T> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn mul(self, rhs: T) -> Self::Output {
+        self.clone() * rhs
+    }
+}
+
 impl<T: Real> MulAssign for Complex<T> {
     #[inline]
     fn mul_assign(&mut self, rhs: Self) {
+        *self = self.clone().mul(rhs);
+    }
+}
+
+impl<T: Real> MulAssign<T> for Complex<T> {
+    #[inline]
+    fn mul_assign(&mut self, rhs: T) {
         *self = self.clone().mul(rhs);
     }
 }
@@ -1799,12 +2009,28 @@ impl<T: Real> MulAssign<&Complex<T>> for Complex<T> {
     }
 }
 
+impl<T: Real> MulAssign<&T> for Complex<T> {
+    #[inline]
+    fn mul_assign(&mut self, rhs: &T) {
+        *self = self.clone().mul(rhs);
+    }
+}
+
 impl<T: Real> Div for Complex<T> {
     type Output = Self;
 
     #[inline]
     fn div(self, rhs: Self) -> Self::Output {
         self.div(&rhs)
+    }
+}
+
+impl<T: Real> Div<T> for Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn div(self, rhs: T) -> Self::Output {
+        Complex::new(self.re / &rhs, self.im / &rhs)
     }
 }
 
@@ -1820,11 +2046,29 @@ impl<T: Real> Div<&Complex<T>> for Complex<T> {
     }
 }
 
+impl<T: Real> Div<&T> for Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn div(self, rhs: &T) -> Self::Output {
+        Complex::new(self.re / rhs, self.im / rhs)
+    }
+}
+
 impl<'a, 'b, T: Real> Div<&'a Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
     fn div(self, rhs: &'a Complex<T>) -> Self::Output {
+        self.clone() / rhs
+    }
+}
+
+impl<'a, T: Real> Div<&T> for &'a Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn div(self, rhs: &T) -> Self::Output {
         self.clone() / rhs
     }
 }
@@ -1838,14 +2082,35 @@ impl<'b, T: Real> Div<Complex<T>> for &'b Complex<T> {
     }
 }
 
+impl<'b, T: Real> Div<T> for &'b Complex<T> {
+    type Output = Complex<T>;
+
+    #[inline]
+    fn div(self, rhs: T) -> Self::Output {
+        self.clone() / rhs
+    }
+}
+
 impl<T: Real> DivAssign for Complex<T> {
     fn div_assign(&mut self, rhs: Self) {
         *self = self.clone().div(rhs);
     }
 }
 
+impl<T: Real> DivAssign<T> for Complex<T> {
+    fn div_assign(&mut self, rhs: T) {
+        *self = self.clone().div(rhs);
+    }
+}
+
 impl<T: Real> DivAssign<&Complex<T>> for Complex<T> {
     fn div_assign(&mut self, rhs: &Self) {
+        *self = self.clone().div(rhs);
+    }
+}
+
+impl<T: Real> DivAssign<&T> for Complex<T> {
+    fn div_assign(&mut self, rhs: &T) {
         *self = self.clone().div(rhs);
     }
 }

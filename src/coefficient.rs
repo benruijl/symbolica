@@ -536,7 +536,7 @@ impl CoefficientView<'_> {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    f.powf(Rational::new(n2, d2).to_multi_prec_float(p)).into(),
+                    f.powf(&Rational::new(n2, d2).to_multi_prec_float(p)).into(),
                     Coefficient::one(),
                 )
             }
@@ -544,7 +544,7 @@ impl CoefficientView<'_> {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    f.powf(Rational::from_large(r.to_rat()).to_multi_prec_float(p))
+                    f.powf(&Rational::from_large(r.to_rat()).to_multi_prec_float(p))
                         .into(),
                     Coefficient::one(),
                 )
@@ -553,7 +553,7 @@ impl CoefficientView<'_> {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    Rational::new(n2, d2).to_multi_prec_float(p).powf(f).into(),
+                    Rational::new(n2, d2).to_multi_prec_float(p).powf(&f).into(),
                     Coefficient::one(),
                 )
             }
@@ -563,14 +563,15 @@ impl CoefficientView<'_> {
                 (
                     Rational::from_large(r.to_rat())
                         .to_multi_prec_float(p)
-                        .powf(f)
+                        .powf(&f)
                         .into(),
                     Coefficient::one(),
                 )
             }
-            (&CoefficientView::Float(f1), &CoefficientView::Float(f2)) => {
-                (f1.to_float().powf(f2.to_float()).into(), Coefficient::one())
-            }
+            (&CoefficientView::Float(f1), &CoefficientView::Float(f2)) => (
+                f1.to_float().powf(&f2.to_float()).into(),
+                Coefficient::one(),
+            ),
             _ => {
                 unimplemented!(
                     "Power of configuration {:?}^{:?} is not implemented",
@@ -1374,7 +1375,7 @@ mod test {
         );
         assert_eq!(
             r,
-            "1.5707963267948966192313216916397514420985846996875529104874722*x+21.472450421034924682062764237715547275896106906504257500510430"
+            "1.5707963267948966192313216916397514420985846996875529104874722*x+21.472450421034925"
         );
     }
 

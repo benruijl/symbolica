@@ -263,7 +263,7 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> StatisticsA
         } else if v.abs() >= 1e6 || v.abs() < 1e-5 {
             // exponential notation for large |self.mean|
             let exponent = v.abs().log10().floor();
-            let fac = 10.0.powf(exponent);
+            let fac = 10.0.powf(&exponent);
             let mantissa = Self::format_uncertainty_impl(v / fac, dv / fac);
             let e = format!("{:.0e}", fac);
             let mut ee = e.split('e');
@@ -965,7 +965,7 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> ContinuousD
             } else if *bi == T::new_zero() {
                 T::new_zero()
             } else {
-                ((*bi / sum - T::new_one()) / (*bi / sum).log()).powf(learning_rate)
+                ((*bi / sum - T::new_one()) / (*bi / sum).log()).powf(&learning_rate)
             };
             *bi = m;
             imp_sum += m;

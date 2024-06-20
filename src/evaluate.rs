@@ -134,7 +134,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 let e_eval = e.evaluate(coeff_map, const_map, function_map, cache);
-                b_eval.powf(e_eval)
+                b_eval.powf(&e_eval)
             }
             AtomView::Mul(m) => {
                 let mut it = m.iter();

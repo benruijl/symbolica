@@ -168,6 +168,18 @@ impl Atom {
         a.read(source)?;
         Ok(a.as_view().rename(state_map))
     }
+
+    pub(crate) unsafe fn from_raw(raw: RawAtom) -> Self {
+        match raw[0] & TYPE_MASK {
+            NUM_ID => Atom::Num(Num::from_raw(raw)),
+            VAR_ID => Atom::Var(Var::from_raw(raw)),
+            FUN_ID => Atom::Fun(Fun::from_raw(raw)),
+            MUL_ID => Atom::Mul(Mul::from_raw(raw)),
+            ADD_ID => Atom::Add(Add::from_raw(raw)),
+            POW_ID => Atom::Pow(Pow::from_raw(raw)),
+            _ => unreachable!("Unknown type {}", raw[0]),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

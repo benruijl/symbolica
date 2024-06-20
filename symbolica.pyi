@@ -236,6 +236,9 @@ class Expression:
             If the input is not a valid Symbolica expression.
         """
 
+    def __new__(cls) -> Expression:
+        """Create a new expression that represents 0."""
+
     def __copy__(self) -> Expression:
         """
         Copy the expression.
@@ -618,10 +621,11 @@ class Expression:
     def map(
         self,
         transformations: Transformer,
+        n_cores: Optional[int] = 1,
     ) -> Expression:
         """
         Map the transformations to every term in the expression.
-        The execution happen in parallel.
+        The execution happens in parallel.
 
 
         No new functions or variables can be defined and no new

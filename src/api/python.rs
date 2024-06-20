@@ -1618,6 +1618,30 @@ impl PythonExpression {
         Ok(e.into())
     }
 
+    /// Create a new expression that represents 0.
+    #[new]
+    pub fn __new__() -> PythonExpression {
+        Atom::new().into()
+    }
+
+    /// Construct an expression from a serialized state.
+    pub fn __setstate__(&mut self, state: Vec<u8>) -> PyResult<()> {
+        unsafe {
+            self.expr = Atom::from_raw(state);
+        }
+        Ok(())
+    }
+
+    /// Get a serialized version of the expression.
+    pub fn __getstate__(&self) -> PyResult<Vec<u8>> {
+        Ok(self.expr.clone().into_raw())
+    }
+
+    /// Get the default positional arguments for `__new__`.
+    pub fn __getnewargs__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyTuple> {
+        Ok(PyTuple::empty(py))
+    }
+
     /// Copy the expression.
     pub fn __copy__(&self) -> PythonExpression {
         self.expr.clone().into()

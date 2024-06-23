@@ -1163,17 +1163,12 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             }
 
             Ok(ConvertibleToExpression(
-                Atom::new_num(rug::Float::with_val(53, f)).into(),
+                Atom::new_num(Float::with_val(53, f)).into(),
             ))
         } else if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
             let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
             Ok(ConvertibleToExpression(
-                Atom::new_num(
-                    Float::parse(a)
-                        .unwrap()
-                        .complete((a.len() as f64 * LOG2_10).ceil() as u32),
-                )
-                .into(),
+                Atom::new_num(Float::parse(a, Some(a.len() as u32)).unwrap()).into(),
             ))
         } else {
             Err(exceptions::PyValueError::new_err(
@@ -1558,7 +1553,7 @@ impl PythonExpression {
                 r = r.truncate_denominator(&(max_denom as u64).into());
                 Ok(Atom::new_num(r).into())
             } else {
-                Ok(Atom::new_num(rug::Float::with_val(53, f)).into())
+                Ok(Atom::new_num(Float::with_val(53, f)).into())
             }
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
             Ok(Atom::new_num(f.0.clone()).into())

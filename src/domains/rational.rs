@@ -399,6 +399,61 @@ impl Rational {
         }
     }
 
+    /// Round the rational to the one with the smallest numerator or denominator in the interval
+    /// `[self * (1-relative_error), self * (1+relative_error)]`, where
+    /// `0 < relative_error < 1`.
+    pub fn round(&self, relative_error: &Rational) -> Rational {
+        if self.is_negative() {
+            self.round_in_interval(
+                self.clone() * (Rational::one() + relative_error),
+                self.clone() * (Rational::one() - relative_error),
+            )
+        } else {
+            self.round_in_interval(
+                self.clone() * (Rational::one() - relative_error),
+                self.clone() * (Rational::one() + relative_error),
+            )
+        }
+    }
+
+    /// Round the rational to the one with the smallest numerator or denominator in the interval
+    /// `[l, u]`, where `l < u`.
+    pub fn round_in_interval(&self, mut l: Rational, mut u: Rational) -> Rational {
+        assert!(l < u);
+
+        let mut flip = false;
+        if l.is_negative() && u.is_negative() {
+            flip = true;
+            (l, u) = (-u, -l);
+        } else if l.is_negative() {
+            return Rational::zero();
+        }
+
+        // use continued fractions to find the best approximation in an interval
+        let (mut ln, mut ld) = (l.numerator(), l.denominator());
+        let (mut un, mut ud) = (u.numerator(), u.denominator());
+
+        // h1/k1 accumulates the shared continued fraction terms of l and u
+        let (mut h1, mut h0, mut k1, mut k0): (Integer, Integer, Integer, Integer) =
+            (1.into(), 0.into(), 0.into(), 1.into());
+
+        loop {
+            let a = &(&ln - &1.into()) / &ld; // get next term in continued fraction
+            (ld, ud, ln, un) = (&un - &a * &ud, &ln - &a * &ld, ud, ld); // subtract and invert
+            (h1, h0) = (&a * &h1 + &h0, h1);
+            (k1, k0) = (&a * &k1 + &k0, k1);
+            if ln <= ld {
+                let res: Rational = (h1 + &h0, k1 + &k0).into();
+
+                if flip {
+                    return -res;
+                } else {
+                    return res;
+                }
+            }
+        }
+    }
+
     /// Reconstruct a rational number `q` from a value `v` in a prime field `p`,
     /// such that `q ≡ v mod p`.
     ///
@@ -966,5 +1021,37 @@ impl DivAssign<Rational> for Rational {
 impl<'a> std::iter::Sum<&'a Self> for Rational {
     fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
         iter.fold(Rational::zero(), |a, b| a + b)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::domains::rational::Rational;
+
+    #[test]
+    fn rounding() {
+        let r = Rational::new(11, 10);
+        let res = r.round_in_interval(Rational::new(1, 1), Rational::new(12, 10));
+        assert_eq!(res, Rational::new(1, 1));
+
+        let r = Rational::new(11, 10);
+        let res = r.round_in_interval(Rational::new(2, 1), Rational::new(3, 1));
+        assert_eq!(res, Rational::new(2, 1));
+
+        let r = Rational::new(503, 1500);
+        let res = r.round(&Rational::new(1, 10));
+        assert_eq!(res, Rational::new(1, 3));
+
+        let r = Rational::new(-503, 1500);
+        let res = r.round(&Rational::new(1, 10));
+        assert_eq!(res, Rational::new(-1, 3));
+
+        let r = crate::domains::float::Float::from(rug::Float::with_val(
+            1000,
+            rug::float::Constant::Pi,
+        ))
+        .to_rational();
+        let res = r.round(&Rational::new(1, 100000000));
+        assert_eq!(res, (93343, 29712).into());
     }
 }

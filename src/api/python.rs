@@ -1157,24 +1157,13 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             let a = format!("{}", num);
             let i = Integer::from_large(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(Atom::new_num(i).into()))
-        } else if let Ok(f) = ob.extract::<f64>() {
-            if !f.is_finite() {
-                return Err(exceptions::PyValueError::new_err("Number must be finite"));
-            }
-
-            Ok(ConvertibleToExpression(
-                Atom::new_num(rug::Float::with_val(53, f)).into(),
+        } else if let Ok(_) = ob.extract::<&str>() {
+            // disallow direct string conversion
+            Err(exceptions::PyValueError::new_err(
+                "Cannot convert to expression",
             ))
-        } else if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
-            let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
-            Ok(ConvertibleToExpression(
-                Atom::new_num(
-                    Float::parse(a)
-                        .unwrap()
-                        .complete((a.len() as f64 * LOG2_10).ceil() as u32),
-                )
-                .into(),
-            ))
+        } else if let Ok(f) = ob.extract::<PythonMultiPrecisionFloat>() {
+            Ok(ConvertibleToExpression(Atom::new_num(f.0).into()))
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Cannot convert to expression",
@@ -1263,11 +1252,32 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
         if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
             let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
-            Ok(Float::parse(a, Some(a.len() as u32)).unwrap().into())
+
+            // get the number of accurate digits
+            let digits = a
+                .chars()
+                .skip_while(|x| *x == '.' || *x == '0')
+                .take_while(|x| x.is_ascii_digit())
+                .count();
+
+            Ok(Float::parse(
+                a,
+                Some((digits as f64 * std::f64::consts::LOG2_10).ceil() as u32),
+            )
+            .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
+            .into())
         } else if let Ok(a) = ob.extract::<&str>() {
-            Ok(Float::parse(a, None).unwrap().into())
+            Ok(Float::parse(a, None)
+                .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
+                .into())
         } else if let Ok(a) = ob.extract::<f64>() {
-            Ok(Float::with_val(53, a).into())
+            if a.is_finite() {
+                Ok(Float::with_val(53, a).into())
+            } else {
+                Err(exceptions::PyValueError::new_err(
+                    "Floating point number is not finite",
+                ))
+            }
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Not a valid multi-precision float",
@@ -1522,9 +1532,9 @@ impl PythonExpression {
         Ok(result)
     }
 
-    /// Create a new Symbolica number from an int, a float, or a string.
+    /// Create a new Symbolica number from an int, a float, a Decimal, or a string.
     /// A floating point number is kept as a float with the same precision as the input,
-    /// but it can also be truncated by specifying the maximal denominator value.
+    /// but it can also be converted to the smallest rational number given a `relative_error`.
     ///
     /// Examples
     /// --------
@@ -1533,37 +1543,33 @@ impl PythonExpression {
     /// 1/2
     ///
     /// >>> print(Expression.num(1/3))
-    /// >>> print(Expression.num(0.33, 5))
+    /// >>> print(Expression.num(0.33, 0.1))
+    /// >>> print(Expression.num('0.333`3'))
+    /// >>> print(Expression.num(Decimal('0.1234')))
     /// 3.3333333333333331e-1
     /// 1/3
+    /// 3.33e-1
+    /// 1.2340e-1
     #[classmethod]
     pub fn num(
         _cls: &PyType,
         py: Python,
         num: PyObject,
-        max_denom: Option<usize>,
+        relative_error: Option<f64>,
     ) -> PyResult<PythonExpression> {
         if let Ok(num) = num.extract::<i64>(py) {
             Ok(Atom::new_num(num).into())
         } else if let Ok(num) = num.extract::<&PyLong>(py) {
             let a = format!("{}", num);
             PythonExpression::parse(_cls, &a)
-        } else if let Ok(f) = num.extract::<f64>(py) {
-            if !f.is_finite() {
-                return Err(exceptions::PyValueError::new_err("Number must be finite"));
-            }
-
-            if let Some(max_denom) = max_denom {
-                let mut r: Rational = f.into();
-                r = r.truncate_denominator(&(max_denom as u64).into());
+        } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
+            if let Some(relative_error) = relative_error {
+                let mut r: Rational = f.0.into();
+                r = r.round(&relative_error.into()).into();
                 Ok(Atom::new_num(r).into())
             } else {
-                Ok(Atom::new_num(rug::Float::with_val(53, f)).into())
+                Ok(Atom::new_num(f.0).into())
             }
-        } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
-            Ok(Atom::new_num(f.0.clone()).into())
-        } else if let Ok(a) = num.extract::<&str>(py) {
-            PythonExpression::parse(_cls, a)
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid number"))
         }
@@ -2008,14 +2014,25 @@ impl PythonExpression {
         }
     }
 
-    /// Convert all coefficients to floats, with a given decimal precision.
-    pub fn to_float(&self, decimal_prec: u32) -> PythonExpression {
-        self.expr.to_float(decimal_prec).into()
+    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
+    pub fn coefficients_to_float(&self, decimal_prec: u32) -> PythonExpression {
+        self.expr.coefficients_to_float(decimal_prec).into()
     }
 
-    /// Convert all floating point coefficients to rationals, with a given maximal denominator.
-    pub fn float_to_rat(&self, max_denominator: Integer) -> PythonExpression {
-        self.expr.float_to_rat(&max_denominator).into()
+    /// Map all floating point and rational coefficients to the best rational approximation
+    /// in the interval `[self*(1-relative_error),self*(1+relative_error)]`.
+    pub fn rationalize_coefficients(&self, relative_error: f64) -> PyResult<PythonExpression> {
+        if relative_error <= 0. || relative_error > 1. {
+            return Err(exceptions::PyValueError::new_err(
+                "Relative error must be between 0 and 1",
+            ));
+        }
+
+        Ok(self
+            .expr
+            .rationalize_coefficients(&relative_error.into())
+            .into())
     }
 
     /// Create a pattern restriction based on the wildcard length before downcasting.

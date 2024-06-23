@@ -193,10 +193,10 @@ class Expression:
         """
 
     @classmethod
-    def num(_cls, num: int | float | str | Decimal, max_denom: Optional[int] = None) -> Expression:
+    def num(_cls, num: int | float | str | Decimal, relative_error: Optional[float] = None) -> Expression:
         """Create a new Symbolica number from an int, a float, or a string.
         A floating point number is kept as a float with the same precision as the input,
-        but it can also be truncated by specifying the maximal denominator value.
+        but it can also be converted to the smallest rational number given a `relative_error`.
 
         Examples
         --------
@@ -205,9 +205,13 @@ class Expression:
         1/2
 
         >>> print(Expression.num(1/3))
-        >>> print(Expression.num(0.33, 5))
+        >>> print(Expression.num(0.33, 0.1))
+        >>> print(Expression.num('0.333`3'))
+        >>> print(Expression.num(Decimal('0.1234')))
         3.3333333333333331e-1
         1/3
+        3.33e-1
+        1.2340e-1
         """
 
     @classmethod
@@ -382,11 +386,13 @@ class Expression:
         transformations can be applied.
         """
 
-    def to_float(self, decimal_prec: int) -> Expression:
-        """Convert all coefficients to floats, with a given decimal precision."""
+    def coefficients_to_float(self, decimal_prec: int) -> Expression:
+        """Convert all coefficients to floats with a given precision `decimal_prec``.
+        The precision of floating point coefficients in the input will be truncated to `decimal_prec`."""
 
-    def float_to_rat(self, max_denominator: int) -> Expression:
-        """Convert all floating point coefficients to rationals, with a given maximal denominator."""
+    def rationalize_coefficients(self, relative_error: float) -> Expression:
+        """Map all floating point and rational coefficients to the best rational approximation
+        in the interval `[self*(1-relative_error),self*(1+relative_error)]`."""
 
     def req_len(self, min_length: int, max_length: int | None) -> PatternRestriction:
         """
@@ -1305,7 +1311,7 @@ class Transformer:
     def series(
         self,
         x: Expression,
-        expansion_point: Expression,
+        expansion_point: Expression | int | float | Decimal,
         depth: int,
         depth_denom: int = 1,
         depth_is_absolute: bool = True

@@ -1,5 +1,5 @@
 use std::{
-    f64::consts::LOG2_10,
+    f64::consts::{LOG10_2, LOG2_10},
     fmt::{self, Debug, Display, Formatter, LowerExp, Write},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -338,13 +338,32 @@ impl Debug for Float {
 
 impl Display for Float {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(&self.0, f)
+        // print only the significant digits
+        // the original float value may not be reconstructible
+        // from this output
+        if f.precision().is_none() {
+            f.write_fmt(format_args!(
+                "{0:.1$}",
+                self.0,
+                (self.0.prec() as f64 * LOG10_2).floor() as usize
+            ))
+        } else {
+            Display::fmt(&self.0, f)
+        }
     }
 }
 
 impl LowerExp for Float {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        LowerExp::fmt(&self.0, f)
+        if f.precision().is_none() {
+            f.write_fmt(format_args!(
+                "{0:.1$e}",
+                self.0,
+                (self.0.prec() as f64 * LOG10_2).floor() as usize
+            ))
+        } else {
+            LowerExp::fmt(&self.0, f)
+        }
     }
 }
 
@@ -799,6 +818,10 @@ impl Float {
         self.0.set_prec(prec);
     }
 
+    pub fn is_finite(&self) -> bool {
+        self.0.is_finite()
+    }
+
     /// Parse a float from a string.
     /// Precision can be specified by a trailing backtick followed by the precision.
     /// For example: ```1.234`20``` for a precision of 20 decimal digits.
@@ -824,7 +847,14 @@ impl Float {
                     .complete(prec),
             ))
         } else {
-            let prec = ((s.len() as f64 * LOG2_10).ceil() as u32).max(53);
+            // get the number of accurate digits
+            let digits = s
+                .chars()
+                .skip_while(|x| *x == '.' || *x == '0')
+                .take_while(|x| x.is_ascii_digit())
+                .count();
+
+            let prec = ((digits as f64 * LOG2_10).ceil() as u32).max(53);
             Ok(Float(
                 MultiPrecisionFloat::parse(s)
                     .map_err(|e| e.to_string())?
@@ -1855,6 +1885,12 @@ macro_rules! simd_impl {
 
 simd_impl!(f64x2, pow_f64x2);
 simd_impl!(f64x4, pow_f64x4);
+
+impl From<Float> for Rational {
+    fn from(value: Float) -> Self {
+        value.to_rational()
+    }
+}
 
 impl LowerExp for Rational {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

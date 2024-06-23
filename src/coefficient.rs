@@ -859,21 +859,39 @@ impl Atom {
         self.as_view().set_coefficient_ring(vars)
     }
 
-    /// Convert all coefficients to floats with a given precision.
-    pub fn to_float(&self, decimal_prec: u32) -> Atom {
+    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
+    pub fn coefficients_to_float(&self, decimal_prec: u32) -> Atom {
         let mut a = Atom::new();
-        self.as_view().to_float_into(decimal_prec, &mut a);
+        self.as_view()
+            .coefficients_to_float_into(decimal_prec, &mut a);
         a
     }
 
-    /// Convert all coefficients to floats with a given precision.
-    pub fn to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
-        self.as_view().to_float_into(decimal_prec, out);
+    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
+    pub fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
+        self.as_view().coefficients_to_float_into(decimal_prec, out);
     }
 
-    /// Map all floating point coefficients to rational numbers, using a given maximum denominator.
-    pub fn float_to_rat(&self, max_denominator: &Integer) -> Atom {
-        self.as_view().float_to_rat(max_denominator)
+    /// Map all coefficients using a given function.
+    pub fn map_coefficient<F: Fn(CoefficientView) -> Coefficient + Copy>(&self, f: F) -> Atom {
+        self.as_view().map_coefficient(f)
+    }
+
+    /// Map all coefficients using a given function.
+    pub fn map_coefficient_into<F: Fn(CoefficientView) -> Coefficient + Copy>(
+        &self,
+        f: F,
+        out: &mut Atom,
+    ) {
+        self.as_view().map_coefficient_into(f, out);
+    }
+
+    /// Map all floating point and rational coefficients to the best rational approximation
+    /// in the interval `[self*(1-relative_error),self*(1+relative_error)]`.
+    pub fn rationalize_coefficients(&self, relative_error: &Rational) -> Atom {
+        self.as_view().rationalize_coefficients(relative_error)
     }
 }
 
@@ -1052,15 +1070,16 @@ impl<'a> AtomView<'a> {
         }
     }
 
-    /// Convert all coefficients to floats with a given precision.
-    pub fn to_float(&self, decimal_prec: u32) -> Atom {
+    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
+    pub fn coefficients_to_float(&self, decimal_prec: u32) -> Atom {
         let mut a = Atom::new();
-        self.to_float_into(decimal_prec, &mut a);
+        self.coefficients_to_float_into(decimal_prec, &mut a);
         a
     }
-
-    /// Convert all coefficients to floats with a given precision.
-    pub fn to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
+    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
+    pub fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
         let binary_prec = (decimal_prec as f64 * LOG2_10).ceil() as u32;
 
         Workspace::get_local().with(|ws| self.to_float_impl(binary_prec, true, false, ws, out))
@@ -1083,7 +1102,7 @@ impl<'a> AtomView<'a> {
                 }
                 CoefficientView::Float(f) => {
                     let mut f = f.to_float();
-                    if f.prec() != binary_prec {
+                    if f.prec() > binary_prec {
                         f.set_prec(binary_prec);
                         out.to_num(Coefficient::Float(f));
                     } else {
@@ -1181,20 +1200,31 @@ impl<'a> AtomView<'a> {
         }
     }
 
-    /// Map all floating point coefficients to rational numbers, using a given maximum denominator.
-    pub fn float_to_rat(&self, max_denominator: &Integer) -> Atom {
+    /// Map all floating point and rational coefficients to the best rational approximation
+    /// in the interval `[self*(1-relative_error),self*(1+relative_error)]`.
+    pub fn rationalize_coefficients(&self, relative_error: &Rational) -> Atom {
         let mut a = Atom::new();
-        self.map_coefficient_into(
-            |c| match c {
-                CoefficientView::Float(f) => f
-                    .to_float()
-                    .to_rational()
-                    .truncate_denominator(max_denominator)
-                    .into(),
-                _ => c.to_owned(),
-            },
-            &mut a,
-        );
+        Workspace::get_local().with(|ws| {
+            self.map_coefficient_impl(
+                |c| match c {
+                    CoefficientView::Float(f) => {
+                        f.to_float().to_rational().round(relative_error).into()
+                    }
+                    CoefficientView::Natural(n, d) => {
+                        let r = Rational::new(n, d);
+                        r.round(relative_error).into()
+                    }
+                    CoefficientView::Large(r) => Rational::from_large(r.to_rat())
+                        .round(relative_error)
+                        .into(),
+                    _ => c.to_owned(),
+                },
+                true,
+                false,
+                ws,
+                &mut a,
+            )
+        });
         a
     }
 
@@ -1375,26 +1405,27 @@ mod test {
         );
         assert_eq!(
             r,
-            "1.5707963267948966192313216916397514420985846996875529104874722*x+21.472450421034925"
+            "1.57079632679489661923132169163975144209858469968755291048747*x+21.4724504210349"
         );
     }
 
     #[test]
     fn float_convert() {
         let expr = Atom::parse("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
-        let expr = expr.to_float(60);
+        let expr = expr.coefficients_to_float(60);
         let r = format!(
             "{}",
             AtomPrinter::new_with_options(expr.as_view(), PrintOptions::file())
         );
-        assert_eq!(r, "5.0000000000000000000000000000000000000000000000000000000000000e-1*x+6.8164061370918581635917066956651198726148569775622233288512875e-1");
+        assert_eq!(r, "5.00000000000000000000000000000000000000000000000000000000000e-1*x+6.81640613709185816359170669566511987261485697756222332885129e-1");
     }
 
     #[test]
     fn float_to_rat() {
         let expr = Atom::parse("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
-        let expr = expr.to_float(60);
-        let expr = expr.float_to_rat(&1000.into());
-        assert_eq!(expr, Atom::parse("1/2*x+349/512").unwrap());
+        let expr = expr.coefficients_to_float(60);
+        let expr = expr.rationalize_coefficients(&(1, 10000).into());
+        println!("expr {}", expr);
+        assert_eq!(expr, Atom::parse("1/2*x+137/201").unwrap());
     }
 }

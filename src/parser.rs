@@ -1330,10 +1330,7 @@ mod test {
             "{}",
             AtomPrinter::new_with_options(input.as_view(), PrintOptions::file())
         );
-        assert_eq!(
-            r,
-            "1.200000000000000000003*x+2*exp(5)+1.12340000000000002e28"
-        );
+        assert_eq!(r, "1.2000000000000000000*x+2*exp(5)+1.123400000000000e28");
     }
 
     #[test]

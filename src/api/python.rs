@@ -1157,19 +1157,13 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             let a = format!("{}", num);
             let i = Integer::from_large(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(Atom::new_num(i).into()))
-        } else if let Ok(f) = ob.extract::<f64>() {
-            if !f.is_finite() {
-                return Err(exceptions::PyValueError::new_err("Number must be finite"));
-            }
-
-            Ok(ConvertibleToExpression(
-                Atom::new_num(Float::with_val(53, f)).into(),
+        } else if let Ok(_) = ob.extract::<&str>() {
+            // disallow direct string conversion
+            Err(exceptions::PyValueError::new_err(
+                "Cannot convert to expression",
             ))
-        } else if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
-            let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
-            Ok(ConvertibleToExpression(
-                Atom::new_num(Float::parse(a, Some(a.len() as u32)).unwrap()).into(),
-            ))
+        } else if let Ok(f) = ob.extract::<PythonMultiPrecisionFloat>() {
+            Ok(ConvertibleToExpression(Atom::new_num(f.0).into()))
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Cannot convert to expression",
@@ -1258,11 +1252,24 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
         if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
             let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
-            Ok(Float::parse(a, Some(a.len() as u32)).unwrap().into())
+            Ok(Float::parse(
+                a,
+                Some((a.len() as f64 * std::f64::consts::LOG2_10).floor() as u32),
+            )
+            .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
+            .into())
         } else if let Ok(a) = ob.extract::<&str>() {
-            Ok(Float::parse(a, None).unwrap().into())
+            Ok(Float::parse(a, None)
+                .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
+                .into())
         } else if let Ok(a) = ob.extract::<f64>() {
-            Ok(Float::with_val(53, a).into())
+            if a.is_finite() {
+                Ok(Float::with_val(53, a).into())
+            } else {
+                Err(exceptions::PyValueError::new_err(
+                    "Floating point number is not finite",
+                ))
+            }
         } else {
             Err(exceptions::PyValueError::new_err(
                 "Not a valid multi-precision float",
@@ -1517,7 +1524,7 @@ impl PythonExpression {
         Ok(result)
     }
 
-    /// Create a new Symbolica number from an int, a float, or a string.
+    /// Create a new Symbolica number from an int, a float, a Decimal, or a string.
     /// A floating point number is kept as a float with the same precision as the input,
     /// but it can also be truncated by specifying the maximal denominator value.
     ///
@@ -1543,22 +1550,14 @@ impl PythonExpression {
         } else if let Ok(num) = num.extract::<&PyLong>(py) {
             let a = format!("{}", num);
             PythonExpression::parse(_cls, &a)
-        } else if let Ok(f) = num.extract::<f64>(py) {
-            if !f.is_finite() {
-                return Err(exceptions::PyValueError::new_err("Number must be finite"));
-            }
-
+        } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
             if let Some(max_denom) = max_denom {
-                let mut r: Rational = f.into();
+                let mut r: Rational = f.0.into();
                 r = r.truncate_denominator(&(max_denom as u64).into());
                 Ok(Atom::new_num(r).into())
             } else {
-                Ok(Atom::new_num(Float::with_val(53, f)).into())
+                Ok(Atom::new_num(f.0).into())
             }
-        } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
-            Ok(Atom::new_num(f.0.clone()).into())
-        } else if let Ok(a) = num.extract::<&str>(py) {
-            PythonExpression::parse(_cls, a)
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid number"))
         }

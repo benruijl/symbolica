@@ -1310,7 +1310,7 @@ class Transformer:
     def series(
         self,
         x: Expression,
-        expansion_point: Expression,
+        expansion_point: Expression | int | float | Decimal,
         depth: int,
         depth_denom: int = 1,
         depth_is_absolute: bool = True

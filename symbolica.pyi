@@ -193,10 +193,10 @@ class Expression:
         """
 
     @classmethod
-    def num(_cls, num: int | float | str | Decimal, max_denom: Optional[int] = None) -> Expression:
+    def num(_cls, num: int | float | str | Decimal, relative_error: Optional[float] = None) -> Expression:
         """Create a new Symbolica number from an int, a float, or a string.
         A floating point number is kept as a float with the same precision as the input,
-        but it can also be truncated by specifying the maximal denominator value.
+        but it can also be converted to the smallest rational number given a `relative_error`.
 
         Examples
         --------
@@ -205,9 +205,13 @@ class Expression:
         1/2
 
         >>> print(Expression.num(1/3))
-        >>> print(Expression.num(0.33, 5))
+        >>> print(Expression.num(0.33, 0.1))
+        >>> print(Expression.num('0.333`3'))
+        >>> print(Expression.num(Decimal('0.1234')))
         3.3333333333333331e-1
         1/3
+        3.33e-1
+        1.2340e-1
         """
 
     @classmethod

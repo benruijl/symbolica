@@ -1252,9 +1252,17 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
     fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
         if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
             let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
+
+            // get the number of accurate digits
+            let digits = a
+                .chars()
+                .skip_while(|x| *x == '.' || *x == '0')
+                .take_while(|x| x.is_ascii_digit())
+                .count();
+
             Ok(Float::parse(
                 a,
-                Some((a.len() as f64 * std::f64::consts::LOG2_10).floor() as u32),
+                Some((digits as f64 * std::f64::consts::LOG2_10).ceil() as u32),
             )
             .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
             .into())
@@ -1526,7 +1534,7 @@ impl PythonExpression {
 
     /// Create a new Symbolica number from an int, a float, a Decimal, or a string.
     /// A floating point number is kept as a float with the same precision as the input,
-    /// but it can also be truncated by specifying the maximal denominator value.
+    /// but it can also be converted to the smallest rational number given a `relative_error`.
     ///
     /// Examples
     /// --------
@@ -1535,15 +1543,19 @@ impl PythonExpression {
     /// 1/2
     ///
     /// >>> print(Expression.num(1/3))
-    /// >>> print(Expression.num(0.33, 5))
+    /// >>> print(Expression.num(0.33, 0.1))
+    /// >>> print(Expression.num('0.333`3'))
+    /// >>> print(Expression.num(Decimal('0.1234')))
     /// 3.3333333333333331e-1
     /// 1/3
+    /// 3.33e-1
+    /// 1.2340e-1
     #[classmethod]
     pub fn num(
         _cls: &PyType,
         py: Python,
         num: PyObject,
-        max_denom: Option<usize>,
+        relative_error: Option<f64>,
     ) -> PyResult<PythonExpression> {
         if let Ok(num) = num.extract::<i64>(py) {
             Ok(Atom::new_num(num).into())
@@ -1551,9 +1563,9 @@ impl PythonExpression {
             let a = format!("{}", num);
             PythonExpression::parse(_cls, &a)
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
-            if let Some(max_denom) = max_denom {
+            if let Some(relative_error) = relative_error {
                 let mut r: Rational = f.0.into();
-                r = r.truncate_denominator(&(max_denom as u64).into());
+                r = r.round(&relative_error.into()).into();
                 Ok(Atom::new_num(r).into())
             } else {
                 Ok(Atom::new_num(f.0).into())

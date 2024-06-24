@@ -11,7 +11,7 @@ use rayon::prelude::*;
 
 use crate::{
     atom::{Atom, AtomView},
-    state::RecycledAtom,
+    state::{RecycledAtom, Workspace},
     LicenseManager,
 };
 
@@ -460,7 +460,8 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
             #[inline(always)]
             || {
                 reader.par_bridge().for_each(|x| {
-                    out_wrap.lock().unwrap().push(f(x));
+                    let r = f(x);
+                    out_wrap.lock().unwrap().push(r);
                 });
             },
         );
@@ -491,6 +492,62 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
 
     pub fn get_byte_size(&self) -> usize {
         self.total_size
+    }
+}
+
+impl<'a> AtomView<'a> {
+    /// Map the function `f` over all its terms, using parallel execution with `n_cores` cores.
+    pub fn map_terms(&self, f: impl Fn(AtomView) -> Atom + Send + Sync, n_cores: usize) -> Atom {
+        if let AtomView::Add(aa) = self {
+            if n_cores < 2 {
+                return Workspace::get_local().with(|ws| {
+                    let mut r = ws.new_atom();
+                    let rr = r.to_add();
+                    for arg in aa {
+                        rr.extend(f(arg).as_view());
+                    }
+                    let mut out = Atom::new();
+                    r.as_view().normalize(ws, &mut out);
+                    out
+                });
+            }
+
+            let out_wrap = Mutex::new(vec![]);
+
+            let t = rayon::ThreadPoolBuilder::new()
+                .num_threads(if LicenseManager::is_licensed() {
+                    n_cores
+                } else {
+                    1
+                })
+                .build()
+                .unwrap();
+
+            t.install(
+                #[inline(always)]
+                || {
+                    aa.iter().par_bridge().for_each(|x| {
+                        let r = f(x);
+                        out_wrap.lock().unwrap().push(r);
+                    });
+                },
+            );
+
+            let res = out_wrap.into_inner().unwrap();
+
+            Workspace::get_local().with(|ws| {
+                let mut r = ws.new_atom();
+                let rr = r.to_add();
+                for arg in res {
+                    rr.extend(arg.as_view());
+                }
+                let mut out = Atom::new();
+                r.as_view().normalize(ws, &mut out);
+                out
+            })
+        } else {
+            f(self.clone())
+        }
     }
 }
 
@@ -593,6 +650,23 @@ mod test {
         let r = stream.to_expression();
 
         let res = Atom::parse("11*v1+10*f1(v1)").unwrap();
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn term_map() {
+        let input = Atom::parse("v1 + v2 + v3 + v4").unwrap();
+
+        let r = input
+            .as_view()
+            .map_terms(|x| Atom::new_num(1) + &x.to_owned(), 4);
+
+        let r2 = input
+            .as_view()
+            .map_terms(|x| Atom::new_num(1) + &x.to_owned(), 1);
+        assert_eq!(r, r2);
+
+        let res = Atom::parse("v1 + v2 + v3 + v4 + 4").unwrap();
         assert_eq!(r, res);
     }
 }

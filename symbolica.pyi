@@ -625,12 +625,7 @@ class Expression:
     ) -> Expression:
         """
         Map the transformations to every term in the expression.
-        The execution happens in parallel.
-
-
-        No new functions or variables can be defined and no new
-        expressions can be parsed inside the map. Doing so will
-        result in a deadlock.
+        The execution happens in parallel using `n_cores`.
 
         Examples
         --------

@@ -2424,7 +2424,7 @@ impl PythonExpression {
     }
 
     /// Map the transformations to every term in the expression.
-    /// The execution happen in parallel.
+    /// The execution happens in parallel, using `n_cores`.
     ///
     /// Examples
     /// --------
@@ -2457,30 +2457,23 @@ impl PythonExpression {
 
         // release the GIL as Python functions may be called from
         // within the term mapper
-        let mut stream = py.allow_threads(move || {
-            // map every term in the expression
-            let mut stream = TermStreamer::<CompressorWriter<_>>::new(TermStreamerConfig {
-                n_cores: n_cores.unwrap_or(1),
-                ..Default::default()
-            });
-            stream.push(self.expr.clone());
-
-            let m = stream.map(|x| {
-                let mut out = Atom::default();
-                Workspace::get_local().with(|ws| {
-                    Transformer::execute(x.as_view(), &t, ws, &mut out).unwrap_or_else(|e| {
-                        // TODO: capture and abort the parallel run
-                        panic!("Transformer failed during parallel execution: {:?}", e)
+        let r = py.allow_threads(move || {
+            self.expr.as_view().map_terms(
+                |x| {
+                    let mut out = Atom::default();
+                    Workspace::get_local().with(|ws| {
+                        Transformer::execute(x, &t, ws, &mut out).unwrap_or_else(|e| {
+                            // TODO: capture and abort the parallel run
+                            panic!("Transformer failed during parallel execution: {:?}", e)
+                        });
                     });
-                });
-                out
-            });
-            Ok::<_, PyErr>(m)
-        })?;
+                    out
+                },
+                n_cores.unwrap_or(1),
+            )
+        });
 
-        let b = stream.to_expression();
-
-        Ok(b.into())
+        Ok(r.into())
     }
 
     /// Set the coefficient ring to contain the variables in the `vars` list.

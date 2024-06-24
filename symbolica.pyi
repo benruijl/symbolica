@@ -382,11 +382,13 @@ class Expression:
         transformations can be applied.
         """
 
-    def to_float(self, decimal_prec: int) -> Expression:
-        """Convert all coefficients to floats, with a given decimal precision."""
+    def coefficients_to_float(self, decimal_prec: int) -> Expression:
+        """Convert all coefficients to floats with a given precision `decimal_prec``.
+        The precision of floating point coefficients in the input will be truncated to `decimal_prec`."""
 
-    def float_to_rat(self, max_denominator: int) -> Expression:
-        """Convert all floating point coefficients to rationals, with a given maximal denominator."""
+    def rationalize_coefficients(self, relative_error: float) -> Expression:
+        """Map all floating point and rational coefficients to the best rational approximation
+        in the interval `[self*(1-relative_error),self*(1+relative_error)]`."""
 
     def req_len(self, min_length: int, max_length: int | None) -> PatternRestriction:
         """

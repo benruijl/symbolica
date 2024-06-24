@@ -2002,14 +2002,25 @@ impl PythonExpression {
         }
     }
 
-    /// Convert all coefficients to floats, with a given decimal precision.
-    pub fn to_float(&self, decimal_prec: u32) -> PythonExpression {
-        self.expr.to_float(decimal_prec).into()
+    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
+    pub fn coefficients_to_float(&self, decimal_prec: u32) -> PythonExpression {
+        self.expr.coefficients_to_float(decimal_prec).into()
     }
 
-    /// Convert all floating point coefficients to rationals, with a given maximal denominator.
-    pub fn float_to_rat(&self, max_denominator: Integer) -> PythonExpression {
-        self.expr.float_to_rat(&max_denominator).into()
+    /// Map all floating point and rational coefficients to the best rational approximation
+    /// in the interval `[self*(1-relative_error),self*(1+relative_error)]`.
+    pub fn rationalize_coefficients(&self, relative_error: f64) -> PyResult<PythonExpression> {
+        if relative_error <= 0. || relative_error > 1. {
+            return Err(exceptions::PyValueError::new_err(
+                "Relative error must be between 0 and 1",
+            ));
+        }
+
+        Ok(self
+            .expr
+            .rationalize_coefficients(&relative_error.into())
+            .into())
     }
 
     /// Create a pattern restriction based on the wildcard length before downcasting.

@@ -169,6 +169,7 @@ impl Atom {
         Ok(a.as_view().rename(state_map))
     }
 
+    #[allow(dead_code)]
     pub(crate) unsafe fn from_raw(raw: RawAtom) -> Self {
         match raw[0] & TYPE_MASK {
             NUM_ID => Atom::Num(Num::from_raw(raw)),

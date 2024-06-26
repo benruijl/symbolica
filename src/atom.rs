@@ -29,6 +29,16 @@ pub struct Symbol {
     is_linear: bool,
 }
 
+impl std::fmt::Debug for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", self.id))?;
+        for _ in 0..self.wildcard_level {
+            f.write_str("_")?;
+        }
+        Ok(())
+    }
+}
+
 impl Symbol {
     /// Create a new variable symbol. This constructor should be used with care as there are no checks
     /// about the validity of the identifier.
@@ -78,16 +88,6 @@ impl Symbol {
 
     pub fn is_linear(&self) -> bool {
         self.is_linear
-    }
-}
-
-impl std::fmt::Debug for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}", self.id))?;
-        for _ in 0..self.wildcard_level {
-            f.write_str("_")?;
-        }
-        Ok(())
     }
 }
 
@@ -189,6 +189,77 @@ impl<'a> From<MulView<'a>> for AtomView<'a> {
 impl<'a> From<AddView<'a>> for AtomView<'a> {
     fn from(n: AddView<'a>) -> AtomView<'a> {
         AtomView::Add(n)
+    }
+}
+
+/// A copy-on-write structure for `Atom` and `AtomView`.
+pub enum AtomOrView<'a> {
+    Atom(Atom),
+    View(AtomView<'a>),
+}
+
+impl<'a> PartialEq for AtomOrView<'a> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (AtomOrView::Atom(a), AtomOrView::Atom(b)) => a == b,
+            (AtomOrView::View(a), AtomOrView::View(b)) => a == b,
+            _ => self.as_view() == other.as_view(),
+        }
+    }
+}
+
+impl Eq for AtomOrView<'_> {}
+
+impl Hash for AtomOrView<'_> {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            AtomOrView::Atom(a) => a.as_view().hash(state),
+            AtomOrView::View(a) => a.hash(state),
+        }
+    }
+}
+
+impl<'a> From<Atom> for AtomOrView<'a> {
+    fn from(a: Atom) -> AtomOrView<'a> {
+        AtomOrView::Atom(a)
+    }
+}
+
+impl<'a> From<AtomView<'a>> for AtomOrView<'a> {
+    fn from(a: AtomView<'a>) -> AtomOrView<'a> {
+        AtomOrView::View(a)
+    }
+}
+
+impl<'a> From<&AtomView<'a>> for AtomOrView<'a> {
+    fn from(a: &AtomView<'a>) -> AtomOrView<'a> {
+        AtomOrView::View(*a)
+    }
+}
+
+impl<'a> AtomOrView<'a> {
+    pub fn as_view(&'a self) -> AtomView<'a> {
+        match self {
+            AtomOrView::Atom(a) => a.as_view(),
+            AtomOrView::View(a) => *a,
+        }
+    }
+
+    pub fn as_mut(&mut self) -> &mut Atom {
+        match self {
+            AtomOrView::Atom(a) => a,
+            AtomOrView::View(a) => {
+                let mut oa = Atom::default();
+                oa.set_from_view(a);
+                *self = AtomOrView::Atom(oa);
+                match self {
+                    AtomOrView::Atom(a) => a,
+                    _ => unreachable!(),
+                }
+            }
+        }
     }
 }
 

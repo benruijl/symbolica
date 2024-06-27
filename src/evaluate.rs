@@ -3,7 +3,10 @@ use ahash::HashMap;
 use crate::{
     atom::{representation::InlineVar, Atom, AtomOrView, AtomView, Symbol},
     coefficient::CoefficientView,
-    domains::{float::Real, rational::Rational},
+    domains::{
+        float::{NumericalFloatLike, Real},
+        rational::Rational,
+    },
     state::State,
 };
 
@@ -31,7 +34,7 @@ impl<T> EvaluationFn<T> {
 
 pub enum ConstOrExpr<'a, T> {
     Const(T),
-    Expr(Vec<Symbol>, AtomView<'a>),
+    Expr(Symbol, Vec<Symbol>, AtomView<'a>),
 }
 
 impl Atom {
@@ -52,46 +55,67 @@ impl Atom {
     }
 }
 
-#[derive(Debug)]
-pub enum EvalTree<T> {
+pub struct ExpressionWithSubexpressions<T> {
+    pub tree: Vec<Expression<T>>,
+    pub subexpressions: Vec<Expression<T>>,
+}
+
+pub struct EvalTree<T> {
+    functions: Vec<(Symbol, Vec<Symbol>, ExpressionWithSubexpressions<T>)>,
+    expressions: ExpressionWithSubexpressions<T>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Expression<T> {
     Const(T),
     Parameter(usize),
-    Eval(Vec<T>, Vec<EvalTree<T>>, Box<EvalTree<T>>), // first argument is a buffer for the evaluated arguments
-    Add(Vec<EvalTree<T>>),
-    Mul(Vec<EvalTree<T>>),
-    Pow(Box<(EvalTree<T>, i64)>),
-    Powf(Box<(EvalTree<T>, EvalTree<T>)>),
-    ReadArg(usize),
-    BuiltinFun(Symbol, Box<EvalTree<T>>),
+    Eval(usize, Vec<Expression<T>>),
+    Add(Vec<Expression<T>>),
+    Mul(Vec<Expression<T>>),
+    Pow(Box<(Expression<T>, i64)>),
+    Powf(Box<(Expression<T>, Expression<T>)>),
+    ReadArg(usize), // read nth function argument
+    BuiltinFun(Symbol, Box<Expression<T>>),
+    SubExpression(usize),
 }
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
+    reserved_indices: usize,
     instructions: Vec<Instr>,
-    result_index: usize,
+    result_indices: Vec<usize>,
 }
 
 impl<T: Real> ExpressionEvaluator<T> {
     pub fn evaluate(&mut self, params: &[T]) -> T {
+        let mut res = T::new_zero();
+        self.evaluate_multiple(params, std::slice::from_mut(&mut res));
+        res
+    }
+
+    pub fn evaluate_multiple(&mut self, params: &[T], out: &mut [T]) {
         for (t, p) in self.stack.iter_mut().zip(params) {
             *t = p.clone();
         }
 
+        let mut tmp;
         for i in &self.instructions {
             match i {
                 Instr::Add(r, v) => {
-                    self.stack[*r] = self.stack[v[0]].clone();
+                    tmp = self.stack[v[0]].clone();
                     for x in &v[1..] {
                         let e = self.stack[*x].clone();
-                        self.stack[*r] += e;
+                        tmp += e;
                     }
+                    std::mem::swap(&mut self.stack[*r], &mut tmp);
                 }
                 Instr::Mul(r, v) => {
-                    self.stack[*r] = self.stack[v[0]].clone();
+                    tmp = self.stack[v[0]].clone();
                     for x in &v[1..] {
                         let e = self.stack[*x].clone();
-                        self.stack[*r] *= e;
+                        tmp *= e;
                     }
+                    std::mem::swap(&mut self.stack[*r], &mut tmp);
                 }
                 Instr::Pow(r, b, e) => {
                     if *e >= 0 {
@@ -111,158 +135,1254 @@ impl<T: Real> ExpressionEvaluator<T> {
                     State::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
                     _ => unreachable!(),
                 },
-                Instr::Copy(d, s) => {
-                    for (o, i) in s.iter().enumerate() {
-                        self.stack[*d + o] = self.stack[*i].clone();
-                    }
-                }
             }
         }
 
-        self.stack[self.result_index].clone()
+        for (o, i) in out.iter_mut().zip(&self.result_indices) {
+            *o = self.stack[*i].clone();
+        }
     }
 }
 
+impl<T> ExpressionEvaluator<T> {
+    pub fn optimize_stack(&mut self) {
+        let mut last_use: Vec<usize> = vec![0; self.stack.len()];
+
+        for (i, x) in self.instructions.iter().enumerate() {
+            match x {
+                Instr::Add(_, a) | Instr::Mul(_, a) => {
+                    for v in a {
+                        last_use[*v] = i;
+                    }
+                }
+                Instr::Pow(_, b, _) | Instr::BuiltinFun(_, _, b) => {
+                    last_use[*b] = i;
+                }
+                Instr::Powf(_, a, b) => {
+                    last_use[*a] = i;
+                    last_use[*b] = i;
+                }
+            };
+        }
+
+        // prevent init slots from being overwritten
+        for i in 0..self.reserved_indices {
+            last_use[i] = self.instructions.len();
+        }
+
+        // prevent the output slots from being overwritten
+        for i in &self.result_indices {
+            last_use[*i] = self.instructions.len();
+        }
+
+        let mut rename_map: Vec<_> = (0..self.stack.len()).collect(); // identity map
+
+        let mut max_reg = self.reserved_indices;
+        for (i, x) in self.instructions.iter_mut().enumerate() {
+            let cur_reg = match x {
+                Instr::Add(r, _)
+                | Instr::Mul(r, _)
+                | Instr::Pow(r, _, _)
+                | Instr::Powf(r, _, _)
+                | Instr::BuiltinFun(r, _, _) => *r,
+            };
+
+            let cur_last_use = last_use[cur_reg];
+
+            let new_reg = if let Some((new_v, lu)) = last_use[..cur_reg]
+                .iter_mut()
+                .enumerate()
+                .find(|(_, r)| **r <= i)
+            // <= is ok because we store intermediate results in temp values
+            {
+                *lu = cur_last_use; // set the last use to the current variable last use
+                last_use[cur_reg] = 0; // make the current index available
+                rename_map[cur_reg] = new_v; // set the rename map so that every occurrence on the rhs is replaced
+                new_v
+            } else {
+                cur_reg
+            };
+
+            max_reg = max_reg.max(new_reg);
+
+            match x {
+                Instr::Add(r, a) | Instr::Mul(r, a) => {
+                    *r = new_reg;
+                    for v in a {
+                        *v = rename_map[*v];
+                    }
+                }
+                Instr::Pow(r, b, _) | Instr::BuiltinFun(r, _, b) => {
+                    *r = new_reg;
+                    *b = rename_map[*b];
+                }
+                Instr::Powf(r, a, b) => {
+                    *r = new_reg;
+                    *a = rename_map[*a];
+                    *b = rename_map[*b];
+                }
+            };
+        }
+
+        self.stack.truncate(max_reg + 1);
+
+        for i in &mut self.result_indices {
+            *i = rename_map[*i];
+        }
+    }
+}
+
+#[derive(Debug)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),
     Pow(usize, usize, i64),
     Powf(usize, usize, usize),
     BuiltinFun(usize, Symbol, usize),
-    Copy(usize, Vec<usize>), // copy arguments into an adjacent array
 }
 
-impl<T: Clone + Default> EvalTree<T> {
+impl<T: Clone + Default + PartialEq> ExpressionWithSubexpressions<T> {
+    pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> ExpressionWithSubexpressions<T2> {
+        ExpressionWithSubexpressions {
+            tree: self.tree.iter().map(|x| x.map_coeff(f)).collect(),
+            subexpressions: self.subexpressions.iter().map(|x| x.map_coeff(f)).collect(),
+        }
+    }
+}
+
+impl<T: Clone + Default + PartialEq> Expression<T> {
+    pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> Expression<T2> {
+        match self {
+            Expression::Const(c) => Expression::Const(f(c)),
+            Expression::Parameter(p) => Expression::Parameter(*p),
+            Expression::Eval(id, e_args) => {
+                Expression::Eval(*id, e_args.iter().map(|x| x.map_coeff(f)).collect())
+            }
+            Expression::Add(a) => {
+                let new_args = a.iter().map(|x| x.map_coeff(f)).collect();
+                Expression::Add(new_args)
+            }
+            Expression::Mul(m) => {
+                let new_args = m.iter().map(|x| x.map_coeff(f)).collect();
+                Expression::Mul(new_args)
+            }
+            Expression::Pow(p) => {
+                let (b, e) = &**p;
+                Expression::Pow(Box::new((b.map_coeff(f), *e)))
+            }
+            Expression::Powf(p) => {
+                let (b, e) = &**p;
+                Expression::Powf(Box::new((b.map_coeff(f), e.map_coeff(f))))
+            }
+            Expression::ReadArg(s) => Expression::ReadArg(*s),
+            Expression::BuiltinFun(s, a) => Expression::BuiltinFun(*s, Box::new(a.map_coeff(f))),
+            Expression::SubExpression(i) => Expression::SubExpression(*i),
+        }
+    }
+
+    fn strip_constants(&mut self, stack: &mut Vec<T>, param_len: usize) {
+        match self {
+            Expression::Const(t) => {
+                if let Some(p) = stack.iter().skip(param_len).position(|x| x == t) {
+                    *self = Expression::Parameter(param_len + p);
+                } else {
+                    stack.push(t.clone());
+                    *self = Expression::Parameter(stack.len() - 1);
+                }
+            }
+            Expression::Parameter(_) => {}
+            Expression::Eval(_, e_args) => {
+                for a in e_args {
+                    a.strip_constants(stack, param_len);
+                }
+            }
+            Expression::Add(a) | Expression::Mul(a) => {
+                for arg in a {
+                    arg.strip_constants(stack, param_len);
+                }
+            }
+            Expression::Pow(p) => {
+                p.0.strip_constants(stack, param_len);
+            }
+            Expression::Powf(p) => {
+                p.0.strip_constants(stack, param_len);
+                p.1.strip_constants(stack, param_len);
+            }
+            Expression::ReadArg(_) => {}
+            Expression::BuiltinFun(_, a) => {
+                a.strip_constants(stack, param_len);
+            }
+            Expression::SubExpression(_) => {}
+        }
+    }
+}
+
+impl<T: Clone + Default + PartialEq> EvalTree<T> {
+    pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> EvalTree<T2> {
+        EvalTree {
+            expressions: ExpressionWithSubexpressions {
+                tree: self
+                    .expressions
+                    .tree
+                    .iter()
+                    .map(|x| x.map_coeff(f))
+                    .collect(),
+                subexpressions: self
+                    .expressions
+                    .subexpressions
+                    .iter()
+                    .map(|x| x.map_coeff(f))
+                    .collect(),
+            },
+            functions: self
+                .functions
+                .iter()
+                .map(|(s, a, e)| (*s, a.clone(), e.map_coeff(f)))
+                .collect(),
+        }
+    }
+
     /// Create a linear version of the tree that can be evaluated more efficiently.
-    pub fn linearize(&self, param_len: usize) -> ExpressionEvaluator<T> {
+    pub fn linearize(mut self, param_len: usize) -> ExpressionEvaluator<T> {
         let mut stack = vec![T::default(); param_len];
+
+        // strip every constant and move them into the stack after the params
+        self.strip_constants(&mut stack, param_len);
+        let reserved_indices = stack.len();
+
+        let mut sub_expr_pos = HashMap::default();
         let mut instructions = vec![];
-        let result_index = self.linearize_impl(&mut stack, &mut instructions, 0);
-        ExpressionEvaluator {
+
+        let mut result_indices = vec![];
+
+        for t in &self.expressions.tree {
+            let result_index = self.linearize_impl(
+                &t,
+                &self.expressions.subexpressions,
+                &mut stack,
+                &mut instructions,
+                &mut sub_expr_pos,
+                &[],
+            );
+            result_indices.push(result_index);
+        }
+
+        let mut e = ExpressionEvaluator {
             stack,
+            reserved_indices,
             instructions,
-            result_index,
+            result_indices,
+        };
+
+        e.optimize_stack();
+        e
+    }
+
+    fn strip_constants(&mut self, stack: &mut Vec<T>, param_len: usize) {
+        for t in &mut self.expressions.tree {
+            t.strip_constants(stack, param_len);
+        }
+
+        for e in &mut self.expressions.subexpressions {
+            e.strip_constants(stack, param_len);
+        }
+
+        for (_, _, e) in &mut self.functions {
+            for t in &mut e.tree {
+                t.strip_constants(stack, param_len);
+            }
+
+            for e in &mut e.subexpressions {
+                e.strip_constants(stack, param_len);
+            }
         }
     }
 
     // Yields the stack index that contains the output.
     fn linearize_impl(
         &self,
+        tree: &Expression<T>,
+        subexpressions: &[Expression<T>],
         stack: &mut Vec<T>,
         instr: &mut Vec<Instr>,
-        arg_start: usize,
+        sub_expr_pos: &mut HashMap<usize, usize>,
+        args: &[usize],
     ) -> usize {
-        match self {
-            EvalTree::Const(t) => {
-                stack.push(t.clone()); // TODO: do once and recycle
+        match tree {
+            Expression::Const(t) => {
+                stack.push(t.clone()); // TODO: do once and recycle, this messes with the logic as there is no associated instruction
                 stack.len() - 1
             }
-            EvalTree::Parameter(i) => *i,
-            EvalTree::Eval(_, args, f) => {
-                let dest_pos = stack.len();
-                for _ in args {
-                    stack.push(T::default());
-                }
-
-                let a: Vec<_> = args
+            Expression::Parameter(i) => *i,
+            Expression::Eval(id, e_args) => {
+                // inline the function
+                let new_args: Vec<_> = e_args
                     .iter()
-                    .map(|x| x.linearize_impl(stack, instr, arg_start))
+                    .map(|x| {
+                        self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
+                    })
                     .collect();
 
-                instr.push(Instr::Copy(dest_pos, a));
-                f.linearize_impl(stack, instr, dest_pos)
+                let mut sub_expr_pos = HashMap::default();
+                let func = &self.functions[*id].2;
+                self.linearize_impl(
+                    &func.tree[0],
+                    &func.subexpressions,
+                    stack,
+                    instr,
+                    &mut sub_expr_pos,
+                    &new_args,
+                )
             }
-            EvalTree::Add(a) => {
+            Expression::Add(a) => {
+                let args = a
+                    .iter()
+                    .map(|x| {
+                        self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
+                    })
+                    .collect();
+
                 stack.push(T::default());
                 let res = stack.len() - 1;
 
-                let add = Instr::Add(
-                    res,
-                    a.iter()
-                        .map(|x| x.linearize_impl(stack, instr, arg_start))
-                        .collect(),
-                );
+                let add = Instr::Add(res, args);
                 instr.push(add);
 
                 res
             }
-            EvalTree::Mul(m) => {
+            Expression::Mul(m) => {
+                let args = m
+                    .iter()
+                    .map(|x| {
+                        self.linearize_impl(x, subexpressions, stack, instr, sub_expr_pos, args)
+                    })
+                    .collect();
+
                 stack.push(T::default());
                 let res = stack.len() - 1;
 
-                let mul = Instr::Mul(
-                    res,
-                    m.iter()
-                        .map(|x| x.linearize_impl(stack, instr, arg_start))
-                        .collect(),
-                );
+                let mul = Instr::Mul(res, args);
                 instr.push(mul);
 
                 res
             }
-            EvalTree::Pow(p) => {
+            Expression::Pow(p) => {
+                let b = self.linearize_impl(&p.0, subexpressions, stack, instr, sub_expr_pos, args);
                 stack.push(T::default());
                 let res = stack.len() - 1;
-                let b = p.0.linearize_impl(stack, instr, arg_start);
 
-                instr.push(Instr::Pow(res, b, p.1));
+                if p.1 > 1 {
+                    instr.push(Instr::Mul(res, vec![b; p.1 as usize]));
+                } else {
+                    instr.push(Instr::Pow(res, b, p.1));
+                }
                 res
             }
-            EvalTree::Powf(p) => {
+            Expression::Powf(p) => {
+                let b = self.linearize_impl(&p.0, subexpressions, stack, instr, sub_expr_pos, args);
+                let e = self.linearize_impl(&p.1, subexpressions, stack, instr, sub_expr_pos, args);
                 stack.push(T::default());
                 let res = stack.len() - 1;
-                let b = p.0.linearize_impl(stack, instr, arg_start);
-                let e = p.1.linearize_impl(stack, instr, arg_start);
 
                 instr.push(Instr::Powf(res, b, e));
                 res
             }
-            EvalTree::ReadArg(a) => arg_start + *a,
-            EvalTree::BuiltinFun(s, v) => {
+            Expression::ReadArg(a) => args[*a],
+            Expression::BuiltinFun(s, v) => {
+                let arg = self.linearize_impl(v, subexpressions, stack, instr, sub_expr_pos, args);
                 stack.push(T::default());
-                let arg = v.linearize_impl(stack, instr, arg_start);
                 let c = Instr::BuiltinFun(stack.len() - 1, *s, arg);
                 instr.push(c);
                 stack.len() - 1
             }
+            Expression::SubExpression(id) => {
+                if sub_expr_pos.contains_key(id) {
+                    *sub_expr_pos.get(id).unwrap()
+                } else {
+                    let res = self.linearize_impl(
+                        &subexpressions[*id],
+                        subexpressions,
+                        stack,
+                        instr,
+                        sub_expr_pos,
+                        args,
+                    );
+                    sub_expr_pos.insert(*id, res);
+                    res
+                }
+            }
+        }
+    }
+}
+
+impl EvalTree<Rational> {
+    pub fn horner_scheme(&mut self) {
+        for t in &mut self.expressions.tree {
+            t.horner_scheme();
+        }
+
+        for e in &mut self.expressions.subexpressions {
+            e.horner_scheme();
+        }
+
+        for (_, _, e) in &mut self.functions {
+            for t in &mut e.tree {
+                t.horner_scheme();
+            }
+
+            for e in &mut e.subexpressions {
+                e.horner_scheme();
+            }
+        }
+    }
+}
+
+impl Expression<Rational> {
+    fn apply_horner_scheme(&mut self, scheme: &[Expression<Rational>]) {
+        if scheme.is_empty() {
+            return;
+        }
+
+        let Expression::Add(a) = self else {
+            return;
+        };
+
+        a.sort();
+
+        let mut max_pow: Option<i64> = None;
+        for x in &*a {
+            if let Expression::Mul(m) = x {
+                let mut pow_counter = 0;
+                for y in m {
+                    if let Expression::Pow(p) = y {
+                        if p.0 == scheme[0] {
+                            pow_counter += p.1;
+                        }
+                    } else if y == &scheme[0] {
+                        pow_counter += 1; // support x*x*x^3 in term
+                    }
+                }
+
+                if pow_counter > 0 && (max_pow.is_none() || pow_counter < max_pow.unwrap()) {
+                    max_pow = Some(pow_counter);
+                }
+            } else if x == &scheme[0] {
+                max_pow = Some(1);
+            }
+        }
+
+        // TODO: jump to next variable if the current variable only appears in one factor?
+        // this will improve the scheme but may hide common subexpressions?
+
+        let Some(max_pow) = max_pow else {
+            return self.apply_horner_scheme(&scheme[1..]);
+        };
+
+        let mut contains = vec![];
+        let mut rest = vec![];
+
+        for x in a {
+            let mut found = false;
+            if let Expression::Mul(m) = x {
+                let mut pow_counter = 0;
+
+                m.retain(|y| {
+                    if let Expression::Pow(p) = y {
+                        if p.0 == scheme[0] {
+                            pow_counter += p.1;
+                            false
+                        } else {
+                            true
+                        }
+                    } else if y == &scheme[0] {
+                        pow_counter += 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                if pow_counter > max_pow {
+                    if pow_counter > max_pow + 1 {
+                        m.push(Expression::Pow(Box::new((
+                            scheme[0].clone(),
+                            pow_counter - max_pow,
+                        ))));
+                    } else {
+                        m.push(scheme[0].clone());
+                    }
+
+                    m.sort();
+                }
+
+                if m.is_empty() {
+                    *x = Expression::Const(Rational::one());
+                } else if m.len() == 1 {
+                    *x = m.pop().unwrap();
+                }
+
+                found = pow_counter > 0;
+            } else if x == &scheme[0] {
+                found = true;
+                *x = Expression::Const(Rational::one());
+            }
+
+            if found {
+                contains.push(x.clone());
+            } else {
+                rest.push(x.clone());
+            }
+        }
+
+        let extracted = if max_pow == 1 {
+            scheme[0].clone()
+        } else {
+            Expression::Pow(Box::new((scheme[0].clone(), max_pow)))
+        };
+
+        let mut contains = if contains.len() == 1 {
+            contains.pop().unwrap()
+        } else {
+            Expression::Add(contains)
+        };
+
+        contains.apply_horner_scheme(&scheme); // keep trying with same variable
+
+        let mut v = vec![contains, extracted];
+        v.sort();
+        let c = Expression::Mul(v);
+
+        if rest.is_empty() {
+            *self = c;
+        } else {
+            let mut r = if rest.len() == 1 {
+                rest.pop().unwrap()
+            } else {
+                Expression::Add(rest)
+            };
+
+            r.apply_horner_scheme(&scheme[1..]);
+
+            let mut v = vec![c, r];
+            v.sort();
+
+            *self = Expression::Add(v);
+        }
+    }
+
+    /// Apply a simple occurrence-order Horner scheme to every addition.
+    pub fn horner_scheme(&mut self) {
+        match self {
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
+            Expression::Eval(_, ae) => {
+                for arg in ae {
+                    arg.horner_scheme();
+                }
+            }
+            Expression::Add(a) => {
+                for arg in &mut *a {
+                    arg.horner_scheme();
+                }
+
+                let mut occurrence = HashMap::default();
+
+                for arg in &*a {
+                    match arg {
+                        Expression::Mul(m) => {
+                            for aa in m {
+                                if let Expression::Pow(p) = aa {
+                                    occurrence
+                                        .entry(p.0.clone())
+                                        .and_modify(|x| *x += 1)
+                                        .or_insert(1);
+                                } else {
+                                    occurrence
+                                        .entry(aa.clone())
+                                        .and_modify(|x| *x += 1)
+                                        .or_insert(1);
+                                }
+                            }
+                        }
+                        x => {
+                            if let Expression::Pow(p) = x {
+                                occurrence
+                                    .entry(p.0.clone())
+                                    .and_modify(|x| *x += 1)
+                                    .or_insert(1);
+                            } else {
+                                occurrence
+                                    .entry(x.clone())
+                                    .and_modify(|x| *x += 1)
+                                    .or_insert(1);
+                            }
+                        }
+                    }
+                }
+
+                occurrence.retain(|_, v| *v > 1);
+                let mut order: Vec<_> = occurrence.into_iter().collect();
+                order.sort_by_key(|k| std::cmp::Reverse(k.1)); // occurrence order
+                let scheme = order.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+
+                self.apply_horner_scheme(&scheme);
+            }
+            Expression::Mul(a) => {
+                for arg in a {
+                    arg.horner_scheme();
+                }
+            }
+            Expression::Pow(p) => {
+                p.0.horner_scheme();
+            }
+            Expression::Powf(p) => {
+                p.0.horner_scheme();
+                p.1.horner_scheme();
+            }
+            Expression::BuiltinFun(_, a) => {
+                a.horner_scheme();
+            }
+            Expression::SubExpression(_) => {}
+        }
+    }
+}
+
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree<T> {
+    pub fn common_subexpression_elimination(&mut self) {
+        self.expressions.common_subexpression_elimination();
+
+        for (_, _, e) in &mut self.functions {
+            e.common_subexpression_elimination();
+        }
+    }
+
+    pub fn common_pair_elimination(&mut self) {
+        while self.expressions.common_pair_elimination() {}
+        for (_, _, e) in &mut self.functions {
+            while e.common_pair_elimination() {}
+        }
+    }
+
+    pub fn count_operations(&self) -> (usize, usize) {
+        let mut add = 0;
+        let mut mul = 0;
+        for e in &self.functions {
+            let (ea, em) = e.2.count_operations();
+            add += ea;
+            mul += em;
+        }
+
+        let (ea, em) = self.expressions.count_operations();
+        (add + ea, mul + em)
+    }
+}
+
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
+    ExpressionWithSubexpressions<T>
+{
+    pub fn common_subexpression_elimination(&mut self) {
+        let mut h = HashMap::default();
+
+        for t in &mut self.tree {
+            t.find_subexpression(&mut h);
+        }
+
+        h.retain(|_, v| *v > 1);
+
+        // make the second argument a unique index of the subexpression
+        for (i, v) in h.values_mut().enumerate() {
+            *v = self.subexpressions.len() + i;
+        }
+
+        for t in &mut self.tree {
+            t.replace_subexpression(&h, false);
+        }
+
+        let mut v: Vec<_> = h.clone().into_iter().map(|(k, v)| (v, k)).collect();
+
+        v.sort();
+
+        // replace subexpressions in subexpressions and
+        // sort them based on their dependencies
+        for (_, mut x) in v {
+            x.replace_subexpression(&h, true);
+            self.subexpressions.push(x);
+        }
+
+        let mut dep_tree = vec![];
+        for (i, s) in self.subexpressions.iter().enumerate() {
+            let mut deps = vec![];
+            s.get_dependent_subexpressions(&mut deps);
+            dep_tree.push((i, deps.clone()));
+        }
+
+        let mut rename = HashMap::default();
+        let mut new_subs = vec![];
+        let mut i = 0;
+        while !dep_tree.is_empty() {
+            if dep_tree[i].1.iter().all(|x| rename.contains_key(x)) {
+                rename.insert(dep_tree[i].0, new_subs.len());
+                new_subs.push(self.subexpressions[dep_tree[i].0].clone());
+                dep_tree.swap_remove(i);
+                if i == dep_tree.len() {
+                    i = 0;
+                }
+            } else {
+                i = (i + 1) % dep_tree.len();
+            }
+        }
+
+        for x in &mut new_subs {
+            x.rename_subexpression(&rename);
+        }
+        for t in &mut self.tree {
+            t.rename_subexpression(&rename);
+        }
+
+        self.subexpressions = new_subs;
+    }
+}
+
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expression<T> {
+    fn rename_subexpression(&mut self, subexp: &HashMap<usize, usize>) {
+        match self {
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
+            Expression::Eval(_, ae) => {
+                for arg in &mut *ae {
+                    arg.rename_subexpression(subexp);
+                }
+            }
+            Expression::Add(a) | Expression::Mul(a) => {
+                for arg in a {
+                    arg.rename_subexpression(subexp);
+                }
+            }
+            Expression::Pow(p) => {
+                p.0.rename_subexpression(subexp);
+            }
+            Expression::Powf(p) => {
+                p.0.rename_subexpression(subexp);
+                p.1.rename_subexpression(subexp);
+            }
+            Expression::BuiltinFun(_, a) => {
+                a.rename_subexpression(subexp);
+            }
+            Expression::SubExpression(i) => {
+                *self = Expression::SubExpression(*subexp.get(i).unwrap());
+            }
+        }
+    }
+
+    fn get_dependent_subexpressions(&self, dep: &mut Vec<usize>) {
+        match self {
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
+            Expression::Eval(_, ae) => {
+                for arg in ae {
+                    arg.get_dependent_subexpressions(dep);
+                }
+            }
+            Expression::Add(a) | Expression::Mul(a) => {
+                for arg in a {
+                    arg.get_dependent_subexpressions(dep);
+                }
+            }
+            Expression::Pow(p) => {
+                p.0.get_dependent_subexpressions(dep);
+            }
+            Expression::Powf(p) => {
+                p.0.get_dependent_subexpressions(dep);
+                p.1.get_dependent_subexpressions(dep);
+            }
+            Expression::BuiltinFun(_, a) => {
+                a.get_dependent_subexpressions(dep);
+            }
+            Expression::SubExpression(i) => {
+                dep.push(*i);
+            }
+        }
+    }
+
+    fn replace_subexpression(&mut self, subexp: &HashMap<Expression<T>, usize>, skip_root: bool) {
+        if !skip_root {
+            if let Some(i) = subexp.get(&self) {
+                *self = Expression::SubExpression(*i);
+                return;
+            }
+        }
+
+        match self {
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
+            Expression::Eval(_, ae) => {
+                for arg in &mut *ae {
+                    arg.replace_subexpression(subexp, false);
+                }
+            }
+            Expression::Add(a) | Expression::Mul(a) => {
+                for arg in &mut *a {
+                    arg.replace_subexpression(subexp, false);
+                }
+
+                a.sort();
+            }
+            Expression::Pow(p) => {
+                p.0.replace_subexpression(subexp, false);
+            }
+            Expression::Powf(p) => {
+                p.0.replace_subexpression(subexp, false);
+                p.1.replace_subexpression(subexp, false);
+            }
+            Expression::BuiltinFun(_, _) => {}
+            Expression::SubExpression(_) => {}
+        }
+    }
+
+    fn find_subexpression(&self, subexp: &mut HashMap<Expression<T>, usize>) {
+        if matches!(
+            self,
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_)
+        ) {
+            return;
+        }
+
+        if let Some(i) = subexp.get_mut(self) {
+            *i += 1;
+            return;
+        }
+
+        subexp.insert(self.clone(), 1);
+
+        match self {
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
+            Expression::Eval(_, ae) => {
+                for arg in ae {
+                    arg.find_subexpression(subexp);
+                }
+            }
+            Expression::Add(a) | Expression::Mul(a) => {
+                for arg in a {
+                    arg.find_subexpression(subexp);
+                }
+            }
+            Expression::Pow(p) => {
+                p.0.find_subexpression(subexp);
+            }
+            Expression::Powf(p) => {
+                p.0.find_subexpression(subexp);
+                p.1.find_subexpression(subexp);
+            }
+            Expression::BuiltinFun(_, _) => {}
+            Expression::SubExpression(_) => {}
+        }
+    }
+}
+
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
+    ExpressionWithSubexpressions<T>
+{
+    /// Find and extract pairs of variables that appear in more than one instruction.
+    /// This reduces the number of operations. Returns `true` iff an extraction could be performed.
+    ///
+    /// This function can be called multiple times such that common subexpressions that
+    /// are larger than pairs can also be extracted.
+    pub fn common_pair_elimination(&mut self) -> bool {
+        let mut pair_count = HashMap::default();
+
+        for e in &self.subexpressions {
+            e.find_common_pairs(&mut pair_count);
+        }
+
+        for t in &self.tree {
+            t.find_common_pairs(&mut pair_count);
+        }
+
+        let mut v: Vec<_> = pair_count.into_iter().collect();
+        v.retain(|x| x.1 > 1);
+        v.sort_by_key(|k| std::cmp::Reverse(k.1));
+
+        let v: Vec<_> = v
+            .into_iter()
+            .map(|((a, b, c), e)| ((a, b.clone(), c.clone()), e))
+            .collect();
+
+        for ((is_add, l, r), _) in &v {
+            let id = self.subexpressions.len();
+
+            for t in &mut self.tree {
+                t.replace_common_pair(*is_add, l, r, id);
+            }
+
+            let mut first_replace = None;
+            for (i, e) in &mut self.subexpressions.iter_mut().enumerate() {
+                if e.replace_common_pair(*is_add, l, r, id) {
+                    if first_replace.is_none() {
+                        first_replace = Some(i);
+                    }
+                }
+            }
+
+            let pair = if *is_add {
+                Expression::Add(vec![l.clone(), r.clone()])
+            } else {
+                Expression::Mul(vec![l.clone(), r.clone()])
+            };
+
+            if let Some(i) = first_replace {
+                // all subexpressions need to be shifted
+                for k in i..self.subexpressions.len() {
+                    self.subexpressions[k].shift_subexpr(i, id);
+                }
+
+                for t in &mut self.tree {
+                    t.shift_subexpr(i, id);
+                }
+
+                self.subexpressions.insert(i, pair);
+            } else {
+                self.subexpressions.push(pair);
+            }
+
+            // some subexpression could be Z3=Z2 now, remove that
+            for i in (0..self.subexpressions.len()).rev() {
+                if let Expression::SubExpression(n) = &self.subexpressions[i] {
+                    let n = *n;
+                    self.subexpressions.remove(i);
+                    for e in &mut self.subexpressions[i..] {
+                        e.rename_subexpr(i, n);
+                    }
+
+                    for t in &mut self.tree {
+                        t.rename_subexpr(i, n);
+                    }
+                }
+            }
+
+            return true; // do just one for now
+        }
+
+        false
+    }
+
+    pub fn count_operations(&self) -> (usize, usize) {
+        let mut add = 0;
+        let mut mul = 0;
+        for e in &self.subexpressions {
+            let (ea, em) = e.count_operations();
+            add += ea;
+            mul += em;
+        }
+
+        for e in &self.tree {
+            let (ea, em) = e.count_operations();
+            add += ea;
+            mul += em;
+        }
+
+        (add, mul)
+    }
+}
+
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expression<T> {
+    pub fn count_operations(&self) -> (usize, usize) {
+        match self {
+            Expression::Const(_) => (0, 0),
+            Expression::Parameter(_) => (0, 0),
+            Expression::Eval(_, args) => {
+                let mut add = 0;
+                let mut mul = 0;
+                for arg in args {
+                    let (a, m) = arg.count_operations();
+                    add += a;
+                    mul += m;
+                }
+                (add, mul)
+            }
+            Expression::Add(a) => {
+                let mut add = 0;
+                let mut mul = 0;
+                for arg in a {
+                    let (a, m) = arg.count_operations();
+                    add += a;
+                    mul += m;
+                }
+                (add + a.len() - 1, mul)
+            }
+            Expression::Mul(m) => {
+                let mut add = 0;
+                let mut mul = 0;
+                for arg in m {
+                    let (a, m) = arg.count_operations();
+                    add += a;
+                    mul += m;
+                }
+                (add, mul + m.len() - 1)
+            }
+            Expression::Pow(p) => {
+                let (a, m) = p.0.count_operations();
+                (a, m + p.1 as usize - 1)
+            }
+            Expression::Powf(p) => {
+                let (a, m) = p.0.count_operations();
+                let (a2, m2) = p.1.count_operations();
+                (a + a2, m + m2 + 1) // not clear how to count this
+            }
+            Expression::ReadArg(_) => (0, 0),
+            Expression::BuiltinFun(_, _) => (0, 0), // not clear how to count this, third arg?
+            Expression::SubExpression(_) => (0, 0),
+        }
+    }
+
+    fn shift_subexpr(&mut self, pos: usize, max: usize) {
+        match self {
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
+            Expression::Eval(_, ae) => {
+                for arg in &mut *ae {
+                    arg.shift_subexpr(pos, max);
+                }
+            }
+            Expression::Add(a) | Expression::Mul(a) => {
+                for arg in a {
+                    arg.shift_subexpr(pos, max);
+                }
+            }
+            Expression::Pow(p) => {
+                p.0.shift_subexpr(pos, max);
+            }
+            Expression::Powf(p) => {
+                p.0.shift_subexpr(pos, max);
+                p.1.shift_subexpr(pos, max);
+            }
+            Expression::BuiltinFun(_, _) => {}
+            Expression::SubExpression(i) => {
+                if *i == max {
+                    *i = pos;
+                } else if *i >= pos {
+                    *i += 1;
+                }
+            }
+        }
+    }
+
+    fn rename_subexpr(&mut self, old: usize, new: usize) {
+        match self {
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
+            Expression::Eval(_, ae) => {
+                for arg in &mut *ae {
+                    arg.rename_subexpr(old, new);
+                }
+            }
+            Expression::Add(a) | Expression::Mul(a) => {
+                for arg in a {
+                    arg.rename_subexpr(old, new);
+                }
+            }
+            Expression::Pow(p) => {
+                p.0.rename_subexpr(old, new);
+            }
+            Expression::Powf(p) => {
+                p.0.rename_subexpr(old, new);
+                p.1.rename_subexpr(old, new);
+            }
+            Expression::BuiltinFun(_, _) => {}
+            Expression::SubExpression(i) => {
+                if *i == old {
+                    *i = new;
+                } else if *i > old {
+                    *i -= 1;
+                }
+            }
+        }
+    }
+
+    fn find_common_pairs<'a>(&'a self, subexp: &mut HashMap<(bool, &'a Self, &'a Self), usize>) {
+        match self {
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
+            Expression::Eval(_, ae) => {
+                for arg in ae {
+                    arg.find_common_pairs(subexp);
+                }
+            }
+            x @ Expression::Add(m) | x @ Expression::Mul(m) => {
+                for a in m {
+                    a.find_common_pairs(subexp);
+                }
+
+                let mut d: Vec<_> = m.iter().collect();
+                d.dedup();
+                let mut rep = vec![0; d.len()];
+
+                for (c, v) in rep.iter_mut().zip(&d) {
+                    for v2 in m {
+                        if *v == v2 {
+                            *c += 1;
+                        }
+                    }
+                }
+
+                for i in 0..d.len() {
+                    if rep[i] > 1 {
+                        *subexp
+                            .entry((matches!(x, Expression::Add(_)), &d[i], &d[i]))
+                            .or_insert(0) += rep[i] / 2;
+                    }
+
+                    for j in i + 1..d.len() {
+                        *subexp
+                            .entry((matches!(x, Expression::Add(_)), &d[i], &d[j]))
+                            .or_insert(0) += rep[i].min(rep[j]);
+                    }
+                }
+            }
+            Expression::Pow(p) => {
+                p.0.find_common_pairs(subexp);
+            }
+            Expression::Powf(p) => {
+                p.0.find_common_pairs(subexp);
+                p.1.find_common_pairs(subexp);
+            }
+            Expression::BuiltinFun(_, _) => {}
+            Expression::SubExpression(_) => {}
+        }
+    }
+
+    fn replace_common_pair(&mut self, is_add: bool, r: &Self, l: &Self, subexpr_id: usize) -> bool {
+        let cur_is_add = matches!(self, Expression::Add(_));
+
+        match self {
+            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => false,
+            Expression::Eval(_, ae) => {
+                let mut replaced = false;
+                for arg in &mut *ae {
+                    replaced |= arg.replace_common_pair(is_add, r, l, subexpr_id);
+                }
+                replaced
+            }
+            Expression::Add(a) | Expression::Mul(a) => {
+                let mut replaced = false;
+                for arg in &mut *a {
+                    replaced |= arg.replace_common_pair(is_add, r, l, subexpr_id);
+                }
+
+                if is_add != cur_is_add {
+                    return replaced;
+                }
+
+                if l == r {
+                    let count = a.iter().filter(|x| *x == l).count();
+                    let pairs = count / 2;
+                    if pairs > 0 {
+                        a.retain(|x| x != l);
+
+                        if count % 2 == 1 {
+                            a.push(l.clone());
+                        }
+
+                        a.extend(
+                            std::iter::repeat(Expression::SubExpression(subexpr_id)).take(pairs),
+                        );
+                        a.sort();
+
+                        if a.len() == 1 {
+                            *self = a.pop().unwrap();
+                        }
+
+                        return true;
+                    }
+                } else {
+                    let mut idx1_count = 0;
+                    let mut idx2_count = 0;
+                    for v in &*a {
+                        if v == l {
+                            idx1_count += 1;
+                        }
+                        if v == r {
+                            idx2_count += 1;
+                        }
+                    }
+
+                    let pair_count = idx1_count.min(idx2_count);
+
+                    if pair_count > 0 {
+                        a.retain(|x| x != l && x != r);
+
+                        // add back removed indices in cases such as idx1*idx2*idx2
+                        if idx1_count > pair_count {
+                            a.extend(std::iter::repeat(l.clone()).take(idx1_count - pair_count));
+                        }
+                        if idx2_count > pair_count {
+                            a.extend(std::iter::repeat(r.clone()).take(idx2_count - pair_count));
+                        }
+
+                        a.extend(
+                            std::iter::repeat(Expression::SubExpression(subexpr_id))
+                                .take(pair_count),
+                        );
+                        a.sort();
+
+                        if a.len() == 1 {
+                            *self = a.pop().unwrap();
+                        }
+
+                        return true;
+                    }
+                }
+
+                replaced
+            }
+            Expression::Pow(p) => p.0.replace_common_pair(is_add, r, l, subexpr_id),
+            Expression::Powf(p) => {
+                let mut replaced = p.0.replace_common_pair(is_add, r, l, subexpr_id);
+                replaced |= p.1.replace_common_pair(is_add, r, l, subexpr_id);
+                replaced
+            }
+            Expression::BuiltinFun(_, _) => false,
+            Expression::SubExpression(_) => false,
         }
     }
 }
 
 impl<T: Real> EvalTree<T> {
     /// Evaluate the evaluation tree. Consider converting to a linear form for repeated evaluation.
-    pub fn evaluate(&mut self, params: &[T]) -> T {
-        self.evaluate_impl(params, &[])
+    pub fn evaluate(&mut self, params: &[T], out: &mut [T]) {
+        for (o, e) in out.iter_mut().zip(&self.expressions.tree) {
+            *o = self.evaluate_impl(&e, &self.expressions.subexpressions, params, &[])
+        }
     }
 
-    fn evaluate_impl(&mut self, params: &[T], args: &[T]) -> T {
-        match self {
-            EvalTree::Const(c) => c.clone(),
-            EvalTree::Parameter(p) => params[*p].clone(),
-            EvalTree::Eval(arg_buf, e_args, f) => {
-                for (b, a) in arg_buf.iter_mut().zip(e_args.iter_mut()) {
-                    *b = a.evaluate_impl(params, args);
+    fn evaluate_impl(
+        &self,
+        expr: &Expression<T>,
+        subexpressions: &[Expression<T>],
+        params: &[T],
+        args: &[T],
+    ) -> T {
+        match expr {
+            Expression::Const(c) => c.clone(),
+            Expression::Parameter(p) => params[*p].clone(),
+            Expression::Eval(f, e_args) => {
+                let mut arg_buf = vec![T::new_zero(); e_args.len()];
+                for (b, a) in arg_buf.iter_mut().zip(e_args.iter()) {
+                    *b = self.evaluate_impl(a, subexpressions, params, args);
                 }
 
-                f.evaluate_impl(params, &arg_buf)
+                let func = &self.functions[*f].2;
+                self.evaluate_impl(&func.tree[0], &func.subexpressions, params, &arg_buf)
             }
-            EvalTree::Add(a) => {
-                let mut r = a[0].evaluate_impl(params, args);
-                for arg in &mut a[1..] {
-                    r += arg.evaluate_impl(params, args);
+            Expression::Add(a) => {
+                let mut r = self.evaluate_impl(&a[0], subexpressions, params, args);
+                for arg in &a[1..] {
+                    r += self.evaluate_impl(arg, subexpressions, params, args);
                 }
                 r
             }
-            EvalTree::Mul(m) => {
-                let mut r = m[0].evaluate_impl(params, args);
-                for arg in &mut m[1..] {
-                    r *= arg.evaluate_impl(params, args);
+            Expression::Mul(m) => {
+                let mut r = self.evaluate_impl(&m[0], subexpressions, params, args);
+                for arg in &m[1..] {
+                    r *= self.evaluate_impl(arg, subexpressions, params, args);
                 }
                 r
             }
-            EvalTree::Pow(p) => {
-                let (b, e) = &mut **p;
-                let b_eval = b.evaluate_impl(params, args);
+            Expression::Pow(p) => {
+                let (b, e) = &**p;
+                let b_eval = self.evaluate_impl(b, subexpressions, params, args);
 
                 if *e >= 0 {
                     b_eval.pow(*e as u64)
@@ -270,15 +1390,15 @@ impl<T: Real> EvalTree<T> {
                     b_eval.pow(e.unsigned_abs()).inv()
                 }
             }
-            EvalTree::Powf(p) => {
-                let (b, e) = &mut **p;
-                let b_eval = b.evaluate_impl(params, args);
-                let e_eval = e.evaluate_impl(params, args);
+            Expression::Powf(p) => {
+                let (b, e) = &**p;
+                let b_eval = self.evaluate_impl(b, subexpressions, params, args);
+                let e_eval = self.evaluate_impl(e, subexpressions, params, args);
                 b_eval.powf(&e_eval)
             }
-            EvalTree::ReadArg(i) => args[*i].clone(),
-            EvalTree::BuiltinFun(s, a) => {
-                let arg = a.evaluate_impl(params, args);
+            Expression::ReadArg(i) => args[*i].clone(),
+            Expression::BuiltinFun(s, a) => {
+                let arg = self.evaluate_impl(a, subexpressions, params, args);
                 match *s {
                     State::EXP => arg.exp(),
                     State::LOG => arg.log(),
@@ -288,47 +1408,211 @@ impl<T: Real> EvalTree<T> {
                     _ => unreachable!(),
                 }
             }
+            Expression::SubExpression(s) => {
+                // TODO: cache
+                self.evaluate_impl(&subexpressions[*s], subexpressions, params, args)
+            }
+        }
+    }
+}
+
+impl<T: NumericalFloatLike> EvalTree<T> {
+    pub fn export_cpp(&self) -> String {
+        let mut res = "#include <iostream>\n#include <cmath>\n\n".to_string();
+
+        for (name, arg_names, body) in &self.functions {
+            let mut args = arg_names
+                .iter()
+                .map(|x| " T ".to_string() + x.to_string().as_str())
+                .collect::<Vec<_>>();
+            args.insert(0, "T* params".to_string());
+
+            res += &format!(
+                "\ntemplate<typename T>\nT {}({}) {{\n",
+                name,
+                args.join(",")
+            );
+            // our functions are all expressions so we return the expression
+
+            for (i, s) in body.subexpressions.iter().enumerate() {
+                res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, arg_names));
+            }
+
+            if body.tree.len() > 1 {
+                panic!("Tensor functions not supported yet");
+            }
+
+            let ret = self.export_cpp_impl(&body.tree[0], arg_names);
+            res += &format!("\treturn {};\n}}\n", ret);
+        }
+
+        res += &format!("\ntemplate<typename T>\nvoid eval(T* params, T* out) {{\n");
+
+        for (i, s) in self.expressions.subexpressions.iter().enumerate() {
+            res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, &[]));
+        }
+
+        for (i, e) in self.expressions.tree.iter().enumerate() {
+            res += &format!("\tout[{}] = {};\n", i, self.export_cpp_impl(&e, &[]));
+        }
+
+        res += "\treturn;\n}\n";
+
+        res += "\nextern \"C\" {\n\tvoid eval_double(double* params, double* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
+
+        res
+    }
+
+    fn export_cpp_impl(&self, expr: &Expression<T>, args: &[Symbol]) -> String {
+        match expr {
+            Expression::Const(c) => {
+                format!("T({})", c)
+            }
+            Expression::Parameter(p) => {
+                format!("params[{}]", p)
+            }
+            Expression::Eval(id, e_args) => {
+                let mut r = format!("{}(params", self.functions[*id].0);
+
+                for a in e_args {
+                    r.push_str(", ");
+                    r += &self.export_cpp_impl(a, args);
+                }
+                r.push_str(")");
+                r
+            }
+            Expression::Add(a) => {
+                let mut r = "(".to_string();
+                r += &self.export_cpp_impl(&a[0], args);
+                for arg in &a[1..] {
+                    r.push_str(" + ");
+                    r += &self.export_cpp_impl(arg, args);
+                }
+                r.push_str(")");
+                r
+            }
+            Expression::Mul(m) => {
+                let mut r = "(".to_string();
+                r += &self.export_cpp_impl(&m[0], args);
+                for arg in &m[1..] {
+                    r.push_str(" * ");
+                    r += &self.export_cpp_impl(arg, args);
+                }
+                r.push_str(")");
+                r
+            }
+            Expression::Pow(p) => {
+                let mut r = "pow(".to_string();
+                r += &self.export_cpp_impl(&p.0, args);
+                r.push_str(", ");
+                r.push_str(&p.1.to_string());
+                r.push(')');
+                r
+            }
+            Expression::Powf(p) => {
+                let mut r = "powf(".to_string();
+                r += &self.export_cpp_impl(&p.0, args);
+                r.push_str(", ");
+                r += &self.export_cpp_impl(&p.1, args);
+                r.push(')');
+                r
+            }
+            Expression::ReadArg(s) => args[*s].to_string(),
+            Expression::BuiltinFun(s, a) => match *s {
+                State::EXP => {
+                    let mut r = "exp(".to_string();
+                    r += &self.export_cpp_impl(a, args);
+                    r.push(')');
+                    r
+                }
+                State::LOG => {
+                    let mut r = "log(".to_string();
+                    r += &self.export_cpp_impl(a, args);
+                    r.push(')');
+                    r
+                }
+                State::SIN => {
+                    let mut r = "sin(".to_string();
+                    r += &self.export_cpp_impl(a, args);
+                    r.push(')');
+                    r
+                }
+                State::COS => {
+                    let mut r = "cos(".to_string();
+                    r += &self.export_cpp_impl(a, args);
+                    r.push(')');
+                    r
+                }
+                State::SQRT => {
+                    let mut r = "sqrt(".to_string();
+                    r += &self.export_cpp_impl(a, args);
+                    r.push(')');
+                    r
+                }
+                _ => unreachable!(),
+            },
+            Expression::SubExpression(id) => {
+                format!("Z{}_", id)
+            }
         }
     }
 }
 
 impl<'a> AtomView<'a> {
-    /// Convert nested expressions to a from suitable for evaluation.
-    pub fn evaluator<T: Clone + Default, F: Fn(&Rational) -> T + Copy>(
-        &self,
-        coeff_map: F,
-        const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
-        params: &[Atom],
-    ) -> ExpressionEvaluator<T> {
-        let tree = self.to_eval_tree(coeff_map, const_map, params);
-        tree.linearize(params.len())
-    }
-
     /// Convert nested expressions to a tree.
-    pub fn to_eval_tree<T: Clone + Default, F: Fn(&Rational) -> T + Copy>(
+    pub fn to_eval_tree<
+        T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord,
+        F: Fn(&Rational) -> T + Copy,
+    >(
         &self,
         coeff_map: F,
         const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
         params: &[Atom],
     ) -> EvalTree<T> {
-        self.to_eval_tree_impl(coeff_map, const_map, params, &[])
+        Self::to_eval_tree_multiple(std::slice::from_ref(self), coeff_map, const_map, params)
     }
 
-    fn to_eval_tree_impl<T: Clone + Default, F: Fn(&Rational) -> T + Copy>(
+    /// Convert nested expressions to a tree.
+    pub fn to_eval_tree_multiple<
+        T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord,
+        F: Fn(&Rational) -> T + Copy,
+    >(
+        exprs: &[Self],
+        coeff_map: F,
+        const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
+        params: &[Atom],
+    ) -> EvalTree<T> {
+        let mut funcs = vec![];
+        let tree = exprs
+            .iter()
+            .map(|t| t.to_eval_tree_impl(coeff_map, const_map, params, &[], &mut funcs))
+            .collect();
+
+        EvalTree {
+            expressions: ExpressionWithSubexpressions {
+                tree,
+                subexpressions: vec![],
+            },
+            functions: funcs,
+        }
+    }
+
+    fn to_eval_tree_impl<T: Clone + Default + Ord, F: Fn(&Rational) -> T + Copy>(
         &self,
         coeff_map: F,
         const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
         params: &[Atom],
         args: &[Symbol],
-    ) -> EvalTree<T> {
+        funcs: &mut Vec<(Symbol, Vec<Symbol>, ExpressionWithSubexpressions<T>)>,
+    ) -> Expression<T> {
         if let Some(p) = params.iter().position(|a| a.as_view() == *self) {
-            return EvalTree::Parameter(p);
+            return Expression::Parameter(p);
         }
 
         if let Some(c) = const_map.get(&self.into()) {
             return match c {
-                ConstOrExpr::Const(c) => EvalTree::Const(c.clone()),
-                ConstOrExpr::Expr(args, v) => {
+                ConstOrExpr::Const(c) => Expression::Const(c.clone()),
+                ConstOrExpr::Expr(name, args, v) => {
                     if !args.is_empty() {
                         panic!(
                             "Function {} called with wrong number of arguments: 0 vs {}",
@@ -337,23 +1621,31 @@ impl<'a> AtomView<'a> {
                         );
                     }
 
-                    let r = v.to_eval_tree_impl(coeff_map, const_map, params, args);
-                    EvalTree::Eval(vec![], vec![], Box::new(r))
+                    if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
+                        Expression::Eval(pos, vec![])
+                    } else {
+                        let r = v.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
+                        funcs.push((
+                            *name,
+                            args.clone(),
+                            ExpressionWithSubexpressions {
+                                tree: vec![r.clone()],
+                                subexpressions: vec![],
+                            },
+                        ));
+                        Expression::Eval(funcs.len() - 1, vec![])
+                    }
                 }
             };
         }
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d) => {
-                    EvalTree::Const(coeff_map(&Rational::Natural(n, d)))
-                }
-                CoefficientView::Large(l) => {
-                    EvalTree::Const(coeff_map(&Rational::Large(l.to_rat())))
-                }
+                CoefficientView::Natural(n, d) => Expression::Const(coeff_map(&(n, d).into())),
+                CoefficientView::Large(l) => Expression::Const(coeff_map(&l.to_rat())),
                 CoefficientView::Float(f) => {
                     // TODO: converting back to rational is slow
-                    EvalTree::Const(coeff_map(&f.to_float().to_rational()))
+                    Expression::Const(coeff_map(&f.to_float().to_rational()))
                 }
                 CoefficientView::FiniteField(_, _) => {
                     unimplemented!("Finite field not yet supported for evaluation")
@@ -368,7 +1660,7 @@ impl<'a> AtomView<'a> {
                 let name = v.get_symbol();
 
                 if let Some(p) = args.iter().position(|s| *s == name) {
-                    return EvalTree::ReadArg(p);
+                    return Expression::ReadArg(p);
                 }
 
                 panic!(
@@ -381,9 +1673,9 @@ impl<'a> AtomView<'a> {
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
-                    let arg_eval = arg.to_eval_tree_impl(coeff_map, const_map, params, args);
+                    let arg_eval = arg.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
 
-                    return EvalTree::BuiltinFun(f.get_symbol(), Box::new(arg_eval));
+                    return Expression::BuiltinFun(f.get_symbol(), Box::new(arg_eval));
                 }
 
                 let symb = InlineVar::new(f.get_symbol());
@@ -392,8 +1684,8 @@ impl<'a> AtomView<'a> {
                 };
 
                 match fun {
-                    ConstOrExpr::Const(t) => EvalTree::Const(t.clone()),
-                    ConstOrExpr::Expr(arg_spec, e) => {
+                    ConstOrExpr::Const(t) => Expression::Const(t.clone()),
+                    ConstOrExpr::Expr(name, arg_spec, e) => {
                         if f.get_nargs() != arg_spec.len() {
                             panic!(
                                 "Function {} called with wrong number of arguments: {} vs {}",
@@ -405,44 +1697,71 @@ impl<'a> AtomView<'a> {
 
                         let eval_args = f
                             .iter()
-                            .map(|arg| arg.to_eval_tree_impl(coeff_map, const_map, params, args))
+                            .map(|arg| {
+                                arg.to_eval_tree_impl(coeff_map, const_map, params, args, funcs)
+                            })
                             .collect();
-                        let res = e.to_eval_tree_impl(coeff_map, const_map, params, arg_spec);
 
-                        EvalTree::Eval(vec![T::default(); arg_spec.len()], eval_args, Box::new(res))
+                        if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
+                            Expression::Eval(pos, eval_args)
+                        } else {
+                            let r =
+                                e.to_eval_tree_impl(coeff_map, const_map, params, arg_spec, funcs);
+                            funcs.push((
+                                *name,
+                                arg_spec.clone(),
+                                ExpressionWithSubexpressions {
+                                    tree: vec![r.clone()],
+                                    subexpressions: vec![],
+                                },
+                            ));
+                            Expression::Eval(funcs.len() - 1, eval_args)
+                        }
                     }
                 }
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
-                let b_eval = b.to_eval_tree_impl(coeff_map, const_map, params, args);
+                let b_eval = b.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
 
                 if let AtomView::Num(n) = e {
                     if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
                         if den == 1 {
-                            return EvalTree::Pow(Box::new((b_eval, num)));
+                            if num > 1 {
+                                return Expression::Mul(vec![b_eval.clone(); num as usize]);
+                            }
+                            return Expression::Pow(Box::new((b_eval, num)));
                         }
                     }
                 }
 
-                let e_eval = e.to_eval_tree_impl(coeff_map, const_map, params, args);
-                EvalTree::Powf(Box::new((b_eval, e_eval)))
+                let e_eval = e.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
+                Expression::Powf(Box::new((b_eval, e_eval)))
             }
             AtomView::Mul(m) => {
                 let mut muls = vec![];
                 for arg in m.iter() {
-                    muls.push(arg.to_eval_tree_impl(coeff_map, const_map, params, args));
+                    let a = arg.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
+                    if let Expression::Mul(m) = a {
+                        muls.extend(m);
+                    } else {
+                        muls.push(a);
+                    }
                 }
 
-                EvalTree::Mul(muls)
+                muls.sort();
+
+                Expression::Mul(muls)
             }
             AtomView::Add(a) => {
                 let mut adds = vec![];
                 for arg in a.iter() {
-                    adds.push(arg.to_eval_tree_impl(coeff_map, const_map, params, args));
+                    adds.push(arg.to_eval_tree_impl(coeff_map, const_map, params, args, funcs));
                 }
 
-                EvalTree::Add(adds)
+                adds.sort();
+
+                Expression::Add(adds)
             }
         }
     }

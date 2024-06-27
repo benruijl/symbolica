@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use ahash::HashMap;
 use symbolica::{atom::Atom, evaluate::ConstOrExpr, state::State};
 
@@ -17,31 +19,63 @@ fn main() {
     let h_s = Atom::new_var(State::get_symbol("h"));
     let i_s = Atom::new_var(State::get_symbol("i"));
 
-    const_map.insert(p1.into(), ConstOrExpr::Expr(vec![], k.as_view()));
+    const_map.insert(
+        p1.into(),
+        ConstOrExpr::Expr(State::get_symbol("p1"), vec![], k.as_view()),
+    );
 
     const_map.insert(
         f_s.into(),
         ConstOrExpr::Expr(
+            State::get_symbol("f"),
             vec![State::get_symbol("y"), State::get_symbol("z")],
             f.as_view(),
         ),
     );
     const_map.insert(
         g_s.into(),
-        ConstOrExpr::Expr(vec![State::get_symbol("y")], g.as_view()),
+        ConstOrExpr::Expr(
+            State::get_symbol("g"),
+            vec![State::get_symbol("y")],
+            g.as_view(),
+        ),
     );
     const_map.insert(
         h_s.into(),
-        ConstOrExpr::Expr(vec![State::get_symbol("y")], h.as_view()),
+        ConstOrExpr::Expr(
+            State::get_symbol("h"),
+            vec![State::get_symbol("y")],
+            h.as_view(),
+        ),
     );
     const_map.insert(
         i_s.into(),
-        ConstOrExpr::Expr(vec![State::get_symbol("y")], i.as_view()),
+        ConstOrExpr::Expr(
+            State::get_symbol("i"),
+            vec![State::get_symbol("y")],
+            i.as_view(),
+        ),
     );
 
     let params = vec![Atom::parse("x").unwrap()];
 
+    // print C++ code
+    println!(
+        "{}",
+        e.as_view()
+            .to_eval_tree(|r| r.into(), &const_map, &params)
+            .export_cpp()
+    );
+
     let mut evaluator = e.as_view().evaluator(|r| r.into(), &const_map, &params);
 
     println!("{}", evaluator.evaluate(&[5.]));
+
+    // benchmark
+    let params = vec![5.];
+    let t = Instant::now();
+    for _ in 0..1000000 {
+        let _ = evaluator.evaluate(&params);
+    }
+    println!("{:#?}", t.elapsed());
 }

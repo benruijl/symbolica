@@ -31,7 +31,7 @@ impl<T> EvaluationFn<T> {
 
 pub enum ConstOrExpr<'a, T> {
     Const(T),
-    Expr(Vec<Symbol>, AtomView<'a>),
+    Expr(Symbol, Vec<Symbol>, AtomView<'a>),
 }
 
 impl Atom {
@@ -56,17 +56,24 @@ impl Atom {
 pub enum EvalTree<T> {
     Const(T),
     Parameter(usize),
-    Eval(Vec<T>, Vec<EvalTree<T>>, Box<EvalTree<T>>), // first argument is a buffer for the evaluated arguments
+    Eval(
+        Vec<T>,      // a buffer for the evaluated arguments
+        Symbol,      // function name
+        Vec<Symbol>, // function argument names
+        Vec<EvalTree<T>>,
+        Box<EvalTree<T>>,
+    ),
     Add(Vec<EvalTree<T>>),
     Mul(Vec<EvalTree<T>>),
     Pow(Box<(EvalTree<T>, i64)>),
     Powf(Box<(EvalTree<T>, EvalTree<T>)>),
-    ReadArg(usize),
+    ReadArg(Symbol, usize), // read nth function argument, also store the name for codegen
     BuiltinFun(Symbol, Box<EvalTree<T>>),
 }
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
+    reserved_indices: usize,
     instructions: Vec<Instr>,
     result_index: usize,
 }
@@ -77,21 +84,24 @@ impl<T: Real> ExpressionEvaluator<T> {
             *t = p.clone();
         }
 
+        let mut tmp;
         for i in &self.instructions {
             match i {
                 Instr::Add(r, v) => {
-                    self.stack[*r] = self.stack[v[0]].clone();
+                    tmp = self.stack[v[0]].clone();
                     for x in &v[1..] {
                         let e = self.stack[*x].clone();
-                        self.stack[*r] += e;
+                        tmp += e;
                     }
+                    std::mem::swap(&mut self.stack[*r], &mut tmp);
                 }
                 Instr::Mul(r, v) => {
-                    self.stack[*r] = self.stack[v[0]].clone();
+                    tmp = self.stack[v[0]].clone();
                     for x in &v[1..] {
                         let e = self.stack[*x].clone();
-                        self.stack[*r] *= e;
+                        tmp *= e;
                     }
+                    std::mem::swap(&mut self.stack[*r], &mut tmp);
                 }
                 Instr::Pow(r, b, e) => {
                     if *e >= 0 {
@@ -111,11 +121,6 @@ impl<T: Real> ExpressionEvaluator<T> {
                     State::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
                     _ => unreachable!(),
                 },
-                Instr::Copy(d, s) => {
-                    for (o, i) in s.iter().enumerate() {
-                        self.stack[*d + o] = self.stack[*i].clone();
-                    }
-                }
             }
         }
 
@@ -123,104 +128,220 @@ impl<T: Real> ExpressionEvaluator<T> {
     }
 }
 
+impl<T> ExpressionEvaluator<T> {
+    pub fn optimize_stack(&mut self) {
+        let mut last_use: Vec<usize> = vec![0; self.stack.len()];
+
+        for (i, x) in self.instructions.iter().enumerate() {
+            match x {
+                Instr::Add(_, a) | Instr::Mul(_, a) => {
+                    for v in a {
+                        last_use[*v] = i;
+                    }
+                }
+                Instr::Pow(_, b, _) | Instr::BuiltinFun(_, _, b) => {
+                    last_use[*b] = i;
+                }
+                Instr::Powf(_, a, b) => {
+                    last_use[*a] = i;
+                    last_use[*b] = i;
+                }
+            };
+        }
+
+        // prevent init slots from being overwritten
+        for i in 0..self.reserved_indices {
+            last_use[i] = self.instructions.len();
+        }
+
+        let mut rename_map: Vec<_> = (0..self.stack.len()).collect(); // identity map
+
+        let mut max_reg = self.reserved_indices;
+        for (i, x) in self.instructions.iter_mut().enumerate() {
+            let cur_reg = match x {
+                Instr::Add(r, _)
+                | Instr::Mul(r, _)
+                | Instr::Pow(r, _, _)
+                | Instr::Powf(r, _, _)
+                | Instr::BuiltinFun(r, _, _) => *r,
+            };
+
+            let cur_last_use = last_use[cur_reg];
+
+            let new_reg = if let Some((new_v, lu)) = last_use[..cur_reg]
+                .iter_mut()
+                .enumerate()
+                .find(|(_, r)| **r <= i)
+            // <= is ok because we store intermediate results in temp values
+            {
+                *lu = cur_last_use; // set the last use to the current variable last use
+                last_use[cur_reg] = 0; // make the current index available
+                rename_map[cur_reg] = new_v; // set the rename map so that every occurrence on the rhs is replaced
+                new_v
+            } else {
+                cur_reg
+            };
+
+            max_reg = max_reg.max(new_reg);
+
+            match x {
+                Instr::Add(r, a) | Instr::Mul(r, a) => {
+                    *r = new_reg;
+                    for v in a {
+                        *v = rename_map[*v];
+                    }
+                }
+                Instr::Pow(r, b, _) | Instr::BuiltinFun(r, _, b) => {
+                    *r = new_reg;
+                    *b = rename_map[*b];
+                }
+                Instr::Powf(r, a, b) => {
+                    *r = new_reg;
+                    *a = rename_map[*a];
+                    *b = rename_map[*b];
+                }
+            };
+        }
+
+        self.stack.truncate(max_reg + 1);
+
+        self.result_index = rename_map[self.result_index];
+    }
+}
+
+#[derive(Debug)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),
     Pow(usize, usize, i64),
     Powf(usize, usize, usize),
-    BuiltinFun(usize, Symbol, usize),
-    Copy(usize, Vec<usize>), // copy arguments into an adjacent array
+    BuiltinFun(usize, Symbol, usize), // support function call too? that would be a jump in the instr table here?
 }
 
-impl<T: Clone + Default> EvalTree<T> {
+impl<T: Clone + Default + PartialEq> EvalTree<T> {
     /// Create a linear version of the tree that can be evaluated more efficiently.
-    pub fn linearize(&self, param_len: usize) -> ExpressionEvaluator<T> {
+    pub fn linearize(mut self, param_len: usize) -> ExpressionEvaluator<T> {
         let mut stack = vec![T::default(); param_len];
+
+        // strip every constant and move them into the stack after the params
+        self.strip_constants(&mut stack, param_len);
+        let reserved_indices = stack.len();
+
         let mut instructions = vec![];
-        let result_index = self.linearize_impl(&mut stack, &mut instructions, 0);
-        ExpressionEvaluator {
+        let result_index = self.linearize_impl(&mut stack, &mut instructions, &[]);
+        let mut e = ExpressionEvaluator {
             stack,
+            reserved_indices,
             instructions,
             result_index,
+        };
+
+        e.optimize_stack();
+        e
+    }
+
+    fn strip_constants(&mut self, stack: &mut Vec<T>, param_len: usize) {
+        match self {
+            EvalTree::Const(t) => {
+                if let Some(p) = stack.iter().skip(param_len).position(|x| x == t) {
+                    *self = EvalTree::Parameter(param_len + p);
+                } else {
+                    stack.push(t.clone());
+                    *self = EvalTree::Parameter(stack.len() - 1);
+                }
+            }
+            EvalTree::Parameter(_) => {}
+            EvalTree::Eval(_, _, _, e_args, f) => {
+                for a in e_args {
+                    a.strip_constants(stack, param_len);
+                }
+                f.strip_constants(stack, param_len);
+            }
+            EvalTree::Add(a) | EvalTree::Mul(a) => {
+                for arg in a {
+                    arg.strip_constants(stack, param_len);
+                }
+            }
+            EvalTree::Pow(p) => {
+                p.0.strip_constants(stack, param_len);
+            }
+            EvalTree::Powf(p) => {
+                p.0.strip_constants(stack, param_len);
+                p.1.strip_constants(stack, param_len);
+            }
+            EvalTree::ReadArg(_, _) => {}
+            EvalTree::BuiltinFun(_, a) => {
+                a.strip_constants(stack, param_len);
+            }
         }
     }
 
     // Yields the stack index that contains the output.
-    fn linearize_impl(
-        &self,
-        stack: &mut Vec<T>,
-        instr: &mut Vec<Instr>,
-        arg_start: usize,
-    ) -> usize {
+    fn linearize_impl(&self, stack: &mut Vec<T>, instr: &mut Vec<Instr>, args: &[usize]) -> usize {
         match self {
             EvalTree::Const(t) => {
-                stack.push(t.clone()); // TODO: do once and recycle
+                stack.push(t.clone()); // TODO: do once and recycle, this messes with the logic as there is no associated instruction
                 stack.len() - 1
             }
             EvalTree::Parameter(i) => *i,
-            EvalTree::Eval(_, args, f) => {
-                let dest_pos = stack.len();
-                for _ in args {
-                    stack.push(T::default());
-                }
-
-                let a: Vec<_> = args
+            EvalTree::Eval(_, _, _, e_args, f) => {
+                // inline the function
+                let new_args: Vec<_> = e_args
                     .iter()
-                    .map(|x| x.linearize_impl(stack, instr, arg_start))
+                    .map(|x| x.linearize_impl(stack, instr, args))
                     .collect();
 
-                instr.push(Instr::Copy(dest_pos, a));
-                f.linearize_impl(stack, instr, dest_pos)
+                f.linearize_impl(stack, instr, &new_args)
             }
             EvalTree::Add(a) => {
+                let args = a
+                    .iter()
+                    .map(|x| x.linearize_impl(stack, instr, args))
+                    .collect();
+
                 stack.push(T::default());
                 let res = stack.len() - 1;
 
-                let add = Instr::Add(
-                    res,
-                    a.iter()
-                        .map(|x| x.linearize_impl(stack, instr, arg_start))
-                        .collect(),
-                );
+                let add = Instr::Add(res, args);
                 instr.push(add);
 
                 res
             }
             EvalTree::Mul(m) => {
+                let args = m
+                    .iter()
+                    .map(|x| x.linearize_impl(stack, instr, args))
+                    .collect();
+
                 stack.push(T::default());
                 let res = stack.len() - 1;
 
-                let mul = Instr::Mul(
-                    res,
-                    m.iter()
-                        .map(|x| x.linearize_impl(stack, instr, arg_start))
-                        .collect(),
-                );
+                let mul = Instr::Mul(res, args);
                 instr.push(mul);
 
                 res
             }
             EvalTree::Pow(p) => {
+                let b = p.0.linearize_impl(stack, instr, args);
                 stack.push(T::default());
                 let res = stack.len() - 1;
-                let b = p.0.linearize_impl(stack, instr, arg_start);
 
                 instr.push(Instr::Pow(res, b, p.1));
                 res
             }
             EvalTree::Powf(p) => {
+                let b = p.0.linearize_impl(stack, instr, args);
+                let e = p.1.linearize_impl(stack, instr, args);
                 stack.push(T::default());
                 let res = stack.len() - 1;
-                let b = p.0.linearize_impl(stack, instr, arg_start);
-                let e = p.1.linearize_impl(stack, instr, arg_start);
 
                 instr.push(Instr::Powf(res, b, e));
                 res
             }
-            EvalTree::ReadArg(a) => arg_start + *a,
+            EvalTree::ReadArg(_, a) => args[*a],
             EvalTree::BuiltinFun(s, v) => {
+                let arg = v.linearize_impl(stack, instr, args);
                 stack.push(T::default());
-                let arg = v.linearize_impl(stack, instr, arg_start);
                 let c = Instr::BuiltinFun(stack.len() - 1, *s, arg);
                 instr.push(c);
                 stack.len() - 1
@@ -239,7 +360,7 @@ impl<T: Real> EvalTree<T> {
         match self {
             EvalTree::Const(c) => c.clone(),
             EvalTree::Parameter(p) => params[*p].clone(),
-            EvalTree::Eval(arg_buf, e_args, f) => {
+            EvalTree::Eval(arg_buf, _, _, e_args, f) => {
                 for (b, a) in arg_buf.iter_mut().zip(e_args.iter_mut()) {
                     *b = a.evaluate_impl(params, args);
                 }
@@ -276,7 +397,7 @@ impl<T: Real> EvalTree<T> {
                 let e_eval = e.evaluate_impl(params, args);
                 b_eval.powf(&e_eval)
             }
-            EvalTree::ReadArg(i) => args[*i].clone(),
+            EvalTree::ReadArg(_, i) => args[*i].clone(),
             EvalTree::BuiltinFun(s, a) => {
                 let arg = a.evaluate_impl(params, args);
                 match *s {
@@ -290,11 +411,138 @@ impl<T: Real> EvalTree<T> {
             }
         }
     }
+
+    pub fn export_cpp(&self) -> String {
+        let mut res = format!("template<typename T>\nT eval(T* params) {{\n");
+        let mut funcs = HashMap::default();
+        res += "\treturn ";
+        self.export_cpp_impl(&mut res, &mut funcs);
+        res.push_str(";\n}\n");
+
+        let mut fs = funcs.values().cloned().collect::<Vec<_>>();
+
+        fs.push(res);
+
+        fs.push(
+            "int main() {\n\tstd::cout << eval(new double[]{5.0,6.0,7.0,8.0,9.0,10.0}) << std::endl;\n\treturn 0;\n}"
+                .to_string(),
+        );
+
+        let header = "#include <iostream>\n#include <cmath>\n\n";
+
+        header.to_string() + fs.join("\n").as_str()
+    }
+
+    fn export_cpp_impl(&self, out: &mut String, funcs: &mut HashMap<Symbol, String>) {
+        match self {
+            EvalTree::Const(c) => {
+                out.push_str(&format!("T({})", c));
+            }
+            EvalTree::Parameter(p) => {
+                out.push_str(&format!("params[{}]", p));
+            }
+            EvalTree::Eval(_, name, arg_names, e_args, f) => {
+                if funcs.get(name).is_none() {
+                    let mut out = String::new();
+
+                    let mut args = arg_names
+                        .iter()
+                        .map(|x| "T ".to_string() + x.to_string().as_str())
+                        .collect::<Vec<_>>();
+                    args.insert(0, "T* params".to_string());
+
+                    out.push_str(&format!(
+                        "template<typename T>\nT {}({}) {{\n",
+                        name,
+                        args.join(",")
+                    ));
+
+                    // our functions are all expressions so we return the expression
+                    out.push_str("\treturn ");
+                    f.export_cpp_impl(&mut out, funcs);
+
+                    out.push_str(";\n}\n");
+                    funcs.insert(name.clone(), out);
+                }
+
+                out.push_str(&format!("{}(params", name));
+
+                for a in e_args {
+                    out.push_str(", ");
+                    a.export_cpp_impl(out, funcs);
+                }
+                out.push_str(")");
+            }
+            EvalTree::Add(a) => {
+                out.push('(');
+                a[0].export_cpp_impl(out, funcs);
+                for arg in &a[1..] {
+                    out.push_str(" + ");
+                    arg.export_cpp_impl(out, funcs);
+                }
+                out.push_str(")");
+            }
+            EvalTree::Mul(m) => {
+                out.push('(');
+                m[0].export_cpp_impl(out, funcs);
+                for arg in &m[1..] {
+                    out.push_str(" * ");
+                    arg.export_cpp_impl(out, funcs);
+                }
+                out.push(')');
+            }
+            EvalTree::Pow(p) => {
+                out.push_str("pow(");
+                p.0.export_cpp_impl(out, funcs);
+                out.push_str(", ");
+                out.push_str(&p.1.to_string());
+                out.push(')');
+            }
+            EvalTree::Powf(p) => {
+                out.push_str("powf(");
+                p.0.export_cpp_impl(out, funcs);
+                out.push_str(", ");
+                p.1.export_cpp_impl(out, funcs);
+                out.push(')');
+            }
+            EvalTree::ReadArg(s, _) => {
+                out.push_str(&format!("{}", s));
+            }
+            EvalTree::BuiltinFun(s, a) => match *s {
+                State::EXP => {
+                    out.push_str("exp(");
+                    a.export_cpp_impl(out, funcs);
+                    out.push(')');
+                }
+                State::LOG => {
+                    out.push_str("log(");
+                    a.export_cpp_impl(out, funcs);
+                    out.push(')');
+                }
+                State::SIN => {
+                    out.push_str("sin(");
+                    a.export_cpp_impl(out, funcs);
+                    out.push(')');
+                }
+                State::COS => {
+                    out.push_str("cos(");
+                    a.export_cpp_impl(out, funcs);
+                    out.push(')');
+                }
+                State::SQRT => {
+                    out.push_str("sqrt(");
+                    a.export_cpp_impl(out, funcs);
+                    out.push(')');
+                }
+                _ => unreachable!(),
+            },
+        }
+    }
 }
 
 impl<'a> AtomView<'a> {
     /// Convert nested expressions to a from suitable for evaluation.
-    pub fn evaluator<T: Clone + Default, F: Fn(&Rational) -> T + Copy>(
+    pub fn evaluator<T: Clone + Default + PartialEq, F: Fn(&Rational) -> T + Copy>(
         &self,
         coeff_map: F,
         const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
@@ -328,7 +576,7 @@ impl<'a> AtomView<'a> {
         if let Some(c) = const_map.get(&self.into()) {
             return match c {
                 ConstOrExpr::Const(c) => EvalTree::Const(c.clone()),
-                ConstOrExpr::Expr(args, v) => {
+                ConstOrExpr::Expr(name, args, v) => {
                     if !args.is_empty() {
                         panic!(
                             "Function {} called with wrong number of arguments: 0 vs {}",
@@ -338,7 +586,7 @@ impl<'a> AtomView<'a> {
                     }
 
                     let r = v.to_eval_tree_impl(coeff_map, const_map, params, args);
-                    EvalTree::Eval(vec![], vec![], Box::new(r))
+                    EvalTree::Eval(vec![], *name, args.clone(), vec![], Box::new(r))
                 }
             };
         }
@@ -368,7 +616,7 @@ impl<'a> AtomView<'a> {
                 let name = v.get_symbol();
 
                 if let Some(p) = args.iter().position(|s| *s == name) {
-                    return EvalTree::ReadArg(p);
+                    return EvalTree::ReadArg(name, p);
                 }
 
                 panic!(
@@ -393,7 +641,7 @@ impl<'a> AtomView<'a> {
 
                 match fun {
                     ConstOrExpr::Const(t) => EvalTree::Const(t.clone()),
-                    ConstOrExpr::Expr(arg_spec, e) => {
+                    ConstOrExpr::Expr(name, arg_spec, e) => {
                         if f.get_nargs() != arg_spec.len() {
                             panic!(
                                 "Function {} called with wrong number of arguments: {} vs {}",
@@ -409,7 +657,13 @@ impl<'a> AtomView<'a> {
                             .collect();
                         let res = e.to_eval_tree_impl(coeff_map, const_map, params, arg_spec);
 
-                        EvalTree::Eval(vec![T::default(); arg_spec.len()], eval_args, Box::new(res))
+                        EvalTree::Eval(
+                            vec![T::default(); arg_spec.len()],
+                            *name,
+                            arg_spec.clone(),
+                            eval_args,
+                            Box::new(res),
+                        )
                     }
                 }
             }

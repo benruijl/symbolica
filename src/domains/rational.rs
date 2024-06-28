@@ -419,6 +419,12 @@ impl<R: EuclideanDomain + FractionNormalization, E: Exponent> PolynomialRing<Fra
 /// A rational number.
 pub type Rational = Fraction<IntegerRing>;
 
+impl Default for Rational {
+    fn default() -> Self {
+        Rational::zero()
+    }
+}
+
 impl Display for Rational {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.numerator.fmt(f)?;

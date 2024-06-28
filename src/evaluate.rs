@@ -1,4 +1,6 @@
-use ahash::HashMap;
+use std::rc::Rc;
+
+use ahash::{HashMap, HashSet};
 
 use crate::{
     atom::{representation::InlineVar, Atom, AtomOrView, AtomView, Symbol},
@@ -52,7 +54,7 @@ impl Atom {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum EvalTree<T> {
     Const(T),
     Parameter(usize),
@@ -69,6 +71,7 @@ pub enum EvalTree<T> {
     Powf(Box<(EvalTree<T>, EvalTree<T>)>),
     ReadArg(Symbol, usize), // read nth function argument, also store the name for codegen
     BuiltinFun(Symbol, Box<EvalTree<T>>),
+    SubExpression(usize, Rc<EvalTree<T>>), // a reference to a subexpression
 }
 
 pub struct ExpressionEvaluator<T> {
@@ -219,6 +222,42 @@ enum Instr {
 }
 
 impl<T: Clone + Default + PartialEq> EvalTree<T> {
+    pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> EvalTree<T2> {
+        match self {
+            EvalTree::Const(c) => EvalTree::Const(f(c)),
+            EvalTree::Parameter(p) => EvalTree::Parameter(*p),
+            EvalTree::Eval(arg_buf, name, arg_names, e_args, ff) => {
+                let new_args = e_args.iter().map(|x| x.map_coeff(f)).collect();
+                EvalTree::Eval(
+                    arg_buf.iter().map(|x| f(x)).collect(),
+                    *name,
+                    arg_names.clone(),
+                    new_args,
+                    Box::new(ff.map_coeff(f)),
+                )
+            }
+            EvalTree::Add(a) => {
+                let new_args = a.iter().map(|x| x.map_coeff(f)).collect();
+                EvalTree::Add(new_args)
+            }
+            EvalTree::Mul(m) => {
+                let new_args = m.iter().map(|x| x.map_coeff(f)).collect();
+                EvalTree::Mul(new_args)
+            }
+            EvalTree::Pow(p) => {
+                let (b, e) = &**p;
+                EvalTree::Pow(Box::new((b.map_coeff(f), *e)))
+            }
+            EvalTree::Powf(p) => {
+                let (b, e) = &**p;
+                EvalTree::Powf(Box::new((b.map_coeff(f), e.map_coeff(f))))
+            }
+            EvalTree::ReadArg(s, i) => EvalTree::ReadArg(*s, *i),
+            EvalTree::BuiltinFun(s, a) => EvalTree::BuiltinFun(*s, Box::new(a.map_coeff(f))),
+            EvalTree::SubExpression(i, e) => EvalTree::SubExpression(*i, Rc::new(e.map_coeff(f))),
+        }
+    }
+
     /// Create a linear version of the tree that can be evaluated more efficiently.
     pub fn linearize(mut self, param_len: usize) -> ExpressionEvaluator<T> {
         let mut stack = vec![T::default(); param_len];
@@ -227,8 +266,11 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
         self.strip_constants(&mut stack, param_len);
         let reserved_indices = stack.len();
 
+        let mut sub_expr_pos = HashMap::default();
         let mut instructions = vec![];
-        let result_index = self.linearize_impl(&mut stack, &mut instructions, &[]);
+        let result_index =
+            self.linearize_impl(&mut stack, &mut instructions, &mut sub_expr_pos, &[]);
+
         let mut e = ExpressionEvaluator {
             stack,
             reserved_indices,
@@ -273,11 +315,22 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             EvalTree::BuiltinFun(_, a) => {
                 a.strip_constants(stack, param_len);
             }
+            EvalTree::SubExpression(_, t) => {
+                let mut t2 = t.as_ref().clone();
+                t2.strip_constants(stack, param_len);
+                *t = Rc::new(t2);
+            }
         }
     }
 
     // Yields the stack index that contains the output.
-    fn linearize_impl(&self, stack: &mut Vec<T>, instr: &mut Vec<Instr>, args: &[usize]) -> usize {
+    fn linearize_impl(
+        &self,
+        stack: &mut Vec<T>,
+        instr: &mut Vec<Instr>,
+        sub_expr_pos: &mut HashMap<usize, usize>,
+        args: &[usize],
+    ) -> usize {
         match self {
             EvalTree::Const(t) => {
                 stack.push(t.clone()); // TODO: do once and recycle, this messes with the logic as there is no associated instruction
@@ -288,15 +341,15 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 // inline the function
                 let new_args: Vec<_> = e_args
                     .iter()
-                    .map(|x| x.linearize_impl(stack, instr, args))
+                    .map(|x| x.linearize_impl(stack, instr, sub_expr_pos, args))
                     .collect();
 
-                f.linearize_impl(stack, instr, &new_args)
+                f.linearize_impl(stack, instr, sub_expr_pos, &new_args)
             }
             EvalTree::Add(a) => {
                 let args = a
                     .iter()
-                    .map(|x| x.linearize_impl(stack, instr, args))
+                    .map(|x| x.linearize_impl(stack, instr, sub_expr_pos, args))
                     .collect();
 
                 stack.push(T::default());
@@ -310,7 +363,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             EvalTree::Mul(m) => {
                 let args = m
                     .iter()
-                    .map(|x| x.linearize_impl(stack, instr, args))
+                    .map(|x| x.linearize_impl(stack, instr, sub_expr_pos, args))
                     .collect();
 
                 stack.push(T::default());
@@ -322,7 +375,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 res
             }
             EvalTree::Pow(p) => {
-                let b = p.0.linearize_impl(stack, instr, args);
+                let b = p.0.linearize_impl(stack, instr, sub_expr_pos, args);
                 stack.push(T::default());
                 let res = stack.len() - 1;
 
@@ -330,8 +383,8 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 res
             }
             EvalTree::Powf(p) => {
-                let b = p.0.linearize_impl(stack, instr, args);
-                let e = p.1.linearize_impl(stack, instr, args);
+                let b = p.0.linearize_impl(stack, instr, sub_expr_pos, args);
+                let e = p.1.linearize_impl(stack, instr, sub_expr_pos, args);
                 stack.push(T::default());
                 let res = stack.len() - 1;
 
@@ -340,11 +393,133 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             }
             EvalTree::ReadArg(_, a) => args[*a],
             EvalTree::BuiltinFun(s, v) => {
-                let arg = v.linearize_impl(stack, instr, args);
+                let arg = v.linearize_impl(stack, instr, sub_expr_pos, args);
                 stack.push(T::default());
                 let c = Instr::BuiltinFun(stack.len() - 1, *s, arg);
                 instr.push(c);
                 stack.len() - 1
+            }
+            EvalTree::SubExpression(id, s) => {
+                if sub_expr_pos.contains_key(id) {
+                    *sub_expr_pos.get(id).unwrap()
+                } else {
+                    let res = s.linearize_impl(stack, instr, sub_expr_pos, args);
+                    sub_expr_pos.insert(*id, res);
+                    res
+                }
+            }
+        }
+    }
+}
+
+impl<T: Clone + Default + Eq + std::hash::Hash> EvalTree<T> {
+    fn extract_subexpressions(&mut self) {
+        let mut h = HashMap::default();
+        self.find_subexpression(&mut h, 0, &mut 0);
+
+        h.retain(|_, v| *v > 1);
+        for (i, v) in h.values_mut().enumerate() {
+            *v = i; // make the second argument a unique index of the subexpression
+        }
+
+        self.replace_subexpression(&h, 0, &mut 0, &mut HashMap::default());
+    }
+
+    fn replace_subexpression(
+        &mut self,
+        subexp: &HashMap<(usize, EvalTree<T>), usize>,
+        branch_id: usize,
+        new_branch_id: &mut usize,
+        new_sub_tree: &mut HashMap<usize, EvalTree<T>>,
+    ) {
+        let key = (branch_id, self.clone()); // key before any replacements
+        if let Some(i) = subexp.get(&key) {
+            if new_sub_tree.contains_key(i) {
+                *self = EvalTree::SubExpression(*i, Rc::new(new_sub_tree[i].clone()));
+                return;
+            }
+        }
+
+        match self {
+            EvalTree::Const(_) | EvalTree::Parameter(_) | EvalTree::ReadArg(_, _) => {}
+            EvalTree::Eval(_, _, _, ae, f) => {
+                for arg in &mut *ae {
+                    arg.replace_subexpression(subexp, branch_id, new_branch_id, new_sub_tree);
+                }
+
+                *new_branch_id += 1;
+                f.replace_subexpression(subexp, *new_branch_id, new_branch_id, new_sub_tree);
+            }
+            EvalTree::Add(a) | EvalTree::Mul(a) => {
+                for arg in a {
+                    arg.replace_subexpression(subexp, branch_id, new_branch_id, new_sub_tree);
+                }
+            }
+            EvalTree::Pow(p) => {
+                p.0.replace_subexpression(subexp, branch_id, new_branch_id, new_sub_tree);
+            }
+            EvalTree::Powf(p) => {
+                p.0.replace_subexpression(subexp, branch_id, new_branch_id, new_sub_tree);
+                p.1.replace_subexpression(subexp, branch_id, new_branch_id, new_sub_tree);
+            }
+            EvalTree::BuiltinFun(_, _) => {}
+            EvalTree::SubExpression(_, _) => {
+                unimplemented!("The expression should not already have subexpressions")
+            }
+        }
+
+        if let Some(i) = subexp.get(&key) {
+            new_sub_tree.insert(*i, self.clone());
+            *self = EvalTree::SubExpression(*i, Rc::new(self.clone()));
+        }
+    }
+
+    fn find_subexpression(
+        &self,
+        subexp: &mut HashMap<(usize, EvalTree<T>), usize>,
+        branch_id: usize,
+        new_branch_id: &mut usize,
+    ) {
+        if matches!(
+            self,
+            EvalTree::Const(_) | EvalTree::Parameter(_) | EvalTree::ReadArg(_, _)
+        ) {
+            return;
+        }
+
+        let key = (branch_id, self.clone());
+        if let Some(i) = subexp.get_mut(&key) {
+            *i += 1;
+            return;
+        }
+
+        subexp.insert(key, 1);
+
+        match self {
+            EvalTree::Const(_) | EvalTree::Parameter(_) | EvalTree::ReadArg(_, _) => {}
+            EvalTree::Eval(_, _, _, ae, f) => {
+                for arg in ae {
+                    arg.find_subexpression(subexp, branch_id, new_branch_id);
+                }
+
+                *new_branch_id += 1;
+                f.find_subexpression(subexp, *new_branch_id, new_branch_id);
+            }
+            EvalTree::Add(a) | EvalTree::Mul(a) => {
+                for arg in a {
+                    arg.find_subexpression(subexp, branch_id, new_branch_id);
+                }
+            }
+            EvalTree::Pow(p) => {
+                p.0.find_subexpression(subexp, branch_id, new_branch_id);
+            }
+            EvalTree::Powf(p) => {
+                p.0.find_subexpression(subexp, branch_id, new_branch_id);
+                p.1.find_subexpression(subexp, branch_id, new_branch_id);
+            }
+            EvalTree::BuiltinFun(_, _) => {}
+            EvalTree::SubExpression(_, _) => {
+                unimplemented!("The expression should not already have subexpressions")
             }
         }
     }
@@ -409,19 +584,35 @@ impl<T: Real> EvalTree<T> {
                     _ => unreachable!(),
                 }
             }
+            EvalTree::SubExpression(_, _) => todo!(),
         }
     }
 
     pub fn export_cpp(&self) -> String {
-        let mut res = format!("template<typename T>\nT eval(T* params) {{\n");
+        let mut res = String::new();
+
+        let mut out_preamble = Vec::new();
+        let mut processed_subexpr = HashSet::default();
+
         let mut funcs = HashMap::default();
         res += "\treturn ";
-        self.export_cpp_impl(&mut res, &mut funcs);
+        self.export_cpp_impl(
+            &mut res,
+            &mut out_preamble,
+            &mut processed_subexpr,
+            &mut funcs,
+        );
         res.push_str(";\n}\n");
 
         let mut fs = funcs.values().cloned().collect::<Vec<_>>();
+        fs.sort();
+        let mut fs = fs.into_iter().map(|(_, s)| s).collect::<Vec<_>>();
 
-        fs.push(res);
+        fs.push(
+            format!("template<typename T>\nT eval(T* params) {{\n")
+                + out_preamble.join("").as_str()
+                + res.as_str(),
+        );
 
         fs.push(
             "int main() {\n\tstd::cout << eval(new double[]{5.0,6.0,7.0,8.0,9.0,10.0}) << std::endl;\n\treturn 0;\n}"
@@ -433,7 +624,13 @@ impl<T: Real> EvalTree<T> {
         header.to_string() + fs.join("\n").as_str()
     }
 
-    fn export_cpp_impl(&self, out: &mut String, funcs: &mut HashMap<Symbol, String>) {
+    fn export_cpp_impl(
+        &self,
+        out: &mut String,
+        out_preamble: &mut Vec<String>,
+        processed_subexpr: &mut HashSet<usize>,
+        funcs: &mut HashMap<Symbol, (usize, String)>,
+    ) {
         match self {
             EvalTree::Const(c) => {
                 out.push_str(&format!("T({})", c));
@@ -444,6 +641,8 @@ impl<T: Real> EvalTree<T> {
             EvalTree::Eval(_, name, arg_names, e_args, f) => {
                 if funcs.get(name).is_none() {
                     let mut out = String::new();
+                    let mut out_preamble = Vec::new();
+                    let mut processed_subexpr = HashSet::default();
 
                     let mut args = arg_names
                         .iter()
@@ -451,58 +650,61 @@ impl<T: Real> EvalTree<T> {
                         .collect::<Vec<_>>();
                     args.insert(0, "T* params".to_string());
 
-                    out.push_str(&format!(
-                        "template<typename T>\nT {}({}) {{\n",
-                        name,
-                        args.join(",")
-                    ));
-
                     // our functions are all expressions so we return the expression
                     out.push_str("\treturn ");
-                    f.export_cpp_impl(&mut out, funcs);
+                    f.export_cpp_impl(&mut out, &mut out_preamble, &mut processed_subexpr, funcs);
 
                     out.push_str(";\n}\n");
-                    funcs.insert(name.clone(), out);
+                    let l = funcs.len();
+                    funcs.insert(
+                        name.clone(),
+                        (
+                            l,
+                            format!("template<typename T>\nT {}({}) {{\n", name, args.join(","))
+                                + out_preamble.join("").as_str()
+                                + out.as_str(),
+                        ),
+                    );
                 }
 
                 out.push_str(&format!("{}(params", name));
 
                 for a in e_args {
                     out.push_str(", ");
-                    a.export_cpp_impl(out, funcs);
+                    a.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                 }
                 out.push_str(")");
             }
             EvalTree::Add(a) => {
                 out.push('(');
-                a[0].export_cpp_impl(out, funcs);
+                a[0].export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                 for arg in &a[1..] {
                     out.push_str(" + ");
-                    arg.export_cpp_impl(out, funcs);
+                    arg.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                 }
                 out.push_str(")");
             }
             EvalTree::Mul(m) => {
                 out.push('(');
-                m[0].export_cpp_impl(out, funcs);
+                m[0].export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                 for arg in &m[1..] {
                     out.push_str(" * ");
-                    arg.export_cpp_impl(out, funcs);
+                    arg.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                 }
                 out.push(')');
             }
             EvalTree::Pow(p) => {
                 out.push_str("pow(");
-                p.0.export_cpp_impl(out, funcs);
+                p.0.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                 out.push_str(", ");
                 out.push_str(&p.1.to_string());
                 out.push(')');
             }
             EvalTree::Powf(p) => {
                 out.push_str("powf(");
-                p.0.export_cpp_impl(out, funcs);
+                p.0.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                 out.push_str(", ");
-                p.1.export_cpp_impl(out, funcs);
+                p.1.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                 out.push(')');
             }
             EvalTree::ReadArg(s, _) => {
@@ -511,55 +713,58 @@ impl<T: Real> EvalTree<T> {
             EvalTree::BuiltinFun(s, a) => match *s {
                 State::EXP => {
                     out.push_str("exp(");
-                    a.export_cpp_impl(out, funcs);
+                    a.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                     out.push(')');
                 }
                 State::LOG => {
                     out.push_str("log(");
-                    a.export_cpp_impl(out, funcs);
+                    a.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                     out.push(')');
                 }
                 State::SIN => {
                     out.push_str("sin(");
-                    a.export_cpp_impl(out, funcs);
+                    a.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                     out.push(')');
                 }
                 State::COS => {
                     out.push_str("cos(");
-                    a.export_cpp_impl(out, funcs);
+                    a.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                     out.push(')');
                 }
                 State::SQRT => {
                     out.push_str("sqrt(");
-                    a.export_cpp_impl(out, funcs);
+                    a.export_cpp_impl(out, out_preamble, processed_subexpr, funcs);
                     out.push(')');
                 }
                 _ => unreachable!(),
             },
+            EvalTree::SubExpression(id, s) => {
+                if processed_subexpr.contains(id) {
+                    out.push_str(&format!("s{}_", id));
+                } else {
+                    processed_subexpr.insert(*id);
+                    let mut sub_out = String::new();
+                    s.export_cpp_impl(&mut sub_out, out_preamble, processed_subexpr, funcs);
+
+                    out_preamble.push(format!("\tT s{}_ = {};\n", id, sub_out));
+                    out.push_str(&format!("s{}_", id));
+                }
+            }
         }
     }
 }
 
 impl<'a> AtomView<'a> {
-    /// Convert nested expressions to a from suitable for evaluation.
-    pub fn evaluator<T: Clone + Default + PartialEq, F: Fn(&Rational) -> T + Copy>(
-        &self,
-        coeff_map: F,
-        const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
-        params: &[Atom],
-    ) -> ExpressionEvaluator<T> {
-        let tree = self.to_eval_tree(coeff_map, const_map, params);
-        tree.linearize(params.len())
-    }
-
     /// Convert nested expressions to a tree.
-    pub fn to_eval_tree<T: Clone + Default, F: Fn(&Rational) -> T + Copy>(
+    pub fn to_eval_tree<T: Clone + Default + Eq + std::hash::Hash, F: Fn(&Rational) -> T + Copy>(
         &self,
         coeff_map: F,
         const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
         params: &[Atom],
     ) -> EvalTree<T> {
-        self.to_eval_tree_impl(coeff_map, const_map, params, &[])
+        let mut t = self.to_eval_tree_impl(coeff_map, const_map, params, &[]);
+        t.extract_subexpressions();
+        t
     }
 
     fn to_eval_tree_impl<T: Clone + Default, F: Fn(&Rational) -> T + Copy>(
@@ -593,12 +798,8 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d) => {
-                    EvalTree::Const(coeff_map(&Rational::Natural(n, d)))
-                }
-                CoefficientView::Large(l) => {
-                    EvalTree::Const(coeff_map(&Rational::Large(l.to_rat())))
-                }
+                CoefficientView::Natural(n, d) => EvalTree::Const(coeff_map(&(n, d).into())),
+                CoefficientView::Large(l) => EvalTree::Const(coeff_map(&l.to_rat())),
                 CoefficientView::Float(f) => {
                     // TODO: converting back to rational is slow
                     EvalTree::Const(coeff_map(&f.to_float().to_rational()))

@@ -1,15 +1,19 @@
 use std::time::Instant;
 
 use ahash::HashMap;
-use symbolica::{atom::Atom, evaluate::ConstOrExpr, state::State};
+use symbolica::{
+    atom::Atom,
+    evaluate::{ConstOrExpr, ExpressionEvaluator},
+    state::State,
+};
 
 fn main() {
     let e = Atom::parse("x + cos(x) + f(g(x+1),h(x*2)) + p(1)").unwrap();
-    let f = Atom::parse("y^2 + z^2").unwrap(); // f(y,z) = y^2+z^2
-    let g = Atom::parse("i(y+7)").unwrap(); // g(y) = i(y+7)
-    let h = Atom::parse("y + 3").unwrap(); // h(y) = y+3
-    let i = Atom::parse("y * 2").unwrap(); // i(y) = y*2
-    let k = Atom::parse("x+8").unwrap(); // p(1) = x + 8
+    let f = Atom::parse("y^2 + z^2*y^2").unwrap();
+    let g = Atom::parse("i(y+7)+x*i(y+7)*(y-1)").unwrap();
+    let h = Atom::parse("y*(1+x*(1+x^2)) + y^2*(1+x*(1+x^2))^2 + 3*(1+x^2)").unwrap();
+    let i = Atom::parse("y - 1").unwrap();
+    let k = Atom::parse("x+8").unwrap();
 
     let mut const_map = HashMap::default();
 
@@ -59,17 +63,13 @@ fn main() {
 
     let params = vec![Atom::parse("x").unwrap()];
 
-    // print C++ code
-    println!(
-        "{}",
-        e.as_view()
-            .to_eval_tree(|r| r.into(), &const_map, &params)
-            .export_cpp()
-    );
+    let tree = e.as_view().to_eval_tree(|r| r.clone(), &const_map, &params);
+    let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
+    println!("{}", t2.export_cpp()); // print C++ code
 
-    let mut evaluator = e.as_view().evaluator(|r| r.into(), &const_map, &params);
+    let mut evaluator: ExpressionEvaluator<f64> = t2.linearize(params.len());
 
-    println!("{}", evaluator.evaluate(&[5.]));
+    println!("Eval: {}", evaluator.evaluate(&[5.]));
 
     // benchmark
     let params = vec![5.];

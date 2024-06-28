@@ -52,6 +52,12 @@ pub enum Rational {
     Large(MultiPrecisionRational),
 }
 
+impl Default for Rational {
+    fn default() -> Self {
+        Rational::Natural(0, 1)
+    }
+}
+
 impl From<i32> for Rational {
     #[inline]
     fn from(value: i32) -> Self {

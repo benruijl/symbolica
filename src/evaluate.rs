@@ -764,6 +764,11 @@ impl<T: Real> EvalTree<T> {
         );
 
         fs.push(
+            "extern \"C\" {\n\tdouble eval_double(double* params) {\n\t\t return eval(params);\n\t}\n}\n"
+                .to_string()
+        );
+
+        fs.push(
             "int main() {\n\tstd::cout << eval(new double[]{5.0,6.0,7.0,8.0,9.0,10.0}) << std::endl;\n\treturn 0;\n}"
                 .to_string(),
         );

@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{process::Command, time::Instant};
 
 use ahash::HashMap;
 use symbolica::{
@@ -68,7 +68,38 @@ fn main() {
     tree.horner_scheme(); // optimize the tree using an occurrence-order Horner scheme
 
     let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
-    println!("{}", t2.export_cpp()); // print C++ code
+
+    let cpp = t2.export_cpp();
+    println!("{}", cpp); // print C++ code
+
+    std::fs::write("nested_evaluation.cpp", cpp).unwrap();
+
+    Command::new("g++")
+        .arg("-shared")
+        .arg("-fPIC")
+        .arg("-O3")
+        .arg("-o")
+        .arg("libneval.so")
+        .arg("nested_evaluation.cpp")
+        .output()
+        .unwrap();
+
+    unsafe {
+        let lib = libloading::Library::new("./libneval.so").unwrap();
+        let func: libloading::Symbol<unsafe extern "C" fn(params: *const f64) -> f64> =
+            lib.get(b"eval_double").unwrap();
+
+        let params = vec![5.];
+        println!("Eval from C++: {}", func(params.as_ptr()));
+
+        // benchmark
+
+        let t = Instant::now();
+        for _ in 0..1000000 {
+            let _ = func(params.as_ptr());
+        }
+        println!("C++ time {:#?}", t.elapsed());
+    };
 
     let mut evaluator: ExpressionEvaluator<f64> = t2.linearize(params.len());
 
@@ -80,5 +111,5 @@ fn main() {
     for _ in 0..1000000 {
         let _ = evaluator.evaluate(&params);
     }
-    println!("{:#?}", t.elapsed());
+    println!("Eager time {:#?}", t.elapsed());
 }

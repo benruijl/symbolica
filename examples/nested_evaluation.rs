@@ -13,7 +13,7 @@ fn main() {
     let g = Atom::parse("i(y+7)+x*i(y+7)*(y-1)").unwrap();
     let h = Atom::parse("y*(1+x*(1+x^2)) + y^2*(1+x*(1+x^2))^2 + 3*(1+x^2)").unwrap();
     let i = Atom::parse("y - 1").unwrap();
-    let k = Atom::parse("x+8").unwrap();
+    let k = Atom::parse("3*x^3 + 4*x^2 + 6*x +8").unwrap();
 
     let mut const_map = HashMap::default();
 
@@ -63,7 +63,10 @@ fn main() {
 
     let params = vec![Atom::parse("x").unwrap()];
 
-    let tree = e.as_view().to_eval_tree(|r| r.clone(), &const_map, &params);
+    let mut tree = e.as_view().to_eval_tree(|r| r.clone(), &const_map, &params);
+
+    tree.horner_scheme(); // optimize the tree using an occurrence-order Horner scheme
+
     let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
     println!("{}", t2.export_cpp()); // print C++ code
 

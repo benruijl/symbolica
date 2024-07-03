@@ -193,6 +193,7 @@ impl<'a> From<AddView<'a>> for AtomView<'a> {
 }
 
 /// A copy-on-write structure for `Atom` and `AtomView`.
+#[derive(Clone)]
 pub enum AtomOrView<'a> {
     Atom(Atom),
     View(AtomView<'a>),

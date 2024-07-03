@@ -2,13 +2,14 @@ use std::{process::Command, time::Instant};
 
 use ahash::HashMap;
 use symbolica::{
-    atom::Atom,
+    atom::{Atom, AtomView},
     evaluate::{ConstOrExpr, ExpressionEvaluator},
     state::State,
 };
 
 fn main() {
-    let e = Atom::parse("x + cos(x) + f(g(x+1),h(x*2)) + p(1)").unwrap();
+    let e1 = Atom::parse("x + cos(x) + f(g(x+1),h(x*2)) + p(1)").unwrap();
+    let e2 = Atom::parse("x + h(x*2) + cos(x)").unwrap();
     let f = Atom::parse("y^2 + z^2*y^2").unwrap();
     let g = Atom::parse("i(y+7)+x*i(y+7)*(y-1)").unwrap();
     let h = Atom::parse("y*(1+x*(1+x^2)) + y^2*(1+x*(1+x^2))^2 + 3*(1+x^2)").unwrap();
@@ -63,7 +64,12 @@ fn main() {
 
     let params = vec![Atom::parse("x").unwrap()];
 
-    let mut tree = e.as_view().to_eval_tree(|r| r.clone(), &const_map, &params);
+    let mut tree = AtomView::to_eval_tree_multiple(
+        &[e1.as_view(), e2.as_view()],
+        |r| r.clone(),
+        &const_map,
+        &params,
+    );
 
     // optimize the tree using an occurrence-order Horner scheme
     println!("Op original {:?}", tree.count_operations());
@@ -72,9 +78,6 @@ fn main() {
     // the compiler seems to do this as well
     tree.common_subexpression_elimination();
     println!("op CSSE {:?}", tree.count_operations());
-
-    let cpp = tree.export_cpp();
-    println!("{}", cpp); // print C++ code
 
     tree.common_pair_elimination();
     println!("op CPE {:?}", tree.count_operations());
@@ -97,17 +100,20 @@ fn main() {
 
     unsafe {
         let lib = libloading::Library::new("./libneval.so").unwrap();
-        let func: libloading::Symbol<unsafe extern "C" fn(params: *const f64) -> f64> =
-            lib.get(b"eval_double").unwrap();
+        let func: libloading::Symbol<
+            unsafe extern "C" fn(params: *const f64, out: *mut f64) -> f64,
+        > = lib.get(b"eval_double").unwrap();
 
         let params = vec![5.];
-        println!("Eval from C++: {}", func(params.as_ptr()));
+        let mut out = vec![0., 0.];
+        func(params.as_ptr(), out.as_mut_ptr());
+        println!("Eval from C++: {}, {}", out[0], out[1]);
 
         // benchmark
 
         let t = Instant::now();
         for _ in 0..1000000 {
-            let _ = func(params.as_ptr());
+            let _ = func(params.as_ptr(), out.as_mut_ptr());
         }
         println!("C++ time {:#?}", t.elapsed());
     };
@@ -115,13 +121,15 @@ fn main() {
     let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
     let mut evaluator: ExpressionEvaluator<f64> = t2.linearize(params.len());
 
-    println!("Eval: {}", evaluator.evaluate(&[5.]));
+    let mut out = vec![0., 0.];
+    evaluator.evaluate_multiple(&[5.], &mut out);
+    println!("Eval: {}, {}", out[0], out[1]);
 
     // benchmark
     let params = vec![5.];
     let t = Instant::now();
     for _ in 0..1000000 {
-        let _ = evaluator.evaluate(&params);
+        evaluator.evaluate_multiple(&params, &mut out);
     }
     println!("Eager time {:#?}", t.elapsed());
 }

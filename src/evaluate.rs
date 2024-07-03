@@ -56,7 +56,7 @@ impl Atom {
 }
 
 pub struct ExpressionWithSubexpressions<T> {
-    pub tree: Expression<T>,
+    pub tree: Vec<Expression<T>>,
     pub subexpressions: Vec<Expression<T>>,
 }
 
@@ -83,11 +83,17 @@ pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
     reserved_indices: usize,
     instructions: Vec<Instr>,
-    result_index: usize,
+    result_indices: Vec<usize>,
 }
 
 impl<T: Real> ExpressionEvaluator<T> {
     pub fn evaluate(&mut self, params: &[T]) -> T {
+        let mut res = T::new_zero();
+        self.evaluate_multiple(params, std::slice::from_mut(&mut res));
+        res
+    }
+
+    pub fn evaluate_multiple(&mut self, params: &[T], out: &mut [T]) {
         for (t, p) in self.stack.iter_mut().zip(params) {
             *t = p.clone();
         }
@@ -132,7 +138,9 @@ impl<T: Real> ExpressionEvaluator<T> {
             }
         }
 
-        self.stack[self.result_index].clone()
+        for (o, i) in out.iter_mut().zip(&self.result_indices) {
+            *o = self.stack[*i].clone();
+        }
     }
 }
 
@@ -160,6 +168,11 @@ impl<T> ExpressionEvaluator<T> {
         // prevent init slots from being overwritten
         for i in 0..self.reserved_indices {
             last_use[i] = self.instructions.len();
+        }
+
+        // prevent the output slots from being overwritten
+        for i in &self.result_indices {
+            last_use[*i] = self.instructions.len();
         }
 
         let mut rename_map: Vec<_> = (0..self.stack.len()).collect(); // identity map
@@ -213,7 +226,9 @@ impl<T> ExpressionEvaluator<T> {
 
         self.stack.truncate(max_reg + 1);
 
-        self.result_index = rename_map[self.result_index];
+        for i in &mut self.result_indices {
+            *i = rename_map[*i];
+        }
     }
 }
 
@@ -229,7 +244,7 @@ enum Instr {
 impl<T: Clone + Default + PartialEq> ExpressionWithSubexpressions<T> {
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> ExpressionWithSubexpressions<T2> {
         ExpressionWithSubexpressions {
-            tree: self.tree.map_coeff(f),
+            tree: self.tree.iter().map(|x| x.map_coeff(f)).collect(),
             subexpressions: self.subexpressions.iter().map(|x| x.map_coeff(f)).collect(),
         }
     }
@@ -306,7 +321,12 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> EvalTree<T2> {
         EvalTree {
             expressions: ExpressionWithSubexpressions {
-                tree: self.expressions.tree.map_coeff(f),
+                tree: self
+                    .expressions
+                    .tree
+                    .iter()
+                    .map(|x| x.map_coeff(f))
+                    .collect(),
                 subexpressions: self
                     .expressions
                     .subexpressions
@@ -332,20 +352,26 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
         let mut sub_expr_pos = HashMap::default();
         let mut instructions = vec![];
-        let result_index = self.linearize_impl(
-            &self.expressions.tree,
-            &self.expressions.subexpressions,
-            &mut stack,
-            &mut instructions,
-            &mut sub_expr_pos,
-            &[],
-        );
+
+        let mut result_indices = vec![];
+
+        for t in &self.expressions.tree {
+            let result_index = self.linearize_impl(
+                &t,
+                &self.expressions.subexpressions,
+                &mut stack,
+                &mut instructions,
+                &mut sub_expr_pos,
+                &[],
+            );
+            result_indices.push(result_index);
+        }
 
         let mut e = ExpressionEvaluator {
             stack,
             reserved_indices,
             instructions,
-            result_index,
+            result_indices,
         };
 
         e.optimize_stack();
@@ -353,13 +379,19 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
     }
 
     fn strip_constants(&mut self, stack: &mut Vec<T>, param_len: usize) {
-        self.expressions.tree.strip_constants(stack, param_len);
+        for t in &mut self.expressions.tree {
+            t.strip_constants(stack, param_len);
+        }
+
         for e in &mut self.expressions.subexpressions {
             e.strip_constants(stack, param_len);
         }
 
         for (_, _, e) in &mut self.functions {
-            e.tree.strip_constants(stack, param_len);
+            for t in &mut e.tree {
+                t.strip_constants(stack, param_len);
+            }
+
             for e in &mut e.subexpressions {
                 e.strip_constants(stack, param_len);
             }
@@ -393,7 +425,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
                 let func = &self.functions[*id].2;
                 self.linearize_impl(
-                    &func.tree,
+                    &func.tree[0],
                     &func.subexpressions,
                     stack,
                     instr,
@@ -480,13 +512,19 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
 impl EvalTree<Rational> {
     pub fn horner_scheme(&mut self) {
-        self.expressions.tree.horner_scheme();
+        for t in &mut self.expressions.tree {
+            t.horner_scheme();
+        }
+
         for e in &mut self.expressions.subexpressions {
             e.horner_scheme();
         }
 
         for (_, _, e) in &mut self.functions {
-            e.tree.horner_scheme();
+            for t in &mut e.tree {
+                t.horner_scheme();
+            }
+
             for e in &mut e.subexpressions {
                 e.horner_scheme();
             }
@@ -705,17 +743,10 @@ impl Expression<Rational> {
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree<T> {
     pub fn common_subexpression_elimination(&mut self) {
-        assert!(self.expressions.subexpressions.is_empty()); // TODO: remove this limitation
-
-        self.expressions.subexpressions.extend(
-            self.expressions
-                .tree
-                .extract_subexpressions(self.expressions.subexpressions.len()),
-        );
+        self.expressions.common_subexpression_elimination();
 
         for (_, _, e) in &mut self.functions {
-            e.subexpressions
-                .extend(e.tree.extract_subexpressions(e.subexpressions.len()));
+            e.common_subexpression_elimination();
         }
     }
 
@@ -740,23 +771,37 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree
     }
 }
 
-impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expression<T> {
-    fn extract_subexpressions(&mut self, sub_expr_start: usize) -> Vec<Expression<T>> {
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
+    ExpressionWithSubexpressions<T>
+{
+    pub fn common_subexpression_elimination(&mut self) {
         let mut h = HashMap::default();
-        self.find_subexpression(&mut h);
 
-        h.retain(|_, v| *v > 1);
-        for (i, v) in h.values_mut().enumerate() {
-            *v = sub_expr_start + i; // make the second argument a unique index of the subexpression
+        for t in &mut self.tree {
+            t.find_subexpression(&mut h);
         }
 
-        self.replace_subexpression(&h);
+        h.retain(|_, v| *v > 1);
+
+        // make the second argument a unique index of the subexpression
+        for (i, v) in h.values_mut().enumerate() {
+            *v = self.subexpressions.len() + i;
+        }
+
+        for t in &mut self.tree {
+            t.replace_subexpression(&h);
+        }
 
         let mut v: Vec<_> = h.into_iter().map(|(k, v)| (v, k)).collect();
         v.sort();
-        v.into_iter().map(|(_, x)| x).collect()
-    }
 
+        for (_, x) in v {
+            self.subexpressions.push(x);
+        }
+    }
+}
+
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expression<T> {
     fn replace_subexpression(&mut self, subexp: &HashMap<Expression<T>, usize>) {
         if let Some(i) = subexp.get(&self) {
             *self = Expression::SubExpression(*i);
@@ -844,7 +889,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
             e.find_common_pairs(&mut pair_count);
         }
 
-        self.tree.find_common_pairs(&mut pair_count);
+        for t in &self.tree {
+            t.find_common_pairs(&mut pair_count);
+        }
 
         let mut v: Vec<_> = pair_count.into_iter().collect();
         v.retain(|x| x.1 > 1);
@@ -858,7 +905,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
         for ((is_add, l, r), _) in &v {
             let id = self.subexpressions.len();
 
-            self.tree.replace_common_pair(*is_add, l, r, id);
+            for t in &mut self.tree {
+                t.replace_common_pair(*is_add, l, r, id);
+            }
 
             let mut first_replace = None;
             for (i, e) in &mut self.subexpressions.iter_mut().enumerate() {
@@ -881,7 +930,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
                     self.subexpressions[k].shift_subexpr(i, id);
                 }
 
-                self.tree.shift_subexpr(i, id);
+                for t in &mut self.tree {
+                    t.shift_subexpr(i, id);
+                }
 
                 self.subexpressions.insert(i, pair);
             } else {
@@ -897,7 +948,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
                         e.rename_subexpr(i, n);
                     }
 
-                    self.tree.rename_subexpr(i, n);
+                    for t in &mut self.tree {
+                        t.rename_subexpr(i, n);
+                    }
                 }
             }
 
@@ -916,8 +969,13 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
             mul += em;
         }
 
-        let (ea, em) = self.tree.count_operations();
-        (add + ea, mul + em)
+        for e in &self.tree {
+            let (ea, em) = e.count_operations();
+            add += ea;
+            mul += em;
+        }
+
+        (add, mul)
     }
 }
 
@@ -1182,13 +1240,10 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
 
 impl<T: Real> EvalTree<T> {
     /// Evaluate the evaluation tree. Consider converting to a linear form for repeated evaluation.
-    pub fn evaluate(&mut self, params: &[T]) -> T {
-        self.evaluate_impl(
-            &self.expressions.tree,
-            &self.expressions.subexpressions,
-            params,
-            &[],
-        )
+    pub fn evaluate(&mut self, params: &[T], out: &mut [T]) {
+        for (o, e) in out.iter_mut().zip(&self.expressions.tree) {
+            *o = self.evaluate_impl(&e, &self.expressions.subexpressions, params, &[])
+        }
     }
 
     fn evaluate_impl(
@@ -1208,7 +1263,7 @@ impl<T: Real> EvalTree<T> {
                 }
 
                 let func = &self.functions[*f].2;
-                self.evaluate_impl(&func.tree, &func.subexpressions, params, &arg_buf)
+                self.evaluate_impl(&func.tree[0], &func.subexpressions, params, &arg_buf)
             }
             Expression::Add(a) => {
                 let mut r = self.evaluate_impl(&a[0], subexpressions, params, args);
@@ -1282,22 +1337,27 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                 res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, arg_names));
             }
 
-            let ret = self.export_cpp_impl(&body.tree, arg_names);
+            if body.tree.len() > 1 {
+                panic!("Tensor functions not supported yet");
+            }
+
+            let ret = self.export_cpp_impl(&body.tree[0], arg_names);
             res += &format!("\treturn {};\n}}\n", ret);
         }
 
-        res += &format!("\ntemplate<typename T>\nT eval(T* params) {{\n");
+        res += &format!("\ntemplate<typename T>\nvoid eval(T* params, T* out) {{\n");
 
         for (i, s) in self.expressions.subexpressions.iter().enumerate() {
             res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, &[]));
         }
 
-        let ret = self.export_cpp_impl(&self.expressions.tree, &[]);
-        res += &format!("\treturn {};\n}}\n", ret);
+        for (i, e) in self.expressions.tree.iter().enumerate() {
+            res += &format!("\tout[{}] = {};\n", i, self.export_cpp_impl(&e, &[]));
+        }
 
-        res += "\nextern \"C\" {\n\tdouble eval_double(double* params) {\n\t\t return eval(params);\n\t}\n}\n";
+        res += "\treturn;\n}\n";
 
-        res += "\nint main() {\n\tstd::cout << eval(new double[]{5.0,6.0,7.0,8.0,9.0,10.0}) << std::endl;\n\treturn 0;\n}";
+        res += "\nextern \"C\" {\n\tvoid eval_double(double* params, double* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
 
         res
     }
@@ -1408,12 +1468,28 @@ impl<'a> AtomView<'a> {
         const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
         params: &[Atom],
     ) -> EvalTree<T> {
+        Self::to_eval_tree_multiple(std::slice::from_ref(self), coeff_map, const_map, params)
+    }
+
+    /// Convert nested expressions to a tree.
+    pub fn to_eval_tree_multiple<
+        T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord,
+        F: Fn(&Rational) -> T + Copy,
+    >(
+        exprs: &[Self],
+        coeff_map: F,
+        const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
+        params: &[Atom],
+    ) -> EvalTree<T> {
         let mut funcs = vec![];
-        let t = self.to_eval_tree_impl(coeff_map, const_map, params, &[], &mut funcs);
+        let tree = exprs
+            .iter()
+            .map(|t| t.to_eval_tree_impl(coeff_map, const_map, params, &[], &mut funcs))
+            .collect();
 
         EvalTree {
             expressions: ExpressionWithSubexpressions {
-                tree: t,
+                tree,
                 subexpressions: vec![],
             },
             functions: funcs,
@@ -1452,7 +1528,7 @@ impl<'a> AtomView<'a> {
                             *name,
                             args.clone(),
                             ExpressionWithSubexpressions {
-                                tree: r.clone(),
+                                tree: vec![r.clone()],
                                 subexpressions: vec![],
                             },
                         ));
@@ -1534,7 +1610,7 @@ impl<'a> AtomView<'a> {
                                 *name,
                                 arg_spec.clone(),
                                 ExpressionWithSubexpressions {
-                                    tree: r.clone(),
+                                    tree: vec![r.clone()],
                                     subexpressions: vec![],
                                 },
                             ));

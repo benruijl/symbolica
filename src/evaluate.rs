@@ -32,9 +32,99 @@ impl<T> EvaluationFn<T> {
     }
 }
 
-pub enum ConstOrExpr<'a, T> {
+#[derive(PartialEq, Eq, Hash)]
+enum AtomOrTaggedFunction<'a> {
+    Atom(AtomOrView<'a>),
+    TaggedFunction(Symbol, Vec<AtomOrView<'a>>),
+}
+
+pub struct FunctionMap<'a, T> {
+    map: HashMap<AtomOrTaggedFunction<'a>, ConstOrExpr<'a, T>>,
+    tag: HashMap<Symbol, usize>,
+}
+
+impl<'a, T> FunctionMap<'a, T> {
+    pub fn new() -> Self {
+        FunctionMap {
+            map: HashMap::default(),
+            tag: HashMap::default(),
+        }
+    }
+
+    pub fn add_constant(&mut self, key: AtomOrView<'a>, value: T) {
+        self.map
+            .insert(AtomOrTaggedFunction::Atom(key), ConstOrExpr::Const(value));
+    }
+
+    pub fn add_function(
+        &mut self,
+        name: Symbol,
+        rename: String,
+        args: Vec<Symbol>,
+        body: AtomView<'a>,
+    ) -> Result<(), &str> {
+        if let Some(t) = self.tag.insert(name, 0) {
+            if t != 0 {
+                return Err("Cannot add the same function with a different number of parameters");
+            }
+        }
+
+        self.map.insert(
+            AtomOrTaggedFunction::Atom(Atom::new_var(name).into()),
+            ConstOrExpr::Expr(rename, 0, args, body),
+        );
+
+        Ok(())
+    }
+
+    pub fn add_tagged_function(
+        &mut self,
+        name: Symbol,
+        tags: Vec<AtomOrView>,
+        rename: String,
+        args: Vec<Symbol>,
+        body: AtomView<'a>,
+    ) -> Result<(), &str> {
+        if let Some(t) = self.tag.insert(name, tags.len()) {
+            if t != tags.len() {
+                return Err("Cannot add the same function with a different number of parameters");
+            }
+        }
+
+        self.map.insert(
+            AtomOrTaggedFunction::Atom(Atom::new_var(name).into()),
+            ConstOrExpr::Expr(rename, tags.len(), args, body),
+        );
+
+        Ok(())
+    }
+
+    fn get_tag_len(&self, symbol: &Symbol) -> usize {
+        self.tag.get(symbol).cloned().unwrap_or(0)
+    }
+
+    fn get(&self, a: AtomView<'a>) -> Option<&ConstOrExpr<'a, T>> {
+        if let Some(c) = self.map.get(&AtomOrTaggedFunction::Atom(a.into())) {
+            return Some(c);
+        }
+
+        if let AtomView::Fun(aa) = a {
+            let s = aa.get_symbol();
+            let tag_len = self.get_tag_len(&s);
+
+            if tag_len != 0 && aa.get_nargs() >= tag_len {
+                let tag = aa.iter().take(tag_len).map(|x| x.into()).collect();
+                return self.map.get(&AtomOrTaggedFunction::TaggedFunction(s, tag));
+            }
+        }
+
+        None
+    }
+}
+
+enum ConstOrExpr<'a, T> {
     Const(T),
-    Expr(Symbol, Vec<Symbol>, AtomView<'a>),
+    Expr(String, usize, Vec<Symbol>, AtomView<'a>),
 }
 
 impl Atom {
@@ -55,14 +145,14 @@ impl Atom {
     }
 }
 
-pub struct ExpressionWithSubexpressions<T> {
+pub struct SplitExpression<T> {
     pub tree: Vec<Expression<T>>,
     pub subexpressions: Vec<Expression<T>>,
 }
 
 pub struct EvalTree<T> {
-    functions: Vec<(Symbol, Vec<Symbol>, ExpressionWithSubexpressions<T>)>,
-    expressions: ExpressionWithSubexpressions<T>,
+    functions: Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
+    expressions: SplitExpression<T>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -241,9 +331,9 @@ enum Instr {
     BuiltinFun(usize, Symbol, usize),
 }
 
-impl<T: Clone + Default + PartialEq> ExpressionWithSubexpressions<T> {
-    pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> ExpressionWithSubexpressions<T2> {
-        ExpressionWithSubexpressions {
+impl<T: Clone + Default + PartialEq> SplitExpression<T> {
+    pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> SplitExpression<T2> {
+        SplitExpression {
             tree: self.tree.iter().map(|x| x.map_coeff(f)).collect(),
             subexpressions: self.subexpressions.iter().map(|x| x.map_coeff(f)).collect(),
         }
@@ -320,7 +410,7 @@ impl<T: Clone + Default + PartialEq> Expression<T> {
 impl<T: Clone + Default + PartialEq> EvalTree<T> {
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> EvalTree<T2> {
         EvalTree {
-            expressions: ExpressionWithSubexpressions {
+            expressions: SplitExpression {
                 tree: self
                     .expressions
                     .tree
@@ -337,7 +427,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             functions: self
                 .functions
                 .iter()
-                .map(|(s, a, e)| (*s, a.clone(), e.map_coeff(f)))
+                .map(|(s, a, e)| (s.clone(), a.clone(), e.map_coeff(f)))
                 .collect(),
         }
     }
@@ -772,9 +862,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree
     }
 }
 
-impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
-    ExpressionWithSubexpressions<T>
-{
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {
     pub fn common_subexpression_elimination(&mut self) {
         let mut h = HashMap::default();
 
@@ -875,9 +963,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
     }
 }
 
-impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord>
-    ExpressionWithSubexpressions<T>
-{
+impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {
     /// Find and extract pairs of variables that appear in more than one instruction.
     /// This reduces the number of operations. Returns `true` iff an extraction could be performed.
     ///
@@ -1466,10 +1552,10 @@ impl<'a> AtomView<'a> {
     >(
         &self,
         coeff_map: F,
-        const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
+        fn_map: &FunctionMap<'a, T>,
         params: &[Atom],
     ) -> EvalTree<T> {
-        Self::to_eval_tree_multiple(std::slice::from_ref(self), coeff_map, const_map, params)
+        Self::to_eval_tree_multiple(std::slice::from_ref(self), coeff_map, fn_map, params)
     }
 
     /// Convert nested expressions to a tree.
@@ -1479,17 +1565,17 @@ impl<'a> AtomView<'a> {
     >(
         exprs: &[Self],
         coeff_map: F,
-        const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
+        fn_map: &FunctionMap<'a, T>,
         params: &[Atom],
     ) -> EvalTree<T> {
         let mut funcs = vec![];
         let tree = exprs
             .iter()
-            .map(|t| t.to_eval_tree_impl(coeff_map, const_map, params, &[], &mut funcs))
+            .map(|t| t.to_eval_tree_impl(coeff_map, fn_map, params, &[], &mut funcs))
             .collect();
 
         EvalTree {
-            expressions: ExpressionWithSubexpressions {
+            expressions: SplitExpression {
                 tree,
                 subexpressions: vec![],
             },
@@ -1500,20 +1586,20 @@ impl<'a> AtomView<'a> {
     fn to_eval_tree_impl<T: Clone + Default, F: Fn(&Rational) -> T + Copy>(
         &self,
         coeff_map: F,
-        const_map: &HashMap<AtomOrView, ConstOrExpr<'a, T>>,
+        fn_map: &FunctionMap<'a, T>,
         params: &[Atom],
         args: &[Symbol],
-        funcs: &mut Vec<(Symbol, Vec<Symbol>, ExpressionWithSubexpressions<T>)>,
+        funcs: &mut Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
     ) -> Expression<T> {
         if let Some(p) = params.iter().position(|a| a.as_view() == *self) {
             return Expression::Parameter(p);
         }
 
-        if let Some(c) = const_map.get(&self.into()) {
+        if let Some(c) = fn_map.get(*self) {
             return match c {
                 ConstOrExpr::Const(c) => Expression::Const(c.clone()),
-                ConstOrExpr::Expr(name, args, v) => {
-                    if !args.is_empty() {
+                ConstOrExpr::Expr(name, tag_len, args, v) => {
+                    if args.len() != *tag_len {
                         panic!(
                             "Function {} called with wrong number of arguments: 0 vs {}",
                             self,
@@ -1524,11 +1610,11 @@ impl<'a> AtomView<'a> {
                     if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
                         Expression::Eval(pos, vec![])
                     } else {
-                        let r = v.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
+                        let r = v.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
                         funcs.push((
-                            *name,
+                            name.clone(),
                             args.clone(),
-                            ExpressionWithSubexpressions {
+                            SplitExpression {
                                 tree: vec![r.clone()],
                                 subexpressions: vec![],
                             },
@@ -1573,44 +1659,44 @@ impl<'a> AtomView<'a> {
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
-                    let arg_eval = arg.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
+                    let arg_eval = arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
 
                     return Expression::BuiltinFun(f.get_symbol(), Box::new(arg_eval));
                 }
 
                 let symb = InlineVar::new(f.get_symbol());
-                let Some(fun) = const_map.get(&symb.as_view().into()) else {
+                let Some(fun) = fn_map.get(symb.as_view()) else {
                     panic!("Undefined function {}", State::get_name(f.get_symbol()));
                 };
 
                 match fun {
                     ConstOrExpr::Const(t) => Expression::Const(t.clone()),
-                    ConstOrExpr::Expr(name, arg_spec, e) => {
-                        if f.get_nargs() != arg_spec.len() {
+                    ConstOrExpr::Expr(name, tag_len, arg_spec, e) => {
+                        if f.get_nargs() != arg_spec.len() + *tag_len {
                             panic!(
                                 "Function {} called with wrong number of arguments: {} vs {}",
                                 f.get_symbol(),
                                 f.get_nargs(),
-                                arg_spec.len()
+                                arg_spec.len() + *tag_len
                             );
                         }
 
                         let eval_args = f
                             .iter()
+                            .skip(*tag_len)
                             .map(|arg| {
-                                arg.to_eval_tree_impl(coeff_map, const_map, params, args, funcs)
+                                arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)
                             })
                             .collect();
 
                         if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
                             Expression::Eval(pos, eval_args)
                         } else {
-                            let r =
-                                e.to_eval_tree_impl(coeff_map, const_map, params, arg_spec, funcs);
+                            let r = e.to_eval_tree_impl(coeff_map, fn_map, params, arg_spec, funcs);
                             funcs.push((
-                                *name,
+                                name.clone(),
                                 arg_spec.clone(),
-                                ExpressionWithSubexpressions {
+                                SplitExpression {
                                     tree: vec![r.clone()],
                                     subexpressions: vec![],
                                 },
@@ -1622,7 +1708,7 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
-                let b_eval = b.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
+                let b_eval = b.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
 
                 if let AtomView::Num(n) = e {
                     if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
@@ -1635,13 +1721,13 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                let e_eval = e.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
+                let e_eval = e.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
                 Expression::Powf(Box::new((b_eval, e_eval)))
             }
             AtomView::Mul(m) => {
                 let mut muls = vec![];
                 for arg in m.iter() {
-                    let a = arg.to_eval_tree_impl(coeff_map, const_map, params, args, funcs);
+                    let a = arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
                     if let Expression::Mul(m) = a {
                         muls.extend(m);
                     } else {
@@ -1654,7 +1740,7 @@ impl<'a> AtomView<'a> {
             AtomView::Add(a) => {
                 let mut adds = vec![];
                 for arg in a.iter() {
-                    adds.push(arg.to_eval_tree_impl(coeff_map, const_map, params, args, funcs));
+                    adds.push(arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs));
                 }
 
                 Expression::Add(adds)

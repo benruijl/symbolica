@@ -65,11 +65,21 @@ fn main() {
 
     let mut tree = e.as_view().to_eval_tree(|r| r.clone(), &const_map, &params);
 
-    tree.horner_scheme(); // optimize the tree using an occurrence-order Horner scheme
+    // optimize the tree using an occurrence-order Horner scheme
+    println!("Op original {:?}", tree.count_operations());
+    tree.horner_scheme();
+    println!("Op horner {:?}", tree.count_operations());
+    // the compiler seems to do this as well
+    tree.common_subexpression_elimination();
+    println!("op CSSE {:?}", tree.count_operations());
 
-    let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
+    let cpp = tree.export_cpp();
+    println!("{}", cpp); // print C++ code
 
-    let cpp = t2.export_cpp();
+    tree.common_pair_elimination();
+    println!("op CPE {:?}", tree.count_operations());
+
+    let cpp = tree.export_cpp();
     println!("{}", cpp); // print C++ code
 
     std::fs::write("nested_evaluation.cpp", cpp).unwrap();
@@ -78,6 +88,7 @@ fn main() {
         .arg("-shared")
         .arg("-fPIC")
         .arg("-O3")
+        .arg("-ffastmath")
         .arg("-o")
         .arg("libneval.so")
         .arg("nested_evaluation.cpp")
@@ -101,6 +112,7 @@ fn main() {
         println!("C++ time {:#?}", t.elapsed());
     };
 
+    let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
     let mut evaluator: ExpressionEvaluator<f64> = t2.linearize(params.len());
 
     println!("Eval: {}", evaluator.evaluate(&[5.]));

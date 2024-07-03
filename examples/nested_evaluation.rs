@@ -88,7 +88,7 @@ fn main() {
         .arg("-shared")
         .arg("-fPIC")
         .arg("-O3")
-        .arg("-ffastmath")
+        .arg("-ffast-math")
         .arg("-o")
         .arg("libneval.so")
         .arg("nested_evaluation.cpp")

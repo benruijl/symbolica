@@ -423,13 +423,14 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                     })
                     .collect();
 
+                let mut sub_expr_pos = HashMap::default();
                 let func = &self.functions[*id].2;
                 self.linearize_impl(
                     &func.tree[0],
                     &func.subexpressions,
                     stack,
                     instr,
-                    sub_expr_pos,
+                    &mut sub_expr_pos,
                     &new_args,
                 )
             }

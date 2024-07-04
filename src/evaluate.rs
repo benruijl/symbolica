@@ -1,10 +1,11 @@
 use ahash::HashMap;
+use self_cell::self_cell;
 
 use crate::{
     atom::{representation::InlineVar, Atom, AtomOrView, AtomView, Symbol},
     coefficient::CoefficientView,
     domains::{
-        float::{NumericalFloatLike, Real},
+        float::{Complex, NumericalFloatLike, Real},
         rational::Rational,
     },
     state::State,
@@ -38,7 +39,7 @@ enum AtomOrTaggedFunction<'a> {
     TaggedFunction(Symbol, Vec<AtomOrView<'a>>),
 }
 
-pub struct FunctionMap<'a, T> {
+pub struct FunctionMap<'a, T = Rational> {
     map: HashMap<AtomOrTaggedFunction<'a>, ConstOrExpr<'a, T>>,
     tag: HashMap<Symbol, usize>,
 }
@@ -1502,9 +1503,140 @@ impl<T: Real> EvalTree<T> {
     }
 }
 
+pub struct ExportedCode(String);
+pub struct CompiledCode(String);
+
+impl CompiledCode {
+    /// Load the evaluator from the compiled shared library.
+    pub fn load(&self) -> Result<CompiledEvaluator, String> {
+        CompiledEvaluator::load(&self.0)
+    }
+}
+
+type L = libloading::Library;
+
+#[derive(Debug)]
+struct EvaluatorFunctions<'a> {
+    eval_double: libloading::Symbol<'a, unsafe extern "C" fn(params: *const f64, out: *mut f64)>,
+    eval_complex: libloading::Symbol<
+        'a,
+        unsafe extern "C" fn(params: *const Complex<f64>, out: *mut Complex<f64>),
+    >,
+}
+
+self_cell!(
+    pub struct CompiledEvaluator {
+        owner: L,
+
+        #[covariant]
+        dependent: EvaluatorFunctions,
+    }
+
+    impl {Debug}
+);
+
+impl CompiledEvaluator {
+    /// Load a compiled evaluator from a shared library.
+    pub fn load(file: &str) -> Result<CompiledEvaluator, String> {
+        unsafe {
+            let lib = match libloading::Library::new(file) {
+                Ok(lib) => lib,
+                Err(_) => {
+                    libloading::Library::new("./".to_string() + file).map_err(|e| e.to_string())?
+                }
+            };
+
+            CompiledEvaluator::try_new(lib, |lib| {
+                Ok(EvaluatorFunctions {
+                    eval_double: lib.get(b"eval_double").map_err(|e| e.to_string())?,
+                    eval_complex: lib.get(b"eval_complex").map_err(|e| e.to_string())?,
+                })
+            })
+        }
+    }
+
+    /// Evaluate the compiled evaluator.
+    #[inline(always)]
+    pub fn evaluate(&self, args: &[f64], out: &mut [f64]) {
+        unsafe { (self.borrow_dependent().eval_double)(args.as_ptr(), out.as_mut_ptr()) }
+    }
+
+    /// Evaluate the compiled evaluator with complex numbers.
+    #[inline(always)]
+    pub fn evaluate_complex(&self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
+        unsafe { (self.borrow_dependent().eval_complex)(args.as_ptr(), out.as_mut_ptr()) }
+    }
+}
+
+/// Options for compiling exported code.
+pub struct CompileOptions {
+    pub optimization_level: usize,
+    pub fast_math: bool,
+    pub unsafe_math: bool,
+    pub compiler: String,
+    pub custom: Vec<String>,
+}
+
+impl Default for CompileOptions {
+    fn default() -> Self {
+        CompileOptions {
+            optimization_level: 3,
+            fast_math: true,
+            unsafe_math: true,
+            compiler: "g++".to_string(),
+            custom: vec![],
+        }
+    }
+}
+
+impl ExportedCode {
+    /// Compile the code to a shared library.
+    pub fn compile(
+        &self,
+        out: &str,
+        options: CompileOptions,
+    ) -> Result<CompiledCode, std::io::Error> {
+        let mut builder = std::process::Command::new(&options.compiler);
+        builder
+            .arg("-shared")
+            .arg("-fPIC")
+            .arg(format!("-O{}", options.optimization_level));
+        if options.fast_math {
+            builder.arg("-ffast-math");
+        }
+        if options.unsafe_math {
+            builder.arg("-funsafe-math-optimizations");
+        }
+        for c in &options.custom {
+            builder.arg(c);
+        }
+
+        let r = builder.arg("-o").arg(out).arg(&self.0).output()?;
+
+        if !r.status.success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "Could not compile code: {}",
+                    String::from_utf8_lossy(&r.stderr)
+                ),
+            ));
+        }
+
+        Ok(CompiledCode(out.to_string()))
+    }
+}
+
 impl<T: NumericalFloatLike> EvalTree<T> {
-    pub fn export_cpp(&self) -> String {
-        let mut res = "#include <iostream>\n#include <cmath>\n\n".to_string();
+    /// Create a C++ code representation of the evaluation tree.
+    pub fn export_cpp(&self, filename: &str) -> Result<ExportedCode, std::io::Error> {
+        let cpp = self.export_cpp_str();
+        std::fs::write(filename, cpp)?;
+        Ok(ExportedCode(filename.to_string()))
+    }
+
+    fn export_cpp_str(&self) -> String {
+        let mut res = "#include <iostream>\n#include <cmath>\n#include <complex>\n\n".to_string();
 
         for (name, arg_names, body) in &self.functions {
             let mut args = arg_names
@@ -1518,7 +1650,6 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                 name,
                 args.join(",")
             );
-            // our functions are all expressions so we return the expression
 
             for (i, s) in body.subexpressions.iter().enumerate() {
                 res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, arg_names));
@@ -1545,6 +1676,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
         res += "\treturn;\n}\n";
 
         res += "\nextern \"C\" {\n\tvoid eval_double(double* params, double* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
+        res += "\nextern \"C\" {\n\tvoid eval_complex(std::complex<double>* params, std::complex<double>* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
 
         res
     }

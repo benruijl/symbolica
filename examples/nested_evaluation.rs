@@ -1,9 +1,9 @@
-use std::{process::Command, time::Instant};
+use std::time::Instant;
 
 use symbolica::{
     atom::{Atom, AtomView},
-    domains::rational::Rational,
-    evaluate::{ExpressionEvaluator, FunctionMap},
+    domains::{float::Complex, rational::Rational},
+    evaluate::{CompileOptions, ExpressionEvaluator, FunctionMap},
     state::State,
 };
 
@@ -77,57 +77,45 @@ fn main() {
     println!("Op original {:?}", tree.count_operations());
     tree.horner_scheme();
     println!("Op horner {:?}", tree.count_operations());
-    // the compiler seems to do this as well
     tree.common_subexpression_elimination();
-    println!("op CSSE {:?}", tree.count_operations());
+    println!("op cse {:?}", tree.count_operations());
 
     tree.common_pair_elimination();
-    println!("op CPE {:?}", tree.count_operations());
+    println!("op cpe {:?}", tree.count_operations());
 
-    let cpp = tree.export_cpp();
-    println!("{}", cpp); // print C++ code
-
-    std::fs::write("nested_evaluation.cpp", cpp).unwrap();
-
-    let r = Command::new("g++")
-        .arg("-shared")
-        .arg("-fPIC")
-        .arg("-O3")
-        .arg("-ffast-math")
-        .arg("-o")
-        .arg("libneval.so")
-        .arg("nested_evaluation.cpp")
-        .output()
+    let ce = tree
+        .export_cpp("nested_evaluation.cpp")
+        .unwrap()
+        .compile("libneval.so", CompileOptions::default())
+        .unwrap()
+        .load()
         .unwrap();
-    println!("Compilation {}", r.status);
 
-    unsafe {
-        let lib = libloading::Library::new("./libneval.so").unwrap();
-        let func: libloading::Symbol<unsafe extern "C" fn(params: *const f64, out: *mut f64)> =
-            lib.get(b"eval_double").unwrap();
+    let params = vec![5.];
+    let mut out = vec![0., 0.];
+    ce.evaluate(&params, &mut out);
+    println!("Eval from C++: {}, {}", out[0], out[1]);
 
-        let params = vec![5.];
-        let mut out = vec![0., 0.];
-        func(params.as_ptr(), out.as_mut_ptr());
+    {
+        let params = vec![Complex::new(5., 0.)];
+        let mut out = vec![Complex::new_zero(), Complex::new_zero()];
+        ce.evaluate_complex(&params, &mut out);
         println!("Eval from C++: {}, {}", out[0], out[1]);
+    }
 
-        // benchmark
-
-        let t = Instant::now();
-        for _ in 0..1000000 {
-            let _ = func(params.as_ptr(), out.as_mut_ptr());
-        }
-        println!("C++ time {:#?}", t.elapsed());
-    };
+    // benchmark
+    let t = Instant::now();
+    for _ in 0..1000000 {
+        let _ = ce.evaluate(&params, &mut out);
+    }
+    println!("C++ time {:#?}", t.elapsed());
 
     let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
     let mut evaluator: ExpressionEvaluator<f64> = t2.linearize(params.len());
 
-    let mut out = vec![0., 0.];
-    evaluator.evaluate_multiple(&[5.], &mut out);
+    evaluator.evaluate_multiple(&params, &mut out);
     println!("Eval: {}, {}", out[0], out[1]);
 
-    // benchmark
     let params = vec![5.];
     let t = Instant::now();
     for _ in 0..1000000 {

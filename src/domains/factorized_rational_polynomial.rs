@@ -17,7 +17,7 @@ use crate::{
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
-    integer::{IntegerRing, Z},
+    integer::{Integer, IntegerRing, Z},
     rational::RationalField,
     EuclideanDomain, Field, Ring,
 };
@@ -598,8 +598,12 @@ where
         false
     }
 
-    fn is_characteristic_zero(&self) -> bool {
-        self.ring.is_characteristic_zero()
+    fn characteristic(&self) -> Integer {
+        self.ring.characteristic()
+    }
+
+    fn size(&self) -> Integer {
+        0.into()
     }
 
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {

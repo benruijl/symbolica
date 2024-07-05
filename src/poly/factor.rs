@@ -28,6 +28,7 @@ pub trait Factorize: Sized {
     fn square_free_factorization(&self) -> Vec<(Self, usize)>;
     /// Factor a polynomial over its coefficient ring.
     fn factor(&self) -> Vec<(Self, usize)>;
+    fn is_irreducible(&self) -> bool;
 }
 
 impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
@@ -287,6 +288,52 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
 
         factors
     }
+
+    fn is_irreducible(&self) -> bool {
+        let mut sf = self.square_free_factorization();
+        if sf.len() > 1 {
+            return false;
+        }
+
+        let (f, _) = sf.pop().unwrap();
+
+        let mut degrees = vec![0; self.nvars()];
+        let mut var_count = 0;
+        for (v, d) in degrees.iter_mut().enumerate() {
+            *d = f.degree(v).to_u32() as usize;
+            if *d > 0 {
+                var_count += 1;
+            }
+        }
+
+        match var_count {
+            0 | 1 => f.factor_reconstruct().len() == 1,
+            2 => {
+                let mut order: Vec<_> = degrees
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, d)| **d > 0)
+                    .collect();
+                order.sort_by_key(|o| Reverse(o.1));
+                let order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
+
+                f.bivariate_factor_reconstruct(order[0], order[1]).len() == 1
+            }
+            _ => {
+                // TODO: find better order
+                let mut order: Vec<_> = degrees
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, d)| **d > 0)
+                    .collect();
+                order.sort_by_key(|o| Reverse(o.1));
+
+                let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
+
+                f.multivariate_factorization(&mut order, 0, None).len() == 1
+            }
+        }
+    }
 }
 
 impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrder> {
@@ -339,6 +386,21 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
         }
 
         factors
+    }
+
+    fn is_irreducible(&self) -> bool {
+        let c = self.content();
+
+        let stripped = self.map_coeff(
+            |coeff| {
+                let coeff = self.field.div(coeff, &c);
+                debug_assert!(coeff.is_integer());
+                coeff.numerator()
+            },
+            Z,
+        );
+
+        stripped.is_irreducible()
     }
 }
 
@@ -431,6 +493,64 @@ where
         }
 
         factors
+    }
+
+    fn is_irreducible(&self) -> bool {
+        let mut sf = self.square_free_factorization();
+        if sf.len() > 1 {
+            return false;
+        }
+
+        let (f, p) = sf.pop().unwrap();
+
+        let mut degrees = vec![0; self.nvars()];
+        debug!("SFF {} {}", f, p);
+
+        let mut var_count = 0;
+        for v in 0..self.nvars() {
+            degrees[v] = f.degree(v).to_u32() as usize;
+            if degrees[v] > 0 {
+                var_count += 1;
+            }
+        }
+
+        match var_count {
+            0 => true,
+            1 => {
+                let mut d = f.distinct_degree_factorization();
+                if d.len() > 1 {
+                    return false;
+                }
+
+                let (d2, f2) = d.pop().unwrap();
+
+                f2.equal_degree_factorization(d2).len() == 1
+            }
+            2 => {
+                let mut order: Vec<_> = degrees
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, d)| **d > 0)
+                    .collect();
+                order.sort_by_key(|o| Reverse(o.1));
+                let order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
+
+                f.bivariate_factorization(order[0], order[1]).len() == 1
+            }
+            _ => {
+                // TODO: find better order
+                let mut order: Vec<_> = degrees
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, d)| **d > 0)
+                    .collect();
+                order.sort_by_key(|o| Reverse(o.1));
+
+                let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
+
+                f.multivariate_factorization(&mut order, 0, None).len() == 1
+            }
+        }
     }
 }
 

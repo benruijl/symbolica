@@ -10,6 +10,8 @@ pub mod rational_polynomial;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::hash::Hash;
 
+use integer::Integer;
+
 use crate::printer::PrintOptions;
 
 pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
@@ -33,7 +35,9 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     fn is_one(&self, a: &Self::Element) -> bool;
     /// Should return `true` iff `gcd(1,x)` returns `1` for any `x`.
     fn one_is_gcd_unit() -> bool;
-    fn is_characteristic_zero(&self) -> bool;
+    fn characteristic(&self) -> Integer;
+    /// The number of elements in the ring. 0 is used for infinite rings.
+    fn size(&self) -> Integer;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
     fn fmt_display(

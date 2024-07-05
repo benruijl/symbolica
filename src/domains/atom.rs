@@ -107,8 +107,12 @@ impl Ring for AtomField {
         Atom::new_num(Integer::from(n))
     }
 
-    fn is_characteristic_zero(&self) -> bool {
-        true
+    fn characteristic(&self) -> Integer {
+        0.into()
+    }
+
+    fn size(&self) -> Integer {
+        0.into()
     }
 
     fn fmt_display(

@@ -7,7 +7,7 @@ use std::mem;
 use std::ops::Add;
 use tracing::{debug, instrument};
 
-use crate::domains::algebraic_number::AlgebraicNumberRing;
+use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::finite_field::{
     FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Zp,
 };
@@ -290,6 +290,8 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
 
         // generate random numbers for all non-leading variables
         // TODO: apply a Horner scheme to speed up the substitution?
+
+        let mut fail_count = 0;
         let (_, a1, b1) = loop {
             for v in &mut cache {
                 for vi in v {
@@ -309,10 +311,17 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 break (r, a1, b1);
             }
 
+            if !ap.field.size().is_zero() && Integer::from(fail_count * 2) > ap.field.size() {
+                debug!("Field is too small to find a good sample point");
+                // TODO: upgrade to larger field?
+                return ap.degree(var).min(bp.degree(var));
+            }
+
             debug!(
-                "Degree error during sampling: trying again: a={}, a1=={}, bp={}, b1={}",
+                "Degree error during sampling: trying again: a={}, a1={}, bp={}, b1={}",
                 ap, a1, bp, b1
             );
+            fail_count += 1;
         };
 
         let g1 = a1.univariate_gcd(&b1);
@@ -1087,6 +1096,11 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
         if vars.len() == 1 {
             let gg = a.univariate_gcd(b);
             if gg.degree(vars[0]) > bounds[vars[0]] {
+                debug!(
+                    "Unexpectedly high GCD bound: {} vs {}",
+                    gg.degree(vars[0]),
+                    bounds[vars[0]]
+                );
                 return None;
             }
             bounds[vars[0]] = gg.degree(vars[0]); // update degree bound
@@ -1124,10 +1138,24 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
             }
             failure_count += 1;
 
+            if !a.field.size().is_zero() && Integer::from(failure_count * 2) > a.field.size() {
+                debug!("Cannot find unique sampling points: prime field is likely too small");
+                return None;
+            }
+
+            let mut sample_fail_count = 0i64;
             let v = loop {
-                let a = a.field.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64));
-                if !gamma.replace(lastvar, &a).is_zero() {
-                    break a;
+                let r = a.field.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64));
+                if !gamma.replace(lastvar, &r).is_zero() {
+                    break r;
+                }
+
+                sample_fail_count += 1;
+                if !a.field.size().is_zero()
+                    && Integer::from(sample_fail_count * 2) > a.field.size()
+                {
+                    debug!("Cannot find unique sampling points: prime field is likely too small");
+                    continue 'newfirstnum;
                 }
             };
 
@@ -1150,6 +1178,11 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
             } else {
                 let gg = av.univariate_gcd(&bv);
                 if gg.degree(vars[0]) > bounds[vars[0]] {
+                    debug!(
+                        "Unexpectedly high GCD bound: {} vs {}",
+                        gg.degree(vars[0]),
+                        bounds[vars[0]]
+                    );
                     return None;
                 }
                 bounds[vars[0]] = gg.degree(vars[0]); // update degree bound
@@ -1201,6 +1234,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
             let mut vseq = vec![v];
 
             // sparse reconstruction
+
             'newnum: loop {
                 if gseq.len()
                     == (tight_bounds[lastvar].to_u32() + gamma.ldegree_max().to_u32() + 1) as usize
@@ -1216,7 +1250,19 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                             break v;
                         }
                     }
+
+                    sample_fail_count += 1;
+                    if !a.field.size().is_zero()
+                        && Integer::from(sample_fail_count * 2) > a.field.size()
+                    {
+                        debug!(
+                            "Cannot find unique sampling points: prime field is likely too small"
+                        );
+                        continue 'newfirstnum;
+                    }
                 };
+
+                debug!("Chosen sample: {}", a.field.printer(&v));
 
                 let av = a.replace(lastvar, &v);
                 let bv = b.replace(lastvar, &v);
@@ -1259,6 +1305,15 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                     }
                     Err(GCDError::BadCurrentImage) => {
                         debug!("Bad current image");
+                        sample_fail_count += 1;
+
+                        if !a.field.size().is_zero()
+                            && Integer::from(sample_fail_count * 2) > a.field.size()
+                        {
+                            debug!("Too many bad current images: prime field is likely too small");
+                            continue 'newfirstnum;
+                        }
+
                         continue 'newnum;
                     }
                 }
@@ -2579,7 +2634,34 @@ where
         tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
         assert!(!a.is_zero() || !b.is_zero());
-        MultivariatePolynomial::gcd_shape_modular(a, b, vars, bounds, tight_bounds).unwrap()
+        match MultivariatePolynomial::gcd_shape_modular(a, b, vars, bounds, tight_bounds) {
+            Some(x) => x,
+            None => {
+                // upgrade to a Galois field that is large enough
+                // TODO: start at a better bound?
+                // TODO: run with Zp[var]/m_i instead and use CRT
+                for i in 2..100 {
+                    debug!("Upgrading to Galois field: {}^{}", a.field.get_prime(), i);
+
+                    let field = AlgebraicExtension::galois_field(a.field.get_prime(), i);
+
+                    let ag = a.map_coeff(|c| field.constant(c.clone()), field.clone());
+                    let bg = b.map_coeff(|c| field.constant(c.clone()), field.clone());
+
+                    if let Some(g) = MultivariatePolynomial::gcd_shape_modular(
+                        &ag,
+                        &bg,
+                        vars,
+                        bounds,
+                        tight_bounds,
+                    ) {
+                        return g.map_coeff(|c| c.poly.get_constant(), a.field.clone());
+                    }
+                }
+
+                panic!("Failed to find a suitable Galois field for gcd");
+            }
+        }
     }
 
     fn get_gcd_var_bounds(
@@ -2606,7 +2688,7 @@ where
     }
 }
 
-impl<E: Exponent> PolynomialGCD<E> for AlgebraicNumberRing<RationalField> {
+impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
     fn heuristic_gcd(
         _a: &MultivariatePolynomial<Self, E>,
         _b: &MultivariatePolynomial<Self, E>,
@@ -2631,7 +2713,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicNumberRing<RationalField> {
     ) -> MultivariatePolynomial<Self, E> {
         let content = a.field.poly().content().inv();
         let a_integer =
-            AlgebraicNumberRing::new(a.field.poly().map_coeff(|c| (c * &content).numerator(), Z));
+            AlgebraicExtension::new(a.field.poly().map_coeff(|c| (c * &content).numerator(), Z));
         let a_lcoeff = a_integer.poly().lcoeff();
 
         debug!("Zippel gcd of {} and {} % {}", a, b, a_integer);
@@ -2733,7 +2815,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicNumberRing<RationalField> {
             // contrary to the integer case, we do not know the leading coefficient in Z
             // as it cannot easily be predicted from the two input polynomials
             // we use rational reconstruction to recover it
-            let mut gm: MultivariatePolynomial<AlgebraicNumberRing<IntegerRing>, E> =
+            let mut gm: MultivariatePolynomial<AlgebraicExtension<IntegerRing>, E> =
                 MultivariatePolynomial::new(
                     &a_integer,
                     gp.nterms().into(),
@@ -3001,7 +3083,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicNumberRing<RationalField> {
 }
 
 impl<UField: FiniteFieldWorkspace, E: Exponent> PolynomialGCD<E>
-    for AlgebraicNumberRing<FiniteField<UField>>
+    for AlgebraicExtension<FiniteField<UField>>
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
     <FiniteField<UField> as Ring>::Element: Copy,

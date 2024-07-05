@@ -276,8 +276,12 @@ impl Ring for Zp {
         true
     }
 
-    fn is_characteristic_zero(&self) -> bool {
-        false
+    fn characteristic(&self) -> Integer {
+        self.get_prime().into()
+    }
+
+    fn size(&self) -> Integer {
+        self.get_prime().into()
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -572,8 +576,12 @@ impl Ring for Zp64 {
         true
     }
 
-    fn is_characteristic_zero(&self) -> bool {
-        false
+    fn characteristic(&self) -> Integer {
+        self.get_prime().into()
+    }
+
+    fn size(&self) -> Integer {
+        self.get_prime().into()
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -848,8 +856,12 @@ impl Ring for FiniteField<Mersenne64> {
         true
     }
 
-    fn is_characteristic_zero(&self) -> bool {
-        false
+    fn characteristic(&self) -> Integer {
+        Mersenne64::PRIME.into()
+    }
+
+    fn size(&self) -> Integer {
+        Mersenne64::PRIME.into()
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -1046,8 +1058,12 @@ impl Ring for FiniteField<Integer> {
         true
     }
 
-    fn is_characteristic_zero(&self) -> bool {
-        false
+    fn characteristic(&self) -> Integer {
+        self.get_prime().into()
+    }
+
+    fn size(&self) -> Integer {
+        self.get_prime().into()
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {

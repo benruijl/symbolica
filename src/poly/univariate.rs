@@ -109,8 +109,12 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
         false
     }
 
-    fn is_characteristic_zero(&self) -> bool {
-        self.ring.is_characteristic_zero()
+    fn characteristic(&self) -> Integer {
+        self.ring.characteristic()
+    }
+
+    fn size(&self) -> Integer {
+        0.into()
     }
 
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
@@ -721,7 +725,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
             return None;
         }
 
-        if self.field.is_characteristic_zero() {
+        if self.field.characteristic().is_zero() {
             // test division of constant term (evaluation at x_i = 0)
             let c = div.get_constant();
             if !F::is_zero(&c)

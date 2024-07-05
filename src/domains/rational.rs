@@ -763,8 +763,12 @@ impl Ring for RationalField {
         false
     }
 
-    fn is_characteristic_zero(&self) -> bool {
-        true
+    fn characteristic(&self) -> Integer {
+        0.into()
+    }
+
+    fn size(&self) -> Integer {
+        0.into()
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {

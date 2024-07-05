@@ -8,7 +8,7 @@ use std::mem;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::Arc;
 
-use crate::domains::algebraic_number::AlgebraicNumberRing;
+use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::RationalField;
 use crate::domains::{EuclideanDomain, Field, Ring};
@@ -135,8 +135,12 @@ impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
         false
     }
 
-    fn is_characteristic_zero(&self) -> bool {
-        self.ring.is_characteristic_zero()
+    fn characteristic(&self) -> Integer {
+        self.ring.characteristic()
+    }
+
+    fn size(&self) -> Integer {
+        0.into()
     }
 
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
@@ -1762,8 +1766,8 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     /// of the number field is moved into the coefficient.
     pub fn to_number_field(
         &self,
-        field: &AlgebraicNumberRing<F>,
-    ) -> MultivariatePolynomial<AlgebraicNumberRing<F>, E> {
+        field: &AlgebraicExtension<F>,
+    ) -> MultivariatePolynomial<AlgebraicExtension<F>, E> {
         let var = &field.poly().get_vars_ref()[0];
         let Some(var_index) = self.get_vars_ref().iter().position(|x| x == var) else {
             return self.map_coeff(
@@ -2426,7 +2430,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             return None;
         }
 
-        if self.field.is_characteristic_zero() {
+        if self.field.characteristic().is_zero() {
             // test division of constant term (evaluation at x_i = 0)
             let c = div.get_constant();
             if !F::is_zero(&c)
@@ -3347,7 +3351,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     }
 }
 
-impl<R: Ring, E: Exponent> MultivariatePolynomial<AlgebraicNumberRing<R>, E> {
+impl<R: Ring, E: Exponent> MultivariatePolynomial<AlgebraicExtension<R>, E> {
     /// Convert the polynomial to a multivariate polynomial that contains the
     /// variable in the number field.
     pub fn from_number_field(&self) -> MultivariatePolynomial<R, E> {

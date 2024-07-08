@@ -1790,7 +1790,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
             c2.exponents = c
                 .exponents_iter()
-                .map(|x| x[var_index].to_u32() as u8)
+                .map(|x| x[var_index].to_u32() as u16)
                 .collect();
             c2.coefficients = c.coefficients;
 

@@ -553,7 +553,7 @@ impl Rational {
             let p = LARGE_U32_PRIMES[prime_start]; // TODO: support u64
             prime_start += 1;
 
-            let field = FiniteField::new(p);
+            let field = FiniteField::<u32>::new(p);
             prime_sample_point.clear();
             for x in sample {
                 prime_sample_point.push(x.to_finite_field(&field));

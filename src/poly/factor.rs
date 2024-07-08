@@ -7,9 +7,10 @@ use tracing::debug;
 use crate::{
     combinatorics::CombinationIterator,
     domains::{
+        algebraic_number::AlgebraicExtension,
         finite_field::{
-            FiniteField, FiniteFieldCore, FiniteFieldWorkspace, PrimeIteratorU64, ToFiniteField,
-            Zp, Zp64,
+            FiniteField, FiniteFieldCore, FiniteFieldWorkspace, GaloisField, PrimeIteratorU64,
+            ToFiniteField, Zp, Zp64,
         },
         integer::{Integer, IntegerRing, Z},
         rational::{RationalField, Q},
@@ -404,10 +405,15 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
     }
 }
 
-impl<UField: FiniteFieldWorkspace, E: Exponent> Factorize
-    for MultivariatePolynomial<FiniteField<UField>, E, LexOrder>
+impl<
+        UField: FiniteFieldWorkspace,
+        F: GaloisField<Base = FiniteField<UField>> + PolynomialGCD<E>,
+        E: Exponent,
+    > Factorize for MultivariatePolynomial<F, E, LexOrder>
 where
-    FiniteField<UField>: Field + PolynomialGCD<E> + FiniteFieldCore<UField>,
+    FiniteField<UField>: Field + FiniteFieldCore<UField> + PolynomialGCD<u16>,
+    <FiniteField<UField> as Ring>::Element: Copy,
+    AlgebraicExtension<<F as GaloisField>::Base>: PolynomialGCD<E>,
 {
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
         let c = self.lcoeff();
@@ -554,10 +560,15 @@ where
     }
 }
 
-impl<UField: FiniteFieldWorkspace, E: Exponent>
-    MultivariatePolynomial<FiniteField<UField>, E, LexOrder>
+impl<
+        UField: FiniteFieldWorkspace,
+        F: GaloisField<Base = FiniteField<UField>> + PolynomialGCD<E>,
+        E: Exponent,
+    > MultivariatePolynomial<F, E, LexOrder>
 where
-    FiniteField<UField>: Field + PolynomialGCD<E> + FiniteFieldCore<UField>,
+    FiniteField<UField>: Field + FiniteFieldCore<UField> + PolynomialGCD<u16>,
+    <FiniteField<UField> as Ring>::Element: Copy,
+    AlgebraicExtension<<F as GaloisField>::Base>: PolynomialGCD<E>,
 {
     /// Bernardin's algorithm for square free factorization.
     fn square_free_factorization_bernardin(&self) -> Vec<(Self, usize)> {
@@ -590,7 +601,7 @@ where
         // take the pth root
         // the coefficients remain unchanged, since x^1/p = x
         // since the derivative in every var is 0, all powers are divisible by p
-        let p = self.field.get_prime().to_u64() as usize;
+        let p = self.field.characteristic().to_u64() as usize;
         let mut b = f.clone();
         for es in b.exponents_iter_mut() {
             for e in es {
@@ -648,7 +659,7 @@ where
         let mut factors = vec![];
 
         let mut i = 1;
-        while !w.is_constant() && i < self.field.get_prime().to_u64() as usize {
+        while !w.is_constant() && i < self.field.characteristic().to_u64() as usize {
             let z = v - w.derivative(var);
             let g = w.gcd(&z);
             w = w / &g;
@@ -666,7 +677,6 @@ where
 
     /// Perform distinct degree factorization on a monic, univariate and square-free polynomial.
     pub fn distinct_degree_factorization(&self) -> Vec<(usize, Self)> {
-        assert!(self.field.get_prime().to_u64() != 2);
         let Some(var) = self.last_exponents().iter().position(|x| *x > E::zero()) else {
             return vec![(0, self.clone())]; // constant polynomial
         };
@@ -682,7 +692,7 @@ where
         while !f.is_one() {
             i += 1;
 
-            h = h.exp_mod_univariate(self.field.get_prime().to_u64().into(), &mut f);
+            h = h.exp_mod_univariate(self.field.size(), &mut f);
 
             let mut g = f.gcd(&(&h - &x));
 
@@ -706,7 +716,6 @@ where
     /// Perform Cantor-Zassenhaus's probabilistic algorithm for
     /// finding irreducible factors of degree `d`.
     pub fn equal_degree_factorization(&self, d: usize) -> Vec<Self> {
-        assert!(self.field.get_prime().to_u64() != 2);
         let mut s = self.clone().make_monic();
 
         let Some(var) = self.last_exponents().iter().position(|x| *x > E::zero()) else {
@@ -743,8 +752,8 @@ where
                 for i in 0..2 * d {
                     let r = self
                         .field
-                        .nth(rng.gen_range(0..self.field.get_prime().to_u64()));
-                    if !FiniteField::<UField>::is_zero(&r) {
+                        .nth(rng.gen_range(0..self.field.characteristic().to_u64()));
+                    if !F::is_zero(&r) {
                         exp[var] = E::from_u32(i as u32);
                         random_poly.append_monomial(r, &exp);
                     }
@@ -762,10 +771,24 @@ where
             }
 
             // TODO: use Frobenius map and modular composition to prevent computing large exponent poly^(p^d)
-            let p: Integer = self.field.get_prime().to_u64().into();
-            let b = random_poly
-                .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
-                - self.one();
+            let p: Integer = self.field.size().to_u64().into();
+            let b = if self.field.characteristic() == 2.into() {
+                let max = self.field.get_extension_degree() as usize * d;
+
+                let mut b = random_poly.clone();
+                let mut vcur = b.clone();
+
+                for _ in 1..max {
+                    vcur = (&vcur * &vcur).rem(&s);
+                    b = b + vcur.clone();
+                }
+
+                b
+            } else {
+                random_poly
+                    .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
+                    - self.one()
+            };
 
             let g = b.gcd(&s);
 
@@ -910,21 +933,43 @@ where
         let mut uni_f = self.replace(interpolation_var, &sample_point);
 
         let mut i = 0;
+        let mut rng = thread_rng();
         loop {
+            if Integer::from(i) == self.field.size() {
+                let field = self
+                    .field
+                    .upgrade(self.field.get_extension_degree().to_u64() as usize + 1);
+
+                debug!(
+                    "Upgrading to Galois field with exponent {}",
+                    field.get_extension_degree()
+                );
+
+                let s_l = self.map_coeff(|c| self.field.upgrade_element(c, &field), field.clone());
+
+                let facs = s_l.bivariate_factorization(main_var, interpolation_var);
+
+                return facs
+                    .into_iter()
+                    .map(|f| f.map_coeff(|c| self.field.downgrade_element(c), self.field.clone()))
+                    .collect();
+            }
+
             if self.degree(main_var) == uni_f.degree(main_var)
                 && uni_f.gcd(&uni_f.derivative(main_var)).is_constant()
             {
                 break;
             }
 
-            sample_point = self.field.nth(i);
+            // TODO: sample simple points first
+            sample_point = self.field.sample(&mut rng, (0, i));
             uni_f = self.replace(interpolation_var, &sample_point);
             i += 1;
         }
 
         let mut d = self.degree(interpolation_var).to_u32();
 
-        let shifted_poly = if !FiniteField::<UField>::is_zero(&sample_point) {
+        let shifted_poly = if !F::is_zero(&sample_point) {
             self.shift_var_cached(interpolation_var, &sample_point)
         } else {
             self.clone()
@@ -993,7 +1038,7 @@ where
 
         rec_factors.push(rest);
 
-        if !FiniteField::<UField>::is_zero(&sample_point) {
+        if !F::is_zero(&sample_point) {
             for x in &mut rec_factors {
                 // shift the polynomial to y - sample
                 *x = x.shift_var_cached(interpolation_var, &self.field.neg(&sample_point));
@@ -1022,8 +1067,8 @@ where
     fn canonical_sort(
         biv_polys: &[Self],
         replace_var: usize,
-        sample_points: &[(usize, <FiniteField<UField> as Ring>::Element)],
-    ) -> Vec<(Self, <FiniteField<UField> as Ring>::Element, Self)> {
+        sample_points: &[(usize, <F as Ring>::Element)],
+    ) -> Vec<(Self, <F as Ring>::Element, Self)> {
         let mut univariate_factors = biv_polys
             .iter()
             .map(|f| {
@@ -1051,7 +1096,7 @@ where
     fn lcoeff_precomputation(
         &self,
         bivariate_factors: &[Self],
-        sample_points: &[(usize, <FiniteField<UField> as Ring>::Element)],
+        sample_points: &[(usize, <F as Ring>::Element)],
         order: &[usize],
     ) -> Result<(Vec<Self>, Vec<Self>), usize> {
         let lcoeff = self.univariate_lcoeff(order[0]);
@@ -1218,7 +1263,7 @@ where
     fn multivariate_hensel_lift_with_auto_lcoeff_fixing(
         &self,
         factors: &[Self],
-        sample_points: &[(usize, <FiniteField<UField> as Ring>::Element)],
+        sample_points: &[(usize, <F as Ring>::Element)],
         order: &[usize],
     ) -> Vec<Self> {
         let lcoeff = self.univariate_lcoeff(order[0]);
@@ -1282,7 +1327,7 @@ where
     fn univariate_diophantine_field(
         factors: &[Self],
         order: &[usize],
-        sample_points: &[(usize, <FiniteField<UField> as Ring>::Element)],
+        sample_points: &[(usize, <F as Ring>::Element)],
     ) -> (Vec<Self>, Vec<Self>) {
         // produce univariate factors and univariate delta
         let mut univariate_factors = factors.to_vec();
@@ -1351,7 +1396,35 @@ where
         let uni_lcoeff = self.univariate_lcoeff(order[0]);
 
         let mut content_fail_count = 0;
+        let mut sample_fail = Integer::zero();
         'new_sample: loop {
+            sample_fail = sample_fail + &1.into();
+
+            if &sample_fail * &2.into() > self.field.size() {
+                // the field is too small, upgrade
+                let field = self
+                    .field
+                    .upgrade(self.field.get_extension_degree().to_u64() as usize + 1);
+
+                debug!(
+                    "Upgrading to Galois field with exponent {}",
+                    field.get_extension_degree()
+                );
+
+                let s_l = self.map_coeff(|c| self.field.upgrade_element(c, &field), field.clone());
+
+                let facs = s_l.multivariate_factorization(
+                    order,
+                    coefficient_upper_bound,
+                    max_bivariate_factors,
+                );
+
+                return facs
+                    .into_iter()
+                    .map(|f| f.map_coeff(|c| self.field.downgrade_element(c), self.field.clone()))
+                    .collect();
+            }
+
             for s in &mut sample_points {
                 s.1 = self.field.nth(rng.gen_range(0..=coefficient_upper_bound));
             }
@@ -1413,7 +1486,7 @@ where
         }
 
         for (v, s) in &sample_points {
-            debug!("Sample point {}={}", v, self.field.from_element(s));
+            debug!("Sample point {}={}", v, self.field.printer(s));
         }
 
         let bivariate_factors = biv_f.bivariate_factorization(order[0], order[1]);
@@ -3219,7 +3292,10 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<Integer>, E, LexOrder> {
 mod test {
     use crate::{
         atom::Atom,
-        domains::{finite_field::Zp, integer::Z},
+        domains::{
+            finite_field::{Zp, Z2},
+            integer::Z,
+        },
         poly::factor::Factorize,
     };
 
@@ -3444,5 +3520,16 @@ mod test {
         let mut r = poly.factor();
         r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
         assert_eq!(r, res);
+    }
+
+    #[test]
+    fn galois_upgrade() {
+        let a = Atom::parse(
+            "x^7(y^5+y^4+y^3+y^2)+x^5(y^3+y)+x^4(y^4+y)+x^3(y^2+y)+x^2y+x*y^2+x*y+x+y+1",
+        )
+        .unwrap()
+        .to_polynomial::<_, u8>(&Z2, None);
+
+        assert_eq!(a.factor().len(), 2)
     }
 }

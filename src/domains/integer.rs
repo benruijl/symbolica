@@ -16,7 +16,8 @@ use crate::{printer::PrintOptions, utils};
 
 use super::{
     finite_field::{
-        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField, Zp, Zp64,
+        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField, Two, Zp,
+        Zp64, Z2,
     },
     rational::Rational,
     EuclideanDomain, Ring,
@@ -164,6 +165,16 @@ impl ToFiniteField<u64> for Integer {
             }
             &Integer::Double(n) => field.to_element(n.rem_euclid(field.get_prime() as i128) as u64),
             Integer::Large(r) => field.to_element(r.mod_u64(field.get_prime())),
+        }
+    }
+}
+
+impl ToFiniteField<Two> for Integer {
+    fn to_finite_field(&self, field: &Z2) -> <Z2 as Ring>::Element {
+        match self {
+            &Integer::Natural(n) => field.to_element(Two(n.rem_euclid(2 as i64) as u8)),
+            &Integer::Double(n) => field.to_element(Two(n.rem_euclid(2 as i128) as u8)),
+            Integer::Large(r) => field.to_element(Two(r.mod_u(2) as u8)),
         }
     }
 }
@@ -470,6 +481,84 @@ impl Integer {
                 }
             }
             Integer::Large(r) => Integer::Large(r.pow(e).into()),
+        }
+    }
+
+    pub fn quot_rem(&self, b: &Integer) -> (Integer, Integer) {
+        if b.is_zero() {
+            panic!("Cannot divide by zero");
+        }
+
+        match (self, b) {
+            (Integer::Natural(aa), Integer::Natural(bb)) => {
+                if let Some(q) = aa.checked_div_euclid(*bb) {
+                    (Integer::Natural(q), self - &(b * &Integer::Natural(q)))
+                } else {
+                    (Integer::Double(-(i64::MIN as i128)), Integer::zero())
+                }
+            }
+            (Integer::Natural(a), Integer::Double(b)) => {
+                // we always have |a| <= |b|
+                if *a < 0 {
+                    if *b > 0 {
+                        (Integer::Natural(-1), Integer::from_double(*a as i128 + *b))
+                    } else {
+                        (Integer::Natural(1), Integer::from_double(*a as i128 - *b))
+                    }
+                } else {
+                    (Integer::zero(), Integer::Natural(*a))
+                }
+            }
+            (Integer::Double(aa), Integer::Natural(bb)) => {
+                if let Some(q) = aa.checked_div_euclid(*bb as i128) {
+                    let q = Integer::from_double(q);
+                    (q.clone(), self - &(b * &q))
+                } else {
+                    (
+                        Integer::Large(MultiPrecisionInteger::from(i128::MIN).neg()),
+                        Integer::zero(),
+                    )
+                }
+            }
+            (Integer::Double(aa), Integer::Double(bb)) => {
+                let q = Integer::from_double(aa.div_euclid(*bb)); // b != -1
+                (q.clone(), self - &(b * &q))
+            }
+            (Integer::Natural(a), Integer::Large(b)) => {
+                if *a < 0 {
+                    if *b > 0 {
+                        (Integer::Natural(-1), Integer::from_large((a + b).into()))
+                    } else {
+                        (Integer::Natural(1), Integer::from_large((a - b).into()))
+                    }
+                } else {
+                    (Integer::zero(), Integer::Natural(*a))
+                }
+            }
+            (Integer::Large(a), Integer::Natural(b)) => {
+                let r = a.clone().div_rem_euc(MultiPrecisionInteger::from(*b));
+                (Integer::from_large(r.0), Integer::from_large(r.1))
+            }
+            (Integer::Large(a), Integer::Large(b)) => {
+                let r = a.clone().div_rem_euc(b.clone());
+                (Integer::from_large(r.0), Integer::from_large(r.1))
+            }
+
+            (Integer::Double(a), Integer::Large(b)) => {
+                if *a < 0 {
+                    if *b > 0 {
+                        (Integer::Natural(-1), Integer::from_large((a + b).into()))
+                    } else {
+                        (Integer::Natural(1), Integer::from_large((a - b).into()))
+                    }
+                } else {
+                    (Integer::zero(), Integer::Double(*a))
+                }
+            }
+            (Integer::Large(a), Integer::Double(b)) => {
+                let r = a.clone().div_rem_euc(MultiPrecisionInteger::from(*b));
+                (Integer::from_large(r.0), Integer::from_large(r.1))
+            }
         }
     }
 
@@ -831,81 +920,7 @@ impl EuclideanDomain for IntegerRing {
     }
 
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
-        if b.is_zero() {
-            panic!("Cannot divide by zero");
-        }
-
-        match (a, b) {
-            (Integer::Natural(aa), Integer::Natural(bb)) => {
-                if let Some(q) = aa.checked_div_euclid(*bb) {
-                    (Integer::Natural(q), a - &(b * &Integer::Natural(q)))
-                } else {
-                    (Integer::Double(-(i64::MIN as i128)), Integer::zero())
-                }
-            }
-            (Integer::Natural(a), Integer::Double(b)) => {
-                // we always have |a| <= |b|
-                if *a < 0 {
-                    if *b > 0 {
-                        (Integer::Natural(-1), Integer::from_double(*a as i128 + *b))
-                    } else {
-                        (Integer::Natural(1), Integer::from_double(*a as i128 - *b))
-                    }
-                } else {
-                    (Integer::zero(), Integer::Natural(*a))
-                }
-            }
-            (Integer::Double(aa), Integer::Natural(bb)) => {
-                if let Some(q) = aa.checked_div_euclid(*bb as i128) {
-                    let q = Integer::from_double(q);
-                    (q.clone(), a - &(b * &q))
-                } else {
-                    (
-                        Integer::Large(MultiPrecisionInteger::from(i128::MIN).neg()),
-                        Integer::zero(),
-                    )
-                }
-            }
-            (Integer::Double(aa), Integer::Double(bb)) => {
-                let q = Integer::from_double(aa.div_euclid(*bb)); // b != -1
-                (q.clone(), a - &(b * &q))
-            }
-            (Integer::Natural(a), Integer::Large(b)) => {
-                if *a < 0 {
-                    if *b > 0 {
-                        (Integer::Natural(-1), Integer::from_large((a + b).into()))
-                    } else {
-                        (Integer::Natural(1), Integer::from_large((a - b).into()))
-                    }
-                } else {
-                    (Integer::zero(), Integer::Natural(*a))
-                }
-            }
-            (Integer::Large(a), Integer::Natural(b)) => {
-                let r = a.clone().div_rem_euc(MultiPrecisionInteger::from(*b));
-                (Integer::from_large(r.0), Integer::from_large(r.1))
-            }
-            (Integer::Large(a), Integer::Large(b)) => {
-                let r = a.clone().div_rem_euc(b.clone());
-                (Integer::from_large(r.0), Integer::from_large(r.1))
-            }
-
-            (Integer::Double(a), Integer::Large(b)) => {
-                if *a < 0 {
-                    if *b > 0 {
-                        (Integer::Natural(-1), Integer::from_large((a + b).into()))
-                    } else {
-                        (Integer::Natural(1), Integer::from_large((a - b).into()))
-                    }
-                } else {
-                    (Integer::zero(), Integer::Double(*a))
-                }
-            }
-            (Integer::Large(a), Integer::Double(b)) => {
-                let r = a.clone().div_rem_euc(MultiPrecisionInteger::from(*b));
-                (Integer::from_large(r.0), Integer::from_large(r.1))
-            }
-        }
+        a.quot_rem(b)
     }
 
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {

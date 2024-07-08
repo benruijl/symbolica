@@ -1,11 +1,13 @@
 use rand::Rng;
 use std::fmt::{Display, Error, Formatter};
 use std::hash::Hash;
-use std::ops::Neg;
+use std::ops::{Deref, Neg};
 
 use crate::domains::integer::Integer;
+use crate::poly::gcd::PolynomialGCD;
 use crate::printer::PrintOptions;
 
+use super::algebraic_number::AlgebraicExtension;
 use super::integer::Z;
 use super::{EuclideanDomain, Field, Ring};
 
@@ -34,6 +36,110 @@ where
     ) -> <FiniteField<UField> as Ring>::Element;
 }
 
+impl ToFiniteField<u32> for u32 {
+    fn to_finite_field(&self, field: &FiniteField<u32>) -> <FiniteField<u32> as Ring>::Element {
+        field.to_element(*self)
+    }
+}
+
+impl ToFiniteField<u64> for u64 {
+    fn to_finite_field(&self, field: &FiniteField<u64>) -> <FiniteField<u64> as Ring>::Element {
+        field.to_element(*self)
+    }
+}
+
+impl ToFiniteField<Two> for u32 {
+    fn to_finite_field(&self, field: &FiniteField<Two>) -> <FiniteField<Two> as Ring>::Element {
+        field.to_element(Two((*self % 2) as u8))
+    }
+}
+
+impl ToFiniteField<Two> for u64 {
+    fn to_finite_field(&self, field: &FiniteField<Two>) -> <FiniteField<Two> as Ring>::Element {
+        field.to_element(Two((*self % 2) as u8))
+    }
+}
+
+/// A Galois field `GF(p,n)` is a finite field with `p^n` elements.
+/// It provides methods to upgrade and downgrade to Galois fields with the
+/// same prime but with a different power.
+pub trait GaloisField: Field {
+    type Base: Field;
+
+    fn get_extension_degree(&self) -> u64;
+    // Convert a number from the finite field to standard form `[0,p)`.
+    fn to_integer(&self, a: &Self::Element) -> Integer;
+    /// Convert a number from the finite field to symmetric form `[-p/2,p/2]`.
+    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer;
+
+    /// Upgrade the field to `GF(p,new_pow)`.
+    fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<Self::Base>
+    where
+        Self::Base: PolynomialGCD<u16>,
+        <Self::Base as Ring>::Element: Copy;
+
+    fn upgrade_element(
+        &self,
+        e: &Self::Element,
+        larger_field: &AlgebraicExtension<Self::Base>,
+    ) -> <AlgebraicExtension<Self::Base> as Ring>::Element;
+
+    fn downgrade_element(
+        &self,
+        e: &<AlgebraicExtension<Self::Base> as Ring>::Element,
+    ) -> Self::Element;
+}
+
+impl<UField: FiniteFieldWorkspace> GaloisField for FiniteField<UField>
+where
+    FiniteField<UField>: Field + FiniteFieldCore<UField>,
+{
+    type Base = Self;
+
+    fn get_extension_degree(&self) -> u64 {
+        1
+    }
+
+    fn to_integer(&self, a: &Self::Element) -> Integer {
+        self.from_element(&a).to_integer()
+    }
+
+    #[inline(always)]
+    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer {
+        let i = self.from_element(a).to_integer();
+        let p = self.get_prime().to_integer();
+
+        if &i * &2.into() > p {
+            &i - &p
+        } else {
+            i
+        }
+    }
+
+    fn upgrade(&self, new_pow: usize) -> AlgebraicExtension<FiniteField<UField>>
+    where
+        Self::Base: PolynomialGCD<u16>,
+        <Self::Base as Ring>::Element: Copy,
+    {
+        AlgebraicExtension::galois_field(self.clone(), new_pow)
+    }
+
+    fn upgrade_element(
+        &self,
+        e: &Self::Element,
+        larger_field: &AlgebraicExtension<Self::Base>,
+    ) -> <AlgebraicExtension<Self::Base> as Ring>::Element {
+        larger_field.constant(e.clone())
+    }
+
+    fn downgrade_element(
+        &self,
+        e: &<AlgebraicExtension<Self::Base> as Ring>::Element,
+    ) -> Self::Element {
+        e.poly.get_constant()
+    }
+}
+
 /// A number in a finite field.
 #[derive(Debug, Copy, Clone, Hash, PartialEq, PartialOrd, Eq)]
 pub struct FiniteFieldElement<UField>(pub(crate) UField);
@@ -41,6 +147,9 @@ pub struct FiniteFieldElement<UField>(pub(crate) UField);
 pub trait FiniteFieldWorkspace: Clone + Display + Eq + Hash {
     /// Convert to u64.
     fn to_u64(&self) -> u64;
+    fn to_integer(&self) -> Integer {
+        self.to_u64().into()
+    }
 }
 
 pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
@@ -50,19 +159,17 @@ pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
     fn to_element(&self, a: UField) -> Self::Element;
     /// Convert a number from the finite field to standard form `[0,p)`.
     fn from_element(&self, a: &Self::Element) -> UField;
-    /// Convert a number from the finite field to symmetric form `[-p/2,p/2]`.
-    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer;
 }
 
 /// The modular ring `Z / mZ`, where `m` can be any positive integer. In most cases,
 /// `m` will be a prime, and the domain will be a field.
 ///
-/// `Zp` and `Zp64` use Montgomery modular arithmetic
-/// to increase the performance of the multiplication operator.
+/// [Zp] ([`FiniteField<u32>`]) and [Zp64] ([`FiniteField<u64>`]) use Montgomery modular arithmetic
+/// to increase the performance of the multiplication operator. For the prime `2`, use [Z2] instead.
 ///
-/// For `m` larger than `2^64`, use `FiniteField<Integer>`.
+/// For `m` larger than `2^64`, use [`FiniteField<Integer>`].
 ///
-/// The special field `FiniteField<Mersenne64>` can be used to have even faster arithmetic
+/// The special field [`FiniteField<Mersenne64>`] can be used to have even faster arithmetic
 /// for a field with Mersenne prime `2^61-1`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FiniteField<UField> {
@@ -74,7 +181,9 @@ pub struct FiniteField<UField> {
 impl Zp {
     /// Create a new finite field. `n` must be a prime larger than 2.
     pub fn new(p: u32) -> Zp {
-        assert!(p % 2 != 0);
+        if p % 2 == 0 {
+            panic!("Prime 2 is not supported: use Z2 instead.");
+        }
 
         FiniteField {
             p,
@@ -134,18 +243,6 @@ impl FiniteFieldCore<u32> for Zp {
     #[inline(always)]
     fn from_element(&self, a: &FiniteFieldElement<u32>) -> u32 {
         self.mul(a, &FiniteFieldElement(1)).0
-    }
-
-    /// Convert a number from Montgomory form to symmetric form.
-    #[inline(always)]
-    fn to_symmetric_integer(&self, a: &FiniteFieldElement<u32>) -> Integer {
-        let i = self.from_element(a) as u64;
-
-        if i * 2 > self.get_prime() as u64 {
-            &Integer::from(i) - &Integer::from(self.get_prime() as u64)
-        } else {
-            i.into()
-        }
     }
 }
 
@@ -379,7 +476,9 @@ impl FiniteFieldWorkspace for u64 {
 impl Zp64 {
     /// Create a new finite field. `n` must be a prime larger than 2.
     fn new(p: u64) -> Zp64 {
-        assert!(p % 2 != 0);
+        if p % 2 == 0 {
+            panic!("Prime 2 is not supported: use Z2 instead.");
+        }
 
         FiniteField {
             p,
@@ -434,18 +533,6 @@ impl FiniteFieldCore<u64> for Zp64 {
     #[inline(always)]
     fn from_element(&self, a: &FiniteFieldElement<u64>) -> u64 {
         self.mul(a, &FiniteFieldElement(1)).0
-    }
-
-    /// Convert a number from Montgomory form to symmetric form.
-    #[inline(always)]
-    fn to_symmetric_integer(&self, a: &FiniteFieldElement<u64>) -> Integer {
-        let i = self.from_element(a);
-
-        if i > self.get_prime() / 2 {
-            &Integer::from(i) - &Integer::from(self.get_prime())
-        } else {
-            i.into()
-        }
     }
 }
 
@@ -669,6 +756,239 @@ impl Field for Zp64 {
     }
 }
 
+/// The finite field with 0 and 1 as elements.
+pub type Z2 = FiniteField<Two>;
+/// The finite field with 0 and 1 as elements.
+pub const Z2: FiniteField<Two> = Z2::new();
+
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+pub struct Two(pub(crate) u8);
+
+impl Z2 {
+    /// Create a new finite field with prime 2.
+    pub const fn new() -> Z2 {
+        FiniteField {
+            p: Two(2),
+            m: Two(2),
+            one: FiniteFieldElement(Two(1)),
+        }
+    }
+
+    // Get the prime 2.
+    pub fn get_prime() -> Two {
+        Two(2)
+    }
+}
+
+impl Two {
+    pub const fn new() -> Two {
+        Two(2)
+    }
+}
+
+impl Default for Two {
+    fn default() -> Self {
+        Two(2)
+    }
+}
+
+impl Deref for Two {
+    type Target = u8;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Two {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl Display for Two {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FiniteFieldWorkspace for Two {
+    fn to_u64(&self) -> u64 {
+        self.0 as u64
+    }
+}
+
+impl FiniteFieldCore<Two> for FiniteField<Two> {
+    fn new(p: Two) -> Self {
+        FiniteField {
+            p,
+            m: p,
+            one: FiniteFieldElement(Two(1)),
+        }
+    }
+
+    fn get_prime(&self) -> Two {
+        Two(2)
+    }
+
+    fn to_element(&self, a: Two) -> Self::Element {
+        a.0 % 2
+    }
+
+    fn from_element(&self, a: &Self::Element) -> Two {
+        Two(*a)
+    }
+}
+
+impl Ring for FiniteField<Two> {
+    type Element = u8;
+
+    #[inline(always)]
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a ^ b
+    }
+
+    #[inline(always)]
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a ^ b
+    }
+
+    #[inline(always)]
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        *a * *b
+    }
+
+    #[inline]
+    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.add(a, b);
+    }
+
+    #[inline]
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.sub(a, b);
+    }
+
+    #[inline]
+    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.add_assign(a, &self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.sub_assign(a, &self.mul(b, c));
+    }
+
+    /// Computes -x mod n.
+    #[inline]
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        *a
+    }
+
+    #[inline]
+    fn zero(&self) -> Self::Element {
+        0
+    }
+
+    /// Return the unit element in Montgomory form.
+    #[inline]
+    fn one(&self) -> Self::Element {
+        1
+    }
+
+    #[inline]
+    fn nth(&self, n: u64) -> Self::Element {
+        (n % 2) as u8
+    }
+
+    /// Compute b^e % n.
+    #[inline]
+    fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
+        if e == 0 {
+            1
+        } else {
+            *b
+        }
+    }
+
+    #[inline]
+    fn is_zero(a: &Self::Element) -> bool {
+        *a == 0
+    }
+
+    #[inline]
+    fn is_one(&self, a: &Self::Element) -> bool {
+        *a == 1
+    }
+
+    fn one_is_gcd_unit() -> bool {
+        true
+    }
+
+    fn characteristic(&self) -> Integer {
+        2.into()
+    }
+
+    fn size(&self) -> Integer {
+        2.into()
+    }
+
+    fn sample(&self, rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
+        rng.gen_range(0..2)
+    }
+
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        opts: &PrintOptions,
+        _in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
+        if opts.symmetric_representation_for_finite_field {
+            self.to_symmetric_integer(element).fmt(f)
+        } else {
+            self.from_element(element).fmt(f)
+        }
+    }
+}
+
+impl EuclideanDomain for FiniteField<Two> {
+    #[inline]
+    fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        0
+    }
+
+    #[inline]
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        (self.mul(a, &self.inv(b)), 0)
+    }
+
+    #[inline]
+    fn gcd(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        1
+    }
+}
+
+impl Field for FiniteField<Two> {
+    #[inline]
+    fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        self.mul(a, &self.inv(b))
+    }
+
+    #[inline]
+    fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, &self.inv(b));
+    }
+
+    /// Computes x^-1 mod n.
+    fn inv(&self, a: &Self::Element) -> Self::Element {
+        assert!(*a != 0, "0 is not invertible");
+        1
+    }
+}
+
 /// The 64-bit Mersenne prime 2^61 -1.
 ///
 /// Can be used for faster finite field arithmetic
@@ -732,14 +1052,6 @@ impl FiniteFieldCore<Mersenne64> for FiniteField<Mersenne64> {
 
     fn from_element(&self, a: &Self::Element) -> Mersenne64 {
         Mersenne64(*a)
-    }
-
-    fn to_symmetric_integer(&self, a: &Self::Element) -> Integer {
-        if *a * 2 > Mersenne64::PRIME {
-            &Integer::from(*a) - &Integer::from(Mersenne64::PRIME)
-        } else {
-            (*a).into()
-        }
     }
 }
 
@@ -957,6 +1269,10 @@ impl FiniteFieldWorkspace for Integer {
             panic!("Modulus {} is too large to be converted to u64", self)
         }
     }
+
+    fn to_integer(&self) -> Integer {
+        self.clone()
+    }
 }
 
 /// A finite field with a large prime modulus.
@@ -980,11 +1296,11 @@ impl FiniteFieldCore<Integer> for FiniteField<Integer> {
     }
 
     fn from_element(&self, a: &Integer) -> Integer {
-        a.clone()
-    }
-
-    fn to_symmetric_integer(&self, a: &Integer) -> Integer {
-        a.clone()
+        if a.is_negative() {
+            a.clone() + &self.p
+        } else {
+            a.clone()
+        }
     }
 }
 

@@ -9,7 +9,7 @@ use tracing::{debug, instrument};
 
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::finite_field::{
-    FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Zp,
+    FiniteField, FiniteFieldCore, FiniteFieldWorkspace, GaloisField, ToFiniteField, Zp,
 };
 use crate::domains::integer::{FromFiniteField, Integer, IntegerRing, SMALL_PRIMES, Z};
 use crate::domains::rational::{Rational, RationalField, Q};
@@ -2610,7 +2610,8 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
     }
 }
 
-impl<UField: FiniteFieldWorkspace, E: Exponent> PolynomialGCD<E> for FiniteField<UField>
+impl<UField: FiniteFieldWorkspace, F: GaloisField<Base = FiniteField<UField>>, E: Exponent>
+    PolynomialGCD<E> for F
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
     <FiniteField<UField> as Ring>::Element: Copy,
@@ -2640,26 +2641,11 @@ where
                 // upgrade to a Galois field that is large enough
                 // TODO: start at a better bound?
                 // TODO: run with Zp[var]/m_i instead and use CRT
-                for i in 2..100 {
-                    debug!("Upgrading to Galois field: {}^{}", a.field.get_prime(), i);
-
-                    let field = AlgebraicExtension::galois_field(a.field.get_prime(), i);
-
-                    let ag = a.map_coeff(|c| field.constant(c.clone()), field.clone());
-                    let bg = b.map_coeff(|c| field.constant(c.clone()), field.clone());
-
-                    if let Some(g) = MultivariatePolynomial::gcd_shape_modular(
-                        &ag,
-                        &bg,
-                        vars,
-                        bounds,
-                        tight_bounds,
-                    ) {
-                        return g.map_coeff(|c| c.poly.get_constant(), a.field.clone());
-                    }
-                }
-
-                panic!("Failed to find a suitable Galois field for gcd");
+                let field = a.field.upgrade(a.field.get_extension_degree() as usize + 1);
+                let ag = a.map_coeff(|c| a.field.upgrade_element(c, &field), field.clone());
+                let bg = b.map_coeff(|c| a.field.upgrade_element(c, &field), field.clone());
+                let g = PolynomialGCD::gcd(&ag, &bg, vars, bounds, tight_bounds);
+                g.map_coeff(|c| a.field.downgrade_element(c), a.field.clone())
             }
         }
     }
@@ -3079,57 +3065,5 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
         } else {
             a
         }
-    }
-}
-
-impl<UField: FiniteFieldWorkspace, E: Exponent> PolynomialGCD<E>
-    for AlgebraicExtension<FiniteField<UField>>
-where
-    FiniteField<UField>: FiniteFieldCore<UField>,
-    <FiniteField<UField> as Ring>::Element: Copy,
-{
-    fn heuristic_gcd(
-        _a: &MultivariatePolynomial<Self, E>,
-        _b: &MultivariatePolynomial<Self, E>,
-    ) -> Option<(
-        MultivariatePolynomial<Self, E>,
-        MultivariatePolynomial<Self, E>,
-        MultivariatePolynomial<Self, E>,
-    )> {
-        None
-    }
-
-    fn gcd(
-        a: &MultivariatePolynomial<Self, E>,
-        b: &MultivariatePolynomial<Self, E>,
-        vars: &[usize],
-        bounds: &mut [E],
-        tight_bounds: &mut [E],
-    ) -> MultivariatePolynomial<Self, E> {
-        assert!(!a.is_zero() || !b.is_zero());
-        MultivariatePolynomial::gcd_shape_modular(a, b, vars, bounds, tight_bounds).unwrap()
-    }
-
-    fn get_gcd_var_bounds(
-        a: &MultivariatePolynomial<Self, E>,
-        b: &MultivariatePolynomial<Self, E>,
-        vars: &[usize],
-        loose_bounds: &[E],
-    ) -> SmallVec<[E; INLINED_EXPONENTS]> {
-        let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
-        for var in vars {
-            let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
-                vars.iter().filter(|i| *i != var).cloned().collect();
-            tight_bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(a, b, &vvars, *var);
-        }
-        tight_bounds
-    }
-
-    fn gcd_multiple(f: Vec<MultivariatePolynomial<Self, E>>) -> MultivariatePolynomial<Self, E> {
-        MultivariatePolynomial::repeated_gcd(f)
-    }
-
-    fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
-        a.make_monic()
     }
 }

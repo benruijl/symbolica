@@ -5,7 +5,10 @@ use rand::Rng;
 use crate::{
     coefficient::ConvertToRing,
     combinatorics::CombinationIterator,
-    poly::{factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Variable},
+    poly::{
+        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent,
+        Variable,
+    },
     printer::PolynomialPrinter,
 };
 
@@ -541,6 +544,69 @@ impl<R: Field + PolynomialGCD<u16>> Field for AlgebraicExtension<R> {
     }
 }
 
+impl<R: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<AlgebraicExtension<R>, E> {
+    /// Get the norm of a non-constant square-free polynomial `f` in the algebraic number field.
+    pub fn norm(&self) -> MultivariatePolynomial<R, E> {
+        self.norm_impl().3
+    }
+
+    /// Get the norm of a non-constant square-free polynomial `f` in the algebraic number field.
+    /// Returns `(v, s, g, r)` where `v` is the shifted variable, `s` is the number of steps,
+    /// `g` is the shifted polynomial and `r` is the norm.
+    pub(crate) fn norm_impl(
+        &self,
+    ) -> (
+        usize,
+        usize,
+        MultivariatePolynomial<R, E>,
+        MultivariatePolynomial<R, E>,
+    ) {
+        assert!(!self.is_constant());
+
+        let f = self.from_number_field();
+
+        let alpha = f
+            .get_vars()
+            .iter()
+            .position(|x| x == &self.field.poly.variables[0])
+            .unwrap();
+
+        let mut poly = f.zero();
+        let mut exp = vec![E::zero(); f.nvars()];
+        for x in self.field.poly.into_iter() {
+            exp[alpha] = E::from_u32(x.exponents[0] as u32);
+            poly.append_monomial(x.coefficient.clone(), &exp);
+        }
+
+        let poly_uni = poly.to_univariate(alpha);
+
+        let mut s = 0;
+        loop {
+            let mut g_multi = f.clone();
+            for v in 0..f.nvars() {
+                if v == alpha || f.degree(v) == E::zero() {
+                    continue;
+                }
+
+                let g_uni = g_multi.to_univariate(alpha);
+
+                let r = g_uni.resultant_prs(&poly_uni);
+
+                let d = r.derivative(v);
+                if r.gcd(&d).is_constant() {
+                    return (v, s, g_multi, r);
+                }
+
+                let alpha_poly = g_multi.variable(&self.get_vars_ref()[v]).unwrap()
+                    - g_multi.variable(&self.field.poly.variables[0]).unwrap();
+
+                g_multi = g_multi.replace_with_poly(v, &alpha_poly);
+                s += 1;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::atom::Atom;
@@ -580,5 +646,23 @@ mod tests {
                 let _ = AlgebraicExtension::galois_field(Zp::new(i as u32), j);
             }
         }
+    }
+
+    #[test]
+    fn norm() {
+        let a = Atom::parse("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Q, None);
+        let f = Atom::parse("a^4-3")
+            .unwrap()
+            .to_polynomial::<_, u16>(&Q, None);
+        let f = AlgebraicExtension::new(f);
+        let norm = a.to_number_field(&f).norm();
+
+        let res = Atom::parse("16-32*z-64*z^2-64*z^3-52*z^4-40*z^5-132*z^6-24*z^7-50*z^8+120*z^9+66*z^10+92*z^11+47*z^12+32*z^13+14*z^14+4*z^15+z^16")
+        .unwrap()
+        .to_polynomial::<_, u8>(&Q, a.variables.clone().into());
+
+        assert_eq!(norm, res);
     }
 }

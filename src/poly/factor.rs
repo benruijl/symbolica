@@ -405,6 +405,80 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
     }
 }
 
+impl<E: Exponent> Factorize
+    for MultivariatePolynomial<AlgebraicExtension<RationalField>, E, LexOrder>
+{
+    fn square_free_factorization(&self) -> Vec<(Self, usize)> {
+        if self.is_zero() {
+            return vec![];
+        }
+
+        let c = self.content();
+        let stripped = self.clone().div_coeff(&c);
+
+        let mut factors = vec![];
+
+        if !self.field.is_one(&c) {
+            factors.push((self.constant(c), 1));
+        }
+
+        let fs = stripped.factor_separable();
+
+        for f in fs {
+            let mut nf = f.square_free_factorization_0_char();
+            factors.append(&mut nf);
+        }
+
+        if factors.is_empty() {
+            factors.push((self.one(), 1))
+        }
+
+        factors
+    }
+
+    /// Perform Trager's algorithm for factorization.
+    fn factor(&self) -> Vec<(Self, usize)> {
+        let sf = self.square_free_factorization();
+
+        let mut full_factors = vec![];
+        for (f, p) in &sf {
+            let (v, s, g, n) = f.norm_impl();
+
+            let factors = n.factor();
+
+            if factors.len() == 1 {
+                return vec![(f.clone(), 1)];
+            }
+
+            let mut g_f = g.to_number_field(&self.field);
+
+            for (f, b) in factors {
+                debug!("Rational factor {}", f);
+                let alpha_poly = g.variable(&self.get_vars_ref()[v]).unwrap()
+                    + g.variable(&self.field.poly().variables[0]).unwrap()
+                        * &g.constant((s as u64).into());
+
+                let f = f.to_number_field(&self.field);
+
+                let gcd = f.gcd(&g_f);
+
+                g_f = g_f / &gcd;
+
+                let g = MultivariatePolynomial::from_number_field(&gcd)
+                    .replace_with_poly(v, &alpha_poly);
+                full_factors.push((g.to_number_field(&self.field), b * p));
+            }
+        }
+
+        full_factors
+    }
+
+    fn is_irreducible(&self) -> bool {
+        // TODO: improve
+        self.factor().len() == 1
+    }
+}
+
 impl<
         UField: FiniteFieldWorkspace,
         F: GaloisField<Base = FiniteField<UField>> + PolynomialGCD<E>,
@@ -752,7 +826,7 @@ where
                 for i in 0..2 * d {
                     let r = self
                         .field
-                        .nth(rng.gen_range(0..self.field.characteristic().to_u64()));
+                        .sample(&mut rng, (0, self.field.characteristic().to_u64() as i64));
                     if !F::is_zero(&r) {
                         exp[var] = E::from_u32(i as u32);
                         random_poly.append_monomial(r, &exp);
@@ -770,8 +844,6 @@ where
                 break g;
             }
 
-            // TODO: use Frobenius map and modular composition to prevent computing large exponent poly^(p^d)
-            let p: Integer = self.field.size().to_u64().into();
             let b = if self.field.characteristic() == 2.into() {
                 let max = self.field.get_extension_degree() as usize * d;
 
@@ -785,6 +857,8 @@ where
 
                 b
             } else {
+                // TODO: use Frobenius map and modular composition to prevent computing large exponent poly^(p^d)
+                let p = self.field.size();
                 random_poly
                     .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
                     - self.one()
@@ -3293,8 +3367,10 @@ mod test {
     use crate::{
         atom::Atom,
         domains::{
+            algebraic_number::AlgebraicExtension,
             finite_field::{Zp, Z2},
             integer::Z,
+            rational::Q,
         },
         poly::factor::Factorize,
     };
@@ -3531,5 +3607,31 @@ mod test {
         .to_polynomial::<_, u8>(&Z2, None);
 
         assert_eq!(a.factor().len(), 2)
+    }
+
+    #[test]
+    fn algebraic_extension() {
+        let a = Atom::parse("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Q, None);
+        let f = Atom::parse("a^4-3")
+            .unwrap()
+            .to_polynomial::<_, u16>(&Q, None);
+        let f = AlgebraicExtension::new(f);
+
+        let mut factors = a.to_number_field(&f).factor();
+
+        let f1 = Atom::parse("(1-a^2)+(1-a)*z+z^2")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Q, a.get_vars().clone().into())
+            .to_number_field(&f);
+        let f2 = Atom::parse("(1+a^2)+(a)*z+z^2")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Q, a.get_vars().clone().into())
+            .to_number_field(&f);
+
+        factors.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+
+        assert_eq!(factors, vec![(f1, 1), (f2, 1)])
     }
 }

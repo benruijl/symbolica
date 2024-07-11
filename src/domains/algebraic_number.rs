@@ -260,9 +260,21 @@ where
 }
 
 impl<R: Ring> AlgebraicExtension<R> {
+    /// Create a new algebraic extension from a univariate polynomial.
+    /// The polynomial should be monic and irreducible.
     pub fn new(poly: MultivariatePolynomial<R, u16>) -> AlgebraicExtension<R> {
+        if poly.nvars() == 1 {
+            return AlgebraicExtension {
+                poly: Rc::new(poly),
+            };
+        }
+
+        assert_eq!((0..poly.nvars()).filter(|v| poly.degree(*v) > 0).count(), 1);
+        let v = (0..poly.nvars()).find(|v| poly.degree(*v) > 0).unwrap();
+        let uni = poly.to_univariate_from_univariate(v);
+
         AlgebraicExtension {
-            poly: Rc::new(poly),
+            poly: Rc::new(uni.to_multivariate()),
         }
     }
 
@@ -293,7 +305,7 @@ impl<R: Ring> AlgebraicExtension<R> {
         }
     }
 
-    pub fn to_element(&self, poly: MultivariatePolynomial<R, u16>) -> AlgebraicNumber<R> {
+    pub fn to_element(&self, poly: MultivariatePolynomial<R, u16>) -> <Self as Ring>::Element {
         assert!(poly.nvars() == 1);
 
         if poly.degree(0) >= self.poly.degree(0) {
@@ -544,6 +556,44 @@ impl<R: Field + PolynomialGCD<u16>> Field for AlgebraicExtension<R> {
     }
 }
 
+impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
+    /// Extend the current algebraic extension `R[a]` with `b`, whose minimal polynomial
+    /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
+    ///
+    /// `b`  must be irreducible over `R` and `R[a]`; this is not checked.
+    pub fn extend(
+        &self,
+        b: &MultivariatePolynomial<AlgebraicExtension<R>>,
+    ) -> (
+        AlgebraicExtension<R>,
+        <AlgebraicExtension<R> as Ring>::Element,
+        <AlgebraicExtension<R> as Ring>::Element,
+    )
+    where
+        AlgebraicExtension<R>: PolynomialGCD<u16>,
+        MultivariatePolynomial<R>: Factorize,
+        MultivariatePolynomial<AlgebraicExtension<R>>: Factorize,
+    {
+        assert_eq!(self, &b.field);
+
+        let (_, s, g, r) = b.norm_impl();
+        debug_assert!(r.is_irreducible());
+
+        let f: AlgebraicExtension<R> = AlgebraicExtension::new(r.clone());
+        let mut g2 = g.to_number_field(&f);
+        let mut h = self.poly.to_number_field(&f); // yields constant coeffs
+
+        g2.unify_variables(&mut h);
+        let g2 = g2.gcd(&h);
+
+        let a = f.neg(&f.div(&g2.get_constant(), &g2.lcoeff()));
+        let y = f.to_element(g2.field.poly.one().mul_exp(&[1]));
+        let b = f.sub(&y, &f.mul(&a, &f.nth(s as u64)));
+
+        (f, a, b)
+    }
+}
+
 impl<R: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<AlgebraicExtension<R>, E> {
     /// Get the norm of a non-constant square-free polynomial `f` in the algebraic number field.
     pub fn norm(&self) -> MultivariatePolynomial<R, E> {
@@ -582,12 +632,16 @@ impl<R: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<AlgebraicE
 
         let mut s = 0;
         loop {
-            let mut g_multi = f.clone();
             for v in 0..f.nvars() {
                 if v == alpha || f.degree(v) == E::zero() {
                     continue;
                 }
 
+                // construct f(x-s*a)
+                let alpha_poly = f.variable(&self.get_vars_ref()[v]).unwrap()
+                    - f.variable(&self.field.poly.variables[0]).unwrap()
+                        * &f.constant(f.field.nth(s as u64));
+                let g_multi = f.clone().replace_with_poly(v, &alpha_poly);
                 let g_uni = g_multi.to_univariate(alpha);
 
                 let r = g_uni.resultant_prs(&poly_uni);
@@ -596,13 +650,9 @@ impl<R: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<AlgebraicE
                 if r.gcd(&d).is_constant() {
                     return (v, s, g_multi, r);
                 }
-
-                let alpha_poly = g_multi.variable(&self.get_vars_ref()[v]).unwrap()
-                    - g_multi.variable(&self.field.poly.variables[0]).unwrap();
-
-                g_multi = g_multi.replace_with_poly(v, &alpha_poly);
-                s += 1;
             }
+
+            s += 1;
         }
     }
 }
@@ -664,5 +714,32 @@ mod tests {
         .to_polynomial::<_, u8>(&Q, a.variables.clone().into());
 
         assert_eq!(norm, res);
+    }
+
+    #[test]
+    fn extend() {
+        let a = Atom::parse("x^2-2").unwrap().to_polynomial(&Q, None);
+        let ae = AlgebraicExtension::new(a);
+
+        let b = Atom::parse("y^2-3")
+            .unwrap()
+            .to_polynomial(&Q, None)
+            .to_number_field(&ae);
+
+        let (c, rep1, rep2) = ae.extend(&b);
+
+        let rf = Atom::parse("1-10*y^2+y^4").unwrap().to_polynomial(&Q, None);
+
+        assert_eq!(c.poly.as_ref(), &rf);
+
+        let r1 = Atom::parse("-9/2y+1/2y^3")
+            .unwrap()
+            .to_polynomial::<_, u16>(&Q, None);
+        assert_eq!(rep1.poly, r1);
+
+        let r2 = Atom::parse("11/2*y-1/2*y^3")
+            .unwrap()
+            .to_polynomial::<_, u16>(&Q, None);
+        assert_eq!(rep2.poly, r2);
     }
 }

@@ -436,6 +436,15 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         self.variables.as_ref()
     }
 
+    /// Renaname a variable.
+    pub fn rename_variable(&mut self, old: &Variable, new: &Variable) {
+        if let Some(pos) = self.variables.iter().position(|v| v == old) {
+            let mut new_vars = self.variables.as_ref().clone();
+            new_vars[pos] = new.clone();
+            self.variables = Arc::new(new_vars);
+        }
+    }
+
     /// Unify the variable maps of two polynomials, i.e.
     /// rewrite a polynomial in `x` and one in `y` to a
     /// two polynomial in `x` and `y`.

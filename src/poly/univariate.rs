@@ -484,6 +484,21 @@ impl<F: Ring> UnivariatePolynomial<F> {
 
         res
     }
+
+    /// Convert from a univariate polynomial to a multivariate polynomial.
+    pub fn to_multivariate<E: Exponent>(self) -> MultivariatePolynomial<F, E> {
+        let mut res = MultivariatePolynomial::new(
+            &self.field,
+            self.degree().into(),
+            Arc::new(vec![self.variable.as_ref().clone()]),
+        );
+
+        for (p, c) in self.coefficients.into_iter().enumerate() {
+            res.append_monomial(c, &[E::from_u32(p as u32)]);
+        }
+
+        res
+    }
 }
 
 impl<F: Ring> PartialEq for UnivariatePolynomial<F> {
@@ -1016,8 +1031,8 @@ impl<F: Field> UnivariatePolynomial<F> {
 }
 
 impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
-    // Convert from a univariate polynomial to a polynomial.
-    pub fn to_multivariate(self) -> MultivariatePolynomial<R, E> {
+    /// Convert a univariate polynomial of multivariate polynomials to a multivariate polynomial.
+    pub fn flatten(self) -> MultivariatePolynomial<R, E> {
         let Some(pos) = self
             .field
             .variables

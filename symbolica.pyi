@@ -1175,6 +1175,21 @@ class Transformer:
         >>> print(e)
         """
 
+    def linearize(self, symbols: Optional[Sequence[Expression]]) -> Transformer:
+        """Create a transformer that linearizes a function, optionally extracting `symbols`
+        as well.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression, Transformer
+        >>> x, y, z, w, f, x__ = Expression.symbols('x', 'y', 'z', 'w', 'f', 'x__')
+        >>> e = f(x+y, 4*z*w+3).replace_all(f(x__), f(x__).transform().linearize([z]))
+        >>> print(e)
+
+        yields `f(x,3)+f(y,3)+4*z*f(x,w)+4*z*f(y,w)`.
+        """
+
     def partitions(
         self,
         bins: Sequence[Tuple[Transformer | Expression, int]],

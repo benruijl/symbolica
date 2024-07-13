@@ -376,6 +376,41 @@ impl PythonPattern {
         return append_transformer!(self, Transformer::ArgCount(only_for_arg_fun));
     }
 
+    /// Create a transformer that linearizes a function, optionally extracting `symbols`
+    /// as well.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x, y, z, w, f, x__ = Expression.symbols('x', 'y', 'z', 'w', 'f', 'x__')
+    /// >>> e = f(x+y, 4*z*w+3).replace_all(f(x__), f(x__).transform().linearize([z]))
+    /// >>> print(e)
+    ///
+    /// yields `f(x,3)+f(y,3)+4*z*f(x,w)+4*z*f(y,w)`.
+    pub fn linearize(&self, symbols: Option<Vec<PythonExpression>>) -> PyResult<PythonPattern> {
+        let mut c_symbols = vec![];
+        if let Some(symbols) = symbols {
+            for s in symbols {
+                if let AtomView::Var(v) = s.expr.as_view() {
+                    c_symbols.push(v.get_symbol());
+                } else {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Can only linearize in variables",
+                    ));
+                }
+            }
+        }
+
+        return append_transformer!(
+            self,
+            Transformer::Linearize(if c_symbols.is_empty() {
+                None
+            } else {
+                Some(c_symbols)
+            })
+        );
+    }
+
     /// Create a transformer that sorts a list of arguments.
     ///
     /// Examples

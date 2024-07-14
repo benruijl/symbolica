@@ -15,9 +15,9 @@
     <a href="https://app.codecov.io/gh/benruijl/symbolica"><img alt="Codecov" src="https://img.shields.io/codecov/c/github/benruijl/symbolica?token=N43MATK5XJ&style=flat-square"></a>
 </p>
 
-# Symbolica
+# Symbolica ⊆ Modern Computer Algebra
 
-Symbolica is a blazing fast and modern computer algebra system which aims to handle huge expressions. It can easily be incorporated into existing projects using its Python, Rust or C++ bindings.
+Symbolica is a blazing fast computer algebra system for Python and Rust, born of a need to push the boundaries of computations in science and enterprise.
 Check out the live [Jupyter Notebook demo](https://colab.research.google.com/drive/1VAtND2kddgBwNt1Tjsai8vnbVIbgg-7D?usp=sharing)!
 
 For documentation and more, see [symbolica.io](https://symbolica.io).
@@ -26,15 +26,15 @@ For documentation and more, see [symbolica.io](https://symbolica.io).
 
 ## Quick Example
 
-Symbolica allows you to build and manipulate mathematical expressions through matching and replacing patterns, similar to `regex` for text:
+Symbolica allows you to build and manipulate mathematical expressions, for example from a Jupyter Notebook:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://symbolica.io/resources/demo.dark.gif">
-  <source media="(prefers-color-scheme: light)" srcset="https://symbolica.io/resources/demo.light.gif">
-  <img width="600" alt="A demo of Symbolica" srcset="https://symbolica.io/resources/demo.dark.gif">
+  <source media="(prefers-color-scheme: dark)" srcset="https://symbolica.io/resources/demo.dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://symbolica.io/resources/demo.light.svg">
+  <img width="600" alt="A demo of Symbolica" srcset="https://symbolica.io/resources/demo.dark.svg">
 </picture>
 
-You are able to perform these operations from the comfort of a programming language that you (probably) already know, by using Symbolica's bindings to Python, Rust and C++:
+You are able to perform these operations from the comfort of a programming language that you (probably) already know, by using Symbolica's bindings to Python and Rust:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://symbolica.io/resources/completion.png">
@@ -76,8 +76,7 @@ In the following example we try to match the pattern `f(w1_,w2_)`:
 
 ```python
 from symbolica import Expression
-x, y, w1_, w2_ = Expression.vars('x','y','w1_','w2_')
-f = Expression.fun('f')
+x, y, w1_, w2_, f = Expression.symbols('x','y','w1_','w2_', 'f')
 e = f(3,x)*y**2+5
 r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2))
 print(r)
@@ -91,8 +90,7 @@ Solve a linear system in `x` and `y` with a parameter `c`:
 ```python
 from symbolica import Expression
 
-x, y, c = Expression.vars('x', 'y', 'c')
-f = Expression.fun('f')
+x, y, c, f = Expression.symbols('x', 'y', 'c', 'f')
 
 x_r, y_r = Expression.solve_linear_system(
     [f(c)*x + y + c, y + c**2], [x, y])
@@ -102,27 +100,22 @@ which yields `x = (-c+c^2)*f(c)^-1` and `y = -c^2`.
 
 ### Series expansion
 
-Perform the Taylor series in `x` of an expression that contains a user-defined function `f`:
+Perform a series expansion in `x`:
 
 ```python
 from symbolica import Expression
-
-x, y = Expression.vars('x', 'y')
-f = Expression.fun('f')
-
-e = 2* x**2 * y + f(x)
-e = e.taylor_series(x, 0, 2)
+x = Expression.symbol('x')
+e = Expression.parse('exp(5+x)/(1-x)').series(x, 0, 3)
 
 print(e)
 ```
-which yields `f(0)+x*der(1,f(0))+1/2*x^2*(4*y+der(2,f(0)))`.
+which yields `(exp(5))+(2*exp(5))*x+(5/2*exp(5))*x^2+(8/3*exp(5))*x^3+O(x^4)`.
 
 ### Rational arithmetic
 
 Symbolica is world-class in rational arithmetic, outperforming Mathematica, Maple, Form, Fermat, and other computer algebra packages. Simply convert an expression to a rational polynomial:
 ```python
 from symbolica import Expression
-x, y = Expression.vars('x','y')
 p = Expression.parse('(x*y^2*5+5)^2/(2*x+5)+(x+4)/(6*x^2+1)').to_rational_polynomial()
 print(p)
 ```

@@ -1054,7 +1054,7 @@ impl Series<AtomField> {
         let pow_ram = pow.denominator().to_i64().unwrap() as usize;
         r.change_ramification(pow_ram);
 
-        let p = &(self.shift as i64, self.ramification as i64).into() * &pow;
+        let p = Rational::from((self.shift as i64, self.ramification as i64)) * &pow;
 
         let shift = p.numerator().to_i64().unwrap() as isize
             * (r.ramification / p.denominator().to_i64().unwrap() as usize) as isize;

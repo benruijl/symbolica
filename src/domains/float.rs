@@ -5,6 +5,7 @@ use std::{
 };
 
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use wide::{f64x2, f64x4};
 
 use super::rational::Rational;
@@ -39,7 +40,6 @@ pub trait NumericalFloatLike:
 {
     fn mul_add(&self, a: &Self, b: &Self) -> Self;
     fn neg(&self) -> Self;
-    fn norm(&self) -> Self;
     fn zero(&self) -> Self;
     /// Create a zero that should only be used as a temporary value,
     /// as for some types it may have wrong precision information.
@@ -82,6 +82,7 @@ pub trait ConstructibleFloat: NumericalFloatLike {
 }
 
 pub trait Real: NumericalFloatLike {
+    fn norm(&self) -> Self;
     fn sqrt(&self) -> Self;
     fn log(&self) -> Self;
     fn exp(&self) -> Self;
@@ -109,11 +110,6 @@ impl NumericalFloatLike for f64 {
     #[inline(always)]
     fn neg(&self) -> Self {
         -self
-    }
-
-    #[inline(always)]
-    fn norm(&self) -> Self {
-        f64::abs(*self)
     }
 
     #[inline(always)]
@@ -221,6 +217,11 @@ impl ConstructibleFloat for f64 {
 }
 
 impl Real for f64 {
+    #[inline(always)]
+    fn norm(&self) -> Self {
+        f64::abs(*self)
+    }
+
     #[inline(always)]
     fn sqrt(&self) -> Self {
         (*self).sqrt()
@@ -901,11 +902,6 @@ impl NumericalFloatLike for Float {
     }
 
     #[inline(always)]
-    fn norm(&self) -> Self {
-        self.0.clone().abs().into()
-    }
-
-    #[inline(always)]
     fn zero(&self) -> Self {
         Float::new(self.prec())
     }
@@ -1000,6 +996,11 @@ impl NumericalFloatComparison for Float {
 }
 
 impl Real for Float {
+    #[inline(always)]
+    fn norm(&self) -> Self {
+        self.0.clone().abs().into()
+    }
+
     #[inline(always)]
     fn sqrt(&self) -> Self {
         self.0.sqrt_ref().complete(self.prec() + 1).into()
@@ -1451,10 +1452,6 @@ impl<T: NumericalFloatComparison> NumericalFloatLike for ErrorPropagatingFloat<T
         -self.clone()
     }
 
-    fn norm(&self) -> Self {
-        todo!()
-    }
-
     fn zero(&self) -> Self {
         ErrorPropagatingFloat {
             value: self.value.zero(),
@@ -1560,6 +1557,14 @@ impl<T: NumericalFloatComparison + Into<f64>> NumericalFloatComparison
 }
 
 impl<T: Real + NumericalFloatComparison> Real for ErrorPropagatingFloat<T> {
+    fn norm(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.norm(),
+            prec: self.prec,
+        }
+        .truncate()
+    }
+
     fn sqrt(&self) -> Self {
         ErrorPropagatingFloat {
             value: self.value.sqrt(),
@@ -1729,11 +1734,6 @@ macro_rules! simd_impl {
             }
 
             #[inline(always)]
-            fn norm(&self) -> Self {
-                (*self).abs()
-            }
-
-            #[inline(always)]
             fn zero(&self) -> Self {
                 Self::ZERO
             }
@@ -1791,6 +1791,11 @@ macro_rules! simd_impl {
         }
 
         impl Real for $t {
+            #[inline(always)]
+            fn norm(&self) -> Self {
+                (*self).abs()
+            }
+
             #[inline(always)]
             fn sqrt(&self) -> Self {
                 (*self).sqrt()
@@ -1908,10 +1913,6 @@ impl NumericalFloatLike for Rational {
         self.neg()
     }
 
-    fn norm(&self) -> Self {
-        self.abs()
-    }
-
     fn zero(&self) -> Self {
         Self::zero()
     }
@@ -2004,10 +2005,19 @@ impl NumericalFloatComparison for Rational {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub struct Complex<T: Real> {
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Complex<T> {
     pub re: T,
     pub im: T,
+}
+
+impl<T: Default> Default for Complex<T> {
+    fn default() -> Self {
+        Complex {
+            re: T::default(),
+            im: T::default(),
+        }
+    }
 }
 
 impl<T: ConstructibleFloat + Real> ConstructibleFloat for Complex<T> {
@@ -2039,7 +2049,8 @@ impl<T: ConstructibleFloat + Real> ConstructibleFloat for Complex<T> {
         }
     }
 }
-impl<T: Real> Complex<T> {
+
+impl<T: NumericalFloatLike> Complex<T> {
     #[inline]
     pub fn new(re: T, im: T) -> Complex<T> {
         Complex { re, im }
@@ -2110,7 +2121,9 @@ impl<T: Real> Complex<T> {
     pub fn norm_squared(&self) -> T {
         self.re.clone() * &self.re + self.im.clone() * &self.im
     }
+}
 
+impl<T: Real> Complex<T> {
     #[inline]
     pub fn arg(&self) -> T {
         self.im.atan2(&self.re)
@@ -2127,7 +2140,7 @@ impl<T: Real> Complex<T> {
     }
 }
 
-impl<T: Real> Add<Complex<T>> for Complex<T> {
+impl<T: NumericalFloatLike> Add<Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
@@ -2136,7 +2149,7 @@ impl<T: Real> Add<Complex<T>> for Complex<T> {
     }
 }
 
-impl<T: Real> Add<T> for Complex<T> {
+impl<T: NumericalFloatLike> Add<T> for Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2145,7 +2158,7 @@ impl<T: Real> Add<T> for Complex<T> {
     }
 }
 
-impl<T: Real> Add<&Complex<T>> for Complex<T> {
+impl<T: NumericalFloatLike> Add<&Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
@@ -2154,7 +2167,7 @@ impl<T: Real> Add<&Complex<T>> for Complex<T> {
     }
 }
 
-impl<T: Real> Add<&T> for Complex<T> {
+impl<T: NumericalFloatLike> Add<&T> for Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2163,7 +2176,7 @@ impl<T: Real> Add<&T> for Complex<T> {
     }
 }
 
-impl<'a, 'b, T: Real> Add<&'a Complex<T>> for &'b Complex<T> {
+impl<'a, 'b, T: NumericalFloatLike> Add<&'a Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2172,7 +2185,7 @@ impl<'a, 'b, T: Real> Add<&'a Complex<T>> for &'b Complex<T> {
     }
 }
 
-impl<'a, T: Real> Add<&T> for &'a Complex<T> {
+impl<'a, T: NumericalFloatLike> Add<&T> for &'a Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2181,7 +2194,7 @@ impl<'a, T: Real> Add<&T> for &'a Complex<T> {
     }
 }
 
-impl<'b, T: Real> Add<Complex<T>> for &'b Complex<T> {
+impl<'b, T: NumericalFloatLike> Add<Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2190,7 +2203,7 @@ impl<'b, T: Real> Add<Complex<T>> for &'b Complex<T> {
     }
 }
 
-impl<'b, T: Real> Add<T> for &'b Complex<T> {
+impl<'b, T: NumericalFloatLike> Add<T> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2199,21 +2212,21 @@ impl<'b, T: Real> Add<T> for &'b Complex<T> {
     }
 }
 
-impl<T: Real> AddAssign for Complex<T> {
+impl<T: NumericalFloatLike> AddAssign for Complex<T> {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
         self.add_assign(&rhs)
     }
 }
 
-impl<T: Real> AddAssign<T> for Complex<T> {
+impl<T: NumericalFloatLike> AddAssign<T> for Complex<T> {
     #[inline]
     fn add_assign(&mut self, rhs: T) {
         self.re += rhs;
     }
 }
 
-impl<T: Real> AddAssign<&Complex<T>> for Complex<T> {
+impl<T: NumericalFloatLike> AddAssign<&Complex<T>> for Complex<T> {
     #[inline]
     fn add_assign(&mut self, rhs: &Self) {
         self.re += &rhs.re;
@@ -2221,14 +2234,14 @@ impl<T: Real> AddAssign<&Complex<T>> for Complex<T> {
     }
 }
 
-impl<T: Real> AddAssign<&T> for Complex<T> {
+impl<T: NumericalFloatLike> AddAssign<&T> for Complex<T> {
     #[inline]
     fn add_assign(&mut self, rhs: &T) {
         self.re += rhs;
     }
 }
 
-impl<T: Real> Sub for Complex<T> {
+impl<T: NumericalFloatLike> Sub for Complex<T> {
     type Output = Self;
 
     #[inline]
@@ -2237,7 +2250,7 @@ impl<T: Real> Sub for Complex<T> {
     }
 }
 
-impl<T: Real> Sub<T> for Complex<T> {
+impl<T: NumericalFloatLike> Sub<T> for Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2246,7 +2259,7 @@ impl<T: Real> Sub<T> for Complex<T> {
     }
 }
 
-impl<T: Real> Sub<&Complex<T>> for Complex<T> {
+impl<T: NumericalFloatLike> Sub<&Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
@@ -2255,7 +2268,7 @@ impl<T: Real> Sub<&Complex<T>> for Complex<T> {
     }
 }
 
-impl<T: Real> Sub<&T> for Complex<T> {
+impl<T: NumericalFloatLike> Sub<&T> for Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2264,7 +2277,7 @@ impl<T: Real> Sub<&T> for Complex<T> {
     }
 }
 
-impl<'a, 'b, T: Real> Sub<&'a Complex<T>> for &'b Complex<T> {
+impl<'a, 'b, T: NumericalFloatLike> Sub<&'a Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2273,7 +2286,7 @@ impl<'a, 'b, T: Real> Sub<&'a Complex<T>> for &'b Complex<T> {
     }
 }
 
-impl<'a, T: Real> Sub<&T> for &'a Complex<T> {
+impl<'a, T: NumericalFloatLike> Sub<&T> for &'a Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2282,7 +2295,7 @@ impl<'a, T: Real> Sub<&T> for &'a Complex<T> {
     }
 }
 
-impl<'b, T: Real> Sub<Complex<T>> for &'b Complex<T> {
+impl<'b, T: NumericalFloatLike> Sub<Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2291,7 +2304,7 @@ impl<'b, T: Real> Sub<Complex<T>> for &'b Complex<T> {
     }
 }
 
-impl<'b, T: Real> Sub<T> for &'b Complex<T> {
+impl<'b, T: NumericalFloatLike> Sub<T> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2300,21 +2313,21 @@ impl<'b, T: Real> Sub<T> for &'b Complex<T> {
     }
 }
 
-impl<T: Real> SubAssign for Complex<T> {
+impl<T: NumericalFloatLike> SubAssign for Complex<T> {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
         self.sub_assign(&rhs)
     }
 }
 
-impl<T: Real> SubAssign<T> for Complex<T> {
+impl<T: NumericalFloatLike> SubAssign<T> for Complex<T> {
     #[inline]
     fn sub_assign(&mut self, rhs: T) {
         self.re -= rhs;
     }
 }
 
-impl<T: Real> SubAssign<&Complex<T>> for Complex<T> {
+impl<T: NumericalFloatLike> SubAssign<&Complex<T>> for Complex<T> {
     #[inline]
     fn sub_assign(&mut self, rhs: &Self) {
         self.re -= &rhs.re;
@@ -2322,14 +2335,14 @@ impl<T: Real> SubAssign<&Complex<T>> for Complex<T> {
     }
 }
 
-impl<T: Real> SubAssign<&T> for Complex<T> {
+impl<T: NumericalFloatLike> SubAssign<&T> for Complex<T> {
     #[inline]
     fn sub_assign(&mut self, rhs: &T) {
         self.re -= rhs;
     }
 }
 
-impl<T: Real> Mul for Complex<T> {
+impl<T: NumericalFloatLike> Mul for Complex<T> {
     type Output = Self;
 
     #[inline]
@@ -2338,7 +2351,7 @@ impl<T: Real> Mul for Complex<T> {
     }
 }
 
-impl<T: Real> Mul<T> for Complex<T> {
+impl<T: NumericalFloatLike> Mul<T> for Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2347,7 +2360,7 @@ impl<T: Real> Mul<T> for Complex<T> {
     }
 }
 
-impl<T: Real> Mul<&Complex<T>> for Complex<T> {
+impl<T: NumericalFloatLike> Mul<&Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
@@ -2359,7 +2372,7 @@ impl<T: Real> Mul<&Complex<T>> for Complex<T> {
     }
 }
 
-impl<T: Real> Mul<&T> for Complex<T> {
+impl<T: NumericalFloatLike> Mul<&T> for Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2368,7 +2381,7 @@ impl<T: Real> Mul<&T> for Complex<T> {
     }
 }
 
-impl<'a, 'b, T: Real> Mul<&'a Complex<T>> for &'b Complex<T> {
+impl<'a, 'b, T: NumericalFloatLike> Mul<&'a Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2377,7 +2390,7 @@ impl<'a, 'b, T: Real> Mul<&'a Complex<T>> for &'b Complex<T> {
     }
 }
 
-impl<'a, T: Real> Mul<&T> for &'a Complex<T> {
+impl<'a, T: NumericalFloatLike> Mul<&T> for &'a Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2386,7 +2399,7 @@ impl<'a, T: Real> Mul<&T> for &'a Complex<T> {
     }
 }
 
-impl<'b, T: Real> Mul<Complex<T>> for &'b Complex<T> {
+impl<'b, T: NumericalFloatLike> Mul<Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2395,7 +2408,7 @@ impl<'b, T: Real> Mul<Complex<T>> for &'b Complex<T> {
     }
 }
 
-impl<'b, T: Real> Mul<T> for &'b Complex<T> {
+impl<'b, T: NumericalFloatLike> Mul<T> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2404,35 +2417,35 @@ impl<'b, T: Real> Mul<T> for &'b Complex<T> {
     }
 }
 
-impl<T: Real> MulAssign for Complex<T> {
+impl<T: NumericalFloatLike> MulAssign for Complex<T> {
     #[inline]
     fn mul_assign(&mut self, rhs: Self) {
         *self = self.clone().mul(rhs);
     }
 }
 
-impl<T: Real> MulAssign<T> for Complex<T> {
+impl<T: NumericalFloatLike> MulAssign<T> for Complex<T> {
     #[inline]
     fn mul_assign(&mut self, rhs: T) {
         *self = self.clone().mul(rhs);
     }
 }
 
-impl<T: Real> MulAssign<&Complex<T>> for Complex<T> {
+impl<T: NumericalFloatLike> MulAssign<&Complex<T>> for Complex<T> {
     #[inline]
     fn mul_assign(&mut self, rhs: &Self) {
         *self = self.clone().mul(rhs);
     }
 }
 
-impl<T: Real> MulAssign<&T> for Complex<T> {
+impl<T: NumericalFloatLike> MulAssign<&T> for Complex<T> {
     #[inline]
     fn mul_assign(&mut self, rhs: &T) {
         *self = self.clone().mul(rhs);
     }
 }
 
-impl<T: Real> Div for Complex<T> {
+impl<T: NumericalFloatLike> Div for Complex<T> {
     type Output = Self;
 
     #[inline]
@@ -2441,7 +2454,7 @@ impl<T: Real> Div for Complex<T> {
     }
 }
 
-impl<T: Real> Div<T> for Complex<T> {
+impl<T: NumericalFloatLike> Div<T> for Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2450,7 +2463,7 @@ impl<T: Real> Div<T> for Complex<T> {
     }
 }
 
-impl<T: Real> Div<&Complex<T>> for Complex<T> {
+impl<T: NumericalFloatLike> Div<&Complex<T>> for Complex<T> {
     type Output = Self;
 
     #[inline]
@@ -2462,7 +2475,7 @@ impl<T: Real> Div<&Complex<T>> for Complex<T> {
     }
 }
 
-impl<T: Real> Div<&T> for Complex<T> {
+impl<T: NumericalFloatLike> Div<&T> for Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2471,7 +2484,7 @@ impl<T: Real> Div<&T> for Complex<T> {
     }
 }
 
-impl<'a, 'b, T: Real> Div<&'a Complex<T>> for &'b Complex<T> {
+impl<'a, 'b, T: NumericalFloatLike> Div<&'a Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2480,7 +2493,7 @@ impl<'a, 'b, T: Real> Div<&'a Complex<T>> for &'b Complex<T> {
     }
 }
 
-impl<'a, T: Real> Div<&T> for &'a Complex<T> {
+impl<'a, T: NumericalFloatLike> Div<&T> for &'a Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2489,7 +2502,7 @@ impl<'a, T: Real> Div<&T> for &'a Complex<T> {
     }
 }
 
-impl<'b, T: Real> Div<Complex<T>> for &'b Complex<T> {
+impl<'b, T: NumericalFloatLike> Div<Complex<T>> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2498,7 +2511,7 @@ impl<'b, T: Real> Div<Complex<T>> for &'b Complex<T> {
     }
 }
 
-impl<'b, T: Real> Div<T> for &'b Complex<T> {
+impl<'b, T: NumericalFloatLike> Div<T> for &'b Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2507,31 +2520,31 @@ impl<'b, T: Real> Div<T> for &'b Complex<T> {
     }
 }
 
-impl<T: Real> DivAssign for Complex<T> {
+impl<T: NumericalFloatLike> DivAssign for Complex<T> {
     fn div_assign(&mut self, rhs: Self) {
         *self = self.clone().div(rhs);
     }
 }
 
-impl<T: Real> DivAssign<T> for Complex<T> {
+impl<T: NumericalFloatLike> DivAssign<T> for Complex<T> {
     fn div_assign(&mut self, rhs: T) {
         *self = self.clone().div(rhs);
     }
 }
 
-impl<T: Real> DivAssign<&Complex<T>> for Complex<T> {
+impl<T: NumericalFloatLike> DivAssign<&Complex<T>> for Complex<T> {
     fn div_assign(&mut self, rhs: &Self) {
         *self = self.clone().div(rhs);
     }
 }
 
-impl<T: Real> DivAssign<&T> for Complex<T> {
+impl<T: NumericalFloatLike> DivAssign<&T> for Complex<T> {
     fn div_assign(&mut self, rhs: &T) {
         *self = self.clone().div(rhs);
     }
 }
 
-impl<T: Real> Neg for Complex<T> {
+impl<T: NumericalFloatLike> Neg for Complex<T> {
     type Output = Complex<T>;
 
     #[inline]
@@ -2540,7 +2553,7 @@ impl<T: Real> Neg for Complex<T> {
     }
 }
 
-impl<T: Real> Display for Complex<T> {
+impl<T: NumericalFloatLike> Display for Complex<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('(')?;
         Display::fmt(&self.re, f)?;
@@ -2550,7 +2563,7 @@ impl<T: Real> Display for Complex<T> {
     }
 }
 
-impl<T: Real> Debug for Complex<T> {
+impl<T: NumericalFloatLike> Debug for Complex<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('(')?;
         Debug::fmt(&self.re, f)?;
@@ -2560,7 +2573,7 @@ impl<T: Real> Debug for Complex<T> {
     }
 }
 
-impl<T: Real> LowerExp for Complex<T> {
+impl<T: NumericalFloatLike> LowerExp for Complex<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('(')?;
         LowerExp::fmt(&self.re, f)?;
@@ -2570,7 +2583,7 @@ impl<T: Real> LowerExp for Complex<T> {
     }
 }
 
-impl<T: Real> NumericalFloatLike for Complex<T> {
+impl<T: NumericalFloatLike> NumericalFloatLike for Complex<T> {
     #[inline]
     fn mul_add(&self, a: &Self, b: &Self) -> Self {
         self.clone() + (a.clone() * b)
@@ -2582,11 +2595,6 @@ impl<T: Real> NumericalFloatLike for Complex<T> {
             re: -self.re.clone(),
             im: -self.im.clone(),
         }
-    }
-
-    #[inline]
-    fn norm(&self) -> Self {
-        Complex::new(self.norm_squared().sqrt(), self.im.zero())
     }
 
     #[inline]
@@ -2664,6 +2672,11 @@ impl<T: Real> NumericalFloatLike for Complex<T> {
 
 /// Following the same conventions and formulas as num::Complex.
 impl<T: Real> Real for Complex<T> {
+    #[inline]
+    fn norm(&self) -> Self {
+        Complex::new(self.norm_squared().sqrt(), self.im.zero())
+    }
+
     #[inline]
     fn sqrt(&self) -> Self {
         let (r, phi) = self.clone().to_polar_coordinates();
@@ -2784,7 +2797,7 @@ impl<T: Real> Real for Complex<T> {
     }
 }
 
-impl<'a, T: Real + From<&'a Rational>> From<&'a Rational> for Complex<T> {
+impl<'a, T: NumericalFloatLike + From<&'a Rational>> From<&'a Rational> for Complex<T> {
     fn from(value: &'a Rational) -> Self {
         let c: T = value.into();
         let zero = c.zero();

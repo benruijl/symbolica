@@ -1189,6 +1189,76 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
         out.as_view().normalize(workspace, &mut norm);
         std::mem::swap(norm.deref_mut(), out);
     }
+
+    pub fn to_expression_with_coeff_map<F: Fn(&R, &R::Element, &mut Atom)>(&self, f: F) -> Atom {
+        let mut out = Atom::default();
+        self.to_expression_with_coeff_map_into(f, &mut out);
+        out
+    }
+
+    pub fn to_expression_with_coeff_map_into<F: Fn(&R, &R::Element, &mut Atom)>(
+        &self,
+        f: F,
+        out: &mut Atom,
+    ) {
+        Workspace::get_local().with(|ws| self.to_expression_coeff_map_impl(ws, f, out));
+    }
+
+    pub(crate) fn to_expression_coeff_map_impl<F: Fn(&R, &R::Element, &mut Atom)>(
+        &self,
+        workspace: &Workspace,
+        f: F,
+        out: &mut Atom,
+    ) {
+        if self.is_zero() {
+            out.set_from_view(&workspace.new_num(0).as_view());
+            return;
+        }
+
+        let add = out.to_add();
+
+        let mut mul_h = workspace.new_atom();
+        let mut var_h = workspace.new_atom();
+        let mut num_h = workspace.new_atom();
+        let mut pow_h = workspace.new_atom();
+
+        let mut coeff = workspace.new_atom();
+        for monomial in self {
+            let mul = mul_h.to_mul();
+
+            for (var_id, &pow) in self.variables.iter().zip(monomial.exponents) {
+                if pow > E::zero() {
+                    match var_id {
+                        Variable::Symbol(v) => {
+                            var_h.to_var(*v);
+                        }
+                        Variable::Temporary(_) => {
+                            unreachable!("Temporary variables not supported");
+                        }
+                        Variable::Function(_, a) | Variable::Other(a) => {
+                            var_h.set_from_view(&a.as_view());
+                        }
+                    }
+
+                    if pow > E::one() {
+                        num_h.to_num((pow.to_u32() as i64).into());
+                        pow_h.to_pow(var_h.as_view(), num_h.as_view());
+                        mul.extend(pow_h.as_view());
+                    } else {
+                        mul.extend(var_h.as_view());
+                    }
+                }
+            }
+
+            f(&self.field, &monomial.coefficient, &mut coeff);
+            mul.extend(coeff.as_view());
+            add.extend(mul_h.as_view());
+        }
+
+        let mut norm = workspace.new_atom();
+        out.as_view().normalize(workspace, &mut norm);
+        std::mem::swap(norm.deref_mut(), out);
+    }
 }
 
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {

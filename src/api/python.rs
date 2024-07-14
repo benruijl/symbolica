@@ -27,10 +27,11 @@ use smartstring::{LazyCompact, SmartString};
 use crate::{
     atom::{Atom, AtomType, AtomView, ListIterator, Symbol},
     domains::{
+        algebraic_number::AlgebraicExtension,
         atom::AtomField,
-        finite_field::{ToFiniteField, Zp},
+        finite_field::{ToFiniteField, Zp, Z2},
         float::{Complex, Float},
-        integer::{Integer, IntegerRing, Z},
+        integer::{FromFiniteField, Integer, IntegerRing, Z},
         rational::{Rational, RationalField, Q},
         rational_polynomial::{
             FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
@@ -72,6 +73,7 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonPolynomial>()?;
     m.add_class::<PythonIntegerPolynomial>()?;
     m.add_class::<PythonFiniteFieldPolynomial>()?;
+    m.add_class::<PythonNumberFieldPolynomial>()?;
     m.add_class::<PythonRationalPolynomial>()?;
     m.add_class::<PythonFiniteFieldRationalPolynomial>()?;
     m.add_class::<PythonMatrix>()?;
@@ -2914,7 +2916,22 @@ impl PythonExpression {
 
     /// Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
     /// All non-polynomial elements will be converted to new independent variables.
-    pub fn to_polynomial(&self, vars: Option<Vec<PythonExpression>>) -> PyResult<PythonPolynomial> {
+    ///
+    /// If a `modulus` is provided, the coefficients will be converted to finite field elements modulo `modulus`.
+    /// If on top an `extension` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
+    /// `GF(modulus^2)` where `a` is the variable of the minimal polynomial of the field.
+    ///
+    /// If a `minimal_poly` is provided, the polynomial will be converted to a number field with the given minimal polynomial.
+    /// The minimal polynomial must be a monic, irreducible univariate polynomial. If a `modulus` is provided as well,
+    /// the Galois field will be created with `minimal_poly` as the minimal polynomial.
+    pub fn to_polynomial(
+        &self,
+        modulus: Option<u32>,
+        extension: Option<(u16, Symbol)>,
+        minimal_poly: Option<PythonExpression>,
+        vars: Option<Vec<PythonExpression>>,
+        py: Python,
+    ) -> PyResult<PyObject> {
         let mut var_map = vec![];
         if let Some(vm) = vars {
             for v in vm {
@@ -2936,9 +2953,108 @@ impl PythonExpression {
             Some(Arc::new(var_map))
         };
 
-        Ok(PythonPolynomial {
-            poly: self.expr.to_polynomial(&Q, var_map),
-        })
+        if extension.is_some() && modulus.is_none() {
+            return Err(exceptions::PyValueError::new_err(
+                "Extension field requires a modulus to be set",
+            ));
+        }
+
+        let poly = minimal_poly.map(|p| p.expr.to_polynomial::<_, u16>(&Q, None));
+        if let Some(p) = &poly {
+            if p.nvars() != 1 {
+                return Err(exceptions::PyValueError::new_err(
+                    "Minimal polynomial must be a univariate polynomial",
+                ));
+            }
+        }
+
+        if let Some(m) = modulus {
+            if let Some((e, name)) = extension {
+                if let Some(p) = &poly {
+                    if e != p.degree(0) {
+                        return Err(exceptions::PyValueError::new_err(
+                            "Extension field degree must match the minimal polynomial degree",
+                        ));
+                    }
+
+                    if Variable::Symbol(name) != p.get_vars_ref()[0] {
+                        return Err(exceptions::PyValueError::new_err(
+                            "Extension variable must be the same as the variable in the minimal polynomial",
+                        ));
+                    }
+
+                    if m == 2 {
+                        let p = p.map_coeff(|c| c.to_finite_field(&Z2), Z2);
+                        if !p.is_irreducible() || e != p.degree(0) {
+                            return Err(exceptions::PyValueError::new_err(
+                                "Minimal polynomial must be irreducible and monic",
+                            ));
+                        }
+
+                        let g = AlgebraicExtension::new(p);
+                        Ok(PythonGaloisFieldPrimeTwoPolynomial {
+                            poly: self.expr.to_polynomial(&g, var_map),
+                        }
+                        .into_py(py))
+                    } else {
+                        let f = Zp::new(m);
+                        let p = p.map_coeff(|c| c.to_finite_field(&f), f.clone());
+                        if !p.is_irreducible() || !f.is_one(&p.lcoeff()) || e != p.degree(0) {
+                            return Err(exceptions::PyValueError::new_err(
+                                "Minimal polynomial must be irreducible and monic",
+                            ));
+                        }
+
+                        let g = AlgebraicExtension::new(p);
+                        Ok(PythonGaloisFieldPolynomial {
+                            poly: self.expr.to_polynomial(&g, var_map),
+                        }
+                        .into_py(py))
+                    }
+                } else if m == 2 {
+                    let g = AlgebraicExtension::galois_field(Z2, e as usize, name.into());
+                    Ok(PythonGaloisFieldPrimeTwoPolynomial {
+                        poly: self.expr.to_polynomial(&g, var_map),
+                    }
+                    .into_py(py))
+                } else {
+                    let g = AlgebraicExtension::galois_field(Zp::new(m), e as usize, name.into());
+                    Ok(PythonGaloisFieldPolynomial {
+                        poly: self.expr.to_polynomial(&g, var_map),
+                    }
+                    .into_py(py))
+                }
+            } else if m == 2 {
+                Ok(PythonPrimeTwoPolynomial {
+                    poly: self.expr.to_polynomial(&Z2, var_map),
+                }
+                .into_py(py))
+            } else {
+                Ok(PythonFiniteFieldPolynomial {
+                    poly: self.expr.to_polynomial(&Zp::new(m), var_map),
+                }
+                .into_py(py))
+            }
+        } else {
+            if let Some(p) = poly {
+                if !p.is_irreducible() || !p.lcoeff().is_one() {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Minimal polynomial must be irreducible and monic",
+                    ));
+                }
+
+                let f = AlgebraicExtension::new(p);
+                Ok(PythonNumberFieldPolynomial {
+                    poly: self.expr.to_polynomial(&Q, var_map).to_number_field(&f),
+                }
+                .into_py(py))
+            } else {
+                Ok(PythonPolynomial {
+                    poly: self.expr.to_polynomial(&Q, var_map),
+                }
+                .into_py(py))
+            }
+        }
     }
 
     /// Convert the expression to a rational polynomial, optionally, with the variable ordering specified in `vars`.
@@ -4366,67 +4482,170 @@ impl PythonFiniteFieldPolynomial {
         Ok(Self { poly: e })
     }
 
-    /// Compute the Groebner basis of a polynomial system.
-    ///
-    /// If `grevlex=True`, reverse graded lexicographical ordering is used,
-    /// otherwise the ordering is lexicographical.
-    ///
-    /// If `print_stats=True` intermediate statistics will be printed.
-    #[pyo3(signature = (system, grevlex = true, print_stats = false))]
-    #[classmethod]
-    pub fn groebner_basis(
-        _cls: &PyType,
-        system: Vec<Self>,
-        grevlex: bool,
-        print_stats: bool,
-    ) -> Vec<Self> {
-        if grevlex {
-            let grevlex_ideal: Vec<_> = system
-                .iter()
-                .map(|p| p.poly.reorder::<GrevLexOrder>())
-                .collect();
-            let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
+    /// Convert the polynomial to an expression.
+    pub fn to_expression(&self) -> PyResult<PythonExpression> {
+        let p = self.poly.map_coeff(
+            |c| Integer::from_finite_field(&self.poly.field, c.clone()),
+            IntegerRing::new(),
+        );
 
-            gb.system
-                .into_iter()
-                .map(|p| Self {
-                    poly: p.reorder::<LexOrder>(),
-                })
-                .collect()
-        } else {
-            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
-            let gb = GroebnerBasis::new(&ideal, print_stats);
-            gb.system.into_iter().map(|p| Self { poly: p }).collect()
-        }
+        Ok(p.to_expression().into())
     }
+}
 
-    /// Integrate the polynomial in `x`.
-    ///
-    /// Examples
-    /// --------
-    ///
-    /// >>> from symbolica import Expression
-    /// >>> x = Expression.symbol('x')
-    /// >>> p = Expression.parse('x^2+2').to_polynomial()
-    /// >>> print(p.integrate(x))
-    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
-        let x = self
+macro_rules! generate_field_methods {
+    ($type:ty, $exp_type:ty) => {
+        #[pymethods]
+        impl $type {
+            /// Compute the Groebner basis of a polynomial system.
+            ///
+            /// If `grevlex=True`, reverse graded lexicographical ordering is used,
+            /// otherwise the ordering is lexicographical.
+            ///
+            /// If `print_stats=True` intermediate statistics will be printed.
+            #[pyo3(signature = (system, grevlex = true, print_stats = false))]
+            #[classmethod]
+            pub fn groebner_basis(
+                _cls: &PyType,
+                system: Vec<Self>,
+                grevlex: bool,
+                print_stats: bool,
+            ) -> Vec<Self> {
+                if grevlex {
+                    let grevlex_ideal: Vec<_> = system
+                        .iter()
+                        .map(|p| p.poly.reorder::<GrevLexOrder>())
+                        .collect();
+                    let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
+
+                    gb.system
+                        .into_iter()
+                        .map(|p| Self {
+                            poly: p.reorder::<LexOrder>(),
+                        })
+                        .collect()
+                } else {
+                    let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
+                    let gb = GroebnerBasis::new(&ideal, print_stats);
+                    gb.system.into_iter().map(|p| Self { poly: p }).collect()
+                }
+            }
+
+            /// Integrate the polynomial in `x`.
+            ///
+            /// Examples
+            /// --------
+            ///
+            /// >>> from symbolica import Expression
+            /// >>> x = Expression.symbol('x')
+            /// >>> p = Expression.parse('x^2+2').to_polynomial()
+            /// >>> print(p.integrate(x))
+            pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+                let x = self
+                    .poly
+                    .get_vars_ref()
+                    .iter()
+                    .position(|v| match (v, x.expr.as_view()) {
+                        (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        _ => false,
+                    })
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Variable {} not found in polynomial",
+                        x.__str__()?
+                    )))?;
+
+                Ok(Self {
+                    poly: self.poly.integrate(x),
+                })
+            }
+        }
+    };
+}
+
+/// A Symbolica polynomial over Galois fields.
+#[pyclass(name = "PrimeTwoPolynomial", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonPrimeTwoPolynomial {
+    pub poly: MultivariatePolynomial<Z2, u16>,
+}
+
+#[pymethods]
+impl PythonPrimeTwoPolynomial {
+    /// Convert the polynomial to an expression.
+    pub fn to_expression(&self) -> PyResult<PythonExpression> {
+        let p = self
             .poly
-            .get_vars_ref()
-            .iter()
-            .position(|v| match (v, x.expr.as_view()) {
-                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
-                _ => false,
-            })
-            .ok_or(exceptions::PyValueError::new_err(format!(
-                "Variable {} not found in polynomial",
-                x.__str__()?
-            )))?;
+            .map_coeff(|c| (*c as i64).into(), IntegerRing::new());
 
-        Ok(Self {
-            poly: self.poly.integrate(x),
-        })
+        Ok(p.to_expression().into())
+    }
+}
+
+/// A Symbolica polynomial over Z2 Galois fields.
+#[pyclass(name = "GaloisFieldPrimeTwoPolynomial", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonGaloisFieldPrimeTwoPolynomial {
+    pub poly: MultivariatePolynomial<AlgebraicExtension<Z2>, u16>,
+}
+
+#[pymethods]
+impl PythonGaloisFieldPrimeTwoPolynomial {
+    /// Convert the polynomial to an expression.
+    pub fn to_expression(&self) -> PyResult<PythonExpression> {
+        Ok(self
+            .poly
+            .to_expression_with_coeff_map(|_, element, out| {
+                let p = element
+                    .poly
+                    .map_coeff(|c| (*c as i64).into(), IntegerRing::new());
+                p.to_expression_into(out);
+            })
+            .into())
+    }
+}
+
+/// A Symbolica polynomial over Galois fields.
+#[pyclass(name = "GaloisFieldPolynomial", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonGaloisFieldPolynomial {
+    pub poly: MultivariatePolynomial<AlgebraicExtension<Zp>, u16>,
+}
+
+#[pymethods]
+impl PythonGaloisFieldPolynomial {
+    /// Convert the polynomial to an expression.
+    pub fn to_expression(&self) -> PyResult<PythonExpression> {
+        Ok(self
+            .poly
+            .to_expression_with_coeff_map(|_, element, out| {
+                let p = element.poly.map_coeff(
+                    |c| Integer::from_finite_field(&element.poly.field, c.clone()),
+                    IntegerRing::new(),
+                );
+                p.to_expression_into(out);
+            })
+            .into())
+    }
+}
+
+/// A Symbolica polynomial over number fields.
+#[pyclass(name = "NumberFieldPolynomial", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonNumberFieldPolynomial {
+    pub poly: MultivariatePolynomial<AlgebraicExtension<Q>, u16>,
+}
+
+#[pymethods]
+impl PythonNumberFieldPolynomial {
+    /// Convert the polynomial to an expression.
+    pub fn to_expression(&self) -> PyResult<PythonExpression> {
+        Ok(self
+            .poly
+            .to_expression_with_coeff_map(|_, element, out| {
+                element.poly.to_expression_into(out);
+            })
+            .into())
     }
 }
 
@@ -4898,12 +5117,21 @@ macro_rules! generate_methods {
                 }
             }
         }
+
     };
 }
 
 generate_methods!(PythonPolynomial, u16);
 generate_methods!(PythonIntegerPolynomial, u8);
 generate_methods!(PythonFiniteFieldPolynomial, u16);
+generate_methods!(PythonPrimeTwoPolynomial, u16);
+generate_methods!(PythonGaloisFieldPolynomial, u16);
+generate_methods!(PythonNumberFieldPolynomial, u16);
+
+generate_field_methods!(PythonFiniteFieldPolynomial, u16);
+generate_field_methods!(PythonPrimeTwoPolynomial, u16);
+generate_field_methods!(PythonGaloisFieldPolynomial, u16);
+generate_field_methods!(PythonNumberFieldPolynomial, u16);
 
 /// A Symbolica rational polynomial.
 #[pyclass(name = "RationalPolynomial", module = "symbolica")]

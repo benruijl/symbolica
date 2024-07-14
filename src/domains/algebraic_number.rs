@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Arc};
+use std::sync::Arc;
 
 use rand::Rng;
 
@@ -25,7 +25,7 @@ use super::{
 // TODO: make special case for degree two and three and hardcode the multiplication table
 #[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct AlgebraicExtension<R: Ring> {
-    poly: Rc<MultivariatePolynomial<R, u16>>, // TODO: convert to univariate polynomial
+    poly: Arc<MultivariatePolynomial<R, u16>>, // TODO: convert to univariate polynomial
 }
 
 impl<T: FiniteFieldWorkspace> GaloisField for AlgebraicExtension<FiniteField<T>>
@@ -62,7 +62,11 @@ where
         Self::Base: PolynomialGCD<u16>,
         <Self::Base as Ring>::Element: Copy,
     {
-        AlgebraicExtension::galois_field(self.poly.field.clone(), new_pow)
+        AlgebraicExtension::galois_field(
+            self.poly.field.clone(),
+            new_pow,
+            self.poly.variables[0].clone(),
+        )
     }
 
     fn upgrade_element(
@@ -155,12 +159,11 @@ where
 {
     /// Construct the Galois field GF(prime^exp).
     /// The irreducible polynomial is determined automatically.
-    pub fn galois_field(prime: FiniteField<UField>, exp: usize) -> Self {
+    pub fn galois_field(prime: FiniteField<UField>, exp: usize, var: Variable) -> Self {
         assert!(exp > 0);
 
         if exp == 1 {
-            let mut poly =
-                MultivariatePolynomial::new(&prime, None, Arc::new(vec![Variable::Temporary(0)]));
+            let mut poly = MultivariatePolynomial::new(&prime, None, Arc::new(vec![var]));
 
             poly.append_monomial(prime.one(), &[1]);
             return AlgebraicExtension::new(poly);
@@ -185,11 +188,7 @@ where
 
         let mut coeffs = vec![0; exp as usize + 1];
         coeffs[exp as usize] = 1;
-        let mut poly = MultivariatePolynomial::new(
-            &prime,
-            Some(coeffs.len()),
-            Arc::new(vec![Variable::Temporary(0)]),
-        );
+        let mut poly = MultivariatePolynomial::new(&prime, Some(coeffs.len()), Arc::new(vec![var]));
 
         // find the minimal polynomial
         let p = prime.get_prime().to_integer();
@@ -265,7 +264,7 @@ impl<R: Ring> AlgebraicExtension<R> {
     pub fn new(poly: MultivariatePolynomial<R, u16>) -> AlgebraicExtension<R> {
         if poly.nvars() == 1 {
             return AlgebraicExtension {
-                poly: Rc::new(poly),
+                poly: Arc::new(poly),
             };
         }
 
@@ -274,7 +273,7 @@ impl<R: Ring> AlgebraicExtension<R> {
         let uni = poly.to_univariate_from_univariate(v);
 
         AlgebraicExtension {
-            poly: Rc::new(uni.to_multivariate()),
+            poly: Arc::new(uni.to_multivariate()),
         }
     }
 
@@ -298,7 +297,7 @@ impl<R: Ring> AlgebraicExtension<R> {
         FiniteField<UField>: FiniteFieldCore<UField>,
     {
         AlgebraicExtension {
-            poly: Rc::new(
+            poly: Arc::new(
                 self.poly
                     .map_coeff(|c| c.to_finite_field(field), field.clone()),
             ),
@@ -663,6 +662,7 @@ mod tests {
     use crate::domains::algebraic_number::AlgebraicExtension;
     use crate::domains::finite_field::{PrimeIteratorU64, Zp, Z2};
     use crate::domains::rational::Q;
+    use crate::state::State;
 
     #[test]
     fn gcd_number_field() -> Result<(), String> {
@@ -688,12 +688,16 @@ mod tests {
     #[test]
     fn galois() {
         for j in 1..10 {
-            let _ = AlgebraicExtension::galois_field(Z2, j);
+            let _ = AlgebraicExtension::galois_field(Z2, j, State::get_symbol("v1").into());
         }
 
         for i in PrimeIteratorU64::new(2).take(20) {
             for j in 1..10 {
-                let _ = AlgebraicExtension::galois_field(Zp::new(i as u32), j);
+                let _ = AlgebraicExtension::galois_field(
+                    Zp::new(i as u32),
+                    j,
+                    State::get_symbol("v1").into(),
+                );
             }
         }
     }

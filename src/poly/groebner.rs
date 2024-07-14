@@ -3,7 +3,8 @@ use std::{cmp::Ordering, rc::Rc};
 use ahash::HashMap;
 
 use crate::domains::{
-    finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64},
+    algebraic_number::AlgebraicExtension,
+    finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64, Z2},
     rational::RationalField,
     Field, Ring,
 };
@@ -925,6 +926,10 @@ macro_rules! echelonize_impl {
 echelonize_impl!(Zp64);
 echelonize_impl!(FiniteField<Mersenne64>);
 echelonize_impl!(RationalField);
+echelonize_impl!(Z2);
+echelonize_impl!(AlgebraicExtension<Zp>);
+echelonize_impl!(AlgebraicExtension<Z2>);
+echelonize_impl!(AlgebraicExtension<RationalField>);
 
 #[cfg(test)]
 mod test {

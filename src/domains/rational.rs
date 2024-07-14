@@ -12,7 +12,9 @@ use rug::{
 use crate::{poly::gcd::LARGE_U32_PRIMES, printer::PrintOptions, utils};
 
 use super::{
-    finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Zp},
+    finite_field::{
+        FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Two, Zp, Z2,
+    },
     integer::{Integer, Z},
     EuclideanDomain, Field, Ring,
 };
@@ -172,6 +174,26 @@ impl ToFiniteField<u32> for Rational {
                 &field.to_element(r.numer().mod_u(field.get_prime())),
                 &field.to_element(r.denom().mod_u(field.get_prime())),
             ),
+        }
+    }
+}
+
+impl ToFiniteField<Two> for Rational {
+    fn to_finite_field(&self, field: &Z2) -> <Z2 as Ring>::Element {
+        match self {
+            &Rational::Natural(n, d) => {
+                let mut ff = n.rem_euclid(2) as u8;
+
+                if d != 1 {
+                    let df = n.rem_euclid(2) as u8;
+                    field.div_assign(&mut ff, &df);
+                }
+
+                ff
+            }
+            Rational::Large(r) => {
+                field.div(&(r.numer().mod_u(2) as u8), &(r.denom().mod_u(2) as u8))
+            }
         }
     }
 }

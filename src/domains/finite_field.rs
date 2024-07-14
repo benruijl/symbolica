@@ -5,6 +5,7 @@ use std::ops::{Deref, Neg};
 
 use crate::domains::integer::Integer;
 use crate::poly::gcd::PolynomialGCD;
+use crate::poly::Variable::Temporary;
 use crate::printer::PrintOptions;
 
 use super::algebraic_number::AlgebraicExtension;
@@ -121,7 +122,7 @@ where
         Self::Base: PolynomialGCD<u16>,
         <Self::Base as Ring>::Element: Copy,
     {
-        AlgebraicExtension::galois_field(self.clone(), new_pow)
+        AlgebraicExtension::galois_field(self.clone(), new_pow, Temporary(0))
     }
 
     fn upgrade_element(

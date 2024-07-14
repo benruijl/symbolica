@@ -442,6 +442,11 @@ impl<E: Exponent> Factorize
 
         let mut full_factors = vec![];
         for (f, p) in &sf {
+            if f.is_constant() {
+                full_factors.push((f.clone(), *p));
+                continue;
+            }
+
             let (v, s, g, n) = f.norm_impl();
 
             let factors = n.factor();
@@ -811,12 +816,16 @@ where
         let mut exp = vec![E::zero(); self.nvars()];
 
         let mut try_counter = 0;
+        let characteristic = self.field.characteristic();
 
         let factor = loop {
             // generate a random non-constant polynomial
             random_poly.clear();
 
-            if d == 1 {
+            if d == 1
+                && (characteristic.is_zero()
+                    || &Integer::from(try_counter as i64) < &characteristic)
+            {
                 exp[var] = E::zero();
                 random_poly.append_monomial(self.field.nth(try_counter), &exp);
                 exp[var] = E::one();
@@ -826,7 +835,7 @@ where
                 for i in 0..2 * d {
                     let r = self
                         .field
-                        .sample(&mut rng, (0, self.field.characteristic().to_u64() as i64));
+                        .sample(&mut rng, (0, characteristic.to_i64().unwrap_or(i64::MAX)));
                     if !F::is_zero(&r) {
                         exp[var] = E::from_u32(i as u32);
                         random_poly.append_monomial(r, &exp);

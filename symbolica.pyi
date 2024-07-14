@@ -804,9 +804,37 @@ class Expression:
         (x+6)**-4
         """
 
+    @overload
     def to_polynomial(self, vars: Optional[Sequence[Expression]] = None) -> Polynomial:
         """Convert the expression to a polynomial, optionally, with the variable ordering specified in `vars`.
         All non-polynomial parts will be converted to new, independent variables.
+        """
+
+    @overload
+    def to_polynomial(self, minimal_poly: Expression, vars: Optional[Sequence[Expression]] = None,
+                      ) -> NumberFieldPolynomial:
+        """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+        All non-polynomial elements will be converted to new independent variables.
+
+        The coefficients will be converted to a number field with the minimal polynomial `minimal_poly`.
+        The minimal polynomial must be a monic, irreducible univariate polynomial.
+        """
+
+    @overload
+    def to_polynomial(self,
+                      modulus: int,
+                      power: Optional[Tuple[int, Expression]] = None,
+                      minimal_poly: Optional[Expression] = None,
+                      vars: Optional[Sequence[Expression]] = None,
+                      ) -> FiniteFieldPolynomial:
+        """Convert the expression to a polynomial, optionally, with the variables and the ordering specified in `vars`.
+        All non-polynomial elements will be converted to new independent variables.
+
+        The coefficients will be converted to finite field elements modulo `modulus`.
+        If on top an `extension` is provided, for example `(2, a)`, the polynomial will be converted to the Galois field
+        `GF(modulus^2)` where `a` is the variable of the minimal polynomial of the field.
+
+        If a `minimal_poly` is provided, the Galois field will be created with `minimal_poly` as the minimal polynomial.
         """
 
     def to_rational_polynomial(
@@ -2058,6 +2086,186 @@ class IntegerPolynomial:
         """
 
 
+class NumberFieldPolynomial:
+    """A Symbolica polynomial with rational coefficients."""
+
+    def __copy__(self) -> NumberFieldPolynomial:
+        """Copy the polynomial."""
+
+    def __str__(self) -> str:
+        """Print the polynomial in a human-readable format."""
+
+    def to_latex(self) -> str:
+        """Convert the polynomial into a LaTeX string."""
+
+    def pretty_str(
+        self,
+        terms_on_new_line: bool = False,
+        color_top_level_sum: bool = True,
+        color_builtin_symbols: bool = True,
+        print_finite_field: bool = True,
+        symmetric_representation_for_finite_field: bool = False,
+        explicit_rational_polynomial: bool = False,
+        number_thousands_separator: Optional[str] = None,
+        multiplication_operator: str = "*",
+        square_brackets_for_function: bool = False,
+        num_exp_as_superscript: bool = True,
+        latex: bool = False,
+    ) -> str:
+        """
+        Convert the polynomial into a human-readable string, with tunable settings.
+
+        Examples
+        --------
+        >>> p = FiniteFieldNumberFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+        >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+
+        Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
+        """
+
+    def nterms(self) -> int:
+        """Get the number of terms in the polynomial."""
+
+    def get_var_list(self) -> Sequence[Expression]:
+        """Get the list of variables in the internal ordering of the polynomial."""
+
+    def __add__(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+        """Add two polynomials `self` and `rhs`, returning the result."""
+
+    def __sub__(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+        """Subtract polynomials `rhs` from `self`, returning the result."""
+
+    def __mul__(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+        """Multiply two polynomials `self` and `rhs`, returning the result."""
+
+    def __truediv__(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+        """Divide the polynomial `self` by `rhs` if possible, returning the result."""
+
+    def quot_rem(self, rhs: NumberFieldPolynomial) -> Tuple[NumberFieldPolynomial, NumberFieldPolynomial]:
+        """Divide `self` by `rhs`, returning the quotient and remainder."""
+
+    def __mod__(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+        """Compute the remainder of the division of `self` by `rhs`."""
+
+    def __neg__(self) -> NumberFieldPolynomial:
+        """Negate the polynomial."""
+
+    def gcd(self, rhs: NumberFieldPolynomial) -> NumberFieldPolynomial:
+        """Compute the greatest common divisor (GCD) of two polynomials."""
+
+    def resultant(self, rhs: NumberFieldPolynomial, var: Expression) -> NumberFieldPolynomial:
+        """Compute the resultant of two polynomials with respect to the variable `var`."""
+
+    def factor_square_free(self) -> list[Tuple[NumberFieldPolynomial, int]]:
+        """Compute the square-free factorization of the polynomial.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+        >>> print('Square-free factorization of {}:'.format(p))
+        >>> for f, exp in p.factor_square_free():
+        >>>     print('\t({})^{}'.format(f, exp))
+        """
+
+    def factor(self) -> list[Tuple[NumberFieldPolynomial, int]]:
+        """Factorize the polynomial.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+        >>> print('Factorization of {}:'.format(p))
+        >>> for f, exp in p.factor():
+        >>>     print('\t({})^{}'.format(f, exp))
+        """
+
+    def derivative(self, x: Expression) -> NumberFieldPolynomial:
+        """Take a derivative in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> print(p.derivative(x))
+        """
+
+    def integrate(self, x: Expression) -> NumberFieldPolynomial:
+        """Integrate the polynomial in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('x^2+2').to_polynomial()
+        >>> print(p.integrate(x))
+        """
+
+    def content(self) -> NumberFieldPolynomial:
+        """Get the content, i.e., the GCD of the coefficients.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+        >>> print(p.content())
+        """
+
+    def coefficient_list(self, xs: Optional[Expression | Sequence[Expression]]) -> list[Tuple[list[int], NumberFieldPolynomial]]:
+        """Get the coefficient list, optionally in the variables `xs`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> for n, pp in p.coefficient_list(x):
+        >>>     print(n, pp)
+        """
+
+    @classmethod
+    def groebner_basis(_cls, system: list[NumberFieldPolynomial], grevlex: bool = True, print_stats: bool = False) -> list[NumberFieldPolynomial]:
+        """Compute the Groebner basis of a polynomial system.
+
+        If `grevlex=True`, reverse graded lexicographical ordering is used,
+        otherwise the ordering is lexicographical.
+
+        If `print_stats=True` intermediate statistics will be printed.
+        """
+
+    def to_expression(self) -> Expression:
+        """ Convert the polynomial to an expression.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> e = Expression.parse('x*y+2*x+x^2')
+        >>> p = e.to_polynomial()
+        >>> print((e - p.to_expression()).expand())
+        """
+
+    def replace(self, x: Expression, v: NumberFieldPolynomial) -> NumberFieldPolynomial:
+        """Replace the variable `x` with a polynomial `v`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+        >>> r = Expression.parse('y+1').to_polynomial())
+        >>> p.replace(x, r)
+        """
+
+
 class FiniteFieldPolynomial:
     """A Symbolica polynomial with finite field coefficients."""
 
@@ -2147,14 +2355,6 @@ class FiniteFieldPolynomial:
 
     def resultant(self, rhs: FiniteFieldPolynomial, var: Expression) -> FiniteFieldPolynomial:
         """Compute the resultant of two polynomials with respect to the variable `var`."""
-
-    def optimize(self, iterations: int = 1000, to_file: str | None = None) -> Evaluator:
-        """
-        Optimize the polynomial for evaluation using `iterations` number of iterations.
-        The optimized output can be exported in a C++ format using `to_file`.
-
-        Returns an evaluator for the polynomial.
-        """
 
     def factor_square_free(self) -> list[Tuple[FiniteFieldPolynomial, int]]:
         """Compute the square-free factorization of the polynomial.
@@ -2267,6 +2467,9 @@ class FiniteFieldPolynomial:
         >>> r = Expression.parse('y+1').to_polynomial())
         >>> p.replace(x, r)
         """
+
+    def to_expression(self) -> Expression:
+        """ Convert the polynomial to an expression."""
 
 
 class RationalPolynomial:

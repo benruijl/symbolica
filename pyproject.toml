@@ -7,12 +7,13 @@ authors = [
   {email = "benruyl@gmail.com"},
   {name = "Ben Ruijl"},
 ]
+summary = "Symbolica is a blazing fast computer algebra system"
 description = "Symbolica is a blazing fast computer algebra system"
 keywords = ["math", "algebra", "polynomial", "expression", "manipulation"]
 license = {file = "License.md"}
 name = "symbolica"
 readme = "Readme.md"
-version = "0.7.0"
+version = "0.8.0"
 
 classifiers = [
   "Development Status :: 4 - Beta",

@@ -71,7 +71,8 @@ fn main() {
         |r| r.clone(),
         &fn_map,
         &params,
-    );
+    )
+    .unwrap();
 
     // optimize the tree using an occurrence-order Horner scheme
     println!("Op original {:?}", tree.count_operations());

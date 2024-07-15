@@ -1992,6 +1992,7 @@ impl NumericalFloatComparison for Rational {
 }
 
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[repr(C)]
 pub struct Complex<T> {
     pub re: T,
     pub im: T,

@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use symbolica::{
     atom::{Atom, AtomView},
-    domains::rational::Rational,
+    domains::{float::Complex, rational::Rational},
     evaluate::{CompileOptions, ExpressionEvaluator, FunctionMap},
     state::State,
 };
@@ -95,6 +95,13 @@ fn main() {
     let mut out = vec![0., 0.];
     ce.evaluate(&params, &mut out);
     println!("Eval from C++: {}, {}", out[0], out[1]);
+
+    {
+        let params = vec![Complex::new(5., 0.)];
+        let mut out = vec![Complex::new_zero(), Complex::new_zero()];
+        ce.evaluate_complex(&params, &mut out);
+        println!("Eval from C++: {}, {}", out[0], out[1]);
+    }
 
     // benchmark
     let t = Instant::now();

@@ -5,7 +5,7 @@ use crate::{
     atom::{representation::InlineVar, Atom, AtomOrView, AtomView, Symbol},
     coefficient::CoefficientView,
     domains::{
-        float::{NumericalFloatLike, Real},
+        float::{Complex, NumericalFloatLike, Real},
         rational::Rational,
     },
     state::State,
@@ -39,7 +39,7 @@ enum AtomOrTaggedFunction<'a> {
     TaggedFunction(Symbol, Vec<AtomOrView<'a>>),
 }
 
-pub struct FunctionMap<'a, T> {
+pub struct FunctionMap<'a, T = Rational> {
     map: HashMap<AtomOrTaggedFunction<'a>, ConstOrExpr<'a, T>>,
     tag: HashMap<Symbol, usize>,
 }
@@ -1414,14 +1414,22 @@ impl CompiledCode {
 }
 
 type L = libloading::Library;
-type TR<'a> = libloading::Symbol<'a, unsafe extern "C" fn(params: *const f64, out: *mut f64)>;
+
+#[derive(Debug)]
+struct EvaluatorFunctions<'a> {
+    eval_double: libloading::Symbol<'a, unsafe extern "C" fn(params: *const f64, out: *mut f64)>,
+    eval_complex: libloading::Symbol<
+        'a,
+        unsafe extern "C" fn(params: *const Complex<f64>, out: *mut Complex<f64>),
+    >,
+}
 
 self_cell!(
     pub struct CompiledEvaluator {
         owner: L,
 
         #[covariant]
-        dependent: TR,
+        dependent: EvaluatorFunctions,
     }
 
     impl {Debug}
@@ -1439,7 +1447,10 @@ impl CompiledEvaluator {
             };
 
             CompiledEvaluator::try_new(lib, |lib| {
-                lib.get(b"eval_double").map_err(|e| e.to_string())
+                Ok(EvaluatorFunctions {
+                    eval_double: lib.get(b"eval_double").map_err(|e| e.to_string())?,
+                    eval_complex: lib.get(b"eval_complex").map_err(|e| e.to_string())?,
+                })
             })
         }
     }
@@ -1447,7 +1458,13 @@ impl CompiledEvaluator {
     /// Evaluate the compiled evaluator.
     #[inline(always)]
     pub fn evaluate(&self, args: &[f64], out: &mut [f64]) {
-        unsafe { self.borrow_dependent()(args.as_ptr(), out.as_mut_ptr()) }
+        unsafe { (self.borrow_dependent().eval_double)(args.as_ptr(), out.as_mut_ptr()) }
+    }
+
+    /// Evaluate the compiled evaluator with complex numbers.
+    #[inline(always)]
+    pub fn evaluate_complex(&self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
+        unsafe { (self.borrow_dependent().eval_complex)(args.as_ptr(), out.as_mut_ptr()) }
     }
 }
 
@@ -1519,7 +1536,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
     }
 
     fn export_cpp_str(&self) -> String {
-        let mut res = "#include <iostream>\n#include <cmath>\n\n".to_string();
+        let mut res = "#include <iostream>\n#include <cmath>\n#include <complex>\n\n".to_string();
 
         for (name, arg_names, body) in &self.functions {
             let mut args = arg_names
@@ -1559,6 +1576,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
         res += "\treturn;\n}\n";
 
         res += "\nextern \"C\" {\n\tvoid eval_double(double* params, double* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
+        res += "\nextern \"C\" {\n\tvoid eval_complex(std::complex<double>* params, std::complex<double>* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
 
         res
     }

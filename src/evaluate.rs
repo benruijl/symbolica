@@ -172,6 +172,7 @@ pub enum Expression<T> {
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
+    param_count: usize,
     reserved_indices: usize,
     instructions: Vec<Instr>,
     result_indices: Vec<usize>,
@@ -323,6 +324,122 @@ impl<T> ExpressionEvaluator<T> {
     }
 }
 
+impl<T: std::fmt::Display> ExpressionEvaluator<T> {
+    /// Create a C++ code representation of the evaluation tree.
+    pub fn export_cpp(
+        &self,
+        filename: &str,
+        function_name: &str,
+        include_header: bool,
+    ) -> Result<ExportedCode, std::io::Error> {
+        let cpp = self.export_cpp_str(function_name, include_header);
+        std::fs::write(filename, cpp)?;
+        Ok(ExportedCode {
+            source_filename: filename.to_string(),
+            function_name: function_name.to_string(),
+        })
+    }
+
+    pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
+        let mut res = if include_header {
+            "#include <iostream>\n#include <complex>\n#include <cmath>\n\n".to_string()
+        } else {
+            String::new()
+        };
+
+        res += &format!(
+            "\ntemplate<typename T>\nvoid {}(T* params, T* out) {{\n",
+            function_name
+        );
+
+        res += &format!(
+            "\tT {};\n",
+            (0..self.stack.len())
+                .map(|x| format!("Z{}", x))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        for i in 0..self.param_count {
+            res += &format!("\tZ{} = params[{}];\n", i, i);
+        }
+
+        for i in self.param_count..self.reserved_indices {
+            res += &format!("\tZ{} = {};\n", i, self.stack[i]);
+        }
+
+        Self::export_cpp_impl(&self.instructions, &mut res);
+
+        for (i, r) in &mut self.result_indices.iter().enumerate() {
+            res += &format!("\tout[{}] = Z{};\n", i, r);
+        }
+
+        res += "\treturn;\n}\n";
+
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double* params, double* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+
+        res
+    }
+
+    fn export_cpp_impl(instr: &[Instr], out: &mut String) {
+        for ins in instr {
+            match ins {
+                Instr::Add(o, a) => {
+                    let args = a
+                        .iter()
+                        .map(|x| format!("Z{}", x))
+                        .collect::<Vec<_>>()
+                        .join("+");
+
+                    *out += format!("\tZ{} = {};\n", o, args).as_str();
+                }
+                Instr::Mul(o, a) => {
+                    let args = a
+                        .iter()
+                        .map(|x| format!("Z{}", x))
+                        .collect::<Vec<_>>()
+                        .join("*");
+
+                    *out += format!("\tZ{} = {};\n", o, args).as_str();
+                }
+                Instr::Pow(o, b, e) => {
+                    let base = format!("Z{}", b);
+                    *out += format!("\tZ{} = pow({}, {});\n", o, base, e).as_str();
+                }
+                Instr::Powf(o, b, e) => {
+                    let base = format!("Z{}", b);
+                    let exp = format!("Z{}", e);
+                    *out += format!("\tZ{} = pow({}, {});\n", o, base, exp).as_str();
+                }
+                Instr::BuiltinFun(o, s, a) => match *s {
+                    State::EXP => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = exp({});\n", o, arg).as_str();
+                    }
+                    State::LOG => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = log({});\n", o, arg).as_str();
+                    }
+                    State::SIN => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = sin({});\n", o, arg).as_str();
+                    }
+                    State::COS => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = cos({});\n", o, arg).as_str();
+                    }
+                    State::SQRT => {
+                        let arg = format!("Z{}", a);
+                        *out += format!("\tZ{} = sqrt({});\n", o, arg).as_str();
+                    }
+                    _ => unreachable!(),
+                },
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 enum Instr {
     Add(usize, Vec<usize>),
@@ -337,6 +454,42 @@ impl<T: Clone + Default + PartialEq> SplitExpression<T> {
         SplitExpression {
             tree: self.tree.iter().map(|x| x.map_coeff(f)).collect(),
             subexpressions: self.subexpressions.iter().map(|x| x.map_coeff(f)).collect(),
+        }
+    }
+
+    pub fn unnest(&mut self, max_depth: usize) {
+        // TODO: also unnest subexpressions
+        for t in &mut self.tree {
+            Self::unnest_impl(t, &mut self.subexpressions, 0, max_depth);
+        }
+    }
+
+    fn unnest_impl(
+        expr: &mut Expression<T>,
+        subs: &mut Vec<Expression<T>>,
+        depth: usize,
+        max_depth: usize,
+    ) {
+        match expr {
+            Expression::Add(a) | Expression::Mul(a) => {
+                if depth == max_depth {
+                    // split off into new subexpression
+
+                    Self::unnest_impl(expr, subs, 0, max_depth);
+
+                    let mut r = Expression::SubExpression(subs.len());
+                    std::mem::swap(expr, &mut r);
+                    subs.push(r);
+                    return;
+                }
+
+                for x in a {
+                    Self::unnest_impl(x, subs, depth + 1, max_depth);
+                }
+            }
+            Expression::Eval(_, _) => {} // TODO: count the arg evals! always bring to base level?
+            Expression::BuiltinFun(_, _) => {}
+            _ => {} // TODO: count pow levels too?
         }
     }
 }
@@ -433,12 +586,20 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
         }
     }
 
+    pub fn unnest(&mut self, max_depth: usize) {
+        for (_, _, e) in &mut self.functions {
+            e.unnest(max_depth);
+        }
+
+        self.expressions.unnest(max_depth);
+    }
+
     /// Create a linear version of the tree that can be evaluated more efficiently.
-    pub fn linearize(mut self, param_len: usize) -> ExpressionEvaluator<T> {
-        let mut stack = vec![T::default(); param_len];
+    pub fn linearize(mut self, param_count: usize) -> ExpressionEvaluator<T> {
+        let mut stack = vec![T::default(); param_count];
 
         // strip every constant and move them into the stack after the params
-        self.strip_constants(&mut stack, param_len);
+        self.strip_constants(&mut stack, param_count);
         let reserved_indices = stack.len();
 
         let mut sub_expr_pos = HashMap::default();
@@ -460,6 +621,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
         let mut e = ExpressionEvaluator {
             stack,
+            param_count,
             reserved_indices,
             instructions,
             result_indices,
@@ -739,7 +901,14 @@ impl Expression<Rational> {
 
         contains.apply_horner_scheme(&scheme); // keep trying with same variable
 
-        let mut v = vec![contains, extracted];
+        let mut v = vec![];
+        if let Expression::Mul(a) = contains {
+            v.extend(a);
+        } else {
+            v.push(contains);
+        }
+
+        v.push(extracted);
         v.sort();
         let c = Expression::Mul(v);
 
@@ -754,7 +923,13 @@ impl Expression<Rational> {
 
             r.apply_horner_scheme(&scheme[1..]);
 
-            let mut v = vec![c, r];
+            let mut v = vec![c];
+            if let Expression::Add(a) = r {
+                v.extend(a);
+            } else {
+                v.push(r);
+            }
+
             v.sort();
 
             *self = Expression::Add(v);
@@ -1503,17 +1678,23 @@ impl<T: Real> EvalTree<T> {
     }
 }
 
-pub struct ExportedCode(String);
-pub struct CompiledCode(String);
+pub struct ExportedCode {
+    source_filename: String,
+    function_name: String,
+}
+pub struct CompiledCode {
+    library_filename: String,
+    function_name: String,
+}
 
 impl CompiledCode {
     /// Load the evaluator from the compiled shared library.
     pub fn load(&self) -> Result<CompiledEvaluator, String> {
-        CompiledEvaluator::load(&self.0)
+        CompiledEvaluator::load(&self.library_filename, &self.function_name)
     }
 }
 
-type L = libloading::Library;
+type L = std::sync::Arc<libloading::Library>;
 
 #[derive(Debug)]
 struct EvaluatorFunctions<'a> {
@@ -1535,9 +1716,44 @@ self_cell!(
     impl {Debug}
 );
 
+/// A floating point type that can be used for compiled evaluation.
+pub trait CompiledEvaluatorFloat: Sized {
+    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]);
+}
+
+impl CompiledEvaluatorFloat for f64 {
+    #[inline(always)]
+    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]) {
+        eval.evaluate_double(args, out);
+    }
+}
+
+impl CompiledEvaluatorFloat for Complex<f64> {
+    #[inline(always)]
+    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]) {
+        eval.evaluate_complex(args, out);
+    }
+}
+
 impl CompiledEvaluator {
+    /// Load a new function from the same library.
+    pub fn load_new_function(&self, function_name: &str) -> Result<CompiledEvaluator, String> {
+        unsafe {
+            CompiledEvaluator::try_new(self.borrow_owner().clone(), |lib| {
+                Ok(EvaluatorFunctions {
+                    eval_double: lib
+                        .get(format!("{}_double", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    eval_complex: lib
+                        .get(format!("{}_complex", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                })
+            })
+        }
+    }
+
     /// Load a compiled evaluator from a shared library.
-    pub fn load(file: &str) -> Result<CompiledEvaluator, String> {
+    pub fn load(file: &str, function_name: &str) -> Result<CompiledEvaluator, String> {
         unsafe {
             let lib = match libloading::Library::new(file) {
                 Ok(lib) => lib,
@@ -1546,22 +1762,32 @@ impl CompiledEvaluator {
                 }
             };
 
-            CompiledEvaluator::try_new(lib, |lib| {
+            CompiledEvaluator::try_new(std::sync::Arc::new(lib), |lib| {
                 Ok(EvaluatorFunctions {
-                    eval_double: lib.get(b"eval_double").map_err(|e| e.to_string())?,
-                    eval_complex: lib.get(b"eval_complex").map_err(|e| e.to_string())?,
+                    eval_double: lib
+                        .get(format!("{}_double", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    eval_complex: lib
+                        .get(format!("{}_complex", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
                 })
             })
         }
     }
 
-    /// Evaluate the compiled evaluator.
+    /// Evaluate the compiled code.
     #[inline(always)]
-    pub fn evaluate(&self, args: &[f64], out: &mut [f64]) {
+    pub fn evaluate<T: CompiledEvaluatorFloat>(&self, args: &[T], out: &mut [T]) {
+        T::evaluate(self, args, out);
+    }
+
+    /// Evaluate the compiled code with double-precision floating point numbers.
+    #[inline(always)]
+    pub fn evaluate_double(&self, args: &[f64], out: &mut [f64]) {
         unsafe { (self.borrow_dependent().eval_double)(args.as_ptr(), out.as_mut_ptr()) }
     }
 
-    /// Evaluate the compiled evaluator with complex numbers.
+    /// Evaluate the compiled code with complex numbers.
     #[inline(always)]
     pub fn evaluate_complex(&self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
         unsafe { (self.borrow_dependent().eval_complex)(args.as_ptr(), out.as_mut_ptr()) }
@@ -1578,6 +1804,7 @@ pub struct CompileOptions {
 }
 
 impl Default for CompileOptions {
+    /// Default compile options: `g++ -O3 -ffast-math -funsafe-math-optimizations`.
     fn default() -> Self {
         CompileOptions {
             optimization_level: 3,
@@ -1590,6 +1817,14 @@ impl Default for CompileOptions {
 }
 
 impl ExportedCode {
+    /// Create a new exported code object from a source file and function name.
+    pub fn new(source_filename: String, function_name: String) -> Self {
+        ExportedCode {
+            source_filename,
+            function_name,
+        }
+    }
+
     /// Compile the code to a shared library.
     pub fn compile(
         &self,
@@ -1611,7 +1846,11 @@ impl ExportedCode {
             builder.arg(c);
         }
 
-        let r = builder.arg("-o").arg(out).arg(&self.0).output()?;
+        let r = builder
+            .arg("-o")
+            .arg(out)
+            .arg(&self.source_filename)
+            .output()?;
 
         if !r.status.success() {
             return Err(std::io::Error::new(
@@ -1623,20 +1862,35 @@ impl ExportedCode {
             ));
         }
 
-        Ok(CompiledCode(out.to_string()))
+        Ok(CompiledCode {
+            library_filename: out.to_string(),
+            function_name: self.function_name.clone(),
+        })
     }
 }
 
 impl<T: NumericalFloatLike> EvalTree<T> {
     /// Create a C++ code representation of the evaluation tree.
-    pub fn export_cpp(&self, filename: &str) -> Result<ExportedCode, std::io::Error> {
-        let cpp = self.export_cpp_str();
+    pub fn export_cpp(
+        &self,
+        filename: &str,
+        function_name: &str,
+        include_header: bool,
+    ) -> Result<ExportedCode, std::io::Error> {
+        let cpp = self.export_cpp_str(function_name, include_header);
         std::fs::write(filename, cpp)?;
-        Ok(ExportedCode(filename.to_string()))
+        Ok(ExportedCode {
+            source_filename: filename.to_string(),
+            function_name: function_name.to_string(),
+        })
     }
 
-    fn export_cpp_str(&self) -> String {
-        let mut res = "#include <iostream>\n#include <cmath>\n#include <complex>\n\n".to_string();
+    fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
+        let mut res = if include_header {
+            "#include <iostream>\n#include <cmath>\n#include <complex>\n\n".to_string()
+        } else {
+            String::new()
+        };
 
         for (name, arg_names, body) in &self.functions {
             let mut args = arg_names
@@ -1663,7 +1917,10 @@ impl<T: NumericalFloatLike> EvalTree<T> {
             res += &format!("\treturn {};\n}}\n", ret);
         }
 
-        res += &format!("\ntemplate<typename T>\nvoid eval(T* params, T* out) {{\n");
+        res += &format!(
+            "\ntemplate<typename T>\nvoid {}(T* params, T* out) {{\n",
+            function_name
+        );
 
         for (i, s) in self.expressions.subexpressions.iter().enumerate() {
             res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, &[]));
@@ -1675,8 +1932,8 @@ impl<T: NumericalFloatLike> EvalTree<T> {
 
         res += "\treturn;\n}\n";
 
-        res += "\nextern \"C\" {\n\tvoid eval_double(double* params, double* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
-        res += "\nextern \"C\" {\n\tvoid eval_complex(std::complex<double>* params, std::complex<double>* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double* params, double* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
     }
@@ -1786,7 +2043,7 @@ impl<'a> AtomView<'a> {
         coeff_map: F,
         fn_map: &FunctionMap<'a, T>,
         params: &[Atom],
-    ) -> EvalTree<T> {
+    ) -> Result<EvalTree<T>, String> {
         Self::to_eval_tree_multiple(std::slice::from_ref(self), coeff_map, fn_map, params)
     }
 
@@ -1799,20 +2056,20 @@ impl<'a> AtomView<'a> {
         coeff_map: F,
         fn_map: &FunctionMap<'a, T>,
         params: &[Atom],
-    ) -> EvalTree<T> {
+    ) -> Result<EvalTree<T>, String> {
         let mut funcs = vec![];
         let tree = exprs
             .iter()
             .map(|t| t.to_eval_tree_impl(coeff_map, fn_map, params, &[], &mut funcs))
-            .collect();
+            .collect::<Result<_, _>>()?;
 
-        EvalTree {
+        Ok(EvalTree {
             expressions: SplitExpression {
                 tree,
                 subexpressions: vec![],
             },
             functions: funcs,
-        }
+        })
     }
 
     fn to_eval_tree_impl<T: Clone + Default + Ord, F: Fn(&Rational) -> T + Copy>(
@@ -1822,27 +2079,27 @@ impl<'a> AtomView<'a> {
         params: &[Atom],
         args: &[Symbol],
         funcs: &mut Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
-    ) -> Expression<T> {
+    ) -> Result<Expression<T>, String> {
         if let Some(p) = params.iter().position(|a| a.as_view() == *self) {
-            return Expression::Parameter(p);
+            return Ok(Expression::Parameter(p));
         }
 
         if let Some(c) = fn_map.get(*self) {
             return match c {
-                ConstOrExpr::Const(c) => Expression::Const(c.clone()),
+                ConstOrExpr::Const(c) => Ok(Expression::Const(c.clone())),
                 ConstOrExpr::Expr(name, tag_len, args, v) => {
                     if args.len() != *tag_len {
-                        panic!(
+                        return Err(format!(
                             "Function {} called with wrong number of arguments: 0 vs {}",
                             self,
                             args.len()
-                        );
+                        ));
                     }
 
                     if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
-                        Expression::Eval(pos, vec![])
+                        Ok(Expression::Eval(pos, vec![]))
                     } else {
-                        let r = v.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
+                        let r = v.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
                         funcs.push((
                             name.clone(),
                             args.clone(),
@@ -1851,7 +2108,7 @@ impl<'a> AtomView<'a> {
                                 subexpressions: vec![],
                             },
                         ));
-                        Expression::Eval(funcs.len() - 1, vec![])
+                        Ok(Expression::Eval(funcs.len() - 1, vec![]))
                     }
                 }
             };
@@ -1859,58 +2116,59 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d) => Expression::Const(coeff_map(&(n, d).into())),
-                CoefficientView::Large(l) => Expression::Const(coeff_map(&l.to_rat())),
+                CoefficientView::Natural(n, d) => Ok(Expression::Const(coeff_map(&(n, d).into()))),
+                CoefficientView::Large(l) => Ok(Expression::Const(coeff_map(&l.to_rat()))),
                 CoefficientView::Float(f) => {
                     // TODO: converting back to rational is slow
-                    Expression::Const(coeff_map(&f.to_float().to_rational()))
+                    Ok(Expression::Const(coeff_map(&f.to_float().to_rational())))
                 }
                 CoefficientView::FiniteField(_, _) => {
-                    unimplemented!("Finite field not yet supported for evaluation")
+                    Err("Finite field not yet supported for evaluation".to_string())
                 }
-                CoefficientView::RationalPolynomial(_) => {
-                    unimplemented!(
-                        "Rational polynomial coefficient not yet supported for evaluation"
-                    )
-                }
+                CoefficientView::RationalPolynomial(_) => Err(
+                    "Rational polynomial coefficient not yet supported for evaluation".to_string(),
+                ),
             },
             AtomView::Var(v) => {
                 let name = v.get_symbol();
 
                 if let Some(p) = args.iter().position(|s| *s == name) {
-                    return Expression::ReadArg(p);
+                    return Ok(Expression::ReadArg(p));
                 }
 
-                panic!(
+                Err(format!(
                     "Variable {} not in constant map",
                     State::get_name(v.get_symbol())
-                );
+                ))
             }
             AtomView::Fun(f) => {
                 let name = f.get_symbol();
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
-                    let arg_eval = arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
+                    let arg_eval = arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
 
-                    return Expression::BuiltinFun(f.get_symbol(), Box::new(arg_eval));
+                    return Ok(Expression::BuiltinFun(f.get_symbol(), Box::new(arg_eval)));
                 }
 
                 let symb = InlineVar::new(f.get_symbol());
                 let Some(fun) = fn_map.get(symb.as_view()) else {
-                    panic!("Undefined function {}", State::get_name(f.get_symbol()));
+                    return Err(format!(
+                        "Undefined function {}",
+                        State::get_name(f.get_symbol())
+                    ));
                 };
 
                 match fun {
-                    ConstOrExpr::Const(t) => Expression::Const(t.clone()),
+                    ConstOrExpr::Const(t) => Ok(Expression::Const(t.clone())),
                     ConstOrExpr::Expr(name, tag_len, arg_spec, e) => {
                         if f.get_nargs() != arg_spec.len() + *tag_len {
-                            panic!(
+                            return Err(format!(
                                 "Function {} called with wrong number of arguments: {} vs {}",
                                 f.get_symbol(),
                                 f.get_nargs(),
                                 arg_spec.len() + *tag_len
-                            );
+                            ));
                         }
 
                         let eval_args = f
@@ -1919,12 +2177,13 @@ impl<'a> AtomView<'a> {
                             .map(|arg| {
                                 arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)
                             })
-                            .collect();
+                            .collect::<Result<_, _>>()?;
 
                         if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
-                            Expression::Eval(pos, eval_args)
+                            Ok(Expression::Eval(pos, eval_args))
                         } else {
-                            let r = e.to_eval_tree_impl(coeff_map, fn_map, params, arg_spec, funcs);
+                            let r =
+                                e.to_eval_tree_impl(coeff_map, fn_map, params, arg_spec, funcs)?;
                             funcs.push((
                                 name.clone(),
                                 arg_spec.clone(),
@@ -1933,33 +2192,33 @@ impl<'a> AtomView<'a> {
                                     subexpressions: vec![],
                                 },
                             ));
-                            Expression::Eval(funcs.len() - 1, eval_args)
+                            Ok(Expression::Eval(funcs.len() - 1, eval_args))
                         }
                     }
                 }
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
-                let b_eval = b.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
+                let b_eval = b.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
 
                 if let AtomView::Num(n) = e {
                     if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
                         if den == 1 {
                             if num > 1 {
-                                return Expression::Mul(vec![b_eval.clone(); num as usize]);
+                                return Ok(Expression::Mul(vec![b_eval.clone(); num as usize]));
                             }
-                            return Expression::Pow(Box::new((b_eval, num)));
+                            return Ok(Expression::Pow(Box::new((b_eval, num))));
                         }
                     }
                 }
 
-                let e_eval = e.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
-                Expression::Powf(Box::new((b_eval, e_eval)))
+                let e_eval = e.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
+                Ok(Expression::Powf(Box::new((b_eval, e_eval))))
             }
             AtomView::Mul(m) => {
                 let mut muls = vec![];
                 for arg in m.iter() {
-                    let a = arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs);
+                    let a = arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
                     if let Expression::Mul(m) = a {
                         muls.extend(m);
                     } else {
@@ -1969,17 +2228,17 @@ impl<'a> AtomView<'a> {
 
                 muls.sort();
 
-                Expression::Mul(muls)
+                Ok(Expression::Mul(muls))
             }
             AtomView::Add(a) => {
                 let mut adds = vec![];
                 for arg in a.iter() {
-                    adds.push(arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs));
+                    adds.push(arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?);
                 }
 
                 adds.sort();
 
-                Expression::Add(adds)
+                Ok(Expression::Add(adds))
             }
         }
     }

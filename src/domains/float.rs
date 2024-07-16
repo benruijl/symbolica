@@ -200,18 +200,22 @@ impl RealNumberLike for f64 {
 }
 
 impl ConstructibleFloat for f64 {
+    #[inline(always)]
     fn new_one() -> Self {
         1.
     }
 
+    #[inline(always)]
     fn new_from_usize(a: usize) -> Self {
         a as f64
     }
 
+    #[inline(always)]
     fn new_from_i64(a: i64) -> Self {
         a as f64
     }
 
+    #[inline(always)]
     fn new_sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self {
         rng.gen()
     }

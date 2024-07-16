@@ -222,12 +222,10 @@ impl<F: Ring + std::fmt::Display> std::fmt::Display for UnivariatePolynomial<F> 
                 } else {
                     write!(f, "{}*{}", p, v)?;
                 }
+            } else if self.field.is_one(c) {
+                write!(f, "{}^{}", v, e)?;
             } else {
-                if self.field.is_one(c) {
-                    write!(f, "{}^{}", v, e)?;
-                } else {
-                    write!(f, "{}*{}^{}", p, v, e)?;
-                }
+                write!(f, "{}*{}^{}", p, v, e)?;
             }
         }
         Ok(())
@@ -918,7 +916,7 @@ impl<F: Field> UnivariatePolynomial<F> {
         let mut t1 = self.constant(self.field.inv(&other.lcoeff()));
 
         while !r1.is_zero() {
-            let (q, r) = r0.quot_rem(&mut r1);
+            let (q, r) = r0.quot_rem(&r1);
             if F::is_zero(&r.lcoeff()) {
                 return (r1, s1, t1);
             }
@@ -981,11 +979,11 @@ impl<F: Field> UnivariatePolynomial<F> {
 
         // TODO: there exists an efficient algorithm for univariate poly
         // division in a finite field using FFT
-        let mut r = c.quot_rem(&mut d).1;
+        let mut r = c.quot_rem(&d).1;
         while !r.is_zero() {
             c = d;
             d = r;
-            r = c.quot_rem(&mut d).1;
+            r = c.quot_rem(&d).1;
         }
 
         // normalize the gcd
@@ -1115,5 +1113,5 @@ fn test_uni() {
     assert_eq!(a.quot_rem(&b), (a_quot_b, a_rem_b));
 
     let c = a.evaluate(&5.into());
-    assert_eq!(c, 78178.into());
+    assert_eq!(c, 78178);
 }

@@ -649,7 +649,7 @@ impl Mul {
             }
             _ => {
                 n_args += 1;
-                &other.get_data()
+                other.get_data()
             }
         };
 
@@ -820,11 +820,11 @@ impl Add {
                 (sub_n_args, _, sd) = sd.get_frac_u64();
 
                 n_args += sub_n_args;
-                self.data.extend_from_slice(&sd);
+                self.data.extend_from_slice(sd);
             }
             _ => {
                 n_args += 1;
-                self.data.extend_from_slice(&other.get_data());
+                self.data.extend_from_slice(other.get_data());
             }
         };
 

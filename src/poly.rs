@@ -342,24 +342,12 @@ impl MonomialOrder for LexOrder {
 /// A polynomial variable. It is either a (global) symbol
 /// a temporary variable (for internal use), an array entry,
 /// a function or any other non-polynomial part.
-#[derive(Clone, Hash, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub enum Variable {
     Symbol(Symbol),
     Temporary(usize), // a temporary variable, for internal use
     Function(Symbol, Arc<Atom>),
     Other(Arc<Atom>), // any other non-polynomial part, for example x^-1, x^y, etc.
-}
-
-impl PartialEq for Variable {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Variable::Symbol(a), Variable::Symbol(b)) => a == b,
-            (Variable::Temporary(a), Variable::Temporary(b)) => a == b,
-            (Variable::Function(a, b), Variable::Function(c, d)) => a == c && b == d,
-            (Variable::Other(a), Variable::Other(b)) => a == b,
-            _ => false,
-        }
-    }
 }
 
 impl std::fmt::Display for Variable {
@@ -388,7 +376,7 @@ impl Variable {
 
     pub fn to_string(&self) -> String {
         match self {
-            Variable::Symbol(v) => format!("{}", State::get_name(*v)),
+            Variable::Symbol(v) => State::get_name(*v).to_string(),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Function(_, a) | Variable::Other(a) => format!("{}", a),
         }
@@ -820,14 +808,11 @@ impl<'a> AtomView<'a> {
         RationalPolynomial<RO, E>:
             FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
-        Workspace::get_local().with(|ws| {
-            self.to_rational_polynomial_impl(
-                ws,
-                field,
-                out_field,
-                var_map.as_ref().unwrap_or(&Arc::new(Vec::new())),
-            )
-        })
+        self.to_rational_polynomial_impl(
+            field,
+            out_field,
+            var_map.as_ref().unwrap_or(&Arc::new(Vec::new())),
+        )
     }
 
     fn to_rational_polynomial_impl<
@@ -836,7 +821,6 @@ impl<'a> AtomView<'a> {
         E: Exponent,
     >(
         &self,
-        workspace: &Workspace,
         field: &R,
         out_field: &RO,
         var_map: &Arc<Vec<Variable>>,
@@ -862,8 +846,7 @@ impl<'a> AtomView<'a> {
 
                     if let CoefficientView::Natural(nn, nd) = num_n {
                         if nd == 1 {
-                            let b = base
-                                .to_rational_polynomial_impl(workspace, field, out_field, var_map);
+                            let b = base.to_rational_polynomial_impl(field, out_field, var_map);
 
                             return if nn < 0 {
                                 let b_inv = b.inv();
@@ -930,12 +913,8 @@ impl<'a> AtomView<'a> {
                 let mut r = RationalPolynomial::new(out_field, var_map.clone());
                 r.numerator = r.numerator.add_constant(out_field.one());
                 for arg in m {
-                    let mut arg_r = arg.to_rational_polynomial_impl(
-                        workspace,
-                        field,
-                        out_field,
-                        &r.numerator.variables,
-                    );
+                    let mut arg_r =
+                        arg.to_rational_polynomial_impl(field, out_field, &r.numerator.variables);
                     r.unify_variables(&mut arg_r);
                     r = &r * &arg_r;
                 }
@@ -944,12 +923,8 @@ impl<'a> AtomView<'a> {
             AtomView::Add(a) => {
                 let mut r = RationalPolynomial::new(out_field, var_map.clone());
                 for arg in a {
-                    let mut arg_r = arg.to_rational_polynomial_impl(
-                        workspace,
-                        field,
-                        out_field,
-                        &r.numerator.variables,
-                    );
+                    let mut arg_r =
+                        arg.to_rational_polynomial_impl(field, out_field, &r.numerator.variables);
                     r.unify_variables(&mut arg_r);
                     r = &r + &arg_r;
                 }
@@ -977,14 +952,11 @@ impl<'a> AtomView<'a> {
             + FromNumeratorAndFactorizedDenominator<RO, RO, E>,
         MultivariatePolynomial<RO, E>: Factorize,
     {
-        Workspace::get_local().with(|ws| {
-            self.to_factorized_rational_polynomial_impl(
-                ws,
-                field,
-                out_field,
-                var_map.as_ref().unwrap_or(&Arc::new(Vec::new())),
-            )
-        })
+        self.to_factorized_rational_polynomial_impl(
+            field,
+            out_field,
+            var_map.as_ref().unwrap_or(&Arc::new(Vec::new())),
+        )
     }
 
     pub fn to_factorized_rational_polynomial_impl<
@@ -993,7 +965,6 @@ impl<'a> AtomView<'a> {
         E: Exponent,
     >(
         &self,
-        workspace: &Workspace,
         field: &R,
         out_field: &RO,
         var_map: &Arc<Vec<Variable>>,
@@ -1020,9 +991,8 @@ impl<'a> AtomView<'a> {
 
                     if let CoefficientView::Natural(nn, nd) = num_n {
                         if nd == 1 {
-                            let b = base.to_factorized_rational_polynomial_impl(
-                                workspace, field, out_field, var_map,
-                            );
+                            let b = base
+                                .to_factorized_rational_polynomial_impl(field, out_field, var_map);
 
                             return if nn < 0 {
                                 let b_inv = b.inv();
@@ -1086,7 +1056,6 @@ impl<'a> AtomView<'a> {
                 r.numer_coeff = out_field.one();
                 for arg in m {
                     let mut arg_r = arg.to_factorized_rational_polynomial_impl(
-                        workspace,
                         field,
                         out_field,
                         &r.numerator.variables,
@@ -1100,7 +1069,6 @@ impl<'a> AtomView<'a> {
                 let mut r = FactorizedRationalPolynomial::new(out_field, var_map.clone());
                 for arg in a {
                     let mut arg_r = arg.to_factorized_rational_polynomial_impl(
-                        workspace,
                         field,
                         out_field,
                         &r.numerator.variables,
@@ -1250,7 +1218,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                 }
             }
 
-            f(&self.field, &monomial.coefficient, &mut coeff);
+            f(&self.field, monomial.coefficient, &mut coeff);
             mul.extend(coeff.as_view());
             add.extend(mul_h.as_view());
         }
@@ -1520,7 +1488,7 @@ impl Token {
                         self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                         Ok(atom
                             .as_view()
-                            .to_rational_polynomial_impl(ws, field, out_field, var_map))
+                            .to_rational_polynomial_impl(field, out_field, var_map))
                     })
                 }
             }
@@ -1555,7 +1523,7 @@ impl Token {
                 self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                 Ok(atom
                     .as_view()
-                    .to_rational_polynomial_impl(ws, field, out_field, var_map))
+                    .to_rational_polynomial_impl(field, out_field, var_map))
             }),
         }
     }
@@ -1671,7 +1639,7 @@ impl Token {
                         self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                         Ok(atom
                             .as_view()
-                            .to_factorized_rational_polynomial_impl(ws, field, out_field, var_map))
+                            .to_factorized_rational_polynomial_impl(field, out_field, var_map))
                     })
                 }
             }
@@ -1749,7 +1717,7 @@ impl Token {
                 self.to_atom_with_output_and_var_map(ws, var_map, var_name_map, &mut atom)?;
                 Ok(atom
                     .as_view()
-                    .to_factorized_rational_polynomial_impl(ws, field, out_field, var_map))
+                    .to_factorized_rational_polynomial_impl(field, out_field, var_map))
             }),
         }
     }

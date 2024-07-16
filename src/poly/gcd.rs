@@ -311,7 +311,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 break (r, a1, b1);
             }
 
-            if !ap.field.size().is_zero() && Integer::from(fail_count * 2) > ap.field.size() {
+            if !ap.field.size().is_zero() && fail_count * 2 > ap.field.size() {
                 debug!("Field is too small to find a good sample point");
                 // TODO: upgrade to larger field?
                 return ap.degree(var).min(bp.degree(var));
@@ -1138,7 +1138,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
             }
             failure_count += 1;
 
-            if !a.field.size().is_zero() && Integer::from(failure_count * 2) > a.field.size() {
+            if !a.field.size().is_zero() && failure_count * 2 > a.field.size() {
                 debug!("Cannot find unique sampling points: prime field is likely too small");
                 return None;
             }
@@ -1151,9 +1151,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                 }
 
                 sample_fail_count += 1;
-                if !a.field.size().is_zero()
-                    && Integer::from(sample_fail_count * 2) > a.field.size()
-                {
+                if !a.field.size().is_zero() && sample_fail_count * 2 > a.field.size() {
                     debug!("Cannot find unique sampling points: prime field is likely too small");
                     continue 'newfirstnum;
                 }
@@ -1252,9 +1250,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                     }
 
                     sample_fail_count += 1;
-                    if !a.field.size().is_zero()
-                        && Integer::from(sample_fail_count * 2) > a.field.size()
-                    {
+                    if !a.field.size().is_zero() && sample_fail_count * 2 > a.field.size() {
                         debug!(
                             "Cannot find unique sampling points: prime field is likely too small"
                         );
@@ -1307,9 +1303,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                         debug!("Bad current image");
                         sample_fail_count += 1;
 
-                        if !a.field.size().is_zero()
-                            && Integer::from(sample_fail_count * 2) > a.field.size()
-                        {
+                        if !a.field.size().is_zero() && sample_fail_count * 2 > a.field.size() {
                             debug!("Too many bad current images: prime field is likely too small");
                             continue 'newfirstnum;
                         }
@@ -2236,7 +2230,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
             // construct the gcd suggestion in Z
             let mut gm = self.zero_with_capacity(gp.nterms());
-            gm.exponents = gp.exponents.clone();
+            gm.exponents.clone_from(&gp.exponents);
             gm.coefficients = gp
                 .coefficients
                 .iter()
@@ -2726,7 +2720,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
 
             let mut p = &primes[pi];
 
-            let mut finite_field = Zp::new(p.clone());
+            let mut finite_field = Zp::new(*p);
             let mut algebraic_field_ff = a.field.to_finite_field(&finite_field);
 
             let a_lcoeff_p = a_lcoeff.to_finite_field(&finite_field);
@@ -2802,12 +2796,8 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
             // as it cannot easily be predicted from the two input polynomials
             // we use rational reconstruction to recover it
             let mut gm: MultivariatePolynomial<AlgebraicExtension<IntegerRing>, E> =
-                MultivariatePolynomial::new(
-                    &a_integer,
-                    gp.nterms().into(),
-                    a.variables.clone().into(),
-                );
-            gm.exponents = gp.exponents.clone();
+                MultivariatePolynomial::new(&a_integer, gp.nterms().into(), a.variables.clone());
+            gm.exponents.clone_from(&gp.exponents);
             gm.coefficients = gp
                 .coefficients
                 .iter()
@@ -2840,7 +2830,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
                     }
 
                     p = &primes[pi];
-                    finite_field = Zp::new(p.clone());
+                    finite_field = Zp::new(*p);
                     algebraic_field_ff = a.field.to_finite_field(&finite_field);
 
                     let a_lcoeff_p = a_lcoeff.to_finite_field(&finite_field);
@@ -3009,11 +2999,11 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
                         }
                     }
 
-                    nc.exponents = c.poly.exponents.clone();
+                    nc.exponents.clone_from(&c.poly.exponents);
                     gc.coefficients.push(a.field.to_element(nc));
                 }
 
-                gc.exponents = gm.exponents.clone();
+                gc.exponents.clone_from(&gm.exponents);
 
                 debug!("Final suggested gcd: {}", gc);
                 if gc.is_one() || (a.divides(&gc).is_some() && b.divides(&gc).is_some()) {

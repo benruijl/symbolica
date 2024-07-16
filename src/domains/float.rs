@@ -635,7 +635,7 @@ impl Add<i64> for Float {
         }
 
         let Some(e1) = self.0.get_exp() else {
-            return (self + rhs).into();
+            return self + rhs;
         };
 
         let e2 = rhs.unsigned_abs().ilog2() + 1;
@@ -869,7 +869,7 @@ impl Float {
     }
 
     pub fn deserialize(d: &[u8], prec: u32) -> Float {
-        MultiPrecisionFloat::parse_radix(&d, 16)
+        MultiPrecisionFloat::parse_radix(d, 16)
             .unwrap()
             .complete(prec)
             .into()
@@ -1010,7 +1010,7 @@ impl Real for Float {
     fn log(&self) -> Self {
         // Log grows in precision if the input is less than 1/e and more than e
         let e = self.0.get_exp().unwrap();
-        if e < 0 || e > 1 {
+        if !(0..2).contains(&e) {
             self.0
                 .ln_ref()
                 .complete(self.0.prec() + e.unsigned_abs().ilog2() + 1)
@@ -1117,7 +1117,6 @@ impl Real for Float {
                         1.max(
                             (self.0.prec() as i32)
                                 .min((e.0.prec() as i32) + eb.unsigned_abs().ilog2() as i32)
-                                as i32
                                 - exp
                                 + 1,
                         ) as u32,
@@ -1406,7 +1405,7 @@ impl<T: NumericalFloatLike> fmt::Display for ErrorPropagatingFloat<T> {
         let p = self.get_precision() as usize;
 
         if p == 0 {
-            return f.write_char('0');
+            f.write_char('0')
         } else {
             f.write_fmt(format_args!(
                 "{0:.1$e}",
@@ -2787,7 +2786,7 @@ impl<T: Real> Real for Complex<T> {
     #[inline]
     fn powf(&self, e: &Self) -> Self {
         if e.re == self.re.zero() && e.im == self.im.zero() {
-            return self.one();
+            self.one()
         } else if e.im == self.im.zero() {
             let (r, phi) = self.clone().to_polar_coordinates();
             Self::from_polar_coordinates(r.powf(&e.re), phi * e.re.clone())

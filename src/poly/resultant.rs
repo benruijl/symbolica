@@ -42,7 +42,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
                 init = true;
             }
 
-            neg_lc = self.field.neg(&a_new.coefficients.last().unwrap());
+            neg_lc = self.field.neg(a_new.coefficients.last().unwrap());
 
             let (_, mut r) = a
                 .mul_coeff(&self.field.pow(&neg_lc, deg + 1))
@@ -68,7 +68,7 @@ impl<F: Field> UnivariatePolynomial<F> {
         let mut c = vec![a.lcoeff()];
 
         while !a_new.is_constant() {
-            let (_, r) = a.quot_rem(&mut a_new);
+            let (_, r) = a.quot_rem(&a_new);
             (a, a_new) = (a_new, r);
 
             v.push(a.degree());

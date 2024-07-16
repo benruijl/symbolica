@@ -387,7 +387,7 @@ class Expression:
         """
 
     def coefficients_to_float(self, decimal_prec: int) -> Expression:
-        """Convert all coefficients to floats with a given precision `decimal_prec``.
+        """Convert all coefficients to floats with a given precision `decimal_prec`.
         The precision of floating point coefficients in the input will be truncated to `decimal_prec`."""
 
     def rationalize_coefficients(self, relative_error: float) -> Expression:

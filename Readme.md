@@ -31,7 +31,7 @@ Symbolica allows you to build and manipulate mathematical expressions, for examp
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://symbolica.io/resources/demo.dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="https://symbolica.io/resources/demo.light.svg">
-  <img width="600" alt="A demo of Symbolica" srcset="https://symbolica.io/resources/demo.dark.svg">
+  <img width="600" alt="A demo of Symbolica" src="https://symbolica.io/resources/demo.light.svg">
 </picture>
 
 You are able to perform these operations from the comfort of a programming language that you (probably) already know, by using Symbolica's bindings to Python and Rust:

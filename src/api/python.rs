@@ -1192,7 +1192,7 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             Ok(ConvertibleToExpression(Atom::new_num(num).into()))
         } else if let Ok(num) = ob.extract::<&PyLong>() {
             let a = format!("{}", num);
-            let i = Integer::from_large(rug::Integer::parse(&a).unwrap().complete());
+            let i = Integer::from(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(Atom::new_num(i).into()))
         } else if let Ok(_) = ob.extract::<&str>() {
             // disallow direct string conversion
@@ -1237,9 +1237,7 @@ impl<'a> FromPyObject<'a> for Integer {
             Ok(num.into())
         } else if let Ok(num) = ob.extract::<&PyLong>() {
             let a = format!("{}", num);
-            Ok(Integer::from_large(
-                rug::Integer::parse(&a).unwrap().complete(),
-            ))
+            Ok(Integer::from(rug::Integer::parse(&a).unwrap().complete()))
         } else {
             Err(exceptions::PyValueError::new_err("Not a valid integer"))
         }

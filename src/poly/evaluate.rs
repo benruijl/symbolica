@@ -911,10 +911,7 @@ impl<N: NumericalFloatLike> std::fmt::Display for Variable<N> {
 }
 
 impl<N: NumericalFloatLike> Variable<N> {
-    pub fn convert<'a, NO: NumericalFloatLike, F: Fn(&N) -> NO>(
-        &'a self,
-        coeff_map: F,
-    ) -> Variable<NO> {
+    pub fn convert<NO: NumericalFloatLike, F: Fn(&N) -> NO>(&self, coeff_map: F) -> Variable<NO> {
         match self {
             Variable::Var(v, index) => Variable::Var(*v, *index),
             Variable::Constant(c) => Variable::Constant(coeff_map(c)),
@@ -1360,7 +1357,7 @@ pub struct InstructionEvaluator<N: NumericalFloatLike> {
     out: Vec<N>,  // output buffer
 }
 
-impl<'a, N: NumericalFloatLike> InstructionEvaluator<N> {
+impl<N: NumericalFloatLike> InstructionEvaluator<N> {
     pub fn output_len(&self) -> usize {
         let mut len = 0;
         for x in &self.instr {
@@ -1501,8 +1498,8 @@ impl<N: NumericalFloatLike> InstructionListOutput<N> {
 
     /// Convert all numbers in the instruction list from the field `N` to the field `NO`,
     /// using a custom map function.
-    pub fn convert_with_map<'a, NO: NumericalFloatLike, F: Fn(&N) -> NO + Copy>(
-        &'a self,
+    pub fn convert_with_map<NO: NumericalFloatLike, F: Fn(&N) -> NO + Copy>(
+        &self,
         coeff_map: F,
     ) -> InstructionListOutput<NO> {
         let mut instr = Vec::with_capacity(self.instr.len());

@@ -2589,7 +2589,7 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
                     new_rhs.as_view(),
                     ws,
                 );
-                h.as_view().normalize(&ws, out);
+                h.as_view().normalize(ws, out);
             });
 
             Some(())

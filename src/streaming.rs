@@ -546,7 +546,7 @@ impl<'a> AtomView<'a> {
                 out
             })
         } else {
-            f(self.clone())
+            f(*self)
         }
     }
 }

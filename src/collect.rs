@@ -203,7 +203,7 @@ impl<'a> AtomView<'a> {
     ) -> (Vec<(Atom, Atom)>, Atom) {
         let mut h = HashMap::default();
         let mut rest = workspace.new_atom();
-        let mut rest_add = rest.to_add();
+        let rest_add = rest.to_add();
 
         let mut expanded = workspace.new_atom();
         self.expand_with_ws_into(workspace, Some(x), &mut expanded);
@@ -211,12 +211,12 @@ impl<'a> AtomView<'a> {
         match expanded.as_view() {
             AtomView::Add(a) => {
                 for arg in a {
-                    arg.collect_factor_list(x, workspace, &mut h, &mut rest_add)
+                    arg.collect_factor_list(x, workspace, &mut h, rest_add)
                 }
             }
             _ => expanded
                 .as_view()
-                .collect_factor_list(x, workspace, &mut h, &mut rest_add),
+                .collect_factor_list(x, workspace, &mut h, rest_add),
         }
 
         let mut rest_norm = Atom::new();
@@ -331,15 +331,15 @@ impl<'a> AtomView<'a> {
     /// Collect terms involving the literal occurrence of `x`.
     pub fn coefficient_with_ws(&self, x: AtomView<'_>, workspace: &Workspace) -> Atom {
         let mut coeffs = workspace.new_atom();
-        let mut coeff_add = coeffs.to_add();
+        let coeff_add = coeffs.to_add();
 
         match self {
             AtomView::Add(a) => {
                 for arg in a {
-                    arg.collect_factor(x, workspace, &mut coeff_add)
+                    arg.collect_factor(x, workspace, coeff_add)
                 }
             }
-            _ => self.collect_factor(x, workspace, &mut coeff_add),
+            _ => self.collect_factor(x, workspace, coeff_add),
         }
 
         let mut rest_norm = Atom::new();
@@ -481,7 +481,8 @@ impl<'a> AtomView<'a> {
                             if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
                                 if n < 0 && d == 1 {
                                     denominators.push(
-                                        b.to_polynomial::<_, u16>(&Q, None).pow(n.abs() as usize),
+                                        b.to_polynomial::<_, u16>(&Q, None)
+                                            .pow(n.unsigned_abs() as usize),
                                     );
                                     den_changed.push((a, false));
                                     continue;

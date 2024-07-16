@@ -101,9 +101,9 @@ impl<'a> SerializedRationalPolynomial<'a> {
                     );
                     source.advance(num_digits as usize);
                     if x == 5 {
-                        Integer::from_large(-i)
+                        Integer::from(-i)
                     } else {
-                        Integer::from_large(i)
+                        Integer::from(i)
                     }
                 }
                 _ => unreachable!(),

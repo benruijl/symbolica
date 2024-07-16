@@ -148,7 +148,7 @@ impl LicenseManager {
 
         let port = env::var("SYMBOLICA_PORT").unwrap_or_else(|_| "12011".to_owned());
 
-        match TcpListener::bind(&format!("127.0.0.1:{}", port)) {
+        match TcpListener::bind(format!("127.0.0.1:{}", port)) {
             Ok(o) => {
                 rayon::ThreadPoolBuilder::new()
                     .num_threads(1)
@@ -212,7 +212,7 @@ impl LicenseManager {
                 let mut v = JsonValue::from(m).stringify().unwrap();
                 v.push('\n');
 
-                if let Ok(mut stream) = TcpStream::connect(&"symbolica.io:12012") {
+                if let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") {
                     let _ = stream.write_all(v.as_bytes());
                 };
             });
@@ -235,7 +235,7 @@ impl LicenseManager {
             }
 
             let h = format!("{:x}", h);
-            if f1 != h.to_string() {
+            if f1 != h {
                 Err(ACTIVATION_ERROR.to_owned())?;
             }
 

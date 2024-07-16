@@ -59,31 +59,101 @@ pub enum Integer {
     Large(MultiPrecisionInteger),
 }
 
-impl From<i32> for Integer {
-    #[inline]
-    fn from(value: i32) -> Self {
-        Integer::Natural(value as i64)
-    }
+macro_rules! from_with_cast {
+    ($base: ty) => {
+        impl From<$base> for Integer {
+            #[inline]
+            fn from(value: $base) -> Self {
+                Integer::Natural(value as i64)
+            }
+        }
+
+        impl PartialEq<$base> for Integer {
+            #[inline]
+            fn eq(&self, other: &$base) -> bool {
+                match self {
+                    Integer::Natural(n) => *n == *other as i64,
+                    _ => false,
+                }
+            }
+        }
+
+        impl PartialEq<Integer> for $base {
+            #[inline]
+            fn eq(&self, other: &Integer) -> bool {
+                other == self
+            }
+        }
+
+        impl PartialOrd<$base> for Integer {
+            #[inline]
+            fn partial_cmp(&self, other: &$base) -> Option<Ordering> {
+                match self {
+                    Integer::Natural(n) => n.partial_cmp(&(*other as i64)),
+                    x => {
+                        if x.is_negative() {
+                            Some(Ordering::Less)
+                        } else {
+                            Some(Ordering::Greater)
+                        }
+                    }
+                }
+            }
+        }
+
+        impl PartialOrd<Integer> for $base {
+            #[inline]
+            fn partial_cmp(&self, other: &Integer) -> Option<Ordering> {
+                other.partial_cmp(self).map(|x| x.reverse())
+            }
+        }
+    };
 }
 
-impl From<i64> for Integer {
-    #[inline]
-    fn from(value: i64) -> Self {
-        Integer::Natural(value)
-    }
+from_with_cast!(i8);
+from_with_cast!(i16);
+from_with_cast!(i32);
+from_with_cast!(i64);
+from_with_cast!(u8);
+from_with_cast!(u16);
+from_with_cast!(u32);
+
+macro_rules! cmp_with_conv {
+    ($base: ty) => {
+        impl PartialEq<$base> for Integer {
+            #[inline]
+            fn eq(&self, other: &$base) -> bool {
+                self == &Integer::from(*other)
+            }
+        }
+
+        impl PartialOrd<$base> for Integer {
+            #[inline]
+            fn partial_cmp(&self, other: &$base) -> Option<Ordering> {
+                self.partial_cmp(&Integer::from(*other))
+            }
+        }
+
+        impl PartialEq<Integer> for $base {
+            #[inline]
+            fn eq(&self, other: &Integer) -> bool {
+                other == self
+            }
+        }
+
+        impl PartialOrd<Integer> for $base {
+            #[inline]
+            fn partial_cmp(&self, other: &Integer) -> Option<Ordering> {
+                other.partial_cmp(self).map(|x| x.reverse())
+            }
+        }
+    };
 }
 
 impl From<i128> for Integer {
     #[inline]
     fn from(value: i128) -> Self {
         Integer::from_double(value)
-    }
-}
-
-impl From<u32> for Integer {
-    #[inline]
-    fn from(value: u32) -> Self {
-        Integer::Natural(value as i64)
     }
 }
 
@@ -108,6 +178,25 @@ impl From<u128> for Integer {
         }
     }
 }
+
+impl From<MultiPrecisionInteger> for Integer {
+    /// Convert from a multi-precision integer to an Integer, potentially
+    /// downcasting the number.
+    #[inline]
+    fn from(n: MultiPrecisionInteger) -> Self {
+        if let Some(n) = n.to_i64() {
+            Integer::Natural(n)
+        } else if let Some(n) = n.to_i128() {
+            Integer::Double(n)
+        } else {
+            Integer::Large(n)
+        }
+    }
+}
+
+cmp_with_conv!(u64);
+cmp_with_conv!(u128);
+cmp_with_conv!(i128);
 
 impl FromStr for Integer {
     type Err = &'static str;
@@ -172,8 +261,8 @@ impl ToFiniteField<u64> for Integer {
 impl ToFiniteField<Two> for Integer {
     fn to_finite_field(&self, field: &Z2) -> <Z2 as Ring>::Element {
         match self {
-            &Integer::Natural(n) => field.to_element(Two(n.rem_euclid(2 as i64) as u8)),
-            &Integer::Double(n) => field.to_element(Two(n.rem_euclid(2 as i128) as u8)),
+            &Integer::Natural(n) => field.to_element(Two(n.rem_euclid(2) as u8)),
+            &Integer::Double(n) => field.to_element(Two(n.rem_euclid(2) as u8)),
             Integer::Large(r) => field.to_element(Two(r.mod_u(2) as u8)),
         }
     }
@@ -276,17 +365,6 @@ impl Integer {
     }
 
     #[inline]
-    pub fn from_large(n: MultiPrecisionInteger) -> Integer {
-        if let Some(n) = n.to_i64() {
-            Integer::Natural(n)
-        } else if let Some(n) = n.to_i128() {
-            Integer::Double(n)
-        } else {
-            Integer::Large(n)
-        }
-    }
-
-    #[inline]
     pub fn from_double(n: i128) -> Integer {
         if n >= i64::MIN as i128 && n <= i64::MAX as i128 {
             Integer::Natural(n as i64)
@@ -297,7 +375,7 @@ impl Integer {
 
     #[inline]
     pub fn from_f64(f: f64) -> Integer {
-        Self::from_large(MultiPrecisionInteger::from_f64(f).unwrap())
+        Self::from(MultiPrecisionInteger::from_f64(f).unwrap())
     }
 
     pub fn to_rational(&self) -> Rational {
@@ -354,7 +432,7 @@ impl Integer {
     #[inline]
     pub fn to_i64(&self) -> Option<i64> {
         match self {
-            Integer::Natural(n) => Some(*n as i64),
+            Integer::Natural(n) => Some(*n),
             _ => None,
         }
     }
@@ -527,9 +605,9 @@ impl Integer {
             (Integer::Natural(a), Integer::Large(b)) => {
                 if *a < 0 {
                     if *b > 0 {
-                        (Integer::Natural(-1), Integer::from_large((a + b).into()))
+                        (Integer::Natural(-1), Integer::from((a + b).complete()))
                     } else {
-                        (Integer::Natural(1), Integer::from_large((a - b).into()))
+                        (Integer::Natural(1), Integer::from((a - b).complete()))
                     }
                 } else {
                     (Integer::zero(), Integer::Natural(*a))
@@ -537,19 +615,19 @@ impl Integer {
             }
             (Integer::Large(a), Integer::Natural(b)) => {
                 let r = a.clone().div_rem_euc(MultiPrecisionInteger::from(*b));
-                (Integer::from_large(r.0), Integer::from_large(r.1))
+                (Integer::from(r.0), Integer::from(r.1))
             }
             (Integer::Large(a), Integer::Large(b)) => {
                 let r = a.clone().div_rem_euc(b.clone());
-                (Integer::from_large(r.0), Integer::from_large(r.1))
+                (Integer::from(r.0), Integer::from(r.1))
             }
 
             (Integer::Double(a), Integer::Large(b)) => {
                 if *a < 0 {
                     if *b > 0 {
-                        (Integer::Natural(-1), Integer::from_large((a + b).into()))
+                        (Integer::Natural(-1), Integer::from((a + b).complete()))
                     } else {
-                        (Integer::Natural(1), Integer::from_large((a - b).into()))
+                        (Integer::Natural(1), Integer::from((a - b).complete()))
                     }
                 } else {
                     (Integer::zero(), Integer::Double(*a))
@@ -557,7 +635,7 @@ impl Integer {
             }
             (Integer::Large(a), Integer::Double(b)) => {
                 let r = a.clone().div_rem_euc(MultiPrecisionInteger::from(*b));
-                (Integer::from_large(r.0), Integer::from_large(r.1))
+                (Integer::from(r.0), Integer::from(r.1))
             }
         }
     }
@@ -576,9 +654,9 @@ impl Integer {
             (Integer::Natural(n1), Integer::Large(r2))
             | (Integer::Large(r2), Integer::Natural(n1)) => {
                 let r1 = MultiPrecisionInteger::from(*n1);
-                Integer::from_large(r1.gcd(r2))
+                Integer::from(r1.gcd(r2))
             }
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large(r1.clone().gcd(r2)),
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from(r1.clone().gcd(r2)),
             (Integer::Natural(r1), Integer::Double(r2))
             | (Integer::Double(r2), Integer::Natural(r1)) => {
                 Integer::from_double(utils::gcd_signed_i128(*r1 as i128, *r2) as i128)
@@ -592,10 +670,10 @@ impl Integer {
                 }
             }
             (Integer::Double(r1), Integer::Large(r2)) => {
-                Integer::from_large(MultiPrecisionInteger::from(*r1).clone().gcd(r2))
+                Integer::from(MultiPrecisionInteger::from(*r1).clone().gcd(r2))
             }
             (Integer::Large(r1), Integer::Double(r2)) => {
-                Integer::from_large(r1.clone().gcd(&MultiPrecisionInteger::from(*r2)))
+                Integer::from(r1.clone().gcd(&MultiPrecisionInteger::from(*r2)))
             }
         }
     }
@@ -667,7 +745,7 @@ impl Integer {
             r
         };
 
-        Integer::from_large(res)
+        Integer::from(res)
     }
 
     /// Perform the symmetric mod `p` on `self`.
@@ -935,13 +1013,45 @@ impl<'b> Add<&'b Integer> for Integer {
     fn add(self, rhs: &'b Integer) -> Integer {
         if let Integer::Large(r) = self {
             match rhs {
-                Integer::Natural(n) => Integer::from_large(*n + r),
-                Integer::Double(n) => Integer::from_large(*n + r),
-                Integer::Large(n) => Integer::from_large(n + r),
+                Integer::Natural(n) => Integer::from(*n + r),
+                Integer::Double(n) => Integer::from(*n + r),
+                Integer::Large(n) => Integer::from(n + r),
             }
         } else {
             &self + rhs
         }
+    }
+}
+
+impl Add<Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn add(self, rhs: Integer) -> Integer {
+        if let Integer::Large(r) = self {
+            match rhs {
+                Integer::Natural(n) => Integer::from(n + r),
+                Integer::Double(n) => Integer::from(n + r),
+                Integer::Large(n) => Integer::from(n + r),
+            }
+        } else if let Integer::Large(r) = rhs {
+            match self {
+                Integer::Natural(n) => Integer::from(n + r),
+                Integer::Double(n) => Integer::from(n + r),
+                Integer::Large(n) => Integer::from(n + r),
+            }
+        } else {
+            self + &rhs
+        }
+    }
+}
+
+impl<'a> Add<Integer> for &'a Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn add(self, rhs: Integer) -> Integer {
+        rhs + self
     }
 }
 
@@ -974,10 +1084,27 @@ impl<'a, 'b> Add<&'b Integer> for &'a Integer {
                 }
             }
             (Integer::Natural(n1), Integer::Large(r2))
-            | (Integer::Large(r2), Integer::Natural(n1)) => Integer::from_large((*n1 + r2).into()),
+            | (Integer::Large(r2), Integer::Natural(n1)) => Integer::from((*n1 + r2).complete()),
             (Integer::Double(n1), Integer::Large(r2))
-            | (Integer::Large(r2), Integer::Double(n1)) => Integer::from_large((*n1 + r2).into()),
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 + r2).into()),
+            | (Integer::Large(r2), Integer::Double(n1)) => Integer::from((*n1 + r2).complete()),
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from((r1 + r2).complete()),
+        }
+    }
+}
+
+impl<'a> Sub<&'a Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn sub(self, rhs: &Integer) -> Integer {
+        if let Integer::Large(s) = self {
+            match rhs {
+                Integer::Natural(r) => Integer::from(s - r),
+                Integer::Double(r) => Integer::from(s - r),
+                Integer::Large(r) => Integer::from(s - r),
+            }
+        } else {
+            &self - rhs
         }
     }
 }
@@ -989,9 +1116,32 @@ impl<'a> Sub<Integer> for &'a Integer {
     fn sub(self, rhs: Integer) -> Integer {
         if let Integer::Large(r) = rhs {
             match self {
-                Integer::Natural(n) => Integer::from_large(*n - r),
-                Integer::Double(n) => Integer::from_large(*n - r),
-                Integer::Large(n) => Integer::from_large(n - r),
+                Integer::Natural(s) => Integer::from(*s - r),
+                Integer::Double(s) => Integer::from(*s - r),
+                Integer::Large(s) => Integer::from(s - r),
+            }
+        } else {
+            self - &rhs
+        }
+    }
+}
+
+impl Sub<Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn sub(self, rhs: Integer) -> Integer {
+        if let Integer::Large(s) = self {
+            match rhs {
+                Integer::Natural(r) => Integer::from(s - r),
+                Integer::Double(r) => Integer::from(s - r),
+                Integer::Large(r) => Integer::from(s - r),
+            }
+        } else if let Integer::Large(r) = rhs {
+            match self {
+                Integer::Natural(s) => Integer::from(s - r),
+                Integer::Double(s) => Integer::from(s - r),
+                Integer::Large(s) => Integer::from(s - r),
             }
         } else {
             self - &rhs
@@ -1033,11 +1183,11 @@ impl<'a, 'b> Sub<&'b Integer> for &'a Integer {
                     Integer::Large(MultiPrecisionInteger::from(*r1) - *r2)
                 }
             }
-            (Integer::Natural(n1), Integer::Large(r2)) => Integer::from_large((*n1 - r2).into()),
-            (Integer::Large(r1), Integer::Natural(n2)) => Integer::from_large((r1 - *n2).into()),
-            (Integer::Double(n1), Integer::Large(r2)) => Integer::from_large((*n1 - r2).into()),
-            (Integer::Large(r1), Integer::Double(n2)) => Integer::from_large((r1 - *n2).into()),
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 - r2).into()),
+            (Integer::Natural(n1), Integer::Large(r2)) => Integer::from((*n1 - r2).complete()),
+            (Integer::Large(r1), Integer::Natural(n2)) => Integer::from((r1 - *n2).complete()),
+            (Integer::Double(n1), Integer::Large(r2)) => Integer::from((*n1 - r2).complete()),
+            (Integer::Large(r1), Integer::Double(n2)) => Integer::from((r1 - *n2).complete()),
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from((r1 - r2).complete()),
         }
     }
 }
@@ -1049,12 +1199,44 @@ impl<'a> Mul<&'a Integer> for Integer {
     fn mul(self, rhs: &'a Integer) -> Integer {
         if let Integer::Large(r) = self {
             match rhs {
-                Integer::Natural(n) => Integer::from_large(*n * r),
-                Integer::Double(n) => Integer::from_large(*n * r),
-                Integer::Large(n) => Integer::from_large(n * r),
+                Integer::Natural(n) => Integer::from(*n * r),
+                Integer::Double(n) => Integer::from(*n * r),
+                Integer::Large(n) => Integer::from(n * r),
             }
         } else {
             &self * rhs
+        }
+    }
+}
+
+impl<'a> Mul<Integer> for &'a Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn mul(self, rhs: Integer) -> Integer {
+        rhs * self
+    }
+}
+
+impl Mul<Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn mul(self, rhs: Integer) -> Integer {
+        if let Integer::Large(r) = self {
+            match rhs {
+                Integer::Natural(n) => Integer::from(n * r),
+                Integer::Double(n) => Integer::from(n * r),
+                Integer::Large(n) => Integer::from(n * r),
+            }
+        } else if let Integer::Large(r) = rhs {
+            match self {
+                Integer::Natural(n) => Integer::from(n * r),
+                Integer::Double(n) => Integer::from(n * r),
+                Integer::Large(n) => Integer::from(n * r),
+            }
+        } else {
+            self * &rhs
         }
     }
 }
@@ -1088,10 +1270,67 @@ impl<'a, 'b> Mul<&'b Integer> for &'a Integer {
                 }
             }
             (Integer::Natural(n1), Integer::Large(r2))
-            | (Integer::Large(r2), Integer::Natural(n1)) => Integer::from_large((n1 * r2).into()),
+            | (Integer::Large(r2), Integer::Natural(n1)) => Integer::from((n1 * r2).complete()),
             (Integer::Double(n1), Integer::Large(r2))
-            | (Integer::Large(r2), Integer::Double(n1)) => Integer::from_large((n1 * r2).into()),
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 * r2).into()),
+            | (Integer::Large(r2), Integer::Double(n1)) => Integer::from((n1 * r2).complete()),
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from((r1 * r2).complete()),
+        }
+    }
+}
+
+impl<'a> Div<&'a Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn div(self, rhs: &Integer) -> Integer {
+        if let Integer::Large(s) = self {
+            match rhs {
+                Integer::Natural(r) => Integer::from(s / r),
+                Integer::Double(r) => Integer::from(s / r),
+                Integer::Large(r) => Integer::from(s / r),
+            }
+        } else {
+            &self / rhs
+        }
+    }
+}
+
+impl<'a> Div<Integer> for &'a Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn div(self, rhs: Integer) -> Integer {
+        if let Integer::Large(r) = rhs {
+            match self {
+                Integer::Natural(s) => Integer::from(*s / r),
+                Integer::Double(s) => Integer::from(*s / r),
+                Integer::Large(s) => Integer::from(s / r),
+            }
+        } else {
+            self / &rhs
+        }
+    }
+}
+
+impl Div<Integer> for Integer {
+    type Output = Integer;
+
+    #[inline(always)]
+    fn div(self, rhs: Integer) -> Integer {
+        if let Integer::Large(s) = self {
+            match rhs {
+                Integer::Natural(r) => Integer::from(s / r),
+                Integer::Double(r) => Integer::from(s / r),
+                Integer::Large(r) => Integer::from(s / r),
+            }
+        } else if let Integer::Large(r) = rhs {
+            match self {
+                Integer::Natural(s) => Integer::from(s / r),
+                Integer::Double(s) => Integer::from(s / r),
+                Integer::Large(s) => Integer::from(s / r),
+            }
+        } else {
+            self / &rhs
         }
     }
 }
@@ -1130,114 +1369,201 @@ impl<'a, 'b> Div<&'b Integer> for &'a Integer {
                     Integer::Large(MultiPrecisionInteger::from(*r1) / *r2)
                 }
             }
-            (Integer::Natural(n1), Integer::Large(r2)) => Integer::from_large((*n1 / r2).into()),
-            (Integer::Large(r1), Integer::Natural(n2)) => Integer::from_large((r1 / *n2).into()),
-            (Integer::Double(n1), Integer::Large(r2)) => Integer::from_large((*n1 / r2).into()),
-            (Integer::Large(r1), Integer::Double(n2)) => Integer::from_large((r1 / *n2).into()),
-            (Integer::Large(r1), Integer::Large(r2)) => Integer::from_large((r1 / r2).into()),
+            (Integer::Natural(n1), Integer::Large(r2)) => Integer::from((*n1 / r2).complete()),
+            (Integer::Large(r1), Integer::Natural(n2)) => Integer::from((r1 / *n2).complete()),
+            (Integer::Double(n1), Integer::Large(r2)) => Integer::from((*n1 / r2).complete()),
+            (Integer::Large(r1), Integer::Double(n2)) => Integer::from((r1 / *n2).complete()),
+            (Integer::Large(r1), Integer::Large(r2)) => Integer::from((r1 / r2).complete()),
         }
     }
 }
 
-impl<'a> Add<i64> for &'a Integer {
-    type Output = Integer;
+macro_rules! bin_op_int {
+    ($base: ty) => {
+        impl Add<$base> for Integer {
+            type Output = Integer;
 
-    #[inline(always)]
-    fn add(self, rhs: i64) -> Integer {
-        match self {
-            Integer::Natural(n1) => {
-                if let Some(num) = n1.checked_add(rhs) {
-                    Integer::Natural(num)
-                } else {
-                    Integer::Double(*n1 as i128 + rhs as i128)
-                }
+            #[inline(always)]
+            fn add(self, rhs: $base) -> Integer {
+                self + Integer::from(rhs)
             }
-            Integer::Double(n1) => {
-                if let Some(num) = n1.checked_add(rhs as i128) {
-                    Integer::from_double(num)
-                } else {
-                    Integer::Large(MultiPrecisionInteger::from(*n1) + rhs)
-                }
-            }
-            Integer::Large(n1) => Integer::from_large((n1 + rhs).into()),
         }
-    }
+
+        impl<'a> Add<$base> for &'a Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn add(self, rhs: $base) -> Integer {
+                self + Integer::from(rhs)
+            }
+        }
+
+        impl<'a> Add<Integer> for $base {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn add(self, rhs: Integer) -> Integer {
+                rhs + self
+            }
+        }
+
+        impl<'a> Add<&'a Integer> for $base {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn add(self, rhs: &'a Integer) -> Integer {
+                rhs + self
+            }
+        }
+
+        impl Sub<$base> for Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn sub(self, rhs: $base) -> Integer {
+                self - Integer::from(rhs)
+            }
+        }
+
+        impl<'a> Sub<$base> for &'a Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn sub(self, rhs: $base) -> Integer {
+                self - Integer::from(rhs)
+            }
+        }
+
+        impl<'a> Sub<Integer> for $base {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn sub(self, rhs: Integer) -> Integer {
+                (-rhs) + self
+            }
+        }
+
+        impl<'a> Sub<&'a Integer> for $base {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn sub(self, rhs: &'a Integer) -> Integer {
+                -(rhs + -(self as i64))
+            }
+        }
+
+        impl Mul<$base> for Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn mul(self, rhs: $base) -> Integer {
+                self * Integer::from(rhs)
+            }
+        }
+
+        impl<'a> Mul<$base> for &'a Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn mul(self, rhs: $base) -> Integer {
+                self * Integer::from(rhs)
+            }
+        }
+
+        impl<'a> Mul<Integer> for $base {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn mul(self, rhs: Integer) -> Integer {
+                rhs * self
+            }
+        }
+
+        impl<'a> Mul<&'a Integer> for $base {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn mul(self, rhs: &'a Integer) -> Integer {
+                rhs * self
+            }
+        }
+
+        impl Div<$base> for Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn div(self, rhs: $base) -> Integer {
+                &self / rhs
+            }
+        }
+
+        impl<'a> Div<$base> for &'a Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn div(self, rhs: $base) -> Integer {
+                self / Integer::from(rhs)
+            }
+        }
+
+        impl Rem<$base> for Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn rem(self, rhs: $base) -> Integer {
+                &self % rhs
+            }
+        }
+
+        impl<'a> Rem<$base> for &'a Integer {
+            type Output = Integer;
+
+            #[inline(always)]
+            fn rem(self, rhs: $base) -> Integer {
+                self % Integer::from(rhs)
+            }
+        }
+
+        impl AddAssign<$base> for Integer {
+            #[inline]
+            fn add_assign(&mut self, rhs: $base) {
+                *self += Integer::from(rhs);
+            }
+        }
+
+        impl SubAssign<$base> for Integer {
+            #[inline]
+            fn sub_assign(&mut self, rhs: $base) {
+                *self -= Integer::from(rhs);
+            }
+        }
+
+        impl MulAssign<$base> for Integer {
+            #[inline]
+            fn mul_assign(&mut self, rhs: $base) {
+                *self *= Integer::from(rhs);
+            }
+        }
+
+        impl DivAssign<$base> for Integer {
+            #[inline]
+            fn div_assign(&mut self, rhs: $base) {
+                *self /= Integer::from(rhs);
+            }
+        }
+    };
 }
 
-impl<'a> Sub<i64> for &'a Integer {
-    type Output = Integer;
-
-    #[inline(always)]
-    fn sub(self, rhs: i64) -> Integer {
-        match self {
-            Integer::Natural(n1) => {
-                if let Some(num) = n1.checked_sub(rhs) {
-                    Integer::Natural(num)
-                } else {
-                    Integer::Double(*n1 as i128 - rhs as i128)
-                }
-            }
-            Integer::Double(n1) => {
-                if let Some(num) = n1.checked_sub(rhs as i128) {
-                    Integer::from_double(num)
-                } else {
-                    Integer::Large(MultiPrecisionInteger::from(*n1) - rhs)
-                }
-            }
-            Integer::Large(n1) => Integer::from_large((n1 - rhs).into()),
-        }
-    }
-}
-
-impl<'a> Mul<i64> for &'a Integer {
-    type Output = Integer;
-
-    #[inline(always)]
-    fn mul(self, rhs: i64) -> Integer {
-        match self {
-            Integer::Natural(n1) => {
-                if let Some(num) = n1.checked_mul(rhs) {
-                    Integer::Natural(num)
-                } else {
-                    Integer::Double(*n1 as i128 * rhs as i128)
-                }
-            }
-            Integer::Double(n1) => {
-                if let Some(num) = n1.checked_mul(rhs as i128) {
-                    Integer::from_double(num)
-                } else {
-                    Integer::Large(MultiPrecisionInteger::from(*n1) * rhs)
-                }
-            }
-            Integer::Large(n1) => Integer::from_large((n1 * rhs).into()),
-        }
-    }
-}
-
-impl<'a> Div<i64> for &'a Integer {
-    type Output = Integer;
-
-    #[inline(always)]
-    fn div(self, rhs: i64) -> Integer {
-        match self {
-            Integer::Natural(n1) => {
-                if let Some(num) = n1.checked_div(rhs) {
-                    Integer::Natural(num)
-                } else {
-                    Integer::Double(*n1 as i128 / rhs as i128)
-                }
-            }
-            Integer::Double(n1) => {
-                if let Some(num) = n1.checked_div(rhs as i128) {
-                    Integer::from_double(num)
-                } else {
-                    Integer::Large(MultiPrecisionInteger::from(*n1) / rhs)
-                }
-            }
-            Integer::Large(n1) => Integer::from_large((n1 / rhs).into()),
-        }
-    }
-}
+bin_op_int!(i8);
+bin_op_int!(i16);
+bin_op_int!(i32);
+bin_op_int!(i64);
+bin_op_int!(i128);
+bin_op_int!(u8);
+bin_op_int!(u16);
+bin_op_int!(u32);
+bin_op_int!(u64);
+bin_op_int!(u128);
 
 impl AddAssign<Integer> for Integer {
     #[inline(always)]
@@ -1307,6 +1633,23 @@ impl<'a> SubAssign<&'a Integer> for Integer {
     }
 }
 
+impl MulAssign<Integer> for Integer {
+    #[inline(always)]
+    fn mul_assign(&mut self, rhs: Integer) {
+        if let Integer::Large(l) = self {
+            match rhs {
+                Integer::Natural(r) => l.mul_assign(r),
+                Integer::Double(r) => l.mul_assign(r),
+                Integer::Large(r) => l.mul_assign(r),
+            }
+
+            self.simplify();
+        } else {
+            *self = &*self * rhs;
+        }
+    }
+}
+
 impl<'a> MulAssign<&'a Integer> for Integer {
     #[inline(always)]
     fn mul_assign(&mut self, rhs: &'a Integer) {
@@ -1320,6 +1663,23 @@ impl<'a> MulAssign<&'a Integer> for Integer {
             self.simplify();
         } else {
             *self = &*self * rhs;
+        }
+    }
+}
+
+impl DivAssign<Integer> for Integer {
+    #[inline(always)]
+    fn div_assign(&mut self, rhs: Integer) {
+        if let Integer::Large(l) = self {
+            match rhs {
+                Integer::Natural(r) => l.div_assign(r),
+                Integer::Double(r) => l.div_assign(r),
+                Integer::Large(r) => l.div_assign(r),
+            }
+
+            self.simplify();
+        } else {
+            *self = &*self / rhs;
         }
     }
 }
@@ -1341,17 +1701,28 @@ impl<'a> DivAssign<&'a Integer> for Integer {
     }
 }
 
-impl MulAssign<i64> for Integer {
-    #[inline]
-    fn mul_assign(&mut self, rhs: i64) {
-        *self = (&*self) * rhs;
-    }
-}
+impl Neg for Integer {
+    type Output = Integer;
 
-impl DivAssign<i64> for Integer {
     #[inline]
-    fn div_assign(&mut self, rhs: i64) {
-        *self = (&*self) / rhs;
+    fn neg(self) -> Self::Output {
+        match self {
+            Integer::Natural(n) => {
+                if let Some(neg) = n.checked_neg() {
+                    Integer::Natural(neg)
+                } else {
+                    Integer::Double((n as i128).neg())
+                }
+            }
+            Integer::Double(n) => {
+                if let Some(neg) = n.checked_neg() {
+                    Integer::from_double(neg)
+                } else {
+                    Integer::Large(MultiPrecisionInteger::from(n).neg())
+                }
+            }
+            Integer::Large(r) => Integer::from(-r),
+        }
     }
 }
 
@@ -1375,8 +1746,32 @@ impl<'a> Neg for &'a Integer {
                     Integer::Large(MultiPrecisionInteger::from(*n).neg())
                 }
             }
-            Integer::Large(r) => Integer::from_large(r.neg().into()),
+            Integer::Large(r) => Integer::from(r.clone().neg()),
         }
+    }
+}
+
+impl Rem<Integer> for Integer {
+    type Output = Integer;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        &self % &rhs
+    }
+}
+
+impl<'a> Rem<&'a Integer> for Integer {
+    type Output = Integer;
+
+    fn rem(self, rhs: &'a Self) -> Self::Output {
+        &self % rhs
+    }
+}
+
+impl<'a> Rem<Integer> for &'a Integer {
+    type Output = Integer;
+
+    fn rem(self, rhs: Integer) -> Self::Output {
+        self % &rhs
     }
 }
 
@@ -1411,9 +1806,9 @@ impl<'a> Rem for &'a Integer {
             (Integer::Natural(a), Integer::Large(b)) => {
                 if *a < 0 {
                     if *b > 0 {
-                        Integer::from_large((a + b).into())
+                        Integer::from((a + b).complete())
                     } else {
-                        Integer::from_large((a - b).into())
+                        Integer::from((a - b).complete())
                     }
                 } else {
                     Integer::Natural(*a)
@@ -1422,9 +1817,9 @@ impl<'a> Rem for &'a Integer {
             (Integer::Double(a), Integer::Large(b)) => {
                 if *a < 0 {
                     if *b > 0 {
-                        Integer::from_large((a + b).into())
+                        Integer::from((a + b).complete())
                     } else {
-                        Integer::from_large((a - b).into())
+                        Integer::from((a - b).complete())
                     }
                 } else {
                     Integer::Double(*a)
@@ -1445,12 +1840,12 @@ impl<'a> Rem for &'a Integer {
                 }
             }
             (Integer::Large(a), Integer::Natural(b)) => {
-                Integer::from_large(a.rem_euc(MultiPrecisionInteger::from(*b)))
+                Integer::from(a.rem_euc(MultiPrecisionInteger::from(*b)))
             }
             (Integer::Large(a), Integer::Double(b)) => {
-                Integer::from_large(a.rem_euc(MultiPrecisionInteger::from(*b)))
+                Integer::from(a.rem_euc(MultiPrecisionInteger::from(*b)))
             }
-            (Integer::Large(a), Integer::Large(b)) => Integer::from_large(a.rem_euc(b).into()),
+            (Integer::Large(a), Integer::Large(b)) => Integer::from(a.rem_euc(b).complete()),
         }
     }
 }
@@ -1596,5 +1991,94 @@ impl EuclideanDomain for MultiPrecisionIntegerRing {
 
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a.clone().gcd(b)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::ops::{Add, Div, Mul, Rem, Sub};
+
+    use rug::Complete;
+
+    use super::Integer;
+
+    #[test]
+    fn binary_ops() {
+        let a = Integer::from(5);
+        let b: Integer = 7.into();
+
+        assert_eq!(a < 5, false);
+        assert_eq!(5 > a, false);
+        assert_eq!(a < Integer::from(-891273892173892178922i128), false);
+
+        let c = 2u32;
+
+        assert_eq!(c + b.clone(), 9);
+        assert_eq!(c + &b, 9);
+        assert_eq!(c * b.clone(), 14);
+        assert_eq!(c * &b, 14);
+        assert_eq!(b.clone() + c, 9);
+        assert_eq!(&b + c, 9);
+        assert_eq!(b.clone() * c, 14);
+        assert_eq!(&b * c, 14);
+        assert_eq!(b.clone() / c, 3);
+        assert_eq!(&b / c, 3);
+        assert_eq!(&b % c, 1);
+        assert_eq!(b.clone() % c, 1);
+
+        macro_rules! try_variants {
+            ($a: expr, $b: expr, $res: expr, $op: tt) => {
+                assert_eq!($a.clone().$op(&$b), $res);
+                assert_eq!($a.clone().$op($b.clone()), $res);
+                assert_eq!((&$a).$op($b.clone()), $res);
+                assert_eq!((&$a).$op(&$b), $res);
+            };
+        }
+
+        try_variants!(a, b, 12, add);
+        try_variants!(a, b, -2, sub);
+        try_variants!(a, b, 35, mul);
+        try_variants!(a, b, 0, div);
+        try_variants!(a, b, 5, rem);
+
+        let a = Integer::from(5123123132i64).pow(5);
+        let b: Integer = Integer::from(-312223132i64).pow(5);
+
+        try_variants!(
+            a,
+            b,
+            Integer::from(
+                rug::Integer::parse("3529178341193418202448766865967598093745792000000")
+                    .unwrap()
+                    .complete()
+            ),
+            add
+        );
+        try_variants!(
+            a,
+            b,
+            Integer::from(
+                rug::Integer::parse("3529184275300451286008027827753913822719081764864")
+                    .unwrap()
+                    .complete()
+            ),
+            sub
+        );
+        try_variants!(a, b,  Integer::from(
+            rug::Integer::parse("-10471269811147586074167526453409671971439869211545667023340431153576356451994427981246234624")
+                .unwrap()
+                .complete()
+        ), mul);
+        try_variants!(a, b, -1189456, div);
+        try_variants!(
+            a,
+            b,
+            Integer::from(
+                rug::Integer::parse("1700675215712075116094879895131557158845440")
+                    .unwrap()
+                    .complete()
+            ),
+            rem
+        );
     }
 }

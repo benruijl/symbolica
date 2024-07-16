@@ -258,14 +258,14 @@ impl Rational {
     pub fn numerator(&self) -> Integer {
         match self {
             Rational::Natural(n, _) => Integer::Natural(*n),
-            Rational::Large(r) => Integer::from_large(r.numer().clone()),
+            Rational::Large(r) => Integer::from(r.numer().clone()),
         }
     }
 
     pub fn denominator(&self) -> Integer {
         match self {
             Rational::Natural(_, d) => Integer::Natural(*d),
-            Rational::Large(r) => Integer::from_large(r.denom().clone()),
+            Rational::Large(r) => Integer::from(r.denom().clone()),
         }
     }
 
@@ -425,6 +425,10 @@ impl Rational {
     /// `[self * (1-relative_error), self * (1+relative_error)]`, where
     /// `0 < relative_error < 1`.
     pub fn round(&self, relative_error: &Rational) -> Rational {
+        if self.is_zero() {
+            return Rational::zero();
+        }
+
         if self.is_negative() {
             self.round_in_interval(
                 self.clone() * (Rational::one() + relative_error),

@@ -102,7 +102,7 @@ where
     }
 
     fn to_integer(&self, a: &Self::Element) -> Integer {
-        self.from_element(&a).to_integer()
+        self.from_element(a).to_integer()
     }
 
     #[inline(always)]
@@ -765,6 +765,12 @@ pub const Z2: FiniteField<Two> = Z2::new();
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Two(pub(crate) u8);
 
+impl Default for Z2 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Z2 {
     /// Create a new finite field with prime 2.
     pub const fn new() -> Z2 {
@@ -1260,7 +1266,7 @@ impl Field for FiniteField<Mersenne64> {
 impl FiniteFieldWorkspace for Integer {
     /// Panics when the modulus is larger than 2^64.
     fn to_u64(&self) -> u64 {
-        if self <= &u64::MAX.into() {
+        if self <= &u64::MAX {
             match self {
                 Integer::Natural(x) => *x as u64,
                 Integer::Double(x) => *x as u64,
@@ -1376,11 +1382,11 @@ impl Ring for FiniteField<Integer> {
     }
 
     fn characteristic(&self) -> Integer {
-        self.get_prime().into()
+        self.get_prime()
     }
 
     fn size(&self) -> Integer {
-        self.get_prime().into()
+        self.get_prime()
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {

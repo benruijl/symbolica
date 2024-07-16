@@ -374,7 +374,7 @@ impl ConvertToRing for IntegerRing {
             CoefficientView::Large(r) => {
                 let r = r.to_rat();
                 debug_assert!(r.denom() == &1);
-                Integer::from_large(r.numer().clone())
+                Integer::from(r.numer().clone())
             }
             CoefficientView::Float(_) => {
                 panic!("Cannot convert float to integer")
@@ -465,7 +465,7 @@ impl CoefficientView<'_> {
         match self {
             CoefficientView::Natural(num, den) => Coefficient::Rational((*num, *den).into()),
             CoefficientView::Large(r) => Coefficient::Rational(r.to_rat().into()),
-            CoefficientView::Float(f) => Coefficient::Float(f.to_float().into()),
+            CoefficientView::Float(f) => Coefficient::Float(f.to_float()),
             CoefficientView::FiniteField(num, field) => Coefficient::FiniteField(*num, *field),
             CoefficientView::RationalPolynomial(p) => {
                 Coefficient::RationalPolynomial(p.deserialize())
@@ -685,8 +685,8 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
                 let r = p.deserialize();
                 let (n, d) = l.to_rat().into_numer_denom();
                 let r2 = RationalPolynomial {
-                    numerator: r.numerator.constant(Integer::from_large(n)),
-                    denominator: r.denominator.constant(Integer::from_large(d)),
+                    numerator: r.numerator.constant(Integer::from(n)),
+                    denominator: r.denominator.constant(Integer::from(d)),
                 };
                 Coefficient::RationalPolynomial(&r + &r2)
             }
@@ -778,7 +778,7 @@ impl Mul for CoefficientView<'_> {
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l)) => {
                 let mut r = p.deserialize();
                 let (n, d) = l.to_rat().into_numer_denom();
-                let (n, d) = (Integer::from_large(n), Integer::from_large(d));
+                let (n, d) = (Integer::from(n), Integer::from(d));
 
                 let gcd1 = Z.gcd(&n, &r.denominator.content());
                 let gcd2 = Z.gcd(&d, &r.numerator.content());

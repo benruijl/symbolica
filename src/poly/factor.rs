@@ -822,10 +822,7 @@ where
             // generate a random non-constant polynomial
             random_poly.clear();
 
-            if d == 1
-                && (characteristic.is_zero()
-                    || &Integer::from(try_counter as i64) < &characteristic)
-            {
+            if d == 1 && (characteristic.is_zero() || try_counter < characteristic) {
                 exp[var] = E::zero();
                 random_poly.append_monomial(self.field.nth(try_counter), &exp);
                 exp[var] = E::one();
@@ -853,7 +850,7 @@ where
                 break g;
             }
 
-            let b = if self.field.characteristic() == 2.into() {
+            let b = if self.field.characteristic() == 2 {
                 let max = self.field.get_extension_degree() as usize * d;
 
                 let mut b = random_poly.clone();
@@ -1018,7 +1015,7 @@ where
         let mut i = 0;
         let mut rng = thread_rng();
         loop {
-            if Integer::from(i) == self.field.size() {
+            if self.field.size() == i {
                 let field = self
                     .field
                     .upgrade(self.field.get_extension_degree().to_u64() as usize + 1);
@@ -1309,7 +1306,7 @@ where
                     if let Some((_, m)) = fac.iter().find(|(f, _)| f == b || f.divides(b).is_some())
                     {
                         for _ in 0..*m {
-                            contrib = &contrib * &full;
+                            contrib = &contrib * full;
                         }
                     }
                 }
@@ -1481,7 +1478,7 @@ where
         let mut content_fail_count = 0;
         let mut sample_fail = Integer::zero();
         'new_sample: loop {
-            sample_fail = sample_fail + &1.into();
+            sample_fail += &1.into();
 
             if &sample_fail * &2.into() > self.field.size() {
                 // the field is too small, upgrade
@@ -2615,8 +2612,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         bound = &match bound {
             Integer::Natural(b) => Integer::Natural((b as f64).sqrt() as i64),
-            Integer::Double(b) => Integer::from_large(rug::Integer::from(b).sqrt()),
-            Integer::Large(b) => Integer::from_large(b.sqrt()),
+            Integer::Double(b) => Integer::from(rug::Integer::from(b).sqrt()),
+            Integer::Large(b) => Integer::from(b.sqrt()),
         } + &1i64.into();
 
         &bound * &(&max_norm * &self.lcoeff().abs())
@@ -3223,7 +3220,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         );
 
         // perform the Hensel lifting in a performance-optimized finite field if possible
-        let factorization = if max_p < u64::MAX.into() {
+        let factorization = if max_p < u64::MAX {
             let prime = match max_p {
                 Integer::Natural(b) => b as u64,
                 Integer::Double(b) => b as u64,

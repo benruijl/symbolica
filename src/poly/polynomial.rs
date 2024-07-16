@@ -487,7 +487,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         let mut newother = Self::new(
             &other.field,
             other.nterms().into(),
-            self.variables.clone().into(),
+            self.variables.clone(),
         );
         let mut newexp = vec![E::zero(); self.nvars()];
         for t in other.into_iter() {
@@ -1435,7 +1435,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         let mut res = MultivariatePolynomial::new(
             &self.field,
             self.nterms().into(),
-            self.variables.clone().into(),
+            self.variables.clone(),
         );
 
         for i in indices {
@@ -1789,12 +1789,12 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         // TODO: remove the variable from the variable map?
         let mut poly =
-            MultivariatePolynomial::new(field, self.nterms().into(), self.variables.clone().into());
+            MultivariatePolynomial::new(field, self.nterms().into(), self.variables.clone());
         for (e, c) in polys {
             let mut c2 = MultivariatePolynomial::new(
                 &self.field,
                 c.nterms().into(),
-                Arc::new(vec![self.variables.as_ref()[var_index].clone()]).into(),
+                Arc::new(vec![self.variables.as_ref()[var_index].clone()]),
             );
 
             c2.exponents = c
@@ -3124,7 +3124,7 @@ impl<F: Field, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         for x in self {
             exp.copy_from_slice(x.exponents);
             let pow = exp[var].to_u32() as u64;
-            exp[var] = exp[var] + E::one();
+            exp[var] += E::one();
             res.append_monomial(
                 self.field.div(x.coefficient, &self.field.nth(pow + 1)),
                 &exp,
@@ -3379,7 +3379,7 @@ impl<R: Ring, E: Exponent> MultivariatePolynomial<AlgebraicExtension<R>, E> {
         let mut poly = MultivariatePolynomial::new(
             &self.field.poly().field,
             self.nterms().into(),
-            var_map.into(),
+            var_map,
         );
         let mut exp = vec![E::zero(); poly.nvars()];
         for t in self {

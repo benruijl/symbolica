@@ -395,9 +395,9 @@ impl Transformer {
                     let reps = replacements
                         .iter()
                         .map(|(pat, rhs, cond, settings)| {
-                            Replacement::new(&pat, &rhs)
-                                .with_conditions(&cond)
-                                .with_settings(&settings)
+                            Replacement::new(pat, rhs)
+                                .with_conditions(cond)
+                                .with_settings(settings)
                         })
                         .collect::<Vec<_>>();
                     input.replace_all_multiple_into(&reps, out);

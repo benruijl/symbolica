@@ -41,7 +41,7 @@ where
     fn to_integer(&self, a: &Self::Element) -> Integer {
         let mut p = Integer::zero();
         for x in a.poly.into_iter() {
-            p = p + &(self.poly.field.to_integer(x.coefficient)
+            p += &(self.poly.field.to_integer(x.coefficient)
                 * &self.characteristic().pow(x.exponents[0] as u64));
         }
         p
@@ -186,22 +186,22 @@ where
             poly.is_irreducible()
         }
 
-        let mut coeffs = vec![0; exp as usize + 1];
-        coeffs[exp as usize] = 1;
+        let mut coeffs = vec![0; exp + 1];
+        coeffs[exp] = 1;
         let mut poly = MultivariatePolynomial::new(&prime, Some(coeffs.len()), Arc::new(vec![var]));
 
         // find the minimal polynomial
         let p = prime.get_prime().to_integer();
-        if p == 2.into() {
+        if p == 2 {
             coeffs[0] = 1;
 
             // try all odd number of non-zero coefficients
             for g in 0..exp / 2 {
                 let g = 2 * g + 1;
 
-                let mut c = CombinationIterator::new(exp as usize - 1, g as usize);
+                let mut c = CombinationIterator::new(exp - 1, g);
                 while let Some(comb) = c.next() {
-                    for i in 0..g as usize {
+                    for i in 0..g {
                         coeffs[comb[i] + 1] = 1;
                     }
 
@@ -209,7 +209,7 @@ where
                         return AlgebraicExtension::new(poly);
                     }
 
-                    for i in 0..g as usize {
+                    for i in 0..g {
                         coeffs[comb[i] + 1] = 0;
                     }
                 }
@@ -249,7 +249,7 @@ where
             for c in coeffs.iter_mut() {
                 *c = r.gen_range(0..sample_max);
             }
-            coeffs[exp as usize] = 1;
+            coeffs[exp] = 1;
 
             if is_irreducible(&coeffs, &mut poly) {
                 return AlgebraicExtension::new(poly);

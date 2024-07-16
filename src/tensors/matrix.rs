@@ -780,32 +780,13 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(
-            a.transpose().data,
-            vec![1.into(), 4.into(), 2.into(), 5.into(), 3.into(), 6.into()]
-        );
+        assert_eq!(a.transpose().data, vec![1, 4, 2, 5, 3, 6]);
 
-        assert_eq!(
-            a.clone().into_transposed().data,
-            vec![1.into(), 4.into(), 2.into(), 5.into(), 3.into(), 6.into()]
-        );
+        assert_eq!(a.clone().into_transposed().data, vec![1, 4, 2, 5, 3, 6]);
 
-        assert_eq!(
-            (-a.clone()).data,
-            vec![
-                (-1).into(),
-                (-2).into(),
-                (-3).into(),
-                (-4).into(),
-                (-5).into(),
-                (-6).into()
-            ]
-        );
+        assert_eq!((-a.clone()).data, vec![-1, -2, -3, -4, -5, -6]);
 
-        assert_eq!(
-            (&a - &a).data,
-            vec![0.into(), 0.into(), 0.into(), 0.into(), 0.into(), 0.into()]
-        );
+        assert_eq!((&a - &a).data, vec![0, 0, 0, 0, 0, 0]);
 
         let b = Matrix::from_nested_vec(
             vec![
@@ -819,15 +800,12 @@ mod test {
 
         let c = &a * &b;
 
-        assert_eq!(c.data, vec![58.into(), 64.into(), 139.into(), 154.into()]);
-        assert_eq!(&c[1], &[139.into(), 154.into()]);
-        assert_eq!(c[(0, 1)], 64.into());
+        assert_eq!(c.data, vec![58, 64, 139, 154]);
+        assert_eq!(&c[1], &[139, 154]);
+        assert_eq!(c[(0, 1)], 64);
 
-        let c_m = c.map(|x| x * &2u64.into(), Z);
-        assert_eq!(
-            c_m.data,
-            vec![116.into(), 128.into(), 278.into(), 308.into()]
-        );
+        let c_m = c.map(|x| x * 2u64, Z);
+        assert_eq!(c_m.data, vec![116, 128, 278, 308]);
     }
 
     #[test]

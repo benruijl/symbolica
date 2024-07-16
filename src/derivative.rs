@@ -362,16 +362,16 @@ impl<'a> AtomView<'a> {
             depth.clone()
         };
 
-        Workspace::get_local().with(|ws| loop {
+        loop {
             let info = Series::new(
                 &AtomField::new(),
                 None,
                 Arc::new(Variable::Symbol(x)),
                 expansion_point.to_owned(),
-                &current_depth + &((1.into(), current_depth.denominator())).into(),
+                &current_depth + &(1.into(), current_depth.denominator()).into(),
             );
 
-            let mut series = self.series_with_ws(x, expansion_point, ws, &info)?;
+            let mut series = self.series_impl(x, expansion_point, &info)?;
             if !depth_is_absolute && series.relative_order() >= depth {
                 series.truncate_relative_order(depth);
                 break Ok(series);
@@ -383,19 +383,18 @@ impl<'a> AtomView<'a> {
                 // TODO: find better heuristic
                 current_depth = &current_depth * &2.into();
             }
-        })
+        }
     }
 
     /// Series expand in `x` around `expansion_point` to depth `depth`.
-    pub fn series_with_ws(
+    pub(crate) fn series_impl(
         &self,
         x: Symbol,
         expansion_point: AtomView,
-        workspace: &Workspace,
         info: &Series<AtomField>,
     ) -> Result<Series<AtomField>, &'static str> {
         if !self.contains_symbol(x) {
-            return Ok(info.constant(self.to_owned().into()));
+            return Ok(info.constant(self.to_owned()));
         }
 
         // TODO: optimize, appending a monomial using addition is slow
@@ -411,7 +410,7 @@ impl<'a> AtomView<'a> {
             AtomView::Fun(f) => {
                 let mut args_series = Vec::with_capacity(f.get_nargs());
                 for arg in f {
-                    args_series.push(arg.series_with_ws(x, expansion_point, workspace, info)?);
+                    args_series.push(arg.series_impl(x, expansion_point, info)?);
                 }
 
                 if args_series.is_empty() {
@@ -488,40 +487,33 @@ impl<'a> AtomView<'a> {
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
-                let base_series = base.series_with_ws(x, expansion_point, workspace, info)?;
+                let base_series = base.series_impl(x, expansion_point, info)?;
 
                 if let AtomView::Num(n) = exp {
                     if let CoefficientView::Natural(n, d) = n.get_coeff_view() {
-                        let r = base_series.rpow((n, d).into());
-                        r
+                        base_series.rpow((n, d).into())
                     } else {
                         unimplemented!("Cannot series expand with large exponents yet")
                     }
                 } else {
-                    let e = exp.series_with_ws(x, expansion_point, workspace, info)?;
+                    let e = exp.series_impl(x, expansion_point, info)?;
                     base_series.pow(&e)
                 }
             }
             AtomView::Mul(args) => {
                 let mut iter = args.iter();
-                let mut series =
-                    iter.next()
-                        .unwrap()
-                        .series_with_ws(x, expansion_point, workspace, info)?;
+                let mut series = iter.next().unwrap().series_impl(x, expansion_point, info)?;
                 for arg in iter {
-                    series = &series * &arg.series_with_ws(x, expansion_point, workspace, info)?;
+                    series = &series * &arg.series_impl(x, expansion_point, info)?;
                 }
 
                 Ok(series)
             }
             AtomView::Add(args) => {
                 let mut iter = args.iter();
-                let mut series =
-                    iter.next()
-                        .unwrap()
-                        .series_with_ws(x, expansion_point, workspace, info)?;
+                let mut series = iter.next().unwrap().series_impl(x, expansion_point, info)?;
                 for arg in iter {
-                    series = &series + &arg.series_with_ws(x, expansion_point, workspace, info)?;
+                    series = &series + &arg.series_impl(x, expansion_point, info)?;
                 }
 
                 Ok(series)
@@ -569,7 +561,7 @@ impl Mul<&Atom> for &Series<AtomField> {
             current_depth = (2, 1).into();
         }
 
-        Workspace::get_local().with(|ws| loop {
+        loop {
             let info = Series::new(
                 &AtomField::new(),
                 None,
@@ -580,7 +572,7 @@ impl Mul<&Atom> for &Series<AtomField> {
 
             let series = rhs
                 .as_view()
-                .series_with_ws(x, expansion_point.as_view(), ws, &info)?
+                .series_impl(x, expansion_point.as_view(), &info)?
                 * self;
             if series.relative_order() >= self.relative_order() {
                 return Ok(series);
@@ -588,7 +580,7 @@ impl Mul<&Atom> for &Series<AtomField> {
                 // increase the expansion depth
                 current_depth = &current_depth * &2.into();
             }
-        })
+        }
     }
 }
 
@@ -631,7 +623,7 @@ impl Add<&Atom> for &Series<AtomField> {
             current_depth = (2, 1).into();
         }
 
-        Workspace::get_local().with(|ws| loop {
+        loop {
             let info = Series::new(
                 &AtomField::new(),
                 None,
@@ -642,7 +634,7 @@ impl Add<&Atom> for &Series<AtomField> {
 
             let series = rhs
                 .as_view()
-                .series_with_ws(x, expansion_point.as_view(), ws, &info)?
+                .series_impl(x, expansion_point.as_view(), &info)?
                 + self.clone();
             if series.absolute_order() >= self.absolute_order() {
                 return Ok(series);
@@ -650,7 +642,7 @@ impl Add<&Atom> for &Series<AtomField> {
                 // increase the expansion depth
                 current_depth = &current_depth * &2.into();
             }
-        })
+        }
     }
 }
 
@@ -693,7 +685,7 @@ impl Div<&Atom> for &Series<AtomField> {
             current_depth = (2, 1).into();
         }
 
-        Workspace::get_local().with(|ws| loop {
+        loop {
             let info = Series::new(
                 &AtomField::new(),
                 None,
@@ -705,14 +697,14 @@ impl Div<&Atom> for &Series<AtomField> {
             let series = self
                 / &rhs
                     .as_view()
-                    .series_with_ws(x, expansion_point.as_view(), ws, &info)?;
+                    .series_impl(x, expansion_point.as_view(), &info)?;
             if series.relative_order() >= self.relative_order() {
                 return Ok(series);
             } else {
                 // increase the expansion depth
                 current_depth = &current_depth * &2.into();
             }
-        })
+        }
     }
 }
 

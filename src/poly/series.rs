@@ -387,7 +387,7 @@ impl<F: Ring> Series<F> {
     #[inline]
     pub fn get_trailing_coefficient(&self) -> F::Element {
         if self.coefficients.is_empty() {
-            return self.field.zero();
+            self.field.zero()
         } else {
             self.coefficients[0].clone()
         }
@@ -672,7 +672,7 @@ impl<'a, 'b, F: Ring> Mul<&'a Series<F>> for &'b Series<F> {
         assert_eq!(self.field, rhs.field);
         assert_eq!(self.variable, rhs.variable);
 
-        let r = self.joint_ramification(&rhs);
+        let r = self.joint_ramification(rhs);
         let r_d_s = r / self.ramification;
         let r_d_o = r / rhs.ramification;
         let mut res = Series {

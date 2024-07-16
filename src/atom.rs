@@ -485,7 +485,7 @@ impl Atom {
     pub fn new_num<T: Into<Coefficient>>(num: T) -> Atom {
         let c = num.into();
         if c.is_zero() {
-            return Atom::Zero;
+            Atom::Zero
         } else {
             Num::new(c).into()
         }

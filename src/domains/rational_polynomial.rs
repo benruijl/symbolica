@@ -163,10 +163,10 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
     ) -> RationalPolynomial<IntegerRing, E> {
         let content = num.field.gcd(&num.content(), &den.content());
 
-        let mut num_int = MultivariatePolynomial::new(&Z, None, num.variables.into());
+        let mut num_int = MultivariatePolynomial::new(&Z, None, num.variables);
         num_int.exponents = num.exponents;
 
-        let mut den_int = MultivariatePolynomial::new(&Z, Some(den.nterms()), den.variables.into());
+        let mut den_int = MultivariatePolynomial::new(&Z, Some(den.nterms()), den.variables);
         den_int.exponents = den.exponents;
 
         if num.field.is_one(&content) {
@@ -392,7 +392,7 @@ where
 
         let v = Arc::new(variables.to_vec());
         let field = RationalPolynomialField::new(self.numerator.field.clone(), v.clone());
-        let mut poly = MultivariatePolynomial::new(&field, Some(hm.len()), v.into());
+        let mut poly = MultivariatePolynomial::new(&field, Some(hm.len()), v);
 
         if !ignore_denominator {
             let denom = RationalPolynomial::from_num_den(
@@ -502,7 +502,7 @@ where
     }
 
     fn zero(&self) -> Self::Element {
-        let num = MultivariatePolynomial::new(&self.ring, None, self.var_map.clone().into());
+        let num = MultivariatePolynomial::new(&self.ring, None, self.var_map.clone());
         RationalPolynomial {
             denominator: num.one(),
             numerator: num,
@@ -510,7 +510,7 @@ where
     }
 
     fn one(&self) -> Self::Element {
-        let num = MultivariatePolynomial::new(&self.ring, None, self.var_map.clone().into()).one();
+        let num = MultivariatePolynomial::new(&self.ring, None, self.var_map.clone()).one();
         RationalPolynomial {
             numerator: num.clone(),
             denominator: num,
@@ -867,7 +867,7 @@ where
         let mut v = if q.is_zero() {
             vec![]
         } else {
-            let n_conv = q.map_coeff(|c| c.clone().into(), rat_field.clone());
+            let n_conv = q.map_coeff(|c| c.clone(), rat_field.clone());
             vec![Self::from_univariate(n_conv.integrate())]
         };
 
@@ -900,7 +900,7 @@ where
             .map(|(f, p)| f.pow(*p).map_coeff(|c| c.clone().into(), rat_field.clone()))
             .collect::<Vec<_>>();
 
-        let rem = r.map_coeff(|c| c.clone().into(), rat_field.clone());
+        let rem = r.map_coeff(|c| c.clone(), rat_field.clone());
 
         // perform partial fractioning
         let deltas = if expanded.len() > 1 {
@@ -921,7 +921,7 @@ where
 
             let p_full = Self::from_univariate(p.clone());
 
-            let mut d_exp = d.p_adic_expansion(&p);
+            let mut d_exp = d.p_adic_expansion(p);
 
             // grow to the same level as the pow
             if d_exp.len() < *p_pow {

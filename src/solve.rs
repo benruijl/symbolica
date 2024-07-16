@@ -66,7 +66,7 @@ impl<'a> AtomView<'a> {
             }
         }
 
-        let field = RationalPolynomialField::new(Z, rhs[0].numerator.get_vars().into());
+        let field = RationalPolynomialField::new(Z, rhs[0].numerator.get_vars());
 
         let nrows = (mat.len() / rhs.len()) as u32;
         let m = Matrix::from_linear(mat, nrows, rhs.len() as u32, field.clone()).unwrap();

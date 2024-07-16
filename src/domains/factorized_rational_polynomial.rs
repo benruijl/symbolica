@@ -541,7 +541,7 @@ where
 
     fn zero(&self) -> Self::Element {
         FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::new(&self.ring, None, self.var_map.clone().into()),
+            numerator: MultivariatePolynomial::new(&self.ring, None, self.var_map.clone()),
             numer_coeff: self.ring.zero(),
             denom_coeff: self.ring.one(),
             denominators: vec![],
@@ -550,8 +550,7 @@ where
 
     fn one(&self) -> Self::Element {
         FactorizedRationalPolynomial {
-            numerator: MultivariatePolynomial::new(&self.ring, None, self.var_map.clone().into())
-                .one(),
+            numerator: MultivariatePolynomial::new(&self.ring, None, self.var_map.clone()).one(),
             numer_coeff: self.ring.one(),
             denom_coeff: self.ring.one(),
             denominators: vec![],
@@ -1024,7 +1023,7 @@ where
             let mut res: MultivariatePolynomial<_, E> = MultivariatePolynomial::new(
                 &rat_field,
                 Some(l.len()),
-                self.numerator.variables.clone().into(),
+                self.numerator.variables.clone(),
             );
 
             let mut exp = vec![E::zero(); self.numerator.nvars()];

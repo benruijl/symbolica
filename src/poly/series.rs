@@ -9,7 +9,8 @@ use crate::{
     atom::{Atom, AtomView, FunctionBuilder},
     coefficient::CoefficientView,
     domains::{
-        atom::AtomField, integer::Integer, rational::Rational, EuclideanDomain, Ring, RingPrinter,
+        atom::AtomField, integer::Integer, rational::Rational, EuclideanDomain, InternalOrdering,
+        Ring, RingPrinter,
     },
     printer::PrintOptions,
     state::State,
@@ -553,9 +554,9 @@ impl<F: Ring> std::hash::Hash for Series<F> {
 impl<F: Ring> Eq for Series<F> {}
 
 impl<R: Ring> PartialOrd for Series<R> {
-    /// An ordering of seriess that has no intuitive meaning.
+    /// An ordering of series that has no intuitive meaning.
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.coefficients.partial_cmp(&other.coefficients)
+        Some(self.coefficients.internal_cmp(&other.coefficients))
     }
 }
 

@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fmt::{Display, Error, Formatter, Write},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
@@ -9,14 +10,18 @@ use rug::{
     Rational as MultiPrecisionRational,
 };
 
-use crate::{poly::gcd::LARGE_U32_PRIMES, printer::PrintOptions, utils};
+use crate::{
+    poly::{gcd::LARGE_U32_PRIMES, polynomial::PolynomialRing, Exponent},
+    printer::PrintOptions,
+    utils,
+};
 
 use super::{
     finite_field::{
         FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Two, Zp, Z2,
     },
     integer::{Integer, Z},
-    EuclideanDomain, Field, Ring,
+    EuclideanDomain, Field, InternalOrdering, Ring,
 };
 
 /// The field of rational numbers.
@@ -40,6 +45,391 @@ impl RationalField {
     }
 }
 
+/// The fraction field of `R`.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct FractionField<R: Ring> {
+    ring: R,
+}
+
+impl<R: Ring> FractionField<R> {
+    pub const fn new(ring: R) -> FractionField<R> {
+        FractionField { ring }
+    }
+}
+
+impl<R: EuclideanDomain + FractionNormalization> FractionField<R> {
+    pub fn to_element_numerator(&self, numerator: R::Element) -> <Self as Ring>::Element {
+        Fraction {
+            numerator,
+            denominator: self.ring.one(),
+        }
+    }
+}
+
+impl<R: EuclideanDomain + FractionNormalization> FractionField<R> {
+    pub fn to_element(
+        &self,
+        mut numerator: R::Element,
+        mut denominator: R::Element,
+        do_gcd: bool,
+    ) -> <Self as Ring>::Element {
+        if do_gcd {
+            let g = self.ring.gcd(&numerator, &denominator);
+            if !self.ring.is_one(&g) {
+                numerator = self.ring.quot_rem(&numerator, &g).0;
+                denominator = self.ring.quot_rem(&denominator, &g).0;
+            }
+        }
+
+        let f = self.ring.get_normalization_factor(&denominator);
+
+        if self.ring.is_one(&f) {
+            Fraction {
+                numerator,
+                denominator,
+            }
+        } else {
+            Fraction {
+                numerator: self.ring.mul(&numerator, &f),
+                denominator: self.ring.mul(&denominator, &f),
+            }
+        }
+    }
+}
+
+impl<R: Ring> Display for FractionField<R> {
+    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+pub trait FractionNormalization: Ring {
+    /// Get the factor that normalizes the element `a`.
+    /// - For a field, this is the inverse of `a`.
+    /// - For the integers, this is the sign of `a`.
+    /// - For a polynomial ring, this is the normalization factor of the leading coefficient.
+    fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element;
+}
+
+impl FractionNormalization for Z {
+    fn get_normalization_factor(&self, a: &Integer) -> Integer {
+        if *a < 0 {
+            (-1).into()
+        } else {
+            1.into()
+        }
+    }
+}
+
+impl<R: Ring + FractionNormalization, E: Exponent> FractionNormalization for PolynomialRing<R, E> {
+    fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element {
+        a.constant(a.field.get_normalization_factor(&a.lcoeff()))
+    }
+}
+
+impl<T: Field> FractionNormalization for T {
+    fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element {
+        self.inv(a)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Fraction<R: Ring> {
+    numerator: R::Element,
+    denominator: R::Element,
+}
+
+impl<R: Ring> Fraction<R> {
+    pub fn numerator(&self) -> &R::Element {
+        &self.numerator
+    }
+
+    pub fn denominator(&self) -> &R::Element {
+        &self.denominator
+    }
+}
+
+impl<R: Ring> InternalOrdering for Fraction<R> {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.numerator
+            .internal_cmp(&other.numerator)
+            .then_with(|| self.denominator.internal_cmp(&other.denominator))
+    }
+}
+
+impl<R: EuclideanDomain> Ring for FractionField<R> {
+    type Element = Fraction<R>;
+
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        let r = &self.ring;
+
+        if a.denominator == b.denominator {
+            let num = r.add(&a.numerator, &b.numerator);
+            let g = r.gcd(&num, &a.denominator);
+            if !r.is_one(&g) {
+                return Fraction {
+                    numerator: r.quot_rem(&num, &g).0,
+                    denominator: a.denominator.clone(),
+                };
+            } else {
+                return Fraction {
+                    numerator: num,
+                    denominator: a.denominator.clone(),
+                };
+            }
+        }
+
+        let denom_gcd = r.gcd(&a.denominator, &b.denominator);
+
+        let mut a_den_red = Cow::Borrowed(&a.denominator);
+        let mut b_den_red = Cow::Borrowed(&b.denominator);
+
+        if !r.is_one(&denom_gcd) {
+            a_den_red = Cow::Owned(r.quot_rem(&a.denominator, &denom_gcd).0);
+            b_den_red = Cow::Owned(r.quot_rem(&b.denominator, &denom_gcd).0);
+        }
+
+        let num1 = r.mul(&a.numerator, &b_den_red);
+        let num2 = r.mul(&b.numerator, &a_den_red);
+        let mut num = r.add(&num1, &num2);
+
+        // TODO: prefer small * large over medium * medium sized operations
+        // a_denom_red.as_ref() * &other.denominator may be faster
+        // TODO: add size hint trait with default implementation?
+        let mut den = r.mul(b_den_red.as_ref(), &a.denominator);
+
+        let g = r.gcd(&num, &denom_gcd);
+
+        if !r.is_one(&g) {
+            num = r.quot_rem(&num, &g).0;
+            den = r.quot_rem(&den, &g).0;
+        }
+
+        Fraction {
+            numerator: num,
+            denominator: den,
+        }
+    }
+
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        // TODO: optimize
+        self.add(a, &self.neg(b))
+    }
+
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        let r = &self.ring;
+        let gcd1 = r.gcd(&a.numerator, &b.denominator);
+        let gcd2 = r.gcd(&a.denominator, &b.numerator);
+
+        if r.is_one(&gcd1) {
+            if r.is_one(&gcd2) {
+                Fraction {
+                    numerator: r.mul(&a.numerator, &b.numerator),
+                    denominator: r.mul(&a.denominator, &b.denominator),
+                }
+            } else {
+                Fraction {
+                    numerator: r.mul(&a.numerator, &r.quot_rem(&b.numerator, &gcd2).0),
+                    denominator: self
+                        .ring
+                        .mul(&r.quot_rem(&a.denominator, &gcd2).0, &b.denominator),
+                }
+            }
+        } else if r.is_one(&gcd2) {
+            Fraction {
+                numerator: r.mul(&r.quot_rem(&a.numerator, &gcd1).0, &b.numerator),
+                denominator: r.mul(&a.denominator, &r.quot_rem(&b.denominator, &gcd1).0),
+            }
+        } else {
+            Fraction {
+                numerator: r.mul(
+                    &r.quot_rem(&a.numerator, &gcd1).0,
+                    &r.quot_rem(&b.numerator, &gcd2).0,
+                ),
+                denominator: r.mul(
+                    &r.quot_rem(&a.denominator, &gcd2).0,
+                    &r.quot_rem(&b.denominator, &gcd1).0,
+                ),
+            }
+        }
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        // TODO: optimize
+        *a = self.add(a, b);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.sub(a, b);
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.mul(a, b);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.add_assign(a, &self.mul(b, c));
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.sub_assign(a, &self.mul(b, c));
+    }
+
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        Fraction {
+            numerator: self.ring.neg(&a.numerator),
+            denominator: a.denominator.clone(),
+        }
+    }
+
+    fn zero(&self) -> Self::Element {
+        Fraction {
+            numerator: self.ring.zero(),
+            denominator: self.ring.one(),
+        }
+    }
+
+    fn one(&self) -> Self::Element {
+        Fraction {
+            numerator: self.ring.one(),
+            denominator: self.ring.one(),
+        }
+    }
+
+    #[inline]
+    fn nth(&self, n: u64) -> Self::Element {
+        Fraction {
+            numerator: self.ring.nth(n),
+            denominator: self.ring.one(),
+        }
+    }
+
+    fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
+        Fraction {
+            numerator: self.ring.pow(&b.numerator, e),
+            denominator: self.ring.pow(&b.denominator, e),
+        }
+    }
+
+    fn is_zero(a: &Self::Element) -> bool {
+        R::is_zero(&a.numerator)
+    }
+
+    fn is_one(&self, a: &Self::Element) -> bool {
+        self.ring.is_one(&a.numerator) && self.ring.is_one(&a.denominator)
+    }
+
+    fn one_is_gcd_unit() -> bool {
+        false
+    }
+
+    fn characteristic(&self) -> Integer {
+        self.ring.characteristic()
+    }
+
+    fn size(&self) -> Integer {
+        // TODO: this is an overestimate
+        self.ring.size() * self.ring.size()
+    }
+
+    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
+        Fraction {
+            numerator: self.ring.sample(rng, range),
+            denominator: self.ring.one(),
+        }
+    }
+
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        opts: &PrintOptions,
+        _in_product: bool,
+        f: &mut Formatter<'_>,
+    ) -> Result<(), Error> {
+        self.ring.fmt_display(&element.numerator, opts, true, f)?;
+        if !self.ring.is_one(&element.denominator) {
+            f.write_char('/')?;
+            self.ring.fmt_display(&element.denominator, opts, true, f)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<R: EuclideanDomain + FractionNormalization> EuclideanDomain for FractionField<R> {
+    fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
+        self.zero()
+    }
+
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        (self.div(a, b), self.zero())
+    }
+
+    fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        let gcd_num = self.ring.gcd(&a.numerator, &b.denominator);
+        let gcd_den = self.ring.gcd(&a.denominator, &b.numerator);
+
+        let d1 = self.ring.quot_rem(&a.denominator, &gcd_den).0;
+        let lcm = self.ring.mul(&d1, &b.denominator);
+
+        Fraction {
+            numerator: gcd_num,
+            denominator: lcm,
+        }
+    }
+}
+
+impl<R: EuclideanDomain + FractionNormalization> Field for FractionField<R> {
+    fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        // TODO: optimize
+        self.mul(a, &self.inv(b))
+    }
+
+    fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a = self.div(a, b);
+    }
+
+    fn inv(&self, a: &Self::Element) -> Self::Element {
+        let f = self.ring.get_normalization_factor(&a.numerator);
+
+        Fraction {
+            numerator: self.ring.mul(&a.denominator, &f),
+            denominator: self.ring.mul(&a.numerator, &f),
+        }
+    }
+}
+
+impl<R: EuclideanDomain + FractionNormalization, E: Exponent> PolynomialRing<FractionField<R>, E> {
+    pub fn to_rational_polynomial(
+        &self,
+        e: &<Self as Ring>::Element,
+    ) -> Fraction<PolynomialRing<R, E>> {
+        let mut lcm = self.ring.ring.one();
+        for x in &e.coefficients {
+            let g = self.ring.ring.gcd(&lcm, x.denominator());
+            lcm = self
+                .ring
+                .ring
+                .mul(&lcm, &self.ring.ring.quot_rem(x.denominator(), &g).0);
+        }
+
+        let e2 = e.map_coeff(
+            |c| {
+                self.ring.ring.mul(
+                    &c.numerator,
+                    &self.ring.ring.quot_rem(&lcm, &c.denominator).0,
+                )
+            },
+            self.ring.ring.clone(),
+        );
+
+        Fraction {
+            denominator: e2.constant(lcm),
+            numerator: e2,
+        }
+    }
+}
+
 /// A rational number.
 ///
 /// Explicit construction of `Rational::Natural`
@@ -52,6 +442,12 @@ impl RationalField {
 pub enum Rational {
     Natural(i64, i64),
     Large(MultiPrecisionRational),
+}
+
+impl InternalOrdering for Rational {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        Ord::cmp(self, &other)
+    }
 }
 
 impl From<i32> for Rational {
@@ -1056,7 +1452,15 @@ impl<'a> std::iter::Sum<&'a Self> for Rational {
 
 #[cfg(test)]
 mod test {
-    use crate::domains::rational::Rational;
+    use crate::{
+        atom::Atom,
+        domains::{
+            integer::Z,
+            rational::{FractionField, Rational, Q},
+            Field, Ring,
+        },
+        poly::polynomial::PolynomialRing,
+    };
 
     #[test]
     fn rounding() {
@@ -1083,5 +1487,43 @@ mod test {
         .to_rational();
         let res = r.round(&Rational::new(1, 100000000));
         assert_eq!(res, (93343, 29712).into());
+    }
+
+    #[test]
+    fn fraction_int() {
+        let f = FractionField::new(Z);
+        let b = f.neg(&f.nth(3));
+        let d = f.div(&f.add(&f.nth(100), &b), &b);
+        assert_eq!(d, f.to_element((-97).into(), 3.into(), false));
+    }
+
+    #[test]
+    fn fraction_poly() {
+        let poly = Atom::parse("-3/2*x^2+1/5x+4")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Q, None);
+
+        let f = FractionField::new(Z);
+        let poly2 = poly.map_coeff(
+            |c| f.to_element(c.numerator(), c.denominator(), false),
+            f.clone(),
+        );
+
+        let p = PolynomialRing::new_from_poly(&poly2);
+        let rat = p.to_rational_polynomial(&poly2);
+        let f = FractionField::new(PolynomialRing::new_from_poly(&rat.numerator));
+
+        let b = f.neg(&f.nth(3));
+        let c = f.add(&rat, &b);
+        let d = f.div(&c, &rat);
+
+        let num = Atom::parse("-10-2*x+15*x^2")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+        let den = Atom::parse("-40-2*x+15*x^2")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None);
+
+        assert_eq!(d, f.to_element(num, den, false));
     }
 }

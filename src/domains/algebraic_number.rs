@@ -18,12 +18,12 @@ use super::{
     },
     integer::Integer,
     rational::Rational,
-    EuclideanDomain, Field, Ring,
+    EuclideanDomain, Field, InternalOrdering, Ring,
 };
 
 /// An algebraic number ring, with a monic, irreducible defining polynomial.
 // TODO: make special case for degree two and three and hardcode the multiplication table
-#[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct AlgebraicExtension<R: Ring> {
     poly: Arc<MultivariatePolynomial<R, u16>>, // TODO: convert to univariate polynomial
 }
@@ -334,9 +334,9 @@ pub struct AlgebraicNumber<R: Ring> {
     pub(crate) poly: MultivariatePolynomial<R, u16>,
 }
 
-impl<R: Ring> PartialOrd for AlgebraicNumber<R> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.poly.partial_cmp(&other.poly)
+impl<R: Ring> InternalOrdering for AlgebraicNumber<R> {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.poly.internal_cmp(&other.poly)
     }
 }
 

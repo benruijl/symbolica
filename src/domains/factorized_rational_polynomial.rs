@@ -19,7 +19,7 @@ use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::{Integer, IntegerRing, Z},
     rational::RationalField,
-    EuclideanDomain, Field, Ring,
+    EuclideanDomain, Field, InternalOrdering, Ring,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -71,9 +71,9 @@ pub struct FactorizedRationalPolynomial<R: Ring, E: Exponent> {
     pub denominators: Vec<(MultivariatePolynomial<R, E>, usize)>, // TODO: sort factors?
 }
 
-impl<R: Ring, E: Exponent> PartialOrd for FactorizedRationalPolynomial<R, E> {
+impl<R: Ring, E: Exponent> InternalOrdering for FactorizedRationalPolynomial<R, E> {
     /// An ordering of rational polynomials that has no intuitive meaning.
-    fn partial_cmp(&self, _other: &Self) -> Option<Ordering> {
+    fn internal_cmp(&self, _other: &Self) -> Ordering {
         todo!()
     }
 }

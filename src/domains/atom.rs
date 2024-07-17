@@ -1,6 +1,6 @@
 use crate::atom::{Atom, AtomView};
 
-use super::{integer::Integer, EuclideanDomain, Field, Ring};
+use super::{integer::Integer, EuclideanDomain, Field, InternalOrdering, Ring};
 
 use rand::Rng;
 
@@ -28,6 +28,12 @@ impl std::fmt::Display for AtomField {
 impl std::fmt::Debug for AtomField {
     fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
+    }
+}
+
+impl InternalOrdering for Atom {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.cmp(other)
     }
 }
 

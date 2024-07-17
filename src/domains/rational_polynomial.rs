@@ -21,7 +21,7 @@ use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::{Integer, IntegerRing, Z},
     rational::RationalField,
-    EuclideanDomain, Field, Ring,
+    EuclideanDomain, Field, InternalOrdering, Ring,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -64,27 +64,23 @@ pub struct RationalPolynomial<R: Ring, E: Exponent> {
     pub denominator: MultivariatePolynomial<R, E>,
 }
 
-impl<R: Ring, E: Exponent> PartialOrd for RationalPolynomial<R, E> {
+impl<R: Ring, E: Exponent> InternalOrdering for RationalPolynomial<R, E> {
     /// An ordering of rational polynomials that has no intuitive meaning.
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(
-            self.numerator
-                .exponents
-                .cmp(&other.numerator.exponents)
-                .then_with(|| self.denominator.exponents.cmp(&other.denominator.exponents))
-                .then_with(|| {
-                    self.numerator
-                        .coefficients
-                        .partial_cmp(&other.numerator.coefficients)
-                        .unwrap_or(Ordering::Equal)
-                })
-                .then_with(|| {
-                    self.denominator
-                        .coefficients
-                        .partial_cmp(&other.denominator.coefficients)
-                        .unwrap_or(Ordering::Equal)
-                }),
-        )
+    fn internal_cmp(&self, other: &Self) -> Ordering {
+        self.numerator
+            .exponents
+            .cmp(&other.numerator.exponents)
+            .then_with(|| self.denominator.exponents.cmp(&other.denominator.exponents))
+            .then_with(|| {
+                self.numerator
+                    .coefficients
+                    .internal_cmp(&other.numerator.coefficients)
+            })
+            .then_with(|| {
+                self.denominator
+                    .coefficients
+                    .internal_cmp(&other.denominator.coefficients)
+            })
     }
 }
 

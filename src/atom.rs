@@ -765,6 +765,20 @@ impl Atom {
     }
 }
 
+impl std::ops::Add<Atom> for Atom {
+    type Output = Atom;
+
+    fn add(self, mut rhs: Atom) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().add_with_ws_into(ws, rhs.as_view(), &mut t);
+            std::mem::swap(&mut rhs, &mut t);
+        });
+
+        rhs
+    }
+}
+
 impl std::ops::Add<Atom> for &Atom {
     type Output = Atom;
 
@@ -772,6 +786,23 @@ impl std::ops::Add<Atom> for &Atom {
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
             self.as_view().add_with_ws_into(ws, rhs.as_view(), &mut t);
+            std::mem::swap(&mut rhs, &mut t);
+        });
+
+        rhs
+    }
+}
+
+impl std::ops::Sub<Atom> for Atom {
+    type Output = Atom;
+
+    fn sub(self, mut rhs: Atom) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view()
+                .sub_no_norm(ws, rhs.as_view())
+                .as_view()
+                .normalize(ws, &mut t);
             std::mem::swap(&mut rhs, &mut t);
         });
 
@@ -803,6 +834,34 @@ impl std::ops::Mul<Atom> for &Atom {
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
             self.as_view().mul_with_ws_into(ws, rhs.as_view(), &mut t);
+            std::mem::swap(&mut rhs, &mut t);
+        });
+
+        rhs
+    }
+}
+
+impl std::ops::Mul<Atom> for Atom {
+    type Output = Atom;
+
+    fn mul(self, mut rhs: Atom) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().mul_with_ws_into(ws, rhs.as_view(), &mut t);
+            std::mem::swap(&mut rhs, &mut t);
+        });
+
+        rhs
+    }
+}
+
+impl std::ops::Div<Atom> for Atom {
+    type Output = Atom;
+
+    fn div(self, mut rhs: Atom) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut t = ws.new_atom();
+            self.as_view().div_with_ws_into(ws, rhs.as_view(), &mut t);
             std::mem::swap(&mut rhs, &mut t);
         });
 

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::RationalField;
-use crate::domains::{EuclideanDomain, Field, Ring};
+use crate::domains::{EuclideanDomain, Field, InternalOrdering, Ring};
 use crate::printer::{PolynomialPrinter, PrintOptions};
 
 use super::gcd::PolynomialGCD;
@@ -484,11 +484,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         self.exponents = newexp;
 
         // reconstruct 'other' with correct monomial ordering
-        let mut newother = Self::new(
-            &other.field,
-            other.nterms().into(),
-            self.variables.clone(),
-        );
+        let mut newother = Self::new(&other.field, other.nterms().into(), self.variables.clone());
         let mut newexp = vec![E::zero(); self.nvars()];
         for t in other.into_iter() {
             for c in &mut newexp {
@@ -776,14 +772,11 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> std::hash::Hash for MultivariatePol
 
 impl<F: Ring, E: Exponent, O: MonomialOrder> Eq for MultivariatePolynomial<F, E, O> {}
 
-impl<R: Ring, E: Exponent, O: MonomialOrder> PartialOrd for MultivariatePolynomial<R, E, O> {
+impl<R: Ring, E: Exponent, O: MonomialOrder> InternalOrdering for MultivariatePolynomial<R, E, O> {
     /// An ordering of polynomials that has no intuitive meaning.
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.exponents.cmp(&other.exponents).then_with(|| {
-            self.coefficients
-                .partial_cmp(&other.coefficients)
-                .unwrap_or(Ordering::Equal)
-        }))
+    fn internal_cmp(&self, other: &Self) -> Ordering {
+        Ord::cmp(&self.exponents, &other.exponents)
+            .then_with(|| self.coefficients.internal_cmp(&other.coefficients))
     }
 }
 
@@ -1432,11 +1425,8 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         let mut indices: Vec<usize> = (0..self.nterms()).collect();
         indices.sort_unstable_by_key(|&i| &new_exp[i * order.len()..(i + 1) * order.len()]);
 
-        let mut res = MultivariatePolynomial::new(
-            &self.field,
-            self.nterms().into(),
-            self.variables.clone(),
-        );
+        let mut res =
+            MultivariatePolynomial::new(&self.field, self.nterms().into(), self.variables.clone());
 
         for i in indices {
             res.append_monomial(
@@ -2828,7 +2818,7 @@ impl<F: EuclideanDomain, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     /// Each exponent is limited to 32767 if there are 5 or fewer variables,
     /// or 127 if there are 8 or fewer variables, such that the last bit per byte can
     /// be used to check for subtraction overflow, serving as a division test.
-    pub fn heap_division_packed_exp(
+    fn heap_division_packed_exp(
         &self,
         div: &MultivariatePolynomial<F, E, LexOrder>,
         abort_on_remainder: bool,
@@ -3376,11 +3366,8 @@ impl<R: Ring, E: Exponent> MultivariatePolynomial<AlgebraicExtension<R>, E> {
 
         let var_index = var_map.iter().position(|x| x == var).unwrap();
 
-        let mut poly = MultivariatePolynomial::new(
-            &self.field.poly().field,
-            self.nterms().into(),
-            var_map,
-        );
+        let mut poly =
+            MultivariatePolynomial::new(&self.field.poly().field, self.nterms().into(), var_map);
         let mut exp = vec![E::zero(); poly.nvars()];
         for t in self {
             exp[..self.nvars()].copy_from_slice(t.exponents);

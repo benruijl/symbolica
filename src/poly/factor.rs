@@ -14,7 +14,7 @@ use crate::{
         },
         integer::{Integer, IntegerRing, Z},
         rational::{RationalField, Q},
-        EuclideanDomain, Field, Ring,
+        EuclideanDomain, Field, InternalOrdering, Ring,
     },
     poly::gcd::LARGE_U32_PRIMES,
     utils,
@@ -1165,7 +1165,7 @@ where
         univariate_factors.sort_by(|(_, _, a), (_, _, b)| {
             a.exponents
                 .cmp(&b.exponents)
-                .then(a.coefficients.partial_cmp(&b.coefficients).unwrap())
+                .then(a.coefficients.internal_cmp(&b.coefficients))
         });
 
         univariate_factors
@@ -3377,6 +3377,7 @@ mod test {
             finite_field::{Zp, Z2},
             integer::Z,
             rational::Q,
+            InternalOrdering,
         },
         poly::factor::Factorize,
     };
@@ -3402,9 +3403,9 @@ mod test {
                 )
             })
             .collect::<Vec<_>>();
-        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        res.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         let mut r = poly.square_free_factorization();
-        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        r.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
 
         assert_eq!(r, res);
     }
@@ -3431,9 +3432,9 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        res.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         let mut r = poly.factor();
-        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        r.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         assert_eq!(r, res);
     }
 
@@ -3464,9 +3465,9 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        res.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         let mut r = poly.square_free_factorization();
-        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        r.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         assert_eq!(r, res);
     }
 
@@ -3497,9 +3498,9 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        res.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         let mut r = poly.factor();
-        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        r.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         assert_eq!(r, res);
     }
 
@@ -3537,9 +3538,9 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        res.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         let mut r = poly.factor();
-        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        r.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         assert_eq!(r, res);
     }
 
@@ -3568,9 +3569,9 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        res.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         let mut r = poly.factor();
-        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        r.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         assert_eq!(r, res);
     }
 
@@ -3598,9 +3599,9 @@ mod test {
             })
             .collect::<Vec<_>>();
 
-        res.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        res.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         let mut r = poly.factor();
-        r.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        r.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
         assert_eq!(r, res);
     }
 
@@ -3636,7 +3637,7 @@ mod test {
             .to_polynomial::<_, u8>(&Q, a.get_vars().clone().into())
             .to_number_field(&f);
 
-        factors.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+        factors.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
 
         assert_eq!(factors, vec![(f1, 1), (f2, 1)])
     }

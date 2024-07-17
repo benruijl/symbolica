@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    domains::{integer::Integer, EuclideanDomain, Field, Ring, RingPrinter},
+    domains::{integer::Integer, EuclideanDomain, Field, InternalOrdering, Ring, RingPrinter},
     printer::PrintOptions,
 };
 
@@ -166,6 +166,13 @@ pub struct UnivariatePolynomial<F: Ring> {
     pub coefficients: Vec<F::Element>,
     pub variable: Arc<Variable>,
     pub field: F,
+}
+
+impl<R: Ring> InternalOrdering for UnivariatePolynomial<R> {
+    /// An ordering of polynomials that has no intuitive meaning.
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.coefficients.internal_cmp(&other.coefficients)
+    }
 }
 
 impl<F: Ring + std::fmt::Debug> std::fmt::Debug for UnivariatePolynomial<F> {
@@ -544,7 +551,7 @@ impl<F: Ring> Eq for UnivariatePolynomial<F> {}
 impl<R: Ring> PartialOrd for UnivariatePolynomial<R> {
     /// An ordering of polynomials that has no intuitive meaning.
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.coefficients.partial_cmp(&other.coefficients)
+        Some(self.coefficients.internal_cmp(&other.coefficients))
     }
 }
 

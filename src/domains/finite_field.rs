@@ -10,7 +10,7 @@ use crate::printer::PrintOptions;
 
 use super::algebraic_number::AlgebraicExtension;
 use super::integer::Z;
-use super::{EuclideanDomain, Field, Ring};
+use super::{EuclideanDomain, Field, InternalOrdering, Ring};
 
 const HENSEL_LIFTING_MASK: [u8; 128] = [
     255, 85, 51, 73, 199, 93, 59, 17, 15, 229, 195, 89, 215, 237, 203, 33, 31, 117, 83, 105, 231,
@@ -144,6 +144,12 @@ where
 /// A number in a finite field.
 #[derive(Debug, Copy, Clone, Hash, PartialEq, PartialOrd, Eq)]
 pub struct FiniteFieldElement<UField>(pub(crate) UField);
+
+impl<UField: PartialOrd> InternalOrdering for FiniteFieldElement<UField> {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
 
 pub trait FiniteFieldWorkspace: Clone + Display + Eq + Hash {
     /// Convert to u64.

@@ -20,7 +20,7 @@ use super::{
         Zp64, Z2,
     },
     rational::Rational,
-    EuclideanDomain, Ring,
+    EuclideanDomain, InternalOrdering, Ring,
 };
 
 pub const SMALL_PRIMES: [i64; 100] = [
@@ -57,6 +57,12 @@ pub enum Integer {
     Natural(i64),
     Double(i128),
     Large(MultiPrecisionInteger),
+}
+
+impl InternalOrdering for Integer {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        Ord::cmp(self, &other)
+    }
 }
 
 macro_rules! from_with_cast {
@@ -478,7 +484,7 @@ impl Integer {
                 .as_abs()
                 .partial_cmp(&n2.unsigned_abs())
                 .unwrap_or(Ordering::Equal),
-            (_, _) => self.abs().cmp(&other.abs()),
+            (_, _) => Ord::cmp(&self.abs(), &other.abs()),
         }
     }
 
@@ -1868,6 +1874,12 @@ impl Default for MultiPrecisionIntegerRing {
 impl MultiPrecisionIntegerRing {
     pub fn new() -> MultiPrecisionIntegerRing {
         MultiPrecisionIntegerRing
+    }
+}
+
+impl InternalOrdering for MultiPrecisionInteger {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        Ord::cmp(self, &other)
     }
 }
 

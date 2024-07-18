@@ -348,20 +348,28 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                 if !opts.latex
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
-                    format_num(rat.numer().to_string(), opts, &print_state, f)?;
+                    format_num(rat.numerator().to_string(), opts, &print_state, f)?;
                     if !rat.is_integer() {
                         f.write_char('/')?;
-                        format_num(rat.denom().to_string(), opts, &print_state, f)?;
+                        format_num(rat.denominator().to_string(), opts, &print_state, f)?;
                     }
                     Ok(())
                 } else if !rat.is_integer() {
                     if opts.latex {
-                        f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", rat.numer(), rat.denom(),))
+                        f.write_fmt(format_args!(
+                            "\\frac{{{}}}{{{}}}",
+                            rat.numerator(),
+                            rat.denominator(),
+                        ))
                     } else {
-                        f.write_fmt(format_args!("{}/{}", rat.numer(), rat.denom()))
+                        f.write_fmt(format_args!(
+                            "{}/{}",
+                            rat.numerator_ref(),
+                            rat.denominator_ref()
+                        ))
                     }
                 } else {
-                    f.write_fmt(format_args!("{}", rat.numer()))
+                    f.write_fmt(format_args!("{}", rat.numerator_ref()))
                 }
             }
             CoefficientView::FiniteField(num, fi) => {

@@ -597,6 +597,10 @@ impl<'a> AtomView<'a> {
         let f_n = r.numerator.factor();
         let f_d = r.denominator.factor();
 
+        if f_n.is_empty() {
+            return Atom::new_num(0);
+        }
+
         let mut out = Atom::new();
         let mul = out.to_mul();
 

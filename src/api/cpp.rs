@@ -7,7 +7,7 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64};
 use crate::domains::integer::{IntegerRing, Z};
-use crate::domains::rational::RationalField;
+use crate::domains::rational::Q;
 use crate::parser::Token;
 use crate::poly::Variable;
 use crate::LicenseManager;
@@ -177,11 +177,11 @@ unsafe extern "C" fn simplify(
     };
 
     macro_rules! to_rational {
-        ($in_field: ty, $exp_size: ty) => {
+        ($in_field: expr, $exp_size: ty) => {
             if prime == 0 {
                 let r: RationalPolynomial<IntegerRing, $exp_size> = token
                     .to_rational_polynomial(
-                        &<$in_field>::new(),
+                        &$in_field,
                         &Z,
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
@@ -273,10 +273,10 @@ unsafe extern "C" fn simplify(
         symbolica.local_state.input_has_rational_numbers,
         symbolica.local_state.exp_fits_in_u8,
     ) {
-        (false, true) => to_rational!(IntegerRing, u8),
-        (true, true) => to_rational!(RationalField, u8),
-        (false, false) => to_rational!(IntegerRing, u16),
-        (true, false) => to_rational!(RationalField, u16),
+        (false, true) => to_rational!(Z, u8),
+        (true, true) => to_rational!(Q, u8),
+        (false, false) => to_rational!(Z, u16),
+        (true, false) => to_rational!(Q, u16),
     }
 
     unsafe { CStr::from_bytes_with_nul_unchecked(symbolica.local_state.buffer.as_bytes()) }.as_ptr()
@@ -313,11 +313,11 @@ unsafe extern "C" fn simplify_factorized(
     };
 
     macro_rules! to_rational {
-        ($in_field: ty, $exp_size: ty) => {
+        ($in_field: expr, $exp_size: ty) => {
             if prime == 0 {
                 let r: FactorizedRationalPolynomial<IntegerRing, $exp_size> = token
                     .to_factorized_rational_polynomial(
-                        &<$in_field>::new(),
+                        &$in_field,
                         &Z,
                         &symbolica.local_state.var_map,
                         &symbolica.local_state.var_name_map,
@@ -409,10 +409,10 @@ unsafe extern "C" fn simplify_factorized(
         symbolica.local_state.input_has_rational_numbers,
         symbolica.local_state.exp_fits_in_u8,
     ) {
-        (false, true) => to_rational!(IntegerRing, u8),
-        (true, true) => to_rational!(RationalField, u8),
-        (false, false) => to_rational!(IntegerRing, u16),
-        (true, false) => to_rational!(RationalField, u16),
+        (false, true) => to_rational!(Z, u8),
+        (true, true) => to_rational!(Q, u8),
+        (false, false) => to_rational!(Z, u16),
+        (true, false) => to_rational!(Q, u16),
     }
 
     unsafe { CStr::from_bytes_with_nul_unchecked(symbolica.local_state.buffer.as_bytes()) }.as_ptr()

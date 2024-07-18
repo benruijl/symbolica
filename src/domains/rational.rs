@@ -4,46 +4,26 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use rand::Rng;
-use rug::{
-    integer::IntegerExt64, ops::Pow, Integer as MultiPrecisionInteger,
-    Rational as MultiPrecisionRational,
-};
+use rug::integer::IntegerExt64;
 
 use crate::{
     poly::{gcd::LARGE_U32_PRIMES, polynomial::PolynomialRing, Exponent},
     printer::PrintOptions,
-    utils,
 };
 
 use super::{
     finite_field::{
         FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Two, Zp, Z2,
     },
-    integer::{Integer, Z},
+    integer::{Integer, IntegerRing, Z},
     EuclideanDomain, Field, InternalOrdering, Ring,
 };
 
 /// The field of rational numbers.
-pub type Q = RationalField;
+pub type Q = FractionField<IntegerRing>;
+pub type RationalField = FractionField<IntegerRing>;
 /// The field of rational numbers.
-pub const Q: RationalField = RationalField::new();
-
-/// The field of rational numbers.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct RationalField;
-
-impl Default for RationalField {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RationalField {
-    pub const fn new() -> RationalField {
-        RationalField
-    }
-}
+pub const Q: FractionField<IntegerRing> = FractionField::new(Z);
 
 /// The fraction field of `R`.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -140,11 +120,19 @@ pub struct Fraction<R: Ring> {
 }
 
 impl<R: Ring> Fraction<R> {
-    pub fn numerator(&self) -> &R::Element {
+    pub fn numerator(&self) -> R::Element {
+        self.numerator.clone()
+    }
+
+    pub fn denominator(&self) -> R::Element {
+        self.denominator.clone()
+    }
+
+    pub fn numerator_ref(&self) -> &R::Element {
         &self.numerator
     }
 
-    pub fn denominator(&self) -> &R::Element {
+    pub fn denominator_ref(&self) -> &R::Element {
         &self.denominator
     }
 }
@@ -169,7 +157,7 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
             if !r.is_one(&g) {
                 return Fraction {
                     numerator: r.quot_rem(&num, &g).0,
-                    denominator: a.denominator.clone(),
+                    denominator: r.quot_rem(&a.denominator, &g).0,
                 };
             } else {
                 return Fraction {
@@ -230,9 +218,7 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
             } else {
                 Fraction {
                     numerator: r.mul(&a.numerator, &r.quot_rem(&b.numerator, &gcd2).0),
-                    denominator: self
-                        .ring
-                        .mul(&r.quot_rem(&a.denominator, &gcd2).0, &b.denominator),
+                    denominator: r.mul(&r.quot_rem(&a.denominator, &gcd2).0, &b.denominator),
                 }
             }
         } else if r.is_one(&gcd2) {
@@ -366,8 +352,8 @@ impl<R: EuclideanDomain + FractionNormalization> EuclideanDomain for FractionFie
     }
 
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        let gcd_num = self.ring.gcd(&a.numerator, &b.denominator);
-        let gcd_den = self.ring.gcd(&a.denominator, &b.numerator);
+        let gcd_num = self.ring.gcd(&a.numerator, &b.numerator);
+        let gcd_den = self.ring.gcd(&a.denominator, &b.denominator);
 
         let d1 = self.ring.quot_rem(&a.denominator, &gcd_den).0;
         let lcm = self.ring.mul(&d1, &b.denominator);
@@ -406,11 +392,11 @@ impl<R: EuclideanDomain + FractionNormalization, E: Exponent> PolynomialRing<Fra
     ) -> Fraction<PolynomialRing<R, E>> {
         let mut lcm = self.ring.ring.one();
         for x in &e.coefficients {
-            let g = self.ring.ring.gcd(&lcm, x.denominator());
+            let g = self.ring.ring.gcd(&lcm, x.denominator_ref());
             lcm = self
                 .ring
                 .ring
-                .mul(&lcm, &self.ring.ring.quot_rem(x.denominator(), &g).0);
+                .mul(&lcm, &self.ring.ring.quot_rem(x.denominator_ref(), &g).0);
         }
 
         let e2 = e.map_coeff(
@@ -431,317 +417,24 @@ impl<R: EuclideanDomain + FractionNormalization, E: Exponent> PolynomialRing<Fra
 }
 
 /// A rational number.
-///
-/// Explicit construction of `Rational::Natural`
-/// is only valid if the conventions are followed:
-/// `Rational::Natural(n,d)` should have `d > 0` and
-/// `gcd(n,d)=1`.
-// TODO: convert to Rational(Integer, Integer)?
-// TODO: prevent construction of explicit rational
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum Rational {
-    Natural(i64, i64),
-    Large(MultiPrecisionRational),
-}
+pub type Rational = Fraction<IntegerRing>;
 
-impl InternalOrdering for Rational {
-    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
-        Ord::cmp(self, &other)
+impl Display for Rational {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.numerator.fmt(f)?;
+        if self.denominator != 1 {
+            f.write_char('/')?;
+            write!(f, "{}", self.denominator)?;
+        }
+
+        Ok(())
     }
 }
-
-impl From<i32> for Rational {
-    #[inline]
-    fn from(value: i32) -> Self {
-        Rational::Natural(value as i64, 1)
-    }
-}
-
-impl From<i64> for Rational {
-    #[inline]
-    fn from(value: i64) -> Self {
-        Rational::Natural(value, 1)
-    }
-}
-
 impl From<f64> for Rational {
-    #[inline]
-    fn from(value: f64) -> Self {
-        Rational::from_f64(value)
-    }
-}
-
-impl From<u64> for Rational {
-    #[inline]
-    fn from(value: u64) -> Self {
-        if value <= i64::MAX as u64 {
-            Rational::Natural(value as i64, 1)
-        } else {
-            Rational::Large(value.into())
-        }
-    }
-}
-
-impl From<&Integer> for Rational {
-    fn from(val: &Integer) -> Self {
-        match val {
-            Integer::Natural(n) => Rational::Natural(*n, 1),
-            Integer::Double(n) => Rational::Large(MultiPrecisionRational::from(*n)),
-            Integer::Large(l) => Rational::Large(l.into()),
-        }
-    }
-}
-
-impl From<Integer> for Rational {
-    fn from(value: Integer) -> Self {
-        match value {
-            Integer::Natural(n) => Rational::Natural(n, 1),
-            Integer::Double(r) => Rational::Large(MultiPrecisionRational::from(r)),
-            Integer::Large(r) => Rational::Large(MultiPrecisionRational::from(r)),
-        }
-    }
-}
-
-impl From<(i64, i64)> for Rational {
-    #[inline]
-    fn from((n, d): (i64, i64)) -> Self {
-        Rational::new(n, d)
-    }
-}
-
-impl From<(Integer, Integer)> for Rational {
-    fn from((num, den): (Integer, Integer)) -> Self {
-        match (num, den) {
-            (Integer::Natural(n), Integer::Natural(d)) => Rational::new(n, d),
-            (Integer::Natural(n), Integer::Large(d)) => {
-                Rational::from_large(MultiPrecisionRational::from((n, d)))
-            }
-            (Integer::Large(n), Integer::Natural(d)) => {
-                Rational::from_large(MultiPrecisionRational::from((n, d)))
-            }
-            (Integer::Double(n), Integer::Large(d)) => {
-                Rational::from_large(MultiPrecisionRational::from((n, d)))
-            }
-            (Integer::Large(n), Integer::Double(d)) => {
-                Rational::from_large(MultiPrecisionRational::from((n, d)))
-            }
-            (Integer::Natural(n), Integer::Double(d)) => {
-                Rational::from_large(MultiPrecisionRational::from((n, d)))
-            }
-            (Integer::Double(n), Integer::Natural(d)) => {
-                Rational::from_large(MultiPrecisionRational::from((n, d)))
-            }
-            (Integer::Double(n), Integer::Double(d)) => {
-                Rational::from_large(MultiPrecisionRational::from((n, d)))
-            }
-            (Integer::Large(n), Integer::Large(d)) => {
-                Rational::from_large(MultiPrecisionRational::from((n, d)))
-            }
-        }
-    }
-}
-
-impl From<MultiPrecisionInteger> for Rational {
-    fn from(value: MultiPrecisionInteger) -> Self {
-        Rational::from_large(value.into())
-    }
-}
-
-impl From<MultiPrecisionRational> for Rational {
-    fn from(value: MultiPrecisionRational) -> Self {
-        Rational::from_large(value)
-    }
-}
-
-impl ToFiniteField<u32> for Rational {
-    fn to_finite_field(&self, field: &Zp) -> <Zp as Ring>::Element {
-        match self {
-            &Rational::Natural(n, d) => {
-                let mut ff = field.to_element(n.rem_euclid(field.get_prime() as i64) as u32);
-
-                if d != 1 {
-                    let df = field.to_element(d.rem_euclid(field.get_prime() as i64) as u32);
-                    field.div_assign(&mut ff, &df);
-                }
-
-                ff
-            }
-            Rational::Large(r) => field.div(
-                &field.to_element(r.numer().mod_u(field.get_prime())),
-                &field.to_element(r.denom().mod_u(field.get_prime())),
-            ),
-        }
-    }
-}
-
-impl ToFiniteField<Two> for Rational {
-    fn to_finite_field(&self, field: &Z2) -> <Z2 as Ring>::Element {
-        match self {
-            &Rational::Natural(n, d) => {
-                let mut ff = n.rem_euclid(2) as u8;
-
-                if d != 1 {
-                    let df = n.rem_euclid(2) as u8;
-                    field.div_assign(&mut ff, &df);
-                }
-
-                ff
-            }
-            Rational::Large(r) => {
-                field.div(&(r.numer().mod_u(2) as u8), &(r.denom().mod_u(2) as u8))
-            }
-        }
-    }
-}
-
-impl Rational {
-    pub fn new(mut num: i64, mut den: i64) -> Rational {
-        if den == 0 {
-            panic!("Division by zero");
-        }
-
-        let gcd = utils::gcd_signed(num, den);
-        if gcd != 1 {
-            if gcd == i64::MAX as u64 + 1 {
-                // num = den = u64::MIN
-                num = 1;
-                den = 1;
-            } else {
-                num /= gcd as i64;
-                den /= gcd as i64;
-            }
-        }
-
-        if den < 0 {
-            if let Some(neg) = den.checked_neg() {
-                Rational::Natural(num, neg).neg()
-            } else {
-                Rational::Large(MultiPrecisionRational::from((num, den)))
-            }
-        } else {
-            Rational::Natural(num, den)
-        }
-    }
-
-    pub fn from_large(r: MultiPrecisionRational) -> Rational {
-        if let Some(d) = r.denom().to_i64() {
-            if let Some(n) = r.numer().to_i64() {
-                return Rational::Natural(n, d);
-            }
-        }
-
-        Rational::Large(r)
-    }
-
-    pub fn from_finite_field_u32(field: Zp, element: &<Zp as Ring>::Element) -> Rational {
-        Rational::Natural(field.from_element(element) as i64, 1)
-    }
-
-    pub fn is_negative(&self) -> bool {
-        match self {
-            Rational::Natural(n, _) => *n < 0,
-            Rational::Large(r) => MultiPrecisionInteger::from(r.numer().signum_ref()) == -1,
-        }
-    }
-
-    pub fn is_integer(&self) -> bool {
-        match self {
-            Rational::Natural(_, d) => *d == 1,
-            Rational::Large(r) => r.is_integer(),
-        }
-    }
-
-    pub fn numerator(&self) -> Integer {
-        match self {
-            Rational::Natural(n, _) => Integer::Natural(*n),
-            Rational::Large(r) => Integer::from(r.numer().clone()),
-        }
-    }
-
-    pub fn denominator(&self) -> Integer {
-        match self {
-            Rational::Natural(_, d) => Integer::Natural(*d),
-            Rational::Large(r) => Integer::from(r.denom().clone()),
-        }
-    }
-
-    pub fn zero() -> Rational {
-        Rational::Natural(0, 1)
-    }
-
-    pub fn one() -> Rational {
-        Rational::Natural(1, 1)
-    }
-
-    pub fn abs(&self) -> Rational {
-        if self.is_negative() {
-            self.clone().neg()
-        } else {
-            self.clone()
-        }
-    }
-
-    pub fn is_zero(&self) -> bool {
-        self == &Rational::Natural(0, 1)
-    }
-
-    pub fn is_one(&self) -> bool {
-        self == &Rational::Natural(1, 1)
-    }
-
-    pub fn pow(&self, e: u64) -> Rational {
-        if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
-        }
-        let e = e as u32;
-
-        match self {
-            Rational::Natural(n1, d1) => {
-                if let Some(pn) = n1.checked_pow(e) {
-                    if let Some(pd) = d1.checked_pow(e) {
-                        return Rational::Natural(pn, pd);
-                    }
-                }
-
-                Rational::Large(MultiPrecisionRational::from((*n1, *d1)).pow(e))
-            }
-            Rational::Large(r) => Rational::Large(r.pow(e).into()),
-        }
-    }
-
-    pub fn inv(&self) -> Rational {
-        match self {
-            Rational::Natural(n, d) => {
-                if *n < 0 {
-                    if let Some(neg) = n.checked_neg() {
-                        Rational::Natural(-d, neg)
-                    } else {
-                        Rational::Large(MultiPrecisionRational::from((*n, *d)).recip())
-                    }
-                } else {
-                    Rational::Natural(*d, *n)
-                }
-            }
-            Rational::Large(r) => Rational::from_large(r.clone().recip()),
-        }
-    }
-
-    pub fn neg(&self) -> Rational {
-        match self {
-            Rational::Natural(n, d) => {
-                if let Some(neg) = n.checked_neg() {
-                    Rational::Natural(neg, *d)
-                } else {
-                    Rational::Large(MultiPrecisionRational::from((*n, *d)).neg())
-                }
-            }
-            Rational::Large(r) => Rational::from_large(r.neg().into()),
-        }
-    }
-
     /// Convert a floating point number to its exact rational number equivalent.
     /// Use [`Rational::truncate_denominator`] to get an approximation with a smaller denominator.
-    pub fn from_f64(f: f64) -> Rational {
+    #[inline]
+    fn from(f: f64) -> Self {
         assert!(f.is_finite());
 
         // taken from num-traits
@@ -772,13 +465,135 @@ impl Rational {
                 .into()
         }
     }
+}
+
+impl<T: Into<Integer>> From<T> for Rational {
+    #[inline]
+    fn from(value: T) -> Self {
+        Rational {
+            numerator: value.into(),
+            denominator: 1.into(),
+        }
+    }
+}
+
+impl From<&Integer> for Rational {
+    fn from(value: &Integer) -> Self {
+        Rational {
+            numerator: value.clone(),
+            denominator: 1.into(),
+        }
+    }
+}
+
+impl<T: Into<Integer>> From<(T, T)> for Rational {
+    #[inline]
+    fn from((num, den): (T, T)) -> Self {
+        Q.to_element(num.into(), den.into(), true)
+    }
+}
+
+impl From<rug::Rational> for Rational {
+    fn from(value: rug::Rational) -> Self {
+        let (num, den) = value.into_numer_denom();
+        Q.to_element(num.into(), den.into(), false)
+    }
+}
+
+impl ToFiniteField<u32> for Rational {
+    fn to_finite_field(&self, field: &Zp) -> <Zp as Ring>::Element {
+        field.div(
+            &self.numerator.to_finite_field(field),
+            &self.denominator.to_finite_field(field),
+        )
+    }
+}
+
+impl ToFiniteField<Two> for Rational {
+    fn to_finite_field(&self, field: &Z2) -> <Z2 as Ring>::Element {
+        field.div(
+            &self.numerator.to_finite_field(field),
+            &self.denominator.to_finite_field(field),
+        )
+    }
+}
+
+impl Rational {
+    pub fn from_unchecked<T: Into<Integer>>(num: T, den: T) -> Rational {
+        Q.to_element(num.into(), den.into(), false)
+    }
+
+    pub fn is_negative(&self) -> bool {
+        self.numerator < 0
+    }
+
+    pub fn is_integer(&self) -> bool {
+        self.denominator.is_one()
+    }
+
+    pub fn zero() -> Rational {
+        Rational {
+            numerator: 0.into(),
+            denominator: 1.into(),
+        }
+    }
+
+    pub fn one() -> Rational {
+        Rational {
+            numerator: 1.into(),
+            denominator: 1.into(),
+        }
+    }
+
+    pub fn abs(&self) -> Rational {
+        if self.is_negative() {
+            self.clone().neg()
+        } else {
+            self.clone()
+        }
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.numerator.is_zero()
+    }
+
+    pub fn is_one(&self) -> bool {
+        self.numerator.is_one() && self.denominator.is_one()
+    }
+
+    pub fn pow(&self, e: u64) -> Rational {
+        Q.pow(self, e)
+    }
+
+    pub fn inv(&self) -> Rational {
+        Q.inv(self)
+    }
+
+    pub fn neg(&self) -> Rational {
+        Q.neg(self)
+    }
+
+    pub fn to_f64(&self) -> f64 {
+        rug::Rational::from((
+            self.numerator.clone().to_multi_prec(),
+            self.denominator.clone().to_multi_prec(),
+        ))
+        .to_f64()
+    }
+
+    pub fn to_multi_prec(self) -> rug::Rational {
+        rug::Rational::from((
+            self.numerator.to_multi_prec(),
+            self.denominator.to_multi_prec(),
+        ))
+    }
 
     /// Return a best approximation of the rational number where the denominator
     /// is less than or equal to `max_denominator`.
     pub fn truncate_denominator(&self, max_denominator: &Integer) -> Rational {
         assert!(!max_denominator.is_zero() && !max_denominator.is_negative());
 
-        if &self.denominator() < max_denominator {
+        if self.denominator_ref() < max_denominator {
             return self.clone();
         }
 
@@ -789,7 +604,7 @@ impl Rational {
             Integer::zero(),
         );
 
-        let (mut n, mut d) = (self.numerator().abs(), self.denominator());
+        let (mut n, mut d) = (self.numerator_ref().abs(), self.denominator());
         loop {
             let a = &n / &d;
             let q2 = &q0 + &(&a * &q1);
@@ -1023,273 +838,22 @@ impl Rational {
     }
 }
 
-impl Display for Rational {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Rational::Natural(n, d) => {
-                if *d == 1 {
-                    n.fmt(f)
-                } else {
-                    n.fmt(f)?;
-                    f.write_char('/')?;
-                    write!(f, "{}", d)
-                }
-            }
-            Rational::Large(r) => r.fmt(f),
-        }
-    }
-}
-
-impl Display for RationalField {
-    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Ok(())
-    }
-}
-
-impl Ring for RationalField {
-    type Element = Rational;
-
-    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        match (a, b) {
-            (Rational::Natural(n1, d1), Rational::Natural(n2, d2)) => {
-                if let Some(lcm) = d2.checked_mul(d1 / utils::gcd_signed(*d1, *d2) as i64) {
-                    if let Some(num2) = n2.checked_mul(lcm / d2) {
-                        if let Some(num1) = n1.checked_mul(lcm / d1) {
-                            if let Some(num) = num1.checked_add(num2) {
-                                let g = utils::gcd_signed(num, lcm) as i64;
-                                return Rational::Natural(num / g, lcm / g);
-                            }
-                        }
-                    }
-                }
-                Rational::from_large(
-                    MultiPrecisionRational::from((*n1, *d1))
-                        + MultiPrecisionRational::from((*n2, *d2)),
-                )
-            }
-            (Rational::Natural(n1, d1), Rational::Large(r2))
-            | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
-                let r1 = MultiPrecisionRational::from((*n1, *d1));
-                Rational::from_large(r1 + r2)
-            }
-            (Rational::Large(r1), Rational::Large(r2)) => Rational::from_large((r1 + r2).into()),
-        }
-    }
-
-    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        // TODO: optimize
-        self.add(a, &self.neg(b))
-    }
-
-    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        match (a, b) {
-            (Rational::Natural(n1, d1), Rational::Natural(n2, d2)) => {
-                let gcd1 = utils::gcd_signed(*n1, *d2);
-                let (n1, d2) = if gcd1 == i64::MAX as u64 + 1 {
-                    (-1, -1)
-                } else {
-                    (n1 / gcd1 as i64, d2 / gcd1 as i64)
-                };
-
-                let gcd2 = utils::gcd_signed(*d1, *n2);
-                let (d1, n2) = if gcd2 == i64::MAX as u64 + 1 {
-                    (-1, -1)
-                } else {
-                    (d1 / gcd2 as i64, n2 / gcd2 as i64)
-                };
-
-                match (n2).checked_mul(n1) {
-                    Some(nn) => match (d1).checked_mul(d2) {
-                        Some(nd) => Rational::Natural(nn, nd),
-                        None => Rational::Large(MultiPrecisionRational::from((
-                            nn,
-                            MultiPrecisionInteger::from(d1) * MultiPrecisionInteger::from(d2),
-                        ))),
-                    },
-                    None => Rational::Large(MultiPrecisionRational::from((
-                        MultiPrecisionInteger::from(n1) * MultiPrecisionInteger::from(n2),
-                        MultiPrecisionInteger::from(d1) * MultiPrecisionInteger::from(d2),
-                    ))),
-                }
-            }
-            (Rational::Natural(n1, d1), Rational::Large(r2))
-            | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
-                let r1 = MultiPrecisionRational::from((*n1, *d1));
-                Rational::from_large(r1 * r2)
-            }
-            (Rational::Large(r1), Rational::Large(r2)) => Rational::from_large((r1 * r2).into()),
-        }
-    }
-
-    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        // TODO: optimize
-        *a = self.add(a, b);
-    }
-
-    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.sub(a, b);
-    }
-
-    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.mul(a, b);
-    }
-
-    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        self.add_assign(a, &(b * c));
-    }
-
-    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        self.sub_assign(a, &(b * c));
-    }
-
-    fn neg(&self, a: &Self::Element) -> Self::Element {
-        a.neg()
-    }
-
-    fn zero(&self) -> Self::Element {
-        Rational::Natural(0, 1)
-    }
-
-    fn one(&self) -> Self::Element {
-        Rational::Natural(1, 1)
-    }
-
-    #[inline]
-    fn nth(&self, n: u64) -> Self::Element {
-        if n <= i64::MAX as u64 {
-            Rational::Natural(n as i64, 1)
-        } else {
-            Rational::Large(MultiPrecisionRational::from(n))
-        }
-    }
-
-    fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
-        b.pow(e)
-    }
-
-    fn is_zero(a: &Self::Element) -> bool {
-        match a {
-            Rational::Natural(r, _) => *r == 0,
-            Rational::Large(_) => false,
-        }
-    }
-
-    fn is_one(&self, a: &Self::Element) -> bool {
-        match a {
-            Rational::Natural(r, d) => *r == 1 && *d == 1,
-            Rational::Large(_) => false,
-        }
-    }
-
-    fn one_is_gcd_unit() -> bool {
-        false
-    }
-
-    fn characteristic(&self) -> Integer {
-        0.into()
-    }
-
-    fn size(&self) -> Integer {
-        0.into()
-    }
-
-    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
-        let r = rng.gen_range(range.0..range.1);
-        Rational::Natural(r, 1)
-    }
-
-    fn fmt_display(
-        &self,
-        element: &Self::Element,
-        _opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
-        element.fmt(f)
-    }
-}
-
-impl EuclideanDomain for RationalField {
-    fn rem(&self, _: &Self::Element, _: &Self::Element) -> Self::Element {
-        Rational::Natural(0, 0)
-    }
-
-    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
-        (self.div(a, b), Rational::Natural(0, 0))
-    }
-
-    fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        match (a, b) {
-            (Rational::Natural(n1, d1), Rational::Natural(n2, d2)) => {
-                let gcd_num = utils::gcd_signed(*n1, *n2);
-                let gcd_den = utils::gcd_signed(*d1, *d2);
-
-                let d1 = if gcd_den == i64::MAX as u64 + 1 {
-                    -1
-                } else {
-                    *d1 / gcd_den as i64
-                };
-
-                let lcm = d2.checked_mul(d1);
-
-                if gcd_num == i64::MAX as u64 + 1 || lcm.is_none() {
-                    Rational::Large(MultiPrecisionRational::from((
-                        MultiPrecisionInteger::from(gcd_num),
-                        MultiPrecisionInteger::from(*d2) * MultiPrecisionInteger::from(d1),
-                    )))
-                } else {
-                    Rational::Natural(gcd_num as i64, lcm.unwrap())
-                }
-            }
-            (Rational::Natural(n1, d1), Rational::Large(r2))
-            | (Rational::Large(r2), Rational::Natural(n1, d1)) => {
-                let r1 = MultiPrecisionRational::from((*n1, *d1));
-                Rational::from_large(MultiPrecisionRational::from((
-                    r1.numer().clone().gcd(r2.numer()),
-                    r1.denom().clone().lcm(r2.denom()),
-                )))
-            }
-            (Rational::Large(r1), Rational::Large(r2)) => {
-                Rational::from_large(MultiPrecisionRational::from((
-                    r1.numer().clone().gcd(r2.numer()),
-                    r1.denom().clone().lcm(r2.denom()),
-                )))
-            }
-        }
-    }
-}
-
-impl Field for RationalField {
-    fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        // TODO: optimize
-        self.mul(a, &self.inv(b))
-    }
-
-    fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.div(a, b);
-    }
-
-    fn inv(&self, a: &Self::Element) -> Self::Element {
-        a.inv()
-    }
-}
-
 impl PartialOrd for Rational {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if let (Rational::Large(n1), Rational::Large(n2)) = (self, other) {
-            return n1.partial_cmp(n2);
-        }
-
-        let a = &self.numerator() * &other.denominator();
-        let b = &self.denominator() * &other.numerator();
-
-        a.partial_cmp(&b)
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for Rational {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        if self.denominator == other.denominator {
+            return self.numerator.cmp(&other.numerator);
+        }
+
+        let a = self.numerator_ref() * other.denominator_ref();
+        let b = self.denominator_ref() * other.numerator_ref();
+
+        a.cmp(&b)
     }
 }
 
@@ -1369,7 +933,7 @@ impl<'a, 'b> Sub<&'a Rational> for &'b Rational {
     type Output = Rational;
 
     fn sub(self, other: &'a Rational) -> Self::Output {
-        self.add(&other.neg())
+        Q.sub(self, other)
     }
 }
 
@@ -1464,28 +1028,28 @@ mod test {
 
     #[test]
     fn rounding() {
-        let r = Rational::new(11, 10);
-        let res = r.round_in_interval(Rational::new(1, 1), Rational::new(12, 10));
-        assert_eq!(res, Rational::new(1, 1));
+        let r: Rational = (11, 10).into();
+        let res = r.round_in_interval((1, 1).into(), (12, 10).into());
+        assert_eq!(res, (1, 1).into());
 
-        let r = Rational::new(11, 10);
-        let res = r.round_in_interval(Rational::new(2, 1), Rational::new(3, 1));
-        assert_eq!(res, Rational::new(2, 1));
+        let r: Rational = (11, 10).into();
+        let res = r.round_in_interval((2, 1).into(), (3, 1).into());
+        assert_eq!(res, (2, 1).into());
 
-        let r = Rational::new(503, 1500);
-        let res = r.round(&Rational::new(1, 10));
-        assert_eq!(res, Rational::new(1, 3));
+        let r: Rational = (503, 1500).into();
+        let res = r.round(&(1, 10).into());
+        assert_eq!(res, (1, 3).into());
 
-        let r = Rational::new(-503, 1500);
-        let res = r.round(&Rational::new(1, 10));
-        assert_eq!(res, Rational::new(-1, 3));
+        let r: Rational = (-503, 1500).into();
+        let res = r.round(&(1, 10).into());
+        assert_eq!(res, (-1, 3).into());
 
         let r = crate::domains::float::Float::from(rug::Float::with_val(
             1000,
             rug::float::Constant::Pi,
         ))
         .to_rational();
-        let res = r.round(&Rational::new(1, 100000000));
+        let res = r.round(&(1, 100000000).into());
         assert_eq!(res, (93343, 29712).into());
     }
 

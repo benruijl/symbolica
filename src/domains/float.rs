@@ -8,10 +8,12 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use wide::{f64x2, f64x4};
 
+use crate::domains::integer::Integer;
+
 use super::rational::Rational;
 use rug::{
     ops::{CompleteRound, Pow},
-    Assign, Float as MultiPrecisionFloat, Rational as MultiPrecisionRational,
+    Assign, Float as MultiPrecisionFloat,
 };
 
 pub trait NumericalFloatLike:
@@ -305,19 +307,13 @@ impl Real for f64 {
 
 impl From<&Rational> for f64 {
     fn from(value: &Rational) -> Self {
-        match value {
-            Rational::Natural(n, d) => *n as f64 / *d as f64,
-            Rational::Large(l) => l.to_f64(),
-        }
+        value.to_f64()
     }
 }
 
 impl From<Rational> for f64 {
     fn from(value: Rational) -> Self {
-        match value {
-            Rational::Natural(n, d) => n as f64 / d as f64,
-            Rational::Large(l) => l.to_f64(),
-        }
+        value.to_f64()
     }
 }
 
@@ -740,14 +736,16 @@ impl Add<Rational> for Float {
             return (self.0 + rhs.to_multi_prec_float(np).0).into();
         };
 
-        let e2 = match &rhs {
-            Rational::Natural(n, d) => {
-                n.unsigned_abs().ilog2() as i32 - d.unsigned_abs().ilog2() as i32 + 1
+        fn get_bits(i: &Integer) -> i32 {
+            match i {
+                Integer::Natural(n) => n.unsigned_abs().ilog2() as i32 + 1,
+                Integer::Double(n) => n.unsigned_abs().ilog2() as i32 + 1,
+                Integer::Large(r) => r.significant_bits() as i32,
             }
-            Rational::Large(r) => {
-                r.numer().significant_bits() as i32 - r.denom().significant_bits() as i32
-            }
-        };
+        }
+
+        // TODO: check off-by-one errors
+        let e2 = get_bits(rhs.numerator_ref()) - get_bits(rhs.denominator_ref());
 
         let old_prec = self.prec();
 
@@ -780,10 +778,7 @@ impl Mul<Rational> for Float {
 
     #[inline]
     fn mul(self, rhs: Rational) -> Self::Output {
-        match rhs {
-            Rational::Natural(n, d) => (self.0 * n / d).into(),
-            Rational::Large(l) => (self.0 * l).into(),
-        }
+        (self.0 * rhs.to_multi_prec()).into()
     }
 }
 
@@ -792,10 +787,7 @@ impl Div<Rational> for Float {
 
     #[inline]
     fn div(self, rhs: Rational) -> Self::Output {
-        match rhs {
-            Rational::Natural(n, d) => (self.0 / n * d).into(),
-            Rational::Large(l) => (self.0 / l).into(),
-        }
+        (self.0 / rhs.to_multi_prec()).into()
     }
 }
 
@@ -876,7 +868,7 @@ impl Float {
     }
 
     pub fn to_rational(&self) -> Rational {
-        Rational::from_large(self.0.to_rational().unwrap())
+        self.0.to_rational().unwrap().into()
     }
 
     pub fn into_inner(self) -> MultiPrecisionFloat {
@@ -1878,10 +1870,7 @@ macro_rules! simd_impl {
 
         impl From<&Rational> for $t {
             fn from(value: &Rational) -> Self {
-                match value {
-                    Rational::Natural(n, d) => Self::from(*n as f64 / *d as f64),
-                    Rational::Large(l) => Self::from(l.to_f64()),
-                }
+                value.to_f64().into()
             }
         }
     };
@@ -1933,15 +1922,11 @@ impl NumericalFloatLike for Rational {
     }
 
     fn from_usize(&self, a: usize) -> Self {
-        if a < i64::MAX as usize {
-            Rational::Natural(a as i64, 1)
-        } else {
-            Rational::Large(MultiPrecisionRational::from(a))
-        }
+        a.into()
     }
 
     fn from_i64(&self, a: i64) -> Self {
-        Rational::Natural(a, 1)
+        a.into()
     }
 
     #[inline(always)]
@@ -1964,9 +1949,9 @@ impl NumericalFloatLike for Rational {
         let rng2 = rng.gen::<i64>();
 
         if rng1 > rng2 {
-            Rational::Natural(rng2, rng1)
+            (rng2, rng1).into()
         } else {
-            Rational::Natural(rng1, rng2)
+            (rng1, rng2).into()
         }
     }
 }
@@ -2806,6 +2791,8 @@ impl<'a, T: NumericalFloatLike + From<&'a Rational>> From<&'a Rational> for Comp
 
 #[cfg(test)]
 mod test {
+    use rug::Complete;
+
     use super::*;
 
     #[test]
@@ -2897,12 +2884,10 @@ mod test {
         assert_eq!(b.get_precision(), 53);
 
         let a = Float::with_val(53, 1000);
-        let b: Float = a + Rational::from_large(
-            MultiPrecisionRational::parse(
-                "-3128903712893789123789213781279/30890231478123748912372",
-            )
-            .unwrap()
-            .into(),
+        let b: Float = a + Rational::from(
+            rug::Rational::parse("-3128903712893789123789213781279/30890231478123748912372")
+                .unwrap()
+                .complete(),
         );
         assert_eq!(b.get_precision(), 71);
     }

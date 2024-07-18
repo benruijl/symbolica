@@ -1,6 +1,6 @@
 use symbolica::{
     atom::Atom,
-    domains::rational::{Rational, Q},
+    domains::rational::Q,
     poly::evaluate::{HornerScheme, InstructionSetPrinter},
 };
 
@@ -13,7 +13,7 @@ fn main() {
 
     // optimize SIGMA and SIGMA + 5 at the same time
     let mut poly2 = poly.clone();
-    poly2 = poly2.add_constant(Rational::Natural(5, 1));
+    poly2 = poly2.add_constant((5, 1).into());
 
     let (h, score, scheme) = HornerScheme::optimize_multiple(&[&poly, &poly2], 1000);
 

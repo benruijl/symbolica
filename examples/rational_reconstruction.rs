@@ -14,12 +14,9 @@ fn black_box(field: &Zp, eval: &[<Zp as Ring>::Element]) -> <Zp as Ring>::Elemen
 }
 
 fn main() {
-    let r = Rational::rational_reconstruction::<_, Q>(
-        black_box,
-        &[Rational::Natural(1, 2), Rational::Natural(3, 1)],
-        None,
-    );
+    let r =
+        Rational::rational_reconstruction::<_, Q>(black_box, &[(1, 2).into(), (3, 1).into()], None);
 
-    assert_eq!(r, Ok(Rational::Natural(-5, 4)));
+    assert_eq!(r, Ok((-5, 4).into()));
     println!("Reconstructed f(1/2,3)={}", r.unwrap());
 }

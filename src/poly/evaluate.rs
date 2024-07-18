@@ -419,16 +419,16 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
         let gcd_norm = match &content {
             HornerScheme::Node(n) => {
                 if n.gcd.is_negative() {
-                    Rational::Natural(-1, 1)
+                    (-1, 1).into()
                 } else {
-                    Rational::Natural(1, 1)
+                    (1, 1).into()
                 }
             }
             HornerScheme::Leaf(_, l) => {
                 if l.is_negative() {
-                    Rational::Natural(-1, 1)
+                    (-1, 1).into()
                 } else {
-                    Rational::Natural(1, 1)
+                    (1, 1).into()
                 }
             }
         };
@@ -483,13 +483,21 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
         let full_hash = h.finish(); // hash var^pow*content+rest
 
         let children = (
-            if let HornerScheme::Leaf(_, Rational::Natural(1, 1)) = content {
-                None
+            if let HornerScheme::Leaf(_, r) = &content {
+                if r.is_one() {
+                    None
+                } else {
+                    Some(content)
+                }
             } else {
                 Some(content)
             },
-            if let HornerScheme::Leaf(_, Rational::Natural(0, 1)) = rest {
-                None
+            if let HornerScheme::Leaf(_, r) = &rest {
+                if r.is_zero() {
+                    None
+                } else {
+                    Some(rest)
+                }
             } else {
                 Some(rest)
             },
@@ -885,9 +893,9 @@ impl Variable<Rational> {
                 InstructionSetMode::Plain => format!("{}", c),
                 InstructionSetMode::CPP(_) => {
                     if c.is_integer() {
-                        format!("T({})", c.numerator())
+                        format!("T({})", c.numerator_ref())
                     } else {
-                        format!("T({})/T({})", c.numerator(), c.denominator())
+                        format!("T({})/T({})", c.numerator_ref(), c.denominator_ref())
                     }
                 }
             },
@@ -1603,9 +1611,9 @@ pub struct CPPPrinter {}
 impl CPPPrinter {
     pub fn format_number(num: &Rational) -> String {
         if num.is_integer() {
-            format!("T({})", num.numerator())
+            format!("T({})", num.numerator_ref())
         } else {
-            format!("T({})/T({})", num.numerator(), num.denominator())
+            format!("T({})/T({})", num.numerator_ref(), num.denominator_ref())
         }
     }
 }

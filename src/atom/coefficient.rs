@@ -11,7 +11,6 @@ use crate::{
     domains::{
         finite_field::FiniteFieldElement,
         integer::{Integer, IntegerRing, Z},
-        rational::Rational,
         rational_polynomial::RationalPolynomial,
     },
     state::{FiniteFieldIndex, State, VariableListIndex},
@@ -137,9 +136,10 @@ pub trait PackedRationalNumberWriter {
 impl PackedRationalNumberWriter for Coefficient {
     fn write_packed(&self, dest: &mut Vec<u8>) {
         match self {
-            Coefficient::Rational(r) => match r {
-                Rational::Natural(num, den) => (*num, *den).write_packed(dest),
-                Rational::Large(r) => {
+            Coefficient::Rational(r) => match (r.numerator_ref(), r.denominator_ref()) {
+                (Integer::Natural(num), Integer::Natural(den)) => (*num, *den).write_packed(dest),
+                _ => {
+                    let r = r.clone().to_multi_prec();
                     dest.put_u8(ARB_NUM | ARB_DEN);
 
                     let num_digits = r.numer().significant_digits::<u8>();
@@ -227,9 +227,11 @@ impl PackedRationalNumberWriter for Coefficient {
 
     fn write_packed_fixed(&self, mut dest: &mut [u8]) {
         match self {
-            Coefficient::Rational(r) => match r {
-                Rational::Natural(num, den) => (*num, *den).write_packed_fixed(dest),
-                Rational::Large(_) => todo!("Writing large packed rational not implemented"),
+            Coefficient::Rational(r) => match (r.numerator_ref(), r.denominator_ref()) {
+                (Integer::Natural(num), Integer::Natural(den)) => {
+                    (*num, *den).write_packed_fixed(dest)
+                }
+                _ => todo!("Writing large packed rational not implemented"),
             },
             Coefficient::Float(_) => todo!("Writing large packed rational not implemented"),
             Coefficient::RationalPolynomial(_) => {
@@ -244,9 +246,10 @@ impl PackedRationalNumberWriter for Coefficient {
 
     fn get_packed_size(&self) -> u64 {
         match self {
-            Coefficient::Rational(r) => match r {
-                Rational::Natural(num, den) => (*num, *den).get_packed_size(),
-                Rational::Large(l) => {
+            Coefficient::Rational(r) => match (r.numerator_ref(), r.denominator_ref()) {
+                (Integer::Natural(num), Integer::Natural(den)) => (*num, *den).get_packed_size(),
+                _ => {
+                    let l = r.clone().to_multi_prec();
                     let n = l.numer().significant_digits::<u8>() as i64;
                     let d = l.denom().significant_digits::<u8>() as i64;
                     1 + (n, d).get_packed_size() + n as u64 + d as u64

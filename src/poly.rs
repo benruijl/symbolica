@@ -541,7 +541,10 @@ impl<'a> AtomView<'a> {
                             }
                             CoefficientView::Large(r) => {
                                 let r = r.to_rat();
-                                if r.denom().to_u8() == Some(1) && r.numer().to_u32().is_some() {
+                                if r.is_integer()
+                                    && !r.is_negative()
+                                    && r.numerator_ref() <= &u32::MAX
+                                {
                                     Ok(())
                                 } else {
                                     Err("Exponent too large or negative or a fraction")
@@ -633,7 +636,7 @@ impl<'a> AtomView<'a> {
                             }
                             CoefficientView::Large(r) => {
                                 exponents[var_index] +=
-                                    E::from_u32(r.to_rat().numer().to_u32().unwrap())
+                                    E::from_u32(r.to_rat().numerator_ref().to_i64().unwrap() as u32)
                             }
                             _ => unreachable!(),
                         },

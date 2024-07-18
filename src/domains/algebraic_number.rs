@@ -134,7 +134,7 @@ where
                 self.div(&n, &d)
             }
             crate::coefficient::CoefficientView::Large(l) => {
-                let r = Rational::from_large(l.to_rat());
+                let r: Rational = l.to_rat();
                 let n = self.element_from_integer(r.numerator());
                 let d = self.element_from_integer(r.denominator());
                 self.div(&n, &d)

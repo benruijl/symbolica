@@ -66,8 +66,8 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d) => coeff_map(&Rational::Natural(n, d)),
-                CoefficientView::Large(l) => coeff_map(&Rational::Large(l.to_rat())),
+                CoefficientView::Natural(n, d) => coeff_map(&Rational::from_unchecked(n, d)),
+                CoefficientView::Large(l) => coeff_map(&l.to_rat()),
                 CoefficientView::Float(f) => {
                     // TODO: converting back to rational is slow
                     coeff_map(&f.to_float().to_rational())

@@ -61,7 +61,7 @@ pub enum Integer {
 
 impl InternalOrdering for Integer {
     fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
-        Ord::cmp(self, &other)
+        Ord::cmp(self, other)
     }
 }
 
@@ -123,6 +123,7 @@ from_with_cast!(i64);
 from_with_cast!(u8);
 from_with_cast!(u16);
 from_with_cast!(u32);
+from_with_cast!(usize);
 
 macro_rules! cmp_with_conv {
     ($base: ty) => {
@@ -385,11 +386,7 @@ impl Integer {
     }
 
     pub fn to_rational(&self) -> Rational {
-        match self {
-            Integer::Natural(n) => Rational::Natural(*n, 1),
-            &Integer::Double(n) => Rational::Large(n.into()),
-            Integer::Large(r) => Rational::Large(r.into()),
-        }
+        self.into()
     }
 
     pub fn to_multi_prec(self) -> MultiPrecisionInteger {
@@ -1879,7 +1876,7 @@ impl MultiPrecisionIntegerRing {
 
 impl InternalOrdering for MultiPrecisionInteger {
     fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
-        Ord::cmp(self, &other)
+        Ord::cmp(self, other)
     }
 }
 

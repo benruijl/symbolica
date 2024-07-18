@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::integer::{Integer, IntegerRing};
-use crate::domains::rational::RationalField;
+use crate::domains::rational::{RationalField, Q};
 use crate::domains::{EuclideanDomain, Field, InternalOrdering, Ring};
 use crate::printer::{PolynomialPrinter, PrintOptions};
 
@@ -3388,7 +3388,7 @@ impl<E: Exponent> From<&MultivariatePolynomial<IntegerRing, E>>
         MultivariatePolynomial {
             coefficients: val.coefficients.iter().map(|x| x.into()).collect(),
             exponents: val.exponents.clone(),
-            field: RationalField,
+            field: Q,
             variables: val.variables.clone(),
             _phantom: PhantomData,
         }

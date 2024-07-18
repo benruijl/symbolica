@@ -3,7 +3,7 @@ use std::sync::Arc;
 use symbolica::{
     domains::{
         finite_field::{FiniteFieldCore, Zp},
-        rational::{Rational, Q},
+        rational::Q,
     },
     poly::polynomial::MultivariatePolynomial,
     state::State,
@@ -15,14 +15,14 @@ fn main() {
     let z = State::get_symbol("z");
     let vars = Arc::new(vec![x.into(), y.into(), z.into()]);
     let mut a = MultivariatePolynomial::<_, u8>::new(&Q, Some(3), vars.clone());
-    a.append_monomial(Rational::Natural(3, 4), &[1, 0, 0]);
-    a.append_monomial(Rational::Natural(5, 1), &[1, 1, 0]);
-    a.append_monomial(Rational::Natural(7, 3), &[1, 1, 2]);
+    a.append_monomial((3, 4).into(), &[1, 0, 0]);
+    a.append_monomial((5, 1).into(), &[1, 1, 0]);
+    a.append_monomial((7, 3).into(), &[1, 1, 2]);
 
     let mut b = MultivariatePolynomial::<_, u8>::new(&Q, Some(3), vars.clone());
-    b.append_monomial(Rational::Natural(6, 7), &[0, 1, 0]);
-    b.append_monomial(Rational::Natural(5, 1), &[1, 1, 0]);
-    b.append_monomial(Rational::Natural(7, 3), &[1, 1, 2]);
+    b.append_monomial((6, 7).into(), &[0, 1, 0]);
+    b.append_monomial((5, 1).into(), &[1, 1, 0]);
+    b.append_monomial((7, 3).into(), &[1, 1, 2]);
 
     println!("> Polynomial multiplication: {} * {} =", a, b);
     println!("\t{}", a * &b);

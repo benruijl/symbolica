@@ -7,11 +7,7 @@ use std::{
 
 use ahash::HashMap;
 use bytes::Buf;
-use rug::{
-    integer::Order,
-    ops::{NegAssign, Pow as RPow},
-    Integer as MultiPrecisionInteger, Rational as MultiPrecisionRational,
-};
+use rug::{integer::Order, ops::NegAssign};
 use smallvec::{smallvec, SmallVec};
 
 use crate::{
@@ -22,7 +18,7 @@ use crate::{
         },
         float::{Float, NumericalFloatComparison, Real},
         integer::{Integer, IntegerRing, Z},
-        rational::{Rational, RationalField},
+        rational::{Rational, Q},
         rational_polynomial::RationalPolynomial,
         EuclideanDomain, Field, Ring,
     },
@@ -91,14 +87,14 @@ impl From<(Integer, Integer)> for Coefficient {
     }
 }
 
-impl From<MultiPrecisionInteger> for Coefficient {
-    fn from(value: MultiPrecisionInteger) -> Self {
+impl From<rug::Integer> for Coefficient {
+    fn from(value: rug::Integer) -> Self {
         Coefficient::Rational(value.into())
     }
 }
 
-impl From<MultiPrecisionRational> for Coefficient {
-    fn from(value: MultiPrecisionRational) -> Self {
+impl From<rug::Rational> for Coefficient {
+    fn from(value: rug::Rational) -> Self {
         Coefficient::Rational(value.into())
     }
 }
@@ -272,14 +268,14 @@ impl<'a> SerializedRational<'a> {
         self.is_negative
     }
 
-    pub fn to_rat(&self) -> MultiPrecisionRational {
-        let mut num = MultiPrecisionInteger::from_digits(self.num_digits, Order::Lsf);
-        let den = MultiPrecisionInteger::from_digits(self.den_digits, Order::Lsf);
+    pub fn to_rat(&self) -> Rational {
+        let mut num = rug::Integer::from_digits(self.num_digits, Order::Lsf);
+        let den = rug::Integer::from_digits(self.den_digits, Order::Lsf);
         if self.is_negative {
             num.neg_assign();
         }
 
-        MultiPrecisionRational::from((num, den))
+        Rational::from_unchecked(num, den)
     }
 }
 
@@ -307,7 +303,7 @@ pub enum CoefficientView<'a> {
     RationalPolynomial(SerializedRationalPolynomial<'a>),
 }
 
-impl ConvertToRing for RationalField {
+impl ConvertToRing for Q {
     #[inline]
     fn element_from_integer(&self, number: Integer) -> Self::Element {
         number.into()
@@ -328,8 +324,8 @@ impl ConvertToRing for RationalField {
     #[inline]
     fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Rational {
         match number {
-            CoefficientView::Natural(r, d) => Rational::Natural(r, d),
-            CoefficientView::Large(r) => Rational::Large(r.to_rat()),
+            CoefficientView::Natural(r, d) => Rational::from_unchecked(r, d),
+            CoefficientView::Large(r) => r.to_rat(),
             CoefficientView::Float(_) => {
                 panic!("Cannot convert float to rational")
             }
@@ -373,8 +369,8 @@ impl ConvertToRing for IntegerRing {
             }
             CoefficientView::Large(r) => {
                 let r = r.to_rat();
-                debug_assert!(r.denom() == &1);
-                Integer::from(r.numer().clone())
+                debug_assert!(r.is_integer());
+                r.numerator()
             }
             CoefficientView::Float(_) => {
                 panic!("Cannot convert float to integer")
@@ -428,10 +424,10 @@ where
                 &Integer::new(d).to_finite_field(self),
             ),
             CoefficientView::Large(r) => {
-                let (n, d) = r.to_rat().into_numer_denom();
+                let l = r.to_rat();
                 self.div(
-                    &Integer::Large(n).to_finite_field(self),
-                    &Integer::Large(d).to_finite_field(self),
+                    &l.numerator().to_finite_field(self),
+                    &l.denominator().to_finite_field(self),
                 )
             }
             CoefficientView::Float(_) => {
@@ -450,10 +446,7 @@ where
 impl CoefficientView<'_> {
     pub fn normalize(&self) -> Coefficient {
         match self {
-            CoefficientView::Natural(num, den) => match Rational::new(*num, *den) {
-                Rational::Natural(n, d) => Coefficient::Rational((n, d).into()),
-                Rational::Large(l) => Coefficient::Rational(l.into()),
-            },
+            CoefficientView::Natural(num, den) => Coefficient::Rational((*num, *den).into()),
             CoefficientView::Float(_)
             | CoefficientView::Large(_)
             | CoefficientView::FiniteField(_, _)
@@ -463,8 +456,10 @@ impl CoefficientView<'_> {
 
     pub fn to_owned(&self) -> Coefficient {
         match self {
-            CoefficientView::Natural(num, den) => Coefficient::Rational((*num, *den).into()),
-            CoefficientView::Large(r) => Coefficient::Rational(r.to_rat().into()),
+            CoefficientView::Natural(num, den) => {
+                Coefficient::Rational(Rational::from_unchecked(*num, *den))
+            }
+            CoefficientView::Large(r) => Coefficient::Rational(r.to_rat()),
             CoefficientView::Float(f) => Coefficient::Float(f.to_float()),
             CoefficientView::FiniteField(num, field) => Coefficient::FiniteField(*num, *field),
             CoefficientView::RationalPolynomial(p) => {
@@ -490,13 +485,13 @@ impl CoefficientView<'_> {
                     if let Some(pn) = n1.checked_pow(n2 as u32) {
                         if let Some(pd) = d1.checked_pow(n2 as u32) {
                             // TODO: simplify 4^(1/2)
-                            return ((pn, pd).into(), (1, d2).into());
+                            return ((pn, pd).into(), Rational::from_unchecked(1, d2).into());
                         }
                     }
 
                     (
-                        MultiPrecisionRational::from((n1, d1)).pow(n2 as u32).into(),
-                        (1, d2).into(),
+                        Rational::from_unchecked(n1, d1).pow(n2 as u64).into(),
+                        Rational::from_unchecked(1, d2).into(),
                     )
                 } else {
                     panic!("Power is too large: {}", n2);
@@ -511,12 +506,12 @@ impl CoefficientView<'_> {
                     let r = r.deserialize().inv();
                     (
                         Coefficient::RationalPolynomial(r.pow(n2.unsigned_abs())),
-                        (1, d2).into(),
+                        Rational::from_unchecked(1, d2).into(),
                     )
                 } else {
                     (
                         Coefficient::RationalPolynomial(r.deserialize().pow(n2 as u64)),
-                        (1, d2).into(),
+                        Rational::from_unchecked(1, d2).into(),
                     )
                 }
             }
@@ -526,17 +521,24 @@ impl CoefficientView<'_> {
                 }
 
                 if n2 < 0 {
-                    let r = r.to_rat().clone().recip();
-                    (r.pow(n2.unsigned_abs() as u32).into(), (1, d2).into())
+                    let r = r.to_rat().clone().inv();
+                    (
+                        r.pow(n2.unsigned_abs()).into(),
+                        Rational::from_unchecked(1, d2).into(),
+                    )
                 } else {
-                    (r.to_rat().pow(n2 as u32).into(), (1, d2).into())
+                    (
+                        r.to_rat().pow(n2 as u64).into(),
+                        Rational::from_unchecked(1, d2).into(),
+                    )
                 }
             }
             (&CoefficientView::Float(f), &CoefficientView::Natural(n2, d2)) => {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    f.powf(&Rational::new(n2, d2).to_multi_prec_float(p)).into(),
+                    f.powf(&Rational::from_unchecked(n2, d2).to_multi_prec_float(p))
+                        .into(),
                     Coefficient::one(),
                 )
             }
@@ -544,8 +546,7 @@ impl CoefficientView<'_> {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    f.powf(&Rational::from_large(r.to_rat()).to_multi_prec_float(p))
-                        .into(),
+                    f.powf(&r.to_rat().to_multi_prec_float(p)).into(),
                     Coefficient::one(),
                 )
             }
@@ -553,7 +554,10 @@ impl CoefficientView<'_> {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    Rational::new(n2, d2).to_multi_prec_float(p).powf(&f).into(),
+                    Rational::from_unchecked(n2, d2)
+                        .to_multi_prec_float(p)
+                        .powf(&f)
+                        .into(),
                     Coefficient::one(),
                 )
             }
@@ -561,10 +565,7 @@ impl CoefficientView<'_> {
                 let f = f.to_float();
                 let p = f.prec();
                 (
-                    Rational::from_large(r.to_rat())
-                        .to_multi_prec_float(p)
-                        .powf(&f)
-                        .into(),
+                    r.to_rat().to_multi_prec_float(p).powf(&f).into(),
                     Coefficient::one(),
                 )
             }
@@ -603,24 +604,7 @@ impl Ord for CoefficientView<'_> {
     fn cmp(&self, other: &CoefficientView) -> Ordering {
         match (self, other) {
             (&CoefficientView::Natural(n1, d1), &CoefficientView::Natural(n2, d2)) => {
-                // TODO: improve
-                if n1 < 0 && n2 > 0 {
-                    return Ordering::Less;
-                }
-                if n1 > 0 && n2 < 0 {
-                    return Ordering::Greater;
-                }
-
-                match n1.checked_mul(d2) {
-                    Some(a1) => match n2.checked_mul(d1) {
-                        Some(a2) => a1.cmp(&a2),
-                        None => MultiPrecisionInteger::from(a1).cmp(
-                            &(MultiPrecisionInteger::from(n2) * MultiPrecisionInteger::from(d1)),
-                        ),
-                    },
-                    None => (MultiPrecisionInteger::from(n1) * MultiPrecisionInteger::from(d2))
-                        .cmp(&(MultiPrecisionInteger::from(n2) * MultiPrecisionInteger::from(d1))),
-                }
+                Rational::from_unchecked(n1, d1).cmp(&Rational::from_unchecked(n2, d2))
             }
             (CoefficientView::Large(n1), CoefficientView::Large(n2)) => {
                 n1.to_rat().cmp(&n2.to_rat())
@@ -629,10 +613,10 @@ impl Ord for CoefficientView<'_> {
                 n1.0.cmp(&n2.0)
             }
             (&CoefficientView::Natural(n1, d1), CoefficientView::Large(n2)) => {
-                MultiPrecisionRational::from((n1, d1)).cmp(&n2.to_rat())
+                Rational::from_unchecked(n1, d1).cmp(&n2.to_rat())
             }
             (CoefficientView::Large(n1), &CoefficientView::Natural(n2, d2)) => {
-                n1.to_rat().cmp(&MultiPrecisionRational::from((n2, d2)))
+                n1.to_rat().cmp(&Rational::from_unchecked(n2, d2))
             }
             _ => unreachable!(),
         }
@@ -645,11 +629,13 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
     fn add(self, other: CoefficientView<'_>) -> Coefficient {
         match (self, other) {
             (CoefficientView::Natural(n1, d1), CoefficientView::Natural(n2, d2)) => {
-                Coefficient::Rational(Rational::Natural(n1, d1) + &Rational::Natural(n2, d2))
+                Coefficient::Rational(
+                    Rational::from_unchecked(n1, d1) + &Rational::from_unchecked(n2, d2),
+                )
             }
             (CoefficientView::Natural(n1, d1), CoefficientView::Large(r2))
             | (CoefficientView::Large(r2), CoefficientView::Natural(n1, d1)) => {
-                Coefficient::Rational(Rational::Natural(n1, d1) + &Rational::Large(r2.to_rat()))
+                Coefficient::Rational(Rational::from_unchecked(n1, d1) + r2.to_rat())
             }
             (CoefficientView::Large(r1), CoefficientView::Large(r2)) => {
                 (r1.to_rat() + r2.to_rat()).into()
@@ -683,10 +669,10 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             (CoefficientView::Large(l), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l)) => {
                 let r = p.deserialize();
-                let (n, d) = l.to_rat().into_numer_denom();
+                let l = l.to_rat();
                 let r2 = RationalPolynomial {
-                    numerator: r.numerator.constant(Integer::from(n)),
-                    denominator: r.denominator.constant(Integer::from(d)),
+                    numerator: r.numerator.constant(l.numerator()),
+                    denominator: r.denominator.constant(l.denominator()),
                 };
                 Coefficient::RationalPolynomial(&r + &r2)
             }
@@ -716,7 +702,7 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             | (CoefficientView::Float(f), CoefficientView::Large(r)) => {
                 let r = r.to_rat();
                 let f = f.to_float();
-                Coefficient::Float(Rational::from_large(r).to_multi_prec_float(f.prec()) + f)
+                Coefficient::Float(r.to_multi_prec_float(f.prec()) + f)
             }
             (CoefficientView::Float(f1), CoefficientView::Float(f2)) => {
                 Coefficient::Float(f1.to_float() + f2.to_float())
@@ -737,11 +723,13 @@ impl Mul for CoefficientView<'_> {
     fn mul(self, other: CoefficientView<'_>) -> Coefficient {
         match (self, other) {
             (CoefficientView::Natural(n1, d1), CoefficientView::Natural(n2, d2)) => {
-                Coefficient::Rational(Rational::Natural(n1, d1) * &Rational::Natural(n2, d2))
+                Coefficient::Rational(
+                    Rational::from_unchecked(n1, d1) * &Rational::from_unchecked(n2, d2),
+                )
             }
             (CoefficientView::Natural(n1, d1), CoefficientView::Large(r2))
             | (CoefficientView::Large(r2), CoefficientView::Natural(n1, d1)) => {
-                Coefficient::Rational(Rational::Natural(n1, d1) * &Rational::Large(r2.to_rat()))
+                Coefficient::Rational(Rational::from_unchecked(n1, d1) * r2.to_rat())
             }
             (CoefficientView::Large(r1), CoefficientView::Large(r2)) => {
                 (r1.to_rat() * r2.to_rat()).into()
@@ -777,11 +765,11 @@ impl Mul for CoefficientView<'_> {
             (CoefficientView::Large(l), CoefficientView::RationalPolynomial(p))
             | (CoefficientView::RationalPolynomial(p), CoefficientView::Large(l)) => {
                 let mut r = p.deserialize();
-                let (n, d) = l.to_rat().into_numer_denom();
-                let (n, d) = (Integer::from(n), Integer::from(d));
+                let l = l.to_rat();
+                let (n, d) = (l.numerator_ref(), l.denominator_ref());
 
-                let gcd1 = Z.gcd(&n, &r.denominator.content());
-                let gcd2 = Z.gcd(&d, &r.numerator.content());
+                let gcd1 = Z.gcd(n, &r.denominator.content());
+                let gcd2 = Z.gcd(d, &r.numerator.content());
                 r.numerator = r.numerator.div_coeff(&gcd2).mul_coeff(n.div(&gcd1));
                 r.denominator = r.denominator.div_coeff(&gcd1).mul_coeff(d.div(&gcd2));
                 Coefficient::RationalPolynomial(r)
@@ -811,7 +799,7 @@ impl Mul for CoefficientView<'_> {
             | (CoefficientView::Float(f), CoefficientView::Large(r)) => {
                 let r = r.to_rat();
                 let f = f.to_float();
-                Coefficient::Float(Rational::from_large(r).to_multi_prec_float(f.prec()) * f)
+                Coefficient::Float(r.to_multi_prec_float(f.prec()) * f)
             }
             (CoefficientView::Float(f1), CoefficientView::Float(f2)) => {
                 Coefficient::Float(f1.to_float() * f2.to_float())
@@ -832,10 +820,12 @@ impl Add<i64> for CoefficientView<'_> {
     fn add(self, other: i64) -> Coefficient {
         match self {
             CoefficientView::Natural(n1, d1) => {
-                Coefficient::Rational(Rational::Natural(n1, d1) + &other.into())
+                Coefficient::Rational(Rational::from((n1, d1)) + Rational::from(other))
             }
             CoefficientView::Float(f) => Coefficient::Float(f.to_float() + other),
-            CoefficientView::Large(r1) => (r1.to_rat() + other).into(),
+            CoefficientView::Large(r1) => {
+                Coefficient::Rational(r1.to_rat() + Rational::from(other))
+            }
             CoefficientView::FiniteField(n1, i1) => {
                 let f = State::get_finite_field(i1);
                 Coefficient::FiniteField(f.add(&n1, &f.element_from_coefficient(other.into())), i1)
@@ -1111,7 +1101,7 @@ impl<'a> AtomView<'a> {
                 }
                 CoefficientView::Large(r) => {
                     out.to_num(Coefficient::Float(
-                        Rational::from_large(r.to_rat()).to_multi_prec_float(binary_prec),
+                        r.to_rat().to_multi_prec_float(binary_prec),
                     ));
                 }
                 CoefficientView::FiniteField(_, _) => {
@@ -1211,12 +1201,10 @@ impl<'a> AtomView<'a> {
                         f.to_float().to_rational().round(relative_error).into()
                     }
                     CoefficientView::Natural(n, d) => {
-                        let r = Rational::new(n, d);
+                        let r = Rational::from_unchecked(n, d);
                         r.round(relative_error).into()
                     }
-                    CoefficientView::Large(r) => Rational::from_large(r.to_rat())
-                        .round(relative_error)
-                        .into(),
+                    CoefficientView::Large(r) => r.to_rat().round(relative_error).into(),
                     _ => c.to_owned(),
                 },
                 true,
@@ -1337,7 +1325,7 @@ mod test {
 
     use crate::{
         atom::Atom,
-        domains::{float::Float, rational::Rational},
+        domains::float::Float,
         printer::{AtomPrinter, PrintOptions},
         state::State,
     };
@@ -1372,12 +1360,9 @@ mod test {
         let expr_yz =
             expr.set_coefficient_ring(&Arc::new(vec![v2.into(), State::get_symbol("v3").into()]));
 
-        let a = ((&expr_yz + &Atom::new_num(Rational::new(1, 2)))
-            * &Atom::new_num(Rational::new(3, 4)))
-            .expand();
+        let a = ((&expr_yz + &Atom::new_num((1, 2))) * &Atom::new_num((3, 4))).expand();
 
-        let a = (a / &Atom::new_num(Rational::new(3, 4)) - &Atom::new_num(Rational::new(1, 2)))
-            .expand();
+        let a = (a / &Atom::new_num((3, 4)) - &Atom::new_num((1, 2))).expand();
 
         let a = a.set_coefficient_ring(&Arc::new(vec![]));
 

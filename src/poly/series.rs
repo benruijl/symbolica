@@ -211,7 +211,7 @@ impl<F: Ring> Series<F> {
         let d = exponent.denominator().to_i64().unwrap() as usize;
 
         let ram = Integer::from(self.ramification as i64)
-            .lcm(&exponent.denominator())
+            .lcm(exponent.denominator_ref())
             .to_i64()
             .unwrap() as usize;
 

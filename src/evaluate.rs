@@ -1539,6 +1539,25 @@ self_cell!(
     impl {Debug}
 );
 
+/// A floating point type that can be used for compiled evaluation.
+pub trait CompiledEvaluatorFloat: Sized {
+    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]);
+}
+
+impl CompiledEvaluatorFloat for f64 {
+    #[inline(always)]
+    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]) {
+        eval.evaluate_double(args, out);
+    }
+}
+
+impl CompiledEvaluatorFloat for Complex<f64> {
+    #[inline(always)]
+    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]) {
+        eval.evaluate_complex(args, out);
+    }
+}
+
 impl CompiledEvaluator {
     /// Load a compiled evaluator from a shared library.
     pub fn load(file: &str) -> Result<CompiledEvaluator, String> {
@@ -1559,13 +1578,19 @@ impl CompiledEvaluator {
         }
     }
 
-    /// Evaluate the compiled evaluator.
+    /// Evaluate the compiled code.
     #[inline(always)]
-    pub fn evaluate(&self, args: &[f64], out: &mut [f64]) {
+    pub fn evaluate<T: CompiledEvaluatorFloat>(&self, args: &[T], out: &mut [T]) {
+        T::evaluate(self, args, out);
+    }
+
+    /// Evaluate the compiled code with double-precision floating point numbers.
+    #[inline(always)]
+    pub fn evaluate_double(&self, args: &[f64], out: &mut [f64]) {
         unsafe { (self.borrow_dependent().eval_double)(args.as_ptr(), out.as_mut_ptr()) }
     }
 
-    /// Evaluate the compiled evaluator with complex numbers.
+    /// Evaluate the compiled code with complex numbers.
     #[inline(always)]
     pub fn evaluate_complex(&self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
         unsafe { (self.borrow_dependent().eval_complex)(args.as_ptr(), out.as_mut_ptr()) }

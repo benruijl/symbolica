@@ -100,7 +100,7 @@ fn main() {
     {
         let params = vec![Complex::new(5., 0.)];
         let mut out = vec![Complex::new_zero(), Complex::new_zero()];
-        ce.evaluate_complex(&params, &mut out);
+        ce.evaluate(&params, &mut out);
         println!("Eval from C++: {}, {}", out[0], out[1]);
     }
 

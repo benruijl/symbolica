@@ -418,12 +418,27 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_ = Expression.symbol('x_')
+    /// >>> x_ = Expression.symbol('x__')
     /// >>> f = Expression.symbol('f')
-    /// >>> e = f(3,2,1).replace_all(f(x_), x_.transform().sort())
+    /// >>> e = f(3,2,1).replace_all(f(x__), x__.transform().sort())
     /// >>> print(e)
     pub fn sort(&self) -> PyResult<PythonPattern> {
         return append_transformer!(self, Transformer::Sort);
+    }
+
+    /// Create a transformer that cycle-symmetrizes a function.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression, Transformer
+    /// >>> x_ = Expression.symbol('x__')
+    /// >>> f = Expression.symbol('f')
+    /// >>> e = f(1,2,4,1,2,3).replace_all(f(x__), x_.transform().cycle_symmetrize())
+    /// >>> print(e)
+    ///
+    /// Yields `f(1,2,3,1,2,4)`.
+    pub fn cycle_symmetrize(&self) -> PyResult<PythonPattern> {
+        return append_transformer!(self, Transformer::CycleSymmetrize);
     }
 
     /// Create a transformer that removes elements from a list if they occur
@@ -3864,29 +3879,41 @@ impl PythonSeries {
 
     /// Get the trailing exponent; the exponent of the first non-zero term.
     pub fn get_trailing_exponent(&self) -> PyResult<(i64, i64)> {
-        if let Rational::Natural(n, d) = self.series.get_trailing_exponent() {
-            Ok((n, d))
-        } else {
-            Err(exceptions::PyValueError::new_err("Order is too large"))
+        let r = self.series.get_trailing_exponent();
+        if let Integer::Natural(n) = r.numerator_ref() {
+            if let Integer::Natural(d) = r.denominator_ref() {
+                return Ok((*n, *d));
+            } else {
+            }
         }
+
+        Err(exceptions::PyValueError::new_err("Order is too large"))
     }
 
     /// Get the relative order.
     pub fn get_relative_order(&self) -> PyResult<(i64, i64)> {
-        if let Rational::Natural(n, d) = self.series.relative_order() {
-            Ok((n, d))
-        } else {
-            Err(exceptions::PyValueError::new_err("Order is too large"))
+        let r = self.series.relative_order();
+        if let Integer::Natural(n) = r.numerator_ref() {
+            if let Integer::Natural(d) = r.denominator_ref() {
+                return Ok((*n, *d));
+            } else {
+            }
         }
+
+        Err(exceptions::PyValueError::new_err("Order is too large"))
     }
 
     /// Get the absolute order.
     pub fn get_absolute_order(&self) -> PyResult<(i64, i64)> {
-        if let Rational::Natural(n, d) = self.series.absolute_order() {
-            Ok((n, d))
-        } else {
-            Err(exceptions::PyValueError::new_err("Order is too large"))
+        let r = self.series.absolute_order();
+        if let Integer::Natural(n) = r.numerator_ref() {
+            if let Integer::Natural(d) = r.denominator_ref() {
+                return Ok((*n, *d));
+            } else {
+            }
         }
+
+        Err(exceptions::PyValueError::new_err("Order is too large"))
     }
 
     /// Convert the series into an expression.
@@ -4657,17 +4684,6 @@ macro_rules! generate_methods {
                     CompareOp::Eq => Ok(self.poly == other.poly),
                     CompareOp::Ne => Ok(self.poly != other.poly),
                     _ => {
-                        if self.poly.is_constant() && other.poly.is_constant() {
-                            return Ok(match op {
-                                CompareOp::Eq => self.poly == other.poly,
-                                CompareOp::Ge => self.poly.lcoeff() >= other.poly.lcoeff(),
-                                CompareOp::Gt => self.poly.lcoeff() > other.poly.lcoeff(),
-                                CompareOp::Le => self.poly.lcoeff() <= other.poly.lcoeff(),
-                                CompareOp::Lt => self.poly.lcoeff() < other.poly.lcoeff(),
-                                CompareOp::Ne => self.poly != other.poly,
-                            });
-                        }
-
                         Err(exceptions::PyTypeError::new_err(format!(
                             "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
                             self.__str__()?,

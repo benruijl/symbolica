@@ -103,6 +103,7 @@ pub enum Transformer {
     Split,
     Partition(Vec<(Symbol, usize)>, bool, bool),
     Sort,
+    CycleSymmetrize,
     Deduplicate,
     Permutations(Symbol),
     Repeat(Vec<Transformer>),
@@ -136,6 +137,7 @@ impl std::fmt::Debug for Transformer {
                 .field(b2)
                 .finish(),
             Transformer::Sort => f.debug_tuple("Sort").finish(),
+            Transformer::CycleSymmetrize => f.debug_tuple("CycleSymmetrize").finish(),
             Transformer::Deduplicate => f.debug_tuple("Deduplicate").finish(),
             Transformer::Permutations(i) => f.debug_tuple("Permutations").field(i).finish(),
             Transformer::Series(x, point, d, depth_is_absolute) => f
@@ -547,6 +549,39 @@ impl Transformer {
 
                     out.set_from_view(&input);
                 }
+                Transformer::CycleSymmetrize => {
+                    if let AtomView::Fun(f) = input {
+                        let args: Vec<_> = f.iter().collect();
+
+                        let mut best_shift = 0;
+                        'shift: for shift in 1..args.len() {
+                            for i in 0..args.len() {
+                                match args[(i + best_shift) % args.len()]
+                                    .cmp(&args[(i + shift) % args.len()])
+                                {
+                                    std::cmp::Ordering::Equal => {}
+                                    std::cmp::Ordering::Less => {
+                                        continue 'shift;
+                                    }
+                                    std::cmp::Ordering::Greater => break,
+                                }
+                            }
+
+                            best_shift = shift;
+                        }
+
+                        let mut fun_h = workspace.new_atom();
+                        let fun = fun_h.to_fun(f.get_symbol());
+
+                        for arg in args[best_shift..].iter().chain(&args[..best_shift]) {
+                            fun.add_arg(*arg);
+                        }
+
+                        fun_h.as_view().normalize(workspace, out);
+                    } else {
+                        out.set_from_view(&input);
+                    }
+                }
                 Transformer::Deduplicate => {
                     if let AtomView::Fun(f) = input {
                         if f.get_symbol() == State::ARG {
@@ -859,6 +894,20 @@ mod test {
         });
 
         let r = Atom::parse("f1(v1,3)+f1(v2,3)+4*v3*f1(v1,v4)+4*v3*f1(v2,v4)").unwrap();
+        assert_eq!(out, r);
+    }
+
+    #[test]
+    fn cycle_symmetrize() {
+        let p = Atom::parse("f1(1,2,3,5,1,2,3,4)").unwrap();
+
+        let mut out = Atom::new();
+        Workspace::get_local().with(|ws| {
+            Transformer::execute(p.as_view(), &[Transformer::CycleSymmetrize], ws, &mut out)
+                .unwrap()
+        });
+
+        let r = Atom::parse("f1(1,2,3,4,1,2,3,5)").unwrap();
         assert_eq!(out, r);
     }
 }

@@ -33,8 +33,8 @@ def request_sublicense(name: str, email: str, company: str, super_licence: str) 
     The key will be sent to the e-mail address `email`."""
 
 
-def get_offline_license_key() -> str:
-    """Get a license key for offline use, generated from a licensed Symbolica session. The key will remain valid for 24 hours."""
+def get_license_key(email: str) -> str:
+    """Get the license key for the account registered with the provided email address."""
 
 
 class AtomType(Enum):
@@ -1164,6 +1164,20 @@ class Transformer:
         >>> f = Expression.symbol('f')
         >>> e = f(3,2,1).replace_all(f(x__), x__.transform().sort())
         >>> print(e)
+        """
+
+    def cycle_symmetrize(self) -> Transformer:
+        """ Create a transformer that cycle-symmetrizes a function.
+
+        Examples
+        --------
+        >>> from symbolica import Expression, Transformer
+        >>> x_ = Expression.symbol('x__')
+        >>> f = Expression.symbol('f')
+        >>> e = f(1,2,4,1,2,3).replace_all(f(x__), x_.transform().cycle_symmetrize())
+        >>> print(e)
+
+        Yields `f(1,2,3,1,2,4)`.
         """
 
     def deduplicate(self) -> Transformer:

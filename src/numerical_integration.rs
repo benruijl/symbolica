@@ -140,12 +140,14 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> StatisticsA
 
         if other.max_eval_positive > self.max_eval_positive {
             self.max_eval_positive = other.max_eval_positive;
-            self.max_eval_positive_xs = other.max_eval_positive_xs.clone();
+            self.max_eval_positive_xs
+                .clone_from(&other.max_eval_positive_xs);
         }
 
         if other.max_eval_negative < self.max_eval_negative {
             self.max_eval_negative = other.max_eval_negative;
-            self.max_eval_negative_xs = other.max_eval_negative_xs.clone();
+            self.max_eval_negative_xs
+                .clone_from(&other.max_eval_negative_xs);
         }
     }
 

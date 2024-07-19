@@ -56,7 +56,7 @@ impl<F: Ring + std::fmt::Display> std::fmt::Display for Series<F> {
         let v = self.variable.to_string();
 
         if self.coefficients.is_empty() {
-            return write!(f, "O({}^{})", v, self.absolute_order());
+            return write!(f, "𝒪({}^{})", v, self.absolute_order());
         }
 
         let mut first = true;
@@ -103,9 +103,9 @@ impl<F: Ring + std::fmt::Display> std::fmt::Display for Series<F> {
 
         let o = self.absolute_order();
         if o.is_integer() {
-            write!(f, "+O({}^{})", v, o)
+            write!(f, "+𝒪({}^{})", v, o)
         } else {
-            write!(f, "+O({}^({}))", v, o)
+            write!(f, "+𝒪({}^({}))", v, o)
         }
     }
 }

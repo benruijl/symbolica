@@ -910,7 +910,9 @@ impl NumericalFloatLike for Float {
 
     #[inline]
     fn pow(&self, e: u64) -> Self {
-        rug::ops::Pow::pow(&self.0, e).complete(self.prec()).into()
+        rug::ops::Pow::pow(&self.0, e)
+            .complete(self.prec() as i64)
+            .into()
     }
 
     #[inline(always)]
@@ -995,7 +997,7 @@ impl Real for Float {
 
     #[inline(always)]
     fn sqrt(&self) -> Self {
-        self.0.sqrt_ref().complete(self.prec() + 1).into()
+        self.0.sqrt_ref().complete(self.prec() as i64 + 1).into()
     }
 
     #[inline(always)]
@@ -1005,7 +1007,7 @@ impl Real for Float {
         if !(0..2).contains(&e) {
             self.0
                 .ln_ref()
-                .complete(self.0.prec() + e.unsigned_abs().ilog2() + 1)
+                .complete((self.0.prec() + e.unsigned_abs().ilog2() + 1) as i64)
                 .into()
         } else {
             self.0.clone().ln().into()
@@ -1018,7 +1020,7 @@ impl Real for Float {
             // Exp grows in precision when e < 0
             self.0
                 .exp_ref()
-                .complete(1.max(self.0.prec() as i32 - e + 1) as u32)
+                .complete(1.max(self.0.prec() as i32 - e + 1) as i64)
                 .into()
         } else {
             self.0.clone().exp().into()
@@ -1072,7 +1074,7 @@ impl Real for Float {
                 return self
                     .0
                     .tanh_ref()
-                    .complete(self.0.prec() + 3 * e.unsigned_abs() + 1)
+                    .complete((self.0.prec() + 3 * e.unsigned_abs() + 1) as i64)
                     .into();
             }
         }

@@ -501,9 +501,7 @@ impl PythonPattern {
     /// >>> print(e)
     ///
     /// yields:
-    /// ```
-    /// 2*f(1)*f(1,2)*g(3)+2*f(1)*f(1,3)*g(2)+2*f(1)*f(2,3)*g(1)+f(2)*f(1,1)*g(3)+2*f(2)*f(1,3)*g(1)+f(3)*f(1,1)*g(2)+2*f(3)*f(1,2)*g(1)
-    /// ```
+    /// `2*f(1)*f(1,2)*g(3)+2*f(1)*f(1,3)*g(2)+2*f(1)*f(2,3)*g(1)+f(2)*f(1,1)*g(3)+2*f(2)*f(1,3)*g(1)+f(3)*f(1,1)*g(2)+2*f(3)*f(1,2)*g(1)`
     #[pyo3(signature = (bins, fill_last = false, repeat = false))]
     pub fn partitions(
         &self,
@@ -549,9 +547,7 @@ impl PythonPattern {
     /// >>> print(e)
     ///
     /// yields:
-    /// ```
-    /// 4*f(1,1,2,2)+4*f(1,2,1,2)+4*f(1,2,2,1)+4*f(2,1,1,2)+4*f(2,1,2,1)+4*f(2,2,1,1)
-    /// ```
+    /// `4*f(1,1,2,2)+4*f(1,2,1,2)+4*f(1,2,2,1)+4*f(2,1,1,2)+4*f(2,1,2,1)+4*f(2,2,1,1)`
     pub fn permutations(&self, function_name: ConvertibleToPattern) -> PyResult<PythonPattern> {
         let id = match &function_name.to_pattern()?.expr {
             Pattern::Literal(x) => {
@@ -2731,7 +2727,7 @@ impl PythonExpression {
     ///
     /// yields
     ///
-    /// ```
+    /// ```log
     /// y + 1
     /// ```
     pub fn coefficient(&self, x: ConvertibleToExpression) -> PythonExpression {
@@ -2755,7 +2751,7 @@ impl PythonExpression {
     ///
     /// yields
     ///
-    /// ```
+    /// ```log
     /// x y+5
     /// x^2 1
     /// 1 5
@@ -3202,7 +3198,7 @@ impl PythonExpression {
     /// >>>     print(r)
     ///
     /// Yields:
-    /// ```
+    /// ```log
     /// f(2)*f(2)*f(3)
     /// f(1)*f(3)*f(3)
     /// f(1)*f(2)*f(4)
@@ -4188,6 +4184,520 @@ pub struct PythonPolynomial {
 
 #[pymethods]
 impl PythonPolynomial {
+    /// Compare two polynomials.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.poly == other.poly),
+            CompareOp::Ne => Ok(self.poly != other.poly),
+            _ => {
+                if self.poly.is_constant() && other.poly.is_constant() {
+                    return Ok(match op {
+                        CompareOp::Eq => self.poly == other.poly,
+                        CompareOp::Ge => self.poly.lcoeff() >= other.poly.lcoeff(),
+                        CompareOp::Gt => self.poly.lcoeff() > other.poly.lcoeff(),
+                        CompareOp::Le => self.poly.lcoeff() <= other.poly.lcoeff(),
+                        CompareOp::Lt => self.poly.lcoeff() < other.poly.lcoeff(),
+                        CompareOp::Ne => self.poly != other.poly,
+                    });
+                }
+
+                Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
+                self.__str__()?,
+                match op {
+                    CompareOp::Eq => "==",
+                    CompareOp::Ge => ">=",
+                    CompareOp::Gt => ">",
+                    CompareOp::Le => "<=",
+                    CompareOp::Lt => "<",
+                    CompareOp::Ne => "!=",
+                },
+                other.__str__()?,
+            )))
+            }
+        }
+    }
+
+    /// Copy the polynomial.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            poly: self.poly.clone(),
+        }
+    }
+
+    /// Convert the polynomial into a human-readable string, with tunable settings.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    #[pyo3(signature =
+    (terms_on_new_line = false,
+        color_top_level_sum = true,
+        color_builtin_symbols = true,
+        print_finite_field = true,
+        symmetric_representation_for_finite_field = false,
+        explicit_rational_polynomial = false,
+        number_thousands_separator = None,
+        multiplication_operator = '*',
+        square_brackets_for_function = false,
+        num_exp_as_superscript = true,
+        latex = false)
+    )]
+    pub fn pretty_str(
+        &self,
+        terms_on_new_line: bool,
+        color_top_level_sum: bool,
+        color_builtin_symbols: bool,
+        print_finite_field: bool,
+        symmetric_representation_for_finite_field: bool,
+        explicit_rational_polynomial: bool,
+        number_thousands_separator: Option<char>,
+        multiplication_operator: char,
+        square_brackets_for_function: bool,
+        num_exp_as_superscript: bool,
+        latex: bool,
+    ) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter::new_with_options(
+                &self.poly,
+                PrintOptions {
+                    terms_on_new_line,
+                    color_top_level_sum,
+                    color_builtin_symbols,
+                    print_finite_field,
+                    symmetric_representation_for_finite_field,
+                    explicit_rational_polynomial,
+                    number_thousands_separator,
+                    multiplication_operator,
+                    square_brackets_for_function,
+                    num_exp_as_superscript,
+                    latex
+                },
+            )
+        ))
+    }
+
+    /// Print the polynomial in a human-readable format.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::default()
+            }
+        ))
+    }
+
+    /// Convert the polynomial into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Get the number of terms.
+    pub fn nterms(&self) -> usize {
+        self.poly.nterms()
+    }
+
+    /// Get the list of variables in the internal ordering of the polynomial.
+    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+        let mut var_list = vec![];
+
+        for x in self.poly.get_vars_ref() {
+            match x {
+                Variable::Symbol(x) => {
+                    var_list.push(Atom::new_var(*x).into());
+                }
+                Variable::Temporary(_) => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Temporary variable in polynomial",
+                    )))?;
+                }
+                Variable::Function(_, a) | Variable::Other(a) => {
+                    var_list.push(a.as_ref().clone().into());
+                }
+            }
+        }
+
+        Ok(var_list)
+    }
+
+    /// Add two polynomials `self and `rhs`, returning the result.
+    pub fn __add__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.clone() + rhs.poly.clone(),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self + new_rhs,
+            }
+        }
+    }
+
+    /// Subtract polynomials `rhs` from `self`, returning the result.
+    pub fn __sub__(&self, rhs: Self) -> Self {
+        self.__add__(rhs.__neg__())
+    }
+
+    /// Multiply two polynomials `self and `rhs`, returning the result.
+    pub fn __mul__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: &self.poly * &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self * &new_rhs,
+            }
+        }
+    }
+
+    /// Divide the polynomial `self` by `rhs` if possible, returning the result.
+    pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            self.poly.quot_rem(&rhs.poly, false)
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            new_self.quot_rem(&new_rhs, false)
+        };
+
+        if r.is_zero() {
+            Ok(Self { poly: q })
+        } else {
+            Err(exceptions::PyValueError::new_err(format!(
+                "The division has a remainder: {}",
+                r
+            )))
+        }
+    }
+
+    /// Divide `self` by `rhs`, returning the quotient and remainder.
+    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
+            Ok((Self { poly: q }, Self { poly: r }))
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let (q, r) = new_self.quot_rem(&new_rhs, false);
+
+            Ok((Self { poly: q }, Self { poly: r }))
+        }
+    }
+
+    /// Negate the polynomial.
+    pub fn __neg__(&self) -> Self {
+        Self {
+            poly: self.poly.clone().neg(),
+        }
+    }
+
+    /// Compute the remainder `self % rhs.
+    pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.rem(&rhs.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            Ok(Self {
+                poly: new_self.rem(&new_rhs),
+            })
+        }
+    }
+
+    /// Compute the greatest common divisor (GCD) of two polynomials.
+    pub fn gcd(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.gcd(&rhs.poly),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self.gcd(&new_rhs),
+            }
+        }
+    }
+
+    /// Compute the resultant of two polynomials with respect to the variable `var`.
+    pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let self_uni = self.poly.to_univariate(x);
+            let rhs_uni = rhs.poly.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let self_uni = new_self.to_univariate(x);
+            let rhs_uni = new_rhs.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        }
+    }
+
+    /// Compute the square-free factorization of the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> print('Square-free factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor_square_free():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .square_free_factorization()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Factorize the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> print('Factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .factor()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Take a derivative in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.derivative(x))
+    pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.derivative(x),
+        })
+    }
+
+    /// Get the content, i.e., the GCD of the coefficients.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> print(p.content())
+    pub fn content(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.content()),
+        })
+    }
+
+    /// Get the coefficient list, optionally in the variables `vars`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> for n, pp in p.coefficient_list(x):
+    /// >>>     print(n, pp)
+    pub fn coefficient_list(
+        &self,
+        vars: Option<OneOrMultiple<PythonExpression>>,
+    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+        if let Some(vv) = vars {
+            let mut vars = vec![];
+
+            for vvv in vv.to_iter() {
+                let x = self
+                    .poly
+                    .get_vars_ref()
+                    .iter()
+                    .position(|v| match (v, vvv.expr.as_view()) {
+                        (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        _ => false,
+                    })
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Variable {} not found in polynomial",
+                        vvv.__str__()?
+                    )))?;
+
+                vars.push(x);
+            }
+
+            if vars.is_empty() {
+                return Ok(self
+                    .poly
+                    .into_iter()
+                    .map(|t| {
+                        (
+                            t.exponents.iter().map(|x| *x as usize).collect(),
+                            Self {
+                                poly: self.poly.constant(t.coefficient.clone()),
+                            },
+                        )
+                    })
+                    .collect());
+            }
+
+            if vars.len() == 1 {
+                return Ok(self
+                    .poly
+                    .to_univariate_polynomial_list(vars[0])
+                    .into_iter()
+                    .map(|(f, p)| (vec![p as usize], Self { poly: f }))
+                    .collect());
+            }
+
+            // sort the exponents wrt the var map
+            let mut r: Vec<(Vec<_>, _)> = self
+                .poly
+                .to_multivariate_polynomial_list(&vars, true)
+                .into_iter()
+                .map(|(f, p)| {
+                    (
+                        vars.iter().map(|v| f[*v] as usize).collect(),
+                        Self { poly: p },
+                    )
+                })
+                .collect();
+            r.sort_by(|a, b| a.0.cmp(&b.0));
+
+            Ok(r)
+        } else {
+            Ok(self
+                .poly
+                .into_iter()
+                .map(|t| {
+                    (
+                        t.exponents.iter().map(|x| *x as usize).collect(),
+                        Self {
+                            poly: self.poly.constant(t.coefficient.clone()),
+                        },
+                    )
+                })
+                .collect())
+        }
+    }
+
+    /// Replace the variable `x` with a polynomial `v`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> p.replace(x, r)
+    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+        let id = match x.expr.as_view() {
+            AtomView::Var(x) => x.get_symbol(),
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Derivative must be taken wrt a variable",
+                ))
+            }
+        };
+
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|x| match x {
+                Variable::Symbol(y) => *y == id,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.replace_with_poly(x, &v.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = v.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Ok(Self {
+                poly: new_self.replace_with_poly(x, &new_rhs),
+            })
+        }
+    }
+
     /// Parse a polynomial with rational coefficients from a string.
     /// The input must be written in an expanded format and a list of all
     /// the variables must be provided.
@@ -4389,25 +4899,6 @@ impl PythonPolynomial {
     }
 }
 
-#[pyclass(name = "Evaluator", module = "symbolica")]
-#[derive(Clone)]
-pub struct PythonInstructionEvaluator {
-    pub instr: InstructionEvaluator<f64>,
-}
-
-#[pymethods]
-impl PythonInstructionEvaluator {
-    /// Evaluate the polynomial for multiple inputs and return the result.
-    fn evaluate(&self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
-        let mut eval = self.instr.clone();
-
-        inputs
-            .iter()
-            .map(|s| eval.evaluate_with_input(s)[0])
-            .collect()
-    }
-}
-
 #[pyclass(name = "IntegerPolynomial", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonIntegerPolynomial {
@@ -4473,6 +4964,570 @@ pub struct PythonFiniteFieldPolynomial {
 
 #[pymethods]
 impl PythonFiniteFieldPolynomial {
+    /// Compare two polynomials.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.poly == other.poly),
+            CompareOp::Ne => Ok(self.poly != other.poly),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between polynomials are not allowed in {} {} {}",
+                self.__str__()?,
+                match op {
+                    CompareOp::Eq => "==",
+                    CompareOp::Ge => ">=",
+                    CompareOp::Gt => ">",
+                    CompareOp::Le => "<=",
+                    CompareOp::Lt => "<",
+                    CompareOp::Ne => "!=",
+                },
+                other.__str__()?,
+            ))),
+        }
+    }
+
+    /// Copy the polynomial.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            poly: self.poly.clone(),
+        }
+    }
+
+    /// Convert the polynomial into a human-readable string, with tunable settings.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    #[pyo3(signature =
+    (terms_on_new_line = false,
+        color_top_level_sum = true,
+        color_builtin_symbols = true,
+        print_finite_field = true,
+        symmetric_representation_for_finite_field = false,
+        explicit_rational_polynomial = false,
+        number_thousands_separator = None,
+        multiplication_operator = '*',
+        square_brackets_for_function = false,
+        num_exp_as_superscript = true,
+        latex = false)
+    )]
+    pub fn pretty_str(
+        &self,
+        terms_on_new_line: bool,
+        color_top_level_sum: bool,
+        color_builtin_symbols: bool,
+        print_finite_field: bool,
+        symmetric_representation_for_finite_field: bool,
+        explicit_rational_polynomial: bool,
+        number_thousands_separator: Option<char>,
+        multiplication_operator: char,
+        square_brackets_for_function: bool,
+        num_exp_as_superscript: bool,
+        latex: bool,
+    ) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter::new_with_options(
+                &self.poly,
+                PrintOptions {
+                    terms_on_new_line,
+                    color_top_level_sum,
+                    color_builtin_symbols,
+                    print_finite_field,
+                    symmetric_representation_for_finite_field,
+                    explicit_rational_polynomial,
+                    number_thousands_separator,
+                    multiplication_operator,
+                    square_brackets_for_function,
+                    num_exp_as_superscript,
+                    latex
+                },
+            )
+        ))
+    }
+
+    /// Print the polynomial in a human-readable format.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::default()
+            }
+        ))
+    }
+
+    /// Convert the polynomial into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Get the number of terms.
+    pub fn nterms(&self) -> usize {
+        self.poly.nterms()
+    }
+
+    /// Get the list of variables in the internal ordering of the polynomial.
+    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+        let mut var_list = vec![];
+
+        for x in self.poly.get_vars_ref() {
+            match x {
+                Variable::Symbol(x) => {
+                    var_list.push(Atom::new_var(*x).into());
+                }
+                Variable::Temporary(_) => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Temporary variable in polynomial",
+                    )))?;
+                }
+                Variable::Function(_, a) | Variable::Other(a) => {
+                    var_list.push(a.as_ref().clone().into());
+                }
+            }
+        }
+
+        Ok(var_list)
+    }
+
+    /// Add two polynomials `self and `rhs`, returning the result.
+    pub fn __add__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.clone() + rhs.poly.clone(),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self + new_rhs,
+            }
+        }
+    }
+
+    /// Subtract polynomials `rhs` from `self`, returning the result.
+    pub fn __sub__(&self, rhs: Self) -> Self {
+        self.__add__(rhs.__neg__())
+    }
+
+    /// Multiply two polynomials `self and `rhs`, returning the result.
+    pub fn __mul__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: &self.poly * &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self * &new_rhs,
+            }
+        }
+    }
+
+    /// Divide the polynomial `self` by `rhs` if possible, returning the result.
+    pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            self.poly.quot_rem(&rhs.poly, false)
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            new_self.quot_rem(&new_rhs, false)
+        };
+
+        if r.is_zero() {
+            Ok(Self { poly: q })
+        } else {
+            Err(exceptions::PyValueError::new_err(format!(
+                "The division has a remainder: {}",
+                r
+            )))
+        }
+    }
+
+    /// Divide `self` by `rhs`, returning the quotient and remainder.
+    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
+            Ok((Self { poly: q }, Self { poly: r }))
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let (q, r) = new_self.quot_rem(&new_rhs, false);
+
+            Ok((Self { poly: q }, Self { poly: r }))
+        }
+    }
+
+    /// Negate the polynomial.
+    pub fn __neg__(&self) -> Self {
+        Self {
+            poly: self.poly.clone().neg(),
+        }
+    }
+
+    /// Compute the remainder `self % rhs.
+    pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.rem(&rhs.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            Ok(Self {
+                poly: new_self.rem(&new_rhs),
+            })
+        }
+    }
+
+    /// Compute the greatest common divisor (GCD) of two polynomials.
+    pub fn gcd(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.gcd(&rhs.poly),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self.gcd(&new_rhs),
+            }
+        }
+    }
+
+    /// Compute the resultant of two polynomials with respect to the variable `var`.
+    pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let self_uni = self.poly.to_univariate(x);
+            let rhs_uni = rhs.poly.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let self_uni = new_self.to_univariate(x);
+            let rhs_uni = new_rhs.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        }
+    }
+
+    /// Compute the square-free factorization of the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> print('Square-free factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor_square_free():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .square_free_factorization()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Factorize the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> print('Factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .factor()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Take a derivative in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.derivative(x))
+    pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.derivative(x),
+        })
+    }
+
+    /// Get the content, i.e., the GCD of the coefficients.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> print(p.content())
+    pub fn content(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.content()),
+        })
+    }
+
+    /// Get the coefficient list, optionally in the variables `vars`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> for n, pp in p.coefficient_list(x):
+    /// >>>     print(n, pp)
+    pub fn coefficient_list(
+        &self,
+        vars: Option<OneOrMultiple<PythonExpression>>,
+    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+        if let Some(vv) = vars {
+            let mut vars = vec![];
+
+            for vvv in vv.to_iter() {
+                let x = self
+                    .poly
+                    .get_vars_ref()
+                    .iter()
+                    .position(|v| match (v, vvv.expr.as_view()) {
+                        (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        _ => false,
+                    })
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Variable {} not found in polynomial",
+                        vvv.__str__()?
+                    )))?;
+
+                vars.push(x);
+            }
+
+            if vars.is_empty() {
+                return Ok(self
+                    .poly
+                    .into_iter()
+                    .map(|t| {
+                        (
+                            t.exponents.iter().map(|x| *x as usize).collect(),
+                            Self {
+                                poly: self.poly.constant(t.coefficient.clone()),
+                            },
+                        )
+                    })
+                    .collect());
+            }
+
+            if vars.len() == 1 {
+                return Ok(self
+                    .poly
+                    .to_univariate_polynomial_list(vars[0])
+                    .into_iter()
+                    .map(|(f, p)| (vec![p as usize], Self { poly: f }))
+                    .collect());
+            }
+
+            // sort the exponents wrt the var map
+            let mut r: Vec<(Vec<_>, _)> = self
+                .poly
+                .to_multivariate_polynomial_list(&vars, true)
+                .into_iter()
+                .map(|(f, p)| {
+                    (
+                        vars.iter().map(|v| f[*v] as usize).collect(),
+                        Self { poly: p },
+                    )
+                })
+                .collect();
+            r.sort_by(|a, b| a.0.cmp(&b.0));
+
+            Ok(r)
+        } else {
+            Ok(self
+                .poly
+                .into_iter()
+                .map(|t| {
+                    (
+                        t.exponents.iter().map(|x| *x as usize).collect(),
+                        Self {
+                            poly: self.poly.constant(t.coefficient.clone()),
+                        },
+                    )
+                })
+                .collect())
+        }
+    }
+
+    /// Replace the variable `x` with a polynomial `v`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> p.replace(x, r)
+    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+        let id = match x.expr.as_view() {
+            AtomView::Var(x) => x.get_symbol(),
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Derivative must be taken wrt a variable",
+                ))
+            }
+        };
+
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|x| match x {
+                Variable::Symbol(y) => *y == id,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.replace_with_poly(x, &v.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = v.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Ok(Self {
+                poly: new_self.replace_with_poly(x, &new_rhs),
+            })
+        }
+    }
+
+    /// Compute the Groebner basis of a polynomial system.
+    ///
+    /// If `grevlex=True`, reverse graded lexicographical ordering is used,
+    /// otherwise the ordering is lexicographical.
+    ///
+    /// If `print_stats=True` intermediate statistics will be printed.
+    #[pyo3(signature = (system, grevlex = true, print_stats = false))]
+    #[classmethod]
+    pub fn groebner_basis(
+        _cls: &PyType,
+        system: Vec<Self>,
+        grevlex: bool,
+        print_stats: bool,
+    ) -> Vec<Self> {
+        if grevlex {
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+            let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
+
+            gb.system
+                .into_iter()
+                .map(|p| Self {
+                    poly: p.reorder::<LexOrder>(),
+                })
+                .collect()
+        } else {
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
+            let gb = GroebnerBasis::new(&ideal, print_stats);
+            gb.system.into_iter().map(|p| Self { poly: p }).collect()
+        }
+    }
+
+    /// Integrate the polynomial in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.integrate(x))
+    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.integrate(x),
+        })
+    }
+
     /// Parse a polynomial with integer coefficients from a string.
     /// The input must be written in an expanded format and a list of all
     /// the variables must be provided.
@@ -4518,76 +5573,6 @@ impl PythonFiniteFieldPolynomial {
     }
 }
 
-macro_rules! generate_field_methods {
-    ($type:ty, $exp_type:ty) => {
-        #[pymethods]
-        impl $type {
-            /// Compute the Groebner basis of a polynomial system.
-            ///
-            /// If `grevlex=True`, reverse graded lexicographical ordering is used,
-            /// otherwise the ordering is lexicographical.
-            ///
-            /// If `print_stats=True` intermediate statistics will be printed.
-            #[pyo3(signature = (system, grevlex = true, print_stats = false))]
-            #[classmethod]
-            pub fn groebner_basis(
-                _cls: &PyType,
-                system: Vec<Self>,
-                grevlex: bool,
-                print_stats: bool,
-            ) -> Vec<Self> {
-                if grevlex {
-                    let grevlex_ideal: Vec<_> = system
-                        .iter()
-                        .map(|p| p.poly.reorder::<GrevLexOrder>())
-                        .collect();
-                    let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
-
-                    gb.system
-                        .into_iter()
-                        .map(|p| Self {
-                            poly: p.reorder::<LexOrder>(),
-                        })
-                        .collect()
-                } else {
-                    let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
-                    let gb = GroebnerBasis::new(&ideal, print_stats);
-                    gb.system.into_iter().map(|p| Self { poly: p }).collect()
-                }
-            }
-
-            /// Integrate the polynomial in `x`.
-            ///
-            /// Examples
-            /// --------
-            ///
-            /// >>> from symbolica import Expression
-            /// >>> x = Expression.symbol('x')
-            /// >>> p = Expression.parse('x^2+2').to_polynomial()
-            /// >>> print(p.integrate(x))
-            pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
-                let x = self
-                    .poly
-                    .get_vars_ref()
-                    .iter()
-                    .position(|v| match (v, x.expr.as_view()) {
-                        (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
-                        _ => false,
-                    })
-                    .ok_or(exceptions::PyValueError::new_err(format!(
-                        "Variable {} not found in polynomial",
-                        x.__str__()?
-                    )))?;
-
-                Ok(Self {
-                    poly: self.poly.integrate(x),
-                })
-            }
-        }
-    };
-}
-
 /// A Symbolica polynomial over Galois fields.
 #[pyclass(name = "PrimeTwoPolynomial", module = "symbolica")]
 #[derive(Clone)]
@@ -4597,6 +5582,570 @@ pub struct PythonPrimeTwoPolynomial {
 
 #[pymethods]
 impl PythonPrimeTwoPolynomial {
+    /// Compare two polynomials.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.poly == other.poly),
+            CompareOp::Ne => Ok(self.poly != other.poly),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between polynomials are not allowed in {} {} {}",
+                self.__str__()?,
+                match op {
+                    CompareOp::Eq => "==",
+                    CompareOp::Ge => ">=",
+                    CompareOp::Gt => ">",
+                    CompareOp::Le => "<=",
+                    CompareOp::Lt => "<",
+                    CompareOp::Ne => "!=",
+                },
+                other.__str__()?,
+            ))),
+        }
+    }
+
+    /// Copy the polynomial.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            poly: self.poly.clone(),
+        }
+    }
+
+    /// Convert the polynomial into a human-readable string, with tunable settings.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    #[pyo3(signature =
+    (terms_on_new_line = false,
+        color_top_level_sum = true,
+        color_builtin_symbols = true,
+        print_finite_field = true,
+        symmetric_representation_for_finite_field = false,
+        explicit_rational_polynomial = false,
+        number_thousands_separator = None,
+        multiplication_operator = '*',
+        square_brackets_for_function = false,
+        num_exp_as_superscript = true,
+        latex = false)
+    )]
+    pub fn pretty_str(
+        &self,
+        terms_on_new_line: bool,
+        color_top_level_sum: bool,
+        color_builtin_symbols: bool,
+        print_finite_field: bool,
+        symmetric_representation_for_finite_field: bool,
+        explicit_rational_polynomial: bool,
+        number_thousands_separator: Option<char>,
+        multiplication_operator: char,
+        square_brackets_for_function: bool,
+        num_exp_as_superscript: bool,
+        latex: bool,
+    ) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter::new_with_options(
+                &self.poly,
+                PrintOptions {
+                    terms_on_new_line,
+                    color_top_level_sum,
+                    color_builtin_symbols,
+                    print_finite_field,
+                    symmetric_representation_for_finite_field,
+                    explicit_rational_polynomial,
+                    number_thousands_separator,
+                    multiplication_operator,
+                    square_brackets_for_function,
+                    num_exp_as_superscript,
+                    latex
+                },
+            )
+        ))
+    }
+
+    /// Print the polynomial in a human-readable format.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::default()
+            }
+        ))
+    }
+
+    /// Convert the polynomial into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Get the number of terms.
+    pub fn nterms(&self) -> usize {
+        self.poly.nterms()
+    }
+
+    /// Get the list of variables in the internal ordering of the polynomial.
+    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+        let mut var_list = vec![];
+
+        for x in self.poly.get_vars_ref() {
+            match x {
+                Variable::Symbol(x) => {
+                    var_list.push(Atom::new_var(*x).into());
+                }
+                Variable::Temporary(_) => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Temporary variable in polynomial",
+                    )))?;
+                }
+                Variable::Function(_, a) | Variable::Other(a) => {
+                    var_list.push(a.as_ref().clone().into());
+                }
+            }
+        }
+
+        Ok(var_list)
+    }
+
+    /// Add two polynomials `self and `rhs`, returning the result.
+    pub fn __add__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.clone() + rhs.poly.clone(),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self + new_rhs,
+            }
+        }
+    }
+
+    /// Subtract polynomials `rhs` from `self`, returning the result.
+    pub fn __sub__(&self, rhs: Self) -> Self {
+        self.__add__(rhs.__neg__())
+    }
+
+    /// Multiply two polynomials `self and `rhs`, returning the result.
+    pub fn __mul__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: &self.poly * &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self * &new_rhs,
+            }
+        }
+    }
+
+    /// Divide the polynomial `self` by `rhs` if possible, returning the result.
+    pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            self.poly.quot_rem(&rhs.poly, false)
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            new_self.quot_rem(&new_rhs, false)
+        };
+
+        if r.is_zero() {
+            Ok(Self { poly: q })
+        } else {
+            Err(exceptions::PyValueError::new_err(format!(
+                "The division has a remainder: {}",
+                r
+            )))
+        }
+    }
+
+    /// Divide `self` by `rhs`, returning the quotient and remainder.
+    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
+            Ok((Self { poly: q }, Self { poly: r }))
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let (q, r) = new_self.quot_rem(&new_rhs, false);
+
+            Ok((Self { poly: q }, Self { poly: r }))
+        }
+    }
+
+    /// Negate the polynomial.
+    pub fn __neg__(&self) -> Self {
+        Self {
+            poly: self.poly.clone().neg(),
+        }
+    }
+
+    /// Compute the remainder `self % rhs.
+    pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.rem(&rhs.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            Ok(Self {
+                poly: new_self.rem(&new_rhs),
+            })
+        }
+    }
+
+    /// Compute the greatest common divisor (GCD) of two polynomials.
+    pub fn gcd(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.gcd(&rhs.poly),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self.gcd(&new_rhs),
+            }
+        }
+    }
+
+    /// Compute the resultant of two polynomials with respect to the variable `var`.
+    pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let self_uni = self.poly.to_univariate(x);
+            let rhs_uni = rhs.poly.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let self_uni = new_self.to_univariate(x);
+            let rhs_uni = new_rhs.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        }
+    }
+
+    /// Compute the square-free factorization of the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> print('Square-free factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor_square_free():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .square_free_factorization()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Factorize the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> print('Factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .factor()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Take a derivative in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.derivative(x))
+    pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.derivative(x),
+        })
+    }
+
+    /// Get the content, i.e., the GCD of the coefficients.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> print(p.content())
+    pub fn content(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.content()),
+        })
+    }
+
+    /// Get the coefficient list, optionally in the variables `vars`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> for n, pp in p.coefficient_list(x):
+    /// >>>     print(n, pp)
+    pub fn coefficient_list(
+        &self,
+        vars: Option<OneOrMultiple<PythonExpression>>,
+    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+        if let Some(vv) = vars {
+            let mut vars = vec![];
+
+            for vvv in vv.to_iter() {
+                let x = self
+                    .poly
+                    .get_vars_ref()
+                    .iter()
+                    .position(|v| match (v, vvv.expr.as_view()) {
+                        (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        _ => false,
+                    })
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Variable {} not found in polynomial",
+                        vvv.__str__()?
+                    )))?;
+
+                vars.push(x);
+            }
+
+            if vars.is_empty() {
+                return Ok(self
+                    .poly
+                    .into_iter()
+                    .map(|t| {
+                        (
+                            t.exponents.iter().map(|x| *x as usize).collect(),
+                            Self {
+                                poly: self.poly.constant(t.coefficient.clone()),
+                            },
+                        )
+                    })
+                    .collect());
+            }
+
+            if vars.len() == 1 {
+                return Ok(self
+                    .poly
+                    .to_univariate_polynomial_list(vars[0])
+                    .into_iter()
+                    .map(|(f, p)| (vec![p as usize], Self { poly: f }))
+                    .collect());
+            }
+
+            // sort the exponents wrt the var map
+            let mut r: Vec<(Vec<_>, _)> = self
+                .poly
+                .to_multivariate_polynomial_list(&vars, true)
+                .into_iter()
+                .map(|(f, p)| {
+                    (
+                        vars.iter().map(|v| f[*v] as usize).collect(),
+                        Self { poly: p },
+                    )
+                })
+                .collect();
+            r.sort_by(|a, b| a.0.cmp(&b.0));
+
+            Ok(r)
+        } else {
+            Ok(self
+                .poly
+                .into_iter()
+                .map(|t| {
+                    (
+                        t.exponents.iter().map(|x| *x as usize).collect(),
+                        Self {
+                            poly: self.poly.constant(t.coefficient.clone()),
+                        },
+                    )
+                })
+                .collect())
+        }
+    }
+
+    /// Replace the variable `x` with a polynomial `v`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> p.replace(x, r)
+    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+        let id = match x.expr.as_view() {
+            AtomView::Var(x) => x.get_symbol(),
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Derivative must be taken wrt a variable",
+                ))
+            }
+        };
+
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|x| match x {
+                Variable::Symbol(y) => *y == id,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.replace_with_poly(x, &v.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = v.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Ok(Self {
+                poly: new_self.replace_with_poly(x, &new_rhs),
+            })
+        }
+    }
+
+    /// Compute the Groebner basis of a polynomial system.
+    ///
+    /// If `grevlex=True`, reverse graded lexicographical ordering is used,
+    /// otherwise the ordering is lexicographical.
+    ///
+    /// If `print_stats=True` intermediate statistics will be printed.
+    #[pyo3(signature = (system, grevlex = true, print_stats = false))]
+    #[classmethod]
+    pub fn groebner_basis(
+        _cls: &PyType,
+        system: Vec<Self>,
+        grevlex: bool,
+        print_stats: bool,
+    ) -> Vec<Self> {
+        if grevlex {
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+            let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
+
+            gb.system
+                .into_iter()
+                .map(|p| Self {
+                    poly: p.reorder::<LexOrder>(),
+                })
+                .collect()
+        } else {
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
+            let gb = GroebnerBasis::new(&ideal, print_stats);
+            gb.system.into_iter().map(|p| Self { poly: p }).collect()
+        }
+    }
+
+    /// Integrate the polynomial in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.integrate(x))
+    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.integrate(x),
+        })
+    }
+
     /// Convert the polynomial to an expression.
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
         let p = self
@@ -4616,6 +6165,570 @@ pub struct PythonGaloisFieldPrimeTwoPolynomial {
 
 #[pymethods]
 impl PythonGaloisFieldPrimeTwoPolynomial {
+    /// Compare two polynomials.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.poly == other.poly),
+            CompareOp::Ne => Ok(self.poly != other.poly),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between polynomials are not allowed in {} {} {}",
+                self.__str__()?,
+                match op {
+                    CompareOp::Eq => "==",
+                    CompareOp::Ge => ">=",
+                    CompareOp::Gt => ">",
+                    CompareOp::Le => "<=",
+                    CompareOp::Lt => "<",
+                    CompareOp::Ne => "!=",
+                },
+                other.__str__()?,
+            ))),
+        }
+    }
+
+    /// Copy the polynomial.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            poly: self.poly.clone(),
+        }
+    }
+
+    /// Convert the polynomial into a human-readable string, with tunable settings.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    #[pyo3(signature =
+    (terms_on_new_line = false,
+        color_top_level_sum = true,
+        color_builtin_symbols = true,
+        print_finite_field = true,
+        symmetric_representation_for_finite_field = false,
+        explicit_rational_polynomial = false,
+        number_thousands_separator = None,
+        multiplication_operator = '*',
+        square_brackets_for_function = false,
+        num_exp_as_superscript = true,
+        latex = false)
+    )]
+    pub fn pretty_str(
+        &self,
+        terms_on_new_line: bool,
+        color_top_level_sum: bool,
+        color_builtin_symbols: bool,
+        print_finite_field: bool,
+        symmetric_representation_for_finite_field: bool,
+        explicit_rational_polynomial: bool,
+        number_thousands_separator: Option<char>,
+        multiplication_operator: char,
+        square_brackets_for_function: bool,
+        num_exp_as_superscript: bool,
+        latex: bool,
+    ) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter::new_with_options(
+                &self.poly,
+                PrintOptions {
+                    terms_on_new_line,
+                    color_top_level_sum,
+                    color_builtin_symbols,
+                    print_finite_field,
+                    symmetric_representation_for_finite_field,
+                    explicit_rational_polynomial,
+                    number_thousands_separator,
+                    multiplication_operator,
+                    square_brackets_for_function,
+                    num_exp_as_superscript,
+                    latex
+                },
+            )
+        ))
+    }
+
+    /// Print the polynomial in a human-readable format.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::default()
+            }
+        ))
+    }
+
+    /// Convert the polynomial into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Get the number of terms.
+    pub fn nterms(&self) -> usize {
+        self.poly.nterms()
+    }
+
+    /// Get the list of variables in the internal ordering of the polynomial.
+    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+        let mut var_list = vec![];
+
+        for x in self.poly.get_vars_ref() {
+            match x {
+                Variable::Symbol(x) => {
+                    var_list.push(Atom::new_var(*x).into());
+                }
+                Variable::Temporary(_) => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Temporary variable in polynomial",
+                    )))?;
+                }
+                Variable::Function(_, a) | Variable::Other(a) => {
+                    var_list.push(a.as_ref().clone().into());
+                }
+            }
+        }
+
+        Ok(var_list)
+    }
+
+    /// Add two polynomials `self and `rhs`, returning the result.
+    pub fn __add__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.clone() + rhs.poly.clone(),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self + new_rhs,
+            }
+        }
+    }
+
+    /// Subtract polynomials `rhs` from `self`, returning the result.
+    pub fn __sub__(&self, rhs: Self) -> Self {
+        self.__add__(rhs.__neg__())
+    }
+
+    /// Multiply two polynomials `self and `rhs`, returning the result.
+    pub fn __mul__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: &self.poly * &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self * &new_rhs,
+            }
+        }
+    }
+
+    /// Divide the polynomial `self` by `rhs` if possible, returning the result.
+    pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            self.poly.quot_rem(&rhs.poly, false)
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            new_self.quot_rem(&new_rhs, false)
+        };
+
+        if r.is_zero() {
+            Ok(Self { poly: q })
+        } else {
+            Err(exceptions::PyValueError::new_err(format!(
+                "The division has a remainder: {}",
+                r
+            )))
+        }
+    }
+
+    /// Divide `self` by `rhs`, returning the quotient and remainder.
+    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
+            Ok((Self { poly: q }, Self { poly: r }))
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let (q, r) = new_self.quot_rem(&new_rhs, false);
+
+            Ok((Self { poly: q }, Self { poly: r }))
+        }
+    }
+
+    /// Negate the polynomial.
+    pub fn __neg__(&self) -> Self {
+        Self {
+            poly: self.poly.clone().neg(),
+        }
+    }
+
+    /// Compute the remainder `self % rhs.
+    pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.rem(&rhs.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            Ok(Self {
+                poly: new_self.rem(&new_rhs),
+            })
+        }
+    }
+
+    /// Compute the greatest common divisor (GCD) of two polynomials.
+    pub fn gcd(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.gcd(&rhs.poly),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self.gcd(&new_rhs),
+            }
+        }
+    }
+
+    /// Compute the resultant of two polynomials with respect to the variable `var`.
+    pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let self_uni = self.poly.to_univariate(x);
+            let rhs_uni = rhs.poly.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let self_uni = new_self.to_univariate(x);
+            let rhs_uni = new_rhs.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        }
+    }
+
+    /// Compute the square-free factorization of the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> print('Square-free factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor_square_free():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .square_free_factorization()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Factorize the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> print('Factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .factor()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Take a derivative in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.derivative(x))
+    pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.derivative(x),
+        })
+    }
+
+    /// Get the content, i.e., the GCD of the coefficients.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> print(p.content())
+    pub fn content(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.content()),
+        })
+    }
+
+    /// Get the coefficient list, optionally in the variables `vars`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> for n, pp in p.coefficient_list(x):
+    /// >>>     print(n, pp)
+    pub fn coefficient_list(
+        &self,
+        vars: Option<OneOrMultiple<PythonExpression>>,
+    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+        if let Some(vv) = vars {
+            let mut vars = vec![];
+
+            for vvv in vv.to_iter() {
+                let x = self
+                    .poly
+                    .get_vars_ref()
+                    .iter()
+                    .position(|v| match (v, vvv.expr.as_view()) {
+                        (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        _ => false,
+                    })
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Variable {} not found in polynomial",
+                        vvv.__str__()?
+                    )))?;
+
+                vars.push(x);
+            }
+
+            if vars.is_empty() {
+                return Ok(self
+                    .poly
+                    .into_iter()
+                    .map(|t| {
+                        (
+                            t.exponents.iter().map(|x| *x as usize).collect(),
+                            Self {
+                                poly: self.poly.constant(t.coefficient.clone()),
+                            },
+                        )
+                    })
+                    .collect());
+            }
+
+            if vars.len() == 1 {
+                return Ok(self
+                    .poly
+                    .to_univariate_polynomial_list(vars[0])
+                    .into_iter()
+                    .map(|(f, p)| (vec![p as usize], Self { poly: f }))
+                    .collect());
+            }
+
+            // sort the exponents wrt the var map
+            let mut r: Vec<(Vec<_>, _)> = self
+                .poly
+                .to_multivariate_polynomial_list(&vars, true)
+                .into_iter()
+                .map(|(f, p)| {
+                    (
+                        vars.iter().map(|v| f[*v] as usize).collect(),
+                        Self { poly: p },
+                    )
+                })
+                .collect();
+            r.sort_by(|a, b| a.0.cmp(&b.0));
+
+            Ok(r)
+        } else {
+            Ok(self
+                .poly
+                .into_iter()
+                .map(|t| {
+                    (
+                        t.exponents.iter().map(|x| *x as usize).collect(),
+                        Self {
+                            poly: self.poly.constant(t.coefficient.clone()),
+                        },
+                    )
+                })
+                .collect())
+        }
+    }
+
+    /// Replace the variable `x` with a polynomial `v`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> p.replace(x, r)
+    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+        let id = match x.expr.as_view() {
+            AtomView::Var(x) => x.get_symbol(),
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Derivative must be taken wrt a variable",
+                ))
+            }
+        };
+
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|x| match x {
+                Variable::Symbol(y) => *y == id,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.replace_with_poly(x, &v.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = v.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Ok(Self {
+                poly: new_self.replace_with_poly(x, &new_rhs),
+            })
+        }
+    }
+
+    /// Compute the Groebner basis of a polynomial system.
+    ///
+    /// If `grevlex=True`, reverse graded lexicographical ordering is used,
+    /// otherwise the ordering is lexicographical.
+    ///
+    /// If `print_stats=True` intermediate statistics will be printed.
+    #[pyo3(signature = (system, grevlex = true, print_stats = false))]
+    #[classmethod]
+    pub fn groebner_basis(
+        _cls: &PyType,
+        system: Vec<Self>,
+        grevlex: bool,
+        print_stats: bool,
+    ) -> Vec<Self> {
+        if grevlex {
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+            let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
+
+            gb.system
+                .into_iter()
+                .map(|p| Self {
+                    poly: p.reorder::<LexOrder>(),
+                })
+                .collect()
+        } else {
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
+            let gb = GroebnerBasis::new(&ideal, print_stats);
+            gb.system.into_iter().map(|p| Self { poly: p }).collect()
+        }
+    }
+
+    /// Integrate the polynomial in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.integrate(x))
+    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.integrate(x),
+        })
+    }
+
     /// Convert the polynomial to an expression.
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
         Ok(self
@@ -4639,6 +6752,570 @@ pub struct PythonGaloisFieldPolynomial {
 
 #[pymethods]
 impl PythonGaloisFieldPolynomial {
+    /// Compare two polynomials.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.poly == other.poly),
+            CompareOp::Ne => Ok(self.poly != other.poly),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between polynomials are not allowed in {} {} {}",
+                self.__str__()?,
+                match op {
+                    CompareOp::Eq => "==",
+                    CompareOp::Ge => ">=",
+                    CompareOp::Gt => ">",
+                    CompareOp::Le => "<=",
+                    CompareOp::Lt => "<",
+                    CompareOp::Ne => "!=",
+                },
+                other.__str__()?,
+            ))),
+        }
+    }
+
+    /// Copy the polynomial.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            poly: self.poly.clone(),
+        }
+    }
+
+    /// Convert the polynomial into a human-readable string, with tunable settings.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    #[pyo3(signature =
+    (terms_on_new_line = false,
+        color_top_level_sum = true,
+        color_builtin_symbols = true,
+        print_finite_field = true,
+        symmetric_representation_for_finite_field = false,
+        explicit_rational_polynomial = false,
+        number_thousands_separator = None,
+        multiplication_operator = '*',
+        square_brackets_for_function = false,
+        num_exp_as_superscript = true,
+        latex = false)
+    )]
+    pub fn pretty_str(
+        &self,
+        terms_on_new_line: bool,
+        color_top_level_sum: bool,
+        color_builtin_symbols: bool,
+        print_finite_field: bool,
+        symmetric_representation_for_finite_field: bool,
+        explicit_rational_polynomial: bool,
+        number_thousands_separator: Option<char>,
+        multiplication_operator: char,
+        square_brackets_for_function: bool,
+        num_exp_as_superscript: bool,
+        latex: bool,
+    ) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter::new_with_options(
+                &self.poly,
+                PrintOptions {
+                    terms_on_new_line,
+                    color_top_level_sum,
+                    color_builtin_symbols,
+                    print_finite_field,
+                    symmetric_representation_for_finite_field,
+                    explicit_rational_polynomial,
+                    number_thousands_separator,
+                    multiplication_operator,
+                    square_brackets_for_function,
+                    num_exp_as_superscript,
+                    latex
+                },
+            )
+        ))
+    }
+
+    /// Print the polynomial in a human-readable format.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::default()
+            }
+        ))
+    }
+
+    /// Convert the polynomial into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Get the number of terms.
+    pub fn nterms(&self) -> usize {
+        self.poly.nterms()
+    }
+
+    /// Get the list of variables in the internal ordering of the polynomial.
+    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+        let mut var_list = vec![];
+
+        for x in self.poly.get_vars_ref() {
+            match x {
+                Variable::Symbol(x) => {
+                    var_list.push(Atom::new_var(*x).into());
+                }
+                Variable::Temporary(_) => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Temporary variable in polynomial",
+                    )))?;
+                }
+                Variable::Function(_, a) | Variable::Other(a) => {
+                    var_list.push(a.as_ref().clone().into());
+                }
+            }
+        }
+
+        Ok(var_list)
+    }
+
+    /// Add two polynomials `self and `rhs`, returning the result.
+    pub fn __add__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.clone() + rhs.poly.clone(),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self + new_rhs,
+            }
+        }
+    }
+
+    /// Subtract polynomials `rhs` from `self`, returning the result.
+    pub fn __sub__(&self, rhs: Self) -> Self {
+        self.__add__(rhs.__neg__())
+    }
+
+    /// Multiply two polynomials `self and `rhs`, returning the result.
+    pub fn __mul__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: &self.poly * &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self * &new_rhs,
+            }
+        }
+    }
+
+    /// Divide the polynomial `self` by `rhs` if possible, returning the result.
+    pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            self.poly.quot_rem(&rhs.poly, false)
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            new_self.quot_rem(&new_rhs, false)
+        };
+
+        if r.is_zero() {
+            Ok(Self { poly: q })
+        } else {
+            Err(exceptions::PyValueError::new_err(format!(
+                "The division has a remainder: {}",
+                r
+            )))
+        }
+    }
+
+    /// Divide `self` by `rhs`, returning the quotient and remainder.
+    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
+            Ok((Self { poly: q }, Self { poly: r }))
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let (q, r) = new_self.quot_rem(&new_rhs, false);
+
+            Ok((Self { poly: q }, Self { poly: r }))
+        }
+    }
+
+    /// Negate the polynomial.
+    pub fn __neg__(&self) -> Self {
+        Self {
+            poly: self.poly.clone().neg(),
+        }
+    }
+
+    /// Compute the remainder `self % rhs.
+    pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.rem(&rhs.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            Ok(Self {
+                poly: new_self.rem(&new_rhs),
+            })
+        }
+    }
+
+    /// Compute the greatest common divisor (GCD) of two polynomials.
+    pub fn gcd(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.gcd(&rhs.poly),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self.gcd(&new_rhs),
+            }
+        }
+    }
+
+    /// Compute the resultant of two polynomials with respect to the variable `var`.
+    pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let self_uni = self.poly.to_univariate(x);
+            let rhs_uni = rhs.poly.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let self_uni = new_self.to_univariate(x);
+            let rhs_uni = new_rhs.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        }
+    }
+
+    /// Compute the square-free factorization of the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> print('Square-free factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor_square_free():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .square_free_factorization()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Factorize the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> print('Factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .factor()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Take a derivative in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.derivative(x))
+    pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.derivative(x),
+        })
+    }
+
+    /// Get the content, i.e., the GCD of the coefficients.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> print(p.content())
+    pub fn content(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.content()),
+        })
+    }
+
+    /// Get the coefficient list, optionally in the variables `vars`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> for n, pp in p.coefficient_list(x):
+    /// >>>     print(n, pp)
+    pub fn coefficient_list(
+        &self,
+        vars: Option<OneOrMultiple<PythonExpression>>,
+    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+        if let Some(vv) = vars {
+            let mut vars = vec![];
+
+            for vvv in vv.to_iter() {
+                let x = self
+                    .poly
+                    .get_vars_ref()
+                    .iter()
+                    .position(|v| match (v, vvv.expr.as_view()) {
+                        (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        _ => false,
+                    })
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Variable {} not found in polynomial",
+                        vvv.__str__()?
+                    )))?;
+
+                vars.push(x);
+            }
+
+            if vars.is_empty() {
+                return Ok(self
+                    .poly
+                    .into_iter()
+                    .map(|t| {
+                        (
+                            t.exponents.iter().map(|x| *x as usize).collect(),
+                            Self {
+                                poly: self.poly.constant(t.coefficient.clone()),
+                            },
+                        )
+                    })
+                    .collect());
+            }
+
+            if vars.len() == 1 {
+                return Ok(self
+                    .poly
+                    .to_univariate_polynomial_list(vars[0])
+                    .into_iter()
+                    .map(|(f, p)| (vec![p as usize], Self { poly: f }))
+                    .collect());
+            }
+
+            // sort the exponents wrt the var map
+            let mut r: Vec<(Vec<_>, _)> = self
+                .poly
+                .to_multivariate_polynomial_list(&vars, true)
+                .into_iter()
+                .map(|(f, p)| {
+                    (
+                        vars.iter().map(|v| f[*v] as usize).collect(),
+                        Self { poly: p },
+                    )
+                })
+                .collect();
+            r.sort_by(|a, b| a.0.cmp(&b.0));
+
+            Ok(r)
+        } else {
+            Ok(self
+                .poly
+                .into_iter()
+                .map(|t| {
+                    (
+                        t.exponents.iter().map(|x| *x as usize).collect(),
+                        Self {
+                            poly: self.poly.constant(t.coefficient.clone()),
+                        },
+                    )
+                })
+                .collect())
+        }
+    }
+
+    /// Replace the variable `x` with a polynomial `v`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> p.replace(x, r)
+    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+        let id = match x.expr.as_view() {
+            AtomView::Var(x) => x.get_symbol(),
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Derivative must be taken wrt a variable",
+                ))
+            }
+        };
+
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|x| match x {
+                Variable::Symbol(y) => *y == id,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.replace_with_poly(x, &v.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = v.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Ok(Self {
+                poly: new_self.replace_with_poly(x, &new_rhs),
+            })
+        }
+    }
+
+    /// Compute the Groebner basis of a polynomial system.
+    ///
+    /// If `grevlex=True`, reverse graded lexicographical ordering is used,
+    /// otherwise the ordering is lexicographical.
+    ///
+    /// If `print_stats=True` intermediate statistics will be printed.
+    #[pyo3(signature = (system, grevlex = true, print_stats = false))]
+    #[classmethod]
+    pub fn groebner_basis(
+        _cls: &PyType,
+        system: Vec<Self>,
+        grevlex: bool,
+        print_stats: bool,
+    ) -> Vec<Self> {
+        if grevlex {
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+            let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
+
+            gb.system
+                .into_iter()
+                .map(|p| Self {
+                    poly: p.reorder::<LexOrder>(),
+                })
+                .collect()
+        } else {
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
+            let gb = GroebnerBasis::new(&ideal, print_stats);
+            gb.system.into_iter().map(|p| Self { poly: p }).collect()
+        }
+    }
+
+    /// Integrate the polynomial in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.integrate(x))
+    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.integrate(x),
+        })
+    }
+
     /// Convert the polynomial to an expression.
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
         Ok(self
@@ -4663,6 +7340,570 @@ pub struct PythonNumberFieldPolynomial {
 
 #[pymethods]
 impl PythonNumberFieldPolynomial {
+    /// Compare two polynomials.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.poly == other.poly),
+            CompareOp::Ne => Ok(self.poly != other.poly),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between polynomials are not allowed in {} {} {}",
+                self.__str__()?,
+                match op {
+                    CompareOp::Eq => "==",
+                    CompareOp::Ge => ">=",
+                    CompareOp::Gt => ">",
+                    CompareOp::Le => "<=",
+                    CompareOp::Lt => "<",
+                    CompareOp::Ne => "!=",
+                },
+                other.__str__()?,
+            ))),
+        }
+    }
+
+    /// Copy the polynomial.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            poly: self.poly.clone(),
+        }
+    }
+
+    /// Convert the polynomial into a human-readable string, with tunable settings.
+    ///
+    /// Examples
+    /// --------
+    /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
+    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    #[pyo3(signature =
+    (terms_on_new_line = false,
+        color_top_level_sum = true,
+        color_builtin_symbols = true,
+        print_finite_field = true,
+        symmetric_representation_for_finite_field = false,
+        explicit_rational_polynomial = false,
+        number_thousands_separator = None,
+        multiplication_operator = '*',
+        square_brackets_for_function = false,
+        num_exp_as_superscript = true,
+        latex = false)
+    )]
+    pub fn pretty_str(
+        &self,
+        terms_on_new_line: bool,
+        color_top_level_sum: bool,
+        color_builtin_symbols: bool,
+        print_finite_field: bool,
+        symmetric_representation_for_finite_field: bool,
+        explicit_rational_polynomial: bool,
+        number_thousands_separator: Option<char>,
+        multiplication_operator: char,
+        square_brackets_for_function: bool,
+        num_exp_as_superscript: bool,
+        latex: bool,
+    ) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter::new_with_options(
+                &self.poly,
+                PrintOptions {
+                    terms_on_new_line,
+                    color_top_level_sum,
+                    color_builtin_symbols,
+                    print_finite_field,
+                    symmetric_representation_for_finite_field,
+                    explicit_rational_polynomial,
+                    number_thousands_separator,
+                    multiplication_operator,
+                    square_brackets_for_function,
+                    num_exp_as_superscript,
+                    latex
+                },
+            )
+        ))
+    }
+
+    /// Print the polynomial in a human-readable format.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::default()
+            }
+        ))
+    }
+
+    /// Convert the polynomial into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Get the number of terms.
+    pub fn nterms(&self) -> usize {
+        self.poly.nterms()
+    }
+
+    /// Get the list of variables in the internal ordering of the polynomial.
+    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+        let mut var_list = vec![];
+
+        for x in self.poly.get_vars_ref() {
+            match x {
+                Variable::Symbol(x) => {
+                    var_list.push(Atom::new_var(*x).into());
+                }
+                Variable::Temporary(_) => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Temporary variable in polynomial",
+                    )))?;
+                }
+                Variable::Function(_, a) | Variable::Other(a) => {
+                    var_list.push(a.as_ref().clone().into());
+                }
+            }
+        }
+
+        Ok(var_list)
+    }
+
+    /// Add two polynomials `self and `rhs`, returning the result.
+    pub fn __add__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.clone() + rhs.poly.clone(),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self + new_rhs,
+            }
+        }
+    }
+
+    /// Subtract polynomials `rhs` from `self`, returning the result.
+    pub fn __sub__(&self, rhs: Self) -> Self {
+        self.__add__(rhs.__neg__())
+    }
+
+    /// Multiply two polynomials `self and `rhs`, returning the result.
+    pub fn __mul__(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: &self.poly * &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self * &new_rhs,
+            }
+        }
+    }
+
+    /// Divide the polynomial `self` by `rhs` if possible, returning the result.
+    pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
+        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            self.poly.quot_rem(&rhs.poly, false)
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            new_self.quot_rem(&new_rhs, false)
+        };
+
+        if r.is_zero() {
+            Ok(Self { poly: q })
+        } else {
+            Err(exceptions::PyValueError::new_err(format!(
+                "The division has a remainder: {}",
+                r
+            )))
+        }
+    }
+
+    /// Divide `self` by `rhs`, returning the quotient and remainder.
+    pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
+            Ok((Self { poly: q }, Self { poly: r }))
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let (q, r) = new_self.quot_rem(&new_rhs, false);
+
+            Ok((Self { poly: q }, Self { poly: r }))
+        }
+    }
+
+    /// Negate the polynomial.
+    pub fn __neg__(&self) -> Self {
+        Self {
+            poly: self.poly.clone().neg(),
+        }
+    }
+
+    /// Compute the remainder `self % rhs.
+    pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
+        if rhs.poly.is_zero() {
+            Err(exceptions::PyValueError::new_err("Division by zero"))
+        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.rem(&rhs.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            Ok(Self {
+                poly: new_self.rem(&new_rhs),
+            })
+        }
+    }
+
+    /// Compute the greatest common divisor (GCD) of two polynomials.
+    pub fn gcd(&self, rhs: Self) -> Self {
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            Self {
+                poly: self.poly.gcd(&rhs.poly),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self.gcd(&new_rhs),
+            }
+        }
+    }
+
+    /// Compute the resultant of two polynomials with respect to the variable `var`.
+    pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, var.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                var.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+            let self_uni = self.poly.to_univariate(x);
+            let rhs_uni = rhs.poly.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+
+            let self_uni = new_self.to_univariate(x);
+            let rhs_uni = new_rhs.to_univariate(x);
+
+            Ok(Self {
+                poly: self_uni.resultant_prs(&rhs_uni),
+            })
+        }
+    }
+
+    /// Compute the square-free factorization of the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
+    /// >>> print('Square-free factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor_square_free():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .square_free_factorization()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Factorize the polynomial.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
+    /// >>> print('Factorization of {}:'.format(p))
+    /// >>> for f, exp in p.factor():
+    /// >>>     print('\t({})^{}'.format(f, exp))
+    pub fn factor(&self) -> Vec<(Self, usize)> {
+        self.poly
+            .factor()
+            .into_iter()
+            .map(|(f, p)| (Self { poly: f }, p))
+            .collect()
+    }
+
+    /// Take a derivative in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.derivative(x))
+    pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.derivative(x),
+        })
+    }
+
+    /// Get the content, i.e., the GCD of the coefficients.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
+    /// >>> print(p.content())
+    pub fn content(&self) -> PyResult<Self> {
+        Ok(Self {
+            poly: self.poly.constant(self.poly.content()),
+        })
+    }
+
+    /// Get the coefficient list, optionally in the variables `vars`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> for n, pp in p.coefficient_list(x):
+    /// >>>     print(n, pp)
+    pub fn coefficient_list(
+        &self,
+        vars: Option<OneOrMultiple<PythonExpression>>,
+    ) -> PyResult<Vec<(Vec<usize>, Self)>> {
+        if let Some(vv) = vars {
+            let mut vars = vec![];
+
+            for vvv in vv.to_iter() {
+                let x = self
+                    .poly
+                    .get_vars_ref()
+                    .iter()
+                    .position(|v| match (v, vvv.expr.as_view()) {
+                        (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                        (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                        _ => false,
+                    })
+                    .ok_or(exceptions::PyValueError::new_err(format!(
+                        "Variable {} not found in polynomial",
+                        vvv.__str__()?
+                    )))?;
+
+                vars.push(x);
+            }
+
+            if vars.is_empty() {
+                return Ok(self
+                    .poly
+                    .into_iter()
+                    .map(|t| {
+                        (
+                            t.exponents.iter().map(|x| *x as usize).collect(),
+                            Self {
+                                poly: self.poly.constant(t.coefficient.clone()),
+                            },
+                        )
+                    })
+                    .collect());
+            }
+
+            if vars.len() == 1 {
+                return Ok(self
+                    .poly
+                    .to_univariate_polynomial_list(vars[0])
+                    .into_iter()
+                    .map(|(f, p)| (vec![p as usize], Self { poly: f }))
+                    .collect());
+            }
+
+            // sort the exponents wrt the var map
+            let mut r: Vec<(Vec<_>, _)> = self
+                .poly
+                .to_multivariate_polynomial_list(&vars, true)
+                .into_iter()
+                .map(|(f, p)| {
+                    (
+                        vars.iter().map(|v| f[*v] as usize).collect(),
+                        Self { poly: p },
+                    )
+                })
+                .collect();
+            r.sort_by(|a, b| a.0.cmp(&b.0));
+
+            Ok(r)
+        } else {
+            Ok(self
+                .poly
+                .into_iter()
+                .map(|t| {
+                    (
+                        t.exponents.iter().map(|x| *x as usize).collect(),
+                        Self {
+                            poly: self.poly.constant(t.coefficient.clone()),
+                        },
+                    )
+                })
+                .collect())
+        }
+    }
+
+    /// Replace the variable `x` with a polynomial `v`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
+    /// >>> r = Expression.parse('y+1').to_polynomial())
+    /// >>> p.replace(x, r)
+    pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
+        let id = match x.expr.as_view() {
+            AtomView::Var(x) => x.get_symbol(),
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Derivative must be taken wrt a variable",
+                ))
+            }
+        };
+
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|x| match x {
+                Variable::Symbol(y) => *y == id,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
+            Ok(Self {
+                poly: self.poly.replace_with_poly(x, &v.poly),
+            })
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = v.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Ok(Self {
+                poly: new_self.replace_with_poly(x, &new_rhs),
+            })
+        }
+    }
+
+    /// Compute the Groebner basis of a polynomial system.
+    ///
+    /// If `grevlex=True`, reverse graded lexicographical ordering is used,
+    /// otherwise the ordering is lexicographical.
+    ///
+    /// If `print_stats=True` intermediate statistics will be printed.
+    #[pyo3(signature = (system, grevlex = true, print_stats = false))]
+    #[classmethod]
+    pub fn groebner_basis(
+        _cls: &PyType,
+        system: Vec<Self>,
+        grevlex: bool,
+        print_stats: bool,
+    ) -> Vec<Self> {
+        if grevlex {
+            let grevlex_ideal: Vec<_> = system
+                .iter()
+                .map(|p| p.poly.reorder::<GrevLexOrder>())
+                .collect();
+            let gb = GroebnerBasis::new(&grevlex_ideal, print_stats);
+
+            gb.system
+                .into_iter()
+                .map(|p| Self {
+                    poly: p.reorder::<LexOrder>(),
+                })
+                .collect()
+        } else {
+            let ideal: Vec<_> = system.iter().map(|p| p.poly.clone()).collect();
+            let gb = GroebnerBasis::new(&ideal, print_stats);
+            gb.system.into_iter().map(|p| Self { poly: p }).collect()
+        }
+    }
+
+    /// Integrate the polynomial in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('x^2+2').to_polynomial()
+    /// >>> print(p.integrate(x))
+    pub fn integrate(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.integrate(x),
+        })
+    }
+
     /// Convert the polynomial to an expression.
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
         Ok(self
@@ -4674,479 +7915,6 @@ impl PythonNumberFieldPolynomial {
     }
 }
 
-macro_rules! generate_methods {
-    ($type:ty, $exp_type:ty) => {
-        #[pymethods]
-        impl $type {
-            /// Compare two polynomials.
-            fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
-                match op {
-                    CompareOp::Eq => Ok(self.poly == other.poly),
-                    CompareOp::Ne => Ok(self.poly != other.poly),
-                    _ => {
-                        Err(exceptions::PyTypeError::new_err(format!(
-                            "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
-                            self.__str__()?,
-                            match op {
-                                CompareOp::Eq => "==",
-                                CompareOp::Ge => ">=",
-                                CompareOp::Gt => ">",
-                                CompareOp::Le => "<=",
-                                CompareOp::Lt => "<",
-                                CompareOp::Ne => "!=",
-                            },
-                            other.__str__()?,
-                        )
-                    ))
-                    }
-                }
-            }
-
-            /// Copy the polynomial.
-            pub fn __copy__(&self) -> Self {
-                Self {
-                    poly: self.poly.clone(),
-                }
-            }
-
-            /// Convert the polynomial into a human-readable string, with tunable settings.
-            ///
-            /// Examples
-            /// --------
-            /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-            /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
-            #[pyo3(signature =
-                (terms_on_new_line = false,
-                    color_top_level_sum = true,
-                    color_builtin_symbols = true,
-                    print_finite_field = true,
-                    symmetric_representation_for_finite_field = false,
-                    explicit_rational_polynomial = false,
-                    number_thousands_separator = None,
-                    multiplication_operator = '*',
-                    square_brackets_for_function = false,
-                    num_exp_as_superscript = true,
-                    latex = false)
-                )]
-                pub fn pretty_str(
-                    &self,
-                    terms_on_new_line: bool,
-                    color_top_level_sum: bool,
-                    color_builtin_symbols: bool,
-                    print_finite_field: bool,
-                    symmetric_representation_for_finite_field: bool,
-                    explicit_rational_polynomial: bool,
-                    number_thousands_separator: Option<char>,
-                    multiplication_operator: char,
-                    square_brackets_for_function: bool,
-                    num_exp_as_superscript: bool,
-                    latex: bool,
-                ) -> PyResult<String> {
-                    Ok(format!(
-                        "{}",
-                        PolynomialPrinter::new_with_options(
-                            &self.poly,
-                            PrintOptions {
-                                terms_on_new_line,
-                                color_top_level_sum,
-                                color_builtin_symbols,
-                                print_finite_field,
-                                symmetric_representation_for_finite_field,
-                                explicit_rational_polynomial,
-                                number_thousands_separator,
-                                multiplication_operator,
-                                square_brackets_for_function,
-                                num_exp_as_superscript,
-                                latex
-                            },
-                        )
-                    ))
-                }
-
-            /// Print the polynomial in a human-readable format.
-            pub fn __str__(&self) -> PyResult<String> {
-                Ok(format!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly,
-                        opts: PrintOptions::default()
-                    }
-                ))
-            }
-
-            /// Convert the polynomial into a LaTeX string.
-            pub fn to_latex(&self) -> PyResult<String> {
-                Ok(format!(
-                    "$${}$$",
-                    PolynomialPrinter::new_with_options(
-                        &self.poly,
-                        PrintOptions::latex(),
-                    )
-                ))
-            }
-
-            /// Get the number of terms.
-            pub fn nterms(&self) -> usize {
-                self.poly.nterms()
-            }
-
-            /// Get the list of variables in the internal ordering of the polynomial.
-            pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
-                let mut var_list = vec![];
-
-                for x in self.poly.get_vars_ref() {
-                    match x {
-                        Variable::Symbol(x) => {
-                            var_list.push(Atom::new_var(*x).into());
-                        }
-                        Variable::Temporary(_) => {
-                            Err(exceptions::PyValueError::new_err(format!(
-                                "Temporary variable in polynomial",
-                            )))?;
-                        }
-                        Variable::Function(_, a) | Variable::Other(a) => {
-                            var_list.push(a.as_ref().clone().into());
-                        }
-                    }
-                }
-
-                Ok(var_list)
-            }
-
-            /// Add two polynomials `self and `rhs`, returning the result.
-            pub fn __add__(&self, rhs: Self) -> Self {
-                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-                    Self {
-                        poly: self.poly.clone() + rhs.poly.clone(),
-                    }
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-                    Self {
-                        poly: new_self + new_rhs,
-                    }
-                }
-            }
-
-            /// Subtract polynomials `rhs` from `self`, returning the result.
-            pub fn __sub__(&self, rhs: Self) -> Self {
-                self.__add__(rhs.__neg__())
-            }
-
-            /// Multiply two polynomials `self and `rhs`, returning the result.
-            pub fn __mul__(&self, rhs: Self) -> Self {
-                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-                    Self {
-                        poly: &self.poly * &rhs.poly,
-                    }
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-                    Self {
-                        poly: new_self * &new_rhs,
-                    }
-                }
-            }
-
-            /// Divide the polynomial `self` by `rhs` if possible, returning the result.
-            pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-                let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-                    self.poly.quot_rem(&rhs.poly, false)
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-
-                    new_self.quot_rem(&new_rhs, false)
-                };
-
-                if r.is_zero() {
-                    Ok(Self { poly: q })
-                } else {
-                    Err(exceptions::PyValueError::new_err(format!(
-                        "The division has a remainder: {}",
-                        r
-                    )))
-                }
-            }
-
-            /// Divide `self` by `rhs`, returning the quotient and remainder.
-            pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
-                if rhs.poly.is_zero() {
-                    Err(exceptions::PyValueError::new_err("Division by zero"))
-                } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-                    let (q, r) = self.poly.quot_rem(&rhs.poly, false);
-                    Ok((Self { poly: q }, Self { poly: r }))
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-
-                    let (q, r) = new_self.quot_rem(&new_rhs, false);
-
-                    Ok((Self { poly: q }, Self { poly: r }))
-                }
-            }
-
-            /// Negate the polynomial.
-            pub fn __neg__(&self) -> Self {
-                Self {
-                    poly: self.poly.clone().neg(),
-                }
-            }
-
-            /// Compute the remainder `self % rhs.
-            pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
-                if rhs.poly.is_zero() {
-                    Err(exceptions::PyValueError::new_err("Division by zero"))
-                } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-                    Ok(Self {
-                        poly: self.poly.rem(&rhs.poly),
-                    })
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-
-                    Ok(Self {
-                        poly: new_self.rem(&new_rhs),
-                    })
-                }
-            }
-
-            /// Compute the greatest common divisor (GCD) of two polynomials.
-            pub fn gcd(&self, rhs: Self) -> Self {
-                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-                    Self {
-                        poly: self.poly.gcd(&rhs.poly),
-                    }
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-                    Self {
-                        poly: new_self.gcd(&new_rhs),
-                    }
-                }
-            }
-
-            /// Compute the resultant of two polynomials with respect to the variable `var`.
-            pub fn resultant(&self, rhs: Self, var: PythonExpression) -> PyResult<Self> {
-                let x = self.poly.get_vars_ref().iter().position(|v| match (v, var.expr.as_view()) {
-                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
-                    _ => false,
-                }).ok_or(exceptions::PyValueError::new_err(format!(
-                    "Variable {} not found in polynomial",
-                    var.__str__()?
-                )))?;
-
-
-                if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-                    let self_uni = self.poly.to_univariate(x);
-                    let rhs_uni = rhs.poly.to_univariate(x);
-
-                    Ok(Self {
-                        poly: self_uni.resultant_prs(&rhs_uni),
-                    })
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-
-                    let self_uni = new_self.to_univariate(x);
-                    let rhs_uni = new_rhs.to_univariate(x);
-
-                    Ok(Self {
-                        poly: self_uni.resultant_prs(&rhs_uni),
-                    })
-                }
-            }
-
-            /// Compute the square-free factorization of the polynomial.
-            ///
-            /// Examples
-            /// --------
-            ///
-            /// >>> from symbolica import Expression
-            /// >>> p = Expression.parse('3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)').expand().to_polynomial()
-            /// >>> print('Square-free factorization of {}:'.format(p))
-            /// >>> for f, exp in p.factor_square_free():
-            /// >>>     print('\t({})^{}'.format(f, exp))
-            pub fn factor_square_free(&self) -> Vec<(Self, usize)> {
-                self.poly
-                    .square_free_factorization()
-                    .into_iter()
-                    .map(|(f, p)| (Self { poly: f }, p))
-                    .collect()
-            }
-
-            /// Factorize the polynomial.
-            ///
-            /// Examples
-            /// --------
-            ///
-            /// >>> from symbolica import Expression
-            /// >>> p = Expression.parse('(x+1)(x+2)(x+3)(x+4)(x+5)(x^2+6)(x^3+7)(x+8)(x^4+9)(x^5+x+10)').expand().to_polynomial()
-            /// >>> print('Factorization of {}:'.format(p))
-            /// >>> for f, exp in p.factor():
-            /// >>>     print('\t({})^{}'.format(f, exp))
-            pub fn factor(&self) -> Vec<(Self, usize)> {
-                self.poly
-                    .factor()
-                    .into_iter()
-                    .map(|(f, p)| (Self { poly: f }, p))
-                    .collect()
-            }
-
-            /// Take a derivative in `x`.
-            ///
-            /// Examples
-            /// --------
-            ///
-            /// >>> from symbolica import Expression
-            /// >>> x = Expression.symbol('x')
-            /// >>> p = Expression.parse('x^2+2').to_polynomial()
-            /// >>> print(p.derivative(x))
-            pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
-                let x = self.poly.get_vars_ref().iter().position(|v| match (v, x.expr.as_view()) {
-                    (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                    (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
-                    _ => false,
-                }).ok_or(exceptions::PyValueError::new_err(format!(
-                    "Variable {} not found in polynomial",
-                    x.__str__()?
-                )))?;
-
-                Ok(Self { poly: self.poly.derivative(x)})
-            }
-
-            /// Get the content, i.e., the GCD of the coefficients.
-            ///
-            /// Examples
-            /// --------
-            ///
-            /// >>> from symbolica import Expression
-            /// >>> p = Expression.parse('3x^2+6x+9').to_polynomial()
-            /// >>> print(p.content())
-            pub fn content(&self) -> PyResult<Self> {
-                Ok(Self { poly: self.poly.constant(self.poly.content())})
-            }
-
-            /// Get the coefficient list, optionally in the variables `vars`.
-            ///
-            /// Examples
-            /// --------
-            ///
-            /// >>> from symbolica import Expression
-            /// >>> x = Expression.symbol('x')
-            /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
-            /// >>> for n, pp in p.coefficient_list(x):
-            /// >>>     print(n, pp)
-            pub fn coefficient_list(&self, vars: Option<OneOrMultiple<PythonExpression>>) -> PyResult<Vec<(Vec<usize>, Self)>> {
-                if let Some(vv) = vars {
-                    let mut vars = vec![];
-
-                    for vvv in vv.to_iter() {
-                        let x = self.poly.get_vars_ref().iter().position(|v| match (v, vvv.expr.as_view()) {
-                            (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
-                            (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
-                            _ => false,
-                        }).ok_or(exceptions::PyValueError::new_err(format!(
-                            "Variable {} not found in polynomial",
-                            vvv.__str__()?
-                        )))?;
-
-                        vars.push(x);
-                    }
-
-                    if vars.is_empty() {
-                        return Ok(self.poly.into_iter().map(|t| {
-                            (t.exponents.iter().map(|x| *x as usize).collect(), Self { poly: self.poly.constant(t.coefficient.clone()) })
-                       }).collect());
-                    }
-
-                    if vars.len() == 1 {
-                        return Ok(self.poly.to_univariate_polynomial_list(vars[0]).into_iter()
-                        .map(|(f, p)| (vec![p as usize], Self { poly: f })).collect());
-                    }
-
-                    // sort the exponents wrt the var map
-                    let mut r: Vec<(Vec<_>, _)> = self.poly.to_multivariate_polynomial_list(&vars, true).into_iter()
-                        .map(|(f, p)| (vars.iter().map(|v| f[*v] as usize).collect(), Self { poly: p })).collect();
-                    r.sort_by(|a, b| a.0.cmp(&b.0));
-
-                    Ok(r)
-
-                } else {
-                    Ok(self.poly.into_iter().map(|t| {
-                         (t.exponents.iter().map(|x| *x as usize).collect(), Self { poly: self.poly.constant(t.coefficient.clone()) })
-                    }).collect())
-                }
-            }
-
-            /// Replace the variable `x` with a polynomial `v`.
-            ///
-            /// Examples
-            /// --------
-            ///
-            /// >>> from symbolica import Expression
-            /// >>> x = Expression.symbol('x')
-            /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
-            /// >>> r = Expression.parse('y+1').to_polynomial())
-            /// >>> p.replace(x, r)
-            pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
-                let id = match x.expr.as_view() {
-                    AtomView::Var(x) => {
-                        x.get_symbol()
-                    }
-                    _ => {
-                        return Err(exceptions::PyValueError::new_err(
-                            "Derivative must be taken wrt a variable",
-                        ))
-                    }
-                };
-
-                let x = self.poly.get_vars_ref().iter().position(|x| match x {
-                    Variable::Symbol(y) => *y == id,
-                    _ => false,
-                }).ok_or(exceptions::PyValueError::new_err(format!(
-                    "Variable {} not found in polynomial",
-                    x.__str__()?
-                )))?;
-
-                if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
-                    Ok(Self {
-                        poly: self.poly.replace_with_poly(x, &v.poly)
-                    })
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = v.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-                    Ok(Self {
-                        poly: new_self.replace_with_poly(x, &new_rhs)
-                    })
-                }
-            }
-        }
-
-    };
-}
-
-generate_methods!(PythonPolynomial, u16);
-generate_methods!(PythonIntegerPolynomial, u8);
-generate_methods!(PythonFiniteFieldPolynomial, u16);
-generate_methods!(PythonPrimeTwoPolynomial, u16);
-generate_methods!(PythonGaloisFieldPolynomial, u16);
-generate_methods!(PythonNumberFieldPolynomial, u16);
-
-generate_field_methods!(PythonFiniteFieldPolynomial, u16);
-generate_field_methods!(PythonPrimeTwoPolynomial, u16);
-generate_field_methods!(PythonGaloisFieldPolynomial, u16);
-generate_field_methods!(PythonNumberFieldPolynomial, u16);
-
 /// A Symbolica rational polynomial.
 #[pyclass(name = "RationalPolynomial", module = "symbolica")]
 #[derive(Clone)]
@@ -5156,6 +7924,205 @@ pub struct PythonRationalPolynomial {
 
 #[pymethods]
 impl PythonRationalPolynomial {
+    /// Copy the rational polynomial.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            poly: self.poly.clone(),
+        }
+    }
+
+    /// Compare two polynomials.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.poly == other.poly),
+            CompareOp::Ne => Ok(self.poly != other.poly),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
+                self.__str__()?,
+                match op {
+                    CompareOp::Eq => "==",
+                    CompareOp::Ge => ">=",
+                    CompareOp::Gt => ">",
+                    CompareOp::Le => "<=",
+                    CompareOp::Lt => "<",
+                    CompareOp::Ne => "!=",
+                },
+                other.__str__()?,
+            ))),
+        }
+    }
+
+    /// Get the list of variables in the internal ordering of the polynomial.
+    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+        let mut var_list = vec![];
+
+        for x in self.poly.get_variables().iter() {
+            match x {
+                Variable::Symbol(x) => {
+                    var_list.push(Atom::new_var(*x).into());
+                }
+                Variable::Temporary(_) => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Temporary variable in polynomial",
+                    )))?;
+                }
+                Variable::Function(_, a) | Variable::Other(a) => {
+                    var_list.push(a.as_ref().clone().into());
+                }
+            }
+        }
+
+        Ok(var_list)
+    }
+
+    /// Print the rational polynomial in a human-readable format.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            RationalPolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::default(),
+                add_parentheses: false,
+            }
+        ))
+    }
+
+    /// Convert the rational polynomial into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            RationalPolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Add two rational polynomials `self and `rhs`, returning the result.
+    pub fn __add__(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: &self.poly + &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: &new_self + &new_rhs,
+            }
+        }
+    }
+
+    /// Subtract rational polynomials `rhs` from `self`, returning the result.
+    pub fn __sub__(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: &self.poly - &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: &new_self - &new_rhs,
+            }
+        }
+    }
+
+    /// Multiply two rational polynomials `self and `rhs`, returning the result.
+    pub fn __mul__(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: &self.poly * &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: &new_self * &new_rhs,
+            }
+        }
+    }
+
+    /// Divide the rational polynomial `self` by `rhs` if possible, returning the result.
+    pub fn __truediv__(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: &self.poly / &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: &new_self / &new_rhs,
+            }
+        }
+    }
+
+    /// Negate the rational polynomial.
+    pub fn __neg__(&self) -> Self {
+        Self {
+            poly: self.poly.clone().neg(),
+        }
+    }
+
+    /// Compute the greatest common divisor (GCD) of two rational polynomials.
+    pub fn gcd(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: self.poly.gcd(&rhs.poly),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self.gcd(&new_rhs),
+            }
+        }
+    }
+
+    /// Compute the partial fraction decomposition in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+    /// >>> for pp in p.apart(x):
+    /// >>>     print(pp)
+    pub fn apart(&self, x: PythonExpression) -> PyResult<Vec<Self>> {
+        let id = match x.expr.as_view() {
+            AtomView::Var(x) => x.get_symbol(),
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Invalid variable specified.",
+                ))
+            }
+        };
+
+        let x = self
+            .poly
+            .get_variables()
+            .iter()
+            .position(|x| match x {
+                Variable::Symbol(y) => *y == id,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(self
+            .poly
+            .apart(x)
+            .into_iter()
+            .map(|f| Self { poly: f })
+            .collect())
+    }
+
     /// Create a new rational polynomial from a numerator and denominator polynomial.
     #[new]
     pub fn __new__(num: &PythonPolynomial, den: &PythonPolynomial) -> Self {
@@ -5184,62 +8151,53 @@ impl PythonRationalPolynomial {
             poly: (&self.poly.denominator).into(),
         }
     }
-}
 
-macro_rules! generate_rat_parse {
-    ($type:ty) => {
-        #[pymethods]
-        impl $type {
-            /// Parse a rational polynomial from a string.
-            /// The list of all the variables must be provided.
-            ///
-            /// If this requirements is too strict, use `Expression.to_polynomial()` instead.
-            ///
-            ///
-            /// Examples
-            /// --------
-            /// >>> e = Polynomial.parse('3/4*x^2+y+y*4', ['x', 'y'])
-            ///
-            /// Raises
-            /// ------
-            /// ValueError
-            ///     If the input is not a valid Symbolica rational polynomial.
-            #[classmethod]
-            pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
-                let mut var_map = vec![];
-                let mut var_name_map = vec![];
+    /// Parse a rational polynomial from a string.
+    /// The list of all the variables must be provided.
+    ///
+    /// If this requirements is too strict, use `Expression.to_polynomial()` instead.
+    ///
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = Polynomial.parse('3/4*x^2+y+y*4', ['x', 'y'])
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the input is not a valid Symbolica rational polynomial.
+    #[classmethod]
+    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
+        let mut var_map = vec![];
+        let mut var_name_map = vec![];
 
-                for v in vars {
-                    let id = State::get_symbol(v);
-                    var_map.push(id.into());
-                    var_name_map.push(v.into());
-                }
-
-                let e = Token::parse(arg)
-                    .map_err(exceptions::PyValueError::new_err)?
-                    .to_rational_polynomial(&Q, &Z, &Arc::new(var_map), &var_name_map)
-                    .map_err(exceptions::PyValueError::new_err)?;
-
-                Ok(Self { poly: e })
-            }
-
-            /// Convert the rational polynomial to an expression.
-            ///
-            /// Examples
-            /// --------
-            ///
-            /// >>> from symbolica import Expression
-            /// >>> e = Expression.parse('(x*y+2*x+x^2)/(1+y^2+x^7)')
-            /// >>> p = e.to_rational_polynomial()
-            /// >>> print((e - p.to_expression()).expand())
-            pub fn to_expression(&self) -> PyResult<PythonExpression> {
-                Ok(self.poly.to_expression().into())
-            }
+        for v in vars {
+            let id = State::get_symbol(v);
+            var_map.push(id.into());
+            var_name_map.push(v.into());
         }
-    };
-}
 
-generate_rat_parse!(PythonRationalPolynomial);
+        let e = Token::parse(arg)
+            .map_err(exceptions::PyValueError::new_err)?
+            .to_rational_polynomial(&Q, &Z, &Arc::new(var_map), &var_name_map)
+            .map_err(exceptions::PyValueError::new_err)?;
+
+        Ok(Self { poly: e })
+    }
+
+    /// Convert the rational polynomial to an expression.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> e = Expression.parse('(x*y+2*x+x^2)/(1+y^2+x^7)')
+    /// >>> p = e.to_rational_polynomial()
+    /// >>> print((e - p.to_expression()).expand())
+    pub fn to_expression(&self) -> PyResult<PythonExpression> {
+        Ok(self.poly.to_expression().into())
+    }
+}
 
 /// A Symbolica rational polynomial over finite fields.
 #[pyclass(name = "FiniteFieldRationalPolynomial", module = "symbolica")]
@@ -5250,6 +8208,205 @@ pub struct PythonFiniteFieldRationalPolynomial {
 
 #[pymethods]
 impl PythonFiniteFieldRationalPolynomial {
+    /// Copy the rational polynomial.
+    pub fn __copy__(&self) -> Self {
+        Self {
+            poly: self.poly.clone(),
+        }
+    }
+
+    /// Compare two polynomials.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.poly == other.poly),
+            CompareOp::Ne => Ok(self.poly != other.poly),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
+                self.__str__()?,
+                match op {
+                    CompareOp::Eq => "==",
+                    CompareOp::Ge => ">=",
+                    CompareOp::Gt => ">",
+                    CompareOp::Le => "<=",
+                    CompareOp::Lt => "<",
+                    CompareOp::Ne => "!=",
+                },
+                other.__str__()?,
+            ))),
+        }
+    }
+
+    /// Get the list of variables in the internal ordering of the polynomial.
+    pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
+        let mut var_list = vec![];
+
+        for x in self.poly.get_variables().iter() {
+            match x {
+                Variable::Symbol(x) => {
+                    var_list.push(Atom::new_var(*x).into());
+                }
+                Variable::Temporary(_) => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Temporary variable in polynomial",
+                    )))?;
+                }
+                Variable::Function(_, a) | Variable::Other(a) => {
+                    var_list.push(a.as_ref().clone().into());
+                }
+            }
+        }
+
+        Ok(var_list)
+    }
+
+    /// Print the rational polynomial in a human-readable format.
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            RationalPolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::default(),
+                add_parentheses: false,
+            }
+        ))
+    }
+
+    /// Convert the rational polynomial into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            RationalPolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+        ))
+    }
+
+    /// Add two rational polynomials `self and `rhs`, returning the result.
+    pub fn __add__(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: &self.poly + &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: &new_self + &new_rhs,
+            }
+        }
+    }
+
+    /// Subtract rational polynomials `rhs` from `self`, returning the result.
+    pub fn __sub__(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: &self.poly - &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: &new_self - &new_rhs,
+            }
+        }
+    }
+
+    /// Multiply two rational polynomials `self and `rhs`, returning the result.
+    pub fn __mul__(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: &self.poly * &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: &new_self * &new_rhs,
+            }
+        }
+    }
+
+    /// Divide the rational polynomial `self` by `rhs` if possible, returning the result.
+    pub fn __truediv__(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: &self.poly / &rhs.poly,
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: &new_self / &new_rhs,
+            }
+        }
+    }
+
+    /// Negate the rational polynomial.
+    pub fn __neg__(&self) -> Self {
+        Self {
+            poly: self.poly.clone().neg(),
+        }
+    }
+
+    /// Compute the greatest common divisor (GCD) of two rational polynomials.
+    pub fn gcd(&self, rhs: Self) -> Self {
+        if self.poly.get_variables() == rhs.poly.get_variables() {
+            Self {
+                poly: self.poly.gcd(&rhs.poly),
+            }
+        } else {
+            let mut new_self = self.poly.clone();
+            let mut new_rhs = rhs.poly.clone();
+            new_self.unify_variables(&mut new_rhs);
+            Self {
+                poly: new_self.gcd(&new_rhs),
+            }
+        }
+    }
+
+    /// Compute the partial fraction decomposition in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+    /// >>> for pp in p.apart(x):
+    /// >>>     print(pp)
+    pub fn apart(&self, x: PythonExpression) -> PyResult<Vec<Self>> {
+        let id = match x.expr.as_view() {
+            AtomView::Var(x) => x.get_symbol(),
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Invalid variable specified.",
+                ))
+            }
+        };
+
+        let x = self
+            .poly
+            .get_variables()
+            .iter()
+            .position(|x| match x {
+                Variable::Symbol(y) => *y == id,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(self
+            .poly
+            .apart(x)
+            .into_iter()
+            .map(|f| Self { poly: f })
+            .collect())
+    }
+
     /// Parse a rational polynomial from a string.
     /// The list of all the variables must be provided.
     ///
@@ -5285,215 +8442,6 @@ impl PythonFiniteFieldRationalPolynomial {
     }
 }
 
-// TODO: unify with polynomial methods
-macro_rules! generate_rat_methods {
-    ($type:ty) => {
-        #[pymethods]
-        impl $type {
-            /// Copy the rational polynomial.
-            pub fn __copy__(&self) -> Self {
-                Self {
-                    poly: self.poly.clone(),
-                }
-            }
-
-            /// Compare two polynomials.
-            fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
-                match op {
-                    CompareOp::Eq => Ok(self.poly == other.poly),
-                    CompareOp::Ne => Ok(self.poly != other.poly),
-                    _ => {
-                        Err(exceptions::PyTypeError::new_err(format!(
-                            "Inequalities between polynomials that are not numbers are not allowed in {} {} {}",
-                            self.__str__()?,
-                            match op {
-                                CompareOp::Eq => "==",
-                                CompareOp::Ge => ">=",
-                                CompareOp::Gt => ">",
-                                CompareOp::Le => "<=",
-                                CompareOp::Lt => "<",
-                                CompareOp::Ne => "!=",
-                            },
-                            other.__str__()?,
-                        )
-                    ))
-                    }
-                }
-            }
-
-            /// Get the list of variables in the internal ordering of the polynomial.
-            pub fn get_var_list(&self) -> PyResult<Vec<PythonExpression>> {
-                let mut var_list = vec![];
-
-                for x in self.poly.get_variables().iter() {
-                    match x {
-                        Variable::Symbol(x) => {
-                            var_list.push(Atom::new_var(*x).into());
-                        }
-                        Variable::Temporary(_) => {
-                            Err(exceptions::PyValueError::new_err(format!(
-                                "Temporary variable in polynomial",
-                            )))?;
-                        }
-                        Variable::Function(_, a) | Variable::Other(a) => {
-                            var_list.push(a.as_ref().clone().into());
-                        }
-                    }
-                }
-
-                Ok(var_list)
-            }
-
-            /// Print the rational polynomial in a human-readable format.
-            pub fn __str__(&self) -> PyResult<String> {
-                Ok(format!(
-                    "{}",
-                    RationalPolynomialPrinter {
-                        poly: &self.poly,
-                        opts: PrintOptions::default(),
-                        add_parentheses: false,
-                    }
-                ))
-            }
-
-            /// Convert the rational polynomial into a LaTeX string.
-            pub fn to_latex(&self) -> PyResult<String> {
-                Ok(format!(
-                    "$${}$$",
-                    RationalPolynomialPrinter::new_with_options(
-                        &self.poly,
-                        PrintOptions::latex(),
-                    )
-                ))
-            }
-
-            /// Add two rational polynomials `self and `rhs`, returning the result.
-            pub fn __add__(&self, rhs: Self) -> Self {
-                if self.poly.get_variables() == rhs.poly.get_variables() {
-                    Self {
-                        poly: &self.poly + &rhs.poly,
-                    }
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-                    Self {
-                        poly: &new_self + &new_rhs,
-                    }
-                }
-            }
-
-            /// Subtract rational polynomials `rhs` from `self`, returning the result.
-            pub fn __sub__(&self, rhs: Self) -> Self {
-                if self.poly.get_variables() == rhs.poly.get_variables() {
-                    Self {
-                        poly: &self.poly - &rhs.poly,
-                    }
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-                    Self {
-                        poly: &new_self - &new_rhs,
-                    }
-                }
-            }
-
-            /// Multiply two rational polynomials `self and `rhs`, returning the result.
-            pub fn __mul__(&self, rhs: Self) -> Self {
-                if self.poly.get_variables() == rhs.poly.get_variables() {
-                    Self {
-                        poly: &self.poly * &rhs.poly,
-                    }
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-                    Self {
-                        poly: &new_self * &new_rhs,
-                    }
-                }
-            }
-
-            /// Divide the rational polynomial `self` by `rhs` if possible, returning the result.
-            pub fn __truediv__(&self, rhs: Self) -> Self {
-                if self.poly.get_variables() == rhs.poly.get_variables() {
-                    Self {
-                        poly: &self.poly / &rhs.poly,
-                    }
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-                    Self {
-                        poly: &new_self / &new_rhs,
-                    }
-                }
-            }
-
-            /// Negate the rational polynomial.
-            pub fn __neg__(&self) -> Self {
-                Self {
-                    poly: self.poly.clone().neg(),
-                }
-            }
-
-            /// Compute the greatest common divisor (GCD) of two rational polynomials.
-            pub fn gcd(&self, rhs: Self) -> Self {
-                if self.poly.get_variables() == rhs.poly.get_variables() {
-                    Self {
-                        poly: self.poly.gcd(&rhs.poly),
-                    }
-                } else {
-                    let mut new_self = self.poly.clone();
-                    let mut new_rhs = rhs.poly.clone();
-                    new_self.unify_variables(&mut new_rhs);
-                    Self {
-                        poly: new_self.gcd(&new_rhs),
-                    }
-                }
-            }
-
-            /// Compute the partial fraction decomposition in `x`.
-            ///
-            /// Examples
-            /// --------
-            ///
-            /// >>> from symbolica import Expression
-            /// >>> x = Expression.symbol('x')
-            /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
-            /// >>> for pp in p.apart(x):
-            /// >>>     print(pp)
-            pub fn apart(&self, x: PythonExpression) -> PyResult<Vec<Self>> {
-                let id = match x.expr.as_view() {
-                    AtomView::Var(x) => {
-                        x.get_symbol()
-                    }
-                    _ => {
-                        return Err(exceptions::PyValueError::new_err(
-                            "Invalid variable specified.",
-                        ))
-                    }
-                };
-
-                let x = self.poly.get_variables().iter().position(|x| match x {
-                    Variable::Symbol(y) => *y == id,
-                    _ => false,
-                }).ok_or(exceptions::PyValueError::new_err(format!(
-                    "Variable {} not found in polynomial",
-                    x.__str__()?
-                )))?;
-
-                Ok(self.poly.apart(x).into_iter()
-                    .map(|f| Self { poly: f }).collect())
-            }
-        }
-    };
-}
-
-generate_rat_methods!(PythonRationalPolynomial);
-generate_rat_methods!(PythonFiniteFieldRationalPolynomial);
-
 #[derive(FromPyObject)]
 pub enum ConvertibleToRationalPolynomial {
     Literal(PythonRationalPolynomial),
@@ -5512,6 +8460,25 @@ impl ConvertibleToRationalPolynomial {
                 Ok(PythonRationalPolynomial { poly })
             }
         }
+    }
+}
+
+#[pyclass(name = "Evaluator", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonInstructionEvaluator {
+    pub instr: InstructionEvaluator<f64>,
+}
+
+#[pymethods]
+impl PythonInstructionEvaluator {
+    /// Evaluate the polynomial for multiple inputs and return the result.
+    fn evaluate(&self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
+        let mut eval = self.instr.clone();
+
+        inputs
+            .iter()
+            .map(|s| eval.evaluate_with_input(s)[0])
+            .collect()
     }
 }
 

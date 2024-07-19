@@ -1093,7 +1093,10 @@ where
 
                         w.push((&sol * &constant, res));
                     } else {
-                        w.push((&ff.clone().into() * &constant, res.clone()));
+                        w.push((
+                            &RationalPolynomial::from(ff.clone()) * &constant,
+                            res.clone(),
+                        ));
                     }
                 }
             }

@@ -6,14 +6,14 @@ use std::sync::{Arc, RwLock};
 use smartstring::{LazyCompact, SmartString};
 
 use crate::domains::finite_field::{FiniteFieldCore, Zp, Zp64};
-use crate::domains::integer::{IntegerRing, Z};
-use crate::domains::rational::RationalField;
+use crate::domains::integer::Z;
+use crate::domains::rational::Q;
 use crate::parser::Token;
 use crate::poly::Variable;
 use crate::{
     domains::rational_polynomial::RationalPolynomial,
     printer::{PrintOptions, RationalPolynomialPrinter},
-    state::{State, Workspace},
+    state::State,
 };
 use once_cell::sync::Lazy;
 
@@ -65,17 +65,15 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
     let token = Token::parse(&input).unwrap();
 
     macro_rules! to_rational {
-        ($in_field: ty, $exp_size: ty) => {
+        ($in_field: expr, $exp_size: ty) => {
             if prime == 0 {
-                let r: RationalPolynomial<IntegerRing, $exp_size> = Workspace::get_local()
-                    .with(|workspace| {
-                        token.to_rational_polynomial(
-                            &<$in_field>::new(),
-                            &Z,
-                            &symbolica.var_map,
-                            &symbolica.var_name_map,
-                        )
-                    })
+                let r: RationalPolynomial<_, $exp_size> = token
+                    .to_rational_polynomial(
+                        &$in_field,
+                        &Z,
+                        &symbolica.var_map,
+                        &symbolica.var_name_map,
+                    )
                     .unwrap();
 
                 format!(
@@ -101,15 +99,13 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
             } else {
                 if prime >= 0 && prime <= u32::MAX as i64 {
                     let field = Zp::new(prime as u32);
-                    let rf: RationalPolynomial<Zp, $exp_size> = Workspace::get_local()
-                        .with(|workspace| {
-                            token.to_rational_polynomial(
-                                &field,
-                                &field,
-                                &symbolica.var_map,
-                                &symbolica.var_name_map,
-                            )
-                        })
+                    let rf: RationalPolynomial<_, $exp_size> = token
+                        .to_rational_polynomial(
+                            &field,
+                            &field,
+                            &symbolica.var_map,
+                            &symbolica.var_name_map,
+                        )
                         .unwrap();
 
                     symbolica.buffer.clear();
@@ -135,15 +131,13 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                     )
                 } else {
                     let field = Zp64::new(prime as u64);
-                    let rf: RationalPolynomial<Zp64, $exp_size> = Workspace::get_local()
-                        .with(|workspace| {
-                            token.to_rational_polynomial(
-                                &field,
-                                &field,
-                                &symbolica.var_map,
-                                &symbolica.var_name_map,
-                            )
-                        })
+                    let rf: RationalPolynomial<_, $exp_size> = token
+                        .to_rational_polynomial(
+                            &field,
+                            &field,
+                            &symbolica.var_map,
+                            &symbolica.var_name_map,
+                        )
                         .unwrap();
 
                     symbolica.buffer.clear();
@@ -176,9 +170,9 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
         symbolica.input_has_rational_numbers,
         symbolica.exp_fits_in_u8,
     ) {
-        (false, true) => to_rational!(IntegerRing, u8),
-        (true, true) => to_rational!(RationalField, u8),
-        (false, false) => to_rational!(IntegerRing, u16),
-        (true, false) => to_rational!(RationalField, u16),
+        (false, true) => to_rational!(Z, u8),
+        (true, true) => to_rational!(Q, u8),
+        (false, false) => to_rational!(Z, u16),
+        (true, false) => to_rational!(Q, u16),
     }
 }

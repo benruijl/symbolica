@@ -1017,6 +1017,15 @@ impl<'a> AtomView<'a> {
                         t.as_view().normalize(workspace, out);
                         return;
                     }
+
+                    for a in out_f.to_fun_view() {
+                        if let AtomView::Num(n) = a {
+                            if n.is_zero() {
+                                out.to_num(Coefficient::zero());
+                                return;
+                            }
+                        }
+                    }
                 }
 
                 if id.is_symmetric() || id.is_antisymmetric() {

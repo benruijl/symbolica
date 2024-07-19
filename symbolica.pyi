@@ -2561,6 +2561,18 @@ class RationalPolynomial:
         >>> print((e - p.to_expression()).expand())
         """
 
+    def derivative(self, x: Expression) -> RationalPolynomial:
+        """Take a derivative in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+        >>> print(p.derivative(x))
+        """
+
     def apart(self, x: Expression) -> List[RationalPolynomial]:
         """Compute the partial fraction decomposition in `x`.
 
@@ -2628,6 +2640,18 @@ class FiniteFieldRationalPolynomial:
 
     def gcd(self, rhs: FiniteFieldRationalPolynomial) -> FiniteFieldRationalPolynomial:
         """Compute the greatest common divisor (GCD) of two rational polynomials."""
+
+    def derivative(self, x: Expression) -> RationalPolynomial:
+        """Take a derivative in `x`.
+
+        Examples
+        --------
+
+        >>> from symbolica import Expression
+        >>> x = Expression.symbol('x')
+        >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+        >>> print(p.derivative(x))
+        """
 
     def apart(self, x: Expression) -> List[FiniteFieldRationalPolynomial]:
         """Compute the partial fraction decomposition in `x`.

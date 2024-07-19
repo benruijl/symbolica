@@ -8082,6 +8082,36 @@ impl PythonRationalPolynomial {
         }
     }
 
+    /// Take a derivative in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+    /// >>> print(p.derivative(x))
+    pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .numerator
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.derivative(x),
+        })
+    }
+
     /// Compute the partial fraction decomposition in `x`.
     ///
     /// Examples
@@ -8364,6 +8394,36 @@ impl PythonFiniteFieldRationalPolynomial {
                 poly: new_self.gcd(&new_rhs),
             }
         }
+    }
+
+    /// Take a derivative in `x`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x = Expression.symbol('x')
+    /// >>> p = Expression.parse('1/((x+y)*(x^2+x*y+1)(x+1))').to_rational_polynomial()
+    /// >>> print(p.derivative(x))
+    pub fn derivative(&self, x: PythonExpression) -> PyResult<Self> {
+        let x = self
+            .poly
+            .numerator
+            .get_vars_ref()
+            .iter()
+            .position(|v| match (v, x.expr.as_view()) {
+                (Variable::Symbol(y), AtomView::Var(vv)) => *y == vv.get_symbol(),
+                (Variable::Function(_, f) | Variable::Other(f), a) => f.as_view() == a,
+                _ => false,
+            })
+            .ok_or(exceptions::PyValueError::new_err(format!(
+                "Variable {} not found in polynomial",
+                x.__str__()?
+            )))?;
+
+        Ok(Self {
+            poly: self.poly.derivative(x),
+        })
     }
 
     /// Compute the partial fraction decomposition in `x`.
@@ -8718,7 +8778,7 @@ impl PythonMatrix {
 
     /// Return the number of columns.
     pub fn ncols(&self) -> usize {
-        self.matrix.nrows()
+        self.matrix.ncols()
     }
 
     /// Return true iff every entry in the matrix is zero.

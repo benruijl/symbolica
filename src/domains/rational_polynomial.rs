@@ -745,6 +745,39 @@ where
 impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+{
+    /// Compute the derivative of the rational polynomial in `var`.
+    pub fn derivative(&self, var: usize) -> Self {
+        if self.numerator.degree(var) == E::zero() && self.denominator.degree(var) == E::zero() {
+            return RationalPolynomial {
+                numerator: self.numerator.zero(),
+                denominator: self.denominator.one(),
+            };
+        }
+
+        let dn = self.numerator.derivative(var);
+        let dd = self.denominator.derivative(var);
+
+        let a = RationalPolynomial::from_num_den(
+            dn,
+            self.denominator.clone(),
+            &self.numerator.field,
+            false,
+        );
+        let b = RationalPolynomial::from_num_den(
+            &self.numerator * &dd,
+            &self.denominator * &self.denominator,
+            &self.numerator.field,
+            false,
+        );
+
+        &a - &b
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
     MultivariatePolynomial<R, E>: Factorize,
 {
     /// Compute the partial fraction decomposition of the rational polynomial in `var`.

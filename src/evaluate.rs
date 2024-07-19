@@ -325,7 +325,14 @@ impl<T> ExpressionEvaluator<T> {
 }
 
 impl<T: std::fmt::Display> ExpressionEvaluator<T> {
-    pub fn export_cpp(&self) -> String {
+    /// Create a C++ code representation of the evaluation tree.
+    pub fn export_cpp(&self, filename: &str) -> Result<ExportedCode, std::io::Error> {
+        let cpp = self.export_cpp_str();
+        std::fs::write(filename, cpp)?;
+        Ok(ExportedCode(filename.to_string()))
+    }
+
+    pub fn export_cpp_str(&self) -> String {
         let mut res = String::new();
         res += &format!("\ntemplate<typename T>\nvoid eval(T* params, T* out) {{\n");
 

@@ -618,7 +618,18 @@ impl Ord for CoefficientView<'_> {
             (CoefficientView::Large(n1), &CoefficientView::Natural(n2, d2)) => {
                 n1.to_rat().cmp(&Rational::from_unchecked(n2, d2))
             }
-            _ => unreachable!(),
+            (CoefficientView::Float(f1), CoefficientView::Float(f2)) => f1
+                .to_float()
+                .partial_cmp(&f2.to_float())
+                .unwrap_or(Ordering::Equal),
+            (CoefficientView::Natural(_, _), _) => Ordering::Less,
+            (_, CoefficientView::Natural(_, _)) => Ordering::Greater,
+            (CoefficientView::Float(_), _) => Ordering::Less,
+            (_, CoefficientView::Float(_)) => Ordering::Greater,
+            (CoefficientView::FiniteField(_, _), _) => Ordering::Less,
+            (_, CoefficientView::FiniteField(_, _)) => Ordering::Greater,
+            (CoefficientView::RationalPolynomial(_), _) => Ordering::Less,
+            (_, CoefficientView::RationalPolynomial(_)) => Ordering::Greater,
         }
     }
 }

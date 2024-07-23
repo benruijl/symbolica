@@ -85,7 +85,7 @@ fn main() {
     println!("op cpe {:?}", tree.count_operations());
 
     let ce = tree
-        .export_cpp("nested_evaluation.cpp")
+        .export_cpp("nested_evaluation.cpp", "evaltest", true)
         .unwrap()
         .compile("libneval.so", CompileOptions::default())
         .unwrap()

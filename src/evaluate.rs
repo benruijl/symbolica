@@ -326,14 +326,27 @@ impl<T> ExpressionEvaluator<T> {
 
 impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     /// Create a C++ code representation of the evaluation tree.
-    pub fn export_cpp(&self, filename: &str) -> Result<ExportedCode, std::io::Error> {
-        let cpp = self.export_cpp_str();
+    pub fn export_cpp(
+        &self,
+        filename: &str,
+        function_name: &str,
+        include_header: bool,
+    ) -> Result<ExportedCode, std::io::Error> {
+        let cpp = self.export_cpp_str(function_name, include_header);
         std::fs::write(filename, cpp)?;
-        Ok(ExportedCode(filename.to_string()))
+        Ok(ExportedCode {
+            source_filename: filename.to_string(),
+            function_name: function_name.to_string(),
+        })
     }
 
-    pub fn export_cpp_str(&self) -> String {
-        let mut res = String::new();
+    pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
+        let mut res = if include_header {
+            "#include <iostream>\n#include <complex>\n#include <cmath>\n\n".to_string()
+        } else {
+            String::new()
+        };
+
         res += &format!("\ntemplate<typename T>\nvoid eval(T* params, T* out) {{\n");
 
         res += &format!(
@@ -360,12 +373,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         res += "\treturn;\n}\n";
 
-        res += "\nextern \"C\" {\n\tvoid eval_double(double* params, double* out) {\n\t\t eval(params, out);\n\t}\n}\n";
-        res += "\nextern \"C\" {\n\tvoid eval_complex(std::complex<double>* params, std::complex<double>* out) {\n\t\t eval(params, out);\n\t}\n}\n";
+        res += &format!("\nextern \"C\" {{\n\tvoid {}_double(double* params, double* out) {{\n\t\teval(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\teval(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
-        let header = "#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
-
-        header.to_string() + res.as_str()
+        res
     }
 
     fn export_cpp_impl(instr: &[Instr], out: &mut String) {
@@ -1507,17 +1518,23 @@ impl<T: Real> EvalTree<T> {
     }
 }
 
-pub struct ExportedCode(String);
-pub struct CompiledCode(String);
+pub struct ExportedCode {
+    source_filename: String,
+    function_name: String,
+}
+pub struct CompiledCode {
+    library_filename: String,
+    function_name: String,
+}
 
 impl CompiledCode {
     /// Load the evaluator from the compiled shared library.
     pub fn load(&self) -> Result<CompiledEvaluator, String> {
-        CompiledEvaluator::load(&self.0)
+        CompiledEvaluator::load(&self.library_filename, &self.function_name)
     }
 }
 
-type L = libloading::Library;
+type L = std::sync::Arc<libloading::Library>;
 
 #[derive(Debug)]
 struct EvaluatorFunctions<'a> {
@@ -1559,8 +1576,24 @@ impl CompiledEvaluatorFloat for Complex<f64> {
 }
 
 impl CompiledEvaluator {
+    /// Load a new function from the same library.
+    pub fn load_new_function(&self, function_name: &str) -> Result<CompiledEvaluator, String> {
+        unsafe {
+            CompiledEvaluator::try_new(self.borrow_owner().clone(), |lib| {
+                Ok(EvaluatorFunctions {
+                    eval_double: lib
+                        .get(format!("{}_double", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    eval_complex: lib
+                        .get(format!("{}_complex", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                })
+            })
+        }
+    }
+
     /// Load a compiled evaluator from a shared library.
-    pub fn load(file: &str) -> Result<CompiledEvaluator, String> {
+    pub fn load(file: &str, function_name: &str) -> Result<CompiledEvaluator, String> {
         unsafe {
             let lib = match libloading::Library::new(file) {
                 Ok(lib) => lib,
@@ -1569,10 +1602,14 @@ impl CompiledEvaluator {
                 }
             };
 
-            CompiledEvaluator::try_new(lib, |lib| {
+            CompiledEvaluator::try_new(std::sync::Arc::new(lib), |lib| {
                 Ok(EvaluatorFunctions {
-                    eval_double: lib.get(b"eval_double").map_err(|e| e.to_string())?,
-                    eval_complex: lib.get(b"eval_complex").map_err(|e| e.to_string())?,
+                    eval_double: lib
+                        .get(format!("{}_double", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    eval_complex: lib
+                        .get(format!("{}_complex", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
                 })
             })
         }
@@ -1641,7 +1678,11 @@ impl ExportedCode {
             builder.arg(c);
         }
 
-        let r = builder.arg("-o").arg(out).arg(&self.0).output()?;
+        let r = builder
+            .arg("-o")
+            .arg(out)
+            .arg(&self.source_filename)
+            .output()?;
 
         if !r.status.success() {
             return Err(std::io::Error::new(
@@ -1653,20 +1694,35 @@ impl ExportedCode {
             ));
         }
 
-        Ok(CompiledCode(out.to_string()))
+        Ok(CompiledCode {
+            library_filename: out.to_string(),
+            function_name: self.function_name.clone(),
+        })
     }
 }
 
 impl<T: NumericalFloatLike> EvalTree<T> {
     /// Create a C++ code representation of the evaluation tree.
-    pub fn export_cpp(&self, filename: &str) -> Result<ExportedCode, std::io::Error> {
-        let cpp = self.export_cpp_str();
+    pub fn export_cpp(
+        &self,
+        filename: &str,
+        function_name: &str,
+        include_header: bool,
+    ) -> Result<ExportedCode, std::io::Error> {
+        let cpp = self.export_cpp_str(function_name, include_header);
         std::fs::write(filename, cpp)?;
-        Ok(ExportedCode(filename.to_string()))
+        Ok(ExportedCode {
+            source_filename: filename.to_string(),
+            function_name: function_name.to_string(),
+        })
     }
 
-    fn export_cpp_str(&self) -> String {
-        let mut res = "#include <iostream>\n#include <cmath>\n#include <complex>\n\n".to_string();
+    fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
+        let mut res = if include_header {
+            "#include <iostream>\n#include <cmath>\n#include <complex>\n\n".to_string()
+        } else {
+            String::new()
+        };
 
         for (name, arg_names, body) in &self.functions {
             let mut args = arg_names
@@ -1705,8 +1761,8 @@ impl<T: NumericalFloatLike> EvalTree<T> {
 
         res += "\treturn;\n}\n";
 
-        res += "\nextern \"C\" {\n\tvoid eval_double(double* params, double* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
-        res += "\nextern \"C\" {\n\tvoid eval_complex(std::complex<double>* params, std::complex<double>* out) {\n\t\teval(params, out);\n\t\treturn;\n\t}\n}\n";
+        res += &format!("\nextern \"C\" {{\n\tvoid {}_double(double* params, double* out) {{\n\t\teval(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\teval(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
     }

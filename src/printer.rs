@@ -4,7 +4,8 @@ use colored::Colorize;
 
 use crate::{
     atom::{
-        representation::FunView, AddView, AtomView, MulView, NumView, PowView, Symbol, VarView,
+        representation::FunView, AddView, Atom, AtomView, MulView, NumView, PowView, Symbol,
+        VarView,
     },
     coefficient::CoefficientView,
     domains::{
@@ -26,6 +27,7 @@ pub struct PrintOptions {
     pub explicit_rational_polynomial: bool,
     pub number_thousands_separator: Option<char>,
     pub multiplication_operator: char,
+    pub double_star_for_exponentiation: bool,
     pub square_brackets_for_function: bool,
     pub num_exp_as_superscript: bool,
     pub latex: bool,
@@ -33,7 +35,7 @@ pub struct PrintOptions {
 
 impl PrintOptions {
     /// Print the output in a Mathematica-readable format.
-    pub fn mathematica() -> PrintOptions {
+    pub const fn mathematica() -> PrintOptions {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: false,
@@ -43,6 +45,7 @@ impl PrintOptions {
             explicit_rational_polynomial: false,
             number_thousands_separator: None,
             multiplication_operator: ' ',
+            double_star_for_exponentiation: false,
             square_brackets_for_function: true,
             num_exp_as_superscript: false,
             latex: false,
@@ -50,7 +53,7 @@ impl PrintOptions {
     }
 
     /// Print the output in a Latex input format.
-    pub fn latex() -> PrintOptions {
+    pub const fn latex() -> PrintOptions {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: false,
@@ -60,6 +63,7 @@ impl PrintOptions {
             explicit_rational_polynomial: false,
             number_thousands_separator: None,
             multiplication_operator: ' ',
+            double_star_for_exponentiation: false,
             square_brackets_for_function: false,
             num_exp_as_superscript: false,
             latex: true,
@@ -67,7 +71,7 @@ impl PrintOptions {
     }
 
     /// Print the output suitable for a file.
-    pub fn file() -> PrintOptions {
+    pub const fn file() -> PrintOptions {
         Self {
             terms_on_new_line: false,
             color_top_level_sum: false,
@@ -77,9 +81,18 @@ impl PrintOptions {
             explicit_rational_polynomial: false,
             number_thousands_separator: None,
             multiplication_operator: '*',
+            double_star_for_exponentiation: false,
             square_brackets_for_function: false,
             num_exp_as_superscript: false,
             latex: false,
+        }
+    }
+
+    /// Print the output in a sympy input format.
+    pub const fn sympy() -> PrintOptions {
+        Self {
+            double_star_for_exponentiation: true,
+            ..Self::file()
         }
     }
 }
@@ -95,6 +108,7 @@ impl Default for PrintOptions {
             explicit_rational_polynomial: false,
             number_thousands_separator: None,
             multiplication_operator: '*',
+            double_star_for_exponentiation: false,
             square_brackets_for_function: false,
             num_exp_as_superscript: false,
             latex: false,
@@ -175,6 +189,20 @@ impl std::fmt::Display for Symbol {
     }
 }
 
+impl Atom {
+    /// Construct a printer for the atom with special options.
+    pub fn printer<'a>(&'a self, opts: PrintOptions) -> AtomPrinter<'a> {
+        AtomPrinter::new_with_options(self.as_view(), opts)
+    }
+
+    /// Print the atom in a form that is unique and independent of any implementation details.
+    ///     
+    /// Anti-symmetric functions are not supported.
+    pub fn to_canonical_string(&self) -> String {
+        self.as_view().to_canonical_string()
+    }
+}
+
 impl<'a> AtomView<'a> {
     fn fmt_debug(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -200,6 +228,145 @@ impl<'a> AtomView<'a> {
             AtomView::Pow(p) => p.fmt_output(fmt, opts, print_state),
             AtomView::Mul(t) => t.fmt_output(fmt, opts, print_state),
             AtomView::Add(e) => e.fmt_output(fmt, opts, print_state),
+        }
+    }
+
+    /// Construct a printer for the atom with special options.
+    pub fn printer(&self, opts: PrintOptions) -> AtomPrinter {
+        AtomPrinter::new_with_options(*self, opts)
+    }
+
+    /// Print the atom in a form that is unique and independent of any implementation details.
+    ///
+    /// Anti-symmetric functions are not supported.
+    pub fn to_canonical_string(&self) -> String {
+        let mut s = String::new();
+        self.to_canonical_view_impl(&mut s);
+        s
+    }
+
+    fn to_canonical_view_impl(&self, out: &mut String) {
+        fn add_paren(cur: AtomView, s: AtomView) -> bool {
+            if let AtomView::Pow(_) = cur {
+                matches!(s, AtomView::Add(_) | AtomView::Mul(_))
+            } else if let AtomView::Mul(_) = cur {
+                matches!(s, AtomView::Add(_))
+            } else {
+                false
+            }
+        }
+
+        match self {
+            AtomView::Num(_) => write!(out, "{}", self).unwrap(),
+            AtomView::Var(v) => write!(out, "{}", v.get_symbol()).unwrap(),
+            AtomView::Fun(f) => {
+                write!(out, "{}(", f.get_symbol()).unwrap();
+
+                let mut args = vec![];
+
+                for x in f.iter() {
+                    let mut arg = String::new();
+                    x.to_canonical_view_impl(&mut arg);
+                    args.push(arg);
+                }
+
+                // TODO: anti-symmetric may generate minus sign...
+                if f.is_symmetric() {
+                    args.sort();
+                }
+
+                if f.is_antisymmetric() {
+                    unimplemented!(
+                        "Antisymmetric functions are not supported yet for canonical view"
+                    );
+                }
+
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(out, ",").unwrap();
+                    }
+                    write!(out, "{}", arg).unwrap();
+                }
+
+                write!(out, ")").unwrap();
+            }
+            AtomView::Pow(p) => {
+                let (b, e) = p.get_base_exp();
+
+                if add_paren(*self, b) {
+                    write!(out, "(").unwrap();
+                    b.to_canonical_view_impl(out);
+                    write!(out, ")").unwrap();
+                } else {
+                    b.to_canonical_view_impl(out);
+                }
+
+                if add_paren(*self, e) {
+                    write!(out, "^(").unwrap();
+                    e.to_canonical_view_impl(out);
+                    write!(out, ")").unwrap();
+                } else {
+                    write!(out, "^").unwrap();
+                    e.to_canonical_view_impl(out);
+                }
+            }
+            AtomView::Mul(m) => {
+                let mut terms = vec![];
+
+                for x in m.iter() {
+                    let mut term = if add_paren(*self, x) {
+                        "(".to_string()
+                    } else {
+                        String::new()
+                    };
+
+                    x.to_canonical_view_impl(&mut term);
+
+                    if add_paren(*self, x) {
+                        term.push(')');
+                    }
+
+                    terms.push(term);
+                }
+
+                terms.sort();
+
+                for (i, term) in terms.iter().enumerate() {
+                    if i > 0 {
+                        write!(out, "*").unwrap();
+                    }
+
+                    write!(out, "{}", term).unwrap();
+                }
+            }
+            AtomView::Add(a) => {
+                let mut terms = vec![];
+
+                for x in a.iter() {
+                    let mut term = if add_paren(*self, x) {
+                        "(".to_string()
+                    } else {
+                        String::new()
+                    };
+
+                    x.to_canonical_view_impl(&mut term);
+
+                    if add_paren(*self, x) {
+                        term.push(')');
+                    }
+
+                    terms.push(term);
+                }
+
+                terms.sort();
+
+                for (i, term) in terms.iter().enumerate() {
+                    if i > 0 {
+                        write!(out, "+").unwrap();
+                    }
+                    write!(out, "{}", term).unwrap();
+                }
+            }
         }
     }
 }
@@ -606,7 +773,11 @@ impl<'a> FormattedPrintPow for PowView<'a> {
         }
 
         if !superscript_exponent {
-            f.write_char('^')?;
+            if !opts.latex && opts.double_star_for_exponentiation {
+                f.write_str("**")?;
+            } else {
+                f.write_char('^')?;
+            }
         }
 
         if opts.latex {
@@ -863,7 +1034,6 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                             "({})",
                             PolynomialPrinter {
                                 poly: d,
-
                                 opts: self.opts,
                             }
                         ))?;
@@ -872,7 +1042,6 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                             "({})^{}",
                             PolynomialPrinter {
                                 poly: d,
-
                                 opts: self.opts,
                             },
                             p
@@ -900,7 +1069,6 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     "{}",
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
-
                         opts: self.opts,
                     }
                 ))?;
@@ -909,7 +1077,6 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     "({})",
                     PolynomialPrinter {
                         poly: &self.poly.numerator,
-
                         opts: self.opts,
                     }
                 ))?;
@@ -942,7 +1109,6 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                         "{}",
                         PolynomialPrinter {
                             poly: d,
-
                             opts: self.opts,
                         }
                     ));
@@ -969,17 +1135,20 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                         "({})",
                         PolynomialPrinter {
                             poly: d,
-
                             opts: self.opts,
                         }
                     ))?;
                 } else {
                     f.write_fmt(format_args!(
-                        "({})^{}",
+                        "({}){}{}",
                         PolynomialPrinter {
                             poly: d,
-
                             opts: self.opts,
+                        },
+                        if self.opts.double_star_for_exponentiation {
+                            "**"
+                        } else {
+                            "^"
                         },
                         p
                     ))?;
@@ -1223,6 +1392,8 @@ impl<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
                 if e.to_u32() != 1 {
                     if self.opts.latex {
                         write!(f, "^{{{}}}", e)?;
+                    } else if self.opts.double_star_for_exponentiation {
+                        write!(f, "**{}", e)?;
                     } else {
                         write!(f, "^{}", e)?;
                     }
@@ -1327,6 +1498,7 @@ mod test {
         atom::Atom,
         domains::{finite_field::Zp, integer::Z},
         printer::{AtomPrinter, PolynomialPrinter, PrintOptions},
+        state::{FunctionAttribute, State},
     };
 
     #[test]
@@ -1362,17 +1534,10 @@ mod test {
                 AtomPrinter::new_with_options(
                     a.as_view(),
                     PrintOptions {
-                        terms_on_new_line: true,
-                        color_top_level_sum: false,
-                        color_builtin_symbols: false,
-                        print_finite_field: true,
-                        symmetric_representation_for_finite_field: false,
-                        explicit_rational_polynomial: false,
                         number_thousands_separator: Some('_'),
                         multiplication_operator: ' ',
-                        square_brackets_for_function: false,
                         num_exp_as_superscript: true,
-                        latex: false
+                        ..PrintOptions::file()
                     }
                 )
             ),
@@ -1391,17 +1556,9 @@ mod test {
                 PolynomialPrinter::new_with_options(
                     &a,
                     PrintOptions {
-                        terms_on_new_line: true,
-                        color_top_level_sum: false,
-                        color_builtin_symbols: false,
                         print_finite_field: true,
                         symmetric_representation_for_finite_field: true,
-                        explicit_rational_polynomial: false,
-                        number_thousands_separator: Some('_'),
-                        multiplication_operator: ' ',
-                        square_brackets_for_function: false,
-                        num_exp_as_superscript: false,
-                        latex: false
+                        ..PrintOptions::file()
                     }
                 )
             ),
@@ -1446,24 +1603,23 @@ mod test {
         assert_eq!(
             format!(
                 "{}",
-                AtomPrinter::new_with_options(
-                    a.as_view(),
-                    PrintOptions {
-                        terms_on_new_line: false,
-                        color_top_level_sum: false,
-                        color_builtin_symbols: false,
-                        print_finite_field: true,
-                        symmetric_representation_for_finite_field: true,
-                        explicit_rational_polynomial: false,
-                        number_thousands_separator: None,
-                        multiplication_operator: '*',
-                        square_brackets_for_function: false,
-                        num_exp_as_superscript: false,
-                        latex: false
-                    }
-                )
+                AtomPrinter::new_with_options(a.as_view(), PrintOptions::file())
             ),
             "(-1)^(x+1)-(1/2)^x"
         )
+    }
+
+    #[test]
+    fn canon() {
+        let _ =
+            State::get_symbol_with_attributes("canon_f", &[FunctionAttribute::Symmetric]).unwrap();
+        let _ = State::get_symbol("canon_y");
+        let _ = State::get_symbol("canon_x");
+
+        let a = Atom::parse("canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)").unwrap();
+        assert_eq!(
+            a.to_canonical_string(),
+            "(canon_x+canon_y)*canon_y^2+2*canon_x*canon_y+canon_f(canon_x,canon_y)+canon_x^2"
+        );
     }
 }

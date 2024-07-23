@@ -266,6 +266,7 @@ class Expression:
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
         multiplication_operator: str = "*",
+        double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
@@ -291,6 +292,15 @@ class Expression:
         >>> print(a.to_latex())
 
         Yields `$$z^{34}+x^{x+2}+y^{4}+f(x,x^{2})+128378127123 z^{\\frac{2}{3}} w^{2} \\frac{1}{x} \\frac{1}{y}+\\frac{3}{5}$$`.
+        """
+
+    def to_sympy(self) -> str:
+        """Convert the expression into a sympy-parsable string.
+
+        Examples
+        --------
+        >>> from sympy import *
+        >>> s = sympy.parse_expr(Expression.parse('x^2+f((1+x)^y)').to_sympy())
         """
 
     def __hash__(self) -> str:
@@ -1444,6 +1454,7 @@ class Transformer:
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
         multiplication_operator: str = "*",
+        double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
@@ -1735,6 +1746,7 @@ class Polynomial:
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
         multiplication_operator: str = "*",
+        double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
@@ -1962,6 +1974,7 @@ class IntegerPolynomial:
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
         multiplication_operator: str = "*",
+        double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
@@ -2122,6 +2135,7 @@ class NumberFieldPolynomial:
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
         multiplication_operator: str = "*",
+        double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
@@ -2322,6 +2336,7 @@ class FiniteFieldPolynomial:
         explicit_rational_polynomial: bool = False,
         number_thousands_separator: Optional[str] = None,
         multiplication_operator: str = "*",
+        double_star_for_exponentiation: bool = False,
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,

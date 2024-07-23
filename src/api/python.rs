@@ -926,6 +926,7 @@ impl PythonPattern {
             explicit_rational_polynomial = false,
             number_thousands_separator = None,
             multiplication_operator = '*',
+            double_star_for_exponentiation = false,
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false)
@@ -940,6 +941,7 @@ impl PythonPattern {
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
+        double_star_for_exponentiation: bool,
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
@@ -955,6 +957,7 @@ impl PythonPattern {
                 explicit_rational_polynomial,
                 number_thousands_separator,
                 multiplication_operator,
+                double_star_for_exponentiation,
                 square_brackets_for_function,
                 num_exp_as_superscript,
                 latex
@@ -1753,18 +1756,19 @@ impl PythonExpression {
     /// >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
     /// >>> print(a.pretty_str(number_thousands_separator='_', multiplication_operator=' '))
     #[pyo3(signature =
-    (terms_on_new_line = false,
-        color_top_level_sum = true,
-        color_builtin_symbols = true,
-        print_finite_field = true,
-        symmetric_representation_for_finite_field = false,
-        explicit_rational_polynomial = false,
-        number_thousands_separator = None,
-        multiplication_operator = '*',
-        square_brackets_for_function = false,
-        num_exp_as_superscript = true,
-        latex = false)
-    )]
+        (terms_on_new_line = false,
+            color_top_level_sum = true,
+            color_builtin_symbols = true,
+            print_finite_field = true,
+            symmetric_representation_for_finite_field = false,
+            explicit_rational_polynomial = false,
+            number_thousands_separator = None,
+            multiplication_operator = '*',
+            double_star_for_exponentiation = false,
+            square_brackets_for_function = false,
+            num_exp_as_superscript = true,
+            latex = false)
+        )]
     pub fn pretty_str(
         &self,
         terms_on_new_line: bool,
@@ -1775,6 +1779,7 @@ impl PythonExpression {
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
+        double_star_for_exponentiation: bool,
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
@@ -1792,6 +1797,7 @@ impl PythonExpression {
                     explicit_rational_polynomial,
                     number_thousands_separator,
                     multiplication_operator,
+                    double_star_for_exponentiation,
                     square_brackets_for_function,
                     num_exp_as_superscript,
                     latex
@@ -1813,6 +1819,16 @@ impl PythonExpression {
             "$${}$$",
             AtomPrinter::new_with_options(self.expr.as_view(), PrintOptions::latex(),)
         ))
+    }
+
+    /// Convert the expression into a sympy-parsable string.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from sympy import *
+    /// >>> s = sympy.parse_expr(Expression.parse('x^2+f((1+x)^y)').to_sympy())
+    pub fn to_sympy(&self) -> PyResult<String> {
+        Ok(format!("{}", self.expr.printer(PrintOptions::sympy())))
     }
 
     /// Hash the expression.
@@ -4232,18 +4248,19 @@ impl PythonPolynomial {
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
     /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
-    (terms_on_new_line = false,
-        color_top_level_sum = true,
-        color_builtin_symbols = true,
-        print_finite_field = true,
-        symmetric_representation_for_finite_field = false,
-        explicit_rational_polynomial = false,
-        number_thousands_separator = None,
-        multiplication_operator = '*',
-        square_brackets_for_function = false,
-        num_exp_as_superscript = true,
-        latex = false)
-    )]
+        (terms_on_new_line = false,
+            color_top_level_sum = true,
+            color_builtin_symbols = true,
+            print_finite_field = true,
+            symmetric_representation_for_finite_field = false,
+            explicit_rational_polynomial = false,
+            number_thousands_separator = None,
+            multiplication_operator = '*',
+            double_star_for_exponentiation = false,
+            square_brackets_for_function = false,
+            num_exp_as_superscript = true,
+            latex = false)
+        )]
     pub fn pretty_str(
         &self,
         terms_on_new_line: bool,
@@ -4254,6 +4271,7 @@ impl PythonPolynomial {
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
+        double_star_for_exponentiation: bool,
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
@@ -4271,6 +4289,7 @@ impl PythonPolynomial {
                     explicit_rational_polynomial,
                     number_thousands_separator,
                     multiplication_operator,
+                    double_star_for_exponentiation,
                     square_brackets_for_function,
                     num_exp_as_superscript,
                     latex
@@ -4999,18 +5018,19 @@ impl PythonFiniteFieldPolynomial {
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
     /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
-    (terms_on_new_line = false,
-        color_top_level_sum = true,
-        color_builtin_symbols = true,
-        print_finite_field = true,
-        symmetric_representation_for_finite_field = false,
-        explicit_rational_polynomial = false,
-        number_thousands_separator = None,
-        multiplication_operator = '*',
-        square_brackets_for_function = false,
-        num_exp_as_superscript = true,
-        latex = false)
-    )]
+        (terms_on_new_line = false,
+            color_top_level_sum = true,
+            color_builtin_symbols = true,
+            print_finite_field = true,
+            symmetric_representation_for_finite_field = false,
+            explicit_rational_polynomial = false,
+            number_thousands_separator = None,
+            multiplication_operator = '*',
+            double_star_for_exponentiation = false,
+            square_brackets_for_function = false,
+            num_exp_as_superscript = true,
+            latex = false)
+        )]
     pub fn pretty_str(
         &self,
         terms_on_new_line: bool,
@@ -5021,6 +5041,7 @@ impl PythonFiniteFieldPolynomial {
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
+        double_star_for_exponentiation: bool,
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
@@ -5038,6 +5059,7 @@ impl PythonFiniteFieldPolynomial {
                     explicit_rational_polynomial,
                     number_thousands_separator,
                     multiplication_operator,
+                    double_star_for_exponentiation,
                     square_brackets_for_function,
                     num_exp_as_superscript,
                     latex
@@ -5617,18 +5639,19 @@ impl PythonPrimeTwoPolynomial {
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
     /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
-    (terms_on_new_line = false,
-        color_top_level_sum = true,
-        color_builtin_symbols = true,
-        print_finite_field = true,
-        symmetric_representation_for_finite_field = false,
-        explicit_rational_polynomial = false,
-        number_thousands_separator = None,
-        multiplication_operator = '*',
-        square_brackets_for_function = false,
-        num_exp_as_superscript = true,
-        latex = false)
-    )]
+        (terms_on_new_line = false,
+            color_top_level_sum = true,
+            color_builtin_symbols = true,
+            print_finite_field = true,
+            symmetric_representation_for_finite_field = false,
+            explicit_rational_polynomial = false,
+            number_thousands_separator = None,
+            multiplication_operator = '*',
+            double_star_for_exponentiation = false,
+            square_brackets_for_function = false,
+            num_exp_as_superscript = true,
+            latex = false)
+        )]
     pub fn pretty_str(
         &self,
         terms_on_new_line: bool,
@@ -5639,6 +5662,7 @@ impl PythonPrimeTwoPolynomial {
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
+        double_star_for_exponentiation: bool,
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
@@ -5656,6 +5680,7 @@ impl PythonPrimeTwoPolynomial {
                     explicit_rational_polynomial,
                     number_thousands_separator,
                     multiplication_operator,
+                    double_star_for_exponentiation,
                     square_brackets_for_function,
                     num_exp_as_superscript,
                     latex
@@ -6208,6 +6233,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         explicit_rational_polynomial = false,
         number_thousands_separator = None,
         multiplication_operator = '*',
+        double_star_for_exponentiation = false,
         square_brackets_for_function = false,
         num_exp_as_superscript = true,
         latex = false)
@@ -6222,6 +6248,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
+        double_star_for_exponentiation: bool,
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
@@ -6239,6 +6266,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                     explicit_rational_polynomial,
                     number_thousands_separator,
                     multiplication_operator,
+                    double_star_for_exponentiation,
                     square_brackets_for_function,
                     num_exp_as_superscript,
                     latex
@@ -6787,18 +6815,19 @@ impl PythonGaloisFieldPolynomial {
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
     /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
-    (terms_on_new_line = false,
-        color_top_level_sum = true,
-        color_builtin_symbols = true,
-        print_finite_field = true,
-        symmetric_representation_for_finite_field = false,
-        explicit_rational_polynomial = false,
-        number_thousands_separator = None,
-        multiplication_operator = '*',
-        square_brackets_for_function = false,
-        num_exp_as_superscript = true,
-        latex = false)
-    )]
+        (terms_on_new_line = false,
+            color_top_level_sum = true,
+            color_builtin_symbols = true,
+            print_finite_field = true,
+            symmetric_representation_for_finite_field = false,
+            explicit_rational_polynomial = false,
+            number_thousands_separator = None,
+            multiplication_operator = '*',
+            double_star_for_exponentiation = false,
+            square_brackets_for_function = false,
+            num_exp_as_superscript = true,
+            latex = false)
+        )]
     pub fn pretty_str(
         &self,
         terms_on_new_line: bool,
@@ -6809,6 +6838,7 @@ impl PythonGaloisFieldPolynomial {
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
+        double_star_for_exponentiation: bool,
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
@@ -6826,6 +6856,7 @@ impl PythonGaloisFieldPolynomial {
                     explicit_rational_polynomial,
                     number_thousands_separator,
                     multiplication_operator,
+                    double_star_for_exponentiation,
                     square_brackets_for_function,
                     num_exp_as_superscript,
                     latex
@@ -7383,6 +7414,7 @@ impl PythonNumberFieldPolynomial {
         explicit_rational_polynomial = false,
         number_thousands_separator = None,
         multiplication_operator = '*',
+        double_star_for_exponentiation = false,
         square_brackets_for_function = false,
         num_exp_as_superscript = true,
         latex = false)
@@ -7397,6 +7429,7 @@ impl PythonNumberFieldPolynomial {
         explicit_rational_polynomial: bool,
         number_thousands_separator: Option<char>,
         multiplication_operator: char,
+        double_star_for_exponentiation: bool,
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
@@ -7414,6 +7447,7 @@ impl PythonNumberFieldPolynomial {
                     explicit_rational_polynomial,
                     number_thousands_separator,
                     multiplication_operator,
+                    double_star_for_exponentiation,
                     square_brackets_for_function,
                     num_exp_as_superscript,
                     latex

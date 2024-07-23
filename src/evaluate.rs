@@ -1657,6 +1657,14 @@ impl Default for CompileOptions {
 }
 
 impl ExportedCode {
+    /// Create a new exported code object from a source file and function name.
+    pub fn new(source_filename: String, function_name: String) -> Self {
+        ExportedCode {
+            source_filename,
+            function_name,
+        }
+    }
+
     /// Compile the code to a shared library.
     pub fn compile(
         &self,

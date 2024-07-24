@@ -59,9 +59,9 @@ fn main() {
     );
 
     let mut it = pattern.pattern_match(expr.as_view(), &conditions, &settings);
-    while let Some((location, used_flags, _atom, match_stack)) = it.next() {
-        println!("\tMatch at location {:?} - {:?}:", location, used_flags);
-        for (id, v) in match_stack {
+    while let Some(m) = it.next() {
+        println!("\tMatch at location {:?} - {:?}:", m.position, m.used_flags);
+        for (id, v) in m.match_stack {
             print!("\t\t{} = ", State::get_name(*id));
             match v {
                 Match::Single(s) => {

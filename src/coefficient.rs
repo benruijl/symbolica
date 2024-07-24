@@ -20,7 +20,7 @@ use crate::{
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, Q},
         rational_polynomial::RationalPolynomial,
-        EuclideanDomain, Field, Ring,
+        EuclideanDomain, Field, InternalOrdering, Ring,
     },
     poly::{polynomial::MultivariatePolynomial, Variable, INLINED_EXPONENTS},
     state::{FiniteFieldIndex, State, Workspace},
@@ -75,6 +75,13 @@ impl From<(i64, i64)> for Coefficient {
     }
 }
 
+impl<'a> From<(i64, i64)> for CoefficientView<'a> {
+    #[inline]
+    fn from(r: (i64, i64)) -> Self {
+        CoefficientView::Natural(r.0, r.1)
+    }
+}
+
 impl From<Integer> for Coefficient {
     fn from(value: Integer) -> Self {
         Coefficient::Rational(value.into())
@@ -114,6 +121,33 @@ impl From<Float> for Coefficient {
 impl Default for Coefficient {
     fn default() -> Self {
         Coefficient::zero()
+    }
+}
+
+impl PartialOrd for Coefficient {
+    fn partial_cmp(&self, other: &Coefficient) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Coefficient {
+    fn cmp(&self, other: &Coefficient) -> Ordering {
+        match (self, other) {
+            (Coefficient::Rational(r1), Coefficient::Rational(r2)) => r1.cmp(r2),
+            (Coefficient::FiniteField(n1, _), Coefficient::FiniteField(n2, _)) => n1.0.cmp(&n2.0),
+            (Coefficient::Float(f1), Coefficient::Float(f2)) => {
+                f1.partial_cmp(&f2).unwrap_or(Ordering::Equal)
+            }
+            (Coefficient::RationalPolynomial(n1), Coefficient::RationalPolynomial(n2)) => {
+                n1.internal_cmp(&n2)
+            }
+            (Coefficient::Rational(_), _) => Ordering::Less,
+            (_, Coefficient::Rational(_)) => Ordering::Greater,
+            (Coefficient::Float(_), _) => Ordering::Less,
+            (_, Coefficient::Float(_)) => Ordering::Greater,
+            (Coefficient::FiniteField(_, _), _) => Ordering::Less,
+            (_, Coefficient::FiniteField(_, _)) => Ordering::Greater,
+        }
     }
 }
 
@@ -603,8 +637,8 @@ impl PartialOrd for CoefficientView<'_> {
 impl Ord for CoefficientView<'_> {
     fn cmp(&self, other: &CoefficientView) -> Ordering {
         match (self, other) {
-            (&CoefficientView::Natural(n1, d1), &CoefficientView::Natural(n2, d2)) => {
-                Rational::from_unchecked(n1, d1).cmp(&Rational::from_unchecked(n2, d2))
+            (CoefficientView::Natural(n1, d1), CoefficientView::Natural(n2, d2)) => {
+                Rational::from_unchecked(*n1, *d1).cmp(&Rational::from_unchecked(*n2, *d2))
             }
             (CoefficientView::Large(n1), CoefficientView::Large(n2)) => {
                 n1.to_rat().cmp(&n2.to_rat())
@@ -622,14 +656,17 @@ impl Ord for CoefficientView<'_> {
                 .to_float()
                 .partial_cmp(&f2.to_float())
                 .unwrap_or(Ordering::Equal),
+            (CoefficientView::RationalPolynomial(n1), CoefficientView::RationalPolynomial(n2)) => {
+                n1.deserialize().internal_cmp(&n2.deserialize())
+            }
             (CoefficientView::Natural(_, _), _) => Ordering::Less,
             (_, CoefficientView::Natural(_, _)) => Ordering::Greater,
+            (CoefficientView::Large(_), _) => Ordering::Less,
+            (_, CoefficientView::Large(_)) => Ordering::Greater,
             (CoefficientView::Float(_), _) => Ordering::Less,
             (_, CoefficientView::Float(_)) => Ordering::Greater,
             (CoefficientView::FiniteField(_, _), _) => Ordering::Less,
             (_, CoefficientView::FiniteField(_, _)) => Ordering::Greater,
-            (CoefficientView::RationalPolynomial(_), _) => Ordering::Less,
-            (_, CoefficientView::RationalPolynomial(_)) => Ordering::Greater,
         }
     }
 }

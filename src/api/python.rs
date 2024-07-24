@@ -4136,8 +4136,8 @@ impl PythonMatchIterator {
     /// Return the next match.
     fn __next__(&mut self) -> Option<HashMap<PythonExpression, PythonExpression>> {
         self.with_dependent_mut(|_, i| {
-            i.next().map(|(_, _, _, matches)| {
-                matches
+            i.next().map(|m| {
+                m.match_stack
                     .into_iter()
                     .map(|m| {
                         (Atom::new_var(m.0).into(), {
@@ -9293,7 +9293,7 @@ impl PythonNumericalIntegrator {
             .map_err(|e| pyo3::exceptions::PyAssertionError::new_err(e))
     }
 
-    /// Update the grid using the `learning_rate`.
+    /// Update the grid using the `discrete_learning_rate` and `continuous_learning_rate`.
     /// Examples
     /// --------
     /// >>> from symbolica import NumericalIntegrator, Sample
@@ -9309,10 +9309,15 @@ impl PythonNumericalIntegrator {
     /// >>>     samples = integrator.sample(10000 + i * 1000)
     /// >>>     res = integrand(samples)
     /// >>>     integrator.add_training_samples(samples, res)
-    /// >>>     avg, err, chi_sq = integrator.update(1.5)
+    /// >>>     avg, err, chi_sq = integrator.update(1.5, 1.5)
     /// >>>     print('Iteration {}: {:.6} +- {:.6}, chi={:.6}'.format(i+1, avg, err, chi_sq))
-    fn update(&mut self, learing_rate: f64) -> PyResult<(f64, f64, f64)> {
-        self.grid.update(learing_rate);
+    fn update(
+        &mut self,
+        discrete_learing_rate: f64,
+        continuous_learing_rate: f64,
+    ) -> PyResult<(f64, f64, f64)> {
+        self.grid
+            .update(discrete_learing_rate, continuous_learing_rate);
 
         let stats = self.grid.get_statistics();
         Ok((stats.avg, stats.err, stats.chi_sq / stats.cur_iter as f64))
@@ -9381,7 +9386,7 @@ impl PythonNumericalIntegrator {
                 self.grid.add_training_sample(s, r).unwrap();
             }
 
-            self.grid.update(1.5);
+            self.grid.update(1.5, 1.5);
 
             let stats = self.grid.get_statistics();
             if show_stats {

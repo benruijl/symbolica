@@ -413,10 +413,10 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Grid<T> {
     }
 
     /// Update the grid based on the samples added through [`Grid::add_training_sample`].
-    pub fn update(&mut self, learning_rate: T) {
+    pub fn update(&mut self, discrete_learning_rate: T, continuous_learning_rate: T) {
         match self {
-            Grid::Continuous(g) => g.update(learning_rate),
-            Grid::Discrete(g) => g.update(learning_rate),
+            Grid::Continuous(g) => g.update(continuous_learning_rate),
+            Grid::Discrete(g) => g.update(discrete_learning_rate, continuous_learning_rate),
         }
     }
 
@@ -527,11 +527,11 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> DiscreteGri
     /// and adapt all sub-grids based on the new training samples.
     ///
     /// If `learning_rate` is set to 0, no training happens.
-    pub fn update(&mut self, learning_rate: T) {
+    pub fn update(&mut self, discrete_learning_rate: T, continuous_learning_rate: T) {
         let mut err_sum = T::new_zero();
         for bin in &mut self.bins {
             if let Some(sub_grid) = &mut bin.sub_grid {
-                sub_grid.update(learning_rate);
+                sub_grid.update(discrete_learning_rate, continuous_learning_rate);
             }
 
             let acc = &mut bin.accumulator;
@@ -542,7 +542,7 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> DiscreteGri
             }
         }
 
-        if learning_rate.is_zero()
+        if discrete_learning_rate.is_zero()
             || self.bins.iter().all(|x| {
                 if self.train_on_avg {
                     x.accumulator.avg == T::new_zero()
@@ -1126,7 +1126,7 @@ mod test {
                 }
             }
 
-            grid.update(1.5);
+            grid.update(1.5, 1.5);
         }
 
         assert_eq!(grid.accumulator.avg, 0.9713543844460519);

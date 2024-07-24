@@ -1399,11 +1399,52 @@ impl std::fmt::Debug for PatternRestriction {
     }
 }
 
+/// A part of an expression that was matched to a wildcard.
 #[derive(Clone, PartialEq)]
 pub enum Match<'a> {
+    /// A matched single atom.
     Single(AtomView<'a>),
+    /// A matched subexpression of atoms of the same type.
     Multiple(SliceType, Vec<AtomView<'a>>),
+    /// A matched function name.
     FunctionName(Symbol),
+}
+
+impl<'a> std::fmt::Display for Match<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Single(a) => a.fmt(f),
+            Self::Multiple(t, list) => match t {
+                SliceType::Add | SliceType::Mul | SliceType::Arg | SliceType::Pow => {
+                    f.write_str("(")?;
+                    for (i, a) in list.iter().enumerate() {
+                        if i > 0 {
+                            match t {
+                                SliceType::Add => {
+                                    f.write_str("+")?;
+                                }
+                                SliceType::Mul => {
+                                    f.write_str("*")?;
+                                }
+                                SliceType::Arg => {
+                                    f.write_str(",")?;
+                                }
+                                SliceType::Pow => {
+                                    f.write_str("^")?;
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        a.fmt(f)?;
+                    }
+                    f.write_str(")")
+                }
+                SliceType::One => list[0].fmt(f),
+                SliceType::Empty => f.write_str("()"),
+            },
+            Self::FunctionName(name) => name.fmt(f),
+        }
+    }
 }
 
 impl<'a> std::fmt::Debug for Match<'a> {
@@ -1489,6 +1530,20 @@ pub struct MatchStack<'a, 'b> {
     stack: Vec<(Symbol, Match<'a>)>,
     conditions: &'b Condition<WildcardAndRestriction>,
     settings: &'b MatchSettings,
+}
+
+impl<'a, 'b> std::fmt::Display for MatchStack<'a, 'b> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[")?;
+        for (i, (k, v)) in self.stack.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            f.write_fmt(format_args!("{}: {}", k, v))?;
+        }
+
+        f.write_str("]")
+    }
 }
 
 impl<'a, 'b> std::fmt::Debug for MatchStack<'a, 'b> {
@@ -2373,6 +2428,18 @@ pub struct PatternAtomTreeIterator<'a, 'b> {
     first_match: bool,
 }
 
+/// A part of an expression with its position that yields a match.
+pub struct PatternMatch<'a, 'b, 'c> {
+    /// The position (branch) of the match in the tree.
+    pub position: &'a [usize],
+    /// Flags which subexpressions are matched in case of matching a range.
+    pub used_flags: Vec<bool>,
+    /// The matched target.
+    pub target: AtomView<'b>,
+    /// The list of identifications of matched wildcards.
+    pub match_stack: &'a MatchStack<'b, 'c>,
+}
+
 impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
     pub fn new(
         pattern: &'b Pattern,
@@ -2391,7 +2458,8 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
         }
     }
 
-    pub fn next(&mut self) -> Option<(&[usize], Vec<bool>, AtomView<'a>, &MatchStack<'a, 'b>)> {
+    /// Generate the next match if it exists.
+    pub fn next(&mut self) -> Option<PatternMatch<'_, 'a, 'b>> {
         loop {
             if let Some(ct) = self.current_target {
                 if let Some(it) = self.pattern_iter.as_mut() {
@@ -2399,7 +2467,12 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
                         let a = used_flags.to_vec();
 
                         self.first_match = true;
-                        return Some((&self.tree_pos, a, ct, &self.match_stack));
+                        return Some(PatternMatch {
+                            position: &self.tree_pos,
+                            used_flags: a,
+                            target: ct,
+                            match_stack: &self.match_stack,
+                        });
                     } else {
                         // no match: bail
                         self.current_target = None;
@@ -2570,21 +2643,19 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 
     /// Return the next replacement.
     pub fn next(&mut self, out: &mut Atom) -> Option<()> {
-        if let Some((position, used_flags, _target, match_stack)) =
-            self.pattern_tree_iterator.next()
-        {
+        if let Some(pattern_match) = self.pattern_tree_iterator.next() {
             Workspace::get_local().with(|ws| {
                 let mut new_rhs = ws.new_atom();
 
                 self.rhs
-                    .substitute_wildcards(ws, &mut new_rhs, match_stack)
+                    .substitute_wildcards(ws, &mut new_rhs, pattern_match.match_stack)
                     .unwrap(); // TODO: escalate?
 
                 let mut h = ws.new_atom();
                 ReplaceIterator::copy_and_replace(
                     &mut h,
-                    position,
-                    &used_flags,
+                    pattern_match.position,
+                    &pattern_match.used_flags,
                     self.target,
                     new_rhs.as_view(),
                     ws,

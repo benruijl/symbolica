@@ -2867,8 +2867,8 @@ class NumericalIntegrator:
         """Add the samples and their corresponding function evaluations to the grid.
         Call `update` after to update the grid and to obtain the new expected value for the integral."""
 
-    def update(self, learning_rate: float) -> Tuple[float, float, float]:
-        """Update the grid using the `learning_rate`.
+    def update(self, discrete_learning_rate: float, continous_learning_rate: float) -> Tuple[float, float, float]:
+        """Update the grid using the `discrete_learning_rate` and `continuous_learning_rate`.
         Examples
         --------
         >>> from symbolica import NumericalIntegrator, Sample
@@ -2884,7 +2884,7 @@ class NumericalIntegrator:
         >>>     samples = integrator.sample(10000 + i * 1000)
         >>>     res = integrand(samples)
         >>>     integrator.add_training_samples(samples, res)
-        >>>     avg, err, chi_sq = integrator.update(1.5)
+        >>>     avg, err, chi_sq = integrator.update(1.5, 1.5)
         >>>     print('Iteration {}: {:.6} +- {:.6}, chi={:.6}'.format(i+1, avg, err, chi_sq))
         """
 

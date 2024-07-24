@@ -36,7 +36,7 @@ fn main() {
             }
         }
 
-        grid.update(1.5);
+        grid.update(1.5, 1.5);
 
         println!(
             "Integral at iteration {:2}: {:.6} ± {:.6}",

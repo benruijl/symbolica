@@ -749,6 +749,67 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             *o * 16,
                         );
                     }
+                    5 => {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "
+                                    \"movsd   xmm0, QWORD PTR [%0+{0}]\\n \\t\"
+                                    \"movsd   xmm2, QWORD PTR [%0+{0}+8]\\n   \\t\"
+                                    \"movsd   xmm3, QWORD PTR [%0+{1}]\\n \\t\"
+                                    \"movsd   xmm4, QWORD PTR [%0+{1}+8]\\n \\t\"
+                                    \"movapd  xmm1, xmm0\\n\\t\"
+                                    \"movapd  xmm5, xmm2\\n\\t\"
+                                    \"mulsd   xmm5, xmm4\\n\\t\"
+                                    \"mulsd   xmm2, xmm3\\n\\t\"
+                                    \"mulsd   xmm1, xmm3\\n\\t\"
+                                    \"movsd   xmm3, QWORD PTR [%0+{2}+8]\\n\\t\"
+                                    \"mulsd   xmm0, xmm4\\n\\t\"
+                                    \"movsd   xmm4, QWORD PTR [%0+{2}]\\n\\t\"
+                                    \"subsd   xmm1, xmm5\\n\\t\"
+                                    \"addsd   xmm0, xmm2\\n\\t\"
+                                    \"movapd  xmm2, xmm1\\n\\t\"
+                                    \"mulsd   xmm2, xmm4\\n\\t\"
+                                    \"movapd  xmm5, xmm0\\n\\t\"
+                                    \"mulsd   xmm5, xmm3\\n\\t\"
+                                    \"mulsd   xmm1, xmm3\\n\\t\"
+                                    \"movsd   xmm3, QWORD PTR [%0+{3}+8]\\n   \\t\"
+                                    \"mulsd   xmm0, xmm4\\n\\t\"
+                                    \"movsd   xmm4, QWORD PTR [%0+{3}]\\n   \\t\"
+                                    \"subsd   xmm2, xmm5\\n\\t\"
+                                    \"addsd   xmm0, xmm1\\n\\t\"
+                                    \"movapd  xmm1, xmm2\\n\\t\"
+                                    \"mulsd   xmm1, xmm4\\n\\t\"
+                                    \"mulsd   xmm2, xmm3\\n\\t\"
+                                    \"movapd  xmm5, xmm0\\n\\t\"
+                                    \"mulsd   xmm5, xmm3\\n\\t\"
+                                    \"movsd   xmm3, QWORD PTR [%0+{4}+8]\\n   \\t\"
+                                    \"mulsd   xmm0, xmm4\\n\\t\"
+                                    \"movsd   xmm4, QWORD PTR [%0+{4}]\\n   \\t\"
+                                    \"subsd   xmm1, xmm5\\n\\t\"
+                                    \"addsd   xmm0, xmm2\\n\\t\"
+                                    \"movapd  xmm2, xmm1\\n\\t\"
+                                    \"mulsd   xmm2, xmm4\\n\\t\"
+                                    \"movapd  xmm5, xmm0\\n\\t\"
+                                    \"mulsd   xmm5, xmm3\\n\\t\"
+                                    \"mulsd   xmm0, xmm4\\n\\t\"
+                                    \"mulsd   xmm1, xmm3\\n\\t\"
+                                    \"subsd   xmm2, xmm5\\n\\t\"
+                                    \"addsd   xmm0, xmm1\\n\\t\"
+                                    \"movsd   QWORD PTR [%0+{5}], xmm2\\n \\t\"
+                                    \"movsd   QWORD PTR [%0+{5}+8], xmm0\\n   \\t\"
+                                                ",
+                            a[0] * 16,
+                            a[1] * 16,
+                            a[2] * 16,
+                            a[3] * 16,
+                            a[4] * 16,
+                            *o * 16,
+                        );
+                    }
                     _ => {
                         // TODO: split the multiplication in blocks of the above operations
 

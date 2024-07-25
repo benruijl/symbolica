@@ -755,11 +755,18 @@ impl FunctionBuilder {
 
 /// Create a new function by providing its name as the first argument,
 /// followed by the list of arguments. This macro uses [`FunctionBuilder`].
+///
+/// For example:
+/// ```
+/// use symbolica::{atom::Atom, fun, state::State};
+/// let f_id = State::get_symbol("f");
+/// let f = fun!(f_id, Atom::new_num(3), &Atom::parse("x").unwrap());
+/// ```
 #[macro_export]
 macro_rules! fun {
-    ($name:ident, $($id:expr),*) => {
+    ($name: expr, $($id: expr),*) => {
         {
-            let mut f = FunctionBuilder::new($name);
+            let mut f = $crate::atom::FunctionBuilder::new($name);
             $(
                 f = f.add_arg(&$id);
             )+
@@ -1271,11 +1278,7 @@ impl<T: Into<Coefficient>> std::ops::Div<T> for Atom {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        atom::{Atom, FunctionBuilder},
-        fun,
-        state::State,
-    };
+    use crate::{atom::Atom, fun, state::State};
 
     #[test]
     fn debug() {

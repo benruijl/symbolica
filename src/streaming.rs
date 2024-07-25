@@ -632,7 +632,7 @@ mod test {
         let r = streamer.to_expression();
 
         let res = Atom::parse("coeff((v3+2*v2*v3+v2*v3^2+v2^2)/(v2*v3))*v1").unwrap();
-        assert_eq!(r, res);
+        assert_eq!(r - res, Atom::Zero);
     }
 
     #[test]

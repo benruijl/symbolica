@@ -435,9 +435,408 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             }
         }
     }
+
+    /// Create a C++ code representation of the evaluation tree with assembly instructions.
+    pub fn export_asm(
+        &self,
+        filename: &str,
+        function_name: &str,
+        include_header: bool,
+    ) -> Result<ExportedCode, std::io::Error> {
+        let cpp = self.export_asm_str(function_name, include_header);
+        std::fs::write(filename, cpp)?;
+        Ok(ExportedCode {
+            source_filename: filename.to_string(),
+            function_name: function_name.to_string(),
+        })
+    }
+
+    pub fn export_asm_str(&self, function_name: &str, include_header: bool) -> String {
+        let mut res = if include_header {
+            "#include <iostream>\n#include <complex>\n#include <cmath>\n\n".to_string()
+        } else {
+            String::new()
+        };
+
+        res += &format!("extern \"C\" {{\n\tvoid {}_complex(std::complex<double>* params, std::complex<double>* out) {{\n", function_name);
+
+        res += &format!("\tstd::complex<double> Z[{}];\n", self.stack.len());
+
+        for i in 0..self.param_count {
+            res += &format!("\tZ[{}] = params[{}];\n", i, i);
+        }
+
+        for i in self.param_count..self.reserved_indices {
+            res += &format!("\tZ[{}] = {};\n", i, self.stack[i]);
+        }
+
+        Self::export_asm_impl(&self.instructions, &mut res);
+
+        for (i, r) in &mut self.result_indices.iter().enumerate() {
+            res += &format!("\tout[{}] = Z[{}];\n", i, r);
+
+            /*res += &format!(
+                "__asm__(
+                \"movsd   xmm0, QWORD PTR [%0+{1}]\\n\\t\"
+                \"movsd   QWORD PTR [%1+{0}], xmm0\\n\\t\"
+                \"movsd   xmm0, QWORD PTR [%0+{1}+8]\\n\\t\"
+                \"movsd   QWORD PTR [%1+{0}+8], xmm0\\n\\t\"
+                :
+                : \"r\"(Z), \"r\"(out)
+                : \"memory\" );",
+                i * 16,
+                r * 16
+            );*/
+        }
+
+        res += "\treturn;\n}\n";
+
+        res += &format!(
+            "\n\tvoid {}_double(double* params, double* out) {{\n\t\treturn;\n\t}}\n}}\n",
+            function_name
+        );
+
+        res
+    }
+
+    fn export_asm_impl(instr: &[Instr], out: &mut String) {
+        let mut in_asm_block = false;
+        for ins in instr {
+            match ins {
+                Instr::Add(o, a) => match a.len() {
+                    2 => {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "
+                            \"movapd  xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"addpd   xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"movups  XMMWORD PTR [%0+{}], xmm0\\n\\t\"
+                                    ",
+                            a[0] * 16,
+                            a[1] * 16,
+                            *o * 16,
+                        );
+                    }
+                    3 => {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "
+
+                                \"movupd  xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
+                                \"movupd  xmm2, XMMWORD PTR [%0+{}]\\n\\t\"
+                                \"movupd  xmm1, XMMWORD PTR [%0+{}]\\n\\t\"
+                                \"addpd   xmm0, xmm2\\n\\t\"
+                                \"addpd   xmm0, xmm1\\n\\t\"
+                                \"movups  XMMWORD PTR [%0+{}], xmm0\\n\\t\"
+                                        ",
+                            a[0] * 16,
+                            a[1] * 16,
+                            a[2] * 16,
+                            *o * 16,
+                        );
+                    }
+                    4 => {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "
+                            \"movupd  xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"movupd  xmm3, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"movupd  xmm1, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"movupd  xmm2, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"addpd   xmm0, xmm3\\n\\t\"
+                            \"addpd   xmm1, xmm2\\n\\t\"
+                            \"addpd   xmm0, xmm1\\n\\t\"
+                            \"movups  XMMWORD PTR [%0+{}], xmm0\\n\\t\"
+                                    ",
+                            a[0] * 16,
+                            a[1] * 16,
+                            a[2] * 16,
+                            a[3] * 16,
+                            *o * 16,
+                        );
+                    }
+                    _ => {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!("\"movsd  xmm0, QWORD PTR [%0+{} + 8]\\n\\t\"\n", a[0]);
+                        for i in 1..a.len() / 2 {
+                            *out += &format!(
+                                "\"addsd  xmm0, QWORD PTR [%0+{} + 8]\\n\\t\"\n",
+                                a[i] * 16
+                            );
+                        }
+
+                        *out += &format!(
+                            "\"movsd  xmm1, QWORD PTR [%0+{} + 8]\\n\\t\"\n",
+                            a[a.len() / 2]
+                        );
+                        for i in (a.len() / 2) + 1..a.len() {
+                            *out += &format!(
+                                "\"addsd  xmm1, QWORD PTR [%0+{} + 8]\\n\\t\"\n",
+                                a[i] * 16
+                            );
+                        }
+
+                        *out += "\"addsd   xmm0, xmm1\\n\\t\"\n";
+
+                        *out += &format!("\"movsd  xmm1, QWORD PTR [%0+{}]\\n\\t\"\n", a[0]);
+                        for i in 1..a.len() / 2 {
+                            *out +=
+                                &format!("\"addsd  xmm1, QWORD PTR [%0+{}]\\n\\t\"\n", a[i] * 16);
+                        }
+
+                        *out +=
+                            &format!("\"movsd  xmm2, QWORD PTR [%0+{}]\\n\\t\"\n", a[a.len() / 2]);
+                        for i in (a.len() / 2) + 1..a.len() {
+                            *out +=
+                                &format!("\"addsd  xmm2, QWORD PTR [%0+{}]\\n\\t\"\n", a[i] * 16);
+                        }
+
+                        *out += "\"addsd   xmm1, xmm2\\n\\t\"\n";
+                        *out += &format!("\"movsd   QWORD PTR [%0+{}], xmm1\\n\\t\"\n", *o * 16);
+                        *out += &format!("\"movsd   QWORD PTR [%0+{}+8], xmm0\\n\\t\"\n", *o * 16);
+
+                        /*if in_asm_block {
+                            *out += ":
+                            : \"r\"(Z)
+                            : \"memory\");";
+                            in_asm_block = false;
+                        }
+
+                        let args = a
+                            .iter()
+                            .map(|x| format!("Z[{}]", x))
+                            .collect::<Vec<_>>()
+                            .join("+");
+
+                        *out += format!("\tZ[{}] = {};\n", o, args).as_str();*/
+                    }
+                },
+                Instr::Mul(o, a) => match a.len() {
+                    2 => {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "
+                                \"movsd   xmm0, QWORD PTR [%0+{0}]\\n\\t\"
+                                \"movsd   xmm1, QWORD PTR [%0+{0}+8]\\n\\t\"
+                                \"movsd   xmm3, QWORD PTR [%0+{1}]\\n\\t\"
+                                \"movsd   xmm4, QWORD PTR [%0+{1}+8]\\n\\t\"
+                                \"movapd  xmm2, xmm0\\n\\t\"
+                                \"movapd  xmm5, xmm1\\n\\t\"
+                                \"mulsd   xmm2, xmm3\\n\\t\"
+                                \"mulsd   xmm5, xmm4\\n\\t\"
+                                \"mulsd   xmm0, xmm4\\n\\t\"
+                                \"mulsd   xmm1, xmm3\\n\\t\"
+                                \"subsd   xmm2, xmm5\\n\\t\"
+                                \"addsd   xmm0, xmm1\\n\\t\"
+                                \"movsd   QWORD PTR [%0+{2}], xmm2\\n\\t\"
+                                \"movsd   QWORD PTR [%0+{2}+8], xmm0\\n\\t\"
+  
+                                    ",
+                            a[0] * 16,
+                            a[1] * 16,
+                            *o * 16,
+                        );
+                    }
+                    3 => {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "
+                                \"movsd   xmm0, QWORD PTR [%0+{0}]\\n\\t\"
+                                \"movsd   xmm2, QWORD PTR [%0+{0}+8]\\n\\t\"
+                                \"movsd   xmm3, QWORD PTR [%0+{1}]\\n\\t\"
+                                \"movsd   xmm4, QWORD PTR [%0+{1}+8]\\n\\t\"
+                                \"movapd  xmm1, xmm0\\n\\t\"
+                                \"movapd  xmm5, xmm2\\n\\t\"
+                                \"mulsd   xmm5, xmm4\\n\\t\"
+                                \"mulsd   xmm2, xmm3\\n\\t\"
+                                \"mulsd   xmm1, xmm3\\n\\t\"
+                                \"movsd   xmm3, QWORD PTR [%0+{2}+8]\\n\\t\"
+                                \"mulsd   xmm0, xmm4\\n\\t\"
+                                \"movsd   xmm4, QWORD PTR [%0+{2}]\\n\\t\"
+                                \"subsd   xmm1, xmm5\\n\\t\"
+                                \"addsd   xmm0, xmm2\\n\\t\"
+                                \"movapd  xmm2, xmm1\\n\\t\"
+                                \"mulsd   xmm2, xmm4\\n\\t\"
+                                \"movapd  xmm5, xmm0\\n\\t\"
+                                \"mulsd   xmm5, xmm3\\n\\t\"
+                                \"mulsd   xmm0, xmm4\\n\\t\"
+                                \"mulsd   xmm1, xmm3\\n\\t\"
+                                \"subsd   xmm2, xmm5\\n\\t\"
+                                \"addsd   xmm0, xmm1\\n\\t\"
+                                \"movsd   QWORD PTR [%0+{3}], xmm2\\n\\t\"
+                                \"movsd   QWORD PTR [%0+{3}+8], xmm0\\n\\t\"
+                                    ",
+                            a[0] * 16,
+                            a[1] * 16,
+                            a[2] * 16,
+                            *o * 16,
+                        );
+                    }
+                    4 => {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "
+                                \"movsd   xmm0, QWORD PTR [%0+{0}]\\n\\t\"
+                                \"movsd   xmm1, QWORD PTR [%0+{0}+8]\\n\\t\"
+                                \"movsd   xmm3, QWORD PTR [%0+{1}]\\n\\t\"
+                                \"movsd   xmm4, QWORD PTR [%0+{1}+8]\\n\\t\"
+                                \"movapd  xmm2, xmm0\\n\\t\"
+                                \"movapd  xmm5, xmm1\\n\\t\"
+                                \"mulsd   xmm5, xmm4\\n\\t\"
+                                \"mulsd   xmm1, xmm3\\n\\t\"
+                                \"mulsd   xmm2, xmm3\\n\\t\"
+                                \"movsd   xmm3, QWORD PTR [%0+{2}+8]\\n\\t\"
+                                \"mulsd   xmm0, xmm4\\n\\t\"
+                                \"movsd   xmm4, QWORD PTR [%0+{2}]\\n\\t\"
+                                \"subsd   xmm2, xmm5\\n\\t\"
+                                \"addsd   xmm0, xmm1\\n\\t\"
+                                \"movapd  xmm1, xmm2\\n\\t\"
+                                \"mulsd   xmm1, xmm4\\n\\t\"
+                                \"movapd  xmm5, xmm0\\n\\t\"
+                                \"mulsd   xmm5, xmm3\\n\\t\"
+                                \"mulsd   xmm2, xmm3\\n\\t\"
+                                \"movsd   xmm3, QWORD PTR [%0+{3}+8]\\n\\t\"
+                                \"mulsd   xmm0, xmm4\\n\\t\"
+                                \"movsd   xmm4, QWORD PTR [%0+{3}]\\n\\t\"
+                                \"subsd   xmm1, xmm5\\n\\t\"
+                                \"addsd   xmm0, xmm2\\n\\t\"
+                                \"movapd  xmm2, xmm1\\n\\t\"
+                                \"mulsd   xmm2, xmm4\\n\\t\"
+                                \"mulsd   xmm1, xmm3\\n\\t\"
+                                \"movapd  xmm5, xmm0\\n\\t\"
+                                \"mulsd   xmm5, xmm3\\n\\t\"
+                                \"mulsd   xmm0, xmm4\\n\\t\"
+                                \"subsd   xmm2, xmm5\\n\\t\"
+                                \"addsd   xmm0, xmm1\\n\\t\"
+                                \"movsd   QWORD PTR [%0+{4}], xmm2\\n\\t\"
+                                \"movsd   QWORD PTR [%0+{4}+8], xmm0\\n\\t\"
+",
+                            a[0] * 16,
+                            a[1] * 16,
+                            a[2] * 16,
+                            a[3] * 16,
+                            *o * 16,
+                        );
+                    }
+                    _ => {
+                        // TODO: split the multiplication in blocks of the above operations
+
+                        if in_asm_block {
+                            *out += ":
+                            : \"r\"(Z)
+                            : \"memory\");
+                            ";
+                            in_asm_block = false;
+                        }
+
+                        let args = a
+                            .iter()
+                            .map(|x| format!("Z[{}]", x))
+                            .collect::<Vec<_>>()
+                            .join("*");
+
+                        *out += format!("\tZ[{}] = {};\n", o, args).as_str();
+                    }
+                },
+                Instr::Pow(o, b, e) => {
+                    if in_asm_block {
+                        *out += ":
+                        : \"r\"(Z)
+                        : \"memory\");
+                        ";
+                        in_asm_block = false;
+                    }
+
+                    let base = format!("Z[{}]", b);
+                    *out += format!("\tZ[{}] = pow({}, {});\n", o, base, e).as_str();
+                }
+                Instr::Powf(o, b, e) => {
+                    if in_asm_block {
+                        *out += ":
+                        : \"r\"(Z)
+                        : \"memory\");
+                        ";
+                        in_asm_block = false;
+                    }
+
+                    let base = format!("Z[{}]", b);
+                    let exp = format!("Z[{}]", e);
+                    *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
+                }
+                Instr::BuiltinFun(o, s, a) => {
+                    if in_asm_block {
+                        *out += ":
+                        : \"r\"(Z)
+                        : \"memory\");
+                        ";
+                        in_asm_block = false;
+                    }
+
+                    match *s {
+                        State::EXP => {
+                            let arg = format!("Z[{}]", a);
+                            *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
+                        }
+                        State::LOG => {
+                            let arg = format!("Z[{}]", a);
+                            *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
+                        }
+                        State::SIN => {
+                            let arg = format!("Z[{}]", a);
+                            *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
+                        }
+                        State::COS => {
+                            let arg = format!("Z[{}]", a);
+                            *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
+                        }
+                        State::SQRT => {
+                            let arg = format!("Z[{}]", a);
+                            *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+
+        if in_asm_block {
+            *out += ":
+            : \"r\"(Z)
+            : \"memory\");
+            ";
+        }
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),
@@ -721,7 +1120,11 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 stack.push(T::default());
                 let res = stack.len() - 1;
 
+                if p.1 > 1 {
+                    instr.push(Instr::Mul(res, vec![b; p.1 as usize]));
+                } else {
                 instr.push(Instr::Pow(res, b, p.1));
+                }
                 res
             }
             Expression::Powf(p) => {

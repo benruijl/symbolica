@@ -347,7 +347,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             String::new()
         };
 
-        res += &format!("\ntemplate<typename T>\nvoid eval(T* params, T* out) {{\n");
+        res += &format!(
+            "\ntemplate<typename T>\nvoid {}(T* params, T* out) {{\n",
+            function_name
+        );
 
         res += &format!(
             "\tT {};\n",
@@ -373,8 +376,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         res += "\treturn;\n}\n";
 
-        res += &format!("\nextern \"C\" {{\n\tvoid {}_double(double* params, double* out) {{\n\t\teval(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\tvoid {}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\teval(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double* params, double* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
     }
@@ -2282,7 +2285,10 @@ impl<T: NumericalFloatLike> EvalTree<T> {
             res += &format!("\treturn {};\n}}\n", ret);
         }
 
-        res += &format!("\ntemplate<typename T>\nvoid eval(T* params, T* out) {{\n");
+        res += &format!(
+            "\ntemplate<typename T>\nvoid {}(T* params, T* out) {{\n",
+            function_name
+        );
 
         for (i, s) in self.expressions.subexpressions.iter().enumerate() {
             res += &format!("\tT Z{}_ = {};\n", i, self.export_cpp_impl(s, &[]));
@@ -2294,8 +2300,8 @@ impl<T: NumericalFloatLike> EvalTree<T> {
 
         res += "\treturn;\n}\n";
 
-        res += &format!("\nextern \"C\" {{\n\tvoid {}_double(double* params, double* out) {{\n\t\teval(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
-        res += &format!("\nextern \"C\" {{\n\tvoid {}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\teval(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_double(double* params, double* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
+        res += &format!("\nextern \"C\" {{\n\tvoid {0}_complex(std::complex<double>* params, std::complex<double>* out) {{\n\t\t{0}(params, out);\n\t\treturn;\n\t}}\n}}\n", function_name);
 
         res
     }

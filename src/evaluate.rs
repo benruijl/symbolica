@@ -573,7 +573,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             in_asm_block = true;
                         }
 
-                        *out += &format!("\"movsd  xmm0, QWORD PTR [%0+{} + 8]\\n\\t\"\n", a[0]);
+                        *out +=
+                            &format!("\"movsd  xmm0, QWORD PTR [%0+{} + 8]\\n\\t\"\n", a[0] * 16);
                         for i in 1..a.len() / 2 {
                             *out += &format!(
                                 "\"addsd  xmm0, QWORD PTR [%0+{} + 8]\\n\\t\"\n",
@@ -594,7 +595,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                         *out += "\"addsd   xmm0, xmm1\\n\\t\"\n";
 
-                        *out += &format!("\"movsd  xmm1, QWORD PTR [%0+{}]\\n\\t\"\n", a[0]);
+                        *out += &format!("\"movsd  xmm1, QWORD PTR [%0+{}]\\n\\t\"\n", a[0] * 16);
                         for i in 1..a.len() / 2 {
                             *out +=
                                 &format!("\"addsd  xmm1, QWORD PTR [%0+{}]\\n\\t\"\n", a[i] * 16);

@@ -1,8 +1,4 @@
-use symbolica::{
-    atom::{Atom, FunctionBuilder},
-    fun,
-    state::State,
-};
+use symbolica::{atom::Atom, fun, state::State};
 
 fn main() {
     let input = Atom::parse("x*(1+a)+x*5*y+f(5,x)+2+y^2+x^2 + x^3").unwrap();

@@ -95,6 +95,34 @@ where
     }
 }
 
+impl<R: Ring, E: Exponent> RationalPolynomial<R, E>
+where
+    Self: FromNumeratorAndDenominator<R, R, E>,
+{
+    pub fn unify_variables(&mut self, other: &mut Self) {
+        assert_eq!(self.numerator.variables, self.denominator.variables);
+        assert_eq!(other.numerator.variables, other.denominator.variables);
+
+        // this may require a new normalization of the denominator
+        self.numerator.unify_variables(&mut other.numerator);
+        self.denominator.unify_variables(&mut other.denominator);
+
+        *self = Self::from_num_den(
+            self.numerator.clone(),
+            self.denominator.clone(),
+            &self.numerator.field,
+            false,
+        );
+
+        *other = Self::from_num_den(
+            other.numerator.clone(),
+            other.denominator.clone(),
+            &other.numerator.field,
+            false,
+        );
+    }
+}
+
 impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     pub fn new(field: &R, var_map: Arc<Vec<Variable>>) -> RationalPolynomial<R, E> {
         let num = MultivariatePolynomial::new(field, None, var_map);
@@ -108,14 +136,6 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
 
     pub fn get_variables(&self) -> &Arc<Vec<Variable>> {
         &self.numerator.variables
-    }
-
-    pub fn unify_variables(&mut self, other: &mut Self) {
-        assert_eq!(self.numerator.variables, self.denominator.variables);
-        assert_eq!(other.numerator.variables, other.denominator.variables);
-
-        self.numerator.unify_variables(&mut other.numerator);
-        self.denominator.unify_variables(&mut other.denominator);
     }
 
     pub fn is_zero(&self) -> bool {

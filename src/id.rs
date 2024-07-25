@@ -1080,12 +1080,12 @@ impl Pattern {
         matched
     }
 
-    pub fn pattern_match<'a>(
-        &'a self,
+    pub fn pattern_match<'a: 'b, 'b>(
+        &'b self,
         target: AtomView<'a>,
-        conditions: &'a Condition<WildcardAndRestriction>,
-        settings: &'a MatchSettings,
-    ) -> PatternAtomTreeIterator<'a, 'a> {
+        conditions: &'b Condition<WildcardAndRestriction>,
+        settings: &'b MatchSettings,
+    ) -> PatternAtomTreeIterator<'a, 'b> {
         PatternAtomTreeIterator::new(self, target, conditions, settings)
     }
 }
@@ -1599,6 +1599,16 @@ impl<'a, 'b> MatchStack<'a, 'b> {
             }
         }
         None
+    }
+
+    /// Get a reference to all matches.
+    pub fn get_matches(&self) -> &[(Symbol, Match<'a>)] {
+        &self.stack
+    }
+
+    /// Get the underlying matches `Vec`.
+    pub fn into_matches(self) -> Vec<(Symbol, Match<'a>)> {
+        self.stack
     }
 
     /// Return the length of the stack.
@@ -2444,8 +2454,8 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
     pub fn new(
         pattern: &'b Pattern,
         target: AtomView<'a>,
-        conditions: &'a Condition<WildcardAndRestriction>,
-        settings: &'a MatchSettings,
+        conditions: &'b Condition<WildcardAndRestriction>,
+        settings: &'b MatchSettings,
     ) -> PatternAtomTreeIterator<'a, 'b> {
         PatternAtomTreeIterator {
             pattern,

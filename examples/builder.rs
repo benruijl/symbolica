@@ -1,8 +1,4 @@
-use symbolica::{
-    atom::{Atom, FunctionBuilder},
-    fun,
-    state::State,
-};
+use symbolica::{atom::Atom, fun, state::State};
 
 fn main() {
     let x = Atom::parse("x").unwrap();

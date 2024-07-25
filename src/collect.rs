@@ -631,11 +631,7 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        atom::{Atom, FunctionBuilder},
-        fun,
-        state::State,
-    };
+    use crate::{atom::Atom, fun, state::State};
 
     #[test]
     fn coefficient_list() {

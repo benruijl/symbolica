@@ -583,7 +583,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                         *out += &format!(
                             "\"movsd  xmm1, QWORD PTR [%0+{} + 8]\\n\\t\"\n",
-                            a[a.len() / 2]
+                            a[a.len() / 2] * 16
                         );
                         for i in (a.len() / 2) + 1..a.len() {
                             *out += &format!(
@@ -600,8 +600,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 &format!("\"addsd  xmm1, QWORD PTR [%0+{}]\\n\\t\"\n", a[i] * 16);
                         }
 
-                        *out +=
-                            &format!("\"movsd  xmm2, QWORD PTR [%0+{}]\\n\\t\"\n", a[a.len() / 2]);
+                        *out += &format!(
+                            "\"movsd  xmm2, QWORD PTR [%0+{}]\\n\\t\"\n",
+                            a[a.len() / 2] * 16
+                        );
                         for i in (a.len() / 2) + 1..a.len() {
                             *out +=
                                 &format!("\"addsd  xmm2, QWORD PTR [%0+{}]\\n\\t\"\n", a[i] * 16);

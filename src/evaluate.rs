@@ -453,6 +453,42 @@ impl<T: Clone + Default + PartialEq> SplitExpression<T> {
             subexpressions: self.subexpressions.iter().map(|x| x.map_coeff(f)).collect(),
         }
     }
+
+    pub fn unnest(&mut self, max_depth: usize) {
+        // TODO: also unnest subexpressions
+        for t in &mut self.tree {
+            Self::unnest_impl(t, &mut self.subexpressions, 0, max_depth);
+        }
+    }
+
+    fn unnest_impl(
+        expr: &mut Expression<T>,
+        subs: &mut Vec<Expression<T>>,
+        depth: usize,
+        max_depth: usize,
+    ) {
+        match expr {
+            Expression::Add(a) | Expression::Mul(a) => {
+                if depth == max_depth {
+                    // split off into new subexpression
+
+                    Self::unnest_impl(expr, subs, 0, max_depth);
+
+                    let mut r = Expression::SubExpression(subs.len());
+                    std::mem::swap(expr, &mut r);
+                    subs.push(r);
+                    return;
+                }
+
+                for x in a {
+                    Self::unnest_impl(x, subs, depth + 1, max_depth);
+                }
+            }
+            Expression::Eval(_, _) => {} // TODO: count the arg evals! always bring to base level?
+            Expression::BuiltinFun(_, _) => {}
+            _ => {} // TODO: count pow levels too?
+        }
+    }
 }
 
 impl<T: Clone + Default + PartialEq> Expression<T> {
@@ -545,6 +581,14 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 .map(|(s, a, e)| (s.clone(), a.clone(), e.map_coeff(f)))
                 .collect(),
         }
+    }
+
+    pub fn unnest(&mut self, max_depth: usize) {
+        for (_, _, e) in &mut self.functions {
+            e.unnest(max_depth);
+        }
+
+        self.expressions.unnest(max_depth);
     }
 
     /// Create a linear version of the tree that can be evaluated more efficiently.
@@ -850,7 +894,14 @@ impl Expression<Rational> {
 
         contains.apply_horner_scheme(&scheme); // keep trying with same variable
 
-        let mut v = vec![contains, extracted];
+        let mut v = vec![];
+        if let Expression::Mul(a) = contains {
+            v.extend(a);
+        } else {
+            v.push(contains);
+        }
+
+        v.push(extracted);
         v.sort();
         let c = Expression::Mul(v);
 
@@ -865,7 +916,13 @@ impl Expression<Rational> {
 
             r.apply_horner_scheme(&scheme[1..]);
 
-            let mut v = vec![c, r];
+            let mut v = vec![c];
+            if let Expression::Add(a) = r {
+                v.extend(a);
+            } else {
+                v.push(r);
+            }
+
             v.sort();
 
             *self = Expression::Add(v);

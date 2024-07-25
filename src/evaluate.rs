@@ -2199,6 +2199,7 @@ impl ExportedCode {
         builder
             .arg("-shared")
             .arg("-fPIC")
+            .arg("-masm=intel")
             .arg(format!("-O{}", options.optimization_level));
         if options.fast_math {
             builder.arg("-ffast-math");

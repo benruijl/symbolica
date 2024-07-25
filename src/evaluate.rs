@@ -1,9 +1,12 @@
-use ahash::HashMap;
+use std::hash::{Hash, Hasher};
+
+use ahash::{AHasher, HashMap};
 use self_cell::self_cell;
 
 use crate::{
     atom::{representation::InlineVar, Atom, AtomOrView, AtomView, Symbol},
     coefficient::CoefficientView,
+    combinatorics::CombinationIterator,
     domains::{
         float::{Complex, NumericalFloatLike, Real},
         rational::Rational,
@@ -146,14 +149,17 @@ impl Atom {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SplitExpression<T> {
     pub tree: Vec<Expression<T>>,
     pub subexpressions: Vec<Expression<T>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct EvalTree<T> {
     functions: Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
     expressions: SplitExpression<T>,
+    param_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -169,6 +175,498 @@ pub enum Expression<T> {
     BuiltinFun(Symbol, Box<Expression<T>>),
     SubExpression(usize),
 }
+
+type ExpressionHash = u64;
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum HashedExpression<T> {
+    Const(ExpressionHash, T),
+    Parameter(ExpressionHash, usize),
+    Eval(ExpressionHash, usize, Vec<HashedExpression<T>>),
+    Add(ExpressionHash, Vec<HashedExpression<T>>),
+    Mul(ExpressionHash, Vec<HashedExpression<T>>),
+    Pow(ExpressionHash, Box<(HashedExpression<T>, i64)>),
+    Powf(
+        ExpressionHash,
+        Box<(HashedExpression<T>, HashedExpression<T>)>,
+    ),
+    ReadArg(ExpressionHash, usize), // read nth function argument
+    BuiltinFun(ExpressionHash, Symbol, Box<HashedExpression<T>>),
+    SubExpression(ExpressionHash, usize),
+}
+
+impl<T> HashedExpression<T> {
+    fn get_hash(&self) -> ExpressionHash {
+        match self {
+            HashedExpression::Const(h, _) => *h,
+            HashedExpression::Parameter(h, _) => *h,
+            HashedExpression::Eval(h, _, _) => *h,
+            HashedExpression::Add(h, _) => *h,
+            HashedExpression::Mul(h, _) => *h,
+            HashedExpression::Pow(h, _) => *h,
+            HashedExpression::Powf(h, _) => *h,
+            HashedExpression::ReadArg(h, _) => *h,
+            HashedExpression::BuiltinFun(h, _, _) => *h,
+            HashedExpression::SubExpression(h, _) => *h,
+        }
+    }
+}
+
+impl<T: Clone> HashedExpression<T> {
+    fn to_expression(&self) -> Expression<T> {
+        match self {
+            HashedExpression::Const(_, c) => Expression::Const(c.clone()),
+            HashedExpression::Parameter(_, p) => Expression::Parameter(*p),
+            HashedExpression::Eval(_, i, v) => {
+                Expression::Eval(*i, v.into_iter().map(|x| x.to_expression()).collect())
+            }
+            HashedExpression::Add(_, a) => {
+                Expression::Add(a.into_iter().map(|x| x.to_expression()).collect())
+            }
+            HashedExpression::Mul(_, a) => {
+                Expression::Mul(a.into_iter().map(|x| x.to_expression()).collect())
+            }
+            HashedExpression::Pow(_, p) => Expression::Pow(Box::new((p.0.to_expression(), p.1))),
+            HashedExpression::Powf(_, p) => {
+                Expression::Powf(Box::new((p.0.to_expression(), p.1.to_expression())))
+            }
+            HashedExpression::ReadArg(_, r) => Expression::ReadArg(*r),
+            HashedExpression::BuiltinFun(_, s, a) => {
+                Expression::BuiltinFun(*s, Box::new(a.to_expression()))
+            }
+            HashedExpression::SubExpression(_, s) => Expression::SubExpression(*s),
+        }
+    }
+}
+
+impl<T: Ord> PartialOrd for HashedExpression<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: Ord> Ord for HashedExpression<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (HashedExpression::Const(_, a), HashedExpression::Const(_, b)) => a.cmp(b),
+            (HashedExpression::Parameter(_, a), HashedExpression::Parameter(_, b)) => a.cmp(b),
+            (HashedExpression::Eval(_, a, b), HashedExpression::Eval(_, c, d)) => {
+                a.cmp(c).then_with(|| b.cmp(d))
+            }
+            (HashedExpression::Add(_, a), HashedExpression::Add(_, b)) => a.cmp(b),
+            (HashedExpression::Mul(_, a), HashedExpression::Mul(_, b)) => a.cmp(b),
+            (HashedExpression::Pow(_, p1), HashedExpression::Pow(_, p2)) => p1.cmp(p2),
+            (HashedExpression::Powf(_, p1), HashedExpression::Powf(_, p2)) => p1.cmp(p2),
+            (HashedExpression::ReadArg(_, r1), HashedExpression::ReadArg(_, r2)) => r1.cmp(r2),
+            (HashedExpression::BuiltinFun(_, a, b), HashedExpression::BuiltinFun(_, c, d)) => {
+                a.cmp(c).then_with(|| b.cmp(d))
+            }
+            (HashedExpression::SubExpression(_, s1), HashedExpression::SubExpression(_, s2)) => {
+                s1.cmp(s2)
+            }
+            (HashedExpression::Const(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Const(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Parameter(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Parameter(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Eval(_, _, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Eval(_, _, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Add(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Add(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Mul(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Mul(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Pow(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Pow(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Powf(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Powf(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::ReadArg(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::ReadArg(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::BuiltinFun(_, _, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::BuiltinFun(_, _, _)) => std::cmp::Ordering::Greater,
+        }
+    }
+}
+
+impl<T: Eq + Hash> Hash for HashedExpression<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.get_hash())
+    }
+}
+
+#[derive(Debug, Eq, Clone)]
+pub struct HashedSubExpression<'a, T> {
+    pub hash: u64,
+    pub op: u8, // should be 0 when it's a single item, else 3 for add, 4 for mul; used for EQ!
+    pub expression: Vec<&'a HashedExpression<T>>,
+}
+
+impl<T: PartialEq> PartialEq for HashedSubExpression<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.hash != other.hash {
+            return false;
+        }
+
+        if self.op == other.op {
+            return self.expression.len() == other.expression.len()
+                && self
+                    .expression
+                    .iter()
+                    .zip(&other.expression)
+                    .all(|x| **x.0 == **x.1);
+        }
+
+        if self.op != 0 {
+            return other.eq(self);
+        }
+
+        if other.op == 3 {
+            if let HashedExpression::Add(_, v) = &self.expression[0] {
+                return self.expression.iter().zip(v).all(|(a, b)| *a == b);
+            }
+        } else if other.op == 4 {
+            if let HashedExpression::Mul(_, v) = &self.expression[0] {
+                return self.expression.iter().zip(v).all(|(a, b)| *a == b);
+            }
+        }
+
+        false
+    }
+}
+
+impl<'a, T: Clone> HashedSubExpression<'a, T> {
+    fn to_hashed_expression(&self) -> HashedExpression<T> {
+        match self.op {
+            3 => HashedExpression::Add(
+                self.hash,
+                self.expression.iter().cloned().cloned().collect(),
+            ),
+            4 => HashedExpression::Mul(
+                self.hash,
+                self.expression.iter().cloned().cloned().collect(),
+            ),
+            _ => self.expression[0].clone(),
+        }
+    }
+}
+
+impl<'a, T: Eq + Hash> Hash for HashedSubExpression<'a, T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash)
+    }
+}
+impl<T: Eq + Hash + Clone + Ord> HashedExpression<T> {
+    fn find_subexpression<'a>(
+        &'a self,
+        subexp: &mut HashMap<HashedSubExpression<'a, T>, usize>,
+        max_subexpr_len: usize,
+    ) -> bool {
+        if matches!(
+            self,
+            HashedExpression::Const(_, _)
+                | HashedExpression::Parameter(_, _)
+                | HashedExpression::ReadArg(_, _)
+        ) {
+            return true;
+        }
+
+        let complete_node = HashedSubExpression {
+            hash: self.get_hash(),
+            op: 0,
+            expression: vec![self],
+        };
+
+        if let Some(i) = subexp.get_mut(&complete_node) {
+            *i += 1;
+            return true;
+        }
+
+        subexp.insert(complete_node.clone(), 1);
+
+        match self {
+            HashedExpression::Const(_, _)
+            | HashedExpression::Parameter(_, _)
+            | HashedExpression::ReadArg(_, _) => {}
+            HashedExpression::Eval(_, _, ae) => {
+                for arg in ae {
+                    arg.find_subexpression(subexp, max_subexpr_len);
+                }
+            }
+            HashedExpression::Add(_, a) | HashedExpression::Mul(_, a) => {
+                let mut unused_indices = (0..a.len()).collect::<Vec<_>>();
+                let mut k = max_subexpr_len.min(unused_indices.len() - 1);
+
+                /*let op: u64 = if let HashedExpression::Add(_, _) = self {
+                    3
+                } else {
+                    4
+                };
+
+                let min = if op == 3 { 2 } else { 1 };*/
+
+                //k = 0;
+                'big_loop: while k > 1 {
+                    let mut it = CombinationIterator::new(unused_indices.len(), k);
+                    while let Some(x) = it.next() {
+                        let op: u64 = if let HashedExpression::Add(_, _) = self {
+                            3
+                        } else {
+                            4
+                        };
+
+                        let mut hash = op;
+                        for i in x {
+                            hash = hash.wrapping_add(a[unused_indices[*i]].get_hash());
+                        }
+
+                        // FIXME: the op does not play well!
+                        // we need to construct a new
+                        let complete_node = HashedSubExpression {
+                            hash,
+                            op: op as u8,
+                            expression: x.iter().map(|i| &a[unused_indices[*i]]).collect(),
+                        };
+
+                        if let Some(i) = subexp.get_mut(&complete_node) {
+                            *i += 1;
+                            for j in x.iter().rev() {
+                                unused_indices.remove(*j);
+                            }
+
+                            k = unused_indices.len().min(k);
+                            continue 'big_loop;
+                        } else {
+                            subexp.insert(complete_node.clone(), 1);
+                        }
+                    }
+
+                    k -= 1;
+                }
+
+                for arg in unused_indices {
+                    a[arg].find_subexpression(subexp, max_subexpr_len);
+                }
+            }
+            HashedExpression::Pow(_, p) => {
+                p.0.find_subexpression(subexp, max_subexpr_len);
+            }
+            HashedExpression::Powf(_, p) => {
+                p.0.find_subexpression(subexp, max_subexpr_len);
+                p.1.find_subexpression(subexp, max_subexpr_len);
+            }
+            HashedExpression::BuiltinFun(_, _, _) => {}
+            HashedExpression::SubExpression(_, _) => {}
+        }
+
+        false
+    }
+
+    fn replace_subexpression<'a>(
+        &mut self,
+        subexp: &HashMap<HashedSubExpression<'a, T>, usize>,
+        max_subexpr_len: usize,
+        skip_root: bool,
+    ) {
+        if !skip_root {
+            let complete_node = HashedSubExpression {
+                hash: self.get_hash(),
+                op: 0,
+                expression: vec![self],
+            };
+
+            if let Some(i) = subexp.get(&complete_node) {
+                *self = HashedExpression::SubExpression(self.get_hash(), *i); // recycle hash!
+                return;
+            }
+        }
+
+        let op: u64 = if let HashedExpression::Add(_, _) = self {
+            3
+        } else {
+            4
+        };
+
+        match self {
+            HashedExpression::Const(_, _)
+            | HashedExpression::Parameter(_, _)
+            | HashedExpression::ReadArg(_, _) => {}
+            HashedExpression::Eval(_, _, ae) => {
+                for arg in &mut *ae {
+                    arg.replace_subexpression(subexp, max_subexpr_len, false);
+                }
+            }
+            HashedExpression::Add(_, a) | HashedExpression::Mul(_, a) => {
+                let mut unused_indices = (0..a.len()).collect::<Vec<_>>();
+                let mut k = max_subexpr_len.min(unused_indices.len() - 1);
+
+                let mut res = vec![];
+
+                /*if op == 3 {
+                    // k = 0;
+                }
+
+                let min = if op == 3 { 2 } else { 1 };*/
+
+                //k = 0;
+                'big_loop: while k > 1 {
+                    let mut it = CombinationIterator::new(unused_indices.len(), k);
+                    while let Some(x) = it.next() {
+                        let mut hash = op;
+                        for i in x {
+                            hash = hash.wrapping_add(a[unused_indices[*i]].get_hash());
+                        }
+
+                        // FIXME: the op does not play well!
+                        // we need to construct a new
+                        let complete_node = HashedSubExpression {
+                            hash,
+                            op: op as u8,
+                            expression: x.iter().map(|i| &a[unused_indices[*i]]).collect(),
+                        };
+
+                        if let Some(i) = subexp.get(&complete_node) {
+                            res.push(HashedExpression::SubExpression(hash, *i)); // recycle hash???
+
+                            for j in x.iter().rev() {
+                                unused_indices.remove(*j);
+                            }
+
+                            k = unused_indices.len().min(k);
+                            continue 'big_loop;
+                        }
+                    }
+
+                    k -= 1;
+                }
+
+                for arg in unused_indices {
+                    a[arg].replace_subexpression(subexp, max_subexpr_len, false);
+                    res.push(a[arg].clone());
+                }
+
+                res.sort();
+                *a = res;
+            }
+            HashedExpression::Pow(_, p) => {
+                p.0.replace_subexpression(subexp, max_subexpr_len, false);
+            }
+            HashedExpression::Powf(_, p) => {
+                p.0.replace_subexpression(subexp, max_subexpr_len, false);
+                p.1.replace_subexpression(subexp, max_subexpr_len, false);
+            }
+            HashedExpression::BuiltinFun(_, _, _) => {}
+            HashedExpression::SubExpression(_, _) => {}
+        }
+    }
+}
+
+impl<T: std::hash::Hash + Clone> Expression<T> {
+    fn to_hashed_expression(&self) -> (ExpressionHash, HashedExpression<T>) {
+        match self {
+            Expression::Const(c) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(0);
+                c.hash(&mut hasher);
+                let h = hasher.finish();
+                (h, HashedExpression::Const(h, c.clone()))
+            }
+            Expression::Parameter(p) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(1);
+                hasher.write_usize(*p);
+                let h = hasher.finish();
+                (h, HashedExpression::Parameter(h, *p))
+            }
+            Expression::Eval(i, v) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(2);
+                hasher.write_usize(*i);
+                let mut new_v = vec![];
+                for x in v {
+                    let (h, v) = x.to_hashed_expression();
+                    new_v.push(v);
+                    hasher.write_u64(h);
+                }
+                let h = hasher.finish();
+                (h, HashedExpression::Eval(h, *i, new_v))
+            }
+            Expression::Add(v) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(3);
+                let mut new_v = vec![];
+
+                // do an additive hash
+                let mut arg_sum = 0u64;
+                for x in v {
+                    let (h, v) = x.to_hashed_expression();
+                    new_v.push(v);
+                    arg_sum = arg_sum.wrapping_add(h);
+                }
+                hasher.write_u64(arg_sum);
+                let h = hasher.finish();
+                (h, HashedExpression::Add(h, new_v))
+            }
+            Expression::Mul(v) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(4);
+                let mut new_v = vec![];
+
+                // do an additive hash
+                let mut arg_sum = 0u64;
+                for x in v {
+                    let (h, v) = x.to_hashed_expression();
+                    new_v.push(v);
+                    arg_sum = arg_sum.wrapping_add(h);
+                }
+                hasher.write_u64(arg_sum);
+                let h = hasher.finish();
+                (h, HashedExpression::Mul(h, new_v))
+            }
+            Expression::Pow(p) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(5);
+                let (hb, vb) = p.0.to_hashed_expression();
+                hasher.write_u64(hb);
+                hasher.write_i64(p.1);
+                let h = hasher.finish();
+                (h, HashedExpression::Pow(h, Box::new((vb, p.1))))
+            }
+            Expression::Powf(p) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(6);
+                let (hb, vb) = p.0.to_hashed_expression();
+                let (he, ve) = p.1.to_hashed_expression();
+                hasher.write_u64(hb);
+                hasher.write_u64(he);
+                let h = hasher.finish();
+                (h, HashedExpression::Powf(h, Box::new((vb, ve))))
+            }
+            Expression::ReadArg(i) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(7);
+                hasher.write_usize(*i);
+                let h = hasher.finish();
+                (h, HashedExpression::ReadArg(h, *i))
+            }
+            Expression::BuiltinFun(s, a) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(8);
+                s.hash(&mut hasher);
+                let (ha, va) = a.to_hashed_expression();
+                hasher.write_u64(ha);
+                let h = hasher.finish();
+                (h, HashedExpression::BuiltinFun(h, *s, Box::new(va)))
+            }
+            Expression::SubExpression(i) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(9);
+                hasher.write_usize(*i);
+                let h = hasher.finish();
+                (h, HashedExpression::SubExpression(h, *i))
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
@@ -326,17 +824,27 @@ impl<T> ExpressionEvaluator<T> {
 
 impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     /// Create a C++ code representation of the evaluation tree.
+    /// With `inline_asm` set to any value other than `None`,
+    /// high-performance inline ASM code will be generated for most
+    /// evaluation instructions. This often gives better performance than
+    /// the `O3` optimization level and results in very fast compilation.
     pub fn export_cpp(
         &self,
         filename: &str,
         function_name: &str,
         include_header: bool,
+        inline_asm: InlineASM,
     ) -> Result<ExportedCode, std::io::Error> {
-        let cpp = self.export_cpp_str(function_name, include_header);
-        std::fs::write(filename, cpp)?;
+        let cpp = match inline_asm {
+            InlineASM::Intel => self.export_asm_str(function_name, include_header),
+            InlineASM::None => self.export_cpp_str(function_name, include_header),
+        };
+
+        let _ = std::fs::write(filename, cpp)?;
         Ok(ExportedCode {
             source_filename: filename.to_string(),
             function_name: function_name.to_string(),
+            inline_asm,
         })
     }
 
@@ -438,9 +946,389 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             }
         }
     }
+
+    pub fn export_asm_str(&self, function_name: &str, include_header: bool) -> String {
+        let mut res = if include_header {
+            "#include <iostream>\n#include <complex>\n#include <cmath>\n\n".to_string()
+        } else {
+            String::new()
+        };
+
+        res += &format!(
+            "static const std::complex<double> CONSTANTS_complex[{}] = {{{}}};\n\n",
+            self.reserved_indices - self.param_count + 1,
+            {
+                let mut nums = (self.param_count..self.reserved_indices)
+                    .map(|i| format!("std::complex<double>({})", self.stack[i]))
+                    .collect::<Vec<_>>();
+                nums.push("std::complex<double>(0, -0.)".to_string()); // used for inversion
+                nums.join(",")
+            }
+        );
+
+        res += &format!("extern \"C\" void {}_complex(const std::complex<double> *params, std::complex<double> *out)\n{{\n", function_name);
+
+        // TODO: pass as argument to prevent stack reallocation
+        res += &format!("\tstd::complex<double> Z[{}];\n", self.stack.len());
+
+        self.export_asm_complex_impl(&self.instructions, &mut res);
+
+        res += "\treturn;\n}\n\n";
+
+        res += &format!(
+            "static const double CONSTANTS_double[{}] = {{{}}};\n\n",
+            self.reserved_indices - self.param_count + 1,
+            {
+                let mut nums = (self.param_count..self.reserved_indices)
+                    .map(|i| format!("double({})", self.stack[i]))
+                    .collect::<Vec<_>>();
+                nums.push("1".to_string()); // used for inversion
+                nums.join(",")
+            }
+        );
+
+        res += &format!(
+            "extern \"C\" void {}_double(const double *params, double *out)\n{{\n",
+            function_name
+        );
+
+        res += &format!("\tdouble Z[{}];\n", self.stack.len());
+
+        self.export_asm_double_impl(&self.instructions, &mut res);
+
+        res += "\treturn;\n}\n";
+
+        res
+    }
+
+    fn export_asm_double_impl(&self, instr: &[Instr], out: &mut String) -> bool {
+        macro_rules! get_input {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    format!("params[{}]", $i)
+                } else if $i < self.reserved_indices {
+                    format!("CONSTANTS_double[{}]", $i - self.param_count)
+                } else {
+                    // TODO: subtract reserved indices
+                    format!("Z[{}]", $i)
+                }
+            };
+        }
+
+        macro_rules! format_addr {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    format!("PTR [%2+{}]", $i * 8)
+                } else if $i < self.reserved_indices {
+                    format!("PTR [%1+{}]", ($i - self.param_count) * 8)
+                } else {
+                    // TODO: subtract reserved indices
+                    format!("PTR [%0+{}]", $i * 8)
+                }
+            };
+        }
+
+        macro_rules! end_asm_block {
+            ($in_block: expr) => {
+                if $in_block {
+                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n";
+                    $in_block = false;
+                }
+            };
+        }
+
+        let mut in_asm_block = false;
+        for ins in instr {
+            match ins {
+                Instr::Add(o, a) => {
+                    if !in_asm_block {
+                        *out += "\t__asm__(\n";
+                        in_asm_block = true;
+                    }
+
+                    *out += &format!("\t\t\"movsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(a[0]));
+
+                    // TODO: try loading in multiple registers for better instruction-level parallelism?
+                    for i in &a[1..] {
+                        *out += &format!("\t\t\"addsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(*i));
+                    }
+                    *out += &format!("\t\t\"movsd QWORD {}, xmm0\\n\\t\"\n", format_addr!(*o));
+                }
+                Instr::Mul(o, a) => {
+                    if !in_asm_block {
+                        *out += "\t__asm__(\n";
+                        in_asm_block = true;
+                    }
+
+                    *out += &format!("\t\t\"movsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(a[0]));
+
+                    for i in &a[1..] {
+                        *out += &format!("\t\t\"mulsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(*i));
+                    }
+                    *out += &format!("\t\t\"movsd QWORD {}, xmm0\\n\\t\"\n", format_addr!(*o));
+                }
+                Instr::Pow(o, b, e) => {
+                    if *e == -1 {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "\t\t\"movsd xmm0, QWORD PTR [%1+{}]\\n\\t\"
+\t\t\"divsd xmm0, QWORD {}\\n\\t\"
+\t\t\"movapd xmm2, xmm0\\n\\t\"
+\t\t\"movsd QWORD {}, xmm0\\n\\t\"\n",
+                            (self.reserved_indices - self.param_count) * 8,
+                            format_addr!(*b),
+                            format_addr!(*o)
+                        );
+                    } else {
+                        end_asm_block!(in_asm_block);
+
+                        let base = get_input!(*b);
+                        *out += format!("\tZ[{}] = pow({}, {});\n", o, base, e).as_str();
+                    }
+                }
+                Instr::Powf(o, b, e) => {
+                    end_asm_block!(in_asm_block);
+
+                    let base = get_input!(*b);
+                    let exp = get_input!(*e);
+                    *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
+                }
+                Instr::BuiltinFun(o, s, a) => {
+                    end_asm_block!(in_asm_block);
+
+                    let arg = get_input!(*a);
+
+                    match *s {
+                        State::EXP => {
+                            *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
+                        }
+                        State::LOG => {
+                            *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
+                        }
+                        State::SIN => {
+                            *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
+                        }
+                        State::COS => {
+                            *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
+                        }
+                        State::SQRT => {
+                            *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+
+        end_asm_block!(in_asm_block);
+
+        *out += "\t__asm__(\n";
+        for (i, r) in &mut self.result_indices.iter().enumerate() {
+            if *r < self.param_count {
+                *out += &format!("\t\t\"movsd xmm0, QWORD PTR[%3+{}]\\n\\t\"\n", r * 8);
+            } else if *r < self.reserved_indices {
+                *out += &format!(
+                    "\t\t\"movsd xmm0, QWORD PTR[%2+{}]\\n\\t\"\n",
+                    (r - self.param_count) * 8
+                );
+            } else {
+                *out += &format!("\t\t\"movsd xmm0, QWORD PTR[%1+{}]\\n\\t\"\n", r * 8);
+            }
+
+            *out += &format!("\t\t\"movsd QWORD PTR[%0+{}], xmm0\\n\\t\"\n", i * 8);
+        }
+
+        *out += "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n";
+        in_asm_block
+    }
+
+    fn export_asm_complex_impl(&self, instr: &[Instr], out: &mut String) -> bool {
+        macro_rules! get_input {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    format!("params[{}]", $i)
+                } else if $i < self.reserved_indices {
+                    format!("CONSTANTS_complex[{}]", $i - self.param_count)
+                } else {
+                    // TODO: subtract reserved indices
+                    format!("Z[{}]", $i)
+                }
+            };
+        }
+
+        macro_rules! format_addr {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    format!("PTR [%2+{}]", $i * 16)
+                } else if $i < self.reserved_indices {
+                    format!("PTR [%1+{}]", ($i - self.param_count) * 16)
+                } else {
+                    // TODO: subtract reserved indices
+                    format!("PTR [%0+{}]", $i * 16)
+                }
+            };
+        }
+
+        macro_rules! end_asm_block {
+            ($in_block: expr) => {
+                if $in_block {
+                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n";
+                    $in_block = false;
+                }
+            };
+        }
+
+        let mut in_asm_block = false;
+        for ins in instr {
+            match ins {
+                Instr::Add(o, a) => {
+                    if !in_asm_block {
+                        *out += "\t__asm__(\n";
+                        in_asm_block = true;
+                    }
+
+                    *out += &format!("\t\t\"xorpd xmm0, xmm0\\n\\t\"\n");
+
+                    // TODO: try loading in multiple registers for better instruction-level parallelism?
+                    for i in a {
+                        *out +=
+                            &format!("\t\t\"addpd xmm0, XMMWORD {}\\n\\t\"\n", format_addr!(*i));
+                    }
+                    *out += &format!("\t\t\"movupd XMMWORD {}, xmm0\\n\\t\"\n", format_addr!(*o),);
+                }
+                Instr::Mul(o, a) => {
+                    if a.len() < 15 {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        // optimized complex multiplication
+                        for (i, r) in a.iter().enumerate() {
+                            *out += &format!(
+                                "\t\t\"movupd xmm{}, XMMWORD {}\\n\\t\"\n",
+                                i + 1,
+                                format_addr!(*r)
+                            );
+                        }
+
+                        for i in 1..a.len() {
+                            *out += &format!(
+                                "\t\t\"movapd xmm0, xmm1\\n\\t\"
+\t\t\"unpckhpd xmm0, xmm0\\n\\t\"
+\t\t\"unpcklpd xmm1, xmm1\\n\\t\"
+\t\t\"mulpd xmm0, xmm{0}\\n\\t\"
+\t\t\"mulpd xmm1, xmm{0}\\n\\t\"
+\t\t\"shufpd xmm0, xmm0, 1\\n\\t\"
+\t\t\"addsubpd xmm1, xmm0\\n\\t\"\n",
+                                i + 1
+                            );
+                        }
+
+                        *out +=
+                            &format!("\t\t\"movupd XMMWORD {}, xmm1\\n\\t\"\n", format_addr!(*o));
+                    } else {
+                        // TODO: reuse registers
+
+                        end_asm_block!(in_asm_block);
+
+                        let args = a
+                            .iter()
+                            .map(|x| get_input!(*x))
+                            .collect::<Vec<_>>()
+                            .join("*");
+
+                        *out += format!("\tZ[{}] = {};\n", o, args).as_str();
+                    }
+                }
+                Instr::Pow(o, b, e) => {
+                    if *e == -1 {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "\t\t\"movupd xmm0, XMMWORD {}\\n\\t\"
+\t\t\"movupd xmm1, XMMWORD PTR [%1+{}]\\n\\t\"
+\t\t\"movapd xmm2, xmm0\\n\\t\"
+\t\t\"xorpd xmm0, xmm1\\n\\t\"
+\t\t\"mulpd xmm2, xmm2\\n\\t\"
+\t\t\"haddpd xmm2, xmm2\\n\\t\"
+\t\t\"divpd xmm0, xmm2\\n\\t\"
+\t\t\"movupd XMMWORD {}, xmm0\\n\\t\"",
+                            format_addr!(*b),
+                            (self.reserved_indices - self.param_count) * 16,
+                            format_addr!(*o)
+                        );
+                    } else {
+                        end_asm_block!(in_asm_block);
+
+                        let base = get_input!(*b);
+                        *out += format!("\tZ[{}] = pow({}, {});\n", o, base, e).as_str();
+                    }
+                }
+                Instr::Powf(o, b, e) => {
+                    end_asm_block!(in_asm_block);
+                    let base = get_input!(*b);
+                    let exp = get_input!(*e);
+                    *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
+                }
+                Instr::BuiltinFun(o, s, a) => {
+                    end_asm_block!(in_asm_block);
+
+                    let arg = get_input!(*a);
+
+                    match *s {
+                        State::EXP => {
+                            *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
+                        }
+                        State::LOG => {
+                            *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
+                        }
+                        State::SIN => {
+                            *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
+                        }
+                        State::COS => {
+                            *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
+                        }
+                        State::SQRT => {
+                            *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+
+        end_asm_block!(in_asm_block);
+
+        *out += "\t__asm__(\n";
+        for (i, r) in &mut self.result_indices.iter().enumerate() {
+            if *r < self.param_count {
+                *out += &format!("\t\t\"movupd xmm0, XMMWORD PTR[%3+{}]\\n\\t\"\n", r * 16);
+            } else if *r < self.reserved_indices {
+                *out += &format!(
+                    "\t\t\"movupd xmm0, XMMWORD PTR[%2+{}]\\n\\t\"\n",
+                    (r - self.param_count) * 16
+                );
+            } else {
+                *out += &format!("\t\t\"movupd xmm0, XMMWORD PTR[%1+{}]\\n\\t\"\n", r * 16);
+            }
+
+            *out += &format!("\t\t\"movupd XMMWORD PTR[%0+{}], xmm0\\n\\t\"\n", i * 16);
+        }
+
+        *out += "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"(CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n";
+        in_asm_block
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),
@@ -449,7 +1337,7 @@ enum Instr {
     BuiltinFun(usize, Symbol, usize),
 }
 
-impl<T: Clone + Default + PartialEq> SplitExpression<T> {
+impl<T: Clone + PartialEq> SplitExpression<T> {
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> SplitExpression<T2> {
         SplitExpression {
             tree: self.tree.iter().map(|x| x.map_coeff(f)).collect(),
@@ -494,7 +1382,7 @@ impl<T: Clone + Default + PartialEq> SplitExpression<T> {
     }
 }
 
-impl<T: Clone + Default + PartialEq> Expression<T> {
+impl<T: Clone + PartialEq> Expression<T> {
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> Expression<T2> {
         match self {
             Expression::Const(c) => Expression::Const(f(c)),
@@ -561,7 +1449,7 @@ impl<T: Clone + Default + PartialEq> Expression<T> {
     }
 }
 
-impl<T: Clone + Default + PartialEq> EvalTree<T> {
+impl<T: Clone + PartialEq> EvalTree<T> {
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> EvalTree<T2> {
         EvalTree {
             expressions: SplitExpression {
@@ -583,6 +1471,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 .iter()
                 .map(|(s, a, e)| (s.clone(), a.clone(), e.map_coeff(f)))
                 .collect(),
+            param_count: self.param_count,
         }
     }
 
@@ -593,13 +1482,15 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
         self.expressions.unnest(max_depth);
     }
+}
 
+impl<T: Clone + Default + PartialEq> EvalTree<T> {
     /// Create a linear version of the tree that can be evaluated more efficiently.
-    pub fn linearize(mut self, param_count: usize) -> ExpressionEvaluator<T> {
-        let mut stack = vec![T::default(); param_count];
+    pub fn linearize(mut self) -> ExpressionEvaluator<T> {
+        let mut stack = vec![T::default(); self.param_count];
 
         // strip every constant and move them into the stack after the params
-        self.strip_constants(&mut stack, param_count);
+        self.strip_constants(&mut stack);
         let reserved_indices = stack.len();
 
         let mut sub_expr_pos = HashMap::default();
@@ -621,7 +1512,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
         let mut e = ExpressionEvaluator {
             stack,
-            param_count,
+            param_count: self.param_count,
             reserved_indices,
             instructions,
             result_indices,
@@ -631,22 +1522,22 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
         e
     }
 
-    fn strip_constants(&mut self, stack: &mut Vec<T>, param_len: usize) {
+    fn strip_constants(&mut self, stack: &mut Vec<T>) {
         for t in &mut self.expressions.tree {
-            t.strip_constants(stack, param_len);
+            t.strip_constants(stack, self.param_count);
         }
 
         for e in &mut self.expressions.subexpressions {
-            e.strip_constants(stack, param_len);
+            e.strip_constants(stack, self.param_count);
         }
 
         for (_, _, e) in &mut self.functions {
             for t in &mut e.tree {
-                t.strip_constants(stack, param_len);
+                t.strip_constants(stack, self.param_count);
             }
 
             for e in &mut e.subexpressions {
-                e.strip_constants(stack, param_len);
+                e.strip_constants(stack, self.param_count);
             }
         }
     }
@@ -1013,11 +1904,12 @@ impl Expression<Rational> {
 }
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree<T> {
-    pub fn common_subexpression_elimination(&mut self) {
-        self.expressions.common_subexpression_elimination();
+    pub fn common_subexpression_elimination(&mut self, max_subexpr_len: usize) {
+        self.expressions
+            .common_subexpression_elimination(max_subexpr_len);
 
         for (_, _, e) in &mut self.functions {
-            e.common_subexpression_elimination();
+            e.common_subexpression_elimination(max_subexpr_len);
         }
     }
 
@@ -1043,11 +1935,19 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree
 }
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {
-    pub fn common_subexpression_elimination(&mut self) {
+    /// Eliminate common subexpressions in the expression, also checking for subexpressions
+    /// up to length `max_subexpr_len`.
+    pub fn common_subexpression_elimination(&mut self, max_subexpr_len: usize) {
         let mut h = HashMap::default();
 
-        for t in &mut self.tree {
-            t.find_subexpression(&mut h);
+        let mut hashed_tree = vec![];
+        for t in &self.tree {
+            let (_, t) = t.to_hashed_expression();
+            hashed_tree.push(t);
+        }
+
+        for t in &hashed_tree {
+            t.find_subexpression(&mut h, max_subexpr_len);
         }
 
         h.retain(|_, v| *v > 1);
@@ -1057,19 +1957,23 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExp
             *v = self.subexpressions.len() + i;
         }
 
-        for t in &mut self.tree {
-            t.replace_subexpression(&h, false);
+        let mut n_hash_tree = hashed_tree.clone();
+        for t in &mut n_hash_tree {
+            t.replace_subexpression(&h, max_subexpr_len, false);
         }
+
+        self.tree = n_hash_tree.iter().map(|x| x.to_expression()).collect();
 
         let mut v: Vec<_> = h.clone().into_iter().map(|(k, v)| (v, k)).collect();
 
-        v.sort();
+        v.sort_by_key(|k| k.0); // not needed
 
         // replace subexpressions in subexpressions and
         // sort them based on their dependencies
-        for (_, mut x) in v {
-            x.replace_subexpression(&h, true);
-            self.subexpressions.push(x);
+        for (_, x) in v {
+            let mut he = x.to_hashed_expression();
+            he.replace_subexpression(&h, max_subexpr_len, true);
+            self.subexpressions.push(he.to_expression());
         }
 
         let mut dep_tree = vec![];
@@ -1116,9 +2020,11 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
                 }
             }
             Expression::Add(a) | Expression::Mul(a) => {
-                for arg in a {
+                for arg in &mut *a {
                     arg.rename_subexpression(subexp);
                 }
+
+                a.sort();
             }
             Expression::Pow(p) => {
                 p.0.rename_subexpression(subexp);
@@ -1165,6 +2071,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
         }
     }
 
+    /*
     fn replace_subexpression(&mut self, subexp: &HashMap<Expression<T>, usize>, skip_root: bool) {
         if !skip_root {
             if let Some(i) = subexp.get(&self) {
@@ -1237,6 +2144,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
             Expression::SubExpression(_) => {}
         }
     }
+    */
 }
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {
@@ -1681,6 +2589,7 @@ impl<T: Real> EvalTree<T> {
 pub struct ExportedCode {
     source_filename: String,
     function_name: String,
+    inline_asm: InlineASM,
 }
 pub struct CompiledCode {
     library_filename: String,
@@ -1698,6 +2607,7 @@ type L = std::sync::Arc<libloading::Library>;
 
 #[derive(Debug)]
 struct EvaluatorFunctions<'a> {
+    fn_name: String,
     eval_double: libloading::Symbol<'a, unsafe extern "C" fn(params: *const f64, out: *mut f64)>,
     eval_complex: libloading::Symbol<
         'a,
@@ -1715,6 +2625,13 @@ self_cell!(
 
     impl {Debug}
 );
+
+impl Clone for CompiledEvaluator {
+    fn clone(&self) -> Self {
+        self.load_new_function(&self.with_dependent(|_, d| &d.fn_name))
+            .unwrap()
+    }
+}
 
 /// A floating point type that can be used for compiled evaluation.
 pub trait CompiledEvaluatorFloat: Sized {
@@ -1741,6 +2658,7 @@ impl CompiledEvaluator {
         unsafe {
             CompiledEvaluator::try_new(self.borrow_owner().clone(), |lib| {
                 Ok(EvaluatorFunctions {
+                    fn_name: function_name.to_string(),
                     eval_double: lib
                         .get(format!("{}_double", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
@@ -1764,6 +2682,7 @@ impl CompiledEvaluator {
 
             CompiledEvaluator::try_new(std::sync::Arc::new(lib), |lib| {
                 Ok(EvaluatorFunctions {
+                    fn_name: function_name.to_string(),
                     eval_double: lib
                         .get(format!("{}_double", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
@@ -1818,10 +2737,11 @@ impl Default for CompileOptions {
 
 impl ExportedCode {
     /// Create a new exported code object from a source file and function name.
-    pub fn new(source_filename: String, function_name: String) -> Self {
+    pub fn new(source_filename: String, function_name: String, inline_asm: InlineASM) -> Self {
         ExportedCode {
             source_filename,
             function_name,
+            inline_asm,
         }
     }
 
@@ -1842,6 +2762,14 @@ impl ExportedCode {
         if options.unsafe_math {
             builder.arg("-funsafe-math-optimizations");
         }
+
+        match self.inline_asm {
+            InlineASM::Intel => {
+                builder.arg("-masm=intel");
+            }
+            InlineASM::None => {}
+        }
+
         for c in &options.custom {
             builder.arg(c);
         }
@@ -1869,6 +2797,28 @@ impl ExportedCode {
     }
 }
 
+/// The inline assembly mode used to generate fast
+/// assembly instructions for mathematical operations.
+/// Set to `None` to disable inline assembly.
+pub enum InlineASM {
+    /// Use instructions suitable for x86_64 machines.
+    Intel,
+    /// Do not generate inline assembly.
+    None,
+}
+
+impl Default for InlineASM {
+    /// Set the assembly mode suitable for the current
+    /// architecture.
+    fn default() -> Self {
+        if cfg!(target_arch = "x86_64") {
+            return InlineASM::Intel;
+        } else {
+            InlineASM::None
+        }
+    }
+}
+
 impl<T: NumericalFloatLike> EvalTree<T> {
     /// Create a C++ code representation of the evaluation tree.
     pub fn export_cpp(
@@ -1882,6 +2832,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
         Ok(ExportedCode {
             source_filename: filename.to_string(),
             function_name: function_name.to_string(),
+            inline_asm: InlineASM::None,
         })
     }
 
@@ -2069,6 +3020,7 @@ impl<'a> AtomView<'a> {
                 subexpressions: vec![],
             },
             functions: funcs,
+            param_count: params.len(),
         })
     }
 
@@ -2206,8 +3158,15 @@ impl<'a> AtomView<'a> {
                         if den == 1 {
                             if num > 1 {
                                 return Ok(Expression::Mul(vec![b_eval.clone(); num as usize]));
+                            } else {
+                                return Ok(Expression::Pow(Box::new((
+                                    Expression::Mul(vec![
+                                        b_eval.clone();
+                                        num.unsigned_abs() as usize
+                                    ]),
+                                    -1,
+                                ))));
                             }
-                            return Ok(Expression::Pow(Box::new((b_eval, num))));
                         }
                     }
                 }

@@ -78,7 +78,7 @@ fn main() {
     println!("Op original {:?}", tree.count_operations());
     tree.horner_scheme();
     println!("Op horner {:?}", tree.count_operations());
-    tree.common_subexpression_elimination();
+    tree.common_subexpression_elimination(20); // test 2^20 options at the most
     println!("op cse {:?}", tree.count_operations());
 
     tree.common_pair_elimination();
@@ -112,7 +112,7 @@ fn main() {
     println!("C++ time {:#?}", t.elapsed());
 
     let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
-    let mut evaluator: ExpressionEvaluator<f64> = t2.linearize(params.len());
+    let mut evaluator: ExpressionEvaluator<f64> = t2.linearize();
 
     evaluator.evaluate_multiple(&params, &mut out);
     println!("Eval: {}, {}", out[0], out[1]);

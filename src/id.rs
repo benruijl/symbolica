@@ -822,8 +822,13 @@ impl Pattern {
             Pattern::Wildcard(name) => {
                 if let Some(w) = match_stack.get(*name) {
                     w.to_atom(out);
+                } else if match_stack.settings.allow_new_wildcards_on_rhs {
+                    out.to_var(*name);
                 } else {
-                    panic!("Unsubstituted wildcard {}", name.get_id());
+                    Err(TransformerError::ValueError(format!(
+                        "Unsubstituted wildcard {}",
+                        name
+                    )))?;
                 }
             }
             Pattern::Fn(mut name, args) => {
@@ -834,8 +839,11 @@ impl Pattern {
                         } else {
                             unreachable!("Wildcard must be a function name")
                         }
-                    } else {
-                        panic!("Unsubstituted wildcard {}", name.get_id());
+                    } else if !match_stack.settings.allow_new_wildcards_on_rhs {
+                        Err(TransformerError::ValueError(format!(
+                            "Unsubstituted wildcard {}",
+                            name
+                        )))?;
                     }
                 }
 
@@ -863,11 +871,16 @@ impl Pattern {
                                     unreachable!("Wildcard cannot be function name")
                                 }
                             }
-
-                            continue;
+                        } else if match_stack.settings.allow_new_wildcards_on_rhs {
+                            func.add_arg(workspace.new_var(*w).as_view())
                         } else {
-                            panic!("Unsubstituted wildcard {}", name.get_id());
+                            Err(TransformerError::ValueError(format!(
+                                "Unsubstituted wildcard {}",
+                                w
+                            )))?;
                         }
+
+                        continue;
                     }
 
                     let mut handle = workspace.new_atom();
@@ -896,11 +909,16 @@ impl Pattern {
                                     unreachable!("Wildcard cannot be function name")
                                 }
                             }
-
-                            continue;
+                        } else if match_stack.settings.allow_new_wildcards_on_rhs {
+                            out.set_from_view(&workspace.new_var(*w).as_view());
                         } else {
-                            panic!("Unsubstituted wildcard {}", w.get_id());
+                            Err(TransformerError::ValueError(format!(
+                                "Unsubstituted wildcard {}",
+                                w
+                            )))?;
                         }
+
+                        continue;
                     }
 
                     let mut handle = workspace.new_atom();
@@ -937,11 +955,16 @@ impl Pattern {
                                     unreachable!("Wildcard cannot be function name")
                                 }
                             }
-
-                            continue;
+                        } else if match_stack.settings.allow_new_wildcards_on_rhs {
+                            mul.extend(workspace.new_var(*w).as_view());
                         } else {
-                            panic!("Unsubstituted wildcard {}", w.get_id());
+                            Err(TransformerError::ValueError(format!(
+                                "Unsubstituted wildcard {}",
+                                w
+                            )))?;
                         }
+
+                        continue;
                     }
 
                     let mut handle = workspace.new_atom();
@@ -975,11 +998,16 @@ impl Pattern {
                                     unreachable!("Wildcard cannot be function name")
                                 }
                             }
-
-                            continue;
+                        } else if match_stack.settings.allow_new_wildcards_on_rhs {
+                            add.extend(workspace.new_var(*w).as_view());
                         } else {
-                            panic!("Unsubstituted wildcard {}", w.get_id());
+                            Err(TransformerError::ValueError(format!(
+                                "Unsubstituted wildcard {}",
+                                w
+                            )))?;
                         }
+
+                        continue;
                     }
 
                     let mut handle = workspace.new_atom();
@@ -1521,6 +1549,8 @@ pub struct MatchSettings {
     pub level_range: (usize, Option<usize>),
     /// Determine whether a level reflects the expression tree depth or the function depth.
     pub level_is_tree_depth: bool,
+    /// Allow wildcards on the right-hand side that do not appear in the pattern.
+    pub allow_new_wildcards_on_rhs: bool,
 }
 
 /// An insertion-ordered map of wildcard identifiers to a subexpressions.

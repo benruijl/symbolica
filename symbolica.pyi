@@ -870,6 +870,7 @@ class Expression:
         cond: Optional[PatternRestriction] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False,
     ) -> MatchIterator:
         """
         Return an iterator over the pattern `self` matching to `lhs`.
@@ -896,6 +897,7 @@ class Expression:
         cond: Optional[PatternRestriction] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False,
     ) -> bool:
         """
         Test whether the pattern is found in the expression.
@@ -916,6 +918,7 @@ class Expression:
         cond: Optional[PatternRestriction] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False,
     ) -> ReplaceIterator:
         """
         Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
@@ -945,6 +948,7 @@ class Expression:
         cond: Conditions on the pattern.
         level_range: Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
         level_is_tree_depth: If set to `True`, the level is increased when going one level deeper in the expression tree.
+        allow_new_wildcards_on_rhs: If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         """
 
     def replace_all(
@@ -955,6 +959,7 @@ class Expression:
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False,
         repeat: Optional[bool] = False,
     ) -> Expression:
         """
@@ -978,6 +983,7 @@ class Expression:
         non_greedy_wildcards: Wildcards that try to match as little as possible.
         level_range: Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
         level_is_tree_depth: If set to `True`, the level is increased when going one level deeper in the expression tree.
+        allow_new_wildcards_on_rhs: If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         repeat: If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
@@ -1084,7 +1090,8 @@ class Replacement:
             cond: Optional[PatternRestriction] = None,
             non_greedy_wildcards: Optional[Sequence[Expression]] = None,
             level_range: Optional[Tuple[int, Optional[int]]] = None,
-            level_is_tree_depth: Optional[bool] = False) -> Replacement:
+            level_is_tree_depth: Optional[bool] = False,
+            allow_new_wildcards_on_rhs: Optional[bool] = False) -> Replacement:
         """Create a new replacement. See `replace_all` for more information."""
 
 
@@ -1407,6 +1414,7 @@ class Transformer:
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False
     ) -> Transformer:
         """
         Create a transformer that replaces all subexpressions matching the pattern `pat` by the right-hand side `rhs`.
@@ -1428,6 +1436,7 @@ class Transformer:
         non_greedy_wildcards: Wildcards that try to match as little as possible.
         level_range: Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
         level_is_tree_depth: If set to `True`, the level is increased when going one level deeper in the expression tree.
+        allow_new_wildcards_on_rhs: If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         repeat: If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 

@@ -828,7 +828,8 @@ impl PythonPattern {
 
     /// Create a transformer that replaces all patterns matching the left-hand side `self` by the right-hand side `rhs`.
     /// Restrictions on pattern can be supplied through `cond`. The settings `non_greedy_wildcards` can be used to specify
-    /// wildcards that try to match as little as possible.
+    /// wildcards that try to match as little as possible. The settings `allow_new_wildcards_on_rhs` can be used to allow
+    /// wildcards that do not appear in the pattern on the right-hand side.
     ///
     /// The `level_range` specifies the `[min,max]` level at which the pattern is allowed to match.
     /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
@@ -849,6 +850,7 @@ impl PythonPattern {
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
+        allow_new_wildcards_on_rhs: Option<bool>,
     ) -> PyResult<PythonPattern> {
         let mut settings = MatchSettings::default();
 
@@ -876,6 +878,9 @@ impl PythonPattern {
         }
         if let Some(level_is_tree_depth) = level_is_tree_depth {
             settings.level_is_tree_depth = level_is_tree_depth;
+        }
+        if let Some(allow_new_wildcards_on_rhs) = allow_new_wildcards_on_rhs {
+            settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
         }
 
         return append_transformer!(
@@ -3141,6 +3146,7 @@ impl PythonExpression {
         cond: Option<PythonPatternRestriction>,
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
+        allow_new_wildcards_on_rhs: Option<bool>,
     ) -> PyResult<PythonMatchIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
@@ -3148,6 +3154,7 @@ impl PythonExpression {
         let settings = MatchSettings {
             level_range: level_range.unwrap_or((0, None)),
             level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
+            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
             ..MatchSettings::default()
         };
         Ok(PythonMatchIterator::new(
@@ -3178,6 +3185,7 @@ impl PythonExpression {
         cond: Option<PythonPatternRestriction>,
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
+        allow_new_wildcards_on_rhs: Option<bool>,
     ) -> PyResult<bool> {
         let pat = lhs.to_pattern()?.expr;
         let conditions = cond
@@ -3186,6 +3194,7 @@ impl PythonExpression {
         let settings = MatchSettings {
             level_range: level_range.unwrap_or((0, None)),
             level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
+            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
             ..MatchSettings::default()
         };
 
@@ -3226,6 +3235,7 @@ impl PythonExpression {
         cond: Option<PythonPatternRestriction>,
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
+        allow_new_wildcards_on_rhs: Option<bool>,
     ) -> PyResult<PythonReplaceIterator> {
         let conditions = cond
             .map(|r| r.condition.clone())
@@ -3233,6 +3243,7 @@ impl PythonExpression {
         let settings = MatchSettings {
             level_range: level_range.unwrap_or((0, None)),
             level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
+            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
             ..MatchSettings::default()
         };
 
@@ -3280,6 +3291,8 @@ impl PythonExpression {
     ///     Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
     /// level_is_tree_depth: bool, optional
     ///     If set to `True`, the level is increased when going one level deeper in the expression tree.
+    /// allow_new_wildcards_on_rhs: bool, optional
+    ///     If set to `True`, wildcards that do not appear ion the pattern are allowed on the right-hand side.
     /// repeat: bool, optional
     ///     If set to `True`, the entire operation will be repeated until there are no more matches.
     pub fn replace_all(
@@ -3290,6 +3303,7 @@ impl PythonExpression {
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
+        allow_new_wildcards_on_rhs: Option<bool>,
         repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
@@ -3321,6 +3335,9 @@ impl PythonExpression {
         }
         if let Some(level_is_tree_depth) = level_is_tree_depth {
             settings.level_is_tree_depth = level_is_tree_depth;
+        }
+        if let Some(allow_new_wildcards_on_rhs) = allow_new_wildcards_on_rhs {
+            settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
         }
 
         let mut expr_ref = self.expr.as_view();
@@ -3654,6 +3671,7 @@ impl PythonReplacement {
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
+        allow_new_wildcards_on_rhs: Option<bool>,
     ) -> PyResult<Self> {
         let pattern = pattern.to_pattern()?.expr;
         let rhs = rhs.to_pattern()?.expr;
@@ -3684,6 +3702,9 @@ impl PythonReplacement {
         }
         if let Some(level_is_tree_depth) = level_is_tree_depth {
             settings.level_is_tree_depth = level_is_tree_depth;
+        }
+        if let Some(allow_new_wildcards_on_rhs) = allow_new_wildcards_on_rhs {
+            settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
         }
 
         let cond = cond

@@ -1,9 +1,12 @@
-use ahash::HashMap;
+use std::hash::{Hash, Hasher};
+
+use ahash::{AHasher, HashMap};
 use self_cell::self_cell;
 
 use crate::{
     atom::{representation::InlineVar, Atom, AtomOrView, AtomView, Symbol},
     coefficient::CoefficientView,
+    combinatorics::CombinationIterator,
     domains::{
         float::{Complex, NumericalFloatLike, Real},
         rational::Rational,
@@ -168,6 +171,496 @@ pub enum Expression<T> {
     ReadArg(usize), // read nth function argument
     BuiltinFun(Symbol, Box<Expression<T>>),
     SubExpression(usize),
+}
+
+type ExpressionHash = u64;
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum HashedExpression<T> {
+    Const(ExpressionHash, T),
+    Parameter(ExpressionHash, usize),
+    Eval(ExpressionHash, usize, Vec<HashedExpression<T>>),
+    Add(ExpressionHash, Vec<HashedExpression<T>>),
+    Mul(ExpressionHash, Vec<HashedExpression<T>>),
+    Pow(ExpressionHash, Box<(HashedExpression<T>, i64)>),
+    Powf(
+        ExpressionHash,
+        Box<(HashedExpression<T>, HashedExpression<T>)>,
+    ),
+    ReadArg(ExpressionHash, usize), // read nth function argument
+    BuiltinFun(ExpressionHash, Symbol, Box<HashedExpression<T>>),
+    SubExpression(ExpressionHash, usize),
+}
+
+impl<T> HashedExpression<T> {
+    fn get_hash(&self) -> ExpressionHash {
+        match self {
+            HashedExpression::Const(h, _) => *h,
+            HashedExpression::Parameter(h, _) => *h,
+            HashedExpression::Eval(h, _, _) => *h,
+            HashedExpression::Add(h, _) => *h,
+            HashedExpression::Mul(h, _) => *h,
+            HashedExpression::Pow(h, _) => *h,
+            HashedExpression::Powf(h, _) => *h,
+            HashedExpression::ReadArg(h, _) => *h,
+            HashedExpression::BuiltinFun(h, _, _) => *h,
+            HashedExpression::SubExpression(h, _) => *h,
+        }
+    }
+}
+
+impl<T: Clone> HashedExpression<T> {
+    fn to_expression(&self) -> Expression<T> {
+        match self {
+            HashedExpression::Const(_, c) => Expression::Const(c.clone()),
+            HashedExpression::Parameter(_, p) => Expression::Parameter(*p),
+            HashedExpression::Eval(_, i, v) => {
+                Expression::Eval(*i, v.into_iter().map(|x| x.to_expression()).collect())
+            }
+            HashedExpression::Add(_, a) => {
+                Expression::Add(a.into_iter().map(|x| x.to_expression()).collect())
+            }
+            HashedExpression::Mul(_, a) => {
+                Expression::Mul(a.into_iter().map(|x| x.to_expression()).collect())
+            }
+            HashedExpression::Pow(_, p) => Expression::Pow(Box::new((p.0.to_expression(), p.1))),
+            HashedExpression::Powf(_, p) => {
+                Expression::Powf(Box::new((p.0.to_expression(), p.1.to_expression())))
+            }
+            HashedExpression::ReadArg(_, r) => Expression::ReadArg(*r),
+            HashedExpression::BuiltinFun(_, s, a) => {
+                Expression::BuiltinFun(*s, Box::new(a.to_expression()))
+            }
+            HashedExpression::SubExpression(_, s) => Expression::SubExpression(*s),
+        }
+    }
+}
+
+impl<T: Ord> PartialOrd for HashedExpression<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: Ord> Ord for HashedExpression<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (HashedExpression::Const(_, a), HashedExpression::Const(_, b)) => a.cmp(b),
+            (HashedExpression::Parameter(_, a), HashedExpression::Parameter(_, b)) => a.cmp(b),
+            (HashedExpression::Eval(_, a, b), HashedExpression::Eval(_, c, d)) => {
+                a.cmp(c).then_with(|| b.cmp(d))
+            }
+            (HashedExpression::Add(_, a), HashedExpression::Add(_, b)) => a.cmp(b),
+            (HashedExpression::Mul(_, a), HashedExpression::Mul(_, b)) => a.cmp(b),
+            (HashedExpression::Pow(_, p1), HashedExpression::Pow(_, p2)) => p1.cmp(p2),
+            (HashedExpression::Powf(_, p1), HashedExpression::Powf(_, p2)) => p1.cmp(p2),
+            (HashedExpression::ReadArg(_, r1), HashedExpression::ReadArg(_, r2)) => r1.cmp(r2),
+            (HashedExpression::BuiltinFun(_, a, b), HashedExpression::BuiltinFun(_, c, d)) => {
+                a.cmp(c).then_with(|| b.cmp(d))
+            }
+            (HashedExpression::SubExpression(_, s1), HashedExpression::SubExpression(_, s2)) => {
+                s1.cmp(s2)
+            }
+            (HashedExpression::Const(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Const(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Parameter(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Parameter(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Eval(_, _, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Eval(_, _, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Add(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Add(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Mul(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Mul(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Pow(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Pow(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::Powf(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::Powf(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::ReadArg(_, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::ReadArg(_, _)) => std::cmp::Ordering::Greater,
+            (HashedExpression::BuiltinFun(_, _, _), _) => std::cmp::Ordering::Less,
+            (_, HashedExpression::BuiltinFun(_, _, _)) => std::cmp::Ordering::Greater,
+        }
+    }
+}
+
+impl<T: Eq + Hash> Hash for HashedExpression<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.get_hash())
+    }
+}
+
+#[derive(Debug, Eq, Clone)]
+pub struct HashedSubExpression<'a, T> {
+    pub hash: u64,
+    pub op: u8, // should be 0 when it's a single item, else 3 for add, 4 for mul; used for EQ!
+    pub expression: Vec<&'a HashedExpression<T>>,
+}
+
+impl<T: PartialEq> PartialEq for HashedSubExpression<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.hash != other.hash {
+            return false;
+        }
+
+        if self.op == other.op {
+            return self.expression.len() == other.expression.len()
+                && self
+                    .expression
+                    .iter()
+                    .zip(&other.expression)
+                    .all(|x| **x.0 == **x.1);
+        }
+
+        if self.op != 0 {
+            return other.eq(self);
+        }
+
+        if other.op == 3 {
+            if let HashedExpression::Add(_, v) = &self.expression[0] {
+                return self.expression.iter().zip(v).all(|(a, b)| *a == b);
+            }
+        } else if other.op == 4 {
+            if let HashedExpression::Mul(_, v) = &self.expression[0] {
+                return self.expression.iter().zip(v).all(|(a, b)| *a == b);
+            }
+        }
+
+        false
+    }
+}
+
+impl<'a, T: Clone> HashedSubExpression<'a, T> {
+    fn to_hashed_expression(&self) -> HashedExpression<T> {
+        match self.op {
+            3 => HashedExpression::Add(
+                self.hash,
+                self.expression.iter().cloned().cloned().collect(),
+            ),
+            4 => HashedExpression::Mul(
+                self.hash,
+                self.expression.iter().cloned().cloned().collect(),
+            ),
+            _ => self.expression[0].clone(),
+        }
+    }
+}
+
+impl<'a, T: Eq + Hash> Hash for HashedSubExpression<'a, T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash)
+    }
+}
+impl<T: Eq + Hash + Clone + Ord> HashedExpression<T> {
+    fn find_subexpression<'a>(
+        &'a self,
+        subexp: &mut HashMap<HashedSubExpression<'a, T>, usize>,
+        max_subexpr_len: usize,
+    ) -> bool {
+        if matches!(
+            self,
+            HashedExpression::Const(_, _)
+                | HashedExpression::Parameter(_, _)
+                | HashedExpression::ReadArg(_, _)
+        ) {
+            return true;
+        }
+
+        let complete_node = HashedSubExpression {
+            hash: self.get_hash(),
+            op: 0,
+            expression: vec![self],
+        };
+
+        if let Some(i) = subexp.get_mut(&complete_node) {
+            *i += 1;
+            return true;
+        }
+
+        subexp.insert(complete_node.clone(), 1);
+
+        match self {
+            HashedExpression::Const(_, _)
+            | HashedExpression::Parameter(_, _)
+            | HashedExpression::ReadArg(_, _) => {}
+            HashedExpression::Eval(_, _, ae) => {
+                for arg in ae {
+                    arg.find_subexpression(subexp, max_subexpr_len);
+                }
+            }
+            HashedExpression::Add(_, a) | HashedExpression::Mul(_, a) => {
+                let mut unused_indices = (0..a.len()).collect::<Vec<_>>();
+                let mut k = max_subexpr_len.min(unused_indices.len() - 1);
+
+                /*let op: u64 = if let HashedExpression::Add(_, _) = self {
+                    3
+                } else {
+                    4
+                };
+
+                let min = if op == 3 { 2 } else { 1 };*/
+
+                //k = 0;
+                'big_loop: while k > 1 {
+                    let mut it = CombinationIterator::new(unused_indices.len(), k);
+                    while let Some(x) = it.next() {
+                        let op: u64 = if let HashedExpression::Add(_, _) = self {
+                            3
+                        } else {
+                            4
+                        };
+
+                        let mut hash = op;
+                        for i in x {
+                            hash = hash.wrapping_add(a[unused_indices[*i]].get_hash());
+                        }
+
+                        // FIXME: the op does not play well!
+                        // we need to construct a new
+                        let complete_node = HashedSubExpression {
+                            hash,
+                            op: op as u8,
+                            expression: x.iter().map(|i| &a[unused_indices[*i]]).collect(),
+                        };
+
+                        if let Some(i) = subexp.get_mut(&complete_node) {
+                            *i += 1;
+                            for j in x.iter().rev() {
+                                unused_indices.remove(*j);
+                            }
+
+                            k = unused_indices.len().min(k);
+                            continue 'big_loop;
+                        } else {
+                            subexp.insert(complete_node.clone(), 1);
+                        }
+                    }
+
+                    k -= 1;
+                }
+
+                for arg in unused_indices {
+                    a[arg].find_subexpression(subexp, max_subexpr_len);
+                }
+            }
+            HashedExpression::Pow(_, p) => {
+                p.0.find_subexpression(subexp, max_subexpr_len);
+            }
+            HashedExpression::Powf(_, p) => {
+                p.0.find_subexpression(subexp, max_subexpr_len);
+                p.1.find_subexpression(subexp, max_subexpr_len);
+            }
+            HashedExpression::BuiltinFun(_, _, _) => {}
+            HashedExpression::SubExpression(_, _) => {}
+        }
+
+        false
+    }
+
+    fn replace_subexpression<'a>(
+        &mut self,
+        subexp: &HashMap<HashedSubExpression<'a, T>, usize>,
+        max_subexpr_len: usize,
+        skip_root: bool,
+    ) {
+        if !skip_root {
+            let complete_node = HashedSubExpression {
+                hash: self.get_hash(),
+                op: 0,
+                expression: vec![self],
+            };
+
+            if let Some(i) = subexp.get(&complete_node) {
+                *self = HashedExpression::SubExpression(self.get_hash(), *i); // recycle hash!
+                return;
+            }
+        }
+
+        let op: u64 = if let HashedExpression::Add(_, _) = self {
+            3
+        } else {
+            4
+        };
+
+        match self {
+            HashedExpression::Const(_, _)
+            | HashedExpression::Parameter(_, _)
+            | HashedExpression::ReadArg(_, _) => {}
+            HashedExpression::Eval(_, _, ae) => {
+                for arg in &mut *ae {
+                    arg.replace_subexpression(subexp, max_subexpr_len, false);
+                }
+            }
+            HashedExpression::Add(_, a) | HashedExpression::Mul(_, a) => {
+                let mut unused_indices = (0..a.len()).collect::<Vec<_>>();
+                let mut k = max_subexpr_len.min(unused_indices.len() - 1);
+
+                let mut res = vec![];
+
+                /*if op == 3 {
+                    // k = 0;
+                }
+
+                let min = if op == 3 { 2 } else { 1 };*/
+
+                //k = 0;
+                'big_loop: while k > 1 {
+                    let mut it = CombinationIterator::new(unused_indices.len(), k);
+                    while let Some(x) = it.next() {
+                        let mut hash = op;
+                        for i in x {
+                            hash = hash.wrapping_add(a[unused_indices[*i]].get_hash());
+                        }
+
+                        // FIXME: the op does not play well!
+                        // we need to construct a new
+                        let complete_node = HashedSubExpression {
+                            hash,
+                            op: op as u8,
+                            expression: x.iter().map(|i| &a[unused_indices[*i]]).collect(),
+                        };
+
+                        if let Some(i) = subexp.get(&complete_node) {
+                            res.push(HashedExpression::SubExpression(hash, *i)); // recycle hash???
+
+                            for j in x.iter().rev() {
+                                unused_indices.remove(*j);
+                            }
+
+                            k = unused_indices.len().min(k);
+                            continue 'big_loop;
+                        }
+                    }
+
+                    k -= 1;
+                }
+
+                for arg in unused_indices {
+                    a[arg].replace_subexpression(subexp, max_subexpr_len, false);
+                    res.push(a[arg].clone());
+                }
+
+                res.sort();
+                *a = res;
+            }
+            HashedExpression::Pow(_, p) => {
+                p.0.replace_subexpression(subexp, max_subexpr_len, false);
+            }
+            HashedExpression::Powf(_, p) => {
+                p.0.replace_subexpression(subexp, max_subexpr_len, false);
+                p.1.replace_subexpression(subexp, max_subexpr_len, false);
+            }
+            HashedExpression::BuiltinFun(_, _, _) => {}
+            HashedExpression::SubExpression(_, _) => {}
+        }
+    }
+}
+
+impl<T: std::hash::Hash + Clone> Expression<T> {
+    fn to_hashed_expression(&self) -> (ExpressionHash, HashedExpression<T>) {
+        match self {
+            Expression::Const(c) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(0);
+                c.hash(&mut hasher);
+                let h = hasher.finish();
+                (h, HashedExpression::Const(h, c.clone()))
+            }
+            Expression::Parameter(p) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(1);
+                hasher.write_usize(*p);
+                let h = hasher.finish();
+                (h, HashedExpression::Parameter(h, *p))
+            }
+            Expression::Eval(i, v) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(2);
+                hasher.write_usize(*i);
+                let mut new_v = vec![];
+                for x in v {
+                    let (h, v) = x.to_hashed_expression();
+                    new_v.push(v);
+                    hasher.write_u64(h);
+                }
+                let h = hasher.finish();
+                (h, HashedExpression::Eval(h, *i, new_v))
+            }
+            Expression::Add(v) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(3);
+                let mut new_v = vec![];
+
+                // do an additive hash
+                let mut arg_sum = 0u64;
+                for x in v {
+                    let (h, v) = x.to_hashed_expression();
+                    new_v.push(v);
+                    arg_sum = arg_sum.wrapping_add(h);
+                }
+                hasher.write_u64(arg_sum);
+                let h = hasher.finish();
+                (h, HashedExpression::Add(h, new_v))
+            }
+            Expression::Mul(v) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(4);
+                let mut new_v = vec![];
+
+                // do an additive hash
+                let mut arg_sum = 0u64;
+                for x in v {
+                    let (h, v) = x.to_hashed_expression();
+                    new_v.push(v);
+                    arg_sum = arg_sum.wrapping_add(h);
+                }
+                hasher.write_u64(arg_sum);
+                let h = hasher.finish();
+                (h, HashedExpression::Mul(h, new_v))
+            }
+            Expression::Pow(p) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(5);
+                let (hb, vb) = p.0.to_hashed_expression();
+                hasher.write_u64(hb);
+                hasher.write_i64(p.1);
+                let h = hasher.finish();
+                (h, HashedExpression::Pow(h, Box::new((vb, p.1))))
+            }
+            Expression::Powf(p) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(6);
+                let (hb, vb) = p.0.to_hashed_expression();
+                let (he, ve) = p.1.to_hashed_expression();
+                hasher.write_u64(hb);
+                hasher.write_u64(he);
+                let h = hasher.finish();
+                (h, HashedExpression::Powf(h, Box::new((vb, ve))))
+            }
+            Expression::ReadArg(i) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(7);
+                hasher.write_usize(*i);
+                let h = hasher.finish();
+                (h, HashedExpression::ReadArg(h, *i))
+            }
+            Expression::BuiltinFun(s, a) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(8);
+                s.hash(&mut hasher);
+                let (ha, va) = a.to_hashed_expression();
+                hasher.write_u64(ha);
+                let h = hasher.finish();
+                (h, HashedExpression::BuiltinFun(h, *s, Box::new(va)))
+            }
+            Expression::SubExpression(i) => {
+                let mut hasher = AHasher::default();
+                hasher.write_u8(9);
+                hasher.write_usize(*i);
+                let h = hasher.finish();
+                (h, HashedExpression::SubExpression(h, *i))
+            }
+        }
+    }
 }
 
 pub struct ExpressionEvaluator<T> {
@@ -532,7 +1025,6 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                         *out += &format!(
                             "
-
                                 \"movupd  xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
                                 \"movupd  xmm2, XMMWORD PTR [%0+{}]\\n\\t\"
                                 \"movupd  xmm1, XMMWORD PTR [%0+{}]\\n\\t\"
@@ -567,6 +1059,33 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             a[1] * 16,
                             a[2] * 16,
                             a[3] * 16,
+                            *o * 16,
+                        );
+                    }
+                    5 => {
+                        if !in_asm_block {
+                            *out += "\t__asm__(\n";
+                            in_asm_block = true;
+                        }
+
+                        *out += &format!(
+                            "
+                            \"movupd  xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"movupd  xmm3, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"movupd  xmm4, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"movupd  xmm1, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"movupd  xmm2, XMMWORD PTR [%0+{}]\\n\\t\"
+                            \"addpd   xmm0, xmm3\\n\\t\"
+                            \"addpd   xmm1, xmm2\\n\\t\"
+                            \"addpd   xmm0, xmm4\\n\\t\"
+                            \"addpd   xmm0, xmm1\\n\\t\"
+                            \"movups  XMMWORD PTR [%0+{}], xmm0\\n\\t\"
+                                    ",
+                            a[0] * 16,
+                            a[1] * 16,
+                            a[2] * 16,
+                            a[3] * 16,
+                            a[4] * 16,
                             *o * 16,
                         );
                     }
@@ -640,24 +1159,18 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             in_asm_block = true;
                         }
 
+                        // optimized complex multiplication
                         *out += &format!(
                             "
-                                \"movsd   xmm0, QWORD PTR [%0+{0}]\\n\\t\"
-                                \"movsd   xmm1, QWORD PTR [%0+{0}+8]\\n\\t\"
-                                \"movsd   xmm3, QWORD PTR [%0+{1}]\\n\\t\"
-                                \"movsd   xmm4, QWORD PTR [%0+{1}+8]\\n\\t\"
-                                \"movapd  xmm2, xmm0\\n\\t\"
-                                \"movapd  xmm5, xmm1\\n\\t\"
-                                \"mulsd   xmm2, xmm3\\n\\t\"
-                                \"mulsd   xmm5, xmm4\\n\\t\"
-                                \"mulsd   xmm0, xmm4\\n\\t\"
-                                \"mulsd   xmm1, xmm3\\n\\t\"
-                                \"subsd   xmm2, xmm5\\n\\t\"
-                                \"addsd   xmm0, xmm1\\n\\t\"
-                                \"movsd   QWORD PTR [%0+{2}], xmm2\\n\\t\"
-                                \"movsd   QWORD PTR [%0+{2}+8], xmm0\\n\\t\"
-  
-                                    ",
+                            \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
+                            \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"mulpd xmm2, xmm1\\n\\t\"
+                            \"shufpd xmm1, xmm1, 1\\n\\t\"
+                            \"mulpd xmm0, xmm1\\n\\t\"
+                            \"addsubpd xmm2, xmm0\\n\\t\"
+                            \"movapd XMMWORD PTR [%0+{2}], xmm2\\n\\t\"
+                            ",
                             a[0] * 16,
                             a[1] * 16,
                             *o * 16,
@@ -671,31 +1184,21 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                         *out += &format!(
                             "
-                                \"movsd   xmm0, QWORD PTR [%0+{0}]\\n\\t\"
-                                \"movsd   xmm2, QWORD PTR [%0+{0}+8]\\n\\t\"
-                                \"movsd   xmm3, QWORD PTR [%0+{1}]\\n\\t\"
-                                \"movsd   xmm4, QWORD PTR [%0+{1}+8]\\n\\t\"
-                                \"movapd  xmm1, xmm0\\n\\t\"
-                                \"movapd  xmm5, xmm2\\n\\t\"
-                                \"mulsd   xmm5, xmm4\\n\\t\"
-                                \"mulsd   xmm2, xmm3\\n\\t\"
-                                \"mulsd   xmm1, xmm3\\n\\t\"
-                                \"movsd   xmm3, QWORD PTR [%0+{2}+8]\\n\\t\"
-                                \"mulsd   xmm0, xmm4\\n\\t\"
-                                \"movsd   xmm4, QWORD PTR [%0+{2}]\\n\\t\"
-                                \"subsd   xmm1, xmm5\\n\\t\"
-                                \"addsd   xmm0, xmm2\\n\\t\"
-                                \"movapd  xmm2, xmm1\\n\\t\"
-                                \"mulsd   xmm2, xmm4\\n\\t\"
-                                \"movapd  xmm5, xmm0\\n\\t\"
-                                \"mulsd   xmm5, xmm3\\n\\t\"
-                                \"mulsd   xmm0, xmm4\\n\\t\"
-                                \"mulsd   xmm1, xmm3\\n\\t\"
-                                \"subsd   xmm2, xmm5\\n\\t\"
-                                \"addsd   xmm0, xmm1\\n\\t\"
-                                \"movsd   QWORD PTR [%0+{3}], xmm2\\n\\t\"
-                                \"movsd   QWORD PTR [%0+{3}+8], xmm0\\n\\t\"
-                                    ",
+                            \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
+                            \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
+                            \"movapd xmm3, XMMWORD PTR [%0+{2}]\\n\\t\"
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"mulpd xmm2, xmm1\\n\\t\"
+                            \"shufpd xmm1, xmm1, 1\\n\\t\"
+                            \"mulpd xmm0, xmm1\\n\\t\"
+                            \"addsubpd xmm2, xmm0\\n\\t\"
+                            \"movapd xmm1, xmm2\\n\\t\"
+                            \"mulpd xmm1, xmm3\\n\\t\"
+                            \"shufpd xmm3, xmm3, 1\\n\\t\"
+                            \"mulpd xmm0, xmm3\\n\\t\"
+                            \"addsubpd xmm1, xmm0\\n\\t\"
+                            \"movapd XMMWORD PTR [%0+{3}], xmm1\\n\\t\"
+                            ",
                             a[0] * 16,
                             a[1] * 16,
                             a[2] * 16,
@@ -710,41 +1213,27 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                         *out += &format!(
                             "
-                                \"movsd   xmm0, QWORD PTR [%0+{0}]\\n\\t\"
-                                \"movsd   xmm1, QWORD PTR [%0+{0}+8]\\n\\t\"
-                                \"movsd   xmm3, QWORD PTR [%0+{1}]\\n\\t\"
-                                \"movsd   xmm4, QWORD PTR [%0+{1}+8]\\n\\t\"
-                                \"movapd  xmm2, xmm0\\n\\t\"
-                                \"movapd  xmm5, xmm1\\n\\t\"
-                                \"mulsd   xmm5, xmm4\\n\\t\"
-                                \"mulsd   xmm1, xmm3\\n\\t\"
-                                \"mulsd   xmm2, xmm3\\n\\t\"
-                                \"movsd   xmm3, QWORD PTR [%0+{2}+8]\\n\\t\"
-                                \"mulsd   xmm0, xmm4\\n\\t\"
-                                \"movsd   xmm4, QWORD PTR [%0+{2}]\\n\\t\"
-                                \"subsd   xmm2, xmm5\\n\\t\"
-                                \"addsd   xmm0, xmm1\\n\\t\"
-                                \"movapd  xmm1, xmm2\\n\\t\"
-                                \"mulsd   xmm1, xmm4\\n\\t\"
-                                \"movapd  xmm5, xmm0\\n\\t\"
-                                \"mulsd   xmm5, xmm3\\n\\t\"
-                                \"mulsd   xmm2, xmm3\\n\\t\"
-                                \"movsd   xmm3, QWORD PTR [%0+{3}+8]\\n\\t\"
-                                \"mulsd   xmm0, xmm4\\n\\t\"
-                                \"movsd   xmm4, QWORD PTR [%0+{3}]\\n\\t\"
-                                \"subsd   xmm1, xmm5\\n\\t\"
-                                \"addsd   xmm0, xmm2\\n\\t\"
-                                \"movapd  xmm2, xmm1\\n\\t\"
-                                \"mulsd   xmm2, xmm4\\n\\t\"
-                                \"mulsd   xmm1, xmm3\\n\\t\"
-                                \"movapd  xmm5, xmm0\\n\\t\"
-                                \"mulsd   xmm5, xmm3\\n\\t\"
-                                \"mulsd   xmm0, xmm4\\n\\t\"
-                                \"subsd   xmm2, xmm5\\n\\t\"
-                                \"addsd   xmm0, xmm1\\n\\t\"
-                                \"movsd   QWORD PTR [%0+{4}], xmm2\\n\\t\"
-                                \"movsd   QWORD PTR [%0+{4}+8], xmm0\\n\\t\"
-",
+                            \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
+                            \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
+                            \"movapd xmm3, XMMWORD PTR [%0+{2}]\\n\\t\"
+                            \"movapd xmm4, XMMWORD PTR [%0+{3}]\\n\\t\"
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"mulpd xmm2, xmm1\\n\\t\"
+                            \"shufpd xmm1, xmm1, 1\\n\\t\"
+                            \"mulpd xmm0, xmm1\\n\\t\"
+                            \"addsubpd xmm2, xmm0\\n\\t\"
+                            \"movapd xmm1, xmm2\\n\\t\"
+                            \"mulpd xmm1, xmm3\\n\\t\"
+                            \"shufpd xmm3, xmm3, 1\\n\\t\"
+                            \"mulpd xmm0, xmm3\\n\\t\"
+                            \"addsubpd xmm1, xmm0\\n\\t\"
+                            \"movapd xmm2, xmm1\\n\\t\"
+                            \"mulpd xmm2, xmm4\\n\\t\"
+                            \"shufpd xmm4, xmm4, 1\\n\\t\"
+                            \"mulpd xmm0, xmm4\\n\\t\"
+                            \"addsubpd xmm2, xmm0\\n\\t\"
+                            \"movapd XMMWORD PTR [%0+{4}], xmm2\\n\\t\"
+                            ",
                             a[0] * 16,
                             a[1] * 16,
                             a[2] * 16,
@@ -760,51 +1249,33 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                         *out += &format!(
                             "
-                                    \"movsd   xmm0, QWORD PTR [%0+{0}]\\n \\t\"
-                                    \"movsd   xmm2, QWORD PTR [%0+{0}+8]\\n   \\t\"
-                                    \"movsd   xmm3, QWORD PTR [%0+{1}]\\n \\t\"
-                                    \"movsd   xmm4, QWORD PTR [%0+{1}+8]\\n \\t\"
-                                    \"movapd  xmm1, xmm0\\n\\t\"
-                                    \"movapd  xmm5, xmm2\\n\\t\"
-                                    \"mulsd   xmm5, xmm4\\n\\t\"
-                                    \"mulsd   xmm2, xmm3\\n\\t\"
-                                    \"mulsd   xmm1, xmm3\\n\\t\"
-                                    \"movsd   xmm3, QWORD PTR [%0+{2}+8]\\n\\t\"
-                                    \"mulsd   xmm0, xmm4\\n\\t\"
-                                    \"movsd   xmm4, QWORD PTR [%0+{2}]\\n\\t\"
-                                    \"subsd   xmm1, xmm5\\n\\t\"
-                                    \"addsd   xmm0, xmm2\\n\\t\"
-                                    \"movapd  xmm2, xmm1\\n\\t\"
-                                    \"mulsd   xmm2, xmm4\\n\\t\"
-                                    \"movapd  xmm5, xmm0\\n\\t\"
-                                    \"mulsd   xmm5, xmm3\\n\\t\"
-                                    \"mulsd   xmm1, xmm3\\n\\t\"
-                                    \"movsd   xmm3, QWORD PTR [%0+{3}+8]\\n   \\t\"
-                                    \"mulsd   xmm0, xmm4\\n\\t\"
-                                    \"movsd   xmm4, QWORD PTR [%0+{3}]\\n   \\t\"
-                                    \"subsd   xmm2, xmm5\\n\\t\"
-                                    \"addsd   xmm0, xmm1\\n\\t\"
-                                    \"movapd  xmm1, xmm2\\n\\t\"
-                                    \"mulsd   xmm1, xmm4\\n\\t\"
-                                    \"mulsd   xmm2, xmm3\\n\\t\"
-                                    \"movapd  xmm5, xmm0\\n\\t\"
-                                    \"mulsd   xmm5, xmm3\\n\\t\"
-                                    \"movsd   xmm3, QWORD PTR [%0+{4}+8]\\n   \\t\"
-                                    \"mulsd   xmm0, xmm4\\n\\t\"
-                                    \"movsd   xmm4, QWORD PTR [%0+{4}]\\n   \\t\"
-                                    \"subsd   xmm1, xmm5\\n\\t\"
-                                    \"addsd   xmm0, xmm2\\n\\t\"
-                                    \"movapd  xmm2, xmm1\\n\\t\"
-                                    \"mulsd   xmm2, xmm4\\n\\t\"
-                                    \"movapd  xmm5, xmm0\\n\\t\"
-                                    \"mulsd   xmm5, xmm3\\n\\t\"
-                                    \"mulsd   xmm0, xmm4\\n\\t\"
-                                    \"mulsd   xmm1, xmm3\\n\\t\"
-                                    \"subsd   xmm2, xmm5\\n\\t\"
-                                    \"addsd   xmm0, xmm1\\n\\t\"
-                                    \"movsd   QWORD PTR [%0+{5}], xmm2\\n \\t\"
-                                    \"movsd   QWORD PTR [%0+{5}+8], xmm0\\n   \\t\"
-                                                ",
+                            \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
+                            \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
+                            \"movapd xmm3, XMMWORD PTR [%0+{2}]\\n\\t\"
+                            \"movapd xmm4, XMMWORD PTR [%0+{3}]\\n\\t\"
+                            \"movapd xmm5, XMMWORD PTR [%0+{4}]\\n\\t\"
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"mulpd xmm2, xmm1\\n\\t\"
+                            \"shufpd xmm1, xmm1, 1\\n\\t\"
+                            \"mulpd xmm0, xmm1\\n\\t\"
+                            \"addsubpd xmm2, xmm0\\n\\t\"
+                            \"movapd xmm1, xmm2\\n\\t\"
+                            \"mulpd xmm1, xmm3\\n\\t\"
+                            \"shufpd xmm3, xmm3, 1\\n\\t\"
+                            \"mulpd xmm0, xmm3\\n\\t\"
+                            \"addsubpd xmm1, xmm0\\n\\t\"
+                            \"movapd xmm2, xmm1\\n\\t\"
+                            \"mulpd xmm2, xmm4\\n\\t\"
+                            \"shufpd xmm4, xmm4, 1\\n\\t\"
+                            \"mulpd xmm0, xmm4\\n\\t\"
+                            \"addsubpd xmm2, xmm0\\n\\t\"
+                            \"movapd xmm1, xmm2\\n\\t\"
+                            \"mulpd xmm1, xmm5\\n\\t\"
+                            \"shufpd xmm5, xmm5, 1\\n\\t\"
+                            \"mulpd xmm0, xmm5\\n\\t\"
+                            \"addsubpd xmm1, xmm0\\n\\t\"
+                            \"movapd XMMWORD PTR [%0+{5}], xmm1\\n\\t\"
+                            ",
                             a[0] * 16,
                             a[1] * 16,
                             a[2] * 16,
@@ -1476,11 +1947,12 @@ impl Expression<Rational> {
 }
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree<T> {
-    pub fn common_subexpression_elimination(&mut self) {
-        self.expressions.common_subexpression_elimination();
+    pub fn common_subexpression_elimination(&mut self, max_subexpr_len: usize) {
+        self.expressions
+            .common_subexpression_elimination(max_subexpr_len);
 
         for (_, _, e) in &mut self.functions {
-            e.common_subexpression_elimination();
+            e.common_subexpression_elimination(max_subexpr_len);
         }
     }
 
@@ -1506,11 +1978,19 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree
 }
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {
-    pub fn common_subexpression_elimination(&mut self) {
+    /// Eliminate common subexpressions in the expression, also checking for subexpressions
+    /// up to length `max_subexpr_len`.
+    pub fn common_subexpression_elimination(&mut self, max_subexpr_len: usize) {
         let mut h = HashMap::default();
 
-        for t in &mut self.tree {
-            t.find_subexpression(&mut h);
+        let mut hashed_tree = vec![];
+        for t in &self.tree {
+            let (_, t) = t.to_hashed_expression();
+            hashed_tree.push(t);
+        }
+
+        for t in &hashed_tree {
+            t.find_subexpression(&mut h, max_subexpr_len);
         }
 
         h.retain(|_, v| *v > 1);
@@ -1520,19 +2000,23 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExp
             *v = self.subexpressions.len() + i;
         }
 
-        for t in &mut self.tree {
-            t.replace_subexpression(&h, false);
+        let mut n_hash_tree = hashed_tree.clone();
+        for t in &mut n_hash_tree {
+            t.replace_subexpression(&h, max_subexpr_len, false);
         }
+
+        self.tree = n_hash_tree.iter().map(|x| x.to_expression()).collect();
 
         let mut v: Vec<_> = h.clone().into_iter().map(|(k, v)| (v, k)).collect();
 
-        v.sort();
+        v.sort_by_key(|k| k.0); // not needed
 
         // replace subexpressions in subexpressions and
         // sort them based on their dependencies
-        for (_, mut x) in v {
-            x.replace_subexpression(&h, true);
-            self.subexpressions.push(x);
+        for (_, x) in v {
+            let mut he = x.to_hashed_expression();
+            he.replace_subexpression(&h, max_subexpr_len, true);
+            self.subexpressions.push(he.to_expression());
         }
 
         let mut dep_tree = vec![];
@@ -1579,9 +2063,11 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
                 }
             }
             Expression::Add(a) | Expression::Mul(a) => {
-                for arg in a {
+                for arg in &mut *a {
                     arg.rename_subexpression(subexp);
                 }
+
+                a.sort();
             }
             Expression::Pow(p) => {
                 p.0.rename_subexpression(subexp);
@@ -1628,6 +2114,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
         }
     }
 
+    /*
     fn replace_subexpression(&mut self, subexp: &HashMap<Expression<T>, usize>, skip_root: bool) {
         if !skip_root {
             if let Some(i) = subexp.get(&self) {
@@ -1700,6 +2187,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
             Expression::SubExpression(_) => {}
         }
     }
+    */
 }
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {

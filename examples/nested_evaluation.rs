@@ -78,7 +78,7 @@ fn main() {
     println!("Op original {:?}", tree.count_operations());
     tree.horner_scheme();
     println!("Op horner {:?}", tree.count_operations());
-    tree.common_subexpression_elimination();
+    tree.common_subexpression_elimination(20); // test 2^20 options at the most
     println!("op cse {:?}", tree.count_operations());
 
     tree.common_pair_elimination();

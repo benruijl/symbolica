@@ -112,7 +112,7 @@ fn main() {
     println!("C++ time {:#?}", t.elapsed());
 
     let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
-    let mut evaluator: ExpressionEvaluator<f64> = t2.linearize(params.len());
+    let mut evaluator: ExpressionEvaluator<f64> = t2.linearize();
 
     evaluator.evaluate_multiple(&params, &mut out);
     println!("Eval: {}, {}", out[0], out[1]);

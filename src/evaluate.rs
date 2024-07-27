@@ -157,6 +157,7 @@ pub struct SplitExpression<T> {
 pub struct EvalTree<T> {
     functions: Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
     expressions: SplitExpression<T>,
+    param_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1383,7 +1384,7 @@ enum Instr {
     BuiltinFun(usize, Symbol, usize),
 }
 
-impl<T: Clone + Default + PartialEq> SplitExpression<T> {
+impl<T: Clone + PartialEq> SplitExpression<T> {
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> SplitExpression<T2> {
         SplitExpression {
             tree: self.tree.iter().map(|x| x.map_coeff(f)).collect(),
@@ -1428,7 +1429,7 @@ impl<T: Clone + Default + PartialEq> SplitExpression<T> {
     }
 }
 
-impl<T: Clone + Default + PartialEq> Expression<T> {
+impl<T: Clone + PartialEq> Expression<T> {
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> Expression<T2> {
         match self {
             Expression::Const(c) => Expression::Const(f(c)),
@@ -1495,7 +1496,7 @@ impl<T: Clone + Default + PartialEq> Expression<T> {
     }
 }
 
-impl<T: Clone + Default + PartialEq> EvalTree<T> {
+impl<T: Clone + PartialEq> EvalTree<T> {
     pub fn map_coeff<T2, F: Fn(&T) -> T2>(&self, f: &F) -> EvalTree<T2> {
         EvalTree {
             expressions: SplitExpression {
@@ -1517,6 +1518,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
                 .iter()
                 .map(|(s, a, e)| (s.clone(), a.clone(), e.map_coeff(f)))
                 .collect(),
+            param_count: self.param_count,
         }
     }
 
@@ -1527,13 +1529,15 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
         self.expressions.unnest(max_depth);
     }
+}
 
+impl<T: Clone + Default + PartialEq> EvalTree<T> {
     /// Create a linear version of the tree that can be evaluated more efficiently.
-    pub fn linearize(mut self, param_count: usize) -> ExpressionEvaluator<T> {
-        let mut stack = vec![T::default(); param_count];
+    pub fn linearize(mut self) -> ExpressionEvaluator<T> {
+        let mut stack = vec![T::default(); self.param_count];
 
         // strip every constant and move them into the stack after the params
-        self.strip_constants(&mut stack, param_count);
+        self.strip_constants(&mut stack);
         let reserved_indices = stack.len();
 
         let mut sub_expr_pos = HashMap::default();
@@ -1555,7 +1559,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 
         let mut e = ExpressionEvaluator {
             stack,
-            param_count,
+            param_count: self.param_count,
             reserved_indices,
             instructions,
             result_indices,
@@ -1565,22 +1569,22 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
         e
     }
 
-    fn strip_constants(&mut self, stack: &mut Vec<T>, param_len: usize) {
+    fn strip_constants(&mut self, stack: &mut Vec<T>) {
         for t in &mut self.expressions.tree {
-            t.strip_constants(stack, param_len);
+            t.strip_constants(stack, self.param_count);
         }
 
         for e in &mut self.expressions.subexpressions {
-            e.strip_constants(stack, param_len);
+            e.strip_constants(stack, self.param_count);
         }
 
         for (_, _, e) in &mut self.functions {
             for t in &mut e.tree {
-                t.strip_constants(stack, param_len);
+                t.strip_constants(stack, self.param_count);
             }
 
             for e in &mut e.subexpressions {
-                e.strip_constants(stack, param_len);
+                e.strip_constants(stack, self.param_count);
             }
         }
     }
@@ -3021,6 +3025,7 @@ impl<'a> AtomView<'a> {
                 subexpressions: vec![],
             },
             functions: funcs,
+            param_count: params.len(),
         })
     }
 

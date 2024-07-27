@@ -29,6 +29,8 @@ default = []
 # if using this, make sure jemalloc is compiled with --disable-initial-exec-tls
 # if symbolica is used as a dynamic library (as is the case for the Python API)
 faster_alloc = ["tikv-jemallocator"]
+# sort functions based on an argument-by-argument comparison
+full_fn_cmp = []
 mathematica_api = ["wolfram-library-link"]
 python_api = ["pyo3", "bincode"]
 # build a module that is independent of the specific Python version
@@ -56,7 +58,7 @@ once_cell = "1.19"
 rand = "0.8.5"
 rand_xoshiro = "0.6"
 rayon = "1.8"
-rug = "1.25"
+rug = "=1.25.0"
 self_cell = "1.0"
 serde = {version = "1.0", features = ["derive"]}
 smallvec = "1.13"

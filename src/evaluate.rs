@@ -1013,7 +1013,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         *out +=
                             &format!("\t\t\"addpd xmm0, XMMWORD PTR [%0+{}]\\n\\t\"\n", *i * 16);
                     }
-                    *out += &format!("\t\t\"movapd XMMWORD PTR [%0+{}], xmm0\\n\\t\"", *o * 16,);
+                    *out += &format!("\t\t\"movapd XMMWORD PTR [%0+{}], xmm0\\n\\t\"\n", *o * 16,);
                 }
                 Instr::Mul(o, a) => {
                     if a.len() < 15 {
@@ -1033,13 +1033,13 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                         for i in 1..a.len() {
                             *out += &format!(
-                                "   \"movapd xmm0, xmm1\\n\\t\"
-        \"unpckhpd xmm0, xmm0\\n\\t\"
-        \"unpcklpd xmm1, xmm1\\n\\t\"
-        \"mulpd xmm0, xmm{0}\\n\\t\"
-        \"mulpd xmm1, xmm{0}\\n\\t\"
-        \"shufpd xmm0, xmm0, 1\\n\\t\"
-        \"addsubpd xmm1, xmm0\\n\\t\"\n",
+                                "\t\t\"movapd xmm0, xmm1\\n\\t\"
+\t\t\"unpckhpd xmm0, xmm0\\n\\t\"
+\t\t\"unpcklpd xmm1, xmm1\\n\\t\"
+\t\t\"mulpd xmm0, xmm{0}\\n\\t\"
+\t\t\"mulpd xmm1, xmm{0}\\n\\t\"
+\t\t\"shufpd xmm0, xmm0, 1\\n\\t\"
+\t\t\"addsubpd xmm1, xmm0\\n\\t\"\n",
                                 i + 1
                             );
                         }

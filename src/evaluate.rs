@@ -1000,324 +1000,54 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         let mut in_asm_block = false;
         for ins in instr {
             match ins {
-                Instr::Add(o, a) => match a.len() {
-                    2 => {
-                        if !in_asm_block {
-                            *out += "\t__asm__(\n";
-                            in_asm_block = true;
-                        }
-
-                        *out += &format!(
-                            "
-                            \"movapd  xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"addpd   xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"movups  XMMWORD PTR [%0+{}], xmm0\\n\\t\"
-                                    ",
-                            a[0] * 16,
-                            a[1] * 16,
-                            *o * 16,
-                        );
+                Instr::Add(o, a) => {
+                    if !in_asm_block {
+                        *out += "\t__asm__(\n";
+                        in_asm_block = true;
                     }
-                    3 => {
-                        if !in_asm_block {
-                            *out += "\t__asm__(\n";
-                            in_asm_block = true;
-                        }
 
-                        *out += &format!(
-                            "
-                                \"movupd  xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
-                                \"movupd  xmm2, XMMWORD PTR [%0+{}]\\n\\t\"
-                                \"movupd  xmm1, XMMWORD PTR [%0+{}]\\n\\t\"
-                                \"addpd   xmm0, xmm2\\n\\t\"
-                                \"addpd   xmm0, xmm1\\n\\t\"
-                                \"movups  XMMWORD PTR [%0+{}], xmm0\\n\\t\"
-                                        ",
-                            a[0] * 16,
-                            a[1] * 16,
-                            a[2] * 16,
-                            *o * 16,
-                        );
-                    }
-                    4 => {
-                        if !in_asm_block {
-                            *out += "\t__asm__(\n";
-                            in_asm_block = true;
-                        }
+                    *out += &format!("\t\t\"xorpd xmm0, xmm0\\n\\t\"\n");
 
-                        *out += &format!(
-                            "
-                            \"movupd  xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"movupd  xmm3, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"movupd  xmm1, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"movupd  xmm2, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"addpd   xmm0, xmm3\\n\\t\"
-                            \"addpd   xmm1, xmm2\\n\\t\"
-                            \"addpd   xmm0, xmm1\\n\\t\"
-                            \"movups  XMMWORD PTR [%0+{}], xmm0\\n\\t\"
-                                    ",
-                            a[0] * 16,
-                            a[1] * 16,
-                            a[2] * 16,
-                            a[3] * 16,
-                            *o * 16,
-                        );
-                    }
-                    5 => {
-                        if !in_asm_block {
-                            *out += "\t__asm__(\n";
-                            in_asm_block = true;
-                        }
-
-                        *out += &format!(
-                            "
-                            \"movupd  xmm0, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"movupd  xmm3, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"movupd  xmm4, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"movupd  xmm1, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"movupd  xmm2, XMMWORD PTR [%0+{}]\\n\\t\"
-                            \"addpd   xmm0, xmm3\\n\\t\"
-                            \"addpd   xmm1, xmm2\\n\\t\"
-                            \"addpd   xmm0, xmm4\\n\\t\"
-                            \"addpd   xmm0, xmm1\\n\\t\"
-                            \"movups  XMMWORD PTR [%0+{}], xmm0\\n\\t\"
-                                    ",
-                            a[0] * 16,
-                            a[1] * 16,
-                            a[2] * 16,
-                            a[3] * 16,
-                            a[4] * 16,
-                            *o * 16,
-                        );
-                    }
-                    _ => {
-                        if !in_asm_block {
-                            *out += "\t__asm__(\n";
-                            in_asm_block = true;
-                        }
-
+                    // TODO: try loading in multiple registers for better instruction-level parallelism?
+                    for i in a {
                         *out +=
-                            &format!("\"movsd  xmm0, QWORD PTR [%0+{} + 8]\\n\\t\"\n", a[0] * 16);
-                        for i in 1..a.len() / 2 {
-                            *out += &format!(
-                                "\"addsd  xmm0, QWORD PTR [%0+{} + 8]\\n\\t\"\n",
-                                a[i] * 16
-                            );
-                        }
-
-                        *out += &format!(
-                            "\"movsd  xmm1, QWORD PTR [%0+{} + 8]\\n\\t\"\n",
-                            a[a.len() / 2] * 16
-                        );
-                        for i in (a.len() / 2) + 1..a.len() {
-                            *out += &format!(
-                                "\"addsd  xmm1, QWORD PTR [%0+{} + 8]\\n\\t\"\n",
-                                a[i] * 16
-                            );
-                        }
-
-                        *out += "\"addsd   xmm0, xmm1\\n\\t\"\n";
-
-                        *out += &format!("\"movsd  xmm1, QWORD PTR [%0+{}]\\n\\t\"\n", a[0] * 16);
-                        for i in 1..a.len() / 2 {
-                            *out +=
-                                &format!("\"addsd  xmm1, QWORD PTR [%0+{}]\\n\\t\"\n", a[i] * 16);
-                        }
-
-                        *out += &format!(
-                            "\"movsd  xmm2, QWORD PTR [%0+{}]\\n\\t\"\n",
-                            a[a.len() / 2] * 16
-                        );
-                        for i in (a.len() / 2) + 1..a.len() {
-                            *out +=
-                                &format!("\"addsd  xmm2, QWORD PTR [%0+{}]\\n\\t\"\n", a[i] * 16);
-                        }
-
-                        *out += "\"addsd   xmm1, xmm2\\n\\t\"\n";
-                        *out += &format!("\"movsd   QWORD PTR [%0+{}], xmm1\\n\\t\"\n", *o * 16);
-                        *out += &format!("\"movsd   QWORD PTR [%0+{}+8], xmm0\\n\\t\"\n", *o * 16);
-
-                        /*if in_asm_block {
-                            *out += ":
-                            : \"r\"(Z)
-                            : \"memory\");";
-                            in_asm_block = false;
-                        }
-
-                        let args = a
-                            .iter()
-                            .map(|x| format!("Z[{}]", x))
-                            .collect::<Vec<_>>()
-                            .join("+");
-
-                        *out += format!("\tZ[{}] = {};\n", o, args).as_str();*/
+                            &format!("\t\t\"addpd xmm0, XMMWORD PTR [%0+{}]\\n\\t\"\n", *i * 16);
                     }
-                },
-                Instr::Mul(o, a) => match a.len() {
-                    2 => {
+                    *out += &format!("\t\t\"movapd XMMWORD PTR [%0+{}], xmm0\\n\\t\"", *o * 16,);
+                }
+                Instr::Mul(o, a) => {
+                    if a.len() < 15 {
                         if !in_asm_block {
                             *out += "\t__asm__(\n";
                             in_asm_block = true;
                         }
 
                         // optimized complex multiplication
-                        *out += &format!(
-                            "
-                            \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
-                            \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm1\\n\\t\"
-                            \"mulpd xmm0, xmm1\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-                            \"movapd XMMWORD PTR [%0+{2}], xmm0\\n\\t\"
-                            ",
-                            a[0] * 16,
-                            a[1] * 16,
-                            *o * 16,
-                        );
-                    }
-                    3 => {
-                        if !in_asm_block {
-                            *out += "\t__asm__(\n";
-                            in_asm_block = true;
-                        }
-                        *out += &format!(
-                            "
-                            \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
-                            \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
-                            \"movapd xmm3, XMMWORD PTR [%0+{2}]\\n\\t\"
-
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm1\\n\\t\"
-                            \"mulpd xmm0, xmm1\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm3\\n\\t\"
-                            \"mulpd xmm0, xmm3\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-
-                            \"movapd XMMWORD PTR [%0+{3}], xmm0\\n\\t\"
-                            ",
-                            a[0] * 16,
-                            a[1] * 16,
-                            a[2] * 16,
-                            *o * 16,
-                        );
-                    }
-                    4 => {
-                        if !in_asm_block {
-                            *out += "\t__asm__(\n";
-                            in_asm_block = true;
+                        for (i, r) in a.iter().enumerate() {
+                            *out += &format!(
+                                "\t\t\"movapd xmm{}, XMMWORD PTR [%0+{}]\\n\\t\"\n",
+                                i + 1,
+                                r * 16
+                            );
                         }
 
-                        *out += &format!(
-                            "
-                            \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
-                            \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
-                            \"movapd xmm3, XMMWORD PTR [%0+{2}]\\n\\t\"
-                            \"movapd xmm4, XMMWORD PTR [%0+{3}]\\n\\t\"
-
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm1\\n\\t\"
-                            \"mulpd xmm0, xmm1\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm3\\n\\t\"
-                            \"mulpd xmm0, xmm3\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm4\\n\\t\"
-                            \"mulpd xmm0, xmm4\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-
-                            \"movapd XMMWORD PTR [%0+{4}], xmm0\\n\\t\"
-                            ",
-                            a[0] * 16,
-                            a[1] * 16,
-                            a[2] * 16,
-                            a[3] * 16,
-                            *o * 16,
-                        );
-                    }
-                    5 => {
-                        if !in_asm_block {
-                            *out += "\t__asm__(\n";
-                            in_asm_block = true;
+                        for i in 1..a.len() {
+                            *out += &format!(
+                                "   \"movapd xmm0, xmm1\\n\\t\"
+        \"unpckhpd xmm0, xmm0\\n\\t\"
+        \"unpcklpd xmm1, xmm1\\n\\t\"
+        \"mulpd xmm0, xmm{0}\\n\\t\"
+        \"mulpd xmm1, xmm{0}\\n\\t\"
+        \"shufpd xmm0, xmm0, 1\\n\\t\"
+        \"addsubpd xmm1, xmm0\\n\\t\"\n",
+                                i + 1
+                            );
                         }
 
-                        *out += &format!(
-                            "
-                            \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
-                            \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
-                            \"movapd xmm3, XMMWORD PTR [%0+{2}]\\n\\t\"
-                            \"movapd xmm4, XMMWORD PTR [%0+{3}]\\n\\t\"
-                            \"movapd xmm5, XMMWORD PTR [%0+{4}]\\n\\t\"
-   
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm1\\n\\t\"
-                            \"mulpd xmm0, xmm1\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm3\\n\\t\"
-                            \"mulpd xmm0, xmm3\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm4\\n\\t\"
-                            \"mulpd xmm0, xmm4\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-
-                            \"movapd xmm2, xmm0\\n\\t\"
-                            \"unpckhpd xmm2, xmm2\\n\\t\"
-                            \"unpcklpd xmm0, xmm0\\n\\t\"
-                            \"mulpd xmm2, xmm5\\n\\t\"
-                            \"mulpd xmm0, xmm5\\n\\t\"
-                            \"shufpd xmm2, xmm2, 1\\n\\t\"
-                            \"addsubpd xmm0, xmm2\\n\\t\"
-
-                            \"movapd XMMWORD PTR [%0+{5}], xmm0\\n\\t\"
-                            ",
-                            a[0] * 16,
-                            a[1] * 16,
-                            a[2] * 16,
-                            a[3] * 16,
-                            a[4] * 16,
-                            *o * 16,
-                        );
-                    }
-                    _ => {
-                        // TODO: split the multiplication in blocks of the above operations
+                        *out +=
+                            &format!("\t\t\"movapd XMMWORD PTR [%0+{}], xmm1\\n\\t\"\n", *o * 16);
+                    } else {
+                        // TODO: reuse registers
 
                         if in_asm_block {
                             *out += ":
@@ -1335,7 +1065,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                         *out += format!("\tZ[{}] = {};\n", o, args).as_str();
                     }
-                },
+                }
                 Instr::Pow(o, b, e) => {
                     if in_asm_block {
                         *out += ":

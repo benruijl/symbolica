@@ -1166,11 +1166,13 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
                             \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
                             \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
                             \"mulpd xmm2, xmm1\\n\\t\"
-                            \"shufpd xmm1, xmm1, 1\\n\\t\"
                             \"mulpd xmm0, xmm1\\n\\t\"
-                            \"addsubpd xmm2, xmm0\\n\\t\"
-                            \"movapd XMMWORD PTR [%0+{2}], xmm2\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+                            \"movapd XMMWORD PTR [%0+{2}], xmm0\\n\\t\"
                             ",
                             a[0] * 16,
                             a[1] * 16,
@@ -1182,23 +1184,29 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             *out += "\t__asm__(\n";
                             in_asm_block = true;
                         }
-
                         *out += &format!(
                             "
                             \"movapd xmm0, XMMWORD PTR [%0+{0}]\\n\\t\"
                             \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
                             \"movapd xmm3, XMMWORD PTR [%0+{2}]\\n\\t\"
+
                             \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
                             \"mulpd xmm2, xmm1\\n\\t\"
-                            \"shufpd xmm1, xmm1, 1\\n\\t\"
                             \"mulpd xmm0, xmm1\\n\\t\"
-                            \"addsubpd xmm2, xmm0\\n\\t\"
-                            \"movapd xmm1, xmm2\\n\\t\"
-                            \"mulpd xmm1, xmm3\\n\\t\"
-                            \"shufpd xmm3, xmm3, 1\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
+                            \"mulpd xmm2, xmm3\\n\\t\"
                             \"mulpd xmm0, xmm3\\n\\t\"
-                            \"addsubpd xmm1, xmm0\\n\\t\"
-                            \"movapd XMMWORD PTR [%0+{3}], xmm1\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+
+                            \"movapd XMMWORD PTR [%0+{3}], xmm0\\n\\t\"
                             ",
                             a[0] * 16,
                             a[1] * 16,
@@ -1218,22 +1226,32 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             \"movapd xmm1, XMMWORD PTR [%0+{1}]\\n\\t\"
                             \"movapd xmm3, XMMWORD PTR [%0+{2}]\\n\\t\"
                             \"movapd xmm4, XMMWORD PTR [%0+{3}]\\n\\t\"
+
                             \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
                             \"mulpd xmm2, xmm1\\n\\t\"
-                            \"shufpd xmm1, xmm1, 1\\n\\t\"
                             \"mulpd xmm0, xmm1\\n\\t\"
-                            \"addsubpd xmm2, xmm0\\n\\t\"
-                            \"movapd xmm1, xmm2\\n\\t\"
-                            \"mulpd xmm1, xmm3\\n\\t\"
-                            \"shufpd xmm3, xmm3, 1\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
+                            \"mulpd xmm2, xmm3\\n\\t\"
                             \"mulpd xmm0, xmm3\\n\\t\"
-                            \"addsubpd xmm1, xmm0\\n\\t\"
-                            \"movapd xmm2, xmm1\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
                             \"mulpd xmm2, xmm4\\n\\t\"
-                            \"shufpd xmm4, xmm4, 1\\n\\t\"
                             \"mulpd xmm0, xmm4\\n\\t\"
-                            \"addsubpd xmm2, xmm0\\n\\t\"
-                            \"movapd XMMWORD PTR [%0+{4}], xmm2\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+
+                            \"movapd XMMWORD PTR [%0+{4}], xmm0\\n\\t\"
                             ",
                             a[0] * 16,
                             a[1] * 16,
@@ -1255,27 +1273,40 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             \"movapd xmm3, XMMWORD PTR [%0+{2}]\\n\\t\"
                             \"movapd xmm4, XMMWORD PTR [%0+{3}]\\n\\t\"
                             \"movapd xmm5, XMMWORD PTR [%0+{4}]\\n\\t\"
+   
                             \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
                             \"mulpd xmm2, xmm1\\n\\t\"
-                            \"shufpd xmm1, xmm1, 1\\n\\t\"
                             \"mulpd xmm0, xmm1\\n\\t\"
-                            \"addsubpd xmm2, xmm0\\n\\t\"
-                            \"movapd xmm1, xmm2\\n\\t\"
-                            \"mulpd xmm1, xmm3\\n\\t\"
-                            \"shufpd xmm3, xmm3, 1\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
+                            \"mulpd xmm2, xmm3\\n\\t\"
                             \"mulpd xmm0, xmm3\\n\\t\"
-                            \"addsubpd xmm1, xmm0\\n\\t\"
-                            \"movapd xmm2, xmm1\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
                             \"mulpd xmm2, xmm4\\n\\t\"
-                            \"shufpd xmm4, xmm4, 1\\n\\t\"
                             \"mulpd xmm0, xmm4\\n\\t\"
-                            \"addsubpd xmm2, xmm0\\n\\t\"
-                            \"movapd xmm1, xmm2\\n\\t\"
-                            \"mulpd xmm1, xmm5\\n\\t\"
-                            \"shufpd xmm5, xmm5, 1\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+
+                            \"movapd xmm2, xmm0\\n\\t\"
+                            \"unpckhpd xmm2, xmm2\\n\\t\"
+                            \"unpcklpd xmm0, xmm0\\n\\t\"
+                            \"mulpd xmm2, xmm5\\n\\t\"
                             \"mulpd xmm0, xmm5\\n\\t\"
-                            \"addsubpd xmm1, xmm0\\n\\t\"
-                            \"movapd XMMWORD PTR [%0+{5}], xmm1\\n\\t\"
+                            \"shufpd xmm2, xmm2, 1\\n\\t\"
+                            \"addsubpd xmm0, xmm2\\n\\t\"
+
+                            \"movapd XMMWORD PTR [%0+{5}], xmm0\\n\\t\"
                             ",
                             a[0] * 16,
                             a[1] * 16,

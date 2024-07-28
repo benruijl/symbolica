@@ -45,6 +45,11 @@ impl<R: Ring, E: Exponent> PolynomialRing<R, E> {
             _phantom_exp: PhantomData,
         }
     }
+
+    /// Get the coefficient ring.
+    pub fn coefficient_ring(&self) -> &R {
+        &self.ring
+    }
 }
 
 impl<R: Ring, E: Exponent> std::fmt::Display for PolynomialRing<R, E> {

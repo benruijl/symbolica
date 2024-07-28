@@ -891,6 +891,70 @@ impl Add<i64> for CoefficientView<'_> {
     }
 }
 
+impl TryFrom<Atom> for i64 {
+    type Error = &'static str;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl TryFrom<&Atom> for i64 {
+    type Error = &'static str;
+
+    fn try_from(value: &Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl<'a> TryFrom<AtomView<'a>> for i64 {
+    type Error = &'static str;
+
+    fn try_from(value: AtomView<'a>) -> Result<Self, Self::Error> {
+        if let AtomView::Num(n) = value {
+            if let CoefficientView::Natural(n, 1) = n.get_coeff_view() {
+                return Ok(n);
+            } else {
+                Err("Not an i64")
+            }
+        } else {
+            Err("Not a number")
+        }
+    }
+}
+
+impl TryFrom<Atom> for Rational {
+    type Error = &'static str;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl TryFrom<&Atom> for Rational {
+    type Error = &'static str;
+
+    fn try_from(value: &Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl<'a> TryFrom<AtomView<'a>> for Rational {
+    type Error = &'static str;
+
+    fn try_from(value: AtomView<'a>) -> Result<Self, Self::Error> {
+        if let AtomView::Num(n) = value {
+            match n.get_coeff_view() {
+                CoefficientView::Natural(n, d) => Ok(Rational::from_unchecked(n, d)),
+                CoefficientView::Large(r) => Ok(r.to_rat()),
+                _ => Err("Not a rational"),
+            }
+        } else {
+            Err("Not a number")
+        }
+    }
+}
+
 impl Atom {
     /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
     pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {

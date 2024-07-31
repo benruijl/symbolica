@@ -343,7 +343,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
 
         let stripped = self.map_coeff(
             |coeff| {
-                let coeff = self.field.div(coeff, &c);
+                let coeff = self.ring.div(coeff, &c);
                 debug_assert!(coeff.is_integer());
                 coeff.numerator()
             },
@@ -369,7 +369,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
 
         let stripped = self.map_coeff(
             |coeff| {
-                let coeff = self.field.div(coeff, &c);
+                let coeff = self.ring.div(coeff, &c);
                 debug_assert!(coeff.is_integer());
                 coeff.numerator()
             },
@@ -394,7 +394,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
 
         let stripped = self.map_coeff(
             |coeff| {
-                let coeff = self.field.div(coeff, &c);
+                let coeff = self.ring.div(coeff, &c);
                 debug_assert!(coeff.is_integer());
                 coeff.numerator()
             },
@@ -418,7 +418,7 @@ impl<E: Exponent> Factorize
 
         let mut factors = vec![];
 
-        if !self.field.is_one(&c) {
+        if !self.ring.is_one(&c) {
             factors.push((self.constant(c), 1));
         }
 
@@ -455,15 +455,15 @@ impl<E: Exponent> Factorize
                 return vec![(f.clone(), 1)];
             }
 
-            let mut g_f = g.to_number_field(&self.field);
+            let mut g_f = g.to_number_field(&self.ring);
 
             for (f, b) in factors {
                 debug!("Rational factor {}", f);
                 let alpha_poly = g.variable(&self.get_vars_ref()[v]).unwrap()
-                    + g.variable(&self.field.poly().variables[0]).unwrap()
+                    + g.variable(&self.ring.poly().variables[0]).unwrap()
                         * &g.constant((s as u64).into());
 
-                let f = f.to_number_field(&self.field);
+                let f = f.to_number_field(&self.ring);
 
                 let gcd = f.gcd(&g_f);
 
@@ -471,7 +471,7 @@ impl<E: Exponent> Factorize
 
                 let g = MultivariatePolynomial::from_number_field(&gcd)
                     .replace_with_poly(v, &alpha_poly);
-                full_factors.push((g.to_number_field(&self.field), b * p));
+                full_factors.push((g.to_number_field(&self.ring), b * p));
             }
         }
 
@@ -506,7 +506,7 @@ where
             factors.append(&mut nf);
         }
 
-        if factors.is_empty() || !self.field.is_one(&c) {
+        if factors.is_empty() || !self.ring.is_one(&c) {
             factors.push((self.constant(c), 1))
         }
 
@@ -680,7 +680,7 @@ where
         // take the pth root
         // the coefficients remain unchanged, since x^1/p = x
         // since the derivative in every var is 0, all powers are divisible by p
-        let p = self.field.characteristic().to_u64() as usize;
+        let p = self.ring.characteristic().to_u64() as usize;
         let mut b = f.clone();
         for es in b.exponents_iter_mut() {
             for e in es {
@@ -738,7 +738,7 @@ where
         let mut factors = vec![];
 
         let mut i = 1;
-        while !w.is_constant() && i < self.field.characteristic().to_u64() as usize {
+        while !w.is_constant() && i < self.ring.characteristic().to_u64() as usize {
             let z = v - w.derivative(var);
             let g = w.gcd(&z);
             w = w / &g;
@@ -762,7 +762,7 @@ where
 
         let mut e = self.last_exponents().to_vec();
         e[var] = E::one();
-        let x = self.monomial(self.field.one(), e);
+        let x = self.monomial(self.ring.one(), e);
 
         let mut factors = vec![];
         let mut h = x.clone();
@@ -771,7 +771,7 @@ where
         while !f.is_one() {
             i += 1;
 
-            h = h.exp_mod_univariate(self.field.size(), &mut f);
+            h = h.exp_mod_univariate(self.ring.size(), &mut f);
 
             let mut g = f.gcd(&(&h - &x));
 
@@ -816,7 +816,7 @@ where
         let mut exp = vec![E::zero(); self.nvars()];
 
         let mut try_counter = 0;
-        let characteristic = self.field.characteristic();
+        let characteristic = self.ring.characteristic();
 
         let factor = loop {
             // generate a random non-constant polynomial
@@ -824,14 +824,14 @@ where
 
             if d == 1 && (characteristic.is_zero() || try_counter < characteristic) {
                 exp[var] = E::zero();
-                random_poly.append_monomial(self.field.nth(try_counter), &exp);
+                random_poly.append_monomial(self.ring.nth(try_counter), &exp);
                 exp[var] = E::one();
-                random_poly.append_monomial(self.field.one(), &exp);
+                random_poly.append_monomial(self.ring.one(), &exp);
                 try_counter += 1;
             } else {
                 for i in 0..2 * d {
                     let r = self
-                        .field
+                        .ring
                         .sample(&mut rng, (0, characteristic.to_i64().unwrap_or(i64::MAX)));
                     if !F::is_zero(&r) {
                         exp[var] = E::from_u32(i as u32);
@@ -850,8 +850,8 @@ where
                 break g;
             }
 
-            let b = if self.field.characteristic() == 2 {
-                let max = self.field.get_extension_degree() as usize * d;
+            let b = if self.ring.characteristic() == 2 {
+                let max = self.ring.get_extension_degree() as usize * d;
 
                 let mut b = random_poly.clone();
                 let mut vcur = b.clone();
@@ -864,7 +864,7 @@ where
                 b
             } else {
                 // TODO: use Frobenius map and modular composition to prevent computing large exponent poly^(p^d)
-                let p = self.field.size();
+                let p = self.ring.size();
                 random_poly
                     .exp_mod_univariate(&(&p.pow(d as u64) - &1i64.into()) / &2i64.into(), &mut s)
                     - self.one()
@@ -910,7 +910,7 @@ where
         let y_poly = self.to_univariate_polynomial_list(interpolation_var);
 
         // add the leading coefficient as a first factor
-        let mut factors = vec![lcoeff.replace(interpolation_var, &self.field.zero())];
+        let mut factors = vec![lcoeff.replace(interpolation_var, &self.ring.zero())];
         factors.extend_from_slice(univariate_factors);
 
         // extract coefficients in y
@@ -1009,29 +1009,29 @@ where
             return factors;
         }
 
-        let mut sample_point = self.field.zero();
+        let mut sample_point = self.ring.zero();
         let mut uni_f = self.replace(interpolation_var, &sample_point);
 
         let mut i = 0;
         let mut rng = thread_rng();
         loop {
-            if self.field.size() == i {
+            if self.ring.size() == i {
                 let field = self
-                    .field
-                    .upgrade(self.field.get_extension_degree().to_u64() as usize + 1);
+                    .ring
+                    .upgrade(self.ring.get_extension_degree().to_u64() as usize + 1);
 
                 debug!(
                     "Upgrading to Galois field with exponent {}",
                     field.get_extension_degree()
                 );
 
-                let s_l = self.map_coeff(|c| self.field.upgrade_element(c, &field), field.clone());
+                let s_l = self.map_coeff(|c| self.ring.upgrade_element(c, &field), field.clone());
 
                 let facs = s_l.bivariate_factorization(main_var, interpolation_var);
 
                 return facs
                     .into_iter()
-                    .map(|f| f.map_coeff(|c| self.field.downgrade_element(c), self.field.clone()))
+                    .map(|f| f.map_coeff(|c| self.ring.downgrade_element(c), self.ring.clone()))
                     .collect();
             }
 
@@ -1042,7 +1042,7 @@ where
             }
 
             // TODO: sample simple points first
-            sample_point = self.field.sample(&mut rng, (0, i));
+            sample_point = self.ring.sample(&mut rng, (0, i));
             uni_f = self.replace(interpolation_var, &sample_point);
             i += 1;
         }
@@ -1121,7 +1121,7 @@ where
         if !F::is_zero(&sample_point) {
             for x in &mut rec_factors {
                 // shift the polynomial to y - sample
-                *x = x.shift_var_cached(interpolation_var, &self.field.neg(&sample_point));
+                *x = x.shift_var_cached(interpolation_var, &self.ring.neg(&sample_point));
             }
         }
 
@@ -1131,7 +1131,7 @@ where
     /// Reconstruct the leading coefficient using a Pade approximation with numerator degree `deg_n` and
     /// denominator degree `deg_d`. The resulting denominator should be a factor of the leading coefficient.
     fn lcoeff_reconstruct(coeffs: &[Self], deg_n: u32, deg_d: u32) -> Self {
-        let mut lcoeff = coeffs[0].constant(coeffs[0].field.one());
+        let mut lcoeff = coeffs[0].constant(coeffs[0].ring.one());
         for x in coeffs {
             let d = x.rational_approximant_univariate(deg_n, deg_d).unwrap().1;
             if !d.is_one() {
@@ -1421,7 +1421,7 @@ where
 
         let univariate_deltas = Self::diophantine_univariate(
             &mut univariate_factors,
-            &factors[0].constant(factors[0].field.one()),
+            &factors[0].constant(factors[0].ring.one()),
         );
 
         (univariate_factors, univariate_deltas)
@@ -1467,7 +1467,7 @@ where
 
         // select a suitable evaluation point
         let mut sample_points: Vec<_> =
-            order[1..].iter().map(|i| (*i, self.field.zero())).collect();
+            order[1..].iter().map(|i| (*i, self.ring.zero())).collect();
         let mut uni_f;
         let mut biv_f;
         let mut rng = thread_rng();
@@ -1480,18 +1480,18 @@ where
         'new_sample: loop {
             sample_fail += &1.into();
 
-            if &sample_fail * &2.into() > self.field.size() {
+            if &sample_fail * &2.into() > self.ring.size() {
                 // the field is too small, upgrade
                 let field = self
-                    .field
-                    .upgrade(self.field.get_extension_degree().to_u64() as usize + 1);
+                    .ring
+                    .upgrade(self.ring.get_extension_degree().to_u64() as usize + 1);
 
                 debug!(
                     "Upgrading to Galois field with exponent {}",
                     field.get_extension_degree()
                 );
 
-                let s_l = self.map_coeff(|c| self.field.upgrade_element(c, &field), field.clone());
+                let s_l = self.map_coeff(|c| self.ring.upgrade_element(c, &field), field.clone());
 
                 let facs = s_l.multivariate_factorization(
                     order,
@@ -1501,12 +1501,12 @@ where
 
                 return facs
                     .into_iter()
-                    .map(|f| f.map_coeff(|c| self.field.downgrade_element(c), self.field.clone()))
+                    .map(|f| f.map_coeff(|c| self.ring.downgrade_element(c), self.ring.clone()))
                     .collect();
             }
 
             for s in &mut sample_points {
-                s.1 = self.field.nth(rng.gen_range(0..=coefficient_upper_bound));
+                s.1 = self.ring.nth(rng.gen_range(0..=coefficient_upper_bound));
             }
 
             biv_f = self.clone();
@@ -1566,7 +1566,7 @@ where
         }
 
         for (v, s) in &sample_points {
-            debug!("Sample point {}={}", v, self.field.printer(s));
+            debug!("Sample point {}={}", v, self.ring.printer(s));
         }
 
         let bivariate_factors = biv_f.bivariate_factorization(order[0], order[1]);
@@ -1692,8 +1692,8 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
             exp[*r.0] = E::one();
             let var_pow = error
-                .monomial(error.field.one(), exp.clone())
-                .shift_var(*r.0, &error.field.neg(shift))
+                .monomial(error.ring.one(), exp.clone())
+                .shift_var(*r.0, &error.ring.neg(shift))
                 .pow(r.1 + 1);
             exp[*r.0] = E::zero();
             mod_vars.push(var_pow);
@@ -1701,8 +1701,8 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         exp[last_var] = E::one();
         let var_pow = error
-            .monomial(error.field.one(), exp)
-            .shift_var(last_var, &error.field.neg(shift));
+            .monomial(error.ring.one(), exp)
+            .shift_var(last_var, &error.ring.neg(shift));
         let mut cur_exponent;
         let mut next_exponent = var_pow.clone();
 
@@ -1856,7 +1856,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             );
 
             for f in &mut reconstructed_factors {
-                *f = f.shift_var(order[v], &self.field.neg(shift));
+                *f = f.shift_var(order[v], &self.ring.neg(shift));
             }
 
             for f in &reconstructed_factors {
@@ -1909,7 +1909,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
 
         let prod_mod = prods
             .iter()
-            .map(|f| f.replace(last_var, &self.field.zero()))
+            .map(|f| f.replace(last_var, &self.ring.zero()))
             .collect::<Vec<_>>();
 
         debug!("in shift {}", self);
@@ -2003,9 +2003,9 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
     {
         let lcoeff = self.lcoeff(); // lcoeff % p != 0
         let mut gamma = gamma.unwrap_or(lcoeff.clone());
-        let lcoeff_p = lcoeff.to_finite_field(&u.field);
-        let gamma_p = gamma.to_finite_field(&u.field);
-        let field = u.field.clone();
+        let lcoeff_p = lcoeff.to_finite_field(&u.ring);
+        let gamma_p = gamma.to_finite_field(&u.ring);
+        let field = u.ring.clone();
         let p = Integer::from(field.get_prime().to_u64());
 
         let a = self.clone().mul_coeff(gamma.clone());
@@ -2253,7 +2253,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let finite_field = Zp::new(p);
 
         // add the leading coefficient as a first factor
-        let mut factors = vec![lcoeff.replace(interpolation_var, &poly.field.zero())];
+        let mut factors = vec![lcoeff.replace(interpolation_var, &poly.ring.zero())];
 
         for f in univariate_factors {
             factors.push(f.clone());
@@ -2261,7 +2261,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
         let delta = Self::lift_diophantine_univariate(
             &mut factors,
-            &poly.constant(poly.field.one()),
+            &poly.constant(poly.ring.one()),
             finite_field.get_prime(),
             k,
         );
@@ -2511,7 +2511,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         if !sample_point.is_zero() {
             for x in &mut rec_factors {
                 // shift the polynomial to y - sample
-                *x = x.shift_var(interpolation_var, &self.field.neg(&sample_point));
+                *x = x.shift_var(interpolation_var, &self.ring.neg(&sample_point));
             }
         }
 
@@ -2543,8 +2543,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             .iter()
             .map(|s| {
                 s.map_coeff(
-                    |c| field.to_symmetric_integer(c).to_finite_field(&rhs.field),
-                    rhs.field.clone(),
+                    |c| field.to_symmetric_integer(c).to_finite_field(&rhs.ring),
+                    rhs.ring.clone(),
                 )
             })
             .collect();
@@ -2553,7 +2553,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             return deltas;
         }
 
-        let mut tot = rhs.constant(rhs.field.one());
+        let mut tot = rhs.constant(rhs.ring.one());
         for f in factors.iter() {
             tot = &tot * f;
         }
@@ -2579,8 +2579,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
                 *d = &*d
                     + &new_delta.map_coeff(
-                        |c| (&field.to_symmetric_integer(c) * &m).to_finite_field(&rhs.field),
-                        rhs.field.clone(),
+                        |c| (&field.to_symmetric_integer(c) * &m).to_finite_field(&rhs.ring),
+                        rhs.ring.clone(),
                     );
             }
 
@@ -3359,7 +3359,7 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<Integer>, E, LexOrder> {
 
         let univariate_deltas = MultivariatePolynomial::lift_diophantine_univariate(
             &mut univariate_factors,
-            &factors[0].constant(factors[0].field.one()),
+            &factors[0].constant(factors[0].ring.one()),
             p,
             k,
         );

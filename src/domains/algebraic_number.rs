@@ -41,7 +41,7 @@ where
     fn to_integer(&self, a: &Self::Element) -> Integer {
         let mut p = Integer::zero();
         for x in a.poly.into_iter() {
-            p += &(self.poly.field.to_integer(x.coefficient)
+            p += &(self.poly.ring.to_integer(x.coefficient)
                 * &self.characteristic().pow(x.exponents[0] as u64));
         }
         p
@@ -63,7 +63,7 @@ where
         <Self::Base as Ring>::Element: Copy,
     {
         AlgebraicExtension::galois_field(
-            self.poly.field.clone(),
+            self.poly.ring.clone(),
             new_pow,
             self.poly.variables[0].clone(),
         )
@@ -95,8 +95,8 @@ where
         let mut pow = 0;
         let mut poly = self.poly.zero();
         while !q.is_zero() {
-            let (qn, r) = q.quot_rem(&self.poly.field.size());
-            poly.append_monomial(r.to_finite_field(&self.poly.field), &[pow]);
+            let (qn, r) = q.quot_rem(&self.poly.ring.size());
+            poly.append_monomial(r.to_finite_field(&self.poly.ring), &[pow]);
             pow += 1;
             q = qn;
         }
@@ -180,7 +180,7 @@ where
         {
             poly.clear();
             for (i, c) in coeffs.iter().enumerate() {
-                poly.append_monomial(poly.field.nth(*c), &[i as u16]);
+                poly.append_monomial(poly.ring.nth(*c), &[i as u16]);
             }
 
             poly.is_irreducible()
@@ -434,7 +434,7 @@ impl<R: Ring> Ring for AlgebraicExtension<R> {
 
     fn nth(&self, n: u64) -> Self::Element {
         AlgebraicNumber {
-            poly: self.poly.constant(self.poly.field.nth(n)),
+            poly: self.poly.constant(self.poly.ring.nth(n)),
         }
     }
 
@@ -459,17 +459,17 @@ impl<R: Ring> Ring for AlgebraicExtension<R> {
     }
 
     fn characteristic(&self) -> Integer {
-        self.poly.field.characteristic()
+        self.poly.ring.characteristic()
     }
 
     fn size(&self) -> Integer {
-        self.poly.field.size().pow(self.poly.degree(0) as u64)
+        self.poly.ring.size().pow(self.poly.degree(0) as u64)
     }
 
     /// Sample a polynomial.
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let coeffs: Vec<_> = (0..self.poly.degree(0))
-            .map(|_| self.poly.field.sample(rng, range))
+            .map(|_| self.poly.ring.sample(rng, range))
             .collect();
 
         let mut poly = self.poly.zero_with_capacity(coeffs.len());
@@ -530,7 +530,7 @@ impl<R: Field + PolynomialGCD<u16>> EuclideanDomain for AlgebraicExtension<R> {
         let c1 = a.poly.content();
         let c2 = b.poly.content();
         AlgebraicNumber {
-            poly: a.poly.constant(a.poly.field.gcd(&c1, &c2)),
+            poly: a.poly.constant(a.poly.ring.gcd(&c1, &c2)),
         }
     }
 }
@@ -573,7 +573,7 @@ impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
         MultivariatePolynomial<R>: Factorize,
         MultivariatePolynomial<AlgebraicExtension<R>>: Factorize,
     {
-        assert_eq!(self, &b.field);
+        assert_eq!(self, &b.ring);
 
         let (_, s, g, r) = b.norm_impl();
         debug_assert!(r.is_irreducible());
@@ -586,7 +586,7 @@ impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
         let g2 = g2.gcd(&h);
 
         let a = f.neg(&f.div(&g2.get_constant(), &g2.lcoeff()));
-        let y = f.to_element(g2.field.poly.one().mul_exp(&[1]));
+        let y = f.to_element(g2.ring.poly.one().mul_exp(&[1]));
         let b = f.sub(&y, &f.mul(&a, &f.nth(s as u64)));
 
         (f, a, b)
@@ -617,12 +617,12 @@ impl<R: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<AlgebraicE
         let alpha = f
             .get_vars()
             .iter()
-            .position(|x| x == &self.field.poly.variables[0])
+            .position(|x| x == &self.ring.poly.variables[0])
             .unwrap();
 
         let mut poly = f.zero();
         let mut exp = vec![E::zero(); f.nvars()];
-        for x in self.field.poly.into_iter() {
+        for x in self.ring.poly.into_iter() {
             exp[alpha] = E::from_u32(x.exponents[0] as u32);
             poly.append_monomial(x.coefficient.clone(), &exp);
         }
@@ -638,8 +638,8 @@ impl<R: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<AlgebraicE
 
                 // construct f(x-s*a)
                 let alpha_poly = f.variable(&self.get_vars_ref()[v]).unwrap()
-                    - f.variable(&self.field.poly.variables[0]).unwrap()
-                        * &f.constant(f.field.nth(s as u64));
+                    - f.variable(&self.ring.poly.variables[0]).unwrap()
+                        * &f.constant(f.ring.nth(s as u64));
                 let g_multi = f.clone().replace_with_poly(v, &alpha_poly);
                 let g_uni = g_multi.to_univariate(alpha);
 

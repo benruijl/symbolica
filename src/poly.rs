@@ -653,7 +653,7 @@ impl<'a> AtomView<'a> {
             poly: &mut MultivariatePolynomial<R, E>,
             field: &R,
         ) {
-            let mut coefficient = poly.field.one();
+            let mut coefficient = poly.ring.one();
             let mut exponents = smallvec![E::zero(); vars.len()];
 
             match term {
@@ -1221,7 +1221,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                 }
             }
 
-            f(&self.field, monomial.coefficient, &mut coeff);
+            f(&self.ring, monomial.coefficient, &mut coeff);
             mul.extend(coeff.as_view());
             add.extend(mul_h.as_view());
         }
@@ -1355,7 +1355,7 @@ impl Token {
             poly: &mut MultivariatePolynomial<R, E>,
             field: &R,
         ) -> Result<(), Cow<'static, str>> {
-            let mut coefficient = poly.field.one();
+            let mut coefficient = poly.ring.one();
             let mut exponents = smallvec![E::zero(); var_name_map.len()];
 
             match term {

@@ -121,7 +121,7 @@ impl<R: Field + Echelonize, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O
     ///
     fn f4(&mut self) {
         let nvars = self.system[0].nvars();
-        let field = self.system[0].field.clone();
+        let field = self.system[0].ring.clone();
 
         let mut simplifications = vec![];
         let mut basis = vec![];
@@ -454,7 +454,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                     *e = *e1 - *e2;
                 }
 
-                let ratio = g.field.div(r.max_coeff(), g.max_coeff());
+                let ratio = g.ring.div(r.max_coeff(), g.max_coeff());
                 r = r - g.clone().mul_exp(&monom).mul_coeff(ratio);
 
                 if r.is_zero() {
@@ -507,7 +507,7 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
             lead_reduced.swap(0, i);
             let h = Self::reduce(&lead_reduced[0], &lead_reduced[1..]);
             if !h.is_zero() {
-                let i = h.field.inv(h.max_coeff());
+                let i = h.ring.inv(h.max_coeff());
                 basis.push(h.mul_coeff(i));
             }
         }
@@ -545,11 +545,11 @@ impl<R: Field, E: Exponent, O: MonomialOrder> GroebnerBasis<R, E, O> {
                 let new_f1 = p1
                     .clone()
                     .mul_exp(&extra_factor_f1)
-                    .mul_coeff(p1.field.div(p2.max_coeff(), p1.max_coeff()));
+                    .mul_coeff(p1.ring.div(p2.max_coeff(), p1.max_coeff()));
                 let new_f2 = p2
                     .clone()
                     .mul_exp(&extra_factor_f2)
-                    .mul_coeff(p1.field.div(p1.max_coeff(), p2.max_coeff()));
+                    .mul_coeff(p1.ring.div(p1.max_coeff(), p2.max_coeff()));
 
                 let s = new_f1 - new_f2;
 

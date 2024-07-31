@@ -351,7 +351,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
             debug_assert!(indices.len() <= index_start + 1);
 
             let num = if indices.len() == index_start {
-                self.field.zero()
+                self.ring.zero()
             } else {
                 self.coefficients[indices[index_start]].clone()
             };

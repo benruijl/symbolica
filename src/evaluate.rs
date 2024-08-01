@@ -149,11 +149,13 @@ impl Atom {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SplitExpression<T> {
     pub tree: Vec<Expression<T>>,
     pub subexpressions: Vec<Expression<T>>,
 }
 
+#[derive(Debug, Clone)]
 pub struct EvalTree<T> {
     functions: Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
     expressions: SplitExpression<T>,
@@ -664,6 +666,8 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
     }
 }
 
+#[derive(Clone)]
+
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
     param_count: usize,
@@ -955,68 +959,111 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             String::new()
         };
 
-        res += &format!("extern \"C\" {{\n\tvoid {}_complex(std::complex<double>* params, std::complex<double>* out) {{\n", function_name);
+        res += &format!(
+            "static const std::complex<double> CONSTANTS_complex[{}] = {{{}}};\n\n",
+            self.reserved_indices - self.param_count,
+            (self.param_count..self.reserved_indices)
+                .map(|i| format!("std::complex<double>({})", self.stack[i]))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
 
+        res += &format!("extern \"C\" void {}_complex(const std::complex<double> *params, std::complex<double> *out)\n{{\n", function_name);
+
+        // TODO: pass as argument to prevent stack reallocation
         res += &format!("\tstd::complex<double> Z[{}];\n", self.stack.len());
 
-        for i in 0..self.param_count {
-            res += &format!("\tZ[{}] = params[{}];\n", i, i);
-        }
-
-        for i in self.param_count..self.reserved_indices {
-            res += &format!("\tZ[{}] = {};\n", i, self.stack[i]);
-        }
-
-        Self::export_asm_complex_impl(&self.instructions, &mut res);
+        self.export_asm_complex_impl(&self.instructions, &mut res);
 
         for (i, r) in &mut self.result_indices.iter().enumerate() {
-            res += &format!("\tout[{}] = Z[{}];\n", i, r);
-
-            /*res += &format!(
-                "__asm__(
-                \"movsd   xmm0, QWORD PTR [%0+{1}]\\n\\t\"
-                \"movsd   QWORD PTR [%1+{0}], xmm0\\n\\t\"
-                \"movsd   xmm0, QWORD PTR [%0+{1}+8]\\n\\t\"
-                \"movsd   QWORD PTR [%1+{0}+8], xmm0\\n\\t\"
-                :
-                : \"r\"(Z), \"r\"(out)
-                : \"memory\" );",
-                i * 16,
-                r * 16
-            );*/
+            if *r < self.param_count {
+                res += &format!("\tout[{}] = params[{}];\n", i, r);
+            } else if *r < self.reserved_indices {
+                res += &format!(
+                    "\tout[{}] = CONSTANTS_complex[{}];\n",
+                    i,
+                    r - self.param_count
+                );
+            } else {
+                res += &format!("\tout[{}] = Z[{}];\n", i, r);
+            }
         }
 
-        res += "\treturn;\n}\n";
+        res += "\treturn;\n}\n\n";
 
         res += &format!(
-            "\n\tvoid {}_double(double* params, double* out) {{\n",
+            "static const double CONSTANTS_double[{}] = {{{}}};\n\n",
+            self.reserved_indices - self.param_count,
+            (self.param_count..self.reserved_indices)
+                .map(|i| format!("double({})", self.stack[i]))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        res += &format!(
+            "extern \"C\" void {}_double(const double *params, double *out)\n{{\n",
             function_name
         );
 
         res += &format!("\tdouble Z[{}];\n", self.stack.len());
 
-        for i in 0..self.param_count {
-            res += &format!("\tZ[{}] = params[{}];\n", i, i);
-        }
-
-        for i in self.param_count..self.reserved_indices {
-            res += &format!("\tZ[{}] = {};\n", i, self.stack[i]);
-        }
-
-        Self::export_asm_double_impl(&self.instructions, &mut res);
+        self.export_asm_double_impl(&self.instructions, &mut res);
 
         for (i, r) in &mut self.result_indices.iter().enumerate() {
-            res += &format!("\tout[{}] = Z[{}];\n", i, r);
+            if *r < self.param_count {
+                res += &format!("\tout[{}] = params[{}];\n", i, r);
+            } else if *r < self.reserved_indices {
+                res += &format!(
+                    "\tout[{}] = CONSTANTS_double[{}];\n",
+                    i,
+                    r - self.param_count
+                );
+            } else {
+                res += &format!("\tout[{}] = Z[{}];\n", i, r);
+            }
         }
 
         res += "\treturn;\n}\n";
 
-        res += "}\n";
-
         res
     }
 
-    fn export_asm_double_impl(instr: &[Instr], out: &mut String) {
+    fn export_asm_double_impl(&self, instr: &[Instr], out: &mut String) -> bool {
+        macro_rules! get_input {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    format!("params[{}]", $i)
+                } else if $i < self.reserved_indices {
+                    format!("CONSTANTS_double[{}]", $i - self.param_count)
+                } else {
+                    // TODO: subtract reserved indices
+                    format!("Z[{}]", $i)
+                }
+            };
+        }
+
+        macro_rules! format_addr {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    format!("PTR [%2+{}]", $i * 8)
+                } else if $i < self.reserved_indices {
+                    format!("PTR [%1+{}]", ($i - self.param_count) * 8)
+                } else {
+                    // TODO: subtract reserved indices
+                    format!("PTR [%0+{}]", $i * 8)
+                }
+            };
+        }
+
+        macro_rules! end_asm_block {
+            ($in_block: expr) => {
+                if $in_block {
+                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\");\n";
+                    $in_block = false;
+                }
+            };
+        }
+
         let mut in_asm_block = false;
         for ins in instr {
             match ins {
@@ -1026,13 +1073,13 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         in_asm_block = true;
                     }
 
-                    *out += &format!("\t\t\"movsd xmm0, QWORD PTR [%0+{}]\\n\\t\"\n", a[0] * 8);
+                    *out += &format!("\t\t\"movsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(a[0]));
 
                     // TODO: try loading in multiple registers for better instruction-level parallelism?
                     for i in &a[1..] {
-                        *out += &format!("\t\t\"addsd xmm0, QWORD PTR [%0+{}]\\n\\t\"\n", *i * 8);
+                        *out += &format!("\t\t\"addsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(*i));
                     }
-                    *out += &format!("\t\t\"movsd QWORD PTR [%0+{}], xmm0\\n\\t\"\n", *o * 8,);
+                    *out += &format!("\t\t\"movsd QWORD {}, xmm0\\n\\t\"\n", format_addr!(*o));
                 }
                 Instr::Mul(o, a) => {
                     if !in_asm_block {
@@ -1040,66 +1087,45 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         in_asm_block = true;
                     }
 
-                    *out += &format!("\t\t\"movsd xmm0, QWORD PTR [%0+{}]\\n\\t\"\n", a[0] * 8);
+                    *out += &format!("\t\t\"movsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(a[0]));
 
                     for i in &a[1..] {
-                        *out += &format!("\t\t\"mulsd xmm0, QWORD PTR [%0+{}]\\n\\t\"\n", *i * 8);
+                        *out += &format!("\t\t\"mulsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(*i));
                     }
-                    *out += &format!("\t\t\"movsd QWORD PTR [%0+{}], xmm0\\n\\t\"\n", *o * 8,);
+                    *out += &format!("\t\t\"movsd QWORD {}, xmm0\\n\\t\"\n", format_addr!(*o));
                 }
                 Instr::Pow(o, b, e) => {
-                    if in_asm_block {
-                        *out += ":
-                        : \"r\"(Z)
-                        : \"memory\");
-                        ";
-                        in_asm_block = false;
-                    }
+                    end_asm_block!(in_asm_block);
 
-                    let base = format!("Z[{}]", b);
+                    let base = get_input!(*b);
                     *out += format!("\tZ[{}] = pow({}, {});\n", o, base, e).as_str();
                 }
                 Instr::Powf(o, b, e) => {
-                    if in_asm_block {
-                        *out += ":
-                        : \"r\"(Z)
-                        : \"memory\");
-                        ";
-                        in_asm_block = false;
-                    }
+                    end_asm_block!(in_asm_block);
 
-                    let base = format!("Z[{}]", b);
-                    let exp = format!("Z[{}]", e);
+                    let base = get_input!(*b);
+                    let exp = get_input!(*e);
                     *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
                 }
                 Instr::BuiltinFun(o, s, a) => {
-                    if in_asm_block {
-                        *out += ":
-                        : \"r\"(Z)
-                        : \"memory\");
-                        ";
-                        in_asm_block = false;
-                    }
+                    end_asm_block!(in_asm_block);
+
+                    let arg = get_input!(*a);
 
                     match *s {
                         State::EXP => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
                         State::LOG => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
                         }
                         State::SIN => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
                         }
                         State::COS => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
                         }
                         State::SQRT => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
                         }
                         _ => unreachable!(),
@@ -1108,15 +1134,46 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             }
         }
 
-        if in_asm_block {
-            *out += ":
-            : \"r\"(Z)
-            : \"memory\");
-            ";
-        }
+        end_asm_block!(in_asm_block);
+        in_asm_block
     }
 
-    fn export_asm_complex_impl(instr: &[Instr], out: &mut String) {
+    fn export_asm_complex_impl(&self, instr: &[Instr], out: &mut String) -> bool {
+        macro_rules! get_input {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    format!("params[{}]", $i)
+                } else if $i < self.reserved_indices {
+                    format!("CONSTANTS_complex[{}]", $i - self.param_count)
+                } else {
+                    // TODO: subtract reserved indices
+                    format!("Z[{}]", $i)
+                }
+            };
+        }
+
+        macro_rules! format_addr {
+            ($i:expr) => {
+                if $i < self.param_count {
+                    format!("PTR [%2+{}]", $i * 16)
+                } else if $i < self.reserved_indices {
+                    format!("PTR [%1+{}]", ($i - self.param_count) * 16)
+                } else {
+                    // TODO: subtract reserved indices
+                    format!("PTR [%0+{}]", $i * 16)
+                }
+            };
+        }
+
+        macro_rules! end_asm_block {
+            ($in_block: expr) => {
+                if $in_block {
+                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\");\n";
+                    $in_block = false;
+                }
+            };
+        }
+
         let mut in_asm_block = false;
         for ins in instr {
             match ins {
@@ -1131,9 +1188,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     // TODO: try loading in multiple registers for better instruction-level parallelism?
                     for i in a {
                         *out +=
-                            &format!("\t\t\"addpd xmm0, XMMWORD PTR [%0+{}]\\n\\t\"\n", *i * 16);
+                            &format!("\t\t\"addpd xmm0, XMMWORD {}\\n\\t\"\n", format_addr!(*i));
                     }
-                    *out += &format!("\t\t\"movapd XMMWORD PTR [%0+{}], xmm0\\n\\t\"\n", *o * 16,);
+                    *out += &format!("\t\t\"movupd XMMWORD {}, xmm0\\n\\t\"\n", format_addr!(*o),);
                 }
                 Instr::Mul(o, a) => {
                     if a.len() < 15 {
@@ -1145,9 +1202,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         // optimized complex multiplication
                         for (i, r) in a.iter().enumerate() {
                             *out += &format!(
-                                "\t\t\"movapd xmm{}, XMMWORD PTR [%0+{}]\\n\\t\"\n",
+                                "\t\t\"movupd xmm{}, XMMWORD {}\\n\\t\"\n",
                                 i + 1,
-                                r * 16
+                                format_addr!(*r)
                             );
                         }
 
@@ -1165,21 +1222,15 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         }
 
                         *out +=
-                            &format!("\t\t\"movapd XMMWORD PTR [%0+{}], xmm1\\n\\t\"\n", *o * 16);
+                            &format!("\t\t\"movupd XMMWORD {}, xmm1\\n\\t\"\n", format_addr!(*o));
                     } else {
                         // TODO: reuse registers
 
-                        if in_asm_block {
-                            *out += ":
-                            : \"r\"(Z)
-                            : \"memory\");
-                            ";
-                            in_asm_block = false;
-                        }
+                        end_asm_block!(in_asm_block);
 
                         let args = a
                             .iter()
-                            .map(|x| format!("Z[{}]", x))
+                            .map(|x| get_input!(*x))
                             .collect::<Vec<_>>()
                             .join("*");
 
@@ -1187,58 +1238,36 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     }
                 }
                 Instr::Pow(o, b, e) => {
-                    if in_asm_block {
-                        *out += ":
-                        : \"r\"(Z)
-                        : \"memory\");
-                        ";
-                        in_asm_block = false;
-                    }
+                    end_asm_block!(in_asm_block);
 
-                    let base = format!("Z[{}]", b);
+                    let base = get_input!(*b);
                     *out += format!("\tZ[{}] = pow({}, {});\n", o, base, e).as_str();
                 }
                 Instr::Powf(o, b, e) => {
-                    if in_asm_block {
-                        *out += ":
-                        : \"r\"(Z)
-                        : \"memory\");
-                        ";
-                        in_asm_block = false;
-                    }
-
-                    let base = format!("Z[{}]", b);
-                    let exp = format!("Z[{}]", e);
+                    end_asm_block!(in_asm_block);
+                    let base = get_input!(*b);
+                    let exp = get_input!(*e);
                     *out += format!("\tZ[{}] = pow({}, {});\n", o, base, exp).as_str();
                 }
                 Instr::BuiltinFun(o, s, a) => {
-                    if in_asm_block {
-                        *out += ":
-                        : \"r\"(Z)
-                        : \"memory\");
-                        ";
-                        in_asm_block = false;
-                    }
+                    end_asm_block!(in_asm_block);
+
+                    let arg = get_input!(*a);
 
                     match *s {
                         State::EXP => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
                         State::LOG => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
                         }
                         State::SIN => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
                         }
                         State::COS => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
                         }
                         State::SQRT => {
-                            let arg = format!("Z[{}]", a);
                             *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
                         }
                         _ => unreachable!(),
@@ -1247,12 +1276,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             }
         }
 
-        if in_asm_block {
-            *out += ":
-            : \"r\"(Z)
-            : \"memory\");
-            ";
-        }
+        end_asm_block!(in_asm_block);
+        in_asm_block
     }
 }
 
@@ -2534,6 +2559,7 @@ type L = std::sync::Arc<libloading::Library>;
 
 #[derive(Debug)]
 struct EvaluatorFunctions<'a> {
+    fn_name: String,
     eval_double: libloading::Symbol<'a, unsafe extern "C" fn(params: *const f64, out: *mut f64)>,
     eval_complex: libloading::Symbol<
         'a,
@@ -2551,6 +2577,13 @@ self_cell!(
 
     impl {Debug}
 );
+
+impl Clone for CompiledEvaluator {
+    fn clone(&self) -> Self {
+        self.load_new_function(&self.with_dependent(|_, d| &d.fn_name))
+            .unwrap()
+    }
+}
 
 /// A floating point type that can be used for compiled evaluation.
 pub trait CompiledEvaluatorFloat: Sized {
@@ -2577,6 +2610,7 @@ impl CompiledEvaluator {
         unsafe {
             CompiledEvaluator::try_new(self.borrow_owner().clone(), |lib| {
                 Ok(EvaluatorFunctions {
+                    fn_name: function_name.to_string(),
                     eval_double: lib
                         .get(format!("{}_double", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
@@ -2600,6 +2634,7 @@ impl CompiledEvaluator {
 
             CompiledEvaluator::try_new(std::sync::Arc::new(lib), |lib| {
                 Ok(EvaluatorFunctions {
+                    fn_name: function_name.to_string(),
                     eval_double: lib
                         .get(format!("{}_double", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,

@@ -1058,7 +1058,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         macro_rules! end_asm_block {
             ($in_block: expr) => {
                 if $in_block {
-                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\");\n";
+                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n";
                     $in_block = false;
                 }
             };
@@ -1168,7 +1168,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         macro_rules! end_asm_block {
             ($in_block: expr) => {
                 if $in_block {
-                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\");\n";
+                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n";
                     $in_block = false;
                 }
             };

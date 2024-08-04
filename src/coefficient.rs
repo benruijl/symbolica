@@ -16,7 +16,7 @@ use crate::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
         },
-        float::{Float, NumericalFloatComparison, Real},
+        float::{Float, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, Q},
         rational_polynomial::RationalPolynomial,

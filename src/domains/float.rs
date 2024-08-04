@@ -64,12 +64,13 @@ pub trait NumericalFloatLike:
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self;
 }
 
-pub trait NumericalFloatComparison: NumericalFloatLike + PartialOrd {
+pub trait SingleFloat: NumericalFloatLike {
     fn is_zero(&self) -> bool;
     fn is_one(&self) -> bool;
     fn is_finite(&self) -> bool;
-    fn max(&self, other: &Self) -> Self;
+}
 
+pub trait RealNumberLike: SingleFloat {
     fn to_usize_clamped(&self) -> usize;
     fn to_f64(&self) -> f64;
 }
@@ -171,7 +172,7 @@ impl NumericalFloatLike for f64 {
     }
 }
 
-impl NumericalFloatComparison for f64 {
+impl SingleFloat for f64 {
     #[inline(always)]
     fn is_zero(&self) -> bool {
         *self == 0.
@@ -186,11 +187,9 @@ impl NumericalFloatComparison for f64 {
     fn is_finite(&self) -> bool {
         (*self).is_finite()
     }
+}
 
-    fn max(&self, other: &Self) -> Self {
-        (*self).max(*other)
-    }
-
+impl RealNumberLike for f64 {
     fn to_usize_clamped(&self) -> usize {
         *self as usize
     }
@@ -956,7 +955,7 @@ impl NumericalFloatLike for Float {
     }
 }
 
-impl NumericalFloatComparison for Float {
+impl SingleFloat for Float {
     #[inline(always)]
     fn is_zero(&self) -> bool {
         self.0 == 0.
@@ -971,15 +970,9 @@ impl NumericalFloatComparison for Float {
     fn is_finite(&self) -> bool {
         self.0.is_finite()
     }
+}
 
-    fn max(&self, other: &Self) -> Self {
-        if self.0 > other.0 {
-            self.clone()
-        } else {
-            other.clone()
-        }
-    }
-
+impl RealNumberLike for Float {
     fn to_usize_clamped(&self) -> usize {
         self.0
             .to_integer()
@@ -1159,7 +1152,7 @@ impl<T: NumericalFloatLike> Neg for ErrorPropagatingFloat<T> {
     }
 }
 
-impl<T: NumericalFloatComparison> Add<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> Add<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1175,7 +1168,7 @@ impl<T: NumericalFloatComparison> Add<&ErrorPropagatingFloat<T>> for ErrorPropag
     }
 }
 
-impl<T: NumericalFloatComparison> Add<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> Add<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1184,7 +1177,7 @@ impl<T: NumericalFloatComparison> Add<ErrorPropagatingFloat<T>> for ErrorPropaga
     }
 }
 
-impl<T: NumericalFloatComparison> Sub<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> Sub<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1193,7 +1186,7 @@ impl<T: NumericalFloatComparison> Sub<&ErrorPropagatingFloat<T>> for ErrorPropag
     }
 }
 
-impl<T: NumericalFloatComparison> Sub<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> Sub<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1202,7 +1195,7 @@ impl<T: NumericalFloatComparison> Sub<ErrorPropagatingFloat<T>> for ErrorPropaga
     }
 }
 
-impl<T: NumericalFloatComparison> Mul<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> Mul<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1214,9 +1207,7 @@ impl<T: NumericalFloatComparison> Mul<&ErrorPropagatingFloat<T>> for ErrorPropag
     }
 }
 
-impl<T: NumericalFloatComparison + Add<Rational, Output = T>> Add<Rational>
-    for ErrorPropagatingFloat<T>
-{
+impl<T: RealNumberLike + Add<Rational, Output = T>> Add<Rational> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1228,9 +1219,7 @@ impl<T: NumericalFloatComparison + Add<Rational, Output = T>> Add<Rational>
     }
 }
 
-impl<T: NumericalFloatComparison + Add<Rational, Output = T>> Sub<Rational>
-    for ErrorPropagatingFloat<T>
-{
+impl<T: RealNumberLike + Add<Rational, Output = T>> Sub<Rational> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1239,9 +1228,7 @@ impl<T: NumericalFloatComparison + Add<Rational, Output = T>> Sub<Rational>
     }
 }
 
-impl<T: NumericalFloatComparison + Mul<Rational, Output = T>> Mul<Rational>
-    for ErrorPropagatingFloat<T>
-{
+impl<T: RealNumberLike + Mul<Rational, Output = T>> Mul<Rational> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1253,9 +1240,7 @@ impl<T: NumericalFloatComparison + Mul<Rational, Output = T>> Mul<Rational>
     }
 }
 
-impl<T: NumericalFloatComparison + Div<Rational, Output = T>> Div<Rational>
-    for ErrorPropagatingFloat<T>
-{
+impl<T: RealNumberLike + Div<Rational, Output = T>> Div<Rational> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1267,7 +1252,7 @@ impl<T: NumericalFloatComparison + Div<Rational, Output = T>> Div<Rational>
     }
 }
 
-impl<T: NumericalFloatComparison> Mul<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> Mul<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1276,7 +1261,7 @@ impl<T: NumericalFloatComparison> Mul<ErrorPropagatingFloat<T>> for ErrorPropaga
     }
 }
 
-impl<T: NumericalFloatComparison> Div<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> Div<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1288,7 +1273,7 @@ impl<T: NumericalFloatComparison> Div<&ErrorPropagatingFloat<T>> for ErrorPropag
     }
 }
 
-impl<T: NumericalFloatComparison> Div<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> Div<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     type Output = Self;
 
     #[inline]
@@ -1297,9 +1282,7 @@ impl<T: NumericalFloatComparison> Div<ErrorPropagatingFloat<T>> for ErrorPropaga
     }
 }
 
-impl<T: NumericalFloatComparison> AddAssign<&ErrorPropagatingFloat<T>>
-    for ErrorPropagatingFloat<T>
-{
+impl<T: RealNumberLike> AddAssign<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     #[inline]
     fn add_assign(&mut self, rhs: &ErrorPropagatingFloat<T>) {
         // TODO: optimize
@@ -1307,16 +1290,14 @@ impl<T: NumericalFloatComparison> AddAssign<&ErrorPropagatingFloat<T>>
     }
 }
 
-impl<T: NumericalFloatComparison> AddAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> AddAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     #[inline]
     fn add_assign(&mut self, rhs: ErrorPropagatingFloat<T>) {
         self.add_assign(&rhs)
     }
 }
 
-impl<T: NumericalFloatComparison> SubAssign<&ErrorPropagatingFloat<T>>
-    for ErrorPropagatingFloat<T>
-{
+impl<T: RealNumberLike> SubAssign<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     #[inline]
     fn sub_assign(&mut self, rhs: &ErrorPropagatingFloat<T>) {
         // TODO: optimize
@@ -1324,16 +1305,14 @@ impl<T: NumericalFloatComparison> SubAssign<&ErrorPropagatingFloat<T>>
     }
 }
 
-impl<T: NumericalFloatComparison> SubAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> SubAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     #[inline]
     fn sub_assign(&mut self, rhs: ErrorPropagatingFloat<T>) {
         self.sub_assign(&rhs)
     }
 }
 
-impl<T: NumericalFloatComparison> MulAssign<&ErrorPropagatingFloat<T>>
-    for ErrorPropagatingFloat<T>
-{
+impl<T: RealNumberLike> MulAssign<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     #[inline]
     fn mul_assign(&mut self, rhs: &ErrorPropagatingFloat<T>) {
         // TODO: optimize
@@ -1341,16 +1320,14 @@ impl<T: NumericalFloatComparison> MulAssign<&ErrorPropagatingFloat<T>>
     }
 }
 
-impl<T: NumericalFloatComparison> MulAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> MulAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     #[inline]
     fn mul_assign(&mut self, rhs: ErrorPropagatingFloat<T>) {
         self.mul_assign(&rhs)
     }
 }
 
-impl<T: NumericalFloatComparison> DivAssign<&ErrorPropagatingFloat<T>>
-    for ErrorPropagatingFloat<T>
-{
+impl<T: RealNumberLike> DivAssign<&ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     #[inline]
     fn div_assign(&mut self, rhs: &ErrorPropagatingFloat<T>) {
         // TODO: optimize
@@ -1358,7 +1335,7 @@ impl<T: NumericalFloatComparison> DivAssign<&ErrorPropagatingFloat<T>>
     }
 }
 
-impl<T: NumericalFloatComparison> DivAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> DivAssign<ErrorPropagatingFloat<T>> for ErrorPropagatingFloat<T> {
     #[inline]
     fn div_assign(&mut self, rhs: ErrorPropagatingFloat<T>) {
         self.div_assign(&rhs)
@@ -1440,7 +1417,7 @@ impl<T: NumericalFloatLike + PartialOrd> PartialOrd for ErrorPropagatingFloat<T>
     }
 }
 
-impl<T: NumericalFloatComparison> NumericalFloatLike for ErrorPropagatingFloat<T> {
+impl<T: RealNumberLike> NumericalFloatLike for ErrorPropagatingFloat<T> {
     fn mul_add(&self, a: &Self, b: &Self) -> Self {
         a.clone() * b + self
     }
@@ -1521,9 +1498,7 @@ impl<T: NumericalFloatComparison> NumericalFloatLike for ErrorPropagatingFloat<T
     }
 }
 
-impl<T: NumericalFloatComparison + Into<f64>> NumericalFloatComparison
-    for ErrorPropagatingFloat<T>
-{
+impl<T: RealNumberLike> SingleFloat for ErrorPropagatingFloat<T> {
     fn is_zero(&self) -> bool {
         self.value.is_zero()
     }
@@ -1535,15 +1510,9 @@ impl<T: NumericalFloatComparison + Into<f64>> NumericalFloatComparison
     fn is_finite(&self) -> bool {
         self.value.is_finite()
     }
+}
 
-    fn max(&self, other: &Self) -> Self {
-        if self.value > other.value {
-            self.clone()
-        } else {
-            other.clone()
-        }
-    }
-
+impl<T: RealNumberLike> RealNumberLike for ErrorPropagatingFloat<T> {
     fn to_usize_clamped(&self) -> usize {
         self.value.to_usize_clamped()
     }
@@ -1553,7 +1522,7 @@ impl<T: NumericalFloatComparison + Into<f64>> NumericalFloatComparison
     }
 }
 
-impl<T: Real + NumericalFloatComparison> Real for ErrorPropagatingFloat<T> {
+impl<T: Real + RealNumberLike> Real for ErrorPropagatingFloat<T> {
     fn norm(&self) -> Self {
         ErrorPropagatingFloat {
             value: self.value.norm(),
@@ -1962,7 +1931,7 @@ impl NumericalFloatLike for Rational {
     }
 }
 
-impl NumericalFloatComparison for Rational {
+impl SingleFloat for Rational {
     #[inline(always)]
     fn is_zero(&self) -> bool {
         self.is_zero()
@@ -1977,15 +1946,9 @@ impl NumericalFloatComparison for Rational {
     fn is_finite(&self) -> bool {
         true
     }
+}
 
-    fn max(&self, other: &Self) -> Self {
-        if self > other {
-            self.clone()
-        } else {
-            other.clone()
-        }
-    }
-
+impl RealNumberLike for Rational {
     fn to_usize_clamped(&self) -> usize {
         f64::from(self).to_usize_clamped()
     }
@@ -2091,13 +2054,6 @@ impl<T: NumericalFloatLike> Complex<T> {
             re: self.re.zero(),
             im: self.im.zero(),
         }
-    }
-
-    pub fn is_zero(&self) -> bool
-    where
-        T: NumericalFloatComparison,
-    {
-        self.re.is_zero() && self.im.is_zero()
     }
 
     #[inline]
@@ -2571,6 +2527,23 @@ impl<T: NumericalFloatLike> LowerExp for Complex<T> {
         f.write_char('+')?;
         LowerExp::fmt(&self.im, f)?;
         f.write_str("i)")
+    }
+}
+
+impl<T: SingleFloat> SingleFloat for Complex<T> {
+    #[inline(always)]
+    fn is_zero(&self) -> bool {
+        self.re.is_zero() && self.im.is_zero()
+    }
+
+    #[inline(always)]
+    fn is_one(&self) -> bool {
+        self.re.is_one() && self.im.is_zero()
+    }
+
+    #[inline(always)]
+    fn is_finite(&self) -> bool {
+        true
     }
 }
 

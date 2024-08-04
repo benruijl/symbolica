@@ -2,7 +2,7 @@ use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use serde::{Deserialize, Serialize};
 
-use crate::domains::float::{ConstructibleFloat, NumericalFloatComparison, Real};
+use crate::domains::float::{ConstructibleFloat, Real, RealNumberLike};
 
 /// Keep track of statistical quantities, such as the average,
 /// the error and the chi-squared of samples added over multiple
@@ -20,7 +20,8 @@ use crate::domains::float::{ConstructibleFloat, NumericalFloatComparison, Real};
 /// The accumulator also stores which samples yielded the highest weight thus far.
 /// This can be used to study the input that impacted the average and error the most.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct StatisticsAccumulator<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
+pub struct StatisticsAccumulator<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd>
+{
     sum: T,
     sum_sq: T,
     total_sum: T,
@@ -44,7 +45,7 @@ pub struct StatisticsAccumulator<T: Real + ConstructibleFloat + Copy + Numerical
     pub num_zero_evaluations: usize,
 }
 
-impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> StatisticsAccumulator<T> {
+impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> StatisticsAccumulator<T> {
     /// Create a new [StatisticsAccumulator].
     pub fn new() -> StatisticsAccumulator<T> {
         StatisticsAccumulator {
@@ -342,18 +343,18 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> StatisticsA
 /// If the sample comes from a [DiscreteGrid], it is the variant [Discrete](Sample::Discrete) and contains
 /// the weight, the bin and the subsample if the bin has a nested grid.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Sample<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
+pub enum Sample<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
     Continuous(T, Vec<T>),
     Discrete(T, usize, Option<Box<Sample<T>>>),
 }
 
-impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Default for Sample<T> {
+impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Default for Sample<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Sample<T> {
+impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Sample<T> {
     /// Construct a new empty sample that can be handed over to [`Grid::sample()`].
     pub fn new() -> Sample<T> {
         Sample::Continuous(T::new_zero(), vec![])
@@ -395,12 +396,12 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Sample<T> {
 /// It supports discrete and continuous dimensions. The discrete dimensions
 /// can have a nested grid.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Grid<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
+pub enum Grid<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
     Continuous(ContinuousGrid<T>),
     Discrete(DiscreteGrid<T>),
 }
 
-impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Grid<T> {
+impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Grid<T> {
     /// Sample a position in the grid. The sample is more likely to land in a region
     /// where the function the grid is based on is changing rapidly.
     pub fn sample<R: Rng + ?Sized>(&mut self, rng: &mut R, sample: &mut Sample<T>) {
@@ -466,13 +467,13 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Grid<T> {
 }
 /// A bin of a discrete grid, which may contain a subgrid.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Bin<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
+pub struct Bin<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
     pub pdf: T,
     pub accumulator: StatisticsAccumulator<T>,
     pub sub_grid: Option<Grid<T>>,
 }
 
-impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Bin<T> {
+impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Bin<T> {
     /// Returns `Ok` when this grid can be merged with another grid,
     /// and `Err` when the grids have a different shape.
     pub fn is_mergeable(&self, other: &Bin<T>) -> Result<(), String> {
@@ -505,14 +506,14 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> Bin<T> {
 /// average value if training happens on the average, or to its
 /// variance (recommended).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiscreteGrid<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
+pub struct DiscreteGrid<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
     pub bins: Vec<Bin<T>>,
     pub accumulator: StatisticsAccumulator<T>,
     max_prob_ratio: T,
     train_on_avg: bool,
 }
 
-impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> DiscreteGrid<T> {
+impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> DiscreteGrid<T> {
     /// Create a new discrete grid with `bins.len()` number of bins, where
     /// each bin may have a sub-grid.
     ///
@@ -610,8 +611,11 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> DiscreteGri
         }
 
         let mut sum = T::new_zero();
+        let r = max_per_bin / self.max_prob_ratio;
         for bin in &mut self.bins {
-            bin.pdf = bin.pdf.max(&(max_per_bin / self.max_prob_ratio));
+            if bin.pdf < r {
+                bin.pdf = r
+            }
             sum += bin.pdf;
         }
 
@@ -721,12 +725,12 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> DiscreteGri
 /// average value if training happens on the average, or to its
 /// variance (recommended).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContinuousGrid<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
+pub struct ContinuousGrid<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
     pub continuous_dimensions: Vec<ContinuousDimension<T>>,
     pub accumulator: StatisticsAccumulator<T>,
 }
 
-impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> ContinuousGrid<T> {
+impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> ContinuousGrid<T> {
     /// Create a new grid with `n_dims` dimensions and `n_bins` bins
     /// per dimension.
     ///
@@ -848,7 +852,7 @@ impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> ContinuousG
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContinuousDimension<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> {
+pub struct ContinuousDimension<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
     pub partitioning: Vec<T>,
     bin_accumulator: Vec<StatisticsAccumulator<T>>,
     bin_importance: Vec<T>,
@@ -859,7 +863,7 @@ pub struct ContinuousDimension<T: Real + ConstructibleFloat + Copy + NumericalFl
     train_on_avg: bool,
 }
 
-impl<T: Real + ConstructibleFloat + Copy + NumericalFloatComparison> ContinuousDimension<T> {
+impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> ContinuousDimension<T> {
     /// Create a new dimension with `n_bins` bins.
     ///
     /// With `min_samples_for_update` grid updates can be prevented if

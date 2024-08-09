@@ -734,6 +734,237 @@ impl<T: Real> ExpressionEvaluator<T> {
     }
 }
 
+impl<T: Default> ExpressionEvaluator<T> {
+    pub fn remove_common_pairs(&mut self) -> usize {
+        let mut pairs: HashMap<_, Vec<usize>> = HashMap::default();
+
+        let mut affected_lines = vec![true; self.instructions.len()];
+
+        for (p, i) in self.instructions.iter().enumerate() {
+            match i {
+                Instr::Add(_, a) | Instr::Mul(_, a) => {
+                    let is_add = matches!(i, Instr::Add(_, _));
+                    for (li, l) in a.iter().enumerate() {
+                        for r in &a[li + 1..] {
+                            pairs.entry((is_add, *l, *r)).or_default().push(p);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // for now, ignore pairs with only occurrences on the same line
+        let mut to_remove: Vec<_> = pairs.clone().into_iter().collect();
+
+        to_remove.retain_mut(|(_, v)| {
+            v.dedup();
+            v.len() > 1
+        });
+
+        // sort in other direction since we pop
+        to_remove.sort_by_key(|x| x.1.len());
+
+        let total_remove = to_remove.len();
+
+        for x in &mut affected_lines {
+            *x = false;
+        }
+
+        let old_len = self.instructions.len();
+
+        while let Some(((is_add, l, r), lines)) = to_remove.pop() {
+            if lines.iter().any(|x| affected_lines[*x]) {
+                continue;
+            }
+
+            let new_idx = self.stack.len();
+            let new_op = if is_add {
+                Instr::Add(new_idx, vec![l, r])
+            } else {
+                Instr::Mul(new_idx, vec![l, r])
+            };
+
+            self.stack.push(T::default());
+            self.instructions.push(new_op);
+
+            for line in lines {
+                affected_lines[line] = true;
+                let is_add = matches!(self.instructions[line], Instr::Add(_, _));
+
+                if let Instr::Add(_, a) | Instr::Mul(_, a) = &mut self.instructions[line] {
+                    for (li, l) in a.iter().enumerate() {
+                        for r in &a[li + 1..] {
+                            let pp = pairs.entry((is_add, *l, *r)).or_default();
+                            pp.retain(|x| *x != line);
+                        }
+                    }
+
+                    if l == r {
+                        let count = a.iter().filter(|x| **x == l).count();
+                        let pairs = count / 2;
+                        if pairs > 0 {
+                            a.retain(|x| *x != l);
+
+                            if count % 2 == 1 {
+                                a.push(l.clone());
+                            }
+
+                            a.extend(std::iter::repeat(new_idx).take(pairs));
+                            a.sort();
+                        }
+                    } else {
+                        let mut idx1_count = 0;
+                        let mut idx2_count = 0;
+                        for v in &*a {
+                            if *v == l {
+                                idx1_count += 1;
+                            }
+                            if *v == r {
+                                idx2_count += 1;
+                            }
+                        }
+
+                        let pair_count = idx1_count.min(idx2_count);
+
+                        if pair_count > 0 {
+                            a.retain(|x| *x != l && *x != r);
+
+                            // add back removed indices in cases such as idx1*idx2*idx2
+                            if idx1_count > pair_count {
+                                a.extend(
+                                    std::iter::repeat(l.clone()).take(idx1_count - pair_count),
+                                );
+                            }
+                            if idx2_count > pair_count {
+                                a.extend(
+                                    std::iter::repeat(r.clone()).take(idx2_count - pair_count),
+                                );
+                            }
+
+                            a.extend(std::iter::repeat(new_idx).take(pair_count));
+                            a.sort();
+                        }
+                    }
+
+                    // update the pairs for this line
+                    for (li, l) in a.iter().enumerate() {
+                        for r in &a[li + 1..] {
+                            pairs.entry((is_add, *l, *r)).or_default().push(line);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut first_use = vec![];
+        for i in self.instructions.drain(old_len..) {
+            if let Instr::Add(_, a) | Instr::Mul(_, a) = &i {
+                let mut last_dep = a[0];
+                for v in a {
+                    last_dep = last_dep.max(*v);
+                }
+
+                let ins = if last_dep + 1 <= self.reserved_indices {
+                    0
+                } else {
+                    last_dep + 1 - self.reserved_indices
+                };
+
+                first_use.push((ins, i));
+            } else {
+                unreachable!()
+            }
+        }
+
+        first_use.sort_by_key(|x| x.0);
+
+        let mut new_instr = vec![];
+        let mut i = 0;
+        let mut j = 0;
+
+        let mut sub_rename = HashMap::default();
+        let mut rename_map: Vec<_> = (0..self.reserved_indices).collect();
+
+        macro_rules! rename {
+            ($i:expr) => {
+                if $i >= self.reserved_indices + self.instructions.len() {
+                    sub_rename[&$i]
+                } else {
+                    rename_map[$i]
+                }
+            };
+        }
+
+        while i < self.instructions.len() {
+            let new_pos = new_instr.len() + self.reserved_indices;
+
+            if j < first_use.len() && i == first_use[j].0 {
+                let (o, a) = match &first_use[j].1 {
+                    Instr::Add(o, a) => (*o, a),
+                    Instr::Mul(o, a) => (*o, a),
+                    _ => unreachable!(),
+                };
+
+                let is_add = matches!(&first_use[j].1, Instr::Add(_, _));
+
+                let new_a = a.iter().map(|x| rename!(*x)).collect::<Vec<_>>();
+
+                if is_add {
+                    new_instr.push(Instr::Add(new_pos, new_a));
+                } else {
+                    new_instr.push(Instr::Mul(new_pos, new_a));
+                }
+
+                sub_rename.insert(o, new_pos);
+
+                j += 1;
+            } else {
+                let mut s = self.instructions[i].clone();
+
+                match &mut s {
+                    Instr::Add(p, a) | Instr::Mul(p, a) => {
+                        for x in &mut *a {
+                            *x = rename!(*x);
+                        }
+
+                        // remove assignments
+                        if a.len() == 1 {
+                            rename_map.push(a[0]);
+                            i += 1;
+                            continue;
+                        }
+
+                        *p = new_pos;
+                    }
+                    Instr::Pow(p, b, _) | Instr::BuiltinFun(p, _, b) => {
+                        *b = rename!(*b);
+                        *p = new_pos;
+                    }
+                    Instr::Powf(p, a, b) => {
+                        *a = rename!(*a);
+                        *b = rename!(*b);
+                        *p = new_pos;
+                    }
+                }
+
+                new_instr.push(s);
+                rename_map.push(new_pos);
+                i += 1;
+            }
+        }
+
+        for x in &mut self.result_indices {
+            *x = rename!(*x);
+        }
+
+        assert!(j == first_use.len());
+
+        self.instructions = new_instr;
+        total_remove
+    }
+}
+
 impl<T> ExpressionEvaluator<T> {
     pub fn optimize_stack(&mut self) {
         let mut last_use: Vec<usize> = vec![0; self.stack.len()];
@@ -1486,7 +1717,7 @@ impl<T: Clone + PartialEq> EvalTree<T> {
 
 impl<T: Clone + Default + PartialEq> EvalTree<T> {
     /// Create a linear version of the tree that can be evaluated more efficiently.
-    pub fn linearize(mut self) -> ExpressionEvaluator<T> {
+    pub fn linearize(mut self, cpe_rounds: usize) -> ExpressionEvaluator<T> {
         let mut stack = vec![T::default(); self.param_count];
 
         // strip every constant and move them into the stack after the params
@@ -1517,6 +1748,12 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             instructions,
             result_indices,
         };
+
+        for _ in 0..cpe_rounds {
+            if e.remove_common_pairs() == 0 {
+                break;
+            }
+        }
 
         e.optimize_stack();
         e

@@ -8971,7 +8971,7 @@ impl PythonNumericalIntegrator {
         match &self.grid {
             Grid::Continuous(cs) => {
                 let mut a = cs.accumulator.shallow_copy();
-                a.update_iter();
+                a.update_iter(false);
                 Ok((
                     a.avg,
                     a.err,
@@ -8983,7 +8983,7 @@ impl PythonNumericalIntegrator {
             }
             Grid::Discrete(ds) => {
                 let mut a = ds.accumulator.shallow_copy();
-                a.update_iter();
+                a.update_iter(false);
                 Ok((
                     a.avg,
                     a.err,

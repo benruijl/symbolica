@@ -870,12 +870,12 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.opts.explicit_rational_polynomial {
             if !R::is_zero(&self.poly.numer_coeff)
-                && !self.poly.numerator.field.is_one(&self.poly.numer_coeff)
+                && !self.poly.numerator.ring.is_one(&self.poly.numer_coeff)
             {
                 f.write_fmt(format_args!(
                     "[{}]*",
                     RingPrinter {
-                        ring: &self.poly.numerator.field,
+                        ring: &self.poly.numerator.ring,
                         element: &self.poly.numer_coeff,
                         opts: self.opts,
                         in_product: false
@@ -884,7 +884,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
             }
 
             if self.poly.denominators.is_empty()
-                && self.poly.numerator.field.is_one(&self.poly.denom_coeff)
+                && self.poly.numerator.ring.is_one(&self.poly.denom_coeff)
             {
                 if self.poly.numerator.is_zero() {
                     f.write_char('0')?;
@@ -907,11 +907,11 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     },
                 ))?;
 
-                if !self.poly.numerator.field.is_one(&self.poly.denom_coeff) {
+                if !self.poly.numerator.ring.is_one(&self.poly.denom_coeff) {
                     f.write_fmt(format_args!(
                         ",{},1",
                         RingPrinter {
-                            ring: &self.poly.numerator.field,
+                            ring: &self.poly.numerator.ring,
                             element: &self.poly.denom_coeff,
                             opts: self.opts,
                             in_product: false
@@ -942,13 +942,13 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
         }
 
         if self.poly.denominators.is_empty()
-            && self.poly.numerator.field.is_one(&self.poly.denom_coeff)
+            && self.poly.numerator.ring.is_one(&self.poly.denom_coeff)
         {
-            if !self.poly.numerator.field.is_one(&self.poly.numer_coeff) {
+            if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
                 f.write_fmt(format_args!(
                     "{}",
                     RingPrinter {
-                        ring: &self.poly.numerator.field,
+                        ring: &self.poly.numerator.ring,
                         element: &self.poly.numer_coeff,
                         opts: self.opts,
                         in_product: false
@@ -956,10 +956,10 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                 ))?;
             }
 
-            if (self.poly.numerator.field.is_one(&self.poly.numer_coeff) && !self.add_parentheses)
+            if (self.poly.numerator.ring.is_one(&self.poly.numer_coeff) && !self.add_parentheses)
                 || self.poly.numerator.nterms() < 2
             {
-                if !self.poly.numerator.field.is_one(&self.poly.numer_coeff) {
+                if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
                     if self.poly.numerator.is_one() {
                         return Ok(());
                     }
@@ -976,7 +976,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     }
                 ))
             } else {
-                if !self.poly.numerator.field.is_one(&self.poly.numer_coeff) {
+                if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
                     if self.poly.numerator.is_one() {
                         return Ok(());
                     }
@@ -995,11 +995,11 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
             }
         } else {
             if self.opts.latex {
-                if !self.poly.numerator.field.is_one(&self.poly.numer_coeff) {
+                if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
                     f.write_fmt(format_args!(
                         "{} ",
                         RingPrinter {
-                            ring: &self.poly.numerator.field,
+                            ring: &self.poly.numerator.ring,
                             element: &self.poly.numer_coeff,
                             opts: self.opts,
                             in_product: false
@@ -1016,11 +1016,11 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                     },
                 ))?;
 
-                if !self.poly.numerator.field.is_one(&self.poly.denom_coeff) {
+                if !self.poly.numerator.ring.is_one(&self.poly.denom_coeff) {
                     f.write_fmt(format_args!(
                         "{}",
                         RingPrinter {
-                            ring: &self.poly.numerator.field,
+                            ring: &self.poly.numerator.ring,
                             element: &self.poly.denom_coeff,
                             opts: self.opts,
                             in_product: false
@@ -1052,11 +1052,11 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                 return f.write_str("}}");
             }
 
-            if !self.poly.numerator.field.is_one(&self.poly.numer_coeff) {
+            if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
                 f.write_fmt(format_args!(
                     "{}*",
                     RingPrinter {
-                        ring: &self.poly.numerator.field,
+                        ring: &self.poly.numerator.ring,
                         element: &self.poly.numer_coeff,
                         opts: self.opts,
                         in_product: false
@@ -1088,7 +1088,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                 return f.write_fmt(format_args!(
                     "{}",
                     RingPrinter {
-                        ring: &self.poly.numerator.field,
+                        ring: &self.poly.numerator.ring,
                         element: &self.poly.denom_coeff,
                         opts: self.opts,
                         in_product: true
@@ -1096,7 +1096,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                 ));
             }
 
-            if self.poly.numerator.field.is_one(&self.poly.denom_coeff)
+            if self.poly.numerator.ring.is_one(&self.poly.denom_coeff)
                 && self.poly.denominators.len() == 1
                 && self.poly.denominators[0].0.nterms() == 1
                 && self.poly.denominators[0].1 == 1
@@ -1104,7 +1104,7 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
                 let (d, _) = &self.poly.denominators[0];
                 let var_count = d.exponents.iter().filter(|x| !x.is_zero()).count();
 
-                if var_count == 0 || d.field.is_one(&d.coefficients[0]) && var_count == 1 {
+                if var_count == 0 || d.ring.is_one(&d.coefficients[0]) && var_count == 1 {
                     return f.write_fmt(format_args!(
                         "{}",
                         PolynomialPrinter {
@@ -1117,11 +1117,11 @@ impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'
 
             f.write_char('(')?; // TODO: add special cases for 1 argument
 
-            if !self.poly.numerator.field.is_one(&self.poly.denom_coeff) {
+            if !self.poly.numerator.ring.is_one(&self.poly.denom_coeff) {
                 f.write_fmt(format_args!(
                     "{}",
                     RingPrinter {
-                        ring: &self.poly.numerator.field,
+                        ring: &self.poly.numerator.ring,
                         element: &self.poly.denom_coeff,
                         opts: self.opts,
                         in_product: true
@@ -1283,7 +1283,7 @@ impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
                     || self
                         .poly
                         .denominator
-                        .field
+                        .ring
                         .is_one(&self.poly.denominator.coefficients[0])
                         && var_count == 1
                 {
@@ -1348,26 +1348,26 @@ impl<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
         let mut is_first_term = true;
         for monomial in self.poly {
             let mut is_first_factor = true;
-            if self.poly.field.is_one(monomial.coefficient) {
+            if self.poly.ring.is_one(monomial.coefficient) {
                 if !is_first_term {
                     write!(f, "+")?;
                 }
             } else if monomial
                 .coefficient
-                .eq(&self.poly.field.neg(&self.poly.field.one()))
+                .eq(&self.poly.ring.neg(&self.poly.ring.one()))
             {
                 write!(f, "-")?;
             } else {
                 if is_first_term {
                     self.poly
-                        .field
+                        .ring
                         .fmt_display(monomial.coefficient, &self.opts, true, f)?;
                 } else {
                     write!(
                         f,
                         "{:+}",
                         RingPrinter {
-                            ring: &self.poly.field,
+                            ring: &self.poly.ring,
                             element: monomial.coefficient,
                             opts: self.opts,
                             in_product: true
@@ -1408,7 +1408,7 @@ impl<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
         }
 
         if self.opts.print_finite_field {
-            Display::fmt(&self.poly.field, f)?;
+            Display::fmt(&self.poly.ring, f)?;
         }
 
         Ok(())

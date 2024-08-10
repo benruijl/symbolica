@@ -4368,17 +4368,8 @@ impl PythonPolynomial {
 
     /// Add two polynomials `self and `rhs`, returning the result.
     pub fn __add__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.clone() + rhs.poly.clone(),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self + new_rhs,
-            }
+        Self {
+            poly: self.poly.clone() + rhs.poly.clone(),
         }
     }
 
@@ -4389,31 +4380,14 @@ impl PythonPolynomial {
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
     pub fn __mul__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: &self.poly * &rhs.poly,
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self * &new_rhs,
-            }
+        Self {
+            poly: &self.poly * &rhs.poly,
         }
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            self.poly.quot_rem(&rhs.poly, false)
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            new_self.quot_rem(&new_rhs, false)
-        };
+        let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
         if r.is_zero() {
             Ok(Self { poly: q })
@@ -4429,16 +4403,8 @@ impl PythonPolynomial {
     pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
-            Ok((Self { poly: q }, Self { poly: r }))
         } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            let (q, r) = new_self.quot_rem(&new_rhs, false);
-
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
             Ok((Self { poly: q }, Self { poly: r }))
         }
     }
@@ -4454,34 +4420,17 @@ impl PythonPolynomial {
     pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+        } else {
             Ok(Self {
                 poly: self.poly.rem(&rhs.poly),
-            })
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            Ok(Self {
-                poly: new_self.rem(&new_rhs),
             })
         }
     }
 
     /// Compute the greatest common divisor (GCD) of two polynomials.
     pub fn gcd(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.gcd(&rhs.poly),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self.gcd(&new_rhs),
-            }
+        Self {
+            poly: self.poly.gcd(&rhs.poly),
         }
     }
 
@@ -5138,17 +5087,8 @@ impl PythonFiniteFieldPolynomial {
 
     /// Add two polynomials `self and `rhs`, returning the result.
     pub fn __add__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.clone() + rhs.poly.clone(),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self + new_rhs,
-            }
+        Self {
+            poly: self.poly.clone() + rhs.poly.clone(),
         }
     }
 
@@ -5159,31 +5099,14 @@ impl PythonFiniteFieldPolynomial {
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
     pub fn __mul__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: &self.poly * &rhs.poly,
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self * &new_rhs,
-            }
+        Self {
+            poly: &self.poly * &rhs.poly,
         }
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            self.poly.quot_rem(&rhs.poly, false)
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            new_self.quot_rem(&new_rhs, false)
-        };
+        let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
         if r.is_zero() {
             Ok(Self { poly: q })
@@ -5199,16 +5122,8 @@ impl PythonFiniteFieldPolynomial {
     pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
-            Ok((Self { poly: q }, Self { poly: r }))
         } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            let (q, r) = new_self.quot_rem(&new_rhs, false);
-
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
             Ok((Self { poly: q }, Self { poly: r }))
         }
     }
@@ -5224,34 +5139,17 @@ impl PythonFiniteFieldPolynomial {
     pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+        } else {
             Ok(Self {
                 poly: self.poly.rem(&rhs.poly),
-            })
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            Ok(Self {
-                poly: new_self.rem(&new_rhs),
             })
         }
     }
 
     /// Compute the greatest common divisor (GCD) of two polynomials.
     pub fn gcd(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.gcd(&rhs.poly),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self.gcd(&new_rhs),
-            }
+        Self {
+            poly: self.poly.gcd(&rhs.poly),
         }
     }
 
@@ -5608,7 +5506,7 @@ impl PythonFiniteFieldPolynomial {
     /// Convert the polynomial to an expression.
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
         let p = self.poly.map_coeff(
-            |c| Integer::from_finite_field(&self.poly.field, c.clone()),
+            |c| Integer::from_finite_field(&self.poly.ring, c.clone()),
             IntegerRing::new(),
         );
 
@@ -5759,17 +5657,8 @@ impl PythonPrimeTwoPolynomial {
 
     /// Add two polynomials `self and `rhs`, returning the result.
     pub fn __add__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.clone() + rhs.poly.clone(),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self + new_rhs,
-            }
+        Self {
+            poly: self.poly.clone() + rhs.poly.clone(),
         }
     }
 
@@ -5780,31 +5669,14 @@ impl PythonPrimeTwoPolynomial {
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
     pub fn __mul__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: &self.poly * &rhs.poly,
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self * &new_rhs,
-            }
+        Self {
+            poly: &self.poly * &rhs.poly,
         }
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            self.poly.quot_rem(&rhs.poly, false)
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            new_self.quot_rem(&new_rhs, false)
-        };
+        let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
         if r.is_zero() {
             Ok(Self { poly: q })
@@ -5820,16 +5692,8 @@ impl PythonPrimeTwoPolynomial {
     pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
-            Ok((Self { poly: q }, Self { poly: r }))
         } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            let (q, r) = new_self.quot_rem(&new_rhs, false);
-
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
             Ok((Self { poly: q }, Self { poly: r }))
         }
     }
@@ -5845,34 +5709,17 @@ impl PythonPrimeTwoPolynomial {
     pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+        } else {
             Ok(Self {
                 poly: self.poly.rem(&rhs.poly),
-            })
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            Ok(Self {
-                poly: new_self.rem(&new_rhs),
             })
         }
     }
 
     /// Compute the greatest common divisor (GCD) of two polynomials.
     pub fn gcd(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.gcd(&rhs.poly),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self.gcd(&new_rhs),
-            }
+        Self {
+            poly: self.poly.gcd(&rhs.poly),
         }
     }
 
@@ -6345,17 +6192,8 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
 
     /// Add two polynomials `self and `rhs`, returning the result.
     pub fn __add__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.clone() + rhs.poly.clone(),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self + new_rhs,
-            }
+        Self {
+            poly: self.poly.clone() + rhs.poly.clone(),
         }
     }
 
@@ -6366,31 +6204,14 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
     pub fn __mul__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: &self.poly * &rhs.poly,
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self * &new_rhs,
-            }
+        Self {
+            poly: &self.poly * &rhs.poly,
         }
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            self.poly.quot_rem(&rhs.poly, false)
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            new_self.quot_rem(&new_rhs, false)
-        };
+        let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
         if r.is_zero() {
             Ok(Self { poly: q })
@@ -6406,16 +6227,8 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
-            Ok((Self { poly: q }, Self { poly: r }))
         } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            let (q, r) = new_self.quot_rem(&new_rhs, false);
-
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
             Ok((Self { poly: q }, Self { poly: r }))
         }
     }
@@ -6431,34 +6244,17 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+        } else {
             Ok(Self {
                 poly: self.poly.rem(&rhs.poly),
-            })
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            Ok(Self {
-                poly: new_self.rem(&new_rhs),
             })
         }
     }
 
     /// Compute the greatest common divisor (GCD) of two polynomials.
     pub fn gcd(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.gcd(&rhs.poly),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self.gcd(&new_rhs),
-            }
+        Self {
+            poly: self.poly.gcd(&rhs.poly),
         }
     }
 
@@ -6935,17 +6731,8 @@ impl PythonGaloisFieldPolynomial {
 
     /// Add two polynomials `self and `rhs`, returning the result.
     pub fn __add__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.clone() + rhs.poly.clone(),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self + new_rhs,
-            }
+        Self {
+            poly: self.poly.clone() + rhs.poly.clone(),
         }
     }
 
@@ -6956,31 +6743,14 @@ impl PythonGaloisFieldPolynomial {
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
     pub fn __mul__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: &self.poly * &rhs.poly,
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self * &new_rhs,
-            }
+        Self {
+            poly: &self.poly * &rhs.poly,
         }
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            self.poly.quot_rem(&rhs.poly, false)
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            new_self.quot_rem(&new_rhs, false)
-        };
+        let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
         if r.is_zero() {
             Ok(Self { poly: q })
@@ -6996,16 +6766,8 @@ impl PythonGaloisFieldPolynomial {
     pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
-            Ok((Self { poly: q }, Self { poly: r }))
         } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            let (q, r) = new_self.quot_rem(&new_rhs, false);
-
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
             Ok((Self { poly: q }, Self { poly: r }))
         }
     }
@@ -7021,34 +6783,17 @@ impl PythonGaloisFieldPolynomial {
     pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+        } else {
             Ok(Self {
                 poly: self.poly.rem(&rhs.poly),
-            })
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            Ok(Self {
-                poly: new_self.rem(&new_rhs),
             })
         }
     }
 
     /// Compute the greatest common divisor (GCD) of two polynomials.
     pub fn gcd(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.gcd(&rhs.poly),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self.gcd(&new_rhs),
-            }
+        Self {
+            poly: self.poly.gcd(&rhs.poly),
         }
     }
 
@@ -7374,7 +7119,7 @@ impl PythonGaloisFieldPolynomial {
             .poly
             .to_expression_with_coeff_map(|_, element, out| {
                 let p = element.poly.map_coeff(
-                    |c| Integer::from_finite_field(&element.poly.field, c.clone()),
+                    |c| Integer::from_finite_field(&element.poly.ring, c.clone()),
                     IntegerRing::new(),
                 );
                 p.to_expression_into(out);
@@ -7526,17 +7271,8 @@ impl PythonNumberFieldPolynomial {
 
     /// Add two polynomials `self and `rhs`, returning the result.
     pub fn __add__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.clone() + rhs.poly.clone(),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self + new_rhs,
-            }
+        Self {
+            poly: self.poly.clone() + rhs.poly.clone(),
         }
     }
 
@@ -7547,31 +7283,14 @@ impl PythonNumberFieldPolynomial {
 
     /// Multiply two polynomials `self and `rhs`, returning the result.
     pub fn __mul__(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: &self.poly * &rhs.poly,
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self * &new_rhs,
-            }
+        Self {
+            poly: &self.poly * &rhs.poly,
         }
     }
 
     /// Divide the polynomial `self` by `rhs` if possible, returning the result.
     pub fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
-        let (q, r) = if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            self.poly.quot_rem(&rhs.poly, false)
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            new_self.quot_rem(&new_rhs, false)
-        };
+        let (q, r) = self.poly.quot_rem(&rhs.poly, false);
 
         if r.is_zero() {
             Ok(Self { poly: q })
@@ -7587,16 +7306,8 @@ impl PythonNumberFieldPolynomial {
     pub fn quot_rem(&self, rhs: Self) -> PyResult<(Self, Self)> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
-            Ok((Self { poly: q }, Self { poly: r }))
         } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            let (q, r) = new_self.quot_rem(&new_rhs, false);
-
+            let (q, r) = self.poly.quot_rem(&rhs.poly, false);
             Ok((Self { poly: q }, Self { poly: r }))
         }
     }
@@ -7612,34 +7323,17 @@ impl PythonNumberFieldPolynomial {
     pub fn __mod__(&self, rhs: Self) -> PyResult<Self> {
         if rhs.poly.is_zero() {
             Err(exceptions::PyValueError::new_err("Division by zero"))
-        } else if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
+        } else {
             Ok(Self {
                 poly: self.poly.rem(&rhs.poly),
-            })
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-
-            Ok(Self {
-                poly: new_self.rem(&new_rhs),
             })
         }
     }
 
     /// Compute the greatest common divisor (GCD) of two polynomials.
     pub fn gcd(&self, rhs: Self) -> Self {
-        if self.poly.get_vars_ref() == rhs.poly.get_vars_ref() {
-            Self {
-                poly: self.poly.gcd(&rhs.poly),
-            }
-        } else {
-            let mut new_self = self.poly.clone();
-            let mut new_rhs = rhs.poly.clone();
-            new_self.unify_variables(&mut new_rhs);
-            Self {
-                poly: new_self.gcd(&new_rhs),
-            }
+        Self {
+            poly: self.poly.gcd(&rhs.poly),
         }
     }
 
@@ -8622,7 +8316,7 @@ impl PythonMatrix {
         let mut zero = self.matrix.field.zero();
 
         zero.unify_variables(&mut new_rhs[(0, 0)]);
-        new_self.field = RationalPolynomialField::new(Z, zero.numerator.get_vars());
+        new_self.field = RationalPolynomialField::new(Z);
         new_rhs.field = new_self.field.clone();
 
         // now update every element
@@ -8643,7 +8337,7 @@ impl PythonMatrix {
         &self,
         rhs: &PythonRationalPolynomial,
     ) -> (PythonMatrix, PythonRationalPolynomial) {
-        if self.matrix.field == RationalPolynomialField::new(Z, rhs.poly.numerator.get_vars()) {
+        if self.matrix.field == RationalPolynomialField::new(Z) {
             return (self.clone(), rhs.clone());
         }
 
@@ -8653,7 +8347,7 @@ impl PythonMatrix {
         let mut zero = self.matrix.field.zero();
 
         zero.unify_variables(&mut new_rhs);
-        new_self.field = RationalPolynomialField::new(Z, zero.numerator.get_vars());
+        new_self.field = RationalPolynomialField::new(Z);
 
         // now update every element
         for e in &mut new_self.data {
@@ -8679,11 +8373,7 @@ impl PythonMatrix {
         }
 
         Ok(PythonMatrix {
-            matrix: Matrix::new(
-                nrows,
-                ncols,
-                RationalPolynomialField::new(Z, Arc::new(vec![])),
-            ),
+            matrix: Matrix::new(nrows, ncols, RationalPolynomialField::new(Z)),
         })
     }
 
@@ -8697,7 +8387,7 @@ impl PythonMatrix {
         }
 
         Ok(PythonMatrix {
-            matrix: Matrix::identity(nrows, RationalPolynomialField::new(Z, Arc::new(vec![]))),
+            matrix: Matrix::identity(nrows, RationalPolynomialField::new(Z)),
         })
     }
 
@@ -8726,7 +8416,7 @@ impl PythonMatrix {
             }
         }
 
-        let field = RationalPolynomialField::new(Z, first.numerator.get_vars());
+        let field = RationalPolynomialField::new(Z);
 
         Ok(PythonMatrix {
             matrix: Matrix::eye(&diag, field),
@@ -8758,7 +8448,7 @@ impl PythonMatrix {
             }
         }
 
-        let field = RationalPolynomialField::new(Z, first.numerator.get_vars());
+        let field = RationalPolynomialField::new(Z);
 
         Ok(PythonMatrix {
             matrix: Matrix::new_vec(entries, field),
@@ -8792,7 +8482,7 @@ impl PythonMatrix {
             }
         }
 
-        let field = RationalPolynomialField::new(Z, first.numerator.get_vars());
+        let field = RationalPolynomialField::new(Z);
 
         Ok(PythonMatrix {
             matrix: Matrix::from_linear(entries, nrows, ncols, field)
@@ -9281,7 +8971,7 @@ impl PythonNumericalIntegrator {
         match &self.grid {
             Grid::Continuous(cs) => {
                 let mut a = cs.accumulator.shallow_copy();
-                a.update_iter();
+                a.update_iter(false);
                 Ok((
                     a.avg,
                     a.err,
@@ -9293,7 +8983,7 @@ impl PythonNumericalIntegrator {
             }
             Grid::Discrete(ds) => {
                 let mut a = ds.accumulator.shallow_copy();
-                a.update_iter();
+                a.update_iter(false);
                 Ok((
                     a.avg,
                     a.err,

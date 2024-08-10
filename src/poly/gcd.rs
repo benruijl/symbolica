@@ -130,7 +130,7 @@ impl<R: Ring, E: Exponent> MultivariatePolynomial<R, E> {
         r: &[(usize, R::Element)],
         cache: &mut [Vec<R::Element>],
     ) -> Vec<R::Element> {
-        let mut eval = vec![self.field.one(); self.nterms()];
+        let mut eval = vec![self.ring.one(); self.nterms()];
         for (c, t) in eval.iter_mut().zip(self) {
             // evaluate each exponent
             for (n, v) in r {
@@ -138,12 +138,12 @@ impl<R: Ring, E: Exponent> MultivariatePolynomial<R, E> {
                 if exp > 0 {
                     if exp < cache[*n].len() {
                         if R::is_zero(&cache[*n][exp]) {
-                            cache[*n][exp] = self.field.pow(v, exp as u64);
+                            cache[*n][exp] = self.ring.pow(v, exp as u64);
                         }
 
-                        self.field.mul_assign(c, &cache[*n][exp]);
+                        self.ring.mul_assign(c, &cache[*n][exp]);
                     } else {
-                        self.field.mul_assign(c, &self.field.pow(v, exp as u64));
+                        self.ring.mul_assign(c, &self.ring.pow(v, exp as u64));
                     }
                 }
             }
@@ -160,7 +160,7 @@ impl<R: Ring, E: Exponent> MultivariatePolynomial<R, E> {
         out: &mut MultivariatePolynomial<R, E>,
     ) {
         out.clear();
-        let mut c = self.field.zero();
+        let mut c = self.ring.zero();
         let mut new_exp = vec![E::zero(); self.nvars()];
         for (aa, e) in self.into_iter().zip(exp_evals) {
             if aa.exponents[main_var] != new_exp[main_var] {
@@ -168,13 +168,13 @@ impl<R: Ring, E: Exponent> MultivariatePolynomial<R, E> {
                     out.coefficients.push(c);
                     out.exponents.extend_from_slice(&new_exp);
 
-                    c = self.field.zero();
+                    c = self.ring.zero();
                 }
 
                 new_exp[main_var] = aa.exponents[main_var];
             }
 
-            self.field.add_mul_assign(&mut c, aa.coefficient, e);
+            self.ring.add_mul_assign(&mut c, aa.coefficient, e);
         }
 
         if !R::is_zero(&c) {
@@ -212,7 +212,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         // normalize the gcd
         let l = d.coefficients.last().unwrap().clone();
         for x in &mut d.coefficients {
-            self.field.div_assign(x, &l);
+            self.ring.div_assign(x, &l);
         }
 
         d
@@ -234,19 +234,19 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 if exp > 0 {
                     if exp < cache[*n].len() {
                         if F::is_zero(&cache[*n][exp]) {
-                            cache[*n][exp] = self.field.pow(vv, exp as u64);
+                            cache[*n][exp] = self.ring.pow(vv, exp as u64);
                         }
 
-                        self.field.mul_assign(&mut c, &cache[*n][exp]);
+                        self.ring.mul_assign(&mut c, &cache[*n][exp]);
                     } else {
-                        self.field
-                            .mul_assign(&mut c, &self.field.pow(vv, exp as u64));
+                        self.ring
+                            .mul_assign(&mut c, &self.ring.pow(vv, exp as u64));
                     }
                 }
             }
 
             tm.entry(mv.exponents[v])
-                .and_modify(|e| self.field.add_assign(e, &c))
+                .and_modify(|e| self.ring.add_assign(e, &c))
                 .or_insert(c);
         }
 
@@ -275,7 +275,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         let mut cache = (0..ap.nvars())
             .map(|i| {
                 vec![
-                    ap.field.zero();
+                    ap.ring.zero();
                     min(
                         max(ap.degree(i), bp.degree(i)).to_u32() as usize + 1,
                         POW_CACHE_SIZE
@@ -295,13 +295,13 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         let (_, a1, b1) = loop {
             for v in &mut cache {
                 for vi in v {
-                    *vi = ap.field.zero();
+                    *vi = ap.ring.zero();
                 }
             }
 
             let r: Vec<_> = vars
                 .iter()
-                .map(|i| (*i, ap.field.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
+                .map(|i| (*i, ap.ring.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
                 .collect();
 
             let a1 = ap.sample_polynomial(var, &r, &mut cache, &mut tm);
@@ -311,7 +311,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 break (r, a1, b1);
             }
 
-            if !ap.field.size().is_zero() && fail_count * 2 > ap.field.size() {
+            if !ap.ring.size().is_zero() && fail_count * 2 > ap.ring.size() {
                 debug!("Field is too small to find a good sample point");
                 // TODO: upgrade to larger field?
                 return ap.degree(var).min(bp.degree(var));
@@ -340,7 +340,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         // solve the transposed Vandermonde system
         for (((c, ex), sample), rhs) in shape.iter().zip(&row_sample_values).zip(&samples) {
             if c.nterms() == 1 {
-                let coeff = self.field.div(&rhs[0], &sample[0]);
+                let coeff = self.ring.div(&rhs[0], &sample[0]);
                 let mut ee: SmallVec<[E; INLINED_EXPONENTS]> = c.exponents(0).into();
                 ee[main_var] = *ex;
                 gp.append_monomial(coeff, &ee);
@@ -348,43 +348,43 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
             }
 
             // construct the master polynomial (1-s1)*(1-s2)*... efficiently
-            let mut master = vec![self.field.zero(); sample.len() + 1];
-            master[0] = self.field.one();
+            let mut master = vec![self.ring.zero(); sample.len() + 1];
+            master[0] = self.ring.one();
 
             for (i, x) in sample.iter().take(c.nterms()).enumerate() {
                 let first = &mut master[0];
                 let mut old_last = first.clone();
-                self.field.mul_assign(first, &self.field.neg(x));
+                self.ring.mul_assign(first, &self.ring.neg(x));
                 for m in &mut master[1..=i] {
                     let ov = m.clone();
-                    self.field.mul_assign(m, &self.field.neg(x));
-                    self.field.add_assign(m, &old_last);
+                    self.ring.mul_assign(m, &self.ring.neg(x));
+                    self.ring.add_assign(m, &old_last);
                     old_last = ov;
                 }
-                master[i + 1] = self.field.one();
+                master[i + 1] = self.ring.one();
             }
 
             for (i, s) in sample.iter().take(c.nterms()).enumerate() {
-                let mut norm = self.field.one();
+                let mut norm = self.ring.one();
 
                 // sample master/(1-s_i) by using the factorized form
                 for (j, l) in sample.iter().enumerate() {
                     if j != i {
-                        self.field.mul_assign(&mut norm, &self.field.sub(s, l))
+                        self.ring.mul_assign(&mut norm, &self.ring.sub(s, l))
                     }
                 }
 
                 // divide out 1-s_i
-                let mut coeff = self.field.zero();
-                let mut last_q = self.field.zero();
+                let mut coeff = self.ring.zero();
+                let mut last_q = self.ring.zero();
                 for (m, rhs) in master.iter().skip(1).zip(rhs).rev() {
-                    last_q = self.field.add(m, &self.field.mul(s, &last_q));
-                    self.field.add_mul_assign(&mut coeff, &last_q, rhs);
+                    last_q = self.ring.add(m, &self.ring.mul(s, &last_q));
+                    self.ring.add_mul_assign(&mut coeff, &last_q, rhs);
                 }
-                self.field.div_assign(&mut coeff, &norm);
+                self.ring.div_assign(&mut coeff, &norm);
 
                 // divide by the Vandermonde row since the Vandermonde matrices should start with a 1
-                self.field.div_assign(&mut coeff, s);
+                self.ring.div_assign(&mut coeff, s);
 
                 let mut ee: SmallVec<[E; INLINED_EXPONENTS]> = c.exponents(i).into();
                 ee[main_var] = *ex;
@@ -403,16 +403,16 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         u: &[MultivariatePolynomial<F, E>],
         x: usize, // the variable index to extend the polynomial by
     ) -> MultivariatePolynomial<F, E> {
-        let field = &u[0].field;
+        let field = &u[0].ring;
 
         // compute inverses
         let mut gammas = Vec::with_capacity(a.len());
         for k in 1..a.len() {
             let mut pr = field.sub(&a[k], &a[0]);
             for i in 1..k {
-                u[0].field.mul_assign(&mut pr, &field.sub(&a[k], &a[i]));
+                u[0].ring.mul_assign(&mut pr, &field.sub(&a[k], &a[i]));
             }
-            gammas.push(u[0].field.inv(&pr));
+            gammas.push(u[0].ring.inv(&pr));
         }
 
         // compute Newton coefficients
@@ -481,7 +481,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
             let (_, d) = &shape[single_scale];
             for t in &g {
                 if t.exponents[main_var] == *d {
-                    let scale_factor = a.field.neg(&a.field.inv(t.coefficient)); // TODO: why -1?
+                    let scale_factor = a.ring.neg(&a.ring.inv(t.coefficient)); // TODO: why -1?
                     return Ok(g.mul_coeff(scale_factor));
                 }
             }
@@ -499,7 +499,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         let mut cache = (0..a.nvars())
             .map(|i| {
                 vec![
-                    a.field.zero();
+                    a.ring.zero();
                     min(
                         max(a.degree(i), b.degree(i)).to_u32() as usize + 1,
                         POW_CACHE_SIZE
@@ -512,13 +512,13 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         let (row_sample_values, samples) = 'find_root_sample: loop {
             for v in &mut cache {
                 for vi in v {
-                    *vi = a.field.zero();
+                    *vi = a.ring.zero();
                 }
             }
 
             let r_orig: SmallVec<[_; INLINED_EXPONENTS]> = vars
                 .iter()
-                .map(|i| (*i, a.field.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
+                .map(|i| (*i, a.ring.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
                 .collect();
 
             let mut row_sample_values = Vec::with_capacity(shape.len()); // coefficients for the linear system
@@ -530,18 +530,18 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
 
                 for t in c {
                     // evaluate each exponent
-                    let mut c = a.field.one();
+                    let mut c = a.ring.one();
                     for (n, v) in &r_orig {
                         let exp = t.exponents[*n].to_u32() as usize;
                         if exp > 0 {
                             if exp < cache[*n].len() {
                                 if F::is_zero(&cache[*n][exp]) {
-                                    cache[*n][exp] = a.field.pow(v, exp as u64);
+                                    cache[*n][exp] = a.ring.pow(v, exp as u64);
                                 }
 
-                                a.field.mul_assign(&mut c, &cache[*n][exp]);
+                                a.ring.mul_assign(&mut c, &cache[*n][exp]);
                             } else {
-                                a.field.mul_assign(&mut c, &a.field.pow(v, exp as u64));
+                                a.ring.mul_assign(&mut c, &a.ring.pow(v, exp as u64));
                             }
                         }
                     }
@@ -573,14 +573,14 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 // sample at r^i
                 if sample_index > 0 {
                     for (c, rr) in r.iter_mut().zip(&r_orig) {
-                        *c = (c.0, a.field.mul(&c.1, &rr.1));
+                        *c = (c.0, a.ring.mul(&c.1, &rr.1));
                     }
 
                     for (c, e) in a_current.to_mut().iter_mut().zip(&a_eval) {
-                        a.field.mul_assign(c, e);
+                        a.ring.mul_assign(c, e);
                     }
                     for (c, e) in b_current.to_mut().iter_mut().zip(&b_eval) {
-                        b.field.mul_assign(c, e);
+                        b.ring.mul_assign(c, e);
                     }
                 }
 
@@ -613,7 +613,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                         // p is likely unlucky
                         debug!(
                             "Bad current image: gcd({},{}) mod {} under {:?} = {}",
-                            a, b, a.field, r, g
+                            a, b, a.ring, r, g
                         );
                         return Err(GCDError::BadCurrentImage);
                     }
@@ -622,21 +622,21 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 }
 
                 // construct the scaling coefficient
-                let mut scale_factor = a.field.one();
-                let mut coeff = a.field.one();
+                let mut scale_factor = a.ring.one();
+                let mut coeff = a.ring.one();
                 let (c, d) = &shape[single_scale];
                 for (n, v) in r.iter() {
                     // TODO: can be taken from row?
-                    a.field.mul_assign(
+                    a.ring.mul_assign(
                         &mut coeff,
-                        &a.field.pow(v, c.exponents(0)[*n].to_u32() as u64),
+                        &a.ring.pow(v, c.exponents(0)[*n].to_u32() as u64),
                     );
                 }
 
                 let mut found = false;
                 for t in &g {
                     if t.exponents[main_var] == *d {
-                        scale_factor = g.field.div(&coeff, t.coefficient);
+                        scale_factor = g.ring.div(&coeff, t.coefficient);
                         found = true;
                         break;
                     }
@@ -667,17 +667,17 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
 
                     // find the associated term in the sample, trying the usual place first
                     if i < g.nterms() && g.exponents(i)[main_var] == *exp {
-                        rhs.push(a.field.neg(&a.field.mul(&g.coefficients[i], &scale_factor)));
+                        rhs.push(a.ring.neg(&a.ring.mul(&g.coefficients[i], &scale_factor)));
                     } else {
                         // find the matching term if it exists
                         for m in g.into_iter() {
                             if m.exponents[main_var] == *exp {
-                                rhs.push(a.field.neg(&a.field.mul(m.coefficient, &scale_factor)));
+                                rhs.push(a.ring.neg(&a.ring.mul(m.coefficient, &scale_factor)));
                                 continue 'rhs;
                             }
                         }
 
-                        rhs.push(a.field.zero());
+                        rhs.push(a.ring.zero());
                     }
                 }
             }
@@ -711,7 +711,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         let mut cache = (0..a.nvars())
             .map(|i| {
                 vec![
-                    a.field.zero();
+                    a.ring.zero();
                     min(
                         max(a.degree(i), b.degree(i)).to_u32() as usize + 1,
                         POW_CACHE_SIZE
@@ -732,13 +732,13 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
         let (row_sample_values, samples) = 'find_root_sample: loop {
             for v in &mut cache {
                 for vi in v {
-                    *vi = a.field.zero();
+                    *vi = a.ring.zero();
                 }
             }
 
             let r_orig: SmallVec<[_; INLINED_EXPONENTS]> = vars
                 .iter()
-                .map(|i| (*i, a.field.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
+                .map(|i| (*i, a.ring.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
                 .collect();
 
             let mut row_sample_values = Vec::with_capacity(shape.len()); // coefficients for the linear system
@@ -750,18 +750,18 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
 
                 for t in c {
                     // evaluate each exponent
-                    let mut c = a.field.one();
+                    let mut c = a.ring.one();
                     for (n, v) in &r_orig {
                         let exp = t.exponents[*n].to_u32() as usize;
                         if exp > 0 {
                             if exp < cache[*n].len() {
                                 if F::is_zero(&cache[*n][exp]) {
-                                    cache[*n][exp] = a.field.pow(v, exp as u64);
+                                    cache[*n][exp] = a.ring.pow(v, exp as u64);
                                 }
 
-                                a.field.mul_assign(&mut c, &cache[*n][exp]);
+                                a.ring.mul_assign(&mut c, &cache[*n][exp]);
                             } else {
-                                a.field.mul_assign(&mut c, &a.field.pow(v, exp as u64));
+                                a.ring.mul_assign(&mut c, &a.ring.pow(v, exp as u64));
                             }
                         }
                     }
@@ -800,14 +800,14 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 // sample at r^i
                 if sample_index > 0 {
                     for (c, rr) in r.iter_mut().zip(&r_orig) {
-                        *c = (c.0, a.field.mul(&c.1, &rr.1));
+                        *c = (c.0, a.ring.mul(&c.1, &rr.1));
                     }
 
                     for (c, e) in a_current.to_mut().iter_mut().zip(&a_eval) {
-                        a.field.mul_assign(c, e);
+                        a.ring.mul_assign(c, e);
                     }
                     for (c, e) in b_current.to_mut().iter_mut().zip(&b_eval) {
-                        b.field.mul_assign(c, e);
+                        b.ring.mul_assign(c, e);
                     }
                 }
 
@@ -840,7 +840,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                         // p is likely unlucky
                         debug!(
                             "Bad current image: gcd({},{}) mod {} under {:?} = {}",
-                            a, b, a.field, r, g
+                            a, b, a.ring, r, g
                         );
                         return Err(GCDError::BadCurrentImage);
                     }
@@ -862,7 +862,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 let mut found = false;
                 for t in &g {
                     if t.exponents[main_var] == *d {
-                        let scale_factor = g.field.inv(t.coefficient);
+                        let scale_factor = g.ring.inv(t.coefficient);
                         g = g.mul_coeff(scale_factor);
                         found = true;
                         break;
@@ -898,7 +898,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                             }
                         }
 
-                        rhs.push(a.field.zero());
+                        rhs.push(a.ring.zero());
                     }
                 }
 
@@ -923,21 +923,21 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                         let row_eval_first = &row_sample_values[shape_map[0]];
 
                         // assume first constant is 1, which will form the rhs of our equation
-                        let actual_rhs = a.field.mul(
+                        let actual_rhs = a.ring.mul(
                             rhs_sec,
-                            &a.field.pow(&row_eval_first[0], sample_index as u64 + 1),
+                            &a.ring.pow(&row_eval_first[0], sample_index as u64 + 1),
                         );
 
                         for aa in row_eval_sec {
-                            gfm.push(a.field.pow(aa, sample_index as u64 + 1));
+                            gfm.push(a.ring.pow(aa, sample_index as u64 + 1));
                         }
 
                         // place the scaling term variables at the end
                         for aa in &row_eval_first[1..] {
                             gfm.push(
-                                a.field.neg(
-                                    &a.field
-                                        .mul(rhs_sec, &a.field.pow(aa, sample_index as u64 + 1)),
+                                a.ring.neg(
+                                    &a.ring
+                                        .mul(rhs_sec, &a.ring.pow(aa, sample_index as u64 + 1)),
                                 ),
                             );
                         }
@@ -949,7 +949,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                     // that yielded underdetermined systems
                     for extra_relations in &scaling_var_relations {
                         for _ in 0..vars_second {
-                            gfm.push(a.field.zero());
+                            gfm.push(a.ring.zero());
                         }
 
                         for v in &extra_relations[..vars_scale] {
@@ -962,10 +962,10 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                         gfm,
                         rows as u32,
                         samples_needed as u32,
-                        a.field.clone(),
+                        a.ring.clone(),
                     )
                     .unwrap();
-                    let rhs = Matrix::new_vec(new_rhs, a.field.clone());
+                    let rhs = Matrix::new_vec(new_rhs, a.ring.clone());
 
                     match m.solve(&rhs) {
                         Ok(r) => {
@@ -1039,21 +1039,21 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 for sample_index in 0..max_terms {
                     let row_eval_first = &row_sample_values[shape_map[0]];
                     let mut scaling_factor =
-                        a.field.pow(&row_eval_first[0], sample_index as u64 + 1); // coeff eval is 1
+                        a.ring.pow(&row_eval_first[0], sample_index as u64 + 1); // coeff eval is 1
                     for (exp_eval, coeff_eval) in
                         row_sample_values[shape_map[0]][1..].iter().zip(&r)
                     {
-                        a.field.add_mul_assign(
+                        a.ring.add_mul_assign(
                             &mut scaling_factor,
                             coeff_eval,
-                            &a.field.pow(exp_eval, sample_index as u64 + 1),
+                            &a.ring.pow(exp_eval, sample_index as u64 + 1),
                         );
                     }
 
                     debug!(
                         "Scaling fac {}: {}",
                         sample_index,
-                        a.field.printer(&scaling_factor)
+                        a.ring.printer(&scaling_factor)
                     );
                     lcoeff_cache.push(scaling_factor);
                 }
@@ -1061,7 +1061,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
                 for ((c, _), rhs) in shape.iter().zip(&mut samples) {
                     rhs.truncate(c.nterms()); // drop unneeded samples
                     for (r, scale) in rhs.iter_mut().zip(&lcoeff_cache) {
-                        a.field.mul_assign(r, scale);
+                        a.ring.mul_assign(r, scale);
                     }
                 }
             } else {
@@ -1113,7 +1113,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
             debug!("Content in last variable is not 1, but {}", c);
             // TODO: we assume that a content of -1 is also allowed
             // like in the special case gcd_(-x0*x1,-x0-x0*x1)
-            if c.nterms() != 1 || c.coefficients[0] != a.field.neg(&a.field.one()) {
+            if c.nterms() != 1 || c.coefficients[0] != a.ring.neg(&a.ring.one()) {
                 return None;
             }
         }
@@ -1138,26 +1138,26 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
             }
             failure_count += 1;
 
-            if !a.field.size().is_zero() && failure_count * 2 > a.field.size() {
+            if !a.ring.size().is_zero() && failure_count * 2 > a.ring.size() {
                 debug!("Cannot find unique sampling points: prime field is likely too small");
                 return None;
             }
 
             let mut sample_fail_count = 0i64;
             let v = loop {
-                let r = a.field.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64));
+                let r = a.ring.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64));
                 if !gamma.replace(lastvar, &r).is_zero() {
                     break r;
                 }
 
                 sample_fail_count += 1;
-                if !a.field.size().is_zero() && sample_fail_count * 2 > a.field.size() {
+                if !a.ring.size().is_zero() && sample_fail_count * 2 > a.ring.size() {
                     debug!("Cannot find unique sampling points: prime field is likely too small");
                     continue 'newfirstnum;
                 }
             };
 
-            debug!("Chosen variable: {}", a.field.printer(&v));
+            debug!("Chosen variable: {}", a.ring.printer(&v));
             let av = a.replace(lastvar, &v);
             let bv = b.replace(lastvar, &v);
 
@@ -1189,7 +1189,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
 
             debug!(
                 "GCD shape suggestion for sample point {} and gamma {}: {}",
-                a.field.printer(&v),
+                a.ring.printer(&v),
                 gamma,
                 gv
             );
@@ -1226,7 +1226,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
 
             let mut gseq = vec![gv.clone().mul_coeff(
                 gamma
-                    .field
+                    .ring
                     .div(&gamma.replace(lastvar, &v).coefficients[0], &lc),
             )];
             let mut vseq = vec![v];
@@ -1241,7 +1241,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                 }
 
                 let v = loop {
-                    let v = a.field.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64));
+                    let v = a.ring.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64));
                     if !gamma.replace(lastvar, &v).is_zero() {
                         // we need unique sampling points
                         if !vseq.contains(&v) {
@@ -1250,7 +1250,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                     }
 
                     sample_fail_count += 1;
-                    if !a.field.size().is_zero() && sample_fail_count * 2 > a.field.size() {
+                    if !a.ring.size().is_zero() && sample_fail_count * 2 > a.ring.size() {
                         debug!(
                             "Cannot find unique sampling points: prime field is likely too small"
                         );
@@ -1258,7 +1258,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                     }
                 };
 
-                debug!("Chosen sample: {}", a.field.printer(&v));
+                debug!("Chosen sample: {}", a.ring.printer(&v));
 
                 let av = a.replace(lastvar, &v);
                 let bv = b.replace(lastvar, &v);
@@ -1303,7 +1303,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                         debug!("Bad current image");
                         sample_fail_count += 1;
 
-                        if !a.field.size().is_zero() && sample_fail_count * 2 > a.field.size() {
+                        if !a.ring.size().is_zero() && sample_fail_count * 2 > a.ring.size() {
                             debug!("Too many bad current images: prime field is likely too small");
                             continue 'newfirstnum;
                         }
@@ -1317,7 +1317,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                 gseq.push(
                     gv.clone().mul_coeff(
                         gamma
-                            .field
+                            .ring
                             .div(&gamma.replace(lastvar, &v).coefficients[0], &lc),
                     ),
                 );
@@ -1341,7 +1341,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                 let mut cache = (0..a.nvars())
                     .map(|i| {
                         vec![
-                            a.field.zero();
+                            a.ring.zero();
                             min(
                                 max(a.degree(i), b.degree(i)).to_u32() as usize + 1,
                                 POW_CACHE_SIZE
@@ -1353,7 +1353,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
                 let r: Vec<_> = vars
                     .iter()
                     .skip(1)
-                    .map(|i| (*i, a.field.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
+                    .map(|i| (*i, a.ring.sample(&mut rng, (1, MAX_RNG_PREFACTOR as i64))))
                     .collect();
 
                 let g1 = gc.replace_all_except(vars[0], &r, &mut cache);
@@ -1513,8 +1513,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         if self.is_constant() {
             let mut gcd = self.coefficients[0].clone();
             for c in &b.coefficients {
-                gcd = self.field.gcd(&gcd, c);
-                if R::one_is_gcd_unit() && self.field.is_one(&gcd) {
+                gcd = self.ring.gcd(&gcd, c);
+                if R::one_is_gcd_unit() && self.ring.is_one(&gcd) {
                     break;
                 }
             }
@@ -1524,8 +1524,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         if b.is_constant() {
             let mut gcd = b.coefficients[0].clone();
             for c in &self.coefficients {
-                gcd = self.field.gcd(&gcd, c);
-                if R::one_is_gcd_unit() && self.field.is_one(&gcd) {
+                gcd = self.ring.gcd(&gcd, c);
+                if R::one_is_gcd_unit() && self.ring.is_one(&gcd) {
                     break;
                 }
             }
@@ -1538,7 +1538,6 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
     /// Compute the gcd of two multivariate polynomials.
     #[instrument(skip_all)]
     pub fn gcd(&self, b: &MultivariatePolynomial<R, E>) -> MultivariatePolynomial<R, E> {
-        debug_assert_eq!(self.nvars(), b.nvars());
         debug!("gcd of {} and {}", self, b);
 
         if let Some(g) = self.simple_gcd(b) {
@@ -1549,6 +1548,10 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         // a and b are only copied when needed
         let mut a = Cow::Borrowed(self);
         let mut b = Cow::Borrowed(b);
+
+        if self.variables != b.variables {
+            a.to_mut().unify_variables(b.to_mut());
+        }
 
         // determine the maximum shared power of every variable
         let mut shared_degree: SmallVec<[E; INLINED_EXPONENTS]> = a.exponents(0).into();
@@ -1580,7 +1583,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
         let mut base_degree: SmallVec<[Option<E>; INLINED_EXPONENTS]> = smallvec![None; a.nvars()];
 
         if let Some(g) = MultivariatePolynomial::simple_gcd(&a, &b) {
-            return rescale_gcd(g, &shared_degree, &base_degree, &a.constant(a.field.one()));
+            return rescale_gcd(g, &shared_degree, &base_degree, &a.constant(a.ring.one()));
         }
 
         // check if the polynomial are functions of x^n, n > 1
@@ -1661,7 +1664,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                 gcd.0,
                 &shared_degree,
                 &base_degree,
-                &a.constant(a.field.one()),
+                &a.constant(a.ring.one()),
             );
         }
 
@@ -1738,7 +1741,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
                         cont,
                         &shared_degree,
                         &base_degree,
-                        &p1.constant(p1.field.one()),
+                        &p1.constant(p1.ring.one()),
                     );
                 }
             }
@@ -1790,13 +1793,13 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
             // get the integer content for univariate polynomials
             let uca = a.content();
             let ucb = b.content();
-            let content = a.field.gcd(&a.content(), &b.content());
+            let content = a.ring.gcd(&a.content(), &b.content());
             let p = a.zero_with_capacity(1);
 
-            if !a.field.is_one(&uca) {
+            if !a.ring.is_one(&uca) {
                 a = Cow::Owned(a.into_owned().div_coeff(&uca));
             }
-            if !a.field.is_one(&ucb) {
+            if !a.ring.is_one(&ucb) {
                 b = Cow::Owned(b.into_owned().div_coeff(&ucb));
             }
 
@@ -1903,14 +1906,14 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
         debug!("a={}; b={}", self, b);
 
         // do integer GCD
-        let content_gcd = self.field.gcd(&self.content(), &b.content());
+        let content_gcd = self.ring.gcd(&self.content(), &b.content());
 
         debug!("content={}", content_gcd);
 
         let mut a = Cow::Borrowed(self);
         let mut b = Cow::Borrowed(b);
 
-        if !a.field.is_one(&content_gcd) {
+        if !a.ring.is_one(&content_gcd) {
             a = Cow::Owned(a.into_owned().div_coeff(&content_gcd));
             b = Cow::Owned(b.into_owned().div_coeff(&content_gcd));
         }
@@ -2040,11 +2043,11 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             if let Some(n) = f.iter().find(|x| x.is_constant()) {
                 let mut gcd = n.content();
                 for x in f.iter() {
-                    if x.field.is_one(&gcd) {
+                    if x.ring.is_one(&gcd) {
                         break;
                     }
 
-                    gcd = x.field.gcd(&gcd, &x.content());
+                    gcd = x.ring.gcd(&gcd, &x.content());
                 }
                 return n.constant(gcd);
             }
@@ -2092,7 +2095,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
             f.retain(|x| {
                 if x.divides(&gcd).is_some() {
-                    content_gcd = gcd.field.gcd(&content_gcd, &x.content());
+                    content_gcd = gcd.ring.gcd(&content_gcd, &x.content());
                     false
                 } else {
                     true
@@ -2145,7 +2148,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
         // compute scaling factor in Z
         let gamma = self
-            .field
+            .ring
             .gcd(&self.lcoeff_varorder(vars), &b.lcoeff_varorder(vars));
         debug!("gamma {}", gamma);
 
@@ -2226,7 +2229,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
             }
 
             let gpc = gp.lcoeff_varorder(vars);
-            let lcoeff_factor = gp.field.div(&gammap, &gpc);
+            let lcoeff_factor = gp.ring.div(&gammap, &gpc);
 
             // construct the gcd suggestion in Z
             let mut gm = self.zero_with_capacity(gp.nterms());
@@ -2235,8 +2238,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 .coefficients
                 .iter()
                 .map(|x| {
-                    gp.field
-                        .to_symmetric_integer(&gp.field.mul(x, &lcoeff_factor))
+                    gp.ring
+                        .to_symmetric_integer(&gp.ring.mul(x, &lcoeff_factor))
                 })
                 .collect();
 
@@ -2351,8 +2354,8 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 
                 // scale the new image
                 let gpc = gp.lcoeff_varorder(vars);
-                gp = gp.mul_coeff(ap.field.div(&gammap, &gpc));
-                debug!("gp: {} mod {}", gp, gp.field.get_prime());
+                gp = gp.mul_coeff(ap.ring.div(&gammap, &gpc));
+                debug!("gp: {} mod {}", gp, gp.ring.get_prime());
 
                 // use chinese remainder theorem to merge coefficients and map back to Z
                 // terms could be missing in gp, but not in gm (TODO: check this?)
@@ -2362,26 +2365,26 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                         gpi += 1;
                         gp.coefficients[gpi - 1]
                     } else {
-                        ap.field.zero()
+                        ap.ring.zero()
                     };
 
                     let gmc = &mut gm.coefficients[t];
                     let coeff = if gmc.is_negative() {
-                        self.field.add(gmc, &m)
+                        self.ring.add(gmc, &m)
                     } else {
                         gmc.clone()
                     };
 
                     *gmc = Integer::chinese_remainder(
                         coeff,
-                        Integer::from_finite_field(&gp.field, gpc),
+                        Integer::from_finite_field(&gp.ring, gpc),
                         m.clone(),
-                        Integer::from_prime(&gp.field),
+                        Integer::from_prime(&gp.ring),
                     );
                 }
 
-                self.field
-                    .mul_assign(&mut m, &Integer::from_prime(&gp.field));
+                self.ring
+                    .mul_assign(&mut m, &Integer::from_prime(&gp.ring));
 
                 debug!("gm: {} from ring {}", gm, m);
             }
@@ -2554,10 +2557,10 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
         tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
         // remove the content so that the polynomials have integer coefficients
-        let content = a.field.gcd(&a.content(), &b.content());
+        let content = a.ring.gcd(&a.content(), &b.content());
 
-        let a_int = a.map_coeff(|c| a.field.div(c, &content).numerator(), Z);
-        let b_int = b.map_coeff(|c| b.field.div(c, &content).numerator(), Z);
+        let a_int = a.map_coeff(|c| a.ring.div(c, &content).numerator(), Z);
+        let b_int = b.map_coeff(|c| b.ring.div(c, &content).numerator(), Z);
 
         MultivariatePolynomial::gcd_zippel::<u32>(&a_int, &b_int, vars, bounds, tight_bounds)
             .map_coeff(|c| c.to_rational(), Q)
@@ -2635,11 +2638,11 @@ where
                 // upgrade to a Galois field that is large enough
                 // TODO: start at a better bound?
                 // TODO: run with Zp[var]/m_i instead and use CRT
-                let field = a.field.upgrade(a.field.get_extension_degree() as usize + 1);
-                let ag = a.map_coeff(|c| a.field.upgrade_element(c, &field), field.clone());
-                let bg = b.map_coeff(|c| a.field.upgrade_element(c, &field), field.clone());
+                let field = a.ring.upgrade(a.ring.get_extension_degree() as usize + 1);
+                let ag = a.map_coeff(|c| a.ring.upgrade_element(c, &field), field.clone());
+                let bg = b.map_coeff(|c| a.ring.upgrade_element(c, &field), field.clone());
                 let g = PolynomialGCD::gcd(&ag, &bg, vars, bounds, tight_bounds);
-                g.map_coeff(|c| a.field.downgrade_element(c), a.field.clone())
+                g.map_coeff(|c| a.ring.downgrade_element(c), a.ring.clone())
             }
         }
     }
@@ -2691,9 +2694,9 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
         bounds: &mut [E],
         tight_bounds: &mut [E],
     ) -> MultivariatePolynomial<Self, E> {
-        let content = a.field.poly().content().inv();
+        let content = a.ring.poly().content().inv();
         let a_integer =
-            AlgebraicExtension::new(a.field.poly().map_coeff(|c| (c * &content).numerator(), Z));
+            AlgebraicExtension::new(a.ring.poly().map_coeff(|c| (c * &content).numerator(), Z));
         let a_lcoeff = a_integer.poly().lcoeff();
 
         debug!("Zippel gcd of {} and {} % {}", a, b, a_integer);
@@ -2721,7 +2724,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
             let mut p = &primes[pi];
 
             let mut finite_field = Zp::new(*p);
-            let mut algebraic_field_ff = a.field.to_finite_field(&finite_field);
+            let mut algebraic_field_ff = a.ring.to_finite_field(&finite_field);
 
             let a_lcoeff_p = a_lcoeff.to_finite_field(&finite_field);
 
@@ -2789,7 +2792,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
             }
 
             let gpc = gp.lcoeff_varorder(vars);
-            let lcoeff_factor = gp.field.inv(&gpc);
+            let lcoeff_factor = gp.ring.inv(&gpc);
 
             // construct the gcd suggestion in Z
             // contrary to the integer case, we do not know the leading coefficient in Z
@@ -2803,7 +2806,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
                 .iter()
                 .map(|x| {
                     a_integer.to_element(
-                        gp.field
+                        gp.ring
                             .mul(x, &lcoeff_factor)
                             .poly
                             .map_coeff(|c| finite_field.to_symmetric_integer(c), Z),
@@ -2831,7 +2834,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
 
                     p = &primes[pi];
                     finite_field = Zp::new(*p);
-                    algebraic_field_ff = a.field.to_finite_field(&finite_field);
+                    algebraic_field_ff = a.ring.to_finite_field(&finite_field);
 
                     let a_lcoeff_p = a_lcoeff.to_finite_field(&finite_field);
 
@@ -2911,8 +2914,8 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
 
                 // scale the new image
                 let gpc = gp.lcoeff_varorder(vars);
-                gp = gp.mul_coeff(ap.field.inv(&gpc));
-                debug!("gp: {} mod {}", gp, gp.field);
+                gp = gp.mul_coeff(ap.ring.inv(&gpc));
+                debug!("gp: {} mod {}", gp, gp.ring);
 
                 // use chinese remainder theorem to merge coefficients and map back to Z
                 // terms could be missing in gp, but not in gm (TODO: check this?)
@@ -2922,7 +2925,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
                         gpi += 1;
                         gp.coefficients[gpi - 1].clone()
                     } else {
-                        ap.field.zero()
+                        ap.ring.zero()
                     };
 
                     let gmc_a = &mut gm.coefficients[t];
@@ -2930,7 +2933,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
                     // apply CRT to each integer coefficient in the algebraic number ring
                     let mut gpc_pos = 0;
                     let mut gmc_pos = 0;
-                    for i in 0..a.field.poly().degree(0) {
+                    for i in 0..a.ring.poly().degree(0) {
                         let gpc =
                             if gpc_pos < gpc.poly.nterms() && i == gpc.poly.exponents(gpc_pos)[0] {
                                 gpc_pos += 1;
@@ -2986,7 +2989,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
                 let mut gc = a.zero();
 
                 for c in &gm.coefficients {
-                    let mut nc = a.field.poly().zero();
+                    let mut nc = a.ring.poly().zero();
 
                     for aa in &c.poly.coefficients {
                         match Rational::maximal_quotient_reconstruction(aa, &m, None) {
@@ -3000,7 +3003,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
                     }
 
                     nc.exponents.clone_from(&c.poly.exponents);
-                    gc.coefficients.push(a.field.to_element(nc));
+                    gc.coefficients.push(a.ring.to_element(nc));
                 }
 
                 gc.exponents.clone_from(&gm.exponents);
@@ -3026,7 +3029,7 @@ impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
         let mut i = 0;
         loop {
             let f = Zp::new(LARGE_U32_PRIMES[i]);
-            let algebraic_field_ff = a.field.to_finite_field(&f);
+            let algebraic_field_ff = a.ring.to_finite_field(&f);
             let ap = a.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
             let bp = b.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
             if ap.nterms() > 0

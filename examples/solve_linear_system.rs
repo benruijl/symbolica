@@ -58,7 +58,7 @@ fn solve_from_matrix() {
         })
         .collect();
 
-    let field = RationalPolynomialField::new_from_poly(&rhs_rat[0].numerator);
+    let field = RationalPolynomialField::from_poly(&rhs_rat[0].numerator);
     let m = Matrix::from_linear(
         system_rat,
         system.len() as u32,

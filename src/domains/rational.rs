@@ -103,7 +103,7 @@ impl FractionNormalization for Z {
 
 impl<R: Ring + FractionNormalization, E: Exponent> FractionNormalization for PolynomialRing<R, E> {
     fn get_normalization_factor(&self, a: &Self::Element) -> Self::Element {
-        a.constant(a.field.get_normalization_factor(&a.lcoeff()))
+        a.constant(a.ring.get_normalization_factor(&a.lcoeff()))
     }
 }
 
@@ -1079,9 +1079,9 @@ mod test {
             f.clone(),
         );
 
-        let p = PolynomialRing::new_from_poly(&poly2);
+        let p = PolynomialRing::from_poly(&poly2);
         let rat = p.to_rational_polynomial(&poly2);
-        let f = FractionField::new(PolynomialRing::new_from_poly(&rat.numerator));
+        let f = FractionField::new(PolynomialRing::from_poly(&rat.numerator));
 
         let b = f.neg(&f.nth(3));
         let c = f.add(&rat, &b);

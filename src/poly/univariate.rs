@@ -560,7 +560,10 @@ impl<F: Ring> Add for UnivariatePolynomial<F> {
 
     fn add(mut self, mut other: Self) -> Self::Output {
         assert_eq!(self.field, other.field);
-        assert_eq!(self.variable, other.variable);
+
+        if self.variable != other.variable {
+            panic!("Cannot multiply polynomials with different variables");
+        }
 
         if self.is_zero() {
             return other;
@@ -623,8 +626,14 @@ impl<'a, 'b, F: Ring> Mul<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynom
 
     #[inline]
     fn mul(self, rhs: &'a UnivariatePolynomial<F>) -> Self::Output {
+        assert_eq!(self.field, rhs.field);
+
         if self.is_zero() || rhs.is_zero() {
             return self.zero();
+        }
+
+        if self.variable != rhs.variable {
+            panic!("Cannot multiply polynomials with different variables");
         }
 
         let n = self.degree();
@@ -736,6 +745,10 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
             return Some(self.clone());
         }
 
+        if self.variable != div.variable {
+            panic!("Cannot divide with different variables");
+        }
+
         // check if the leading coefficients divide
         if !F::is_zero(&self.field.rem(&self.lcoeff(), &div.lcoeff())) {
             return None;
@@ -799,6 +812,10 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
             return (self.clone(), self.clone());
         }
 
+        if self.variable != div.variable {
+            panic!("Cannot divide with different variables");
+        }
+
         let mut n = self.degree();
         let m = div.degree();
 
@@ -837,6 +854,10 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
     /// Compute the p-adic expansion of the polynomial.
     /// It returns `[a0, a1, a2, ...]` such that `a0 + a1 * p^1 + a2 * p^2 + ... = self`.
     pub fn p_adic_expansion(&self, p: &Self) -> Vec<Self> {
+        if self.variable != p.variable {
+            panic!("Cannot apply p-adic expansion with different variables");
+        }
+
         let mut res = vec![];
         let mut r = self.clone();
         while !r.is_zero() {
@@ -915,6 +936,10 @@ impl<F: Field> UnivariatePolynomial<F> {
     /// Compute `(g, s, t)` where `self * s + other * t = g`
     /// by means of the extended Euclidean algorithm.
     pub fn eea(&self, other: &Self) -> (Self, Self, Self) {
+        if self.variable != other.variable {
+            panic!("Cannot apply EEA with different variables");
+        }
+
         let mut r0 = self.clone().make_monic();
         let mut r1 = other.clone().make_monic();
         let mut s0 = self.constant(self.field.inv(&self.lcoeff()));
@@ -978,6 +1003,10 @@ impl<F: Field> UnivariatePolynomial<F> {
             return self.clone();
         }
 
+        if self.variable != b.variable {
+            panic!("Cannot compute GCD of polynomials with different variables");
+        }
+
         let mut c = self.clone();
         let mut d = b.clone();
         if self.degree() < b.degree() {
@@ -1012,6 +1041,10 @@ impl<F: Field> UnivariatePolynomial<F> {
             return (self.clone(), self.clone());
         }
 
+        if self.variable != div.variable {
+            panic!("Cannot divide polynomials with different variables");
+        }
+
         let mut n = self.degree();
         let m = div.degree();
 
@@ -1038,8 +1071,11 @@ impl<F: Field> UnivariatePolynomial<F> {
 impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
     /// Convert a univariate polynomial of multivariate polynomials to a multivariate polynomial.
     pub fn flatten(self) -> MultivariatePolynomial<R, E> {
-        let Some(pos) = self
-            .field
+        if self.is_zero() {
+            return self.field.zero();
+        }
+
+        let Some(pos) = self.coefficients[0]
             .variables
             .iter()
             .position(|x| x == self.variable.as_ref())
@@ -1047,18 +1083,15 @@ impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
             panic!("Variable not found in the field");
         };
 
+        let n_vars = self.coefficients[0].get_vars().len();
         let mut res = MultivariatePolynomial::new(
             &self.field.ring,
             self.degree().into(),
-            self.field.variables.clone(),
+            self.coefficients[0].get_vars().clone(),
         );
 
         for (p, mut c) in self.coefficients.into_iter().enumerate() {
-            for (e, nc) in c
-                .exponents
-                .chunks_mut(self.field.variables.len())
-                .zip(c.coefficients)
-            {
+            for (e, nc) in c.exponents.chunks_mut(n_vars).zip(c.coefficients) {
                 e[pos] = E::from_u32(p as u32);
                 res.append_monomial(nc, e);
             }

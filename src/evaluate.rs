@@ -1055,17 +1055,27 @@ impl<T> ExpressionEvaluator<T> {
 
 impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     /// Create a C++ code representation of the evaluation tree.
+    /// With `inline_asm` set to any value other than `None`,
+    /// high-performance inline ASM code will be generated for most
+    /// evaluation instructions. This often gives better performance than
+    /// the `O3` optimization level and results in very fast compilation.
     pub fn export_cpp(
         &self,
         filename: &str,
         function_name: &str,
         include_header: bool,
+        inline_asm: InlineASM,
     ) -> Result<ExportedCode, std::io::Error> {
-        let cpp = self.export_cpp_str(function_name, include_header);
-        std::fs::write(filename, cpp)?;
+        let cpp = match inline_asm {
+            InlineASM::Intel => self.export_asm_str(function_name, include_header),
+            InlineASM::None => self.export_cpp_str(function_name, include_header),
+        };
+
+        let _ = std::fs::write(filename, cpp)?;
         Ok(ExportedCode {
             source_filename: filename.to_string(),
             function_name: function_name.to_string(),
+            inline_asm,
         })
     }
 
@@ -1166,21 +1176,6 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                 },
             }
         }
-    }
-
-    /// Create a C++ code representation of the evaluation tree with assembly instructions.
-    pub fn export_asm(
-        &self,
-        filename: &str,
-        function_name: &str,
-        include_header: bool,
-    ) -> Result<ExportedCode, std::io::Error> {
-        let cpp = self.export_asm_str(function_name, include_header);
-        std::fs::write(filename, cpp)?;
-        Ok(ExportedCode {
-            source_filename: filename.to_string(),
-            function_name: function_name.to_string(),
-        })
     }
 
     pub fn export_asm_str(&self, function_name: &str, include_header: bool) -> String {
@@ -2831,6 +2826,7 @@ impl<T: Real> EvalTree<T> {
 pub struct ExportedCode {
     source_filename: String,
     function_name: String,
+    inline_asm: InlineASM,
 }
 pub struct CompiledCode {
     library_filename: String,
@@ -2978,10 +2974,11 @@ impl Default for CompileOptions {
 
 impl ExportedCode {
     /// Create a new exported code object from a source file and function name.
-    pub fn new(source_filename: String, function_name: String) -> Self {
+    pub fn new(source_filename: String, function_name: String, inline_asm: InlineASM) -> Self {
         ExportedCode {
             source_filename,
             function_name,
+            inline_asm,
         }
     }
 
@@ -2995,7 +2992,6 @@ impl ExportedCode {
         builder
             .arg("-shared")
             .arg("-fPIC")
-            .arg("-masm=intel")
             .arg(format!("-O{}", options.optimization_level));
         if options.fast_math {
             builder.arg("-ffast-math");
@@ -3003,6 +2999,14 @@ impl ExportedCode {
         if options.unsafe_math {
             builder.arg("-funsafe-math-optimizations");
         }
+
+        match self.inline_asm {
+            InlineASM::Intel => {
+                builder.arg("-masm=intel");
+            }
+            InlineASM::None => {}
+        }
+
         for c in &options.custom {
             builder.arg(c);
         }
@@ -3030,6 +3034,28 @@ impl ExportedCode {
     }
 }
 
+/// The inline assembly mode used to generate fast
+/// assembly instructions for mathematical operations.
+/// Set to `None` to disable inline assembly.
+pub enum InlineASM {
+    /// Use instructions suitable for x86_64 machines.
+    Intel,
+    /// Do not generate inline assembly.
+    None,
+}
+
+impl Default for InlineASM {
+    /// Set the assembly mode suitable for the current
+    /// architecture.
+    fn default() -> Self {
+        if cfg!(target_arch = "x86_64") {
+            return InlineASM::Intel;
+        } else {
+            InlineASM::None
+        }
+    }
+}
+
 impl<T: NumericalFloatLike> EvalTree<T> {
     /// Create a C++ code representation of the evaluation tree.
     pub fn export_cpp(
@@ -3043,6 +3069,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
         Ok(ExportedCode {
             source_filename: filename.to_string(),
             function_name: function_name.to_string(),
+            inline_asm: InlineASM::None,
         })
     }
 

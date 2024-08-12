@@ -1340,92 +1340,81 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             })
             .collect();
 
-        for i in 0..40 {
-            for (j, last_use) in reg_last_use.iter().enumerate() {
-                if *last_use - j == i {
-                    if *last_use == self.instructions.len() {
-                        continue;
+        // sort the list of instructions based on the distance
+        let mut reg_list = reg_last_use.iter().enumerate().collect::<Vec<_>>();
+        reg_list.sort_by_key(|x| (*x.1 - x.0, x.0));
+
+        'next: for (j, last_use) in reg_list {
+            if *last_use == self.instructions.len() {
+                continue;
+            }
+
+            let old_reg = if let RegInstr::Add(r, _, _) | RegInstr::Mul(r, _, _) = &new_instr[j] {
+                if let MemOrReg::Mem(r) = r {
+                    *r
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            };
+
+            // find free registers in the range
+            // start at j+1 as we can recycle registers that are last used in iteration j
+            let mut free_regs = u16::MAX & !(1 << 15); // leave xmmm15 open
+
+            for k in &new_instr[j + 1..=*last_use] {
+                match k {
+                    RegInstr::Add(_, f, _) | RegInstr::Mul(_, f, _) => {
+                        free_regs &= f;
                     }
-
-                    let old_reg =
-                        if let RegInstr::Add(r, _, _) | RegInstr::Mul(r, _, _) = &new_instr[j] {
-                            if let MemOrReg::Mem(r) = r {
-                                *r
-                            } else {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        };
-
-                    // find free registers in the range
-                    // start at j+1 as we can recycle registers that are last used in iteration j
-                    let mut free_regs = u16::MAX;
-
-                    for k in &new_instr[j + 1..=*last_use] {
-                        match k {
-                            RegInstr::Add(_, f, _) | RegInstr::Mul(_, f, _) => {
-                                free_regs &= f;
-                            }
-                            _ => {
-                                free_regs = 0; // the current instruction is not allowed to be used outside of ASM blocks
-                            }
-                        }
+                    _ => {
+                        free_regs = 0; // the current instruction is not allowed to be used outside of ASM blocks
                     }
+                }
 
-                    if free_regs == 0 {
-                        continue;
-                    }
+                if free_regs == 0 {
+                    continue 'next;
+                }
+            }
 
-                    for k in 0..15 {
-                        if free_regs & (1 << k) != 0 {
-                            if let RegInstr::Add(r, _, _) | RegInstr::Mul(r, _, _) =
-                                &mut new_instr[j]
-                            {
-                                *r = MemOrReg::Reg(k);
-                            }
+            if let Some(k) = (0..16).position(|k| free_regs & (1 << k) != 0) {
+                if let RegInstr::Add(r, _, _) | RegInstr::Mul(r, _, _) = &mut new_instr[j] {
+                    *r = MemOrReg::Reg(k);
+                }
 
-                            for l in &mut new_instr[j + 1..=*last_use] {
-                                match l {
-                                    RegInstr::Add(_, f, a) | RegInstr::Mul(_, f, a) => {
-                                        *f &= !(1 << k); // FIXME: do not set on last use?
-                                        for x in a {
-                                            if *x == MemOrReg::Mem(old_reg) {
-                                                *x = MemOrReg::Reg(k);
-                                            }
-                                        }
-                                    }
-                                    RegInstr::Pow(_, a, _) => {
-                                        if *a == old_reg {
-                                            panic!("use outside of ASM block");
-                                        }
-                                    }
-                                    RegInstr::Powf(_, a, b) => {
-                                        if *a == old_reg {
-                                            panic!("use outside of ASM block");
-                                        }
-                                        if *b == old_reg {
-                                            panic!("use outside of ASM block");
-                                        }
-                                    }
-                                    RegInstr::BuiltinFun(_, _, a) => {
-                                        if *a == old_reg {
-                                            panic!("use outside of ASM block");
-                                        }
-                                    }
+                for l in &mut new_instr[j + 1..=*last_use] {
+                    match l {
+                        RegInstr::Add(_, f, a) | RegInstr::Mul(_, f, a) => {
+                            *f &= !(1 << k); // FIXME: do not set on last use?
+                            for x in a {
+                                if *x == MemOrReg::Mem(old_reg) {
+                                    *x = MemOrReg::Reg(k);
                                 }
                             }
-
-                            break;
+                        }
+                        RegInstr::Pow(_, a, _) => {
+                            if *a == old_reg {
+                                panic!("use outside of ASM block");
+                            }
+                        }
+                        RegInstr::Powf(_, a, b) => {
+                            if *a == old_reg {
+                                panic!("use outside of ASM block");
+                            }
+                            if *b == old_reg {
+                                panic!("use outside of ASM block");
+                            }
+                        }
+                        RegInstr::BuiltinFun(_, _, a) => {
+                            if *a == old_reg {
+                                panic!("use outside of ASM block");
+                            }
                         }
                     }
                 }
             }
         }
-
-        //for (i, x) in new_instr.iter().enumerate() {
-        //    println!("{} {:?}", i, x);
-        //}
 
         let mut in_asm_block = false;
         for ins in &new_instr {
@@ -1515,14 +1504,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             }
                         }
                         MemOrReg::Mem(out_mem) => {
-                            // we need to find a free temporary register
-                            if *free == 0 {
-                                panic!("no free registers");
-                                // we can move the value of xmm0 into the memory location of the output register
-                                // and then swap later
-                            }
-
-                            if let Some(out_reg) = (0..15).position(|k| free & (1 << k) != 0) {
+                            // TODO: we would like a last-use check of the free here. Now we need to move
+                            if let Some(out_reg) = (0..16).position(|k| free & (1 << k) != 0) {
                                 if let Some(MemOrReg::Reg(j)) =
                                     a.iter().find(|x| matches!(x, MemOrReg::Reg(_)))
                                 {
@@ -1577,6 +1560,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                     format_addr!(*out_mem),
                                     out_reg
                                 );
+                            } else {
+                                unreachable!("No free registers");
+                                // move the value of xmm0 into the memory location of the output register
+                                // and then swap later?
                             }
                         }
                     }
@@ -1642,7 +1629,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         let mut regcount = 0;
         *out += "\t__asm__(\n";
-        for (i, r) in &mut self.result_indices.iter().enumerate() {
+        for (i, r) in self.result_indices.iter().enumerate() {
             if *r < self.param_count {
                 *out += &format!(
                     "\t\t\"movsd xmm{}, QWORD PTR[%3+{}]\\n\\t\"\n",

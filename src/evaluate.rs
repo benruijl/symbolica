@@ -1269,34 +1269,146 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         }
 
         let mut in_asm_block = false;
-        for ins in instr {
-            match ins {
-                Instr::Add(o, a) => {
-                    if !in_asm_block {
-                        *out += "\t__asm__(\n";
-                        in_asm_block = true;
-                    }
+        let mut regcount = 0;
 
-                    *out += &format!("\t\t\"movsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(a[0]));
+        fn reg_unused(reg: usize, instr: &[Instr], out: &[usize]) -> bool {
+            if out.contains(&reg) {
+                return false;
+            }
 
-                    // TODO: try loading in multiple registers for better instruction-level parallelism?
-                    for i in &a[1..] {
-                        *out += &format!("\t\t\"addsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(*i));
+            for ins in instr {
+                match ins {
+                    Instr::Add(r, a) | Instr::Mul(r, a) => {
+                        if a.iter().any(|x| *x == reg) {
+                            return false;
+                        }
+
+                        if r == &reg {
+                            return true;
+                        }
                     }
-                    *out += &format!("\t\t\"movsd QWORD {}, xmm0\\n\\t\"\n", format_addr!(*o));
+                    Instr::Pow(r, b, _) => {
+                        if *b == reg {
+                            return false;
+                        }
+                        if r == &reg {
+                            return true;
+                        }
+                    }
+                    Instr::Powf(r, b, e) => {
+                        if *b == reg || *e == reg {
+                            return false;
+                        }
+                        if r == &reg {
+                            return true;
+                        }
+                    }
+                    Instr::BuiltinFun(r, _, b) => {
+                        if *b == reg {
+                            return false;
+                        }
+                        if r == &reg {
+                            return true;
+                        }
+                    }
                 }
-                Instr::Mul(o, a) => {
+            }
+
+            true
+        }
+
+        let mut recycle_register: (Option<(usize, u32)>, Option<(usize, u32)>) = (None, None); // old and current register
+        for (i, ins) in instr.iter().enumerate() {
+            // keep results in xmm registers if the last use is in the next instruction
+            if let Some(ii) = instr.get(i + 1) {
+                match ins {
+                    Instr::Add(r, _) | Instr::Mul(r, _) => match ii {
+                        Instr::Add(j, _) | Instr::Mul(j, _) => {
+                            if r == j || reg_unused(*r, &instr[i + 2..], &self.result_indices) {
+                                if let Some(old) = recycle_register.0 {
+                                    recycle_register.1 = Some((*r, old.1));
+                                } else {
+                                    recycle_register.1 = Some((*r, regcount));
+                                }
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+
+            match ins {
+                Instr::Add(o, a) | Instr::Mul(o, a) => {
                     if !in_asm_block {
                         *out += "\t__asm__(\n";
                         in_asm_block = true;
                     }
 
-                    *out += &format!("\t\t\"movsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(a[0]));
+                    let oper = if matches!(ins, Instr::Add(_, _)) {
+                        "add"
+                    } else {
+                        "mul"
+                    };
 
-                    for i in &a[1..] {
-                        *out += &format!("\t\t\"mulsd xmm0, QWORD {}\\n\\t\"\n", format_addr!(*i));
+                    if let Some(old) = recycle_register.0 {
+                        assert!(a.iter().any(|rr| *rr == old.0)); // the last value must be used
+
+                        for i in a {
+                            if *i != old.0 {
+                                *out += &format!(
+                                    "\t\t\"{}sd xmm{}, QWORD {}\\n\\t\"\n",
+                                    oper,
+                                    old.1,
+                                    format_addr!(*i)
+                                );
+                            }
+                        }
+
+                        if recycle_register.1.is_none() {
+                            *out += &format!(
+                                "\t\t\"movsd QWORD {}, xmm{}\\n\\t\"\n",
+                                format_addr!(*o),
+                                old.1,
+                            );
+                        }
+                    } else if let Some(new) = recycle_register.1 {
+                        *out += &format!(
+                            "\t\t\"movsd xmm{}, QWORD {}\\n\\t\"\n",
+                            new.1,
+                            format_addr!(a[0])
+                        );
+
+                        for i in &a[1..] {
+                            *out += &format!(
+                                "\t\t\"{}sd xmm{}, QWORD {}\\n\\t\"\n",
+                                oper,
+                                new.1,
+                                format_addr!(*i)
+                            );
+                        }
+                    } else {
+                        *out += &format!(
+                            "\t\t\"movsd xmm{}, QWORD {}\\n\\t\"\n",
+                            regcount,
+                            format_addr!(a[0])
+                        );
+
+                        for i in &a[1..] {
+                            *out += &format!(
+                                "\t\t\"{}sd xmm{}, QWORD {}\\n\\t\"\n",
+                                oper,
+                                regcount,
+                                format_addr!(*i)
+                            );
+                        }
+
+                        *out += &format!(
+                            "\t\t\"movsd QWORD {}, xmm{}\\n\\t\"\n",
+                            format_addr!(*o),
+                            regcount,
+                        );
                     }
-                    *out += &format!("\t\t\"movsd QWORD {}, xmm0\\n\\t\"\n", format_addr!(*o));
                 }
                 Instr::Pow(o, b, e) => {
                     if *e == -1 {
@@ -1306,10 +1418,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         }
 
                         *out += &format!(
-                            "\t\t\"movsd xmm0, QWORD PTR [%1+{}]\\n\\t\"
-\t\t\"divsd xmm0, QWORD {}\\n\\t\"
-\t\t\"movapd xmm2, xmm0\\n\\t\"
-\t\t\"movsd QWORD {}, xmm0\\n\\t\"\n",
+                            "\t\t\"movsd xmm{0}, QWORD PTR [%1+{1}]\\n\\t\"
+\t\t\"divsd xmm{0}, QWORD {2}\\n\\t\"
+\t\t\"movsd QWORD {3}, xmm{0}\\n\\t\"\n",
+                            regcount,
                             (self.reserved_indices - self.param_count) * 8,
                             format_addr!(*b),
                             format_addr!(*o)
@@ -1353,6 +1465,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     }
                 }
             }
+
+            recycle_register.0 = recycle_register.1.take();
         }
 
         end_asm_block!(in_asm_block);
@@ -1360,17 +1474,31 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         *out += "\t__asm__(\n";
         for (i, r) in &mut self.result_indices.iter().enumerate() {
             if *r < self.param_count {
-                *out += &format!("\t\t\"movsd xmm0, QWORD PTR[%3+{}]\\n\\t\"\n", r * 8);
+                *out += &format!(
+                    "\t\t\"movsd xmm{}, QWORD PTR[%3+{}]\\n\\t\"\n",
+                    regcount,
+                    r * 8
+                );
             } else if *r < self.reserved_indices {
                 *out += &format!(
-                    "\t\t\"movsd xmm0, QWORD PTR[%2+{}]\\n\\t\"\n",
+                    "\t\t\"movsd xmm{}, QWORD PTR[%2+{}]\\n\\t\"\n",
+                    regcount,
                     (r - self.param_count) * 8
                 );
             } else {
-                *out += &format!("\t\t\"movsd xmm0, QWORD PTR[%1+{}]\\n\\t\"\n", r * 8);
+                *out += &format!(
+                    "\t\t\"movsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
+                    regcount,
+                    r * 8
+                );
             }
 
-            *out += &format!("\t\t\"movsd QWORD PTR[%0+{}], xmm0\\n\\t\"\n", i * 8);
+            *out += &format!(
+                "\t\t\"movsd QWORD PTR[%0+{}], xmm{}\\n\\t\"\n",
+                i * 8,
+                regcount
+            );
+            regcount = (regcount + 1) % 16;
         }
 
         *out += "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n";

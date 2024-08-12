@@ -3165,6 +3165,7 @@ impl ExportedCode {
 /// The inline assembly mode used to generate fast
 /// assembly instructions for mathematical operations.
 /// Set to `None` to disable inline assembly.
+#[derive(Copy, Clone)]
 pub enum InlineASM {
     /// Use instructions suitable for x86_64 machines.
     Intel,

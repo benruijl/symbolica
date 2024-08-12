@@ -3079,6 +3079,7 @@ impl CompiledEvaluator {
 }
 
 /// Options for compiling exported code.
+#[derive(Clone)]
 pub struct CompileOptions {
     pub optimization_level: usize,
     pub fast_math: bool,

@@ -3228,7 +3228,6 @@ impl CompiledCode {
 
 type L = std::sync::Arc<libloading::Library>;
 
-#[derive(Debug)]
 struct EvaluatorFunctions<'a> {
     eval_double: libloading::Symbol<
         'a,
@@ -3262,9 +3261,15 @@ self_cell!(
         #[covariant]
         dependent: EvaluatorFunctions,
     }
-
-    impl {Debug}
 );
+
+unsafe impl Send for CompiledEvaluator {}
+
+impl std::fmt::Debug for CompiledEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompiledEvaluator({})", self.fn_name)
+    }
+}
 
 impl Clone for CompiledEvaluator {
     fn clone(&self) -> Self {

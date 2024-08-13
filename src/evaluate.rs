@@ -1179,10 +1179,11 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     }
 
     pub fn export_asm_str(&self, function_name: &str, include_header: bool) -> String {
-        let mut res = if include_header {
-            "#include <iostream>\n#include <complex>\n#include <cmath>\n\n".to_string()
-        } else {
-            String::new()
+        let mut res = String::new();
+        if include_header {
+            res += &"#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
+            res += &"extern \"C\" void drop_buffer_complex(std::complex<double> *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
+            res += &"extern \"C\" void drop_buffer_double(double *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
         };
 
         res += &format!(
@@ -1190,7 +1191,6 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             function_name,
             self.stack.len()
         );
-        res += &"extern \"C\" void drop_buffer_complex(std::complex<double> *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
 
         res += &format!(
             "static const std::complex<double> CONSTANTS_complex[{}] = {{{}}};\n\n",
@@ -1215,8 +1215,6 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             function_name,
             self.stack.len()
         );
-        res +=
-            &"extern \"C\" void drop_buffer_double(double *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
 
         res += &format!(
             "static const double CONSTANTS_double[{}] = {{{}}};\n\n",

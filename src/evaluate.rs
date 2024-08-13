@@ -1316,7 +1316,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         enum RegInstr {
             Add(MemOrReg, u16, Vec<MemOrReg>),
             Mul(MemOrReg, u16, Vec<MemOrReg>),
-            Pow(usize, usize, i64),
+            Pow(MemOrReg, u16, MemOrReg, i64),
             Powf(usize, usize, usize),
             BuiltinFun(usize, Symbol, usize),
         }
@@ -1334,7 +1334,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     u16::MAX,
                     a.iter().map(|x| MemOrReg::Mem(*x)).collect(),
                 ),
-                Instr::Pow(r, b, e) => RegInstr::Pow(*r, *b, *e),
+                Instr::Pow(r, b, e) => {
+                    RegInstr::Pow(MemOrReg::Mem(*r), u16::MAX, MemOrReg::Mem(*b), *e)
+                }
                 Instr::Powf(r, b, e) => RegInstr::Powf(*r, *b, *e),
                 Instr::BuiltinFun(r, s, a) => RegInstr::BuiltinFun(*r, *s, *a),
             })
@@ -1349,7 +1351,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                 continue;
             }
 
-            let old_reg = if let RegInstr::Add(r, _, _) | RegInstr::Mul(r, _, _) = &new_instr[j] {
+            let old_reg = if let RegInstr::Add(r, _, _)
+            | RegInstr::Mul(r, _, _)
+            | RegInstr::Pow(r, _, _, -1) = &new_instr[j]
+            {
                 if let MemOrReg::Mem(r) = r {
                     *r
                 } else {
@@ -1365,9 +1370,12 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
             for k in &new_instr[j + 1..=*last_use] {
                 match k {
-                    RegInstr::Add(_, f, _) | RegInstr::Mul(_, f, _) => {
+                    RegInstr::Add(_, f, _)
+                    | RegInstr::Mul(_, f, _)
+                    | RegInstr::Pow(_, f, _, -1) => {
                         free_regs &= f;
                     }
+
                     _ => {
                         free_regs = 0; // the current instruction is not allowed to be used outside of ASM blocks
                     }
@@ -1379,7 +1387,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             }
 
             if let Some(k) = (0..16).position(|k| free_regs & (1 << k) != 0) {
-                if let RegInstr::Add(r, _, _) | RegInstr::Mul(r, _, _) = &mut new_instr[j] {
+                if let RegInstr::Add(r, _, _) | RegInstr::Mul(r, _, _) | RegInstr::Pow(r, _, _, _) =
+                    &mut new_instr[j]
+                {
                     *r = MemOrReg::Reg(k);
                 }
 
@@ -1393,10 +1403,14 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 }
                             }
                         }
-                        RegInstr::Pow(_, a, _) => {
-                            if *a == old_reg {
-                                panic!("use outside of ASM block");
+                        RegInstr::Pow(_, f, a, -1) => {
+                            *f &= !(1 << k); // FIXME: do not set on last use?
+                            if *a == MemOrReg::Mem(old_reg) {
+                                *a = MemOrReg::Reg(k);
                             }
+                        }
+                        RegInstr::Pow(_, _, _, _) => {
+                            panic!("use outside of ASM block");
                         }
                         RegInstr::Powf(_, a, b) => {
                             if *a == old_reg {
@@ -1413,6 +1427,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         }
                     }
                 }
+
+                // TODO: if last use is not already set to a register, we can set it to the current one
+                // this prevents a copy
             }
         }
 
@@ -1568,27 +1585,83 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         }
                     }
                 }
-                RegInstr::Pow(o, b, e) => {
+                RegInstr::Pow(o, free, b, e) => {
                     if *e == -1 {
                         if !in_asm_block {
                             *out += "\t__asm__(\n";
                             in_asm_block = true;
                         }
 
-                        *out += &format!(
-                            "\t\t\"movsd xmm{0}, QWORD PTR [%1+{1}]\\n\\t\"
-\t\t\"divsd xmm{0}, QWORD {2}\\n\\t\"
-\t\t\"movsd QWORD {3}, xmm{0}\\n\\t\"\n",
-                            0,
-                            (self.reserved_indices - self.param_count) * 8,
-                            format_addr!(*b),
-                            format_addr!(*o)
-                        );
-                    } else {
-                        end_asm_block!(in_asm_block);
+                        match o {
+                            MemOrReg::Reg(out_reg) => {
+                                if *b == MemOrReg::Reg(*out_reg) {
+                                    *out += &format!(
+                                        "\t\t\"divsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
+                                        out_reg,
+                                        (self.reserved_indices - self.param_count) * 8,
+                                    );
+                                } else {
+                                    match b {
+                                        MemOrReg::Reg(j) => {
+                                            *out += &format!(
+                                                "\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n",
+                                                out_reg, j
+                                            );
+                                        }
+                                        MemOrReg::Mem(k) => {
+                                            *out += &format!(
+                                                "\t\t\"movsd xmm{}, QWORD {}\\n\\t\"\n",
+                                                out_reg,
+                                                format_addr!(*k)
+                                            );
+                                        }
+                                    }
 
-                        let base = get_input!(*b);
-                        *out += format!("\tZ[{}] = pow({}, {});\n", o, base, e).as_str();
+                                    *out += &format!(
+                                        "\t\t\"divsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
+                                        out_reg,
+                                        (self.reserved_indices - self.param_count) * 8,
+                                    );
+                                }
+                            }
+                            MemOrReg::Mem(out_mem) => {
+                                if let Some(out_reg) = (0..16).position(|k| free & (1 << k) != 0) {
+                                    if let MemOrReg::Reg(j) = b {
+                                        *out += &format!(
+                                            "\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n",
+                                            out_reg, j
+                                        );
+                                    } else {
+                                        if let MemOrReg::Mem(k) = b {
+                                            *out += &format!(
+                                                "\t\t\"movsd xmm{}, QWORD {}\\n\\t\"\n",
+                                                out_reg,
+                                                format_addr!(*k)
+                                            );
+                                        }
+                                    }
+
+                                    *out += &format!(
+                                        "\t\t\"divsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
+                                        out_reg,
+                                        (self.reserved_indices - self.param_count) * 8,
+                                    );
+                                    *out += &format!(
+                                        "\t\t\"movsd QWORD {}, xmm{}\\n\\t\"\n",
+                                        format_addr!(*out_mem),
+                                        out_reg
+                                    );
+                                } else {
+                                    unreachable!("No free registers");
+                                    // move the value of xmm0 into the memory location of the output register
+                                    // and then swap later?
+                                }
+                            }
+                        }
+                    } else {
+                        unreachable!(
+                            "Powers other than -1 should have been removed at an earlier stage"
+                        );
                     }
                 }
                 RegInstr::Powf(o, b, e) => {

@@ -1595,57 +1595,75 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         match o {
                             MemOrReg::Reg(out_reg) => {
                                 if *b == MemOrReg::Reg(*out_reg) {
+                                    if let Some(tmp_reg) =
+                                        (0..16).position(|k| free & (1 << k) != 0)
+                                    {
+                                        *out += &format!(
+                                            "\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n",
+                                            tmp_reg, out_reg
+                                        );
+
+                                        *out += &format!(
+                                            "\t\t\"movsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
+                                            out_reg,
+                                            (self.reserved_indices - self.param_count) * 8,
+                                        );
+
+                                        *out += &format!(
+                                            "\t\t\"divsd xmm{}, xmm{}\\n\\t\"\n",
+                                            out_reg, tmp_reg,
+                                        );
+                                    } else {
+                                        panic!("No free registers for division")
+                                    }
+                                } else {
                                     *out += &format!(
-                                        "\t\t\"divsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
+                                        "\t\t\"movsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
                                         out_reg,
                                         (self.reserved_indices - self.param_count) * 8,
                                     );
-                                } else {
+
                                     match b {
                                         MemOrReg::Reg(j) => {
                                             *out += &format!(
-                                                "\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n",
+                                                "\t\t\"divsd xmm{}, xmm{}\\n\\t\"\n",
                                                 out_reg, j
                                             );
                                         }
                                         MemOrReg::Mem(k) => {
                                             *out += &format!(
-                                                "\t\t\"movsd xmm{}, QWORD {}\\n\\t\"\n",
+                                                "\t\t\"divsd xmm{}, QWORD {}\\n\\t\"\n",
                                                 out_reg,
                                                 format_addr!(*k)
                                             );
                                         }
                                     }
-
-                                    *out += &format!(
-                                        "\t\t\"divsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
-                                        out_reg,
-                                        (self.reserved_indices - self.param_count) * 8,
-                                    );
                                 }
                             }
                             MemOrReg::Mem(out_mem) => {
                                 if let Some(out_reg) = (0..16).position(|k| free & (1 << k) != 0) {
-                                    if let MemOrReg::Reg(j) = b {
-                                        *out += &format!(
-                                            "\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n",
-                                            out_reg, j
-                                        );
-                                    } else {
-                                        if let MemOrReg::Mem(k) = b {
+                                    *out += &format!(
+                                        "\t\t\"movsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
+                                        out_reg,
+                                        (self.reserved_indices - self.param_count) * 8,
+                                    );
+
+                                    match b {
+                                        MemOrReg::Reg(j) => {
                                             *out += &format!(
-                                                "\t\t\"movsd xmm{}, QWORD {}\\n\\t\"\n",
+                                                "\t\t\"divsd xmm{}, xmm{}\\n\\t\"\n",
+                                                out_reg, j
+                                            );
+                                        }
+                                        MemOrReg::Mem(k) => {
+                                            *out += &format!(
+                                                "\t\t\"divsd xmm{}, QWORD {}\\n\\t\"\n",
                                                 out_reg,
                                                 format_addr!(*k)
                                             );
                                         }
                                     }
 
-                                    *out += &format!(
-                                        "\t\t\"divsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
-                                        out_reg,
-                                        (self.reserved_indices - self.param_count) * 8,
-                                    );
                                     *out += &format!(
                                         "\t\t\"movsd QWORD {}, xmm{}\\n\\t\"\n",
                                         format_addr!(*out_mem),

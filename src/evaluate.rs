@@ -1179,14 +1179,22 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     }
 
     pub fn export_asm_str(&self, function_name: &str, include_header: bool) -> String {
-        let mut res = if include_header {
-            "#include <iostream>\n#include <complex>\n#include <cmath>\n\n".to_string()
-        } else {
-            String::new()
+        let mut res = String::new();
+        if include_header {
+            res += &"#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
+            res += &"extern \"C\" void drop_buffer_complex(std::complex<double> *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
+            res += &"extern \"C\" void drop_buffer_double(double *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
         };
 
         res += &format!(
-            "static const std::complex<double> CONSTANTS_complex[{}] = {{{}}};\n\n",
+            "extern \"C\" std::complex<double> *{}_create_buffer_complex()\n{{\n\treturn new std::complex<double>[{}];\n}}\n\n",
+            function_name,
+            self.stack.len()
+        );
+
+        res += &format!(
+            "static const std::complex<double> {}_CONSTANTS_complex[{}] = {{{}}};\n\n",
+            function_name,
             self.reserved_indices - self.param_count + 1,
             {
                 let mut nums = (self.param_count..self.reserved_indices)
@@ -1197,17 +1205,21 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             }
         );
 
-        res += &format!("extern \"C\" void {}_complex(const std::complex<double> *params, std::complex<double> *out)\n{{\n", function_name);
+        res += &format!("extern \"C\" void {}_complex(const std::complex<double> *params, std::complex<double> *Z, std::complex<double> *out)\n{{\n", function_name);
 
-        // TODO: pass as argument to prevent stack reallocation
-        res += &format!("\tstd::complex<double> Z[{}];\n", self.stack.len());
-
-        self.export_asm_complex_impl(&self.instructions, &mut res);
+        self.export_asm_complex_impl(&self.instructions, function_name, &mut res);
 
         res += "\treturn;\n}\n\n";
 
         res += &format!(
-            "static const double CONSTANTS_double[{}] = {{{}}};\n\n",
+            "extern \"C\" double *{}_create_buffer_double()\n{{\n\treturn new double[{}];\n}}\n\n",
+            function_name,
+            self.stack.len()
+        );
+
+        res += &format!(
+            "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
+            function_name,
             self.reserved_indices - self.param_count + 1,
             {
                 let mut nums = (self.param_count..self.reserved_indices)
@@ -1219,26 +1231,33 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         );
 
         res += &format!(
-            "extern \"C\" void {}_double(const double *params, double *out)\n{{\n",
+            "extern \"C\" void {}_double(const double *params, double* Z, double *out)\n{{\n",
             function_name
         );
 
-        res += &format!("\tdouble Z[{}];\n", self.stack.len());
-
-        self.export_asm_double_impl(&self.instructions, &mut res);
+        self.export_asm_double_impl(&self.instructions, function_name, &mut res);
 
         res += "\treturn;\n}\n";
 
         res
     }
 
-    fn export_asm_double_impl(&self, instr: &[Instr], out: &mut String) -> bool {
+    fn export_asm_double_impl(
+        &self,
+        instr: &[Instr],
+        function_name: &str,
+        out: &mut String,
+    ) -> bool {
         macro_rules! get_input {
             ($i:expr) => {
                 if $i < self.param_count {
                     format!("params[{}]", $i)
                 } else if $i < self.reserved_indices {
-                    format!("CONSTANTS_double[{}]", $i - self.param_count)
+                    format!(
+                        "{}_CONSTANTS_double[{}]",
+                        function_name,
+                        $i - self.param_count
+                    )
                 } else {
                     // TODO: subtract reserved indices
                     format!("Z[{}]", $i)
@@ -1262,7 +1281,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         macro_rules! end_asm_block {
             ($in_block: expr) => {
                 if $in_block {
-                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n";
+                    *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
                     $in_block = false;
                 }
             };
@@ -1749,17 +1768,26 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             regcount = (regcount + 1) % 16;
         }
 
-        *out += "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n";
+        *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n",  function_name);
         in_asm_block
     }
 
-    fn export_asm_complex_impl(&self, instr: &[Instr], out: &mut String) -> bool {
+    fn export_asm_complex_impl(
+        &self,
+        instr: &[Instr],
+        function_name: &str,
+        out: &mut String,
+    ) -> bool {
         macro_rules! get_input {
             ($i:expr) => {
                 if $i < self.param_count {
                     format!("params[{}]", $i)
                 } else if $i < self.reserved_indices {
-                    format!("CONSTANTS_complex[{}]", $i - self.param_count)
+                    format!(
+                        "{}_CONSTANTS_complex[{}]",
+                        function_name,
+                        $i - self.param_count
+                    )
                 } else {
                     // TODO: subtract reserved indices
                     format!("Z[{}]", $i)
@@ -1783,7 +1811,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         macro_rules! end_asm_block {
             ($in_block: expr) => {
                 if $in_block {
-                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n";
+                    *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
                     $in_block = false;
                 }
             };
@@ -1867,7 +1895,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 \t\t\"mulpd xmm2, xmm2\\n\\t\"
 \t\t\"haddpd xmm2, xmm2\\n\\t\"
 \t\t\"divpd xmm0, xmm2\\n\\t\"
-\t\t\"movupd XMMWORD {}, xmm0\\n\\t\"",
+\t\t\"movupd XMMWORD {}, xmm0\\n\\t\"\n",
                             format_addr!(*b),
                             (self.reserved_indices - self.param_count) * 16,
                             format_addr!(*o)
@@ -1930,7 +1958,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             *out += &format!("\t\t\"movupd XMMWORD PTR[%0+{}], xmm0\\n\\t\"\n", i * 16);
         }
 
-        *out += "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"(CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n";
+        *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n", function_name);
         in_asm_block
     }
 }
@@ -3218,31 +3246,52 @@ impl CompiledCode {
 
 type L = std::sync::Arc<libloading::Library>;
 
-#[derive(Debug)]
 struct EvaluatorFunctions<'a> {
-    fn_name: String,
-    eval_double: libloading::Symbol<'a, unsafe extern "C" fn(params: *const f64, out: *mut f64)>,
+    eval_double: libloading::Symbol<
+        'a,
+        unsafe extern "C" fn(params: *const f64, buffer: *mut f64, out: *mut f64),
+    >,
     eval_complex: libloading::Symbol<
         'a,
-        unsafe extern "C" fn(params: *const Complex<f64>, out: *mut Complex<f64>),
+        unsafe extern "C" fn(
+            params: *const Complex<f64>,
+            buffer: *mut Complex<f64>,
+            out: *mut Complex<f64>,
+        ),
     >,
+    create_buffer_double: libloading::Symbol<'a, unsafe extern "C" fn() -> *mut f64>,
+    create_buffer_complex: libloading::Symbol<'a, unsafe extern "C" fn() -> *mut Complex<f64>>,
+    drop_buffer_double: libloading::Symbol<'a, unsafe extern "C" fn(buffer: *mut f64)>,
+    drop_buffer_complex: libloading::Symbol<'a, unsafe extern "C" fn(buffer: *mut Complex<f64>)>,
+}
+
+pub struct CompiledEvaluator {
+    fn_name: String,
+    library: Library,
+    buffer_double: *mut f64,
+    buffer_complex: *mut Complex<f64>,
 }
 
 self_cell!(
-    pub struct CompiledEvaluator {
+    struct Library {
         owner: L,
 
         #[covariant]
         dependent: EvaluatorFunctions,
     }
-
-    impl {Debug}
 );
+
+unsafe impl Send for CompiledEvaluator {}
+
+impl std::fmt::Debug for CompiledEvaluator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompiledEvaluator({})", self.fn_name)
+    }
+}
 
 impl Clone for CompiledEvaluator {
     fn clone(&self) -> Self {
-        self.load_new_function(&self.with_dependent(|_, d| &d.fn_name))
-            .unwrap()
+        self.load_new_function(&self.fn_name).unwrap()
     }
 }
 
@@ -3265,22 +3314,49 @@ impl CompiledEvaluatorFloat for Complex<f64> {
     }
 }
 
+impl Drop for CompiledEvaluator {
+    fn drop(&mut self) {
+        unsafe {
+            (self.library.borrow_dependent().drop_buffer_double)(self.buffer_double);
+            (self.library.borrow_dependent().drop_buffer_complex)(self.buffer_complex);
+        }
+    }
+}
+
 impl CompiledEvaluator {
     /// Load a new function from the same library.
     pub fn load_new_function(&self, function_name: &str) -> Result<CompiledEvaluator, String> {
-        unsafe {
-            CompiledEvaluator::try_new(self.borrow_owner().clone(), |lib| {
+        let library = unsafe {
+            Library::try_new::<String>(self.library.borrow_owner().clone(), |lib| {
                 Ok(EvaluatorFunctions {
-                    fn_name: function_name.to_string(),
                     eval_double: lib
                         .get(format!("{}_double", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
                     eval_complex: lib
                         .get(format!("{}_complex", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
+                    create_buffer_double: lib
+                        .get(format!("{}_create_buffer_double", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    create_buffer_complex: lib
+                        .get(format!("{}_create_buffer_complex", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    drop_buffer_double: lib
+                        .get("drop_buffer_double".as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    drop_buffer_complex: lib
+                        .get("drop_buffer_complex".as_bytes())
+                        .map_err(|e| e.to_string())?,
                 })
             })
-        }
+        }?;
+
+        Ok(CompiledEvaluator {
+            fn_name: function_name.to_string(),
+            buffer_double: unsafe { (library.borrow_dependent().create_buffer_double)() },
+            buffer_complex: unsafe { (library.borrow_dependent().create_buffer_complex)() },
+            library,
+        })
     }
 
     /// Load a compiled evaluator from a shared library.
@@ -3293,16 +3369,34 @@ impl CompiledEvaluator {
                 }
             };
 
-            CompiledEvaluator::try_new(std::sync::Arc::new(lib), |lib| {
+            let library = Library::try_new::<String>(std::sync::Arc::new(lib), |lib| {
                 Ok(EvaluatorFunctions {
-                    fn_name: function_name.to_string(),
                     eval_double: lib
                         .get(format!("{}_double", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
                     eval_complex: lib
                         .get(format!("{}_complex", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
+                    create_buffer_double: lib
+                        .get(format!("{}_create_buffer_double", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    create_buffer_complex: lib
+                        .get(format!("{}_create_buffer_complex", function_name).as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    drop_buffer_double: lib
+                        .get("drop_buffer_double".as_bytes())
+                        .map_err(|e| e.to_string())?,
+                    drop_buffer_complex: lib
+                        .get("drop_buffer_complex".as_bytes())
+                        .map_err(|e| e.to_string())?,
                 })
+            })?;
+
+            Ok(CompiledEvaluator {
+                fn_name: function_name.to_string(),
+                buffer_double: (library.borrow_dependent().create_buffer_double)(),
+                buffer_complex: (library.borrow_dependent().create_buffer_complex)(),
+                library,
             })
         }
     }
@@ -3316,17 +3410,30 @@ impl CompiledEvaluator {
     /// Evaluate the compiled code with double-precision floating point numbers.
     #[inline(always)]
     pub fn evaluate_double(&self, args: &[f64], out: &mut [f64]) {
-        unsafe { (self.borrow_dependent().eval_double)(args.as_ptr(), out.as_mut_ptr()) }
+        unsafe {
+            (self.library.borrow_dependent().eval_double)(
+                args.as_ptr(),
+                self.buffer_double,
+                out.as_mut_ptr(),
+            )
+        }
     }
 
     /// Evaluate the compiled code with complex numbers.
     #[inline(always)]
     pub fn evaluate_complex(&self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
-        unsafe { (self.borrow_dependent().eval_complex)(args.as_ptr(), out.as_mut_ptr()) }
+        unsafe {
+            (self.library.borrow_dependent().eval_complex)(
+                args.as_ptr(),
+                self.buffer_complex,
+                out.as_mut_ptr(),
+            )
+        }
     }
 }
 
 /// Options for compiling exported code.
+#[derive(Clone)]
 pub struct CompileOptions {
     pub optimization_level: usize,
     pub fast_math: bool,

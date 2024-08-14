@@ -1214,7 +1214,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         );
 
         res += &format!(
-            "static const std::complex<double> CONSTANTS_complex[{}] = {{{}}};\n\n",
+            "static const std::complex<double> {}_CONSTANTS_complex[{}] = {{{}}};\n\n",
+            function_name,
             self.reserved_indices - self.param_count + 1,
             {
                 let mut nums = (self.param_count..self.reserved_indices)
@@ -1227,7 +1228,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
         res += &format!("extern \"C\" void {}_complex(const std::complex<double> *params, std::complex<double> *Z, std::complex<double> *out)\n{{\n", function_name);
 
-        self.export_asm_complex_impl(&self.instructions, &mut res);
+        self.export_asm_complex_impl(&self.instructions, function_name, &mut res);
 
         res += "\treturn;\n}\n\n";
 
@@ -1238,7 +1239,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         );
 
         res += &format!(
-            "static const double CONSTANTS_double[{}] = {{{}}};\n\n",
+            "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
+            function_name,
             self.reserved_indices - self.param_count + 1,
             {
                 let mut nums = (self.param_count..self.reserved_indices)
@@ -1254,20 +1256,29 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             function_name
         );
 
-        self.export_asm_double_impl(&self.instructions, &mut res);
+        self.export_asm_double_impl(&self.instructions, function_name, &mut res);
 
         res += "\treturn;\n}\n";
 
         res
     }
 
-    fn export_asm_double_impl(&self, instr: &[Instr], out: &mut String) -> bool {
+    fn export_asm_double_impl(
+        &self,
+        instr: &[Instr],
+        function_name: &str,
+        out: &mut String,
+    ) -> bool {
         macro_rules! get_input {
             ($i:expr) => {
                 if $i < self.param_count {
                     format!("params[{}]", $i)
                 } else if $i < self.reserved_indices {
-                    format!("CONSTANTS_double[{}]", $i - self.param_count)
+                    format!(
+                        "{}_CONSTANTS_double[{}]",
+                        function_name,
+                        $i - self.param_count
+                    )
                 } else {
                     // TODO: subtract reserved indices
                     format!("Z[{}]", $i)
@@ -1291,7 +1302,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         macro_rules! end_asm_block {
             ($in_block: expr) => {
                 if $in_block {
-                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n";
+                    *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
                     $in_block = false;
                 }
             };
@@ -1778,17 +1789,26 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             regcount = (regcount + 1) % 16;
         }
 
-        *out += "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"(CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n";
+        *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n",  function_name);
         in_asm_block
     }
 
-    fn export_asm_complex_impl(&self, instr: &[Instr], out: &mut String) -> bool {
+    fn export_asm_complex_impl(
+        &self,
+        instr: &[Instr],
+        function_name: &str,
+        out: &mut String,
+    ) -> bool {
         macro_rules! get_input {
             ($i:expr) => {
                 if $i < self.param_count {
                     format!("params[{}]", $i)
                 } else if $i < self.reserved_indices {
-                    format!("CONSTANTS_complex[{}]", $i - self.param_count)
+                    format!(
+                        "{}_CONSTANTS_complex[{}]",
+                        function_name,
+                        $i - self.param_count
+                    )
                 } else {
                     // TODO: subtract reserved indices
                     format!("Z[{}]", $i)
@@ -1812,7 +1832,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         macro_rules! end_asm_block {
             ($in_block: expr) => {
                 if $in_block {
-                    *out += "\t\t:\n\t\t: \"r\"(Z), \"r\"(CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n";
+                    *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
                     $in_block = false;
                 }
             };
@@ -1959,7 +1979,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             *out += &format!("\t\t\"movupd XMMWORD PTR[%0+{}], xmm0\\n\\t\"\n", i * 16);
         }
 
-        *out += "\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"(CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n";
+        *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n", function_name);
         in_asm_block
     }
 }

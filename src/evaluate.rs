@@ -2324,13 +2324,16 @@ impl EvalTree<Rational> {
         }
     }
 
+    /// Find a near-optimal Horner scheme that minimzes the number of multiplications
+    /// and additions, using `iterations` iterations of the optimization algorithm
+    /// and `n_cores` cores. Optionally, a starting scheme can be provided.
     pub fn optimize_horner_scheme(
         &mut self,
         iterations: usize,
         n_cores: usize,
         start_scheme: Option<Vec<Expression<Rational>>>,
     ) -> Vec<Expression<Rational>> {
-        let mut v = match start_scheme {
+        let v = match start_scheme {
             Some(a) => a,
             None => {
                 let mut v = HashMap::default();
@@ -2352,20 +2355,22 @@ impl EvalTree<Rational> {
             }
         };
 
-        for t in &mut self.expressions.tree {
-            *t = t.optimze_horner_scheme(&mut v, iterations, n_cores);
+        let scheme = Expression::optimize_horner_scheme_multiple(
+            &self.expressions.tree,
+            &v,
+            iterations,
+            n_cores,
+        );
+        for e in &mut self.expressions.tree {
+            e.apply_horner_scheme(&scheme);
         }
 
         for e in &mut self.expressions.subexpressions {
-            *e = e.optimze_horner_scheme(&mut v, iterations, n_cores);
+            e.apply_horner_scheme(&scheme);
         }
 
         for (_, _, e) in &mut self.functions {
             let mut v = HashMap::default();
-
-            for t in &mut e.tree {
-                t.find_all_variables(&mut v);
-            }
 
             for e in &mut e.subexpressions {
                 e.find_all_variables(&mut v);
@@ -2374,18 +2379,21 @@ impl EvalTree<Rational> {
             let mut v: Vec<_> = v.into_iter().collect();
             v.retain(|(x, _)| matches!(x, Expression::Parameter(_)));
             v.sort_by_key(|k| std::cmp::Reverse(k.1));
-            let mut v = v.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+            let v = v.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+
+            let scheme =
+                Expression::optimize_horner_scheme_multiple(&e.tree, &v, iterations, n_cores);
 
             for t in &mut e.tree {
-                *t = t.optimze_horner_scheme(&mut v, iterations, n_cores);
+                t.apply_horner_scheme(&scheme);
             }
 
             for e in &mut e.subexpressions {
-                *e = e.optimze_horner_scheme(&mut v, iterations, n_cores);
+                e.apply_horner_scheme(&scheme);
             }
         }
 
-        v
+        scheme
     }
 }
 
@@ -2644,31 +2652,49 @@ impl Expression<Rational> {
         }
     }
 
-    pub fn optimze_horner_scheme(
+    pub fn optimize_horner_scheme(
         &self,
-        vars: &mut Vec<Self>,
+        vars: &[Self],
         iterations: usize,
         n_cores: usize,
-    ) -> Expression<Rational> {
+    ) -> Vec<Self> {
+        Self::optimize_horner_scheme_multiple(std::slice::from_ref(self), vars, iterations, n_cores)
+    }
+
+    pub fn optimize_horner_scheme_multiple(
+        expressions: &[Self],
+        vars: &[Self],
+        iterations: usize,
+        n_cores: usize,
+    ) -> Vec<Self> {
         if vars.len() == 0 {
-            return self.clone();
+            return vars.to_vec();
         }
 
-        let mut best = self.clone();
-        best.apply_horner_scheme(&vars);
-
+        let horner: Vec<_> = expressions
+            .iter()
+            .map(|x| {
+                let mut h = x.clone();
+                h.apply_horner_scheme(&vars);
+                h
+            })
+            .collect();
         let mut subexpr = HashMap::default();
-        let current_best = best.count_operations_with_subexpression(&mut subexpr);
+        let mut best_ops = (0, 0);
+        for h in &horner {
+            let ops = h.count_operations_with_subexpression(&mut subexpr);
+            best_ops = (best_ops.0 + ops.0, best_ops.1 + ops.1);
+        }
 
-        println!("init {:?} {:?} {}", current_best, vars, vars.len());
+        println!("init {:?} {:?} {}", best_ops, vars, vars.len());
 
-        let best_mul = Arc::new(AtomicUsize::new(current_best.1));
-        let best_add = Arc::new(AtomicUsize::new(current_best.0));
-        let best_scheme = Arc::new(Mutex::new((best.clone(), vars.clone())));
+        let best_mul = Arc::new(AtomicUsize::new(best_ops.1));
+        let best_add = Arc::new(AtomicUsize::new(best_ops.0));
+        let best_scheme = Arc::new(Mutex::new(vars.to_vec()));
 
         std::thread::scope(|s| {
             for _ in 0..n_cores {
-                let mut vars = vars.clone();
+                let mut vars = vars.to_vec();
                 let best_scheme = best_scheme.clone();
                 let best_mul = best_mul.clone();
                 let best_add = best_add.clone();
@@ -2682,23 +2708,33 @@ impl Expression<Rational> {
 
                         vars.swap(t1, t2);
 
-                        let mut c = self.clone();
-                        c.apply_horner_scheme(&vars);
-
+                        let horner: Vec<_> = expressions
+                            .iter()
+                            .map(|x| {
+                                let mut h = x.clone();
+                                h.apply_horner_scheme(&vars);
+                                h
+                            })
+                            .collect();
                         let mut subexpr = HashMap::default();
-                        let cur = c.count_operations_with_subexpression(&mut subexpr);
+                        let mut cur_ops = (0, 0);
+
+                        for h in &horner {
+                            let ops = h.count_operations_with_subexpression(&mut subexpr);
+                            cur_ops = (cur_ops.0 + ops.0, cur_ops.1 + ops.1);
+                        }
 
                         // prefer fewer multiplications
-                        if cur.1 <= best_mul.load(Ordering::Relaxed)
-                            || cur.1 == best_mul.load(Ordering::Relaxed)
-                                && cur.0 <= best_add.load(Ordering::Relaxed)
+                        if cur_ops.1 <= best_mul.load(Ordering::Relaxed)
+                            || cur_ops.1 == best_mul.load(Ordering::Relaxed)
+                                && cur_ops.0 <= best_add.load(Ordering::Relaxed)
                         {
-                            println!("new best {:?}", cur);
+                            println!("new best {:?}", cur_ops);
 
-                            *best_scheme.lock().unwrap() = (c, vars.clone());
+                            best_scheme.lock().unwrap().clone_from_slice(&vars);
 
-                            best_mul.store(cur.1, Ordering::Relaxed);
-                            best_add.store(cur.1, Ordering::Relaxed);
+                            best_mul.store(cur_ops.1, Ordering::Relaxed);
+                            best_add.store(cur_ops.0, Ordering::Relaxed);
                         } else {
                             vars.swap(t1, t2);
                         }
@@ -2707,9 +2743,7 @@ impl Expression<Rational> {
             }
         });
 
-        let (best, scheme) = Arc::try_unwrap(best_scheme).unwrap().into_inner().unwrap();
-        *vars = scheme;
-        best
+        Arc::try_unwrap(best_scheme).unwrap().into_inner().unwrap()
     }
 
     fn find_all_variables(&self, vars: &mut HashMap<Expression<Rational>, usize>) {
@@ -3114,6 +3148,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExp
 }
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expression<T> {
+    // Count the number of additions and multiplications in the expression.
     pub fn count_operations(&self) -> (usize, usize) {
         match self {
             Expression::Const(_) => (0, 0),
@@ -3163,6 +3198,8 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
         }
     }
 
+    // Count the number of additions and multiplications in the expression, counting
+    // subexpressions only once.
     pub fn count_operations_with_subexpression<'a>(
         &'a self,
         sub_expr: &mut HashMap<&'a Self, usize>,

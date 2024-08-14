@@ -3185,7 +3185,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
             }
             Expression::Pow(p) => {
                 let (a, m) = p.0.count_operations();
-                (a, m + p.1 as usize - 1)
+                (a, m + p.1.unsigned_abs() as usize - 1)
             }
             Expression::Powf(p) => {
                 let (a, m) = p.0.count_operations();
@@ -3253,7 +3253,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
             }
             Expression::Pow(p) => {
                 let (a, m) = p.0.count_operations_with_subexpression(sub_expr);
-                (a, m + p.1 as usize - 1)
+                (a, m + p.1.unsigned_abs() as usize - 1)
             }
             Expression::Powf(p) => {
                 let (a, m) = p.0.count_operations_with_subexpression(sub_expr);

@@ -181,6 +181,10 @@ impl State {
         }
     }
 
+    pub(crate) unsafe fn symbol_from_id(id: u32) -> Symbol {
+        ID_TO_STR[id as usize].0
+    }
+
     /// Iterate over all defined symbols.
     pub fn symbol_iter() -> impl Iterator<Item = (Symbol, &'static str)> {
         ID_TO_STR

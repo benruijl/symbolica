@@ -1079,6 +1079,62 @@ class Expression:
         >>> print(e.evaluate_complex({x: 1 + 2j, y: 4 + 3j}, {}))
         """
 
+    def evaluator(
+        self,
+        constants: dict[Expression, Expression],
+        funs: dict[Tuple[Expression, str, Sequence[Expression]], Expression],
+        params: Sequence[Expression],
+        iterations: int = 100,
+        n_cores: int = 4,
+        verbose: bool = False,
+    ) -> Evaluator:
+        """Create an evaluator that can evaluate (nested) expressions in an optimized fashion.
+        All constants and functions should be provided as dictionaries, where the function
+        dictionary has a key `(name, printable name, arguments)` and the value is the function
+        body. For example the function `f(x,y)=x^2+y` should be provided as
+        `{(f, "f", (x, y)): x**2 + y}`. All free parameters should be provided in the `params` list.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> x, y, z, pi, f, g = Expression.symbols(
+        >>>     'x', 'y', 'z', 'pi', 'f', 'g')
+        >>>
+        >>> e1 = Expression.parse("x + pi + cos(x) + f(g(x+1),x*2)")
+        >>> fd = Expression.parse("y^2 + z^2*y^2")
+        >>> gd = Expression.parse("y + 5")
+        >>>
+        >>> ev = e1.evaluator({pi: Expression.num(22)/7},
+        >>>              {(f, "f", (y, z)): fd, (g, "g", (y, )): gd}, [x])
+        >>> res = ev.evaluate([[1.], [2.], [3.]])  # evaluate at x=1, x=2, x=3
+        >>> print(res)
+        """
+
+    @classmethod
+    def evaluator_multiple(
+        _cls,
+        exprs: Sequence[Expression],
+        constants: dict[Expression, Expression],
+        funs: dict[Tuple[Expression, str, Sequence[Expression]], Expression],
+        params: Sequence[Expression],
+        iterations: int = 100,
+        n_cores: int = 4,
+        verbose: bool = False,
+    ) -> Evaluator:
+        """Create an evaluator that can jointly evaluate (nested) expressions in an optimized fashion.
+        See `Expression.evaluator()` for more information.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> x = Expression.symbols('x')
+        >>> e1 = Expression.parse("x^2 + 1")
+        >>> e2 = Expression.parse("x^2 + 2)
+        >>> ev = Expression.evaluator_multiple([e1, e2], {}, {}, [x])
+
+        will recycle the `x^2`
+        """
+
 
 class Replacement:
     """A replacement of a pattern by a right-hand side."""
@@ -1809,14 +1865,6 @@ class Polynomial:
 
     def to_finite_field(self, prime: int) -> FiniteFieldPolynomial:
         """Convert the coefficients of the polynomial to a finite field with prime `prime`."""
-
-    def optimize(self, iterations: int = 1000, to_file: str | None = None) -> Evaluator:
-        """
-        Optimize the polynomial for evaluation using `iterations` number of iterations.
-        The optimized output can be exported in a C++ format using `to_file`.
-
-        Returns an evaluator for the polynomial.
-        """
 
     def factor_square_free(self) -> list[Tuple[Polynomial, int]]:
         """Compute the square-free factorization of the polynomial.
@@ -2790,8 +2838,58 @@ class Matrix:
 class Evaluator:
     """An optimized evaluator of an expression."""
 
-    def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[float]:
-        """Evaluate the polynomial for multiple inputs and return the result."""
+    def compile(
+        self,
+        function_name: str,
+        filename: str,
+        library_name: str,
+        inline_asm: bool = True,
+        optimization_level: int = 3,
+        compiler_path: Optional[str] = None,
+    ) -> CompiledEvaluator:
+        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it."""
+
+    def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
+        """Evaluate the expression for multiple inputs and return the result."""
+
+    def evaluate_single(self, inputs: Sequence[Sequence[float]]) -> List[float]:
+        """Evaluate the expression for multiple inputs and return the result, which
+        is a single value."""
+
+    def evaluate_complex(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:
+        """Evaluate the expression for multiple inputs and return the result."""
+
+    def evaluate_complex_single(self, inputs: Sequence[Sequence[complex]]) -> List[complex]:
+        """Evaluate the expression for multiple inputs and return the result, which
+        is a single value."""
+
+
+class CompiledEvaluator:
+    """An compiled evaluator of an expression. This will give the highest performance of 
+    all evaluators."""
+
+    @classmethod
+    def load(
+        _cls,
+        filename: str,
+        function_name: str,
+        output_len: int,
+    ) -> CompiledEvaluator:
+        """Load a compiled library, previously generated with `Evaluator.compile()`."""
+
+    def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
+        """Evaluate the expression for multiple inputs and return the result."""
+
+    def evaluate_single(self, inputs: Sequence[Sequence[float]]) -> List[float]:
+        """Evaluate the expression for multiple inputs and return the result, which
+        is a single value."""
+
+    def evaluate_complex(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:
+        """Evaluate the expression for multiple inputs and return the result."""
+
+    def evaluate_complex_single(self, inputs: Sequence[Sequence[complex]]) -> List[complex]:
+        """Evaluate the expression for multiple inputs and return the result, which
+        is a single value."""
 
 
 class NumericalIntegrator:

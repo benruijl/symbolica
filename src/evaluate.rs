@@ -10,16 +10,19 @@ use ahash::{AHasher, HashMap};
 use rand::{thread_rng, Rng};
 
 use self_cell::self_cell;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     atom::{representation::InlineVar, Atom, AtomOrView, AtomView, Symbol},
     coefficient::CoefficientView,
-    combinatorics::CombinationIterator,
+    combinatorics::unique_permutations,
     domains::{
         float::{Complex, NumericalFloatLike, Real},
+        integer::Integer,
         rational::Rational,
     },
     state::State,
+    LicenseManager,
 };
 
 type EvalFnType<T> = Box<
@@ -63,9 +66,11 @@ impl<'a, T> FunctionMap<'a, T> {
         }
     }
 
-    pub fn add_constant(&mut self, key: AtomOrView<'a>, value: T) {
-        self.map
-            .insert(AtomOrTaggedFunction::Atom(key), ConstOrExpr::Const(value));
+    pub fn add_constant<A: Into<AtomOrView<'a>>>(&mut self, key: A, value: T) {
+        self.map.insert(
+            AtomOrTaggedFunction::Atom(key.into()),
+            ConstOrExpr::Const(value),
+        );
     }
 
     pub fn add_function(
@@ -139,10 +144,31 @@ enum ConstOrExpr<'a, T> {
     Expr(String, usize, Vec<Symbol>, AtomView<'a>),
 }
 
+#[derive(Debug, Clone)]
+pub struct OptimizationSettings {
+    pub horner_iterations: usize,
+    pub n_cores: usize,
+    pub cpe_iterations: Option<usize>,
+    pub hot_start: Option<Vec<Expression<Rational>>>,
+    pub verbose: bool,
+}
+
+impl Default for OptimizationSettings {
+    fn default() -> Self {
+        OptimizationSettings {
+            horner_iterations: 10,
+            n_cores: 1,
+            cpe_iterations: None,
+            hot_start: None,
+            verbose: false,
+        }
+    }
+}
+
 impl Atom {
-    /// Evaluate an expression using a constant map and a function map.
-    /// The constant map can map any literal expression to a value, for example
-    /// a variable or a function with fixed arguments.
+    /// Evaluate a (nested) expression a single time.
+    /// For repeated evaluations, use [Self::evaluator()] and convert
+    /// to an optimized version or generate a compiled version of your expression.
     ///
     /// All variables and all user functions in the expression must occur in the map.
     pub fn evaluate<'b, T: Real, F: Fn(&Rational) -> T + Copy>(
@@ -154,6 +180,54 @@ impl Atom {
     ) -> T {
         self.as_view()
             .evaluate(coeff_map, const_map, function_map, cache)
+    }
+
+    /// Convert nested expressions to a tree suitable for repeated evaluations with
+    /// different values for `params`.
+    /// All variables and all user functions in the expression must occur in the map.
+    pub fn to_evaluation_tree<'a>(
+        &'a self,
+        fn_map: &FunctionMap<'a, Rational>,
+        params: &[Atom],
+    ) -> Result<EvalTree<Rational>, String> {
+        self.as_view().to_evaluation_tree(fn_map, params)
+    }
+
+    /// Create an efficient evaluator for a (nested) expression.
+    /// All free parameters must appear in `params` and all other variables
+    /// and user functions in the expression must occur in the function map.
+    /// The function map may have nested expressions.
+    pub fn evaluator<'a>(
+        &'a self,
+        fn_map: &FunctionMap<'a, Rational>,
+        params: &[Atom],
+        optimization_settings: OptimizationSettings,
+    ) -> Result<ExpressionEvaluator<Rational>, String> {
+        let mut tree = self.to_evaluation_tree(fn_map, params)?;
+        Ok(tree.optimize(
+            optimization_settings.horner_iterations,
+            optimization_settings.n_cores,
+            optimization_settings.hot_start.clone(),
+            optimization_settings.verbose,
+        ))
+    }
+
+    /// Convert nested expressions to a tree suitable for repeated evaluations with
+    /// different values for `params`.
+    /// All variables and all user functions in the expression must occur in the map.
+    pub fn evaluator_multiple<'a>(
+        exprs: &[AtomView<'a>],
+        fn_map: &FunctionMap<'a, Rational>,
+        params: &[Atom],
+        optimization_settings: OptimizationSettings,
+    ) -> Result<ExpressionEvaluator<Rational>, String> {
+        let mut tree = AtomView::to_eval_tree_multiple(exprs, fn_map, params)?;
+        Ok(tree.optimize(
+            optimization_settings.horner_iterations,
+            optimization_settings.n_cores,
+            optimization_settings.hot_start.clone(),
+            optimization_settings.verbose,
+        ))
     }
 }
 
@@ -170,6 +244,22 @@ pub struct EvalTree<T> {
     param_count: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct BuiltinSymbol(Symbol);
+
+impl Serialize for BuiltinSymbol {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.get_id().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BuiltinSymbol {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id: u32 = u32::deserialize(deserializer)?;
+        Ok(BuiltinSymbol(unsafe { State::symbol_from_id(id) }))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Expression<T> {
     Const(T),
@@ -180,7 +270,7 @@ pub enum Expression<T> {
     Pow(Box<(Expression<T>, i64)>),
     Powf(Box<(Expression<T>, Expression<T>)>),
     ReadArg(usize), // read nth function argument
-    BuiltinFun(Symbol, Box<Expression<T>>),
+    BuiltinFun(BuiltinSymbol, Box<Expression<T>>),
     SubExpression(usize),
 }
 
@@ -199,7 +289,7 @@ pub enum HashedExpression<T> {
         Box<(HashedExpression<T>, HashedExpression<T>)>,
     ),
     ReadArg(ExpressionHash, usize), // read nth function argument
-    BuiltinFun(ExpressionHash, Symbol, Box<HashedExpression<T>>),
+    BuiltinFun(ExpressionHash, BuiltinSymbol, Box<HashedExpression<T>>),
     SubExpression(ExpressionHash, usize),
 }
 
@@ -300,72 +390,10 @@ impl<T: Eq + Hash> Hash for HashedExpression<T> {
     }
 }
 
-#[derive(Debug, Eq, Clone)]
-pub struct HashedSubExpression<'a, T> {
-    pub hash: u64,
-    pub op: u8, // should be 0 when it's a single item, else 3 for add, 4 for mul; used for EQ!
-    pub expression: Vec<&'a HashedExpression<T>>,
-}
-
-impl<T: PartialEq> PartialEq for HashedSubExpression<'_, T> {
-    fn eq(&self, other: &Self) -> bool {
-        if self.hash != other.hash {
-            return false;
-        }
-
-        if self.op == other.op {
-            return self.expression.len() == other.expression.len()
-                && self
-                    .expression
-                    .iter()
-                    .zip(&other.expression)
-                    .all(|x| **x.0 == **x.1);
-        }
-
-        if self.op != 0 {
-            return other.eq(self);
-        }
-
-        if other.op == 3 {
-            if let HashedExpression::Add(_, v) = &self.expression[0] {
-                return self.expression.iter().zip(v).all(|(a, b)| *a == b);
-            }
-        } else if other.op == 4 {
-            if let HashedExpression::Mul(_, v) = &self.expression[0] {
-                return self.expression.iter().zip(v).all(|(a, b)| *a == b);
-            }
-        }
-
-        false
-    }
-}
-
-impl<'a, T: Clone> HashedSubExpression<'a, T> {
-    fn to_hashed_expression(&self) -> HashedExpression<T> {
-        match self.op {
-            3 => HashedExpression::Add(
-                self.hash,
-                self.expression.iter().cloned().cloned().collect(),
-            ),
-            4 => HashedExpression::Mul(
-                self.hash,
-                self.expression.iter().cloned().cloned().collect(),
-            ),
-            _ => self.expression[0].clone(),
-        }
-    }
-}
-
-impl<'a, T: Eq + Hash> Hash for HashedSubExpression<'a, T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
-    }
-}
 impl<T: Eq + Hash + Clone + Ord> HashedExpression<T> {
     fn find_subexpression<'a>(
         &'a self,
-        subexp: &mut HashMap<HashedSubExpression<'a, T>, usize>,
-        max_subexpr_len: usize,
+        subexp: &mut HashMap<&'a HashedExpression<T>, usize>,
     ) -> bool {
         if matches!(
             self,
@@ -376,18 +404,12 @@ impl<T: Eq + Hash + Clone + Ord> HashedExpression<T> {
             return true;
         }
 
-        let complete_node = HashedSubExpression {
-            hash: self.get_hash(),
-            op: 0,
-            expression: vec![self],
-        };
-
-        if let Some(i) = subexp.get_mut(&complete_node) {
+        if let Some(i) = subexp.get_mut(self) {
             *i += 1;
             return true;
         }
 
-        subexp.insert(complete_node.clone(), 1);
+        subexp.insert(self, 1);
 
         match self {
             HashedExpression::Const(_, _)
@@ -395,70 +417,20 @@ impl<T: Eq + Hash + Clone + Ord> HashedExpression<T> {
             | HashedExpression::ReadArg(_, _) => {}
             HashedExpression::Eval(_, _, ae) => {
                 for arg in ae {
-                    arg.find_subexpression(subexp, max_subexpr_len);
+                    arg.find_subexpression(subexp);
                 }
             }
             HashedExpression::Add(_, a) | HashedExpression::Mul(_, a) => {
-                let mut unused_indices = (0..a.len()).collect::<Vec<_>>();
-                let mut k = max_subexpr_len.min(unused_indices.len() - 1);
-
-                /*let op: u64 = if let HashedExpression::Add(_, _) = self {
-                    3
-                } else {
-                    4
-                };
-
-                let min = if op == 3 { 2 } else { 1 };*/
-
-                //k = 0;
-                'big_loop: while k > 1 {
-                    let mut it = CombinationIterator::new(unused_indices.len(), k);
-                    while let Some(x) = it.next() {
-                        let op: u64 = if let HashedExpression::Add(_, _) = self {
-                            3
-                        } else {
-                            4
-                        };
-
-                        let mut hash = op;
-                        for i in x {
-                            hash = hash.wrapping_add(a[unused_indices[*i]].get_hash());
-                        }
-
-                        // FIXME: the op does not play well!
-                        // we need to construct a new
-                        let complete_node = HashedSubExpression {
-                            hash,
-                            op: op as u8,
-                            expression: x.iter().map(|i| &a[unused_indices[*i]]).collect(),
-                        };
-
-                        if let Some(i) = subexp.get_mut(&complete_node) {
-                            *i += 1;
-                            for j in x.iter().rev() {
-                                unused_indices.remove(*j);
-                            }
-
-                            k = unused_indices.len().min(k);
-                            continue 'big_loop;
-                        } else {
-                            subexp.insert(complete_node.clone(), 1);
-                        }
-                    }
-
-                    k -= 1;
-                }
-
-                for arg in unused_indices {
-                    a[arg].find_subexpression(subexp, max_subexpr_len);
+                for arg in a {
+                    arg.find_subexpression(subexp);
                 }
             }
             HashedExpression::Pow(_, p) => {
-                p.0.find_subexpression(subexp, max_subexpr_len);
+                p.0.find_subexpression(subexp);
             }
             HashedExpression::Powf(_, p) => {
-                p.0.find_subexpression(subexp, max_subexpr_len);
-                p.1.find_subexpression(subexp, max_subexpr_len);
+                p.0.find_subexpression(subexp);
+                p.1.find_subexpression(subexp);
             }
             HashedExpression::BuiltinFun(_, _, _) => {}
             HashedExpression::SubExpression(_, _) => {}
@@ -469,28 +441,15 @@ impl<T: Eq + Hash + Clone + Ord> HashedExpression<T> {
 
     fn replace_subexpression<'a>(
         &mut self,
-        subexp: &HashMap<HashedSubExpression<'a, T>, usize>,
-        max_subexpr_len: usize,
+        subexp: &HashMap<&'a HashedExpression<T>, usize>,
         skip_root: bool,
     ) {
         if !skip_root {
-            let complete_node = HashedSubExpression {
-                hash: self.get_hash(),
-                op: 0,
-                expression: vec![self],
-            };
-
-            if let Some(i) = subexp.get(&complete_node) {
-                *self = HashedExpression::SubExpression(self.get_hash(), *i); // recycle hash!
+            if let Some(i) = subexp.get(self) {
+                *self = HashedExpression::SubExpression(self.get_hash(), *i); // TODO: do not recyle hash?
                 return;
             }
         }
-
-        let op: u64 = if let HashedExpression::Add(_, _) = self {
-            3
-        } else {
-            4
-        };
 
         match self {
             HashedExpression::Const(_, _)
@@ -498,70 +457,95 @@ impl<T: Eq + Hash + Clone + Ord> HashedExpression<T> {
             | HashedExpression::ReadArg(_, _) => {}
             HashedExpression::Eval(_, _, ae) => {
                 for arg in &mut *ae {
-                    arg.replace_subexpression(subexp, max_subexpr_len, false);
+                    arg.replace_subexpression(subexp, false);
                 }
             }
             HashedExpression::Add(_, a) | HashedExpression::Mul(_, a) => {
-                let mut unused_indices = (0..a.len()).collect::<Vec<_>>();
-                let mut k = max_subexpr_len.min(unused_indices.len() - 1);
-
-                let mut res = vec![];
-
-                /*if op == 3 {
-                    // k = 0;
+                for arg in a {
+                    arg.replace_subexpression(subexp, false);
                 }
-
-                let min = if op == 3 { 2 } else { 1 };*/
-
-                //k = 0;
-                'big_loop: while k > 1 {
-                    let mut it = CombinationIterator::new(unused_indices.len(), k);
-                    while let Some(x) = it.next() {
-                        let mut hash = op;
-                        for i in x {
-                            hash = hash.wrapping_add(a[unused_indices[*i]].get_hash());
-                        }
-
-                        // FIXME: the op does not play well!
-                        // we need to construct a new
-                        let complete_node = HashedSubExpression {
-                            hash,
-                            op: op as u8,
-                            expression: x.iter().map(|i| &a[unused_indices[*i]]).collect(),
-                        };
-
-                        if let Some(i) = subexp.get(&complete_node) {
-                            res.push(HashedExpression::SubExpression(hash, *i)); // recycle hash???
-
-                            for j in x.iter().rev() {
-                                unused_indices.remove(*j);
-                            }
-
-                            k = unused_indices.len().min(k);
-                            continue 'big_loop;
-                        }
-                    }
-
-                    k -= 1;
-                }
-
-                for arg in unused_indices {
-                    a[arg].replace_subexpression(subexp, max_subexpr_len, false);
-                    res.push(a[arg].clone());
-                }
-
-                res.sort();
-                *a = res;
             }
             HashedExpression::Pow(_, p) => {
-                p.0.replace_subexpression(subexp, max_subexpr_len, false);
+                p.0.replace_subexpression(subexp, false);
             }
             HashedExpression::Powf(_, p) => {
-                p.0.replace_subexpression(subexp, max_subexpr_len, false);
-                p.1.replace_subexpression(subexp, max_subexpr_len, false);
+                p.0.replace_subexpression(subexp, false);
+                p.1.replace_subexpression(subexp, false);
             }
             HashedExpression::BuiltinFun(_, _, _) => {}
             HashedExpression::SubExpression(_, _) => {}
+        }
+    }
+
+    // Count the number of additions and multiplications in the expression, counting
+    // subexpressions only once.
+    pub fn count_operations_with_subexpression<'a>(
+        &'a self,
+        sub_expr: &mut HashMap<&'a Self, usize>,
+    ) -> (usize, usize) {
+        if matches!(
+            self,
+            HashedExpression::Const(_, _)
+                | HashedExpression::Parameter(_, _)
+                | HashedExpression::ReadArg(_, _)
+        ) {
+            return (0, 0);
+        }
+
+        if sub_expr.contains_key(self) {
+            //println!("SUB {:?}", self);
+            return (0, 0);
+        }
+
+        sub_expr.insert(self, 1);
+
+        match self {
+            HashedExpression::Const(_, _) => (0, 0),
+            HashedExpression::Parameter(_, _) => (0, 0),
+            HashedExpression::Eval(_, _, args) => {
+                let mut add = 0;
+                let mut mul = 0;
+                for arg in args {
+                    let (a, m) = arg.count_operations_with_subexpression(sub_expr);
+                    add += a;
+                    mul += m;
+                }
+                (add, mul)
+            }
+            HashedExpression::Add(_, a) => {
+                let mut add = 0;
+                let mut mul = 0;
+                for arg in a {
+                    let (a, m) = arg.count_operations_with_subexpression(sub_expr);
+                    add += a;
+                    mul += m;
+                }
+                (add + a.len() - 1, mul)
+            }
+            HashedExpression::Mul(_, m) => {
+                let mut add = 0;
+                let mut mul = 0;
+                for arg in m {
+                    let (a, m) = arg.count_operations_with_subexpression(sub_expr);
+                    add += a;
+                    mul += m;
+                }
+                (add, mul + m.len() - 1)
+            }
+            HashedExpression::Pow(_, p) => {
+                let (a, m) = p.0.count_operations_with_subexpression(sub_expr);
+                (a, m + p.1.unsigned_abs() as usize - 1)
+            }
+            HashedExpression::Powf(_, p) => {
+                let (a, m) = p.0.count_operations_with_subexpression(sub_expr);
+                let (a2, m2) = p.1.count_operations_with_subexpression(sub_expr);
+                (a + a2, m + m2 + 1) // not clear how to count this
+            }
+            HashedExpression::ReadArg(_, _) => (0, 0),
+            HashedExpression::BuiltinFun(_, _, b) => {
+                b.count_operations_with_subexpression(sub_expr)
+            } // not clear how to count this, third arg?
+            HashedExpression::SubExpression(_, _) => (0, 0),
         }
     }
 }
@@ -674,7 +658,7 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
@@ -685,13 +669,13 @@ pub struct ExpressionEvaluator<T> {
 }
 
 impl<T: Real> ExpressionEvaluator<T> {
-    pub fn evaluate(&mut self, params: &[T]) -> T {
+    pub fn evaluate_single(&mut self, params: &[T]) -> T {
         let mut res = T::new_zero();
-        self.evaluate_multiple(params, std::slice::from_mut(&mut res));
+        self.evaluate(params, std::slice::from_mut(&mut res));
         res
     }
 
-    pub fn evaluate_multiple(&mut self, params: &[T], out: &mut [T]) {
+    pub fn evaluate(&mut self, params: &[T], out: &mut [T]) {
         for (t, p) in self.stack.iter_mut().zip(params) {
             *t = p.clone();
         }
@@ -725,7 +709,7 @@ impl<T: Real> ExpressionEvaluator<T> {
                 Instr::Powf(r, b, e) => {
                     self.stack[*r] = self.stack[*b].powf(&self.stack[*e]);
                 }
-                Instr::BuiltinFun(r, s, arg) => match *s {
+                Instr::BuiltinFun(r, s, arg) => match s.0 {
                     State::EXP => self.stack[*r] = self.stack[*arg].exp(),
                     State::LOG => self.stack[*r] = self.stack[*arg].log(),
                     State::SIN => self.stack[*r] = self.stack[*arg].sin(),
@@ -743,7 +727,22 @@ impl<T: Real> ExpressionEvaluator<T> {
 }
 
 impl<T: Default> ExpressionEvaluator<T> {
-    pub fn remove_common_pairs(&mut self) -> usize {
+    /// Map the coefficients to a different type.
+    pub fn map_coeff<T2, F: Fn(&T) -> T2>(self, f: &F) -> ExpressionEvaluator<T2> {
+        ExpressionEvaluator {
+            stack: self.stack.iter().map(f).collect(),
+            param_count: self.param_count,
+            reserved_indices: self.reserved_indices,
+            instructions: self.instructions,
+            result_indices: self.result_indices,
+        }
+    }
+
+    pub fn get_output_len(&self) -> usize {
+        self.result_indices.len()
+    }
+
+    fn remove_common_pairs(&mut self) -> usize {
         let mut pairs: HashMap<_, Vec<usize>> = HashMap::default();
 
         let mut affected_lines = vec![true; self.instructions.len()];
@@ -1074,14 +1073,19 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         include_header: bool,
         inline_asm: InlineASM,
     ) -> Result<ExportedCode, std::io::Error> {
+        let mut filename = filename.to_string();
+        if !filename.ends_with(".cpp") {
+            filename += ".cpp";
+        }
+
         let cpp = match inline_asm {
             InlineASM::Intel => self.export_asm_str(function_name, include_header),
             InlineASM::None => self.export_cpp_str(function_name, include_header),
         };
 
-        let _ = std::fs::write(filename, cpp)?;
+        let _ = std::fs::write(&filename, cpp)?;
         Ok(ExportedCode {
-            source_filename: filename.to_string(),
+            source_filename: filename,
             function_name: function_name.to_string(),
             inline_asm,
         })
@@ -1172,7 +1176,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     let exp = format!("Z{}", e);
                     *out += format!("\tZ{} = pow({}, {});\n", o, base, exp).as_str();
                 }
-                Instr::BuiltinFun(o, s, a) => match *s {
+                Instr::BuiltinFun(o, s, a) => match s.0 {
                     State::EXP => {
                         let arg = format!("Z{}", a);
                         *out += format!("\tZ{} = exp({});\n", o, arg).as_str();
@@ -1358,7 +1362,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             Mul(MemOrReg, u16, Vec<MemOrReg>),
             Pow(MemOrReg, u16, MemOrReg, i64),
             Powf(usize, usize, usize),
-            BuiltinFun(usize, Symbol, usize),
+            BuiltinFun(usize, BuiltinSymbol, usize),
         }
 
         let mut new_instr: Vec<RegInstr> = instr
@@ -1492,8 +1496,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         MemOrReg::Reg(out_reg) => {
                             if let Some(j) = a.iter().find(|x| **x == MemOrReg::Reg(*out_reg)) {
                                 // we can recycle the register completely
+                                let mut first_skipped = false;
                                 for i in a {
-                                    if i != j {
+                                    if first_skipped || i != j {
                                         match i {
                                             MemOrReg::Reg(k) => {
                                                 *out += &format!(
@@ -1511,14 +1516,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             }
                                         }
                                     }
+                                    first_skipped |= i == j;
                                 }
                             } else if let Some(MemOrReg::Reg(j)) =
                                 a.iter().find(|x| matches!(x, MemOrReg::Reg(_)))
                             {
                                 *out += &format!("\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n", out_reg, j);
 
+                                let mut first_skipped = false;
                                 for i in a {
-                                    if *i != MemOrReg::Reg(*j) {
+                                    if first_skipped || *i != MemOrReg::Reg(*j) {
                                         match i {
                                             MemOrReg::Reg(k) => {
                                                 *out += &format!(
@@ -1536,6 +1543,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             }
                                         }
                                     }
+                                    first_skipped |= *i == MemOrReg::Reg(*j);
                                 }
                             } else {
                                 if let MemOrReg::Mem(k) = &a[0] {
@@ -1569,8 +1577,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                     *out +=
                                         &format!("\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n", out_reg, j);
 
+                                    let mut first_skipped = false;
                                     for i in a {
-                                        if *i != MemOrReg::Reg(*j) {
+                                        if first_skipped || *i != MemOrReg::Reg(*j) {
                                             match i {
                                                 MemOrReg::Reg(k) => {
                                                     *out += &format!(
@@ -1588,6 +1597,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                                 }
                                             }
                                         }
+
+                                        first_skipped |= *i == MemOrReg::Reg(*j);
                                     }
                                 } else {
                                     if let MemOrReg::Mem(k) = &a[0] {
@@ -1734,7 +1745,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                     let arg = get_input!(*a);
 
-                    match *s {
+                    match s.0 {
                         State::EXP => {
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
@@ -1939,7 +1950,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                     let arg = get_input!(*a);
 
-                    match *s {
+                    match s.0 {
                         State::EXP => {
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
@@ -1984,13 +1995,13 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),
     Pow(usize, usize, i64),
     Powf(usize, usize, usize),
-    BuiltinFun(usize, Symbol, usize),
+    BuiltinFun(usize, BuiltinSymbol, usize),
 }
 
 impl<T: Clone + PartialEq> SplitExpression<T> {
@@ -2142,7 +2153,7 @@ impl<T: Clone + PartialEq> EvalTree<T> {
 
 impl<T: Clone + Default + PartialEq> EvalTree<T> {
     /// Create a linear version of the tree that can be evaluated more efficiently.
-    pub fn linearize(mut self, cpe_rounds: usize) -> ExpressionEvaluator<T> {
+    pub fn linearize(mut self, cpe_rounds: Option<usize>) -> ExpressionEvaluator<T> {
         let mut stack = vec![T::default(); self.param_count];
 
         // strip every constant and move them into the stack after the params
@@ -2174,7 +2185,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
             result_indices,
         };
 
-        for _ in 0..cpe_rounds {
+        for _ in 0..cpe_rounds.unwrap_or(usize::MAX) {
             if e.remove_common_pairs() == 0 {
                 break;
             }
@@ -2322,6 +2333,21 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 }
 
 impl EvalTree<Rational> {
+    /// Find a near-optimal Horner scheme that minimzes the number of multiplications
+    /// and additions, using `iterations` iterations of the optimization algorithm
+    /// and `n_cores` cores. Optionally, a starting scheme can be provided.
+    pub fn optimize(
+        &mut self,
+        iterations: usize,
+        n_cores: usize,
+        start_scheme: Option<Vec<Expression<Rational>>>,
+        verbose: bool,
+    ) -> ExpressionEvaluator<Rational> {
+        let _ = self.optimize_horner_scheme(iterations, n_cores, start_scheme, verbose);
+        self.common_subexpression_elimination();
+        self.clone().linearize(None)
+    }
+
     /// Write the expressions in a Horner scheme where the variables
     /// are sorted by their occurrence count.
     pub fn horner_scheme(&mut self) {
@@ -2352,6 +2378,7 @@ impl EvalTree<Rational> {
         iterations: usize,
         n_cores: usize,
         start_scheme: Option<Vec<Expression<Rational>>>,
+        verbose: bool,
     ) -> Vec<Expression<Rational>> {
         let v = match start_scheme {
             Some(a) => a,
@@ -2380,6 +2407,7 @@ impl EvalTree<Rational> {
             &v,
             iterations,
             n_cores,
+            verbose,
         );
         for e in &mut self.expressions.tree {
             e.apply_horner_scheme(&scheme);
@@ -2401,8 +2429,9 @@ impl EvalTree<Rational> {
             v.sort_by_key(|k| std::cmp::Reverse(k.1));
             let v = v.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
 
-            let scheme =
-                Expression::optimize_horner_scheme_multiple(&e.tree, &v, iterations, n_cores);
+            let scheme = Expression::optimize_horner_scheme_multiple(
+                &e.tree, &v, iterations, n_cores, verbose,
+            );
 
             for t in &mut e.tree {
                 t.apply_horner_scheme(&scheme);
@@ -2424,13 +2453,13 @@ impl Expression<Rational> {
         }
 
         let a = match self {
+            Expression::Add(a) => a,
             Expression::Eval(_, a) => {
                 for arg in a {
                     arg.apply_horner_scheme(scheme);
                 }
                 return;
             }
-            Expression::Add(a) => a,
             Expression::Mul(m) => {
                 for a in m {
                     a.apply_horner_scheme(scheme);
@@ -2489,9 +2518,9 @@ impl Expression<Rational> {
         let mut contains = vec![];
         let mut rest = vec![];
 
-        for x in a {
+        for mut x in a.drain(..) {
             let mut found = false;
-            if let Expression::Mul(m) = x {
+            if let Expression::Mul(m) = &mut x {
                 let mut pow_counter = 0;
 
                 m.retain(|y| {
@@ -2524,21 +2553,21 @@ impl Expression<Rational> {
                 }
 
                 if m.is_empty() {
-                    *x = Expression::Const(Rational::one());
+                    x = Expression::Const(Rational::one());
                 } else if m.len() == 1 {
-                    *x = m.pop().unwrap();
+                    x = m.pop().unwrap();
                 }
 
                 found = pow_counter > 0;
-            } else if x == &scheme[0] {
+            } else if x == scheme[0] {
                 found = true;
-                *x = Expression::Const(Rational::one());
+                x = Expression::Const(Rational::one());
             }
 
             if found {
-                contains.push(x.clone());
+                contains.push(x);
             } else {
-                rest.push(x.clone());
+                rest.push(x);
             }
         }
 
@@ -2584,16 +2613,16 @@ impl Expression<Rational> {
 
             r.apply_horner_scheme(&scheme[1..]);
 
-            let mut v = vec![c];
-            if let Expression::Add(a) = r {
-                v.extend(a);
+            a.clear();
+            a.push(c);
+
+            if let Expression::Add(aa) = r {
+                a.extend(aa);
             } else {
-                v.push(r);
+                a.push(r);
             }
 
-            v.sort();
-
-            *self = Expression::Add(v);
+            a.sort();
         }
     }
 
@@ -2677,8 +2706,15 @@ impl Expression<Rational> {
         vars: &[Self],
         iterations: usize,
         n_cores: usize,
+        verbose: bool,
     ) -> Vec<Self> {
-        Self::optimize_horner_scheme_multiple(std::slice::from_ref(self), vars, iterations, n_cores)
+        Self::optimize_horner_scheme_multiple(
+            std::slice::from_ref(self),
+            vars,
+            iterations,
+            n_cores,
+            verbose,
+        )
     }
 
     pub fn optimize_horner_scheme_multiple(
@@ -2686,6 +2722,7 @@ impl Expression<Rational> {
         vars: &[Self],
         iterations: usize,
         n_cores: usize,
+        verbose: bool,
     ) -> Vec<Self> {
         if vars.len() == 0 {
             return vars.to_vec();
@@ -2706,34 +2743,66 @@ impl Expression<Rational> {
             best_ops = (best_ops.0 + ops.0, best_ops.1 + ops.1);
         }
 
-        println!("init {:?} {:?} {}", best_ops, vars, vars.len());
+        if verbose {
+            println!(
+                "Initial ops: {} additions and {} multiplications",
+                best_ops.0, best_ops.1
+            );
+        }
 
         let best_mul = Arc::new(AtomicUsize::new(best_ops.1));
         let best_add = Arc::new(AtomicUsize::new(best_ops.0));
         let best_scheme = Arc::new(Mutex::new(vars.to_vec()));
 
+        let permutations =
+            if vars.len() < 10 && Integer::factorial(vars.len() as u32) <= iterations.max(1) {
+                let v: Vec<_> = (0..vars.len()).collect();
+                Some(unique_permutations(&v).1)
+            } else {
+                None
+            };
+        let p_ref = &permutations;
+
+        let n_cores = if LicenseManager::is_licensed() {
+            n_cores
+        } else {
+            1
+        };
+
         std::thread::scope(|s| {
-            for _ in 0..n_cores {
-                let mut vars = vars.to_vec();
+            for i in 0..n_cores {
+                let mut cvars = vars.to_vec();
                 let best_scheme = best_scheme.clone();
                 let best_mul = best_mul.clone();
                 let best_add = best_add.clone();
                 s.spawn(move || {
                     let mut r = thread_rng();
 
-                    for _ in 0..iterations / n_cores {
+                    for j in 0..iterations / n_cores {
                         // try a random swap
-                        let t1 = r.gen_range(0..vars.len());
-                        let t2 = r.gen_range(0..vars.len());
+                        let mut t1 = 0;
+                        let mut t2 = 0;
 
-                        vars.swap(t1, t2);
+                        if let Some(p) = p_ref {
+                            if j >= p.len() / n_cores {
+                                break;
+                            }
+
+                            let perm = &p[i * (p.len() / n_cores) + j];
+                            cvars = perm.iter().map(|x| vars[*x].clone()).collect();
+                        } else {
+                            t1 = r.gen_range(0..cvars.len());
+                            t2 = r.gen_range(0..cvars.len() - 1);
+
+                            cvars.swap(t1, t2);
+                        }
 
                         let horner: Vec<_> = expressions
                             .iter()
                             .map(|x| {
                                 let mut h = x.clone();
-                                h.apply_horner_scheme(&vars);
-                                h
+                                h.apply_horner_scheme(&cvars);
+                                h.to_hashed_expression().1
                             })
                             .collect();
                         let mut subexpr = HashMap::default();
@@ -2749,14 +2818,19 @@ impl Expression<Rational> {
                             || cur_ops.1 == best_mul.load(Ordering::Relaxed)
                                 && cur_ops.0 <= best_add.load(Ordering::Relaxed)
                         {
-                            println!("new best {:?}", cur_ops);
-
-                            best_scheme.lock().unwrap().clone_from_slice(&vars);
+                            if verbose {
+                                println!(
+                                    "Accept move at core iteration {}/{}: {} additions and {} multiplications",
+                                    j, iterations / n_cores,
+                                    cur_ops.0, cur_ops.1
+                                );
+                            }
 
                             best_mul.store(cur_ops.1, Ordering::Relaxed);
                             best_add.store(cur_ops.0, Ordering::Relaxed);
+                            best_scheme.lock().unwrap().clone_from_slice(&cvars);
                         } else {
-                            vars.swap(t1, t2);
+                            cvars.swap(t1, t2);
                         }
                     }
                 });
@@ -2821,19 +2895,11 @@ impl Expression<Rational> {
 }
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree<T> {
-    pub fn common_subexpression_elimination(&mut self, max_subexpr_len: usize) {
-        self.expressions
-            .common_subexpression_elimination(max_subexpr_len);
+    pub fn common_subexpression_elimination(&mut self) {
+        self.expressions.common_subexpression_elimination();
 
         for (_, _, e) in &mut self.functions {
-            e.common_subexpression_elimination(max_subexpr_len);
-        }
-    }
-
-    pub fn common_pair_elimination(&mut self) {
-        while self.expressions.common_pair_elimination() {}
-        for (_, _, e) in &mut self.functions {
-            while e.common_pair_elimination() {}
+            e.common_subexpression_elimination();
         }
     }
 
@@ -2854,7 +2920,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> EvalTree
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {
     /// Eliminate common subexpressions in the expression, also checking for subexpressions
     /// up to length `max_subexpr_len`.
-    pub fn common_subexpression_elimination(&mut self, max_subexpr_len: usize) {
+    pub fn common_subexpression_elimination(&mut self) {
         let mut h = HashMap::default();
 
         let mut hashed_tree = vec![];
@@ -2864,7 +2930,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExp
         }
 
         for t in &hashed_tree {
-            t.find_subexpression(&mut h, max_subexpr_len);
+            t.find_subexpression(&mut h);
         }
 
         h.retain(|_, v| *v > 1);
@@ -2876,7 +2942,7 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExp
 
         let mut n_hash_tree = hashed_tree.clone();
         for t in &mut n_hash_tree {
-            t.replace_subexpression(&h, max_subexpr_len, false);
+            t.replace_subexpression(&h, false);
         }
 
         self.tree = n_hash_tree.iter().map(|x| x.to_expression()).collect();
@@ -2888,8 +2954,8 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExp
         // replace subexpressions in subexpressions and
         // sort them based on their dependencies
         for (_, x) in v {
-            let mut he = x.to_hashed_expression();
-            he.replace_subexpression(&h, max_subexpr_len, true);
+            let mut he = x.clone();
+            he.replace_subexpression(&h, true);
             self.subexpressions.push(he.to_expression());
         }
 
@@ -2987,167 +3053,9 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
             }
         }
     }
-
-    /*
-    fn replace_subexpression(&mut self, subexp: &HashMap<Expression<T>, usize>, skip_root: bool) {
-        if !skip_root {
-            if let Some(i) = subexp.get(&self) {
-                *self = Expression::SubExpression(*i);
-                return;
-            }
-        }
-
-        match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
-            Expression::Eval(_, ae) => {
-                for arg in &mut *ae {
-                    arg.replace_subexpression(subexp, false);
-                }
-            }
-            Expression::Add(a) | Expression::Mul(a) => {
-                for arg in &mut *a {
-                    arg.replace_subexpression(subexp, false);
-                }
-
-                a.sort();
-            }
-            Expression::Pow(p) => {
-                p.0.replace_subexpression(subexp, false);
-            }
-            Expression::Powf(p) => {
-                p.0.replace_subexpression(subexp, false);
-                p.1.replace_subexpression(subexp, false);
-            }
-            Expression::BuiltinFun(_, _) => {}
-            Expression::SubExpression(_) => {}
-        }
-    }
-
-    fn find_subexpression(&self, subexp: &mut HashMap<Expression<T>, usize>) {
-        if matches!(
-            self,
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_)
-        ) {
-            return;
-        }
-
-        if let Some(i) = subexp.get_mut(self) {
-            *i += 1;
-            return;
-        }
-
-        subexp.insert(self.clone(), 1);
-
-        match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
-            Expression::Eval(_, ae) => {
-                for arg in ae {
-                    arg.find_subexpression(subexp);
-                }
-            }
-            Expression::Add(a) | Expression::Mul(a) => {
-                for arg in a {
-                    arg.find_subexpression(subexp);
-                }
-            }
-            Expression::Pow(p) => {
-                p.0.find_subexpression(subexp);
-            }
-            Expression::Powf(p) => {
-                p.0.find_subexpression(subexp);
-                p.1.find_subexpression(subexp);
-            }
-            Expression::BuiltinFun(_, _) => {}
-            Expression::SubExpression(_) => {}
-        }
-    }
-    */
 }
 
 impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> SplitExpression<T> {
-    /// Find and extract pairs of variables that appear in more than one instruction.
-    /// This reduces the number of operations. Returns `true` iff an extraction could be performed.
-    ///
-    /// This function can be called multiple times such that common subexpressions that
-    /// are larger than pairs can also be extracted.
-    pub fn common_pair_elimination(&mut self) -> bool {
-        let mut pair_count = HashMap::default();
-
-        for e in &self.subexpressions {
-            e.find_common_pairs(&mut pair_count);
-        }
-
-        for t in &self.tree {
-            t.find_common_pairs(&mut pair_count);
-        }
-
-        let mut v: Vec<_> = pair_count.into_iter().collect();
-        v.retain(|x| x.1 > 1);
-        v.sort_by_key(|k| std::cmp::Reverse(k.1));
-
-        let v: Vec<_> = v
-            .into_iter()
-            .map(|((a, b, c), e)| ((a, b.clone(), c.clone()), e))
-            .collect();
-
-        for ((is_add, l, r), _) in &v {
-            let id = self.subexpressions.len();
-
-            for t in &mut self.tree {
-                t.replace_common_pair(*is_add, l, r, id);
-            }
-
-            let mut first_replace = None;
-            for (i, e) in &mut self.subexpressions.iter_mut().enumerate() {
-                if e.replace_common_pair(*is_add, l, r, id) {
-                    if first_replace.is_none() {
-                        first_replace = Some(i);
-                    }
-                }
-            }
-
-            let pair = if *is_add {
-                Expression::Add(vec![l.clone(), r.clone()])
-            } else {
-                Expression::Mul(vec![l.clone(), r.clone()])
-            };
-
-            if let Some(i) = first_replace {
-                // all subexpressions need to be shifted
-                for k in i..self.subexpressions.len() {
-                    self.subexpressions[k].shift_subexpr(i, id);
-                }
-
-                for t in &mut self.tree {
-                    t.shift_subexpr(i, id);
-                }
-
-                self.subexpressions.insert(i, pair);
-            } else {
-                self.subexpressions.push(pair);
-            }
-
-            // some subexpression could be Z3=Z2 now, remove that
-            for i in (0..self.subexpressions.len()).rev() {
-                if let Expression::SubExpression(n) = &self.subexpressions[i] {
-                    let n = *n;
-                    self.subexpressions.remove(i);
-                    for e in &mut self.subexpressions[i..] {
-                        e.rename_subexpr(i, n);
-                    }
-
-                    for t in &mut self.tree {
-                        t.rename_subexpr(i, n);
-                    }
-                }
-            }
-
-            return true; // do just one for now
-        }
-
-        false
-    }
-
     pub fn count_operations(&self) -> (usize, usize) {
         let mut add = 0;
         let mut mul = 0;
@@ -3285,214 +3193,6 @@ impl<T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord> Expressi
             Expression::SubExpression(_) => (0, 0),
         }
     }
-
-    fn shift_subexpr(&mut self, pos: usize, max: usize) {
-        match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
-            Expression::Eval(_, ae) => {
-                for arg in &mut *ae {
-                    arg.shift_subexpr(pos, max);
-                }
-            }
-            Expression::Add(a) | Expression::Mul(a) => {
-                for arg in a {
-                    arg.shift_subexpr(pos, max);
-                }
-            }
-            Expression::Pow(p) => {
-                p.0.shift_subexpr(pos, max);
-            }
-            Expression::Powf(p) => {
-                p.0.shift_subexpr(pos, max);
-                p.1.shift_subexpr(pos, max);
-            }
-            Expression::BuiltinFun(_, _) => {}
-            Expression::SubExpression(i) => {
-                if *i == max {
-                    *i = pos;
-                } else if *i >= pos {
-                    *i += 1;
-                }
-            }
-        }
-    }
-
-    fn rename_subexpr(&mut self, old: usize, new: usize) {
-        match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
-            Expression::Eval(_, ae) => {
-                for arg in &mut *ae {
-                    arg.rename_subexpr(old, new);
-                }
-            }
-            Expression::Add(a) | Expression::Mul(a) => {
-                for arg in a {
-                    arg.rename_subexpr(old, new);
-                }
-            }
-            Expression::Pow(p) => {
-                p.0.rename_subexpr(old, new);
-            }
-            Expression::Powf(p) => {
-                p.0.rename_subexpr(old, new);
-                p.1.rename_subexpr(old, new);
-            }
-            Expression::BuiltinFun(_, _) => {}
-            Expression::SubExpression(i) => {
-                if *i == old {
-                    *i = new;
-                } else if *i > old {
-                    *i -= 1;
-                }
-            }
-        }
-    }
-
-    fn find_common_pairs<'a>(&'a self, subexp: &mut HashMap<(bool, &'a Self, &'a Self), usize>) {
-        match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => {}
-            Expression::Eval(_, ae) => {
-                for arg in ae {
-                    arg.find_common_pairs(subexp);
-                }
-            }
-            x @ Expression::Add(m) | x @ Expression::Mul(m) => {
-                for a in m {
-                    a.find_common_pairs(subexp);
-                }
-
-                let mut d: Vec<_> = m.iter().collect();
-                d.dedup();
-                let mut rep = vec![0; d.len()];
-
-                for (c, v) in rep.iter_mut().zip(&d) {
-                    for v2 in m {
-                        if *v == v2 {
-                            *c += 1;
-                        }
-                    }
-                }
-
-                for i in 0..d.len() {
-                    if rep[i] > 1 {
-                        *subexp
-                            .entry((matches!(x, Expression::Add(_)), &d[i], &d[i]))
-                            .or_insert(0) += rep[i] / 2;
-                    }
-
-                    for j in i + 1..d.len() {
-                        *subexp
-                            .entry((matches!(x, Expression::Add(_)), &d[i], &d[j]))
-                            .or_insert(0) += rep[i].min(rep[j]);
-                    }
-                }
-            }
-            Expression::Pow(p) => {
-                p.0.find_common_pairs(subexp);
-            }
-            Expression::Powf(p) => {
-                p.0.find_common_pairs(subexp);
-                p.1.find_common_pairs(subexp);
-            }
-            Expression::BuiltinFun(_, _) => {}
-            Expression::SubExpression(_) => {}
-        }
-    }
-
-    fn replace_common_pair(&mut self, is_add: bool, r: &Self, l: &Self, subexpr_id: usize) -> bool {
-        let cur_is_add = matches!(self, Expression::Add(_));
-
-        match self {
-            Expression::Const(_) | Expression::Parameter(_) | Expression::ReadArg(_) => false,
-            Expression::Eval(_, ae) => {
-                let mut replaced = false;
-                for arg in &mut *ae {
-                    replaced |= arg.replace_common_pair(is_add, r, l, subexpr_id);
-                }
-                replaced
-            }
-            Expression::Add(a) | Expression::Mul(a) => {
-                let mut replaced = false;
-                for arg in &mut *a {
-                    replaced |= arg.replace_common_pair(is_add, r, l, subexpr_id);
-                }
-
-                if is_add != cur_is_add {
-                    return replaced;
-                }
-
-                if l == r {
-                    let count = a.iter().filter(|x| *x == l).count();
-                    let pairs = count / 2;
-                    if pairs > 0 {
-                        a.retain(|x| x != l);
-
-                        if count % 2 == 1 {
-                            a.push(l.clone());
-                        }
-
-                        a.extend(
-                            std::iter::repeat(Expression::SubExpression(subexpr_id)).take(pairs),
-                        );
-                        a.sort();
-
-                        if a.len() == 1 {
-                            *self = a.pop().unwrap();
-                        }
-
-                        return true;
-                    }
-                } else {
-                    let mut idx1_count = 0;
-                    let mut idx2_count = 0;
-                    for v in &*a {
-                        if v == l {
-                            idx1_count += 1;
-                        }
-                        if v == r {
-                            idx2_count += 1;
-                        }
-                    }
-
-                    let pair_count = idx1_count.min(idx2_count);
-
-                    if pair_count > 0 {
-                        a.retain(|x| x != l && x != r);
-
-                        // add back removed indices in cases such as idx1*idx2*idx2
-                        if idx1_count > pair_count {
-                            a.extend(std::iter::repeat(l.clone()).take(idx1_count - pair_count));
-                        }
-                        if idx2_count > pair_count {
-                            a.extend(std::iter::repeat(r.clone()).take(idx2_count - pair_count));
-                        }
-
-                        a.extend(
-                            std::iter::repeat(Expression::SubExpression(subexpr_id))
-                                .take(pair_count),
-                        );
-                        a.sort();
-
-                        if a.len() == 1 {
-                            *self = a.pop().unwrap();
-                        }
-
-                        return true;
-                    }
-                }
-
-                replaced
-            }
-            Expression::Pow(p) => p.0.replace_common_pair(is_add, r, l, subexpr_id),
-            Expression::Powf(p) => {
-                let mut replaced = p.0.replace_common_pair(is_add, r, l, subexpr_id);
-                replaced |= p.1.replace_common_pair(is_add, r, l, subexpr_id);
-                replaced
-            }
-            Expression::BuiltinFun(_, _) => false,
-            Expression::SubExpression(_) => false,
-        }
-    }
 }
 
 impl<T: Real> EvalTree<T> {
@@ -3555,7 +3255,7 @@ impl<T: Real> EvalTree<T> {
             Expression::ReadArg(i) => args[*i].clone(),
             Expression::BuiltinFun(s, a) => {
                 let arg = self.evaluate_impl(a, subexpressions, params, args);
-                match *s {
+                match s.0 {
                     State::EXP => arg.exp(),
                     State::LOG => arg.log(),
                     State::SIN => arg.sin(),
@@ -3642,19 +3342,19 @@ impl Clone for CompiledEvaluator {
 
 /// A floating point type that can be used for compiled evaluation.
 pub trait CompiledEvaluatorFloat: Sized {
-    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]);
+    fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]);
 }
 
 impl CompiledEvaluatorFloat for f64 {
     #[inline(always)]
-    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]) {
+    fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]) {
         eval.evaluate_double(args, out);
     }
 }
 
 impl CompiledEvaluatorFloat for Complex<f64> {
     #[inline(always)]
-    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]) {
+    fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]) {
         eval.evaluate_complex(args, out);
     }
 }
@@ -3748,13 +3448,13 @@ impl CompiledEvaluator {
 
     /// Evaluate the compiled code.
     #[inline(always)]
-    pub fn evaluate<T: CompiledEvaluatorFloat>(&self, args: &[T], out: &mut [T]) {
+    pub fn evaluate<T: CompiledEvaluatorFloat>(&mut self, args: &[T], out: &mut [T]) {
         T::evaluate(self, args, out);
     }
 
     /// Evaluate the compiled code with double-precision floating point numbers.
     #[inline(always)]
-    pub fn evaluate_double(&self, args: &[f64], out: &mut [f64]) {
+    pub fn evaluate_double(&mut self, args: &[f64], out: &mut [f64]) {
         unsafe {
             (self.library.borrow_dependent().eval_double)(
                 args.as_ptr(),
@@ -3766,7 +3466,7 @@ impl CompiledEvaluator {
 
     /// Evaluate the compiled code with complex numbers.
     #[inline(always)]
-    pub fn evaluate_complex(&self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
+    pub fn evaluate_complex(&mut self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
         unsafe {
             (self.library.borrow_dependent().eval_complex)(
                 args.as_ptr(),
@@ -3886,23 +3586,9 @@ impl Default for InlineASM {
 }
 
 impl<T: NumericalFloatLike> EvalTree<T> {
-    /// Create a C++ code representation of the evaluation tree.
-    pub fn export_cpp(
-        &self,
-        filename: &str,
-        function_name: &str,
-        include_header: bool,
-    ) -> Result<ExportedCode, std::io::Error> {
-        let cpp = self.export_cpp_str(function_name, include_header);
-        std::fs::write(filename, cpp)?;
-        Ok(ExportedCode {
-            source_filename: filename.to_string(),
-            function_name: function_name.to_string(),
-            inline_asm: InlineASM::None,
-        })
-    }
-
-    fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
+    /// Export the evaluation tree to C++ code. For much improved performance,
+    /// optimize the tree instead.
+    pub fn export_cpp_str(&self, function_name: &str, include_header: bool) -> String {
         let mut res = if include_header {
             "#include <iostream>\n#include <cmath>\n#include <complex>\n\n".to_string()
         } else {
@@ -4010,7 +3696,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                 r
             }
             Expression::ReadArg(s) => args[*s].to_string(),
-            Expression::BuiltinFun(s, a) => match *s {
+            Expression::BuiltinFun(s, a) => match s.0 {
                 State::EXP => {
                     let mut r = "exp(".to_string();
                     r += &self.export_cpp_impl(a, args);
@@ -4052,32 +3738,24 @@ impl<T: NumericalFloatLike> EvalTree<T> {
 
 impl<'a> AtomView<'a> {
     /// Convert nested expressions to a tree.
-    pub fn to_eval_tree<
-        T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord,
-        F: Fn(&Rational) -> T + Copy,
-    >(
+    pub fn to_evaluation_tree(
         &self,
-        coeff_map: F,
-        fn_map: &FunctionMap<'a, T>,
+        fn_map: &FunctionMap<'a, Rational>,
         params: &[Atom],
-    ) -> Result<EvalTree<T>, String> {
-        Self::to_eval_tree_multiple(std::slice::from_ref(self), coeff_map, fn_map, params)
+    ) -> Result<EvalTree<Rational>, String> {
+        Self::to_eval_tree_multiple(std::slice::from_ref(self), fn_map, params)
     }
 
     /// Convert nested expressions to a tree.
-    pub fn to_eval_tree_multiple<
-        T: Clone + Default + std::fmt::Debug + Eq + std::hash::Hash + Ord,
-        F: Fn(&Rational) -> T + Copy,
-    >(
+    pub fn to_eval_tree_multiple(
         exprs: &[Self],
-        coeff_map: F,
-        fn_map: &FunctionMap<'a, T>,
+        fn_map: &FunctionMap<'a, Rational>,
         params: &[Atom],
-    ) -> Result<EvalTree<T>, String> {
+    ) -> Result<EvalTree<Rational>, String> {
         let mut funcs = vec![];
         let tree = exprs
             .iter()
-            .map(|t| t.to_eval_tree_impl(coeff_map, fn_map, params, &[], &mut funcs))
+            .map(|t| t.to_eval_tree_impl(fn_map, params, &[], &mut funcs))
             .collect::<Result<_, _>>()?;
 
         Ok(EvalTree {
@@ -4090,14 +3768,13 @@ impl<'a> AtomView<'a> {
         })
     }
 
-    fn to_eval_tree_impl<T: Clone + Default + Ord, F: Fn(&Rational) -> T + Copy>(
+    fn to_eval_tree_impl(
         &self,
-        coeff_map: F,
-        fn_map: &FunctionMap<'a, T>,
+        fn_map: &FunctionMap<'a, Rational>,
         params: &[Atom],
         args: &[Symbol],
-        funcs: &mut Vec<(String, Vec<Symbol>, SplitExpression<T>)>,
-    ) -> Result<Expression<T>, String> {
+        funcs: &mut Vec<(String, Vec<Symbol>, SplitExpression<Rational>)>,
+    ) -> Result<Expression<Rational>, String> {
         if let Some(p) = params.iter().position(|a| a.as_view() == *self) {
             return Ok(Expression::Parameter(p));
         }
@@ -4117,7 +3794,7 @@ impl<'a> AtomView<'a> {
                     if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
                         Ok(Expression::Eval(pos, vec![]))
                     } else {
-                        let r = v.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
+                        let r = v.to_eval_tree_impl(fn_map, params, args, funcs)?;
                         funcs.push((
                             name.clone(),
                             args.clone(),
@@ -4134,11 +3811,11 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(n) => match n.get_coeff_view() {
-                CoefficientView::Natural(n, d) => Ok(Expression::Const(coeff_map(&(n, d).into()))),
-                CoefficientView::Large(l) => Ok(Expression::Const(coeff_map(&l.to_rat()))),
+                CoefficientView::Natural(n, d) => Ok(Expression::Const((n, d).into())),
+                CoefficientView::Large(l) => Ok(Expression::Const(l.to_rat())),
                 CoefficientView::Float(f) => {
                     // TODO: converting back to rational is slow
-                    Ok(Expression::Const(coeff_map(&f.to_float().to_rational())))
+                    Ok(Expression::Const(f.to_float().to_rational()))
                 }
                 CoefficientView::FiniteField(_, _) => {
                     Err("Finite field not yet supported for evaluation".to_string())
@@ -4164,9 +3841,12 @@ impl<'a> AtomView<'a> {
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
-                    let arg_eval = arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
+                    let arg_eval = arg.to_eval_tree_impl(fn_map, params, args, funcs)?;
 
-                    return Ok(Expression::BuiltinFun(f.get_symbol(), Box::new(arg_eval)));
+                    return Ok(Expression::BuiltinFun(
+                        BuiltinSymbol(f.get_symbol()),
+                        Box::new(arg_eval),
+                    ));
                 }
 
                 let symb = InlineVar::new(f.get_symbol());
@@ -4192,16 +3872,13 @@ impl<'a> AtomView<'a> {
                         let eval_args = f
                             .iter()
                             .skip(*tag_len)
-                            .map(|arg| {
-                                arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)
-                            })
+                            .map(|arg| arg.to_eval_tree_impl(fn_map, params, args, funcs))
                             .collect::<Result<_, _>>()?;
 
                         if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
                             Ok(Expression::Eval(pos, eval_args))
                         } else {
-                            let r =
-                                e.to_eval_tree_impl(coeff_map, fn_map, params, arg_spec, funcs)?;
+                            let r = e.to_eval_tree_impl(fn_map, params, arg_spec, funcs)?;
                             funcs.push((
                                 name.clone(),
                                 arg_spec.clone(),
@@ -4217,7 +3894,7 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
-                let b_eval = b.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
+                let b_eval = b.to_eval_tree_impl(fn_map, params, args, funcs)?;
 
                 if let AtomView::Num(n) = e {
                     if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
@@ -4237,13 +3914,13 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                let e_eval = e.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
+                let e_eval = e.to_eval_tree_impl(fn_map, params, args, funcs)?;
                 Ok(Expression::Powf(Box::new((b_eval, e_eval))))
             }
             AtomView::Mul(m) => {
                 let mut muls = vec![];
                 for arg in m.iter() {
-                    let a = arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?;
+                    let a = arg.to_eval_tree_impl(fn_map, params, args, funcs)?;
                     if let Expression::Mul(m) = a {
                         muls.extend(m);
                     } else {
@@ -4258,7 +3935,7 @@ impl<'a> AtomView<'a> {
             AtomView::Add(a) => {
                 let mut adds = vec![];
                 for arg in a.iter() {
-                    adds.push(arg.to_eval_tree_impl(coeff_map, fn_map, params, args, funcs)?);
+                    adds.push(arg.to_eval_tree_impl(fn_map, params, args, funcs)?);
                 }
 
                 adds.sort();
@@ -4386,7 +4063,12 @@ impl<'a> AtomView<'a> {
 mod test {
     use ahash::HashMap;
 
-    use crate::{atom::Atom, domains::float::Float, evaluate::EvaluationFn, state::State};
+    use crate::{
+        atom::Atom,
+        domains::{float::Float, rational::Rational},
+        evaluate::{EvaluationFn, FunctionMap, OptimizationSettings},
+        state::State,
+    };
 
     #[test]
     fn evaluate() {
@@ -4446,5 +4128,78 @@ mod test {
             format!("{}", r),
             "6.00000000998400625211945786243908951675582851493871969158108"
         );
+    }
+
+    #[test]
+    fn nested() {
+        let e1 = Atom::parse("x + pi + cos(x) + f(g(x+1),h(x*2)) + p(1,x)").unwrap();
+        let e2 = Atom::parse("x + h(x*2) + cos(x)").unwrap();
+        let f = Atom::parse("y^2 + z^2*y^2").unwrap();
+        let g = Atom::parse("i(y+7)+x*i(y+7)*(y-1)").unwrap();
+        let h = Atom::parse("y*(1+x*(1+x^2)) + y^2*(1+x*(1+x^2))^2 + 3*(1+x^2)").unwrap();
+        let i = Atom::parse("y - 1").unwrap();
+        let p1 = Atom::parse("3*z^3 + 4*z^2 + 6*z +8").unwrap();
+
+        let mut fn_map = FunctionMap::new();
+
+        fn_map.add_constant(
+            Atom::new_var(State::get_symbol("pi")),
+            Rational::from((22, 7)).into(),
+        );
+        fn_map
+            .add_tagged_function(
+                State::get_symbol("p"),
+                vec![Atom::new_num(1).into()],
+                "p1".to_string(),
+                vec![State::get_symbol("z")],
+                p1.as_view(),
+            )
+            .unwrap();
+        fn_map
+            .add_function(
+                State::get_symbol("f"),
+                "f".to_string(),
+                vec![State::get_symbol("y"), State::get_symbol("z")],
+                f.as_view(),
+            )
+            .unwrap();
+        fn_map
+            .add_function(
+                State::get_symbol("g"),
+                "g".to_string(),
+                vec![State::get_symbol("y")],
+                g.as_view(),
+            )
+            .unwrap();
+        fn_map
+            .add_function(
+                State::get_symbol("h"),
+                "h".to_string(),
+                vec![State::get_symbol("y")],
+                h.as_view(),
+            )
+            .unwrap();
+        fn_map
+            .add_function(
+                State::get_symbol("i"),
+                "i".to_string(),
+                vec![State::get_symbol("y")],
+                i.as_view(),
+            )
+            .unwrap();
+
+        let params = vec![Atom::parse("x").unwrap()];
+
+        let evaluator = Atom::evaluator_multiple(
+            &[e1.as_view(), e2.as_view()],
+            &fn_map,
+            &params,
+            OptimizationSettings::default(),
+        )
+        .unwrap();
+
+        let mut e_f64 = evaluator.map_coeff(&|x| x.into());
+        let r = e_f64.evaluate_single(&[1.1]);
+        assert!((r - 1622709.2254269677).abs() / 1622709.2254269677 < 1e-10);
     }
 }

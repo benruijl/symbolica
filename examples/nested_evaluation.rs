@@ -1,9 +1,7 @@
-use std::time::Instant;
-
 use symbolica::{
-    atom::{Atom, AtomView},
-    domains::{float::Complex, rational::Rational},
-    evaluate::{CompileOptions, ExpressionEvaluator, FunctionMap},
+    atom::Atom,
+    domains::rational::Rational,
+    evaluate::{CompileOptions, FunctionMap, InlineASM, OptimizationSettings},
     state::State,
 };
 
@@ -19,7 +17,7 @@ fn main() {
     let mut fn_map = FunctionMap::new();
 
     fn_map.add_constant(
-        Atom::new_var(State::get_symbol("pi")).into(),
+        Atom::new_var(State::get_symbol("pi")),
         Rational::from((22, 7)).into(),
     );
     fn_map
@@ -66,61 +64,27 @@ fn main() {
 
     let params = vec![Atom::parse("x").unwrap()];
 
-    let mut tree = AtomView::to_eval_tree_multiple(
+    let evaluator = Atom::evaluator_multiple(
         &[e1.as_view(), e2.as_view()],
-        |r| r.clone(),
         &fn_map,
         &params,
+        OptimizationSettings::default(),
     )
     .unwrap();
 
-    // optimize the tree using an occurrence-order Horner scheme
-    println!("Op original {:?}", tree.count_operations());
-    tree.horner_scheme();
-    println!("Op horner {:?}", tree.count_operations());
-    tree.common_subexpression_elimination(0);
-    println!("op cse {:?}", tree.count_operations());
+    let mut e_f64 = evaluator.map_coeff(&|x| x.into());
+    let r = e_f64.evaluate_single(&[5.]);
+    println!("{}", r);
 
-    //tree.common_pair_elimination();
-    //println!("op cpe {:?}", tree.count_operations());
-
-    let ce = tree
-        .export_cpp("nested_evaluation.cpp", "evaltest", true)
+    let mut compiled = e_f64
+        .export_cpp("nested_evaluate.cpp", "nested", true, InlineASM::Intel)
         .unwrap()
-        .compile("libneval.so", CompileOptions::default())
+        .compile("nested", CompileOptions::default())
         .unwrap()
         .load()
         .unwrap();
 
-    let params = vec![5.];
-    let mut out = vec![0., 0.];
-    ce.evaluate(&params, &mut out);
-    println!("Eval from C++: {}, {}", out[0], out[1]);
-
-    {
-        let params = vec![Complex::new(5., 0.)];
-        let mut out = vec![Complex::new_zero(), Complex::new_zero()];
-        ce.evaluate(&params, &mut out);
-        println!("Eval from C++: {}, {}", out[0], out[1]);
-    }
-
-    // benchmark
-    let t = Instant::now();
-    for _ in 0..1000000 {
-        let _ = ce.evaluate(&params, &mut out);
-    }
-    println!("C++ time {:#?}", t.elapsed());
-
-    let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
-    let mut evaluator: ExpressionEvaluator<f64> = t2.linearize(10);
-
-    evaluator.evaluate_multiple(&params, &mut out);
-    println!("Eval: {}, {}", out[0], out[1]);
-
-    let params = vec![5.];
-    let t = Instant::now();
-    for _ in 0..1000000 {
-        evaluator.evaluate_multiple(&params, &mut out);
-    }
-    println!("Eager time {:#?}", t.elapsed());
+    let mut out = vec![0.];
+    compiled.evaluate(&[5.], &mut out);
+    println!("{}", out[0]);
 }

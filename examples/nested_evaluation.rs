@@ -3,7 +3,7 @@ use std::time::Instant;
 use symbolica::{
     atom::{Atom, AtomView},
     domains::{float::Complex, rational::Rational},
-    evaluate::{CompileOptions, ExpressionEvaluator, FunctionMap},
+    evaluate::{CompileOptions, ExpressionEvaluator, FunctionMap, InlineASM, OptimizationSettings},
     state::State,
 };
 
@@ -19,7 +19,7 @@ fn main() {
     let mut fn_map = FunctionMap::new();
 
     fn_map.add_constant(
-        Atom::new_var(State::get_symbol("pi")).into(),
+        Atom::new_var(State::get_symbol("pi")),
         Rational::from((22, 7)).into(),
     );
     fn_map
@@ -66,26 +66,39 @@ fn main() {
 
     let params = vec![Atom::parse("x").unwrap()];
 
-    let mut tree = AtomView::to_eval_tree_multiple(
+    let evaluator = Atom::evaluator_multiple(
         &[e1.as_view(), e2.as_view()],
-        |r| r.clone(),
         &fn_map,
         &params,
+        OptimizationSettings::default(),
     )
     .unwrap();
+    let mut e_f64 = evaluator.map_coeff(&|x| x.into());
+    let r = e_f64.evaluate(&[5.]);
+    println!("{}", r);
+
+    let mut tree =
+        AtomView::to_eval_tree_multiple(&[e1.as_view(), e2.as_view()], &fn_map, &params).unwrap();
 
     // optimize the tree using an occurrence-order Horner scheme
     println!("Op original {:?}", tree.count_operations());
     tree.horner_scheme();
     println!("Op horner {:?}", tree.count_operations());
-    tree.common_subexpression_elimination(0);
+    tree.common_subexpression_elimination();
     println!("op cse {:?}", tree.count_operations());
 
     //tree.common_pair_elimination();
     //println!("op cpe {:?}", tree.count_operations());
 
-    let ce = tree
-        .export_cpp("nested_evaluation.cpp", "evaltest", true)
+    let mut evaluator: ExpressionEvaluator<f64> = tree.linearize(None).map_coeff(&|x| x.into());
+
+    let ce = evaluator
+        .export_cpp(
+            "nested_evaluation.cpp",
+            "evaltest",
+            true,
+            InlineASM::default(),
+        )
         .unwrap()
         .compile("libneval.so", CompileOptions::default())
         .unwrap()
@@ -110,9 +123,6 @@ fn main() {
         let _ = ce.evaluate(&params, &mut out);
     }
     println!("C++ time {:#?}", t.elapsed());
-
-    let t2 = tree.map_coeff::<f64, _>(&|r| r.into());
-    let mut evaluator: ExpressionEvaluator<f64> = t2.linearize(10);
 
     evaluator.evaluate_multiple(&params, &mut out);
     println!("Eval: {}, {}", out[0], out[1]);

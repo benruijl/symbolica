@@ -14,11 +14,14 @@ use self_cell::self_cell;
 use crate::{
     atom::{representation::InlineVar, Atom, AtomOrView, AtomView, Symbol},
     coefficient::CoefficientView,
+    combinatorics::unique_permutations,
     domains::{
         float::{Complex, NumericalFloatLike, Real},
+        integer::Integer,
         rational::Rational,
     },
     state::State,
+    LicenseManager,
 };
 
 type EvalFnType<T> = Box<
@@ -146,6 +149,7 @@ pub struct OptimizationSettings {
     pub n_cores: usize,
     pub cpe_iterations: Option<usize>,
     pub hot_start: Option<Vec<Expression<Rational>>>,
+    pub verbose: bool,
 }
 
 impl Default for OptimizationSettings {
@@ -155,6 +159,7 @@ impl Default for OptimizationSettings {
             n_cores: 1,
             cpe_iterations: None,
             hot_start: None,
+            verbose: false,
         }
     }
 }
@@ -188,7 +193,9 @@ impl Atom {
     }
 
     /// Create an efficient evaluator for a (nested) expression.
-    /// All variables and all user functions in the expression must occur in the map.
+    /// All free parameters must appear in `params` and all other variables
+    /// and user functions in the expression must occur in the function map.
+    /// The function map may have nested expressions.
     pub fn evaluator<'a>(
         &'a self,
         fn_map: &FunctionMap<'a, Rational>,
@@ -200,6 +207,7 @@ impl Atom {
             optimization_settings.horner_iterations,
             optimization_settings.n_cores,
             optimization_settings.hot_start.clone(),
+            optimization_settings.verbose,
         ))
     }
 
@@ -217,6 +225,7 @@ impl Atom {
             optimization_settings.horner_iterations,
             optimization_settings.n_cores,
             optimization_settings.hot_start.clone(),
+            optimization_settings.verbose,
         ))
     }
 }
@@ -643,13 +652,13 @@ pub struct ExpressionEvaluator<T> {
 }
 
 impl<T: Real> ExpressionEvaluator<T> {
-    pub fn evaluate(&mut self, params: &[T]) -> T {
+    pub fn evaluate_single(&mut self, params: &[T]) -> T {
         let mut res = T::new_zero();
-        self.evaluate_multiple(params, std::slice::from_mut(&mut res));
+        self.evaluate(params, std::slice::from_mut(&mut res));
         res
     }
 
-    pub fn evaluate_multiple(&mut self, params: &[T], out: &mut [T]) {
+    pub fn evaluate(&mut self, params: &[T], out: &mut [T]) {
         for (t, p) in self.stack.iter_mut().zip(params) {
             *t = p.clone();
         }
@@ -710,6 +719,10 @@ impl<T: Default> ExpressionEvaluator<T> {
             instructions: self.instructions,
             result_indices: self.result_indices,
         }
+    }
+
+    pub fn get_output_len(&self) -> usize {
+        self.result_indices.len()
     }
 
     fn remove_common_pairs(&mut self) -> usize {
@@ -1043,14 +1056,19 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         include_header: bool,
         inline_asm: InlineASM,
     ) -> Result<ExportedCode, std::io::Error> {
+        let mut filename = filename.to_string();
+        if !filename.ends_with(".cpp") {
+            filename += ".cpp";
+        }
+
         let cpp = match inline_asm {
             InlineASM::Intel => self.export_asm_str(function_name, include_header),
             InlineASM::None => self.export_cpp_str(function_name, include_header),
         };
 
-        let _ = std::fs::write(filename, cpp)?;
+        let _ = std::fs::write(&filename, cpp)?;
         Ok(ExportedCode {
-            source_filename: filename.to_string(),
+            source_filename: filename,
             function_name: function_name.to_string(),
             inline_asm,
         })
@@ -1461,8 +1479,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         MemOrReg::Reg(out_reg) => {
                             if let Some(j) = a.iter().find(|x| **x == MemOrReg::Reg(*out_reg)) {
                                 // we can recycle the register completely
+                                let mut first_skipped = false;
                                 for i in a {
-                                    if i != j {
+                                    if first_skipped || i != j {
                                         match i {
                                             MemOrReg::Reg(k) => {
                                                 *out += &format!(
@@ -1480,14 +1499,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             }
                                         }
                                     }
+                                    first_skipped |= i == j;
                                 }
                             } else if let Some(MemOrReg::Reg(j)) =
                                 a.iter().find(|x| matches!(x, MemOrReg::Reg(_)))
                             {
                                 *out += &format!("\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n", out_reg, j);
 
+                                let mut first_skipped = false;
                                 for i in a {
-                                    if *i != MemOrReg::Reg(*j) {
+                                    if first_skipped || *i != MemOrReg::Reg(*j) {
                                         match i {
                                             MemOrReg::Reg(k) => {
                                                 *out += &format!(
@@ -1505,6 +1526,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             }
                                         }
                                     }
+                                    first_skipped |= *i == MemOrReg::Reg(*j);
                                 }
                             } else {
                                 if let MemOrReg::Mem(k) = &a[0] {
@@ -1538,8 +1560,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                     *out +=
                                         &format!("\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n", out_reg, j);
 
+                                    let mut first_skipped = false;
                                     for i in a {
-                                        if *i != MemOrReg::Reg(*j) {
+                                        if first_skipped || *i != MemOrReg::Reg(*j) {
                                             match i {
                                                 MemOrReg::Reg(k) => {
                                                     *out += &format!(
@@ -1557,6 +1580,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                                 }
                                             }
                                         }
+
+                                        first_skipped |= *i == MemOrReg::Reg(*j);
                                     }
                                 } else {
                                     if let MemOrReg::Mem(k) = &a[0] {
@@ -2299,8 +2324,9 @@ impl EvalTree<Rational> {
         iterations: usize,
         n_cores: usize,
         start_scheme: Option<Vec<Expression<Rational>>>,
+        verbose: bool,
     ) -> ExpressionEvaluator<Rational> {
-        let _ = self.optimize_horner_scheme(iterations, n_cores, start_scheme);
+        let _ = self.optimize_horner_scheme(iterations, n_cores, start_scheme, verbose);
         self.common_subexpression_elimination();
         self.clone().linearize(None)
     }
@@ -2335,6 +2361,7 @@ impl EvalTree<Rational> {
         iterations: usize,
         n_cores: usize,
         start_scheme: Option<Vec<Expression<Rational>>>,
+        verbose: bool,
     ) -> Vec<Expression<Rational>> {
         let v = match start_scheme {
             Some(a) => a,
@@ -2363,6 +2390,7 @@ impl EvalTree<Rational> {
             &v,
             iterations,
             n_cores,
+            verbose,
         );
         for e in &mut self.expressions.tree {
             e.apply_horner_scheme(&scheme);
@@ -2384,8 +2412,9 @@ impl EvalTree<Rational> {
             v.sort_by_key(|k| std::cmp::Reverse(k.1));
             let v = v.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
 
-            let scheme =
-                Expression::optimize_horner_scheme_multiple(&e.tree, &v, iterations, n_cores);
+            let scheme = Expression::optimize_horner_scheme_multiple(
+                &e.tree, &v, iterations, n_cores, verbose,
+            );
 
             for t in &mut e.tree {
                 t.apply_horner_scheme(&scheme);
@@ -2660,8 +2689,15 @@ impl Expression<Rational> {
         vars: &[Self],
         iterations: usize,
         n_cores: usize,
+        verbose: bool,
     ) -> Vec<Self> {
-        Self::optimize_horner_scheme_multiple(std::slice::from_ref(self), vars, iterations, n_cores)
+        Self::optimize_horner_scheme_multiple(
+            std::slice::from_ref(self),
+            vars,
+            iterations,
+            n_cores,
+            verbose,
+        )
     }
 
     pub fn optimize_horner_scheme_multiple(
@@ -2669,6 +2705,7 @@ impl Expression<Rational> {
         vars: &[Self],
         iterations: usize,
         n_cores: usize,
+        verbose: bool,
     ) -> Vec<Self> {
         if vars.len() == 0 {
             return vars.to_vec();
@@ -2689,33 +2726,65 @@ impl Expression<Rational> {
             best_ops = (best_ops.0 + ops.0, best_ops.1 + ops.1);
         }
 
-        println!("init {:?} {:?} {}", best_ops, vars, vars.len());
+        if verbose {
+            println!(
+                "Initial ops: {} additions and {} multiplications",
+                best_ops.0, best_ops.1
+            );
+        }
 
         let best_mul = Arc::new(AtomicUsize::new(best_ops.1));
         let best_add = Arc::new(AtomicUsize::new(best_ops.0));
         let best_scheme = Arc::new(Mutex::new(vars.to_vec()));
 
+        let permutations =
+            if vars.len() < 10 && Integer::factorial(vars.len() as u32) <= iterations.max(1) {
+                let v: Vec<_> = (0..vars.len()).collect();
+                Some(unique_permutations(&v).1)
+            } else {
+                None
+            };
+        let p_ref = &permutations;
+
+        let n_cores = if LicenseManager::is_licensed() {
+            n_cores
+        } else {
+            1
+        };
+
         std::thread::scope(|s| {
-            for _ in 0..n_cores {
-                let mut vars = vars.to_vec();
+            for i in 0..n_cores {
+                let mut cvars = vars.to_vec();
                 let best_scheme = best_scheme.clone();
                 let best_mul = best_mul.clone();
                 let best_add = best_add.clone();
                 s.spawn(move || {
                     let mut r = thread_rng();
 
-                    for _ in 0..iterations / n_cores {
+                    for j in 0..iterations / n_cores {
                         // try a random swap
-                        let t1 = r.gen_range(0..vars.len());
-                        let t2 = r.gen_range(0..vars.len());
+                        let mut t1 = 0;
+                        let mut t2 = 0;
 
-                        vars.swap(t1, t2);
+                        if let Some(p) = p_ref {
+                            if j >= p.len() / n_cores {
+                                break;
+                            }
+
+                            let perm = &p[i * (p.len() / n_cores) + j];
+                            cvars = perm.iter().map(|x| vars[*x].clone()).collect();
+                        } else {
+                            t1 = r.gen_range(0..cvars.len());
+                            t2 = r.gen_range(0..cvars.len() - 1);
+
+                            cvars.swap(t1, t2);
+                        }
 
                         let horner: Vec<_> = expressions
                             .iter()
                             .map(|x| {
                                 let mut h = x.clone();
-                                h.apply_horner_scheme(&vars);
+                                h.apply_horner_scheme(&cvars);
                                 h.to_hashed_expression().1
                             })
                             .collect();
@@ -2732,13 +2801,19 @@ impl Expression<Rational> {
                             || cur_ops.1 == best_mul.load(Ordering::Relaxed)
                                 && cur_ops.0 <= best_add.load(Ordering::Relaxed)
                         {
-                            println!("new best {:?}", cur_ops);
+                            if verbose {
+                                println!(
+                                    "Accept move at core iteration {}/{}: {} additions and {} multiplications",
+                                    j, iterations / n_cores,
+                                    cur_ops.0, cur_ops.1
+                                );
+                            }
 
                             best_mul.store(cur_ops.1, Ordering::Relaxed);
                             best_add.store(cur_ops.0, Ordering::Relaxed);
-                            best_scheme.lock().unwrap().clone_from_slice(&vars);
+                            best_scheme.lock().unwrap().clone_from_slice(&cvars);
                         } else {
-                            vars.swap(t1, t2);
+                            cvars.swap(t1, t2);
                         }
                     }
                 });
@@ -3250,19 +3325,19 @@ impl Clone for CompiledEvaluator {
 
 /// A floating point type that can be used for compiled evaluation.
 pub trait CompiledEvaluatorFloat: Sized {
-    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]);
+    fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]);
 }
 
 impl CompiledEvaluatorFloat for f64 {
     #[inline(always)]
-    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]) {
+    fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]) {
         eval.evaluate_double(args, out);
     }
 }
 
 impl CompiledEvaluatorFloat for Complex<f64> {
     #[inline(always)]
-    fn evaluate(eval: &CompiledEvaluator, args: &[Self], out: &mut [Self]) {
+    fn evaluate(eval: &mut CompiledEvaluator, args: &[Self], out: &mut [Self]) {
         eval.evaluate_complex(args, out);
     }
 }
@@ -3356,13 +3431,13 @@ impl CompiledEvaluator {
 
     /// Evaluate the compiled code.
     #[inline(always)]
-    pub fn evaluate<T: CompiledEvaluatorFloat>(&self, args: &[T], out: &mut [T]) {
+    pub fn evaluate<T: CompiledEvaluatorFloat>(&mut self, args: &[T], out: &mut [T]) {
         T::evaluate(self, args, out);
     }
 
     /// Evaluate the compiled code with double-precision floating point numbers.
     #[inline(always)]
-    pub fn evaluate_double(&self, args: &[f64], out: &mut [f64]) {
+    pub fn evaluate_double(&mut self, args: &[f64], out: &mut [f64]) {
         unsafe {
             (self.library.borrow_dependent().eval_double)(
                 args.as_ptr(),
@@ -3374,7 +3449,7 @@ impl CompiledEvaluator {
 
     /// Evaluate the compiled code with complex numbers.
     #[inline(always)]
-    pub fn evaluate_complex(&self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
+    pub fn evaluate_complex(&mut self, args: &[Complex<f64>], out: &mut [Complex<f64>]) {
         unsafe {
             (self.library.borrow_dependent().eval_complex)(
                 args.as_ptr(),

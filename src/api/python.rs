@@ -38,7 +38,10 @@ use crate::{
         },
         Ring,
     },
-    evaluate::EvaluationFn,
+    evaluate::{
+        CompileOptions, CompiledEvaluator, EvaluationFn, ExpressionEvaluator, FunctionMap,
+        InlineASM, OptimizationSettings,
+    },
     id::{
         Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
         PatternRestriction, ReplaceIterator, Replacement, WildcardAndRestriction,
@@ -46,15 +49,8 @@ use crate::{
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
     parser::Token,
     poly::{
-        evaluate::{
-            InstructionEvaluator, InstructionSetMode, InstructionSetModeCPPSettings,
-            InstructionSetPrinter,
-        },
-        factor::Factorize,
-        groebner::GroebnerBasis,
-        polynomial::MultivariatePolynomial,
-        series::Series,
-        GrevLexOrder, LexOrder, Variable, INLINED_EXPONENTS,
+        factor::Factorize, groebner::GroebnerBasis, polynomial::MultivariatePolynomial,
+        series::Series, GrevLexOrder, LexOrder, Variable, INLINED_EXPONENTS,
     },
     printer::{
         AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
@@ -82,7 +78,8 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonAtomType>()?;
     m.add_class::<PythonAtomTree>()?;
     m.add_class::<PythonReplacement>()?;
-    m.add_class::<PythonInstructionEvaluator>()?;
+    m.add_class::<PythonExpressionEvaluator>()?;
+    m.add_class::<PythonCompiledExpressionEvaluator>()?;
     m.add_class::<PythonRandomNumberGenerator>()?;
     m.add_class::<PythonPatternRestriction>()?;
     m.add_class::<PythonTermStreamer>()?;
@@ -2354,9 +2351,7 @@ impl PythonExpression {
             condition: (
                 id,
                 PatternRestriction::Filter(Box::new(move |m| {
-                    let mut a = Atom::default();
-                    m.to_atom(&mut a);
-                    let data: PythonExpression = a.into();
+                    let data: PythonExpression = m.to_atom().into();
 
                     Python::with_gil(|py| {
                         filter_fn
@@ -2518,12 +2513,8 @@ impl PythonExpression {
                 PatternRestriction::Cmp(
                     other_id,
                     Box::new(move |m1, m2| {
-                        let mut a = Atom::default();
-                        m1.to_atom(&mut a);
-                        let data1: PythonExpression = a.clone().into();
-
-                        m2.to_atom(&mut a);
-                        let data2: PythonExpression = a.into();
+                        let data1: PythonExpression = m1.to_atom().into();
+                        let data2: PythonExpression = m2.to_atom().into();
 
                         Python::with_gil(|py| {
                             cmp_fn
@@ -3649,6 +3640,188 @@ impl PythonExpression {
             .evaluate(|x| x.into(), &constants, &functions, &mut cache);
         Ok(PyComplex::from_doubles(py, r.re, r.im))
     }
+
+    /// Create an evaluator that can evaluate (nested) expressions in an optimized fashion.
+    /// All constants and functions should be provided as dictionaries, where the function
+    /// dictionary has a key `(name, printable name, arguments)` and the value is the function
+    /// body. For example the function `f(x,y)=x^2+y` should be provided as
+    /// `{(f, "f", (x, y)): x**2 + y}`. All free parameters should be provided in the `params` list.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> x, y, z, pi, f, g = Expression.symbols(
+    /// >>>     'x', 'y', 'z', 'pi', 'f', 'g')
+    /// >>>
+    /// >>> e1 = Expression.parse("x + pi + cos(x) + f(g(x+1),x*2)")
+    /// >>> fd = Expression.parse("y^2 + z^2*y^2")
+    /// >>> gd = Expression.parse("y + 5")
+    /// >>>
+    /// >>> ev = e1.evaluator({pi: Expression.num(22)/7},
+    /// >>>              {(f, "f", (y, z)): fd, (g, "g", (y, )): gd}, [x])
+    /// >>> res = ev.evaluate([[1.], [2.], [3.]])  # evaluate at x=1, x=2, x=3
+    /// >>> print(res)
+    #[pyo3(signature =
+        (constants,
+        functions,
+        params,
+        iterations = 100,
+        n_cores = 4,
+        verbose = false),
+        )]
+    pub fn evaluator(
+        &self,
+        constants: HashMap<PythonExpression, PythonExpression>,
+        functions: HashMap<(Variable, String, Vec<Variable>), PythonExpression>,
+        params: Vec<PythonExpression>,
+        iterations: usize,
+        n_cores: usize,
+        verbose: bool,
+    ) -> PyResult<PythonExpressionEvaluator> {
+        let mut fn_map = FunctionMap::new();
+
+        for (k, v) in &constants {
+            if let Ok(r) = v.expr.clone().try_into() {
+                fn_map.add_constant(k.expr.as_view(), r);
+            } else {
+                Err(exceptions::PyValueError::new_err(format!(
+                        "Constants must be rationals. If this is not possible, pass the value as a parameter",
+                    )))?
+            }
+        }
+
+        for ((symbol, rename, args), body) in &functions {
+            let symbol = symbol
+                .to_id()
+                .ok_or(exceptions::PyValueError::new_err(format!(
+                    "Bad function name {}",
+                    symbol
+                )))?;
+            let args: Vec<_> = args
+                .iter()
+                .map(|x| {
+                    x.to_id().ok_or(exceptions::PyValueError::new_err(format!(
+                        "Bad function name {}",
+                        symbol
+                    )))
+                })
+                .collect::<Result<_, _>>()?;
+
+            fn_map
+                .add_function(symbol, rename.clone(), args, body.expr.as_view())
+                .map_err(|e| {
+                    exceptions::PyValueError::new_err(format!("Could not add function: {}", e))
+                })?;
+        }
+
+        let settings = OptimizationSettings {
+            horner_iterations: iterations,
+            n_cores,
+            verbose,
+            ..OptimizationSettings::default()
+        };
+
+        let params: Vec<_> = params.iter().map(|x| x.expr.clone()).collect();
+
+        let eval = self
+            .expr
+            .evaluator(&fn_map, &params, settings)
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
+            })?;
+
+        let eval_f64 = eval.map_coeff(&|x| x.to_f64());
+
+        Ok(PythonExpressionEvaluator { eval: eval_f64 })
+    }
+
+    /// Create an evaluator that can jointly evaluate (nested) expressions in an optimized fashion.
+    /// See `Expression.evaluator()` for more information.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> x = Expression.symbols('x')
+    /// >>> e1 = Expression.parse("x^2 + 1")
+    /// >>> e2 = Expression.parse("x^2 + 2)
+    /// >>> ev = Expression.evaluator_multiple([e1, e2], {}, {}, [x])
+    ///
+    /// will recycle the `x^2`
+    #[classmethod]
+    #[pyo3(signature =
+        (exprs,
+        constants,
+        functions,
+        params,
+        iterations = 100,
+        n_cores = 4,
+        verbose = false),
+        )]
+    pub fn evaluator_multiple(
+        _cls: &PyType,
+        exprs: Vec<PythonExpression>,
+        constants: HashMap<PythonExpression, PythonExpression>,
+        functions: HashMap<(Variable, String, Vec<Variable>), PythonExpression>,
+        params: Vec<PythonExpression>,
+        iterations: usize,
+        n_cores: usize,
+        verbose: bool,
+    ) -> PyResult<PythonExpressionEvaluator> {
+        let mut fn_map = FunctionMap::new();
+
+        for (k, v) in &constants {
+            if let Ok(r) = v.expr.clone().try_into() {
+                fn_map.add_constant(k.expr.as_view(), r);
+            } else {
+                Err(exceptions::PyValueError::new_err(format!(
+                    "Constants must be rationals. If this is not possible, pass the value as a parameter",
+                )))?
+            }
+        }
+
+        for ((symbol, rename, args), body) in &functions {
+            let symbol = symbol
+                .to_id()
+                .ok_or(exceptions::PyValueError::new_err(format!(
+                    "Bad function name {}",
+                    symbol
+                )))?;
+            let args: Vec<_> = args
+                .iter()
+                .map(|x| {
+                    x.to_id().ok_or(exceptions::PyValueError::new_err(format!(
+                        "Bad function name {}",
+                        symbol
+                    )))
+                })
+                .collect::<Result<_, _>>()?;
+
+            fn_map
+                .add_function(symbol, rename.clone(), args, body.expr.as_view())
+                .map_err(|e| {
+                    exceptions::PyValueError::new_err(format!("Could not add function: {}", e))
+                })?;
+        }
+
+        let settings = OptimizationSettings {
+            horner_iterations: iterations,
+            n_cores,
+            verbose,
+            ..OptimizationSettings::default()
+        };
+
+        let params: Vec<_> = params.iter().map(|x| x.expr.clone()).collect();
+
+        let exprs = exprs.iter().map(|x| x.expr.as_view()).collect::<Vec<_>>();
+
+        let eval = Atom::evaluator_multiple(&exprs, &fn_map, &params, settings).map_err(|e| {
+            exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
+        })?;
+
+        let eval_f64 = eval.map_coeff(&|x| x.to_f64());
+
+        Ok(PythonExpressionEvaluator { eval: eval_f64 })
+    }
 }
 
 /// A raplacement, which is a pattern and a right-hand side, with optional conditions and settings.
@@ -4160,13 +4333,7 @@ impl PythonMatchIterator {
             i.next().map(|m| {
                 m.match_stack
                     .into_iter()
-                    .map(|m| {
-                        (Atom::new_var(m.0).into(), {
-                            let mut a = Atom::default();
-                            m.1.to_atom(&mut a);
-                            a.into()
-                        })
-                    })
+                    .map(|m| (Atom::new_var(m.0).into(), { m.1.to_atom().into() }))
                     .collect()
             })
         })
@@ -4760,41 +4927,6 @@ impl PythonPolynomial {
         PythonFiniteFieldPolynomial {
             poly: self.poly.map_coeff(|c| c.to_finite_field(&f), f.clone()),
         }
-    }
-
-    /// Optimize the polynomial for evaluation using `iterations` number of iterations.
-    /// The optimized output can be exported in a C++ format using `to_file`.
-    ///
-    /// Returns an evaluator for the polynomial.
-    #[pyo3(signature = (iterations = 1000, to_file = None))]
-    pub fn optimize(
-        &self,
-        iterations: usize,
-        to_file: Option<String>,
-    ) -> PyResult<PythonInstructionEvaluator> {
-        let o = self.poly.optimize(iterations);
-        if let Some(file) = to_file.as_ref() {
-            std::fs::write(
-                file,
-                format!(
-                    "{}",
-                    InstructionSetPrinter {
-                        name: "evaluate".to_string(),
-                        instr: &o,
-                        mode: InstructionSetMode::CPP(InstructionSetModeCPPSettings {
-                            write_header_and_test: true,
-                            always_pass_output_array: false,
-                        })
-                    }
-                ),
-            )
-            .unwrap();
-        }
-
-        let o_f64 = o.convert::<f64>();
-        Ok(PythonInstructionEvaluator {
-            instr: o_f64.evaluator(),
-        })
     }
 
     /// Compute the Groebner basis of a polynomial system.
@@ -8272,22 +8404,210 @@ impl ConvertibleToRationalPolynomial {
     }
 }
 
+/// An optimized evaluator for expressions.
 #[pyclass(name = "Evaluator", module = "symbolica")]
 #[derive(Clone)]
-pub struct PythonInstructionEvaluator {
-    pub instr: InstructionEvaluator<f64>,
+pub struct PythonExpressionEvaluator {
+    pub eval: ExpressionEvaluator<f64>,
+}
+
+/// A compiled and optimized evaluator for expressions.
+#[pyclass(name = "CompiledEvaluator", module = "symbolica")]
+#[derive(Clone)]
+pub struct PythonCompiledExpressionEvaluator {
+    pub eval: CompiledEvaluator,
+    pub output_len: usize,
 }
 
 #[pymethods]
-impl PythonInstructionEvaluator {
-    /// Evaluate the polynomial for multiple inputs and return the result.
-    fn evaluate(&self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
-        let mut eval = self.instr.clone();
+impl PythonCompiledExpressionEvaluator {
+    /// Load a compiled library, previously generated with `compile`.
+    #[classmethod]
+    fn load(
+        _cls: &PyType,
+        filename: &str,
+        function_name: &str,
+        output_len: usize,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            eval: CompiledEvaluator::load(filename, function_name)
+                .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
+            output_len,
+        })
+    }
 
+    /// Evaluate the expression for multiple inputs and return the result.
+    fn evaluate_single(&mut self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
+        let mut res = vec![0.; self.output_len];
         inputs
             .iter()
-            .map(|s| eval.evaluate_with_input(s)[0])
+            .map(|s| {
+                self.eval.evaluate(s, &mut res);
+                res[0]
+            })
             .collect()
+    }
+
+    /// Evaluate the expression for multiple inputs and return the result.
+    fn evaluate_complex_single<'py>(
+        &mut self,
+        py: Python<'py>,
+        inputs: Vec<Vec<Complex<f64>>>,
+    ) -> Vec<&'py PyComplex> {
+        let mut res = vec![Complex::new_zero(); self.output_len];
+        inputs
+            .iter()
+            .map(|s| {
+                self.eval.evaluate(s, &mut res);
+                PyComplex::from_doubles(py, res[0].re, res[0].im)
+            })
+            .collect()
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        inputs
+            .iter()
+            .map(|s| {
+                let mut v = vec![0.; self.output_len];
+                self.eval.evaluate(s, &mut v);
+                v
+            })
+            .collect()
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate_complex<'py>(
+        &mut self,
+        python: Python<'py>,
+        inputs: Vec<Vec<Complex<f64>>>,
+    ) -> Vec<Vec<&'py PyComplex>> {
+        let mut v = vec![Complex::new_zero(); self.output_len];
+        inputs
+            .iter()
+            .map(|s| {
+                self.eval.evaluate(s, &mut v);
+                v.iter()
+                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
+                    .collect()
+            })
+            .collect()
+    }
+}
+
+#[pymethods]
+impl PythonExpressionEvaluator {
+    /// Evaluate the expression for multiple inputs and return the result.
+    fn evaluate_single(&mut self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
+        let mut res = vec![0.];
+        inputs
+            .iter()
+            .map(|s| {
+                self.eval.evaluate(s, &mut res);
+                res[0]
+            })
+            .collect()
+    }
+
+    /// Evaluate the expression for multiple inputs and return the result.
+    fn evaluate_complex_single<'py>(
+        &mut self,
+        py: Python<'py>,
+        inputs: Vec<Vec<Complex<f64>>>,
+    ) -> Vec<&'py PyComplex> {
+        // FIXME: clone every time
+        let mut eval = self.eval.clone().map_coeff(&|x| Complex::new(*x, 0.));
+
+        let mut res = vec![Complex::new_zero()];
+        inputs
+            .iter()
+            .map(|s| {
+                eval.evaluate(s, &mut res);
+                PyComplex::from_doubles(py, res[0].re, res[0].im)
+            })
+            .collect()
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate(&mut self, inputs: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+        inputs
+            .iter()
+            .map(|s| {
+                let mut v = vec![0.; self.eval.get_output_len()];
+                self.eval.evaluate(s, &mut v);
+                v
+            })
+            .collect()
+    }
+
+    /// Evaluate the expression for multiple inputs and return the results.
+    fn evaluate_complex<'py>(
+        &mut self,
+        python: Python<'py>,
+        inputs: Vec<Vec<Complex<f64>>>,
+    ) -> Vec<Vec<&'py PyComplex>> {
+        let mut eval = self.eval.clone().map_coeff(&|x| Complex::new(*x, 0.));
+
+        let mut v = vec![Complex::new_zero(); self.eval.get_output_len()];
+        inputs
+            .iter()
+            .map(|s| {
+                eval.evaluate(s, &mut v);
+                v.iter()
+                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+    #[pyo3(signature =
+        (function_name,
+        filename,
+        library_name,
+        inline_asm = true,
+        optimization_level = 3,
+        compiler_path = None,
+    ))]
+    fn compile(
+        &self,
+        function_name: &str,
+        filename: &str,
+        library_name: &str,
+        inline_asm: bool,
+        optimization_level: u8,
+        compiler_path: Option<&str>,
+    ) -> PyResult<PythonCompiledExpressionEvaluator> {
+        let mut options = CompileOptions::default();
+        options.optimization_level = optimization_level as usize;
+        if let Some(compiler_path) = compiler_path {
+            options.compiler = compiler_path.to_string();
+        }
+
+        Ok(PythonCompiledExpressionEvaluator {
+            eval: self
+                .eval
+                .export_cpp(
+                    filename,
+                    function_name,
+                    true,
+                    if inline_asm {
+                        InlineASM::Intel
+                    } else {
+                        InlineASM::None
+                    },
+                )
+                .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
+                .compile(library_name, options)
+                .map_err(|e| {
+                    exceptions::PyValueError::new_err(format!("Compilation error: {}", e))
+                })?
+                .load()
+                .map_err(|e| {
+                    exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
+                })?,
+            output_len: self.eval.get_output_len(),
+        })
     }
 }
 

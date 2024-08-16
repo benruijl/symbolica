@@ -821,7 +821,7 @@ impl Pattern {
         match self {
             Pattern::Wildcard(name) => {
                 if let Some(w) = match_stack.get(*name) {
-                    w.to_atom(out);
+                    w.to_atom_into(out);
                 } else if match_stack.settings.allow_new_wildcards_on_rhs {
                     out.to_var(*name);
                 } else {
@@ -863,7 +863,7 @@ impl Pattern {
                                     }
                                     _ => {
                                         let mut handle = workspace.new_atom();
-                                        w.to_atom(&mut handle);
+                                        w.to_atom_into(&mut handle);
                                         func.add_arg(handle.as_view())
                                     }
                                 },
@@ -902,7 +902,7 @@ impl Pattern {
                                 Match::Single(s) => out.set_from_view(s),
                                 Match::Multiple(_, _) => {
                                     let mut handle = workspace.new_atom();
-                                    w.to_atom(&mut handle);
+                                    w.to_atom_into(&mut handle);
                                     out.set_from_view(&handle.as_view())
                                 }
                                 Match::FunctionName(_) => {
@@ -947,7 +947,7 @@ impl Pattern {
                                     }
                                     _ => {
                                         let mut handle = workspace.new_atom();
-                                        w.to_atom(&mut handle);
+                                        w.to_atom_into(&mut handle);
                                         mul.extend(handle.as_view())
                                     }
                                 },
@@ -990,7 +990,7 @@ impl Pattern {
                                     }
                                     _ => {
                                         let mut handle = workspace.new_atom();
-                                        w.to_atom(&mut handle);
+                                        w.to_atom_into(&mut handle);
                                         add.extend(handle.as_view())
                                     }
                                 },
@@ -1488,7 +1488,15 @@ impl<'a> std::fmt::Debug for Match<'a> {
 impl<'a> Match<'a> {
     /// Create a new atom from a matched subexpression.
     /// Arguments lists are wrapped in the function `arg`.
-    pub fn to_atom(&self, out: &mut Atom) {
+    pub fn to_atom(&self) -> Atom {
+        let mut out = Atom::default();
+        self.to_atom_into(&mut out);
+        out
+    }
+
+    /// Create a new atom from a matched subexpression.
+    /// Arguments lists are wrapped in the function `arg`.
+    pub fn to_atom_into(&self, out: &mut Atom) {
         match self {
             Self::Single(v) => {
                 out.set_from_view(v);

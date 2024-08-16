@@ -10,6 +10,7 @@ use ahash::{AHasher, HashMap};
 use rand::{thread_rng, Rng};
 
 use self_cell::self_cell;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     atom::{representation::InlineVar, Atom, AtomOrView, AtomView, Symbol},
@@ -243,6 +244,22 @@ pub struct EvalTree<T> {
     param_count: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct BuiltinSymbol(Symbol);
+
+impl Serialize for BuiltinSymbol {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.get_id().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BuiltinSymbol {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id: u32 = u32::deserialize(deserializer)?;
+        Ok(BuiltinSymbol(unsafe { State::symbol_from_id(id) }))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Expression<T> {
     Const(T),
@@ -253,7 +270,7 @@ pub enum Expression<T> {
     Pow(Box<(Expression<T>, i64)>),
     Powf(Box<(Expression<T>, Expression<T>)>),
     ReadArg(usize), // read nth function argument
-    BuiltinFun(Symbol, Box<Expression<T>>),
+    BuiltinFun(BuiltinSymbol, Box<Expression<T>>),
     SubExpression(usize),
 }
 
@@ -272,7 +289,7 @@ pub enum HashedExpression<T> {
         Box<(HashedExpression<T>, HashedExpression<T>)>,
     ),
     ReadArg(ExpressionHash, usize), // read nth function argument
-    BuiltinFun(ExpressionHash, Symbol, Box<HashedExpression<T>>),
+    BuiltinFun(ExpressionHash, BuiltinSymbol, Box<HashedExpression<T>>),
     SubExpression(ExpressionHash, usize),
 }
 
@@ -641,7 +658,7 @@ impl<T: std::hash::Hash + Clone> Expression<T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 
 pub struct ExpressionEvaluator<T> {
     stack: Vec<T>,
@@ -692,7 +709,7 @@ impl<T: Real> ExpressionEvaluator<T> {
                 Instr::Powf(r, b, e) => {
                     self.stack[*r] = self.stack[*b].powf(&self.stack[*e]);
                 }
-                Instr::BuiltinFun(r, s, arg) => match *s {
+                Instr::BuiltinFun(r, s, arg) => match s.0 {
                     State::EXP => self.stack[*r] = self.stack[*arg].exp(),
                     State::LOG => self.stack[*r] = self.stack[*arg].log(),
                     State::SIN => self.stack[*r] = self.stack[*arg].sin(),
@@ -1159,7 +1176,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     let exp = format!("Z{}", e);
                     *out += format!("\tZ{} = pow({}, {});\n", o, base, exp).as_str();
                 }
-                Instr::BuiltinFun(o, s, a) => match *s {
+                Instr::BuiltinFun(o, s, a) => match s.0 {
                     State::EXP => {
                         let arg = format!("Z{}", a);
                         *out += format!("\tZ{} = exp({});\n", o, arg).as_str();
@@ -1345,7 +1362,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             Mul(MemOrReg, u16, Vec<MemOrReg>),
             Pow(MemOrReg, u16, MemOrReg, i64),
             Powf(usize, usize, usize),
-            BuiltinFun(usize, Symbol, usize),
+            BuiltinFun(usize, BuiltinSymbol, usize),
         }
 
         let mut new_instr: Vec<RegInstr> = instr
@@ -1728,7 +1745,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                     let arg = get_input!(*a);
 
-                    match *s {
+                    match s.0 {
                         State::EXP => {
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
@@ -1933,7 +1950,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                     let arg = get_input!(*a);
 
-                    match *s {
+                    match s.0 {
                         State::EXP => {
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
@@ -1978,13 +1995,13 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum Instr {
     Add(usize, Vec<usize>),
     Mul(usize, Vec<usize>),
     Pow(usize, usize, i64),
     Powf(usize, usize, usize),
-    BuiltinFun(usize, Symbol, usize),
+    BuiltinFun(usize, BuiltinSymbol, usize),
 }
 
 impl<T: Clone + PartialEq> SplitExpression<T> {
@@ -3238,7 +3255,7 @@ impl<T: Real> EvalTree<T> {
             Expression::ReadArg(i) => args[*i].clone(),
             Expression::BuiltinFun(s, a) => {
                 let arg = self.evaluate_impl(a, subexpressions, params, args);
-                match *s {
+                match s.0 {
                     State::EXP => arg.exp(),
                     State::LOG => arg.log(),
                     State::SIN => arg.sin(),
@@ -3679,7 +3696,7 @@ impl<T: NumericalFloatLike> EvalTree<T> {
                 r
             }
             Expression::ReadArg(s) => args[*s].to_string(),
-            Expression::BuiltinFun(s, a) => match *s {
+            Expression::BuiltinFun(s, a) => match s.0 {
                 State::EXP => {
                     let mut r = "exp(".to_string();
                     r += &self.export_cpp_impl(a, args);
@@ -3826,7 +3843,10 @@ impl<'a> AtomView<'a> {
                     let arg = f.iter().next().unwrap();
                     let arg_eval = arg.to_eval_tree_impl(fn_map, params, args, funcs)?;
 
-                    return Ok(Expression::BuiltinFun(f.get_symbol(), Box::new(arg_eval)));
+                    return Ok(Expression::BuiltinFun(
+                        BuiltinSymbol(f.get_symbol()),
+                        Box::new(arg_eval),
+                    ));
                 }
 
                 let symb = InlineVar::new(f.get_symbol());

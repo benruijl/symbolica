@@ -1368,7 +1368,7 @@ mod test {
         assert_eq!(
             l,
             vec![(
-                Atom::parse("1+4*v2-4*v2^2")
+                Atom::parse("-1-4*v2+4*v2^2")
                     .unwrap()
                     .to_rational_polynomial::<_, _, u8>(&Q, &Z, new_map.clone().into()),
                 Atom::parse("-1-2*v1*v2+v1^2-2*v1^2*v2+v1^7")

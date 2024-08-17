@@ -211,20 +211,26 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
             return vec![];
         }
 
-        let c = self.content();
+        let mut c = self.content();
         let stripped = self.clone().div_coeff(&c);
 
         let mut factors = vec![];
 
-        if !c.is_one() {
-            factors.push((self.constant(c), 1));
-        }
-
         let fs = stripped.factor_separable();
 
-        for f in fs {
+        for mut f in fs {
+            // make sure f is primitive
+            if f.lcoeff().is_negative() {
+                c = -c;
+                f = -f;
+            }
+
             let mut nf = f.square_free_factorization_0_char();
             factors.append(&mut nf);
+        }
+
+        if !c.is_one() {
+            factors.insert(0, (self.constant(c), 1));
         }
 
         if factors.is_empty() {
@@ -1466,8 +1472,7 @@ where
         }
 
         // select a suitable evaluation point
-        let mut sample_points: Vec<_> =
-            order[1..].iter().map(|i| (*i, self.ring.zero())).collect();
+        let mut sample_points: Vec<_> = order[1..].iter().map(|i| (*i, self.ring.zero())).collect();
         let mut uni_f;
         let mut biv_f;
         let mut rng = thread_rng();
@@ -2701,10 +2706,6 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             // only construct factors that depend on var and remove integer content and unit
             let c = lcoeff_square_free.univariate_content(var);
             let mut lcoeff_square_free_pp = &lcoeff_square_free / &c;
-            if lcoeff_square_free_pp.lcoeff().is_negative() {
-                lcoeff_square_free_pp = -lcoeff_square_free_pp;
-            }
-            debug!("Content-free lcsqf {}", lcoeff_square_free_pp);
 
             // check if the evaluated leading coefficient remains square free
             let mut poly_eval = lcoeff_square_free_pp.clone();
@@ -2713,6 +2714,13 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     poly_eval = poly_eval.replace(*v, p);
                 }
             }
+
+            if poly_eval.lcoeff().is_negative() {
+                lcoeff_square_free_pp = -lcoeff_square_free_pp;
+                poly_eval = -poly_eval;
+            }
+            debug!("Content-free lcsqf {}", lcoeff_square_free_pp);
+
             let sqf = poly_eval.square_free_factorization();
             if sqf.len() != 1 || sqf[0].1 != 1 {
                 debug!("Polynomial is not square free: {}", poly_eval);
@@ -3050,6 +3058,21 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
 
                 bivariate_factors = cur_biv_f.factor().into_iter().map(|f| f.0).collect();
 
+                // absorb unit in another factor
+                let mut has_minus = 0;
+                bivariate_factors.retain(|f| {
+                    if f.is_constant() && f.lcoeff() == -1 {
+                        has_minus += 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                if has_minus % 2 == 1 {
+                    bivariate_factors[0] = -bivariate_factors[0].clone();
+                }
+
                 if bivariate_factors.len() <= max_factors_num.unwrap_or(bivariate_factors.len()) {
                     break;
                 }
@@ -3370,6 +3393,8 @@ impl<E: Exponent> MultivariatePolynomial<FiniteField<Integer>, E, LexOrder> {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use crate::{
         atom::Atom,
         domains::{
@@ -3380,6 +3405,7 @@ mod test {
             InternalOrdering,
         },
         poly::factor::Factorize,
+        state::State,
     };
 
     #[test]
@@ -3585,6 +3611,74 @@ mod test {
             ("1+2*v1+2*v1*v3+2*v1*v2 ", 1),
             ("3+v2+4*v1+v1*v3^2", 1),
         ];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_overall_minus() {
+        let poly = Atom::parse("-v1*v3^2-v1*v2*v3^2")
+            .unwrap()
+            .to_polynomial::<_, u8>(
+                &Z,
+                Some(Arc::new(vec![
+                    State::get_symbol("v1").into(),
+                    State::get_symbol("v2").into(),
+                    State::get_symbol("v3").into(),
+                ])),
+            );
+
+        let res = [("-1", 1), ("v3", 2), ("1+v2", 1), ("v1", 1)];
+
+        let mut res = res
+            .iter()
+            .map(|(f, p)| {
+                (
+                    Atom::parse(f)
+                        .unwrap()
+                        .expand()
+                        .to_polynomial(&Z, poly.variables.clone().into()),
+                    *p,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        res.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let mut r = poly.factor();
+        r.sort_by(|a, b| a.0.internal_cmp(&b.0).then(a.1.cmp(&b.1)));
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn factor_multivariate_2() {
+        let poly = Atom::parse("v2^2*v3-v1*v2*v3+v1*v2*v3^2+v1*v2^2-v1^2*v3^2+v1^2*v2*v3")
+            .unwrap()
+            .to_polynomial::<_, u8>(
+                &Z,
+                Some(Arc::new(vec![
+                    State::get_symbol("v1").into(),
+                    State::get_symbol("v2").into(),
+                    State::get_symbol("v3").into(),
+                ])),
+            );
+
+        let res = [("v2+v1*v3", 1), ("v2*v3-v1*v3+v1*v2", 1)];
 
         let mut res = res
             .iter()

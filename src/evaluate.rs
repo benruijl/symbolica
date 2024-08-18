@@ -1079,7 +1079,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         }
 
         let cpp = match inline_asm {
-            InlineASM::Intel => self.export_asm_str(function_name, include_header),
+            InlineASM::X64 => self.export_asm_str(function_name, include_header),
             InlineASM::None => self.export_cpp_str(function_name, include_header),
         };
 
@@ -1087,7 +1087,6 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         Ok(ExportedCode {
             source_filename: filename,
             function_name: function_name.to_string(),
-            inline_asm,
         })
     }
 
@@ -1293,12 +1292,12 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         macro_rules! format_addr {
             ($i:expr) => {
                 if $i < self.param_count {
-                    format!("PTR [%2+{}]", $i * 8)
+                    format!("{}(%2)", $i * 8)
                 } else if $i < self.reserved_indices {
-                    format!("PTR [%1+{}]", ($i - self.param_count) * 8)
+                    format!("{}(%1)", ($i - self.param_count) * 8)
                 } else {
                     // TODO: subtract reserved indices
-                    format!("PTR [%0+{}]", $i * 8)
+                    format!("{}(%0)", $i * 8)
                 }
             };
         }
@@ -1502,16 +1501,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                         match i {
                                             MemOrReg::Reg(k) => {
                                                 *out += &format!(
-                                                    "\t\t\"{}sd xmm{}, xmm{}\\n\\t\"\n",
-                                                    oper, out_reg, k
+                                                    "\t\t\"{}sd %%xmm{}, %%xmm{}\\n\\t\"\n",
+                                                    oper, k, out_reg,
                                                 );
                                             }
                                             MemOrReg::Mem(k) => {
                                                 *out += &format!(
-                                                    "\t\t\"{}sd xmm{}, QWORD {}\\n\\t\"\n",
+                                                    "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
                                                     oper,
-                                                    out_reg,
-                                                    format_addr!(*k)
+                                                    format_addr!(*k),
+                                                    out_reg
                                                 );
                                             }
                                         }
@@ -1521,7 +1520,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             } else if let Some(MemOrReg::Reg(j)) =
                                 a.iter().find(|x| matches!(x, MemOrReg::Reg(_)))
                             {
-                                *out += &format!("\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n", out_reg, j);
+                                *out +=
+                                    &format!("\t\t\"movapd %%xmm{}, %%xmm{}\\n\\t\"\n", j, out_reg);
 
                                 let mut first_skipped = false;
                                 for i in a {
@@ -1529,16 +1529,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                         match i {
                                             MemOrReg::Reg(k) => {
                                                 *out += &format!(
-                                                    "\t\t\"{}sd xmm{}, xmm{}\\n\\t\"\n",
-                                                    oper, out_reg, k
+                                                    "\t\t\"{}sd %%xmm{}, %%xmm{}\\n\\t\"\n",
+                                                    oper, k, out_reg,
                                                 );
                                             }
                                             MemOrReg::Mem(k) => {
                                                 *out += &format!(
-                                                    "\t\t\"{}sd xmm{}, QWORD {}\\n\\t\"\n",
+                                                    "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
                                                     oper,
-                                                    out_reg,
-                                                    format_addr!(*k)
+                                                    format_addr!(*k),
+                                                    out_reg
                                                 );
                                             }
                                         }
@@ -1548,9 +1548,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             } else {
                                 if let MemOrReg::Mem(k) = &a[0] {
                                     *out += &format!(
-                                        "\t\t\"movsd xmm{}, QWORD {}\\n\\t\"\n",
-                                        out_reg,
-                                        format_addr!(*k)
+                                        "\t\t\"movsd {}, %%xmm{}\\n\\t\"\n",
+                                        format_addr!(*k),
+                                        out_reg
                                     );
                                 } else {
                                     unreachable!();
@@ -1559,10 +1559,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 for i in &a[1..] {
                                     if let MemOrReg::Mem(k) = i {
                                         *out += &format!(
-                                            "\t\t\"{}sd xmm{}, QWORD {}\\n\\t\"\n",
+                                            "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
                                             oper,
-                                            out_reg,
-                                            format_addr!(*k)
+                                            format_addr!(*k),
+                                            out_reg
                                         );
                                     }
                                 }
@@ -1574,8 +1574,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 if let Some(MemOrReg::Reg(j)) =
                                     a.iter().find(|x| matches!(x, MemOrReg::Reg(_)))
                                 {
-                                    *out +=
-                                        &format!("\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n", out_reg, j);
+                                    *out += &format!(
+                                        "\t\t\"movapd %%xmm{}, %%xmm{}\\n\\t\"\n",
+                                        j, out_reg
+                                    );
 
                                     let mut first_skipped = false;
                                     for i in a {
@@ -1583,16 +1585,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             match i {
                                                 MemOrReg::Reg(k) => {
                                                     *out += &format!(
-                                                        "\t\t\"{}sd xmm{}, xmm{}\\n\\t\"\n",
-                                                        oper, out_reg, k
+                                                        "\t\t\"{}sd %%xmm{}, %%xmm{}\\n\\t\"\n",
+                                                        oper, k, out_reg
                                                     );
                                                 }
                                                 MemOrReg::Mem(k) => {
                                                     *out += &format!(
-                                                        "\t\t\"{}sd xmm{}, QWORD {}\\n\\t\"\n",
+                                                        "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
                                                         oper,
-                                                        out_reg,
-                                                        format_addr!(*k)
+                                                        format_addr!(*k),
+                                                        out_reg
                                                     );
                                                 }
                                             }
@@ -1603,9 +1605,9 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 } else {
                                     if let MemOrReg::Mem(k) = &a[0] {
                                         *out += &format!(
-                                            "\t\t\"movsd xmm{}, QWORD {}\\n\\t\"\n",
-                                            out_reg,
-                                            format_addr!(*k)
+                                            "\t\t\"movsd {}, %%xmm{}\\n\\t\"\n",
+                                            format_addr!(*k),
+                                            out_reg
                                         );
                                     } else {
                                         unreachable!();
@@ -1614,19 +1616,19 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                     for i in &a[1..] {
                                         if let MemOrReg::Mem(k) = i {
                                             *out += &format!(
-                                                "\t\t\"{}sd xmm{}, QWORD {}\\n\\t\"\n",
+                                                "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
                                                 oper,
-                                                out_reg,
-                                                format_addr!(*k)
+                                                format_addr!(*k),
+                                                out_reg
                                             );
                                         }
                                     }
                                 }
 
                                 *out += &format!(
-                                    "\t\t\"movsd QWORD {}, xmm{}\\n\\t\"\n",
-                                    format_addr!(*out_mem),
-                                    out_reg
+                                    "\t\t\"movsd %%xmm{}, {}\\n\\t\"\n",
+                                    out_reg,
+                                    format_addr!(*out_mem)
                                 );
                             } else {
                                 unreachable!("No free registers");
@@ -1650,42 +1652,42 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                         (0..16).position(|k| free & (1 << k) != 0)
                                     {
                                         *out += &format!(
-                                            "\t\t\"movapd xmm{}, xmm{}\\n\\t\"\n",
-                                            tmp_reg, out_reg
+                                            "\t\t\"movapd %%xmm{}, %%xmm{}\\n\\t\"\n",
+                                            out_reg, tmp_reg
                                         );
 
                                         *out += &format!(
-                                            "\t\t\"movsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
-                                            out_reg,
+                                            "\t\t\"movsd {}(%1), %%xmm{}\\n\\t\"\n",
                                             (self.reserved_indices - self.param_count) * 8,
+                                            out_reg
                                         );
 
                                         *out += &format!(
-                                            "\t\t\"divsd xmm{}, xmm{}\\n\\t\"\n",
-                                            out_reg, tmp_reg,
+                                            "\t\t\"divsd %%xmm{}, %%xmm{}\\n\\t\"\n",
+                                            tmp_reg, out_reg
                                         );
                                     } else {
                                         panic!("No free registers for division")
                                     }
                                 } else {
                                     *out += &format!(
-                                        "\t\t\"movsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
-                                        out_reg,
+                                        "\t\t\"movsd {}(%1), %%xmm{}\\n\\t\"\n",
                                         (self.reserved_indices - self.param_count) * 8,
+                                        out_reg,
                                     );
 
                                     match b {
                                         MemOrReg::Reg(j) => {
                                             *out += &format!(
-                                                "\t\t\"divsd xmm{}, xmm{}\\n\\t\"\n",
-                                                out_reg, j
+                                                "\t\t\"divsd %%xmm{}, %%xmm{}\\n\\t\"\n",
+                                                j, out_reg
                                             );
                                         }
                                         MemOrReg::Mem(k) => {
                                             *out += &format!(
-                                                "\t\t\"divsd xmm{}, QWORD {}\\n\\t\"\n",
+                                                "\t\t\"divsd {}, %%xmm{}\\n\\t\"\n",
+                                                format_addr!(*k),
                                                 out_reg,
-                                                format_addr!(*k)
                                             );
                                         }
                                     }
@@ -1694,31 +1696,31 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             MemOrReg::Mem(out_mem) => {
                                 if let Some(out_reg) = (0..16).position(|k| free & (1 << k) != 0) {
                                     *out += &format!(
-                                        "\t\t\"movsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
-                                        out_reg,
+                                        "\t\t\"movsd {}(%1), %%xmm{}\\n\\t\"\n",
                                         (self.reserved_indices - self.param_count) * 8,
+                                        out_reg
                                     );
 
                                     match b {
                                         MemOrReg::Reg(j) => {
                                             *out += &format!(
-                                                "\t\t\"divsd xmm{}, xmm{}\\n\\t\"\n",
-                                                out_reg, j
+                                                "\t\t\"divsd %%xmm{}, %%xmm{}\\n\\t\"\n",
+                                                j, out_reg
                                             );
                                         }
                                         MemOrReg::Mem(k) => {
                                             *out += &format!(
-                                                "\t\t\"divsd xmm{}, QWORD {}\\n\\t\"\n",
-                                                out_reg,
-                                                format_addr!(*k)
+                                                "\t\t\"divsd {}, %%xmm{}\\n\\t\"\n",
+                                                format_addr!(*k),
+                                                out_reg
                                             );
                                         }
                                     }
 
                                     *out += &format!(
-                                        "\t\t\"movsd QWORD {}, xmm{}\\n\\t\"\n",
-                                        format_addr!(*out_mem),
-                                        out_reg
+                                        "\t\t\"movsd %%xmm{}, {}\\n\\t\"\n",
+                                        out_reg,
+                                        format_addr!(*out_mem)
                                     );
                                 } else {
                                     unreachable!("No free registers");
@@ -1773,30 +1775,18 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         *out += "\t__asm__(\n";
         for (i, r) in self.result_indices.iter().enumerate() {
             if *r < self.param_count {
-                *out += &format!(
-                    "\t\t\"movsd xmm{}, QWORD PTR[%3+{}]\\n\\t\"\n",
-                    regcount,
-                    r * 8
-                );
+                *out += &format!("\t\t\"movsd {}(%3), %%xmm{}\\n\\t\"\n", r * 8, regcount);
             } else if *r < self.reserved_indices {
                 *out += &format!(
-                    "\t\t\"movsd xmm{}, QWORD PTR[%2+{}]\\n\\t\"\n",
-                    regcount,
-                    (r - self.param_count) * 8
+                    "\t\t\"movsd {}(%2), %%xmm{}\\n\\t\"\n",
+                    (r - self.param_count) * 8,
+                    regcount
                 );
             } else {
-                *out += &format!(
-                    "\t\t\"movsd xmm{}, QWORD PTR[%1+{}]\\n\\t\"\n",
-                    regcount,
-                    r * 8
-                );
+                *out += &format!("\t\t\"movsd {}(%1), %%xmm{}\\n\\t\"\n", r * 8, regcount);
             }
 
-            *out += &format!(
-                "\t\t\"movsd QWORD PTR[%0+{}], xmm{}\\n\\t\"\n",
-                i * 8,
-                regcount
-            );
+            *out += &format!("\t\t\"movsd %%xmm{}, {}(%0)\\n\\t\"\n", regcount, i * 8);
             regcount = (regcount + 1) % 16;
         }
 
@@ -1830,12 +1820,12 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         macro_rules! format_addr {
             ($i:expr) => {
                 if $i < self.param_count {
-                    format!("PTR [%2+{}]", $i * 16)
+                    format!("{}(%2)", $i * 16)
                 } else if $i < self.reserved_indices {
-                    format!("PTR [%1+{}]", ($i - self.param_count) * 16)
+                    format!("{}(%1)", ($i - self.param_count) * 16)
                 } else {
                     // TODO: subtract reserved indices
-                    format!("PTR [%0+{}]", $i * 16)
+                    format!("{}(%0)", $i * 16)
                 }
             };
         }
@@ -1858,14 +1848,13 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         in_asm_block = true;
                     }
 
-                    *out += &format!("\t\t\"xorpd xmm0, xmm0\\n\\t\"\n");
+                    *out += &format!("\t\t\"xorpd %%xmm0, %%xmm0\\n\\t\"\n");
 
                     // TODO: try loading in multiple registers for better instruction-level parallelism?
                     for i in a {
-                        *out +=
-                            &format!("\t\t\"addpd xmm0, XMMWORD {}\\n\\t\"\n", format_addr!(*i));
+                        *out += &format!("\t\t\"addpd {}, %%xmm0\\n\\t\"\n", format_addr!(*i));
                     }
-                    *out += &format!("\t\t\"movupd XMMWORD {}, xmm0\\n\\t\"\n", format_addr!(*o),);
+                    *out += &format!("\t\t\"movupd %%xmm0, {}\\n\\t\"\n", format_addr!(*o));
                 }
                 Instr::Mul(o, a) => {
                     if a.len() < 15 {
@@ -1877,27 +1866,26 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         // optimized complex multiplication
                         for (i, r) in a.iter().enumerate() {
                             *out += &format!(
-                                "\t\t\"movupd xmm{}, XMMWORD {}\\n\\t\"\n",
+                                "\t\t\"movupd {}, %%xmm{}\\n\\t\"\n",
+                                format_addr!(*r),
                                 i + 1,
-                                format_addr!(*r)
                             );
                         }
 
                         for i in 1..a.len() {
                             *out += &format!(
-                                "\t\t\"movapd xmm0, xmm1\\n\\t\"
-\t\t\"unpckhpd xmm0, xmm0\\n\\t\"
-\t\t\"unpcklpd xmm1, xmm1\\n\\t\"
-\t\t\"mulpd xmm0, xmm{0}\\n\\t\"
-\t\t\"mulpd xmm1, xmm{0}\\n\\t\"
-\t\t\"shufpd xmm0, xmm0, 1\\n\\t\"
-\t\t\"addsubpd xmm1, xmm0\\n\\t\"\n",
+                                "\t\t\"movapd %%xmm1, %%xmm0\\n\\t\"
+\t\t\"unpckhpd %%xmm0, %%xmm0\\n\\t\"
+\t\t\"unpcklpd %%xmm1, %%xmm1\\n\\t\"
+\t\t\"mulpd %%xmm{0}, %%xmm0\\n\\t\"
+\t\t\"mulpd %%xmm{0}, %%xmm1\\n\\t\"
+\t\t\"shufpd $1, %%xmm0, %%xmm0\\n\\t\"
+\t\t\"addsubpd %%xmm0, %%xmm1\\n\\t\"\n",
                                 i + 1
                             );
                         }
 
-                        *out +=
-                            &format!("\t\t\"movupd XMMWORD {}, xmm1\\n\\t\"\n", format_addr!(*o));
+                        *out += &format!("\t\t\"movupd %%xmm1, {}\\n\\t\"\n", format_addr!(*o));
                     } else {
                         // TODO: reuse registers
 
@@ -1920,14 +1908,14 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         }
 
                         *out += &format!(
-                            "\t\t\"movupd xmm0, XMMWORD {}\\n\\t\"
-\t\t\"movupd xmm1, XMMWORD PTR [%1+{}]\\n\\t\"
-\t\t\"movapd xmm2, xmm0\\n\\t\"
-\t\t\"xorpd xmm0, xmm1\\n\\t\"
-\t\t\"mulpd xmm2, xmm2\\n\\t\"
-\t\t\"haddpd xmm2, xmm2\\n\\t\"
-\t\t\"divpd xmm0, xmm2\\n\\t\"
-\t\t\"movupd XMMWORD {}, xmm0\\n\\t\"\n",
+                            "\t\t\"movupd {}, %%xmm0\\n\\t\"
+\t\t\"movupd {}(%1), %%xmm1\\n\\t\"
+\t\t\"movapd %%xmm0, %%xmm2\\n\\t\"
+\t\t\"xorpd %%xmm1, %%xmm0\\n\\t\"
+\t\t\"mulpd %%xmm2, %%xmm2\\n\\t\"
+\t\t\"haddpd %%xmm2, %%xmm2\\n\\t\"
+\t\t\"divpd %%xmm2, %%xmm0\\n\\t\"
+\t\t\"movupd %%xmm0, {}\\n\\t\"\n",
                             format_addr!(*b),
                             (self.reserved_indices - self.param_count) * 16,
                             format_addr!(*o)
@@ -1977,17 +1965,17 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         *out += "\t__asm__(\n";
         for (i, r) in &mut self.result_indices.iter().enumerate() {
             if *r < self.param_count {
-                *out += &format!("\t\t\"movupd xmm0, XMMWORD PTR[%3+{}]\\n\\t\"\n", r * 16);
+                *out += &format!("\t\t\"movupd {}(%3), %%xmm0\\n\\t\"\n", r * 16);
             } else if *r < self.reserved_indices {
                 *out += &format!(
-                    "\t\t\"movupd xmm0, XMMWORD PTR[%2+{}]\\n\\t\"\n",
+                    "\t\t\"movupd {}(%2), %%xmm0\\n\\t\"\n",
                     (r - self.param_count) * 16
                 );
             } else {
-                *out += &format!("\t\t\"movupd xmm0, XMMWORD PTR[%1+{}]\\n\\t\"\n", r * 16);
+                *out += &format!("\t\t\"movupd {}(%1), %%xmm0\\n\\t\"\n", r * 16);
             }
 
-            *out += &format!("\t\t\"movupd XMMWORD PTR[%0+{}], xmm0\\n\\t\"\n", i * 16);
+            *out += &format!("\t\t\"movupd %%xmm0, {}(%0)\\n\\t\"\n", i * 16);
         }
 
         *out += &format!("\t\t:\n\t\t: \"r\"(out), \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\");\n", function_name);
@@ -3275,7 +3263,6 @@ impl<T: Real> EvalTree<T> {
 pub struct ExportedCode {
     source_filename: String,
     function_name: String,
-    inline_asm: InlineASM,
 }
 pub struct CompiledCode {
     library_filename: String,
@@ -3502,11 +3489,10 @@ impl Default for CompileOptions {
 
 impl ExportedCode {
     /// Create a new exported code object from a source file and function name.
-    pub fn new(source_filename: String, function_name: String, inline_asm: InlineASM) -> Self {
+    pub fn new(source_filename: String, function_name: String) -> Self {
         ExportedCode {
             source_filename,
             function_name,
-            inline_asm,
         }
     }
 
@@ -3526,13 +3512,6 @@ impl ExportedCode {
         }
         if options.unsafe_math {
             builder.arg("-funsafe-math-optimizations");
-        }
-
-        match self.inline_asm {
-            InlineASM::Intel => {
-                builder.arg("-masm=intel");
-            }
-            InlineASM::None => {}
         }
 
         for c in &options.custom {
@@ -3568,7 +3547,7 @@ impl ExportedCode {
 #[derive(Copy, Clone)]
 pub enum InlineASM {
     /// Use instructions suitable for x86_64 machines.
-    Intel,
+    X64,
     /// Do not generate inline assembly.
     None,
 }
@@ -3578,7 +3557,7 @@ impl Default for InlineASM {
     /// architecture.
     fn default() -> Self {
         if cfg!(target_arch = "x86_64") {
-            return InlineASM::Intel;
+            return InlineASM::X64;
         } else {
             InlineASM::None
         }

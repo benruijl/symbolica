@@ -8592,7 +8592,7 @@ impl PythonExpressionEvaluator {
                     function_name,
                     true,
                     if inline_asm {
-                        InlineASM::Intel
+                        InlineASM::X64
                     } else {
                         InlineASM::None
                     },

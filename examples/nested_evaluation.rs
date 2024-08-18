@@ -77,7 +77,7 @@ fn main() {
     println!("{}", r);
 
     let mut compiled = e_f64
-        .export_cpp("nested_evaluate.cpp", "nested", true, InlineASM::Intel)
+        .export_cpp("nested_evaluate.cpp", "nested", true, InlineASM::X64)
         .unwrap()
         .compile("nested", CompileOptions::default())
         .unwrap()

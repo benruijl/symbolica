@@ -239,8 +239,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
 
                         self.ring.mul_assign(&mut c, &cache[*n][exp]);
                     } else {
-                        self.ring
-                            .mul_assign(&mut c, &self.ring.pow(vv, exp as u64));
+                        self.ring.mul_assign(&mut c, &self.ring.pow(vv, exp as u64));
                     }
                 }
             }
@@ -2383,8 +2382,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                     );
                 }
 
-                self.ring
-                    .mul_assign(&mut m, &Integer::from_prime(&gp.ring));
+                self.ring.mul_assign(&mut m, &Integer::from_prime(&gp.ring));
 
                 debug!("gm: {} from ring {}", gm, m);
             }

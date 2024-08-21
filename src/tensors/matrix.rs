@@ -268,8 +268,8 @@ impl<F: Ring> AddAssign<&Matrix<F>> for Matrix<F> {
             );
         }
 
-        for (a,b) in self.data.iter_mut().zip(rhs.data.iter()) {
-            self.field.add_assign(a,b);
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            self.field.add_assign(a, b);
         }
     }
 }
@@ -305,8 +305,8 @@ impl<F: Ring> SubAssign<&Matrix<F>> for Matrix<F> {
             );
         }
 
-        for (a,b) in self.data.iter_mut().zip(rhs.data.iter()) {
-            self.field.sub_assign(a,b);
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            self.field.sub_assign(a, b);
         }
     }
 }
@@ -339,10 +339,9 @@ impl<F: Ring> Mul<&Matrix<F>> for &Matrix<F> {
 }
 
 impl<F: Ring> MulAssign<&Matrix<F>> for Matrix<F> {
-
     ///Multiply two matrices in place.
     fn mul_assign(&mut self, rhs: &Matrix<F>) {
-        *self = &*self*rhs;
+        *self = &*self * rhs;
     }
 }
 
@@ -845,7 +844,7 @@ mod test {
         assert_eq!(c[(0, 1)], 64);
 
         let mut d = a.clone();
-        d+= &a;
+        d += &a;
 
         assert_eq!(d.data, vec![2, 4, 6, 8, 10, 12]);
 

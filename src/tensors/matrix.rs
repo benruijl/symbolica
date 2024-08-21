@@ -59,7 +59,7 @@ impl<F: Ring> Matrix<F> {
         m
     }
 
-    /// Create a new row vector from a list of scalars.
+    /// Create a new column vector from a list of scalars.
     pub fn new_vec(data: Vec<F::Element>, field: F) -> Matrix<F> {
         Matrix {
             nrows: data.len() as u32,

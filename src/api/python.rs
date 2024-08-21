@@ -8765,7 +8765,7 @@ impl PythonMatrix {
         })
     }
 
-    /// Create a new row vector from a list of scalars.
+    /// Create a new column vector from a list of scalars.
     #[classmethod]
     pub fn vec(
         _cls: &PyType,

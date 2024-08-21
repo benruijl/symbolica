@@ -2768,7 +2768,7 @@ class Matrix:
 
     @classmethod
     def vec(cls, entries: Sequence[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:
-        """Create a new row vector from a list of scalars."""
+        """Create a new column vector from a list of scalars."""
 
     @classmethod
     def from_linear(cls, nrows: int, ncols: int, entries: Sequence[RationalPolynomial | Polynomial | Expression | int]) -> Matrix:

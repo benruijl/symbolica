@@ -2078,6 +2078,20 @@ impl PythonExpression {
         }
     }
 
+    /// Returns true iff `self` contains `a` literally.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> x, y, z = Expression.symbols('x', 'y', 'z')
+    /// >>> e = x * y * z
+    /// >>> e.contains(x) # True
+    /// >>> e.contains(x*y*z) # True
+    /// >>> e.contains(x*y) # False
+    pub fn contains(&self, s: ConvertibleToExpression) -> bool {
+        self.expr.contains(s.to_expression().expr.as_view())
+    }
+
     /// Convert all coefficients to floats with a given precision `decimal_prec``.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
     pub fn coefficients_to_float(&self, decimal_prec: u32) -> PythonExpression {
@@ -3489,9 +3503,11 @@ impl PythonExpression {
             })
             .collect::<PyResult<_>>()?;
 
-        Ok(self
-            .expr
-            .evaluate(|x| x.into(), &constants, &functions, &mut cache))
+        self.expr
+            .evaluate(|x| x.into(), &constants, &functions, &mut cache)
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
+            })
     }
 
     /// Evaluate the expression, using a map of all the constants and
@@ -3575,6 +3591,9 @@ impl PythonExpression {
                 &functions,
                 &mut cache,
             )
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
+            })?
             .into();
 
         Ok(a.to_object(py))
@@ -3637,7 +3656,10 @@ impl PythonExpression {
 
         let r = self
             .expr
-            .evaluate(|x| x.into(), &constants, &functions, &mut cache);
+            .evaluate(|x| x.into(), &constants, &functions, &mut cache)
+            .map_err(|e| {
+                exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
+            })?;
         Ok(PyComplex::from_doubles(py, r.re, r.im))
     }
 

@@ -783,6 +783,8 @@ impl<'a> AtomView<'a> {
                                 // downgrade
                                 last_buf.set_from_view(&out_mul.to_mul_view().to_slice().get(0));
                                 out.set_from_view(&last_buf.as_view());
+                            } else {
+                                out_mul.set_normalized(true);
                             }
                         } else {
                             out_mul.extend(v);
@@ -1292,6 +1294,8 @@ impl<'a> AtomView<'a> {
                             // downgrade
                             last_buf.set_from_view(&out_add.to_add_view().to_slice().get(0));
                             out.set_from_view(&last_buf.as_view());
+                        } else {
+                            out_add.set_normalized(true);
                         }
                     } else {
                         out_add.extend(v);
@@ -1339,5 +1343,33 @@ mod test {
         let res = Atom::new_var(State::I) * &Atom::new_var(State::E) * &Atom::new_var(State::I);
         let refr = -Atom::new_var(State::E);
         assert_eq!(res, refr);
+    }
+
+    #[test]
+    fn coeff_flag() {
+        let a = Atom::parse("-v1*v2").unwrap();
+
+        if let Atom::Mul(m) = &a {
+            assert_eq!(m.to_mul_view().has_coefficient(), true);
+            assert_eq!(m.to_mul_view().is_normalized(), true);
+        }
+
+        let b = a * &Atom::parse("-v3").unwrap();
+
+        if let Atom::Mul(m) = &b {
+            assert_eq!(m.to_mul_view().has_coefficient(), false);
+            assert_eq!(m.to_mul_view().is_normalized(), true);
+        } else {
+            panic!("Expected a Mul");
+        }
+
+        let c = &b * 2;
+
+        if let Atom::Mul(m) = &c {
+            assert_eq!(m.to_mul_view().has_coefficient(), true);
+            assert_eq!(m.to_mul_view().is_normalized(), true);
+        } else {
+            panic!("Expected a Mul");
+        }
     }
 }

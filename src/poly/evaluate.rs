@@ -1484,8 +1484,9 @@ impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
                             .clone();
                     }
                     super::Variable::Function(_, o) | super::Variable::Other(o) => {
-                        *input =
-                            o.evaluate(coeff_map, const_map, function_map, &mut HashMap::default());
+                        *input = o
+                            .evaluate(coeff_map, const_map, function_map, &mut HashMap::default())
+                            .unwrap();
                     }
                     super::Variable::Temporary(_) => panic!("Temporary variable in input"),
                 }

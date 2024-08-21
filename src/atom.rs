@@ -267,7 +267,7 @@ impl<'a> AtomOrView<'a> {
 /// A trait for any type that can be converted into an `AtomView`.
 /// To be used for functions that accept any argument that can be
 /// converted to an `AtomView`.
-pub trait AsAtomView<'a>: Sized {
+pub trait AsAtomView<'a>: Copy + Sized {
     fn as_atom_view(self) -> AtomView<'a>;
 }
 
@@ -738,6 +738,17 @@ impl FunctionBuilder {
     pub fn add_arg<'b, T: AsAtomView<'b>>(mut self, arg: T) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
             f.add_arg(arg.as_atom_view());
+        }
+
+        self
+    }
+
+    /// Add multiple arguments to the function.
+    pub fn add_args<'b, T: AsAtomView<'b>>(mut self, args: &[T]) -> FunctionBuilder {
+        if let Atom::Fun(f) = self.handle.deref_mut() {
+            for a in args {
+                f.add_arg(a.as_atom_view());
+            }
         }
 
         self

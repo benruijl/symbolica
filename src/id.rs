@@ -3,7 +3,8 @@ use dyn_clone::DynClone;
 
 use crate::{
     atom::{
-        representation::ListSlice, AsAtomView, Atom, AtomType, AtomView, Num, SliceType, Symbol,
+        representation::{InlineVar, ListSlice},
+        AsAtomView, Atom, AtomType, AtomView, Num, SliceType, Symbol,
     },
     state::{State, Workspace},
     transformer::{Transformer, TransformerError},
@@ -867,8 +868,8 @@ impl Pattern {
                                         func.add_arg(handle.as_view())
                                     }
                                 },
-                                Match::FunctionName(_) => {
-                                    unreachable!("Wildcard cannot be function name")
+                                Match::FunctionName(s) => {
+                                    func.add_arg(InlineVar::new(*s).as_view())
                                 }
                             }
                         } else if match_stack.settings.allow_new_wildcards_on_rhs {
@@ -905,8 +906,8 @@ impl Pattern {
                                     w.to_atom_into(&mut handle);
                                     out.set_from_view(&handle.as_view())
                                 }
-                                Match::FunctionName(_) => {
-                                    unreachable!("Wildcard cannot be function name")
+                                Match::FunctionName(s) => {
+                                    out.set_from_view(&InlineVar::new(*s).as_view())
                                 }
                             }
                         } else if match_stack.settings.allow_new_wildcards_on_rhs {
@@ -951,9 +952,7 @@ impl Pattern {
                                         mul.extend(handle.as_view())
                                     }
                                 },
-                                Match::FunctionName(_) => {
-                                    unreachable!("Wildcard cannot be function name")
-                                }
+                                Match::FunctionName(s) => mul.extend(InlineVar::new(*s).as_view()),
                             }
                         } else if match_stack.settings.allow_new_wildcards_on_rhs {
                             mul.extend(workspace.new_var(*w).as_view());
@@ -994,9 +993,7 @@ impl Pattern {
                                         add.extend(handle.as_view())
                                     }
                                 },
-                                Match::FunctionName(_) => {
-                                    unreachable!("Wildcard cannot be function name")
-                                }
+                                Match::FunctionName(s) => add.extend(InlineVar::new(*s).as_view()),
                             }
                         } else if match_stack.settings.allow_new_wildcards_on_rhs {
                             add.extend(workspace.new_var(*w).as_view());

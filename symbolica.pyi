@@ -396,6 +396,19 @@ class Expression:
         transformations can be applied.
         """
 
+    def contains(self, a: Expression | int | float | Decimal) -> bool:
+        """Returns true iff `self` contains `a` literally.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> x, y, z = Expression.symbols('x', 'y', 'z')
+        >>> e = x * y * z
+        >>> e.contains(x) # True
+        >>> e.contains(x*y*z) # True
+        >>> e.contains(x*y) # False
+        """
+
     def coefficients_to_float(self, decimal_prec: int) -> Expression:
         """Convert all coefficients to floats with a given precision `decimal_prec`.
         The precision of floating point coefficients in the input will be truncated to `decimal_prec`."""

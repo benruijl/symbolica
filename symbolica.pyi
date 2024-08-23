@@ -2836,10 +2836,16 @@ class Matrix:
         """Subtract matrix `rhs` from `self`, returning the result."""
 
     def __mul__(self, rhs: Matrix | RationalPolynomial | Polynomial | Expression | int) -> Matrix:
-        """Multiply two matrices `self` and `rhs`, returning the result."""
+        """Matrix multiply `self` and `rhs`, returning the result."""
 
     def __rmul__(self, rhs: RationalPolynomial | Polynomial | Expression | int) -> Matrix:
-        """Multiply two matrices `self` and `rhs`, returning the result."""
+        """Matrix multiply  `rhs` and `self`, returning the result."""
+
+    def __matmul__(self, rhs: Matrix | RationalPolynomial | Polynomial | Expression | int) -> Matrix:
+        """Matrix multiply `self` and `rhs`, returning the result."""
+
+    def __rmatmul__(self, rhs: RationalPolynomial | Polynomial | Expression | int) -> Matrix:
+        """Matrix multiply  `rhs` and `self`, returning the result."""
 
     def __truediv__(self, rhs: RationalPolynomial | Polynomial | Expression | int) -> Matrix:
         """Divide this matrix by scalar `rhs` and return the result."""

@@ -43,6 +43,7 @@ mod derivative;
 pub mod domains;
 pub mod evaluate;
 mod expand;
+pub mod graph;
 pub mod id;
 mod normalize;
 pub mod numerical_integration;

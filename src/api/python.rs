@@ -9022,7 +9022,7 @@ impl PythonMatrix {
         self.__add__(rhs.__neg__())
     }
 
-    /// Add this matrix to `rhs`, returning the result.
+    /// Matrix multiply `self` and `rhs`, returning the result.
     pub fn __mul__(&self, rhs: ScalarOrMatrix) -> PyResult<PythonMatrix> {
         match rhs {
             ScalarOrMatrix::Scalar(s) => {
@@ -9041,8 +9041,18 @@ impl PythonMatrix {
         }
     }
 
-    /// Add this matrix to `rhs`, returning the result.
+    /// Matrix multiply `rhs` and `self` returning the result.
     pub fn __rmul__(&self, rhs: ConvertibleToRationalPolynomial) -> PyResult<PythonMatrix> {
+        self.__mul__(ScalarOrMatrix::Scalar(rhs))
+    }
+
+    /// Matrix multiply this matrix and `self`, returning the result.
+    pub fn __matmul__(&self, rhs: ScalarOrMatrix) -> PyResult<PythonMatrix> {
+        self.__mul__(rhs)
+    }
+
+    /// Matrix multiply `rhs` and `self`, returning the result.
+    pub fn __rmatmul__(&self, rhs: ConvertibleToRationalPolynomial) -> PyResult<PythonMatrix> {
         self.__mul__(ScalarOrMatrix::Scalar(rhs))
     }
 

@@ -132,24 +132,7 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
     }
 
     fn canonize_impl<I: NodeIndex>(&self) -> (Vec<I>, Self) {
-        // split on vertex color
-        let mut h = HashMap::default();
-        for (i, x) in self.nodes.iter().enumerate() {
-            h.entry(&x.data)
-                .or_insert_with(Vec::new)
-                .push(I::from_usize(i));
-        }
-        let mut partition: Vec<_> = h.into_iter().collect();
-        partition.sort_by_key(|x| x.0);
-
-        let mut stack = vec![SearchTreeNode {
-            partition: partition.into_iter().map(|x| x.1).collect(),
-            selected_part: None,
-            selected_vertex: None,
-            children_to_visit: vec![],
-            invariant: Invariant::default(),
-        }];
-
+        let mut stack = vec![SearchTreeNode::new(self)];
         let mut automorphisms = vec![];
         let mut leaf_nodes: HashMap<_, (Vec<_>, Vec<_>)> = HashMap::default(); // TODO: limit growth
         let mut current_best: Option<(Graph<&N, &E>, Vec<I>, Vec<Invariant<I>>)> = None;
@@ -162,7 +145,7 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
             }
 
             if let Some((_, _, best_invariant)) = &current_best {
-                // the canonical form is defined as the maximal isomorphism, prepended with the node invariants of the path
+                // the canonical form is defined as the maximal isomorph, prepended with the node invariants of the path
                 // at each tree level, the node invariant must therefore be at least as good as the best
                 // to be a potential canonical form
                 match node
@@ -174,7 +157,7 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                         continue;
                     }
                     Ordering::Greater => {
-                        // we will find a better isomorphism on this path
+                        // we will find a better isomorph on this path
                         current_best = None;
                     }
                     Ordering::Equal => {}
@@ -389,12 +372,22 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
             return true;
         }
 
+        let mut node = SearchTreeNode::<usize>::new(self);
+        let mut other_node = SearchTreeNode::new(other);
+
+        if node.partition.len() != other_node.partition.len() {
+            return false;
+        }
+
+        // check if the vertex colors are the same
+        for (i, j) in node.partition.iter().zip(&other_node.partition) {
+            if i.len() != j.len() || self.node(i[0]).data != other.node(j[0]).data {
+                return false;
+            }
+        }
+
         // check if the first refinement has the same node invariant
-        let mut node = SearchTreeNode::<usize>::default();
-        node.partition = vec![vec![0; self.nodes.len()]];
         node.refine(self);
-        let mut other_node = SearchTreeNode::default();
-        other_node.partition = vec![vec![0; other.nodes.len()]];
         other_node.refine(other);
 
         if node.invariant != other_node.invariant {
@@ -467,6 +460,26 @@ struct SearchTreeNode<N: NodeIndex> {
 }
 
 impl<I: NodeIndex> SearchTreeNode<I> {
+    /// Create a new search tree node with a partition refined on vertex color.
+    fn new<N: PartialOrd + Ord + Hash, E>(g: &Graph<N, E>) -> Self {
+        let mut h = HashMap::default();
+        for (i, x) in g.nodes.iter().enumerate() {
+            h.entry(&x.data)
+                .or_insert_with(Vec::new)
+                .push(I::from_usize(i));
+        }
+        let mut partition: Vec<_> = h.into_iter().collect();
+        partition.sort_by_key(|x| x.0);
+
+        SearchTreeNode {
+            partition: partition.into_iter().map(|x| x.1).collect(),
+            selected_part: None,
+            selected_vertex: None,
+            children_to_visit: vec![],
+            invariant: Invariant::default(),
+        }
+    }
+
     /// Compute a node invariant.
     fn update_invariant(&mut self) {
         self.invariant.partition_lengths.clear();
@@ -574,6 +587,35 @@ mod test {
     }
 
     #[test]
+    fn isomorphic() {
+        let mut g = Graph::new();
+        let n0 = g.add_node(0);
+        g.add_edge(n0, n0, false, 0);
+        g.add_edge(n0, n0, false, 0);
+
+        let mut g1 = Graph::new();
+        let n0 = g1.add_node(0);
+        g1.add_edge(n0, n0, false, 0);
+
+        assert!(!g.is_isomorphic(&g1));
+
+        g1.add_edge(n0, n0, true, 0);
+        assert!(!g.is_isomorphic(&g1));
+
+        g.add_edge(n0, n0, true, 0);
+        g1.add_edge(n0, n0, false, 0);
+        assert!(g.is_isomorphic(&g1));
+
+        let _ = g.add_node(1);
+        let _ = g1.add_node(0);
+        assert!(!g.is_isomorphic(&g1));
+
+        let _ = g1.add_node(1);
+        let _ = g.add_node(0);
+        assert!(g.is_isomorphic(&g1));
+    }
+
+    #[test]
     fn canonize() {
         let mut g = Graph::new();
         let n0 = g.add_node(1);
@@ -604,8 +646,6 @@ mod test {
         g.add_edge(n7, n8, false, 0);
 
         let c = g.canonize();
-
-        println!("{:?}\n{}", c.0, c.1);
 
         assert_eq!(c.1.edge(0).vertices, (0, 2));
     }

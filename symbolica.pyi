@@ -113,11 +113,17 @@ class Expression:
     """The built-in logarithm function."""
 
     @classmethod
-    def symbol(_cls, name: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Expression:
+    def symbol(_cls,
+               name: str,
+               is_symmetric: Optional[bool] = None,
+               is_antisymmetric: Optional[bool] = None,
+               is_cyclesymmetric: Optional[bool] = None,
+               is_linear: Optional[bool] = None) -> Expression:
         """
         Create a new symbol from a `name`. Symbols carry information about their attributes.
         The symbol can signal that it is symmetric if it is used as a function
-        using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`, and
+        using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`,
+        cyclesymmetric using `is_cyclesymmetric=True`, and
         multilinear using `is_linear=True`. If no attributes
         are specified, the attributes are inherited from the symbol if it was already defined,
         otherwise all attributes are set to `false`.
@@ -154,7 +160,7 @@ class Expression:
         """
 
     @classmethod
-    def symbols(_cls, *names: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Sequence[Expression]:
+    def symbols(_cls, *names: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_cyclesymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Sequence[Expression]:
         """
         Create a Symbolica symbol for every name in `*names`. See `Expression.symbol` for more information.
 

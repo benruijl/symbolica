@@ -38,6 +38,7 @@ pub struct VariableListIndex(pub(crate) usize);
 pub enum FunctionAttribute {
     Symmetric,
     Antisymmetric,
+    Cyclesymmetric,
     Linear,
 }
 
@@ -79,14 +80,14 @@ impl Default for State {
 }
 
 impl State {
-    pub const ARG: Symbol = Symbol::init_fn(0, 0, false, false, false);
-    pub const COEFF: Symbol = Symbol::init_fn(1, 0, false, false, false);
-    pub const EXP: Symbol = Symbol::init_fn(2, 0, false, false, false);
-    pub const LOG: Symbol = Symbol::init_fn(3, 0, false, false, false);
-    pub const SIN: Symbol = Symbol::init_fn(4, 0, false, false, false);
-    pub const COS: Symbol = Symbol::init_fn(5, 0, false, false, false);
-    pub const SQRT: Symbol = Symbol::init_fn(6, 0, false, false, false);
-    pub const DERIVATIVE: Symbol = Symbol::init_fn(7, 0, false, false, false);
+    pub const ARG: Symbol = Symbol::init_fn(0, 0, false, false, false, false);
+    pub const COEFF: Symbol = Symbol::init_fn(1, 0, false, false, false, false);
+    pub const EXP: Symbol = Symbol::init_fn(2, 0, false, false, false, false);
+    pub const LOG: Symbol = Symbol::init_fn(3, 0, false, false, false, false);
+    pub const SIN: Symbol = Symbol::init_fn(4, 0, false, false, false, false);
+    pub const COS: Symbol = Symbol::init_fn(5, 0, false, false, false, false);
+    pub const SQRT: Symbol = Symbol::init_fn(6, 0, false, false, false, false);
+    pub const DERIVATIVE: Symbol = Symbol::init_fn(7, 0, false, false, false, false);
     pub const E: Symbol = Symbol::init_var(8, 0);
     pub const I: Symbol = Symbol::init_var(9, 0);
     pub const PI: Symbol = Symbol::init_var(10, 0);
@@ -265,6 +266,7 @@ impl State {
                     r.get_wildcard_level(),
                     attributes.contains(&FunctionAttribute::Symmetric),
                     attributes.contains(&FunctionAttribute::Antisymmetric),
+                    attributes.contains(&FunctionAttribute::Cyclesymmetric),
                     attributes.contains(&FunctionAttribute::Linear),
                 );
 
@@ -297,6 +299,7 @@ impl State {
                     wildcard_level,
                     attributes.contains(&FunctionAttribute::Symmetric),
                     attributes.contains(&FunctionAttribute::Antisymmetric),
+                    attributes.contains(&FunctionAttribute::Cyclesymmetric),
                     attributes.contains(&FunctionAttribute::Linear),
                 );
 

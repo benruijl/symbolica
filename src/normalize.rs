@@ -1087,6 +1087,39 @@ impl<'a> AtomView<'a> {
                     }
 
                     out_f.set_normalized(true);
+                } else if id.is_cyclesymmetric() {
+                    let mut args: SmallVec<[_; 20]> = SmallVec::new();
+                    for a in out_f.to_fun_view().iter() {
+                        args.push(a);
+                    }
+
+                    let mut best_shift = 0;
+                    'shift: for shift in 1..args.len() {
+                        for i in 0..args.len() {
+                            match args[(i + best_shift) % args.len()]
+                                .cmp(&args[(i + shift) % args.len()])
+                            {
+                                std::cmp::Ordering::Equal => {}
+                                std::cmp::Ordering::Less => {
+                                    continue 'shift;
+                                }
+                                std::cmp::Ordering::Greater => break,
+                            }
+                        }
+
+                        best_shift = shift;
+                    }
+
+                    let mut f = workspace.new_atom();
+                    let ff = f.to_fun(id);
+                    for arg in args[best_shift..].iter().chain(&args[..best_shift]) {
+                        ff.add_arg(*arg);
+                    }
+
+                    drop(args);
+
+                    ff.set_normalized(true);
+                    std::mem::swap(ff, out_f);
                 }
             }
             AtomView::Pow(p) => {

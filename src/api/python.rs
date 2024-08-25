@@ -1485,7 +1485,8 @@ macro_rules! req_wc_cmp {
 impl PythonExpression {
     /// Create a new symbol from a `name`. Symbols carry information about their attributes.
     /// The symbol can signal that it is symmetric if it is used as a function
-    /// using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`, and
+    /// using `is_symmetric=True`, antisymmetric using `is_antisymmetric=True`,
+    /// cyclesymmetric using `is_cyclesymmetric=True` and
     /// multilinear using `is_linear=True`. If no attributes
     /// are specified, the attributes are inherited from the symbol if it was already defined,
     /// otherwise all attributes are set to `false`.
@@ -1523,15 +1524,24 @@ impl PythonExpression {
         name: &str,
         is_symmetric: Option<bool>,
         is_antisymmetric: Option<bool>,
+        is_cyclesymmetric: Option<bool>,
         is_linear: Option<bool>,
     ) -> PyResult<Self> {
-        if is_symmetric.is_none() && is_antisymmetric.is_none() && is_linear.is_none() {
+        if is_symmetric.is_none()
+            && is_antisymmetric.is_none()
+            && is_cyclesymmetric.is_none()
+            && is_linear.is_none()
+        {
             return Ok(Atom::new_var(State::get_symbol(name)).into());
         }
 
-        if is_symmetric == Some(true) && is_antisymmetric == Some(true) {
+        let count = (is_symmetric == Some(true)) as u8
+            + (is_antisymmetric == Some(true)) as u8
+            + (is_cyclesymmetric == Some(true)) as u8;
+
+        if count > 1 {
             Err(exceptions::PyValueError::new_err(
-                "Function cannot be both symmetric and antisymmetric",
+                "Function cannot be both symmetric, antisymmetric or cyclesymmetric",
             ))?;
         }
 
@@ -1543,6 +1553,10 @@ impl PythonExpression {
 
         if let Some(true) = is_antisymmetric {
             opts.push(FunctionAttribute::Antisymmetric);
+        }
+
+        if let Some(true) = is_cyclesymmetric {
+            opts.push(FunctionAttribute::Cyclesymmetric);
         }
 
         if let Some(true) = is_linear {
@@ -1563,20 +1577,28 @@ impl PythonExpression {
     /// >>> e = f(1,x)
     /// >>> print(e)
     /// f(1,x)
-    #[pyo3(signature = (*args,is_symmetric=None,is_antisymmetric=None,is_linear=None))]
+    #[pyo3(signature = (*args,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None))]
     #[classmethod]
     pub fn symbols(
         cls: &PyType,
         args: &PyTuple,
         is_symmetric: Option<bool>,
         is_antisymmetric: Option<bool>,
+        is_cyclesymmetric: Option<bool>,
         is_linear: Option<bool>,
     ) -> PyResult<Vec<PythonExpression>> {
         let mut result = Vec::with_capacity(args.len());
 
         for a in args {
             let name = a.extract::<&str>()?;
-            let s = Self::symbol(cls, name, is_symmetric, is_antisymmetric, is_linear)?;
+            let s = Self::symbol(
+                cls,
+                name,
+                is_symmetric,
+                is_antisymmetric,
+                is_cyclesymmetric,
+                is_linear,
+            )?;
             result.push(s);
         }
 

@@ -26,6 +26,7 @@ pub struct Symbol {
     wildcard_level: u8,
     is_symmetric: bool,
     is_antisymmetric: bool,
+    is_cyclesymmetric: bool,
     is_linear: bool,
 }
 
@@ -48,6 +49,7 @@ impl Symbol {
             wildcard_level,
             is_symmetric: false,
             is_antisymmetric: false,
+            is_cyclesymmetric: false,
             is_linear: false,
         }
     }
@@ -59,6 +61,7 @@ impl Symbol {
         wildcard_level: u8,
         is_symmetric: bool,
         is_antisymmetric: bool,
+        is_cyclesymmetric: bool,
         is_linear: bool,
     ) -> Self {
         Symbol {
@@ -66,6 +69,7 @@ impl Symbol {
             wildcard_level,
             is_symmetric,
             is_antisymmetric,
+            is_cyclesymmetric,
             is_linear,
         }
     }
@@ -84,6 +88,10 @@ impl Symbol {
 
     pub fn is_antisymmetric(&self) -> bool {
         self.is_antisymmetric
+    }
+
+    pub fn is_cyclesymmetric(&self) -> bool {
+        self.is_cyclesymmetric
     }
 
     pub fn is_linear(&self) -> bool {

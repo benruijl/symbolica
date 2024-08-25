@@ -353,6 +353,12 @@ impl<R: Ring> std::fmt::Display for AlgebraicNumber<R> {
 }
 
 impl<R: Ring> AlgebraicNumber<R> {
+    pub fn mul_coeff(self, c: R::Element) -> Self {
+        AlgebraicNumber {
+            poly: self.poly.mul_coeff(c),
+        }
+    }
+
     pub fn to_finite_field<UField: FiniteFieldWorkspace>(
         &self,
         field: &FiniteField<UField>,
@@ -559,7 +565,7 @@ impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
     /// Extend the current algebraic extension `R[a]` with `b`, whose minimal polynomial
     /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
     ///
-    /// `b`  must be irreducible over `R` and `R[a]`; this is not checked.
+    /// `b` must be irreducible over `R` and `R[a]`; this is not checked.
     pub fn extend(
         &self,
         b: &MultivariatePolynomial<AlgebraicExtension<R>>,

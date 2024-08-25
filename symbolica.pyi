@@ -2363,6 +2363,15 @@ class NumberFieldPolynomial:
         >>> p.replace(x, r)
         """
 
+    def get_minimal_polynomial(self) -> Polynomial:
+        """Get the minimal polynomial of the algebraic extension."""
+
+    def extend(self, b: NumberFieldPolynomial) -> Tuple[NumberFieldPolynomial, Polynomial, Polynomial]:
+        """Extend the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
+        is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
+
+        `b`  must be irreducible over `R` and `R[a]`; this is not checked."""
+
 
 class FiniteFieldPolynomial:
     """A Symbolica polynomial with finite field coefficients."""

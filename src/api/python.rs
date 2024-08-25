@@ -7816,6 +7816,42 @@ impl PythonNumberFieldPolynomial {
             })
             .into())
     }
+
+    /// Get the minimal polynomial of the algebraic extension.
+    pub fn get_minimal_polynomial(&self) -> PythonPolynomial {
+        PythonPolynomial {
+            poly: self.poly.ring.poly().clone(),
+        }
+    }
+
+    /// Extend the coefficient ring of this polynomial `R[a]` with `b`, whose minimal polynomial
+    /// is `R[a][b]` and form `R[b]`. Also return the new representation of `a` and `b`.
+    ///
+    /// `b`  must be irreducible over `R` and `R[a]`; this is not checked.
+    pub fn extend(&self, b: Self) -> (Self, PythonPolynomial, PythonPolynomial) {
+        let (new_field, map1, map2) = self.poly.ring.extend(&b.poly);
+
+        (
+            Self {
+                poly: self.poly.map_coeff(
+                    |f| {
+                        let mut new_num = new_field.zero();
+                        for (p, coeff) in f.poly.coefficients.iter().enumerate() {
+                            new_field.add_assign(
+                                &mut new_num,
+                                &new_field.pow(&map1, p as u64).mul_coeff(coeff.clone()),
+                            );
+                        }
+
+                        new_num
+                    },
+                    new_field.clone(),
+                ),
+            },
+            PythonPolynomial { poly: map1.poly },
+            PythonPolynomial { poly: map2.poly },
+        )
+    }
 }
 
 /// A Symbolica rational polynomial.

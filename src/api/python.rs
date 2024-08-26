@@ -3871,6 +3871,10 @@ impl PythonExpression {
     /// The tensors must be written as functions, with its indices are the arguments.
     /// The repeated indices should be provided in `contracted_indices`.
     ///
+    /// If the contracted indices are distinguishable (for example in their dimension),
+    /// you can provide an optional group marker for each index using `index_group`.
+    /// This makes sure that an index will not be renamed to an index from a different group.
+    ///
     /// Examples
     /// --------
     /// g = Expression.symbol('g', is_symmetric=True)
@@ -3881,7 +3885,11 @@ impl PythonExpression {
     /// >>>
     /// >>> print(e.canonize_tensors([mu1, mu2, mu3, mu4]))
     /// yields `g(mu1,mu2)*fc(mu1,mu3,mu2,k1,mu3,k1)`.
-    fn canonize_tensors(&self, contracted_indices: Vec<ConvertibleToExpression>) -> PyResult<Self> {
+    fn canonize_tensors(
+        &self,
+        contracted_indices: Vec<ConvertibleToExpression>,
+        index_group: Option<Vec<ConvertibleToExpression>>,
+    ) -> PyResult<Self> {
         let contracted_indices = contracted_indices
             .into_iter()
             .map(|x| x.to_expression().expr)
@@ -3891,9 +3899,21 @@ impl PythonExpression {
             .map(|x| x.as_view())
             .collect::<Vec<_>>();
 
+        let index_group = index_group.map(|x| {
+            x.into_iter()
+                .map(|x| x.to_expression().expr)
+                .collect::<Vec<_>>()
+        });
+        let index_group = index_group
+            .as_ref()
+            .map(|x| x.iter().map(|x| x.as_view()).collect::<Vec<_>>());
+
         let r = self
             .expr
-            .canonize_tensors(&contracted_indices)
+            .canonize_tensors(
+                &contracted_indices,
+                index_group.as_ref().map(|x| x.as_slice()),
+            )
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not canonize tensors: {}", e))
             })?;

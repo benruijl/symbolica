@@ -1154,10 +1154,16 @@ class Expression:
         will recycle the `x^2`
         """
 
-    def canonize_tensors(self, contracted_indices: Sequence[Expression | int]) -> Expression:
+    def canonize_tensors(self,
+                         contracted_indices: Sequence[Expression | int],
+                         index_group: Optional[Sequence[Expression | int]] = None) -> Expression:
         """Canonize (products of) tensors in the expression by relabeling repeated indices.
         The tensors must be written as functions, with its indices are the arguments.
         The repeated indices should be provided in `contracted_indices`.
+
+        If the contracted indices are distinguishable (for example in their dimension),
+        you can provide an optional group marker for each index using `index_group`.
+        This makes sure that an index will not be renamed to an index from a different group.
 
         Examples
         --------

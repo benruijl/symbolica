@@ -11,6 +11,10 @@ impl Atom {
     /// The tensors must be written as functions, with its indices are the arguments.
     /// The repeated indices should be provided in `contracted_indices`.
     ///
+    /// If the contracted indices are distinguishable (for example in their dimension),
+    /// you can provide an optional group marker for each index using `index_group`.
+    /// This makes sure that an index will not be renamed to an index from a different group.
+    ///
     /// Example
     /// -------
     /// ```
@@ -26,13 +30,18 @@ impl Atom {
     /// let mu3 = Atom::parse("mu3").unwrap();
     /// let mu4 = Atom::parse("mu4").unwrap();
     ///
-    /// let r = a.canonize_tensors(&[mu1.as_view(), mu2.as_view(), mu3.as_view(), mu4.as_view()]).unwrap();
+    /// let r = a.canonize_tensors(&[mu1.as_view(), mu2.as_view(), mu3.as_view(), mu4.as_view()], None).unwrap();
     /// println!("{}", r);
     /// # }
     /// ```
     /// yields `fs(mu1,mu2)*fc(mu1,k1,mu3,k1,mu2,mu3)`.
-    pub fn canonize_tensors(&self, contracted_indices: &[AtomView]) -> Result<Atom, String> {
-        self.as_view().canonize_tensors(contracted_indices)
+    pub fn canonize_tensors(
+        &self,
+        contracted_indices: &[AtomView],
+        index_group: Option<&[AtomView]>,
+    ) -> Result<Atom, String> {
+        self.as_view()
+            .canonize_tensors(contracted_indices, index_group)
     }
 }
 
@@ -40,14 +49,33 @@ impl<'a> AtomView<'a> {
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
     /// The tensors must be written as functions, with its indices are the arguments.
     /// The repeated indices should be provided in `contracted_indices`.
-    pub fn canonize_tensors(&self, contracted_indices: &[AtomView]) -> Result<Atom, String> {
+    ///
+    /// If the contracted indices are distinguishable (for example in their dimension),
+    /// you can provide an optional group marker for each index using `index_group`.
+    /// This makes sure that an index will not be renamed to an index from a different group.
+    pub fn canonize_tensors(
+        &self,
+        contracted_indices: &[AtomView],
+        index_group: Option<&[AtomView]>,
+    ) -> Result<Atom, String> {
+        if let Some(c) = index_group {
+            if c.len() != contracted_indices.len() {
+                return Err(
+                    "Index group must have the same length as contracted indices".to_owned(),
+                );
+            }
+        }
+
         Workspace::get_local().with(|ws| {
             if let AtomView::Add(a) = self {
                 let mut aa = ws.new_atom();
                 let add = aa.to_add();
 
                 for a in a.iter() {
-                    add.extend(a.canonize_tensor_product(contracted_indices, ws)?.as_view());
+                    add.extend(
+                        a.canonize_tensor_product(contracted_indices, index_group, ws)?
+                            .as_view(),
+                    );
                 }
 
                 let mut out = Atom::new();
@@ -55,7 +83,7 @@ impl<'a> AtomView<'a> {
                 Ok(out)
             } else {
                 Ok(self
-                    .canonize_tensor_product(contracted_indices, ws)?
+                    .canonize_tensor_product(contracted_indices, index_group, ws)?
                     .into_inner())
             }
         })
@@ -65,6 +93,7 @@ impl<'a> AtomView<'a> {
     fn canonize_tensor_product(
         &self,
         contracted_indices: &[AtomView],
+        index_group: Option<&[AtomView]>,
         ws: &Workspace,
     ) -> Result<RecycledAtom, String> {
         let mut g = Graph::new();
@@ -73,7 +102,13 @@ impl<'a> AtomView<'a> {
         let mut t = ws.new_atom();
         let mul = t.to_mul();
 
-        self.tensor_to_graph_impl(contracted_indices, &mut connections, &mut g, mul)?;
+        self.tensor_to_graph_impl(
+            contracted_indices,
+            index_group,
+            &mut connections,
+            &mut g,
+            mul,
+        )?;
 
         for (i, f) in contracted_indices.iter().zip(&connections) {
             if f.is_some() {
@@ -89,25 +124,35 @@ impl<'a> AtomView<'a> {
         }
 
         // connect dummy indices
-        let mut index_count = 0;
+        let mut used_indices = vec![false; contracted_indices.len()];
         for e in gc.edges() {
             if e.directed {
                 continue;
             }
 
+            // find first free index that belongs to the same group
+            let (index, used) = used_indices
+                .iter_mut()
+                .enumerate()
+                .find(|(p, x)| {
+                    !**x && index_group
+                        .map(|c| c[*p] == e.data.1.as_view())
+                        .unwrap_or(true)
+                })
+                .unwrap();
+            *used = true;
+
             if let Atom::Fun(f) = &mut funcs[e.vertices.0].1 {
-                f.add_arg(contracted_indices[index_count]);
+                f.add_arg(contracted_indices[index]);
             } else {
                 unreachable!("Only functions should be left");
             }
 
             if let Atom::Fun(f) = &mut funcs[e.vertices.1].1 {
-                f.add_arg(contracted_indices[index_count]);
+                f.add_arg(contracted_indices[index]);
             } else {
                 unreachable!("Only functions should be left");
             }
-
-            index_count += 1;
         }
 
         // now join all regular and cyclesymmetric functions
@@ -127,7 +172,7 @@ impl<'a> AtomView<'a> {
                     // check if the current index is the start of a regular function
                     if gc.node(fi).edges.iter().any(|ei| {
                         let e = gc.edge(*ei);
-                        e.directed && e.vertices.0 == fi && e.data != 1
+                        e.directed && e.vertices.0 == fi && e.data.0 != 1
                     }) {
                         continue;
                     }
@@ -183,8 +228,9 @@ impl<'a> AtomView<'a> {
     fn tensor_to_graph_impl(
         &self,
         contracted_indices: &[AtomView],
+        index_group: Option<&[AtomView<'a>]>,
         connections: &mut [Option<usize>],
-        g: &mut Graph<AtomOrView<'a>, usize>,
+        g: &mut Graph<AtomOrView<'a>, (usize, AtomOrView<'a>)>,
         remainder: &mut Mul,
     ) -> Result<(), String> {
         match self {
@@ -204,6 +250,7 @@ impl<'a> AtomView<'a> {
                             for _ in 0..n {
                                 b.tensor_to_graph_impl(
                                     contracted_indices,
+                                    index_group,
                                     connections,
                                     g,
                                     remainder,
@@ -241,7 +288,17 @@ impl<'a> AtomView<'a> {
                     for a in f.iter() {
                         if let Some(p) = contracted_indices.iter().position(|x| x == &a) {
                             if let Some(n2) = connections[p] {
-                                g.add_edge(n, n2, false, Default::default());
+                                g.add_edge(
+                                    n,
+                                    n2,
+                                    false,
+                                    (
+                                        0,
+                                        index_group
+                                            .map(|c| c[p].into())
+                                            .unwrap_or(Atom::Zero.into()),
+                                    ),
+                                );
                                 connections[p] = None;
                             } else {
                                 connections[p] = Some(n);
@@ -266,7 +323,17 @@ impl<'a> AtomView<'a> {
                             g.add_node(ff.into());
 
                             if let Some(n2) = connections[p] {
-                                g.add_edge(start + i, n2, false, 0);
+                                g.add_edge(
+                                    start + i,
+                                    n2,
+                                    false,
+                                    (
+                                        0,
+                                        index_group
+                                            .map(|c| c[p].into())
+                                            .unwrap_or(Atom::Zero.into()),
+                                    ),
+                                );
                                 connections[p] = None;
                             } else {
                                 connections[p] = Some(start + i);
@@ -282,13 +349,13 @@ impl<'a> AtomView<'a> {
                                 start + i - 1,
                                 start + i,
                                 true,
-                                if is_cyclesymmetric { 0 } else { i },
+                                (if is_cyclesymmetric { 0 } else { i }, Atom::Zero.into()),
                             );
                         }
                     }
 
                     if is_cyclesymmetric {
-                        g.add_edge(start + nargs - 1, start, true, 0);
+                        g.add_edge(start + nargs - 1, start, true, (0, Atom::Zero.into()));
                     }
 
                     Ok(())
@@ -296,7 +363,13 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Mul(m) => {
                 for a in m.iter() {
-                    a.tensor_to_graph_impl(contracted_indices, connections, g, remainder)?;
+                    a.tensor_to_graph_impl(
+                        contracted_indices,
+                        index_group,
+                        connections,
+                        g,
+                        remainder,
+                    )?;
                 }
                 Ok(())
             }
@@ -323,6 +396,36 @@ mod test {
     };
 
     #[test]
+    fn index_group() {
+        let a1 = Atom::parse("fc1(mu1,mu2,mu1,mu3,mu4)*fs1(mu2,mu3,mu4)").unwrap();
+
+        let mus: Vec<_> = (0..4)
+            .map(|i| InlineVar::new(State::get_symbol(format!("mu{}", i + 1))))
+            .collect();
+        let mu_ref = mus.iter().map(|x| x.as_view()).collect::<Vec<_>>();
+
+        let colors = vec![
+            Atom::new_num(1),
+            Atom::new_num(2),
+            Atom::new_num(1),
+            Atom::new_num(2),
+        ];
+        let col_ref = colors.iter().map(|x| x.as_view()).collect::<Vec<_>>();
+
+        let r1 = a1.canonize_tensors(&mu_ref, Some(&col_ref)).unwrap();
+
+        let a2 = Atom::parse("fc1(mu4,mu3,mu1,mu2,mu3)*fs1(mu2,mu1,mu4)").unwrap();
+
+        let r2 = a2.canonize_tensors(&mu_ref, Some(&col_ref)).unwrap();
+
+        assert_eq!(r1, r2);
+
+        let r3 = a1.canonize_tensors(&mu_ref, None).unwrap();
+
+        assert_ne!(r1, r3);
+    }
+
+    #[test]
     fn canonize_tensors() {
         // fs1 is symmetric and fc1 is cyclesymmetric
         let a1 = Atom::parse(
@@ -335,14 +438,14 @@ mod test {
             .collect();
         let mu_ref = mus.iter().map(|x| x.as_view()).collect::<Vec<_>>();
 
-        let r1 = a1.canonize_tensors(&mu_ref).unwrap();
+        let r1 = a1.canonize_tensors(&mu_ref, None).unwrap();
 
         let a2 = Atom::parse(
                 "fs1(k2,mu2,mu9)*fs1(mu2,mu5)*fc1(k1,mu8,k1,mu5,mu8,mu9)*(1+x)*f(k)*fs1(mu3,mu6)^2*f(mu7,mu1,k3,mu1,mu7)*h(mu4)*i(mu4)+fc1(mu1,mu4,mu6)*fc1(mu4,mu1,mu6)",
             )
             .unwrap();
 
-        let r2 = a2.canonize_tensors(&mu_ref).unwrap();
+        let r2 = a2.canonize_tensors(&mu_ref, None).unwrap();
 
         assert_eq!(r1, r2);
     }

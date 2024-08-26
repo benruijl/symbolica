@@ -909,15 +909,15 @@ impl<'a> VarView<'a> {
 
     #[inline(always)]
     pub fn get_symbol(&self) -> Symbol {
-        let is_cyclesymmetric = self.data[0] & VAR_CYCLESYMMETRIC_FLAG != 0;
+        let is_cyclesymmetric = self.data[0] & VAR_CYCLESYMMETRIC_FLAG == VAR_CYCLESYMMETRIC_FLAG;
 
         Symbol::init_fn(
             self.data[1..].get_frac_u64().0 as u32,
             self.get_wildcard_level(),
-            !is_cyclesymmetric && self.data[0] & FUN_SYMMETRIC_FLAG != 0,
-            !is_cyclesymmetric && self.data[0] & VAR_ANTISYMMETRIC_FLAG != 0,
+            !is_cyclesymmetric && self.data[0] & FUN_SYMMETRIC_FLAG == FUN_SYMMETRIC_FLAG,
+            !is_cyclesymmetric && self.data[0] & VAR_ANTISYMMETRIC_FLAG == VAR_ANTISYMMETRIC_FLAG,
             is_cyclesymmetric,
-            self.data[0] & FUN_LINEAR_FLAG != 0,
+            self.data[0] & FUN_LINEAR_FLAG == FUN_LINEAR_FLAG,
         )
     }
 
@@ -1003,14 +1003,14 @@ impl<'a> FunView<'a> {
     pub fn get_symbol(&self) -> Symbol {
         let id = self.data[1 + 4..].get_frac_u64().0;
 
-        let is_cyclesymmetric =
-            self.data[0] & FUN_SYMMETRIC_FLAG != 0 && id & FUN_ANTISYMMETRIC_FLAG != 0;
+        let is_cyclesymmetric = self.data[0] & FUN_SYMMETRIC_FLAG == FUN_SYMMETRIC_FLAG
+            && id & FUN_ANTISYMMETRIC_FLAG == FUN_ANTISYMMETRIC_FLAG;
 
         Symbol::init_fn(
             id as u32,
             self.get_wildcard_level(),
-            !is_cyclesymmetric && self.data[0] & FUN_SYMMETRIC_FLAG != 0,
-            !is_cyclesymmetric && id & FUN_ANTISYMMETRIC_FLAG != 0,
+            !is_cyclesymmetric && self.data[0] & FUN_SYMMETRIC_FLAG == FUN_SYMMETRIC_FLAG,
+            !is_cyclesymmetric && id & FUN_ANTISYMMETRIC_FLAG == FUN_ANTISYMMETRIC_FLAG,
             is_cyclesymmetric,
             self.is_linear(),
         )
@@ -1028,12 +1028,12 @@ impl<'a> FunView<'a> {
 
     #[inline(always)]
     pub fn is_antisymmetric(&self) -> bool {
-        if self.data[0] & FUN_SYMMETRIC_FLAG != 0 {
+        if self.data[0] & FUN_SYMMETRIC_FLAG == FUN_SYMMETRIC_FLAG {
             return false;
         }
 
         let id = self.data[1 + 4..].get_frac_u64().0;
-        id & FUN_ANTISYMMETRIC_FLAG != 0
+        id & FUN_ANTISYMMETRIC_FLAG == FUN_ANTISYMMETRIC_FLAG
     }
 
     #[inline(always)]
@@ -1043,12 +1043,12 @@ impl<'a> FunView<'a> {
         }
 
         let id = self.data[1 + 4..].get_frac_u64().0;
-        id & FUN_ANTISYMMETRIC_FLAG != 0
+        id & FUN_ANTISYMMETRIC_FLAG == FUN_ANTISYMMETRIC_FLAG
     }
 
     #[inline(always)]
     pub fn is_linear(&self) -> bool {
-        self.data[0] & FUN_LINEAR_FLAG != 0
+        self.data[0] & FUN_LINEAR_FLAG == FUN_LINEAR_FLAG
     }
 
     #[inline(always)]
@@ -1341,7 +1341,7 @@ impl<'a> MulView<'a> {
 
     #[inline]
     pub fn has_coefficient(&self) -> bool {
-        (self.data[0] & MUL_HAS_COEFF_FLAG) != 0
+        self.data[0] & MUL_HAS_COEFF_FLAG == MUL_HAS_COEFF_FLAG
     }
 
     pub fn get_byte_size(&self) -> usize {

@@ -1018,19 +1018,32 @@ impl<'a> FunView<'a> {
 
     #[inline(always)]
     pub fn is_symmetric(&self) -> bool {
+        if self.data[0] & FUN_SYMMETRIC_FLAG == 0 {
+            return false;
+        }
+
         let id = self.data[1 + 4..].get_frac_u64().0;
-        self.data[0] & FUN_SYMMETRIC_FLAG != 0 && id & FUN_ANTISYMMETRIC_FLAG == 0
+        id & FUN_ANTISYMMETRIC_FLAG == 0
     }
 
     #[inline(always)]
     pub fn is_antisymmetric(&self) -> bool {
+        if self.data[0] & FUN_SYMMETRIC_FLAG != 0 {
+            return false;
+        }
+
         let id = self.data[1 + 4..].get_frac_u64().0;
-        !self.is_symmetric() && id & FUN_ANTISYMMETRIC_FLAG != 0
+        id & FUN_ANTISYMMETRIC_FLAG != 0
     }
 
     #[inline(always)]
     pub fn is_cyclesymmetric(&self) -> bool {
-        self.is_symmetric() && self.is_antisymmetric()
+        if self.data[0] & FUN_SYMMETRIC_FLAG == 0 {
+            return false;
+        }
+
+        let id = self.data[1 + 4..].get_frac_u64().0;
+        id & FUN_ANTISYMMETRIC_FLAG != 0
     }
 
     #[inline(always)]

@@ -26,7 +26,7 @@ pub struct Edge<EdgeData = Empty> {
 }
 
 /// Empty data type.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Empty;
 
 impl Display for Empty {
@@ -83,7 +83,11 @@ impl<N, E> Graph<N, E> {
     pub fn add_edge(&mut self, source: usize, target: usize, directed: bool, data: E) {
         let index = self.edges.len();
         self.edges.push(Edge {
-            vertices: (source, target),
+            vertices: if !directed && source > target {
+                (target, source)
+            } else {
+                (source, target)
+            },
             directed,
             data,
         });
@@ -517,9 +521,9 @@ impl<I: NodeIndex> SearchTreeNode<I> {
                             };
                             if j.contains(&k) {
                                 if e.directed {
-                                    edge_data.push((&e.data, is_source));
+                                    edge_data.push((&e.data, e.directed, is_source));
                                 } else {
-                                    edge_data.push((&e.data, true));
+                                    edge_data.push((&e.data, false, false));
                                 }
                             }
                         }

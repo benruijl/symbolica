@@ -140,6 +140,12 @@ impl State {
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
+                &format!("fc{}", i),
+                &[FunctionAttribute::Cyclesymmetric],
+            );
+        }
+        for i in 0..5 {
+            let _ = self.get_symbol_with_attributes_impl(
                 &format!("fa{}", i),
                 &[FunctionAttribute::Antisymmetric],
             );
@@ -374,6 +380,7 @@ impl State {
             dest.write_u8(s.get_wildcard_level())?;
             dest.write_u8(s.is_symmetric() as u8)?;
             dest.write_u8(s.is_antisymmetric() as u8)?;
+            dest.write_u8(s.is_cyclesymmetric() as u8)?;
             dest.write_u8(s.is_linear() as u8)?;
         }
 
@@ -446,6 +453,7 @@ impl State {
             let wildcard_level = source.read_u8()?;
             let is_symmetric = source.read_u8()? != 0;
             let is_antisymmetric = source.read_u8()? != 0;
+            let is_cyclesymmetric = source.read_u8()? != 0;
             let is_linear = source.read_u8()? != 0;
 
             attributes.clear();
@@ -454,6 +462,9 @@ impl State {
             }
             if is_symmetric {
                 attributes.push(FunctionAttribute::Symmetric);
+            }
+            if is_cyclesymmetric {
+                attributes.push(FunctionAttribute::Cyclesymmetric);
             }
             if is_linear {
                 attributes.push(FunctionAttribute::Linear);

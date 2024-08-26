@@ -201,10 +201,19 @@ impl<'a> From<AddView<'a>> for AtomView<'a> {
 }
 
 /// A copy-on-write structure for `Atom` and `AtomView`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum AtomOrView<'a> {
     Atom(Atom),
     View(AtomView<'a>),
+}
+
+impl<'a> std::fmt::Display for AtomOrView<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AtomOrView::Atom(a) => a.fmt(f),
+            AtomOrView::View(a) => a.fmt(f),
+        }
+    }
 }
 
 impl<'a> PartialEq for AtomOrView<'a> {
@@ -219,6 +228,23 @@ impl<'a> PartialEq for AtomOrView<'a> {
 }
 
 impl Eq for AtomOrView<'_> {}
+
+impl<'a> PartialOrd for AtomOrView<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for AtomOrView<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (AtomOrView::Atom(a1), AtomOrView::Atom(a2)) => a1.as_view().cmp(&a2.as_view()),
+            (AtomOrView::Atom(a1), AtomOrView::View(a2)) => a1.as_view().cmp(a2),
+            (AtomOrView::View(a1), AtomOrView::Atom(a2)) => a1.cmp(&a2.as_view()),
+            (AtomOrView::View(a1), AtomOrView::View(a2)) => a1.cmp(a2),
+        }
+    }
+}
 
 impl Hash for AtomOrView<'_> {
     #[inline]

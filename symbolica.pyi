@@ -1154,6 +1154,22 @@ class Expression:
         will recycle the `x^2`
         """
 
+    def canonize_tensors(self, contracted_indices: Sequence[Expression | int]) -> Expression:
+        """Canonize (products of) tensors in the expression by relabeling repeated indices.
+        The tensors must be written as functions, with its indices are the arguments.
+        The repeated indices should be provided in `contracted_indices`.
+
+        Examples
+        --------
+        >>> g = Expression.symbol('g', is_symmetric=True)
+        >>> fc = Expression.symbol('fc', is_cyclesymmetric=True)
+        >>> mu1, mu2, mu3, mu4, k1 = Expression.symbols('mu1', 'mu2', 'mu3', 'mu4', 'k1')
+        >>> e = g(mu2, mu3)*fc(mu4, mu2, k1, mu4, k1, mu3)
+        >>> print(e.canonize_tensors([mu1, mu2, mu3, mu4]))
+
+        yields `g(mu1,mu2)*fc(mu1,mu3,mu2,k1,mu3,k1)`.
+        """
+
 
 class Replacement:
     """A replacement of a pattern by a right-hand side."""

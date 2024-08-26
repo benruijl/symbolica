@@ -37,5 +37,6 @@ fn main() {
     println!(
         "Result for x = 6.: {}",
         a.evaluate::<f64, _>(|x| x.into(), &const_map, &fn_map, &mut cache)
+            .unwrap()
     );
 }

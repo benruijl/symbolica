@@ -8550,6 +8550,7 @@ pub struct PythonExpressionEvaluator {
 #[derive(Clone)]
 pub struct PythonCompiledExpressionEvaluator {
     pub eval: CompiledEvaluator,
+    pub input_len: usize,
     pub output_len: usize,
 }
 
@@ -8561,41 +8562,53 @@ impl PythonCompiledExpressionEvaluator {
         _cls: &PyType,
         filename: &str,
         function_name: &str,
+        input_len: usize,
         output_len: usize,
     ) -> PyResult<Self> {
         Ok(Self {
             eval: CompiledEvaluator::load(filename, function_name)
                 .map_err(|e| exceptions::PyValueError::new_err(format!("Load error: {}", e)))?,
+            input_len,
             output_len,
         })
     }
 
-    /// Evaluate the expression for multiple inputs and return the result.
-    fn evaluate_single(&mut self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
-        let mut res = vec![0.; self.output_len];
-        inputs
-            .iter()
-            .map(|s| {
-                self.eval.evaluate(s, &mut res);
-                res[0]
-            })
-            .collect()
+    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+    /// This method has less overhead than `evaluate`.
+    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> Vec<f64> {
+        let n_inputs = inputs.len() / self.input_len;
+        let mut res = vec![0.; self.output_len * n_inputs];
+        for (r, s) in res
+            .chunks_mut(self.output_len)
+            .zip(inputs.chunks(self.input_len))
+        {
+            self.eval.evaluate(s, r);
+        }
+
+        res
     }
 
-    /// Evaluate the expression for multiple inputs and return the result.
-    fn evaluate_complex_single<'py>(
+    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+    /// This method has less overhead than `evaluate_complex`.
+    fn evaluate_complex_flat<'py>(
         &mut self,
         py: Python<'py>,
-        inputs: Vec<Vec<Complex<f64>>>,
+        inputs: Vec<Complex<f64>>,
     ) -> Vec<&'py PyComplex> {
-        let mut res = vec![Complex::new_zero(); self.output_len];
-        inputs
-            .iter()
-            .map(|s| {
-                self.eval.evaluate(s, &mut res);
-                PyComplex::from_doubles(py, res[0].re, res[0].im)
-            })
-            .collect()
+        let n_inputs = inputs.len() / self.input_len;
+        let mut res = vec![PyComplex::from_doubles(py, 0., 0.); self.output_len * n_inputs];
+        let mut tmp = vec![Complex::new_zero(); self.output_len];
+        for (r, s) in res
+            .chunks_mut(self.output_len)
+            .zip(inputs.chunks(self.input_len))
+        {
+            self.eval.evaluate(s, &mut tmp);
+            for (rr, t) in r.iter_mut().zip(&tmp) {
+                *rr = PyComplex::from_doubles(py, t.re, t.im);
+            }
+        }
+
+        res
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
@@ -8631,35 +8644,44 @@ impl PythonCompiledExpressionEvaluator {
 
 #[pymethods]
 impl PythonExpressionEvaluator {
-    /// Evaluate the expression for multiple inputs and return the result.
-    fn evaluate_single(&mut self, inputs: Vec<Vec<f64>>) -> Vec<f64> {
-        let mut res = vec![0.];
-        inputs
-            .iter()
-            .map(|s| {
-                self.eval.evaluate(s, &mut res);
-                res[0]
-            })
-            .collect()
+    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+    /// This method has less overhead than `evaluate`.
+    fn evaluate_flat(&mut self, inputs: Vec<f64>) -> Vec<f64> {
+        let n_inputs = inputs.len() / self.eval.get_input_len();
+        let mut res = vec![0.; self.eval.get_output_len() * n_inputs];
+        for (r, s) in res
+            .chunks_mut(self.eval.get_output_len())
+            .zip(inputs.chunks(self.eval.get_input_len()))
+        {
+            self.eval.evaluate(s, r);
+        }
+
+        res
     }
 
-    /// Evaluate the expression for multiple inputs and return the result.
-    fn evaluate_complex_single<'py>(
+    /// Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+    /// This method has less overhead than `evaluate_complex`.
+    fn evaluate_complex_flat<'py>(
         &mut self,
         py: Python<'py>,
-        inputs: Vec<Vec<Complex<f64>>>,
+        inputs: Vec<Complex<f64>>,
     ) -> Vec<&'py PyComplex> {
-        // FIXME: clone every time
         let mut eval = self.eval.clone().map_coeff(&|x| Complex::new(*x, 0.));
+        let n_inputs = inputs.len() / self.eval.get_input_len();
+        let mut res =
+            vec![PyComplex::from_doubles(py, 0., 0.); self.eval.get_output_len() * n_inputs];
+        let mut tmp = vec![Complex::new_zero(); self.eval.get_output_len()];
+        for (r, s) in res
+            .chunks_mut(self.eval.get_output_len())
+            .zip(inputs.chunks(self.eval.get_input_len()))
+        {
+            eval.evaluate(s, &mut tmp);
+            for (rr, t) in r.iter_mut().zip(&tmp) {
+                *rr = PyComplex::from_doubles(py, t.re, t.im);
+            }
+        }
 
-        let mut res = vec![Complex::new_zero()];
-        inputs
-            .iter()
-            .map(|s| {
-                eval.evaluate(s, &mut res);
-                PyComplex::from_doubles(py, res[0].re, res[0].im)
-            })
-            .collect()
+        res
     }
 
     /// Evaluate the expression for multiple inputs and return the results.
@@ -8740,6 +8762,7 @@ impl PythonExpressionEvaluator {
                 .map_err(|e| {
                     exceptions::PyValueError::new_err(format!("Library loading error: {}", e))
                 })?,
+            input_len: self.eval.get_input_len(),
             output_len: self.eval.get_output_len(),
         })
     }

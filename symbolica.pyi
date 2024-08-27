@@ -2908,16 +2908,16 @@ class Evaluator:
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
         """Evaluate the expression for multiple inputs and return the result."""
 
-    def evaluate_single(self, inputs: Sequence[Sequence[float]]) -> List[float]:
-        """Evaluate the expression for multiple inputs and return the result, which
-        is a single value."""
+    def evaluate_flat(self, inputs: Sequence[float]) -> List[float]:
+        """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+        This method has less overhead than `evaluate`."""
 
     def evaluate_complex(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:
         """Evaluate the expression for multiple inputs and return the result."""
 
-    def evaluate_complex_single(self, inputs: Sequence[Sequence[complex]]) -> List[complex]:
-        """Evaluate the expression for multiple inputs and return the result, which
-        is a single value."""
+    def evaluate_complex_flat(self, inputs: Sequence[complex]) -> List[complex]:
+        """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+        This method has less overhead than `evaluate_complex`."""
 
 
 class CompiledEvaluator:
@@ -2936,16 +2936,16 @@ class CompiledEvaluator:
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
         """Evaluate the expression for multiple inputs and return the result."""
 
-    def evaluate_single(self, inputs: Sequence[Sequence[float]]) -> List[float]:
-        """Evaluate the expression for multiple inputs and return the result, which
-        is a single value."""
+    def evaluate_flat(self, inputs: Sequence[float]) -> List[float]:
+        """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+        This method has less overhead than `evaluate`."""
 
     def evaluate_complex(self, inputs: Sequence[Sequence[complex]]) -> List[List[complex]]:
         """Evaluate the expression for multiple inputs and return the result."""
 
-    def evaluate_complex_single(self, inputs: Sequence[Sequence[complex]]) -> List[complex]:
-        """Evaluate the expression for multiple inputs and return the result, which
-        is a single value."""
+    def evaluate_complex_flat(self, inputs: Sequence[complex]) -> List[complex]:
+        """Evaluate the expression for multiple inputs that are flattened and return the flattened result.
+        This method has less overhead than `evaluate_complex`."""
 
 
 class NumericalIntegrator:

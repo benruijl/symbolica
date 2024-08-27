@@ -738,6 +738,10 @@ impl<T: Default> ExpressionEvaluator<T> {
         }
     }
 
+    pub fn get_input_len(&self) -> usize {
+        self.param_count
+    }
+
     pub fn get_output_len(&self) -> usize {
         self.result_indices.len()
     }

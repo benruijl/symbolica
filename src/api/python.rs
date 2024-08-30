@@ -16,8 +16,8 @@ use pyo3::{
     pyfunction, pymethods, pymodule,
     sync::GILOnceCell,
     types::{PyBytes, PyComplex, PyLong, PyModule, PyTuple, PyType},
-    wrap_pyfunction, FromPyObject, IntoPy, Py, PyErr, PyObject, PyRef, PyResult, Python,
-    ToPyObject,
+    wrap_pyfunction, FromPyObject, IntoPy, Py, PyErr, PyObject, PyRef, PyResult, PyTypeInfo,
+    Python, ToPyObject,
 };
 use rug::Complete;
 use self_cell::self_cell;
@@ -84,6 +84,10 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonPatternRestriction>()?;
     m.add_class::<PythonTermStreamer>()?;
     m.add_class::<PythonSeries>()?;
+
+    m.add_function(wrap_pyfunction!(symbol_shorthand, m)?)?;
+    m.add_function(wrap_pyfunction!(number_shorthand, m)?)?;
+    m.add_function(wrap_pyfunction!(expression_shorthand, m)?)?;
 
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_function(wrap_pyfunction!(is_licensed, m)?)?;
@@ -154,6 +158,43 @@ fn get_license_key(email: String) -> PyResult<()> {
     LicenseManager::get_license_key(&email)
         .map(|_| println!("A license key was sent to your e-mail address."))
         .map_err(exceptions::PyConnectionError::new_err)
+}
+
+/// Shorthand notation for :func:`Expression.symbol`.
+#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None))]
+fn symbol_shorthand(
+    names: &PyTuple,
+    is_symmetric: Option<bool>,
+    is_antisymmetric: Option<bool>,
+    is_cyclesymmetric: Option<bool>,
+    is_linear: Option<bool>,
+    py: Python<'_>,
+) -> PyResult<PyObject> {
+    PythonExpression::symbol(
+        PythonExpression::type_object(py),
+        py,
+        names,
+        is_symmetric,
+        is_antisymmetric,
+        is_cyclesymmetric,
+        is_linear,
+    )
+}
+
+/// Shorthand notation for :func:`Expression.symbol`.
+#[pyfunction(name = "N")]
+fn number_shorthand(
+    num: PyObject,
+    relative_error: Option<f64>,
+    py: Python<'_>,
+) -> PyResult<PythonExpression> {
+    PythonExpression::num(PythonExpression::type_object(py), py, num, relative_error)
+}
+
+/// Shorthand notation for :func:`Expression.parse`.
+#[pyfunction(name = "E")]
+fn expression_shorthand(expr: &str, py: Python) -> PyResult<PythonExpression> {
+    PythonExpression::parse(PythonExpression::type_object(py), expr)
 }
 
 /// Specifies the type of the atom.
@@ -305,12 +346,48 @@ impl PythonPattern {
         Pattern::Transformer(Box::new((None, vec![]))).into()
     }
 
+    /// Execute an unbound transformer on the given expression. If the transformer
+    /// is bound, use `execute()` instead.
+    ///
+    /// Examples
+    /// --------
+    /// >>> x = Expression.symbol('x')
+    /// >>> e = Transformer().expand()((1+x)**2)
+    pub fn __call__(&self, expr: ConvertibleToExpression) -> PyResult<PythonExpression> {
+        let e = expr.to_expression();
+
+        if let Pattern::Transformer(t) = &self.expr {
+            if t.0.is_some() {
+                return Err(exceptions::PyValueError::new_err(
+                    "Transformer is already bound to an expression. Use `execute()` instead.",
+                ));
+            }
+
+            let mut out = Atom::new();
+
+            Workspace::get_local()
+                .with(|ws| Transformer::execute(e.as_view(), &t.1, ws, &mut out))
+                .map_err(|e| match e {
+                    TransformerError::Interrupt => {
+                        exceptions::PyKeyboardInterrupt::new_err("Interrupted by user")
+                    }
+                    TransformerError::ValueError(v) => exceptions::PyValueError::new_err(v),
+                })?;
+
+            Ok(out.into())
+        } else {
+            Err(exceptions::PyValueError::new_err(
+                "Input is not a transformer",
+            ))
+        }
+    }
+
     /// Create a transformer that expands products and powers.
     ///
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x, x_ = Expression.symbols('x', 'x_')
+    /// >>> x, x_ = Expression.symbol('x', 'x_')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
     /// >>> print(e)
@@ -381,7 +458,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x, y, z, w, f, x__ = Expression.symbols('x', 'y', 'z', 'w', 'f', 'x__')
+    /// >>> x, y, z, w, f, x__ = Expression.symbol('x', 'y', 'z', 'w', 'f', 'x__')
     /// >>> e = f(x+y, 4*z*w+3).replace_all(f(x__), f(x__).transform().linearize([z]))
     /// >>> print(e)
     ///
@@ -470,7 +547,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x, x__ = Expression.symbols('x', 'x__')
+    /// >>> x, x__ = Expression.symbol('x', 'x__')
     /// >>> f = Expression.symbol('f')
     /// >>> e = (x + 1).replace_all(x__, f(x__.transform().split()))
     /// >>> print(e)
@@ -492,7 +569,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id, g_id = Expression.symbols('x__', 'f', 'g')
+    /// >>> x_, f_id, g_id = Expression.symbol('x__', 'f', 'g')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2,1,3).replace_all(f(x_), x_.transform().partitions([(f_id, 2), (g_id, 1), (f_id, 1)]))
     /// >>> print(e)
@@ -538,7 +615,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, Transformer
-    /// >>> x_, f_id = Expression.symbols('x__', 'f')
+    /// >>> x_, f_id = Expression.symbol('x__', 'f')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(1,2,1,2).replace_all(f(x_), x_.transform().permutations(f_id))
     /// >>> print(e)
@@ -742,7 +819,8 @@ impl PythonPattern {
         }
     }
 
-    /// Execute the transformer.
+    /// Execute a bound transformer. If the transformer is unbound,
+    /// you can call it with an expression as an argument.
     ///
     /// Examples
     /// --------
@@ -835,7 +913,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     ///
-    /// >>> x, w1_, w2_ = Expression.symbols('x','w1_','w2_')
+    /// >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,x)
     /// >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
@@ -896,7 +974,7 @@ impl PythonPattern {
     /// Examples
     /// --------
     ///
-    /// >>> x, y, f = Expression.symbols('x', 'y', 'f')
+    /// >>> x, y, f = Expression.symbol('x', 'y', 'f')
     /// >>> e = f(x,y)
     /// >>> r = e.transform().replace_all_multiple(Replacement(x, y), Replacement(y, x))
     pub fn replace_all_multiple(
@@ -1514,25 +1592,43 @@ impl PythonExpression {
     /// f(1,2)
     ///
     /// Define a linear and symmetric function:
-    /// >>> p1, p2, p3, p4 = Expression.symbols('p1', 'p2', 'p3', 'p4')
+    /// >>> p1, p2, p3, p4 = Expression.symbol('p1', 'p2', 'p3', 'p4')
     /// >>> dot = Expression.symbol('dot', is_symmetric=True, is_linear=True)
     /// >>> e = dot(p2+2*p3,p1+3*p2-p3)
     /// dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
+    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None))]
     #[classmethod]
     pub fn symbol(
         _cls: &PyType,
-        name: &str,
+        py: Python,
+        names: &PyTuple,
         is_symmetric: Option<bool>,
         is_antisymmetric: Option<bool>,
         is_cyclesymmetric: Option<bool>,
         is_linear: Option<bool>,
-    ) -> PyResult<Self> {
+    ) -> PyResult<PyObject> {
         if is_symmetric.is_none()
             && is_antisymmetric.is_none()
             && is_cyclesymmetric.is_none()
             && is_linear.is_none()
         {
-            return Ok(Atom::new_var(State::get_symbol(name)).into());
+            if names.len() == 1 {
+                let name = names[0].extract::<&str>()?;
+
+                let id = State::get_symbol(name);
+                let r = PythonExpression::from(Atom::new_var(id));
+                return Ok(r.into_py(py));
+            } else {
+                let mut result = vec![];
+                for a in names {
+                    let name = a.extract::<&str>()?;
+                    let id = State::get_symbol(name);
+                    let r = PythonExpression::from(Atom::new_var(id));
+                    result.push(r);
+                }
+
+                return Ok(result.into_py(py));
+            }
         }
 
         let count = (is_symmetric == Some(true)) as u8
@@ -1563,46 +1659,25 @@ impl PythonExpression {
             opts.push(FunctionAttribute::Linear);
         }
 
-        let id = State::get_symbol_with_attributes(name, &opts)
-            .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+        if names.len() == 1 {
+            let name = names[0].extract::<&str>()?;
 
-        Ok(Atom::new_var(id).into())
-    }
+            let id = State::get_symbol_with_attributes(name, &opts)
+                .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+            let r = PythonExpression::from(Atom::new_var(id));
+            Ok(r.into_py(py))
+        } else {
+            let mut result = vec![];
+            for a in names {
+                let name = a.extract::<&str>()?;
+                let id = State::get_symbol_with_attributes(name, &opts)
+                    .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+                let r = PythonExpression::from(Atom::new_var(id));
+                result.push(r);
+            }
 
-    /// Create a Symbolica symbol for every name in `*names`. See `Expression.symbol` for more information.
-    ///
-    /// Examples
-    /// --------
-    /// >>> f, x = Expression.symbols('x', 'f')
-    /// >>> e = f(1,x)
-    /// >>> print(e)
-    /// f(1,x)
-    #[pyo3(signature = (*args,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None))]
-    #[classmethod]
-    pub fn symbols(
-        cls: &PyType,
-        args: &PyTuple,
-        is_symmetric: Option<bool>,
-        is_antisymmetric: Option<bool>,
-        is_cyclesymmetric: Option<bool>,
-        is_linear: Option<bool>,
-    ) -> PyResult<Vec<PythonExpression>> {
-        let mut result = Vec::with_capacity(args.len());
-
-        for a in args {
-            let name = a.extract::<&str>()?;
-            let s = Self::symbol(
-                cls,
-                name,
-                is_symmetric,
-                is_antisymmetric,
-                is_cyclesymmetric,
-                is_linear,
-            )?;
-            result.push(s);
+            Ok(result.into_py(py))
         }
-
-        Ok(result)
     }
 
     /// Create a new Symbolica number from an int, a float, a Decimal, or a string.
@@ -1994,7 +2069,7 @@ impl PythonExpression {
     ///
     /// Examples
     /// -------
-    /// >>> x = Expression.symbols('x')
+    /// >>> x = Expression.symbol('x')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,x)
     /// >>> print(e)
@@ -2105,7 +2180,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import *
-    /// >>> x, y, z = Expression.symbols('x', 'y', 'z')
+    /// >>> x, y, z = Expression.symbol('x', 'y', 'z')
     /// >>> e = x * y * z
     /// >>> e.contains(x) # True
     /// >>> e.contains(x*y*z) # True
@@ -2165,7 +2240,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression, AtomType
-    /// >>> x, x_ = Expression.symbols('x', 'x_')
+    /// >>> x, x_ = Expression.symbol('x', 'x_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(x)*f(2)*f(f(3))
     /// >>> e = e.replace_all(f(x_), 1, x_.req_type(AtomType.Num))
@@ -2500,7 +2575,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x_, y_ = Expression.symbols('x_', 'y_')
+    /// >>> x_, y_ = Expression.symbol('x_', 'y_')
     /// >>> f = Expression.symbol("f")
     /// >>> e = f(1)*f(2)*f(3)
     /// >>> e = e.replace_all(f(x_)*f(y_), 1, x_.req_cmp(y_, lambda m1, m2: m1 + m2 == 4))
@@ -2586,7 +2661,7 @@ impl PythonExpression {
     ///
     /// Examples
     /// --------
-    /// >>> x, x_ = Expression.symbols('x', 'x_')
+    /// >>> x, x_ = Expression.symbol('x', 'x_')
     /// >>> e = (1+x)**2
     /// >>> r = e.map(Transformer().expand().replace_all(x, 6))
     /// >>> print(r)
@@ -2688,7 +2763,7 @@ impl PythonExpression {
     /// --------
     ///
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbols('x', 'y')
+    /// >>> x, y = Expression.symbol('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
     /// >>> print(e.collect(x))
@@ -2696,7 +2771,7 @@ impl PythonExpression {
     /// yields `x^2+x*(y+5)+5`.
     ///
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbols('x', 'y')
+    /// >>> x, y = Expression.symbol('x', 'y')
     /// >>> exp, coeff = Expression.funs('var', 'coeff')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
@@ -2769,7 +2844,7 @@ impl PythonExpression {
     ///
     /// from symbolica import Expression
     /// >>>
-    /// >>> x, y = Expression.symbols('x', 'y')
+    /// >>> x, y = Expression.symbol('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + y*x**2
     /// >>> print(e.coefficient(x**2))
     ///
@@ -2791,7 +2866,7 @@ impl PythonExpression {
     ///
     /// from symbolica import Expression
     /// >>>
-    /// >>> x, y = Expression.symbols('x', 'y')
+    /// >>> x, y = Expression.symbol('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + 5
     /// >>>
     /// >>> for a in e.coefficient_list(x):
@@ -2854,7 +2929,7 @@ impl PythonExpression {
     /// Examples
     /// -------
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbols('x', 'y')
+    /// >>> x, y = Expression.symbol('x', 'y')
     /// >>> f = Expression.symbol('f')
     /// >>>
     /// >>> e = 2* x**2 * y + f(x)
@@ -3160,7 +3235,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     ///
-    /// >>> x, x_ = Expression.symbols('x','x_')
+    /// >>> x, x_ = Expression.symbol('x','x_')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(x)*f(1)*f(2)*f(3)
     /// >>> for match in e.match(f(x_)):
@@ -3300,7 +3375,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     ///
-    /// >>> x, w1_, w2_ = Expression.symbols('x','w1_','w2_')
+    /// >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,x)
     /// >>> r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
@@ -3396,7 +3471,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     ///
-    /// >>> x, y, f = Expression.symbols('x', 'y', 'f')
+    /// >>> x, y, f = Expression.symbol('x', 'y', 'f')
     /// >>> e = f(x,y)
     /// >>> r = e.replace_all_multiple(Replacement(x, y), Replacement(y, x))
     /// >>> print(r)
@@ -3444,7 +3519,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, y, c = Expression.symbols('x', 'y', 'c')
+    /// >>> x, y, c = Expression.symbol('x', 'y', 'c')
     /// >>> f = Expression.symbol('f')
     /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
     /// >>> print('x =', x_r, ', y =', y_r)
@@ -3541,7 +3616,7 @@ impl PythonExpression {
     /// --------
     /// >>> from symbolica import *
     /// >>> from decimal import Decimal, getcontext
-    /// >>> x = Expression.symbols('x', 'f')
+    /// >>> x = Expression.symbol('x', 'f')
     /// >>> e = Expression.parse('cos(x)')*3 + f(x, 2)
     /// >>> getcontext().prec = 100
     /// >>> a = e.evaluate_with_prec({x: Decimal('1.123456789')}, {
@@ -3627,7 +3702,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import Expression
-    /// >>> x, y = Expression.symbols('x', 'y')
+    /// >>> x, y = Expression.symbol('x', 'y')
     /// >>> e = Expression.parse('sqrt(x)')*y
     /// >>> print(e.evaluate_complex({x: 1 + 2j, y: 4 + 3j}, {}))
     pub fn evaluate_complex<'py>(
@@ -3694,7 +3769,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import *
-    /// >>> x, y, z, pi, f, g = Expression.symbols(
+    /// >>> x, y, z, pi, f, g = Expression.symbol(
     /// >>>     'x', 'y', 'z', 'pi', 'f', 'g')
     /// >>>
     /// >>> e1 = Expression.parse("x + pi + cos(x) + f(g(x+1),x*2)")
@@ -3785,7 +3860,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> from symbolica import *
-    /// >>> x = Expression.symbols('x')
+    /// >>> x = Expression.symbol('x')
     /// >>> e1 = Expression.parse("x^2 + 1")
     /// >>> e2 = Expression.parse("x^2 + 2)
     /// >>> ev = Expression.evaluator_multiple([e1, e2], {}, {}, [x])
@@ -3879,7 +3954,7 @@ impl PythonExpression {
     /// --------
     /// g = Expression.symbol('g', is_symmetric=True)
     /// >>> fc = Expression.symbol('fc', is_cyclesymmetric=True)
-    /// >>> mu1, mu2, mu3, mu4, k1 = Expression.symbols('mu1', 'mu2', 'mu3', 'mu4', 'k1')
+    /// >>> mu1, mu2, mu3, mu4, k1 = Expression.symbol('mu1', 'mu2', 'mu3', 'mu4', 'k1')
     /// >>>
     /// >>> e = g(mu2, mu3)*fc(mu4, mu2, k1, mu4, k1, mu3)
     /// >>>

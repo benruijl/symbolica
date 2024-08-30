@@ -9,7 +9,7 @@ use crate::{
     printer::AtomPrinter,
     state::{RecycledAtom, Workspace},
 };
-use std::{cmp::Ordering, hash::Hash, ops::DerefMut};
+use std::{cmp::Ordering, hash::Hash, ops::DerefMut, str::FromStr};
 
 pub use self::representation::{
     Add, AddView, Fun, ListIterator, ListSlice, Mul, MulView, Num, NumView, Pow, PowView, Var,
@@ -568,6 +568,15 @@ impl PartialOrd for Atom {
 impl Ord for Atom {
     fn cmp(&self, other: &Self) -> Ordering {
         self.as_view().cmp(&other.as_view())
+    }
+}
+
+impl FromStr for Atom {
+    type Err = String;
+
+    /// Parse an atom from a string.
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        Atom::parse(input)
     }
 }
 

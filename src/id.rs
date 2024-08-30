@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use ahash::HashSet;
 use dyn_clone::DynClone;
 
@@ -468,6 +470,15 @@ impl<'a> AtomView<'a> {
         };
 
         submatch
+    }
+}
+
+impl FromStr for Pattern {
+    type Err = String;
+
+    /// Parse a pattern from a string.
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        Pattern::parse(input)
     }
 }
 

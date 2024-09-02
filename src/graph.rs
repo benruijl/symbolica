@@ -35,7 +35,55 @@ impl Display for Empty {
     }
 }
 
+/// Data that has a public part and a private part. The private
+/// part is not used for equality or hashing.
+#[derive(Clone)]
+pub struct HiddenData<T, U> {
+    pub data: T,
+    pub hidden: U,
+}
+
+impl<T, U> HiddenData<T, U> {
+    pub fn new(data: T, hidden: U) -> Self {
+        HiddenData { data, hidden }
+    }
+}
+
+impl<T: PartialEq, U> PartialEq for HiddenData<T, U> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
+}
+
+impl<T: Eq, U> Eq for HiddenData<T, U> {}
+
+impl<T: Hash, U> Hash for HiddenData<T, U> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
+    }
+}
+
+impl<T: Display, U: Display> Display for HiddenData<T, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{} ({})", self.data, self.hidden)
+    }
+}
+
+impl<T: PartialOrd, U> PartialOrd for HiddenData<T, U> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.data.partial_cmp(&other.data)
+    }
+}
+
+impl<T: Ord, U> Ord for HiddenData<T, U> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.data.cmp(&other.data)
+    }
+}
+
 /// A multigraph with support for arbitrary node and edge data.
+///
+/// Use [HiddenData] to hide parts of the data from all equality and hashing.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct Graph<NodeData = Empty, EdgeData = Empty> {
     nodes: Vec<Node<NodeData>>,
@@ -124,6 +172,10 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
     /// Canonize the graph using McKay's canonical graph labeling algorithm,
     /// returning the vertex mapping and the canonical form.
     pub fn canonize(&self) -> (Vec<usize>, Self) {
+        if self.nodes.is_empty() {
+            return (vec![], self.clone());
+        }
+
         if self.nodes.len() <= u16::MAX as usize {
             let r = self.canonize_impl::<u16>();
             (r.0.into_iter().map(|x| x as usize).collect(), r.1)

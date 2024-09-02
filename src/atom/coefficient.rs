@@ -137,7 +137,9 @@ impl PackedRationalNumberWriter for Coefficient {
     fn write_packed(&self, dest: &mut Vec<u8>) {
         match self {
             Coefficient::Rational(r) => match (r.numerator_ref(), r.denominator_ref()) {
-                (Integer::Natural(num), Integer::Natural(den)) => (*num, *den).write_packed(dest),
+                (Integer::Natural(num), Integer::Natural(den)) => {
+                    (*num, *den as u64).write_packed(dest)
+                }
                 _ => {
                     let r = r.clone().to_multi_prec();
                     dest.put_u8(ARB_NUM | ARB_DEN);
@@ -146,9 +148,9 @@ impl PackedRationalNumberWriter for Coefficient {
                     let den_digits = r.denom().significant_digits::<u8>();
 
                     if r.numer() < &0 {
-                        (-(num_digits as i64), den_digits as i64).write_packed(dest);
+                        (-(num_digits as i64), den_digits as u64).write_packed(dest);
                     } else {
-                        (num_digits as i64, den_digits as i64).write_packed(dest);
+                        (num_digits as i64, den_digits as u64).write_packed(dest);
                     }
 
                     let old_len = dest.len();
@@ -229,7 +231,7 @@ impl PackedRationalNumberWriter for Coefficient {
         match self {
             Coefficient::Rational(r) => match (r.numerator_ref(), r.denominator_ref()) {
                 (Integer::Natural(num), Integer::Natural(den)) => {
-                    (*num, *den).write_packed_fixed(dest)
+                    (*num, *den as u64).write_packed_fixed(dest)
                 }
                 _ => todo!("Writing large packed rational not implemented"),
             },
@@ -247,11 +249,13 @@ impl PackedRationalNumberWriter for Coefficient {
     fn get_packed_size(&self) -> u64 {
         match self {
             Coefficient::Rational(r) => match (r.numerator_ref(), r.denominator_ref()) {
-                (Integer::Natural(num), Integer::Natural(den)) => (*num, *den).get_packed_size(),
+                (Integer::Natural(num), Integer::Natural(den)) => {
+                    (*num, *den as u64).get_packed_size()
+                }
                 _ => {
                     let l = r.clone().to_multi_prec();
-                    let n = l.numer().significant_digits::<u8>() as i64;
-                    let d = l.denom().significant_digits::<u8>() as i64;
+                    let n = l.numer().significant_digits::<u8>() as u64;
+                    let d = l.denom().significant_digits::<u8>() as u64;
                     1 + (n, d).get_packed_size() + n as u64 + d as u64
                 }
             },
@@ -574,33 +578,29 @@ impl PackedRationalNumberReader for [u8] {
     }
 }
 
-impl PackedRationalNumberWriter for (i64, i64) {
+impl PackedRationalNumberWriter for (i64, u64) {
     #[inline(always)]
     fn write_packed(&self, dest: &mut Vec<u8>) {
         let p = dest.len();
 
-        let num_u64 = self.0.unsigned_abs();
-        let den_u64 = self.1.unsigned_abs();
-        (num_u64, den_u64).write_packed(dest);
+        (self.0.unsigned_abs(), self.1).write_packed(dest);
 
-        if self.0 >= 0 && self.1 < 0 || self.0 < 0 && self.1 >= 0 {
+        if self.0 < 0 {
             dest[p] |= SIGN;
         }
     }
 
     #[inline(always)]
     fn write_packed_fixed(&self, dest: &mut [u8]) {
-        let num_u64 = self.0.unsigned_abs();
-        let den_u64 = self.1.unsigned_abs();
-        (num_u64, den_u64).write_packed_fixed(dest);
+        (self.0.unsigned_abs(), self.1).write_packed_fixed(dest);
 
-        if self.0 >= 0 && self.1 < 0 || self.0 < 0 && self.1 >= 0 {
+        if self.0 < 0 {
             dest[0] |= SIGN;
         }
     }
 
     fn get_packed_size(&self) -> u64 {
-        (self.0 as u64, self.1 as u64).get_packed_size()
+        (self.0.unsigned_abs(), self.1).get_packed_size()
     }
 }
 

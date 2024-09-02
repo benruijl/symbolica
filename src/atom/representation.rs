@@ -107,7 +107,7 @@ pub struct InlineNum {
 
 impl InlineNum {
     /// Create a new inline number. The gcd of num and den should be 1.
-    pub fn new(num: i64, den: i64) -> InlineNum {
+    pub fn new(num: i64, den: u64) -> InlineNum {
         let mut data = [0; 24];
         data[0] = NUM_ID;
 

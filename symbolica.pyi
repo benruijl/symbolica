@@ -490,6 +490,11 @@ class Expression:
         >>> e.contains(x*y) # False
         """
 
+    def get_all_symbols(self, include_function_symbols: bool = True) -> Sequence[Expression]:
+        """ Get all symbols in the current expression, optionally including function symbols.
+        The symbols are sorted in Symbolica's internal ordering.
+        """
+
     def coefficients_to_float(self, decimal_prec: int) -> Expression:
         """Convert all coefficients to floats with a given precision `decimal_prec`.
         The precision of floating point coefficients in the input will be truncated to `decimal_prec`."""
@@ -801,8 +806,12 @@ class Expression:
 
         Parameters
         ----------
-        key_map: A function to be applied to the quantity collected in
-        coeff_map: A function to be applied to the coefficient
+        x: Expression
+            The variable to collect terms in
+        key_map
+            A function to be applied to the quantity collected in
+        coeff_map
+            A function to be applied to the coefficient
         """
 
     def coefficient_list(
@@ -1037,12 +1046,18 @@ class Expression:
 
         Parameters
         ----------
-        lhs: The pattern to match.
-        rhs: The right-hand side to replace the matched subexpression with.
-        cond: Conditions on the pattern.
-        level_range: Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
-        level_is_tree_depth: If set to `True`, the level is increased when going one level deeper in the expression tree.
-        allow_new_wildcards_on_rhs: If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
+        lhs:
+            The pattern to match.
+        rhs:
+            The right-hand side to replace the matched subexpression with.
+        cond:
+            Conditions on the pattern.
+        level_range:
+            Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+        level_is_tree_depth:
+            If set to `True`, the level is increased when going one level deeper in the expression tree.
+        allow_new_wildcards_on_rhs:
+            If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         """
 
     def replace_all(
@@ -1070,15 +1085,24 @@ class Expression:
 
         Parameters
         ----------
-        self: The expression to match and replace on.
-        pattern: The pattern to match.
-        rhs: The right-hand side to replace the matched subexpression with.
-        cond: Conditions on the pattern.
-        non_greedy_wildcards: Wildcards that try to match as little as possible.
-        level_range: Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
-        level_is_tree_depth: If set to `True`, the level is increased when going one level deeper in the expression tree.
-        allow_new_wildcards_on_rhs: If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
-        repeat: If set to `True`, the entire operation will be repeated until there are no more matches.
+        self:
+            The expression to match and replace on.
+        pattern:
+            The pattern to match.
+        rhs:
+            The right-hand side to replace the matched subexpression with.
+        cond:
+            Conditions on the pattern.
+        non_greedy_wildcards:
+            Wildcards that try to match as little as possible.
+        level_range:
+            Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+        level_is_tree_depth: bool, optional
+            If set to `True`, the level is increased when going one level deeper in the expression tree.
+        allow_new_wildcards_on_rhs: bool, optional
+            If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
+        repeat: bool, optional
+            If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
     def replace_all_multiple(self, replacements: Sequence[Replacement],  repeat: Optional[bool] = False) -> Expression:
@@ -1092,7 +1116,7 @@ class Expression:
 
         >>> x, y, f = Expression.symbol('x', 'y', 'f')
         >>> e = f(x,y)
-        >>> r = e.replace_all_multiple(Replacement(x, y), Replacement(y, x))
+        >>> r = e.replace_all_multiple([Replacement(x, y), Replacement(y, x)])
         >>> print(r)
         f(y,x)
 
@@ -1202,6 +1226,22 @@ class Expression:
         >>>              {(f, "f", (y, z)): fd, (g, "g", (y, )): gd}, [x])
         >>> res = ev.evaluate([[1.], [2.], [3.]])  # evaluate at x=1, x=2, x=3
         >>> print(res)
+
+        Parameters
+        ----------
+        constants: dict[Expression, Expression]
+            A map of expressions to constants. The constants should be numerical expressions.
+        funs: dict[Tuple[Expression, str, Sequence[Expression]], Expression]
+            A dictionary of functions. The key is a tuple of the function name, printable name and the argument variables.
+            The value is the function body.
+        params: Sequence[Expression]
+            A list of free parameters.
+        iterations: int, optional
+            The number of optimization iterations to perform.
+        n_cores: int, optional
+            The number of cores to use for the optimization.
+        verbose: bool, optional
+            If set to `True`, print the progress of the optimization.
         """
 
     @classmethod
@@ -1613,14 +1653,22 @@ class Transformer:
 
         Parameters
         ----------
-        pat: The pattern to match.
-        rhs: The right-hand side to replace the matched subexpression with.
-        cond: Conditions on the pattern.
-        non_greedy_wildcards: Wildcards that try to match as little as possible.
-        level_range: Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
-        level_is_tree_depth: If set to `True`, the level is increased when going one level deeper in the expression tree.
-        allow_new_wildcards_on_rhs: If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
-        repeat: If set to `True`, the entire operation will be repeated until there are no more matches.
+        pat:
+            The pattern to match.
+        rhs:
+            The right-hand side to replace the matched subexpression with.
+        cond:
+            Conditions on the pattern.
+        non_greedy_wildcards:
+            Wildcards that try to match as little as possible.
+        level_range:
+            Specifies the `[min,max]` level at which the pattern is allowed to match. The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree, depending on `level_is_tree_depth`.
+        level_is_tree_depth:
+            If set to `True`, the level is increased when going one level deeper in the expression tree.
+        allow_new_wildcards_on_rhs:
+            If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
+        repeat:
+            If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
     def replace_all_multiple(self, replacements: Sequence[Replacement]) -> Transformer:
@@ -1632,7 +1680,7 @@ class Transformer:
 
         >>> x, y, f = Expression.symbol('x', 'y', 'f')
         >>> e = f(x,y)
-        >>> r = e.transform().replace_all_multiple(Replacement(x, y), Replacement(y, x))
+        >>> r = e.transform().replace_all_multiple([Replacement(x, y), Replacement(y, x)])
         >>> print(r)
         """
 
@@ -2673,8 +2721,10 @@ class FiniteFieldPolynomial:
 
         Parameters
         ----------
-        grevlex: if `True`, reverse graded lexicographical ordering is used, otherwise the ordering is lexicographical.
-        print_stats: if `True`, intermediate statistics will be printed.
+        grevlex: bool
+            If `True`, reverse graded lexicographical ordering is used, otherwise the ordering is lexicographical.
+        print_stats: bool
+            If `True`, intermediate statistics will be printed.
         """
 
     def replace(self, x: Expression, v: Polynomial) -> Polynomial:

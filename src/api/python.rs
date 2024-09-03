@@ -985,7 +985,7 @@ impl PythonTransformer {
     ///
     /// >>> x, y, f = Expression.symbol('x', 'y', 'f')
     /// >>> e = f(x,y)
-    /// >>> r = e.transform().replace_all_multiple(Replacement(x, y), Replacement(y, x))
+    /// >>> r = e.transform().replace_all_multiple([Replacement(x, y), Replacement(y, x)])
     pub fn replace_all_multiple(
         &self,
         replacements: Vec<PythonReplacement>,
@@ -1805,7 +1805,8 @@ impl PythonExpression {
     ///
     /// Parameters
     /// ----------
-    /// input: str An input string. UTF-8 character are allowed.
+    /// input:
+    ///     str An input string. UTF-8 character are allowed.
     ///
     /// Examples
     /// --------
@@ -2202,6 +2203,20 @@ impl PythonExpression {
     /// >>> e.contains(x*y) # False
     pub fn contains(&self, s: ConvertibleToExpression) -> bool {
         self.expr.contains(s.to_expression().expr.as_view())
+    }
+
+    /// Get all symbols in the current expression, optionally including function symbols.
+    /// The symbols are sorted in Symbolica's internal ordering.
+    #[pyo3(signature =(include_function_symbols = true))]
+    pub fn get_all_symbols(&self, include_function_symbols: bool) -> Vec<PythonExpression> {
+        let mut s: Vec<PythonExpression> = self
+            .expr
+            .get_all_symbols(include_function_symbols)
+            .into_iter()
+            .map(|x| Atom::new_var(x).into())
+            .collect();
+        s.sort_by(|x, y| x.expr.cmp(&y.expr));
+        s
     }
 
     /// Convert all coefficients to floats with a given precision `decimal_prec``.
@@ -2729,7 +2744,8 @@ impl PythonExpression {
     ///
     /// Parameters
     /// ----------
-    /// vars: List[Expression] A list of variables
+    /// vars: List[Expression]
+    ///     A list of variables
     pub fn set_coefficient_ring(&self, vars: Vec<PythonExpression>) -> PyResult<PythonExpression> {
         let mut var_map = vec![];
         for v in vars {
@@ -3488,7 +3504,7 @@ impl PythonExpression {
     ///
     /// >>> x, y, f = Expression.symbol('x', 'y', 'f')
     /// >>> e = f(x,y)
-    /// >>> r = e.replace_all_multiple(Replacement(x, y), Replacement(y, x))
+    /// >>> r = e.replace_all_multiple([Replacement(x, y), Replacement(y, x)])
     /// >>> print(r)
     /// f(y,x)
     ///

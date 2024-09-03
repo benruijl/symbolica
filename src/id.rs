@@ -1038,7 +1038,7 @@ impl Pattern {
                 let mut handle = workspace.new_atom();
                 pat.substitute_wildcards(workspace, &mut handle, match_stack)?;
 
-                Transformer::execute(handle.as_view(), ts, workspace, out)?;
+                Transformer::execute_chain(handle.as_view(), ts, workspace, out)?;
             }
         }
 

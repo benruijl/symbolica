@@ -330,31 +330,51 @@ impl Transformer {
         Transformer::Partition(vec![partition], false, true)
     }
 
-    pub fn execute(
-        orig_input: AtomView<'_>,
+    /// Apply the transformer to `input`.
+    pub fn execute(&self, input: AtomView<'_>) -> Result<Atom, TransformerError> {
+        let mut a = Atom::new();
+        Workspace::get_local().with(|ws| {
+            Transformer::execute_chain(input, std::slice::from_ref(self), ws, &mut a).map_err(|e| e)
+        })?;
+        Ok(a)
+    }
+
+    /// Apply the transformer to `input`.
+    pub fn execute_with_ws(
+        &self,
+        input: AtomView<'_>,
+        workspace: &Workspace,
+        out: &mut Atom,
+    ) -> Result<(), TransformerError> {
+        Transformer::execute_chain(input, std::slice::from_ref(self), workspace, out)
+    }
+
+    /// Apply a chain of transformers to `orig_input`.
+    pub fn execute_chain(
+        input: AtomView<'_>,
         chain: &[Transformer],
         workspace: &Workspace,
         out: &mut Atom,
     ) -> Result<(), TransformerError> {
-        out.set_from_view(&orig_input);
+        out.set_from_view(&input);
         let mut tmp = workspace.new_atom();
         for t in chain {
             std::mem::swap(out, &mut tmp);
-            let input = tmp.as_view();
+            let cur_input = tmp.as_view();
 
             match t {
                 Transformer::Map(f) => {
-                    f(input, out)?;
+                    f(cur_input, out)?;
                 }
                 Transformer::ForEach(t) => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         if f.get_symbol() == State::ARG {
                             let mut ff = workspace.new_atom();
                             let ff = ff.to_fun(State::ARG);
 
                             let mut a = workspace.new_atom();
                             for arg in f {
-                                Self::execute(arg, t, workspace, &mut a)?;
+                                Self::execute_chain(arg, t, workspace, &mut a)?;
                                 ff.add_arg(a.as_view());
                             }
 
@@ -363,16 +383,16 @@ impl Transformer {
                         }
                     }
 
-                    Self::execute(input, t, workspace, out)?;
+                    Self::execute_chain(cur_input, t, workspace, out)?;
                 }
                 Transformer::Expand(s) => {
-                    input.expand_with_ws_into(workspace, *s, out);
+                    cur_input.expand_with_ws_into(workspace, *s, out);
                 }
                 Transformer::Derivative(x) => {
-                    input.derivative_with_ws_into(*x, workspace, out);
+                    cur_input.derivative_with_ws_into(*x, workspace, out);
                 }
                 Transformer::Series(x, expansion_point, depth, depth_is_absolute) => {
-                    if let Ok(s) = input.series(
+                    if let Ok(s) = cur_input.series(
                         *x,
                         expansion_point.as_view(),
                         depth.clone(),
@@ -380,12 +400,12 @@ impl Transformer {
                     ) {
                         s.to_atom_into(out);
                     } else {
-                        out.set_from_view(&input);
+                        std::mem::swap(out, &mut tmp);
                     }
                 }
                 Transformer::ReplaceAll(pat, rhs, cond, settings) => {
                     pat.replace_all_with_ws_into(
-                        input,
+                        cur_input,
                         rhs,
                         workspace,
                         cond.into(),
@@ -402,10 +422,10 @@ impl Transformer {
                                 .with_settings(settings)
                         })
                         .collect::<Vec<_>>();
-                    input.replace_all_multiple_into(&reps, out);
+                    cur_input.replace_all_multiple_into(&reps, out);
                 }
                 Transformer::Product => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         if f.get_symbol() == State::ARG {
                             let mut mul_h = workspace.new_atom();
                             let mul = mul_h.to_mul();
@@ -419,10 +439,10 @@ impl Transformer {
                         }
                     }
 
-                    out.set_from_view(&input);
+                    std::mem::swap(out, &mut tmp);
                 }
                 Transformer::Sum => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         if f.get_symbol() == State::ARG {
                             let mut add_h = workspace.new_atom();
                             let add = add_h.to_add();
@@ -436,10 +456,10 @@ impl Transformer {
                         }
                     }
 
-                    out.set_from_view(&input);
+                    std::mem::swap(out, &mut tmp);
                 }
                 Transformer::ArgCount(only_for_arg_fun) => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         if !*only_for_arg_fun || f.get_symbol() == State::ARG {
                             let n_args = f.get_nargs();
                             out.to_num((n_args as i64).into());
@@ -453,13 +473,13 @@ impl Transformer {
                     }
                 }
                 Transformer::Linearize(symbols) => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         f.linearize_impl(symbols.as_ref().map(|x| x.as_slice()), workspace, out);
                     } else {
-                        out.set_from_view(&input);
+                        std::mem::swap(out, &mut tmp);
                     }
                 }
-                Transformer::Split => match input {
+                Transformer::Split => match cur_input {
                     AtomView::Mul(m) => {
                         let mut arg_h = workspace.new_atom();
                         let arg = arg_h.to_fun(State::ARG);
@@ -469,7 +489,6 @@ impl Transformer {
                         }
 
                         arg_h.as_view().normalize(workspace, out);
-                        continue;
                     }
                     AtomView::Add(a) => {
                         let mut arg_h = workspace.new_atom();
@@ -480,14 +499,13 @@ impl Transformer {
                         }
 
                         arg_h.as_view().normalize(workspace, out);
-                        continue;
                     }
                     _ => {
-                        out.set_from_view(&input);
+                        std::mem::swap(out, &mut tmp);
                     }
                 },
                 Transformer::Partition(bins, fill_last, repeat) => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         if f.get_symbol() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
 
@@ -527,10 +545,10 @@ impl Transformer {
                         }
                     }
 
-                    out.set_from_view(&input);
+                    std::mem::swap(out, &mut tmp);
                 }
                 Transformer::Sort => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         if f.get_symbol() == State::ARG {
                             let mut args: Vec<_> = f.iter().collect();
                             args.sort();
@@ -547,10 +565,10 @@ impl Transformer {
                         }
                     }
 
-                    out.set_from_view(&input);
+                    std::mem::swap(out, &mut tmp);
                 }
                 Transformer::CycleSymmetrize => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         let args: Vec<_> = f.iter().collect();
 
                         let mut best_shift = 0;
@@ -579,11 +597,11 @@ impl Transformer {
 
                         fun_h.as_view().normalize(workspace, out);
                     } else {
-                        out.set_from_view(&input);
+                        std::mem::swap(out, &mut tmp);
                     }
                 }
                 Transformer::Deduplicate => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         if f.get_symbol() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
                             let mut args_dedup: Vec<_> = Vec::with_capacity(args.len());
@@ -607,10 +625,10 @@ impl Transformer {
                         }
                     }
 
-                    out.set_from_view(&input);
+                    std::mem::swap(out, &mut tmp);
                 }
                 Transformer::Permutations(f_name) => {
-                    if let AtomView::Fun(f) = input {
+                    if let AtomView::Fun(f) = cur_input {
                         if f.get_symbol() == State::ARG {
                             let args: Vec<_> = f.iter().collect();
 
@@ -647,10 +665,10 @@ impl Transformer {
                         }
                     }
 
-                    out.set_from_view(&input);
+                    std::mem::swap(out, &mut tmp);
                 }
                 Transformer::Repeat(r) => loop {
-                    Self::execute(tmp.as_view(), r, workspace, out)?;
+                    Self::execute_chain(tmp.as_view(), r, workspace, out)?;
 
                     if tmp.as_view() == out.as_view() {
                         break;
@@ -659,19 +677,19 @@ impl Transformer {
                     std::mem::swap(out, &mut tmp);
                 },
                 Transformer::Print(o) => {
-                    println!("{}", AtomPrinter::new_with_options(input, *o));
-                    out.set_from_view(&input);
+                    println!("{}", AtomPrinter::new_with_options(cur_input, *o));
+                    std::mem::swap(out, &mut tmp);
                 }
                 Transformer::Stats(o, r) => {
-                    let in_nterms = if let AtomView::Add(a) = input {
+                    let in_nterms = if let AtomView::Add(a) = cur_input {
                         a.get_nargs()
                     } else {
                         1
                     };
-                    let in_size = input.get_byte_size();
+                    let in_size = cur_input.get_byte_size();
 
                     let t = Instant::now();
-                    Self::execute(input, r, workspace, out)?;
+                    Self::execute_chain(cur_input, r, workspace, out)?;
 
                     let out_nterms = if let AtomView::Add(a) = out.as_view() {
                         a.get_nargs()
@@ -709,7 +727,7 @@ impl Transformer {
                     );
                 }
                 Transformer::FromNumber => {
-                    if let AtomView::Num(n) = input {
+                    if let AtomView::Num(n) = cur_input {
                         if let CoefficientView::RationalPolynomial(r) = n.get_coeff_view() {
                             r.deserialize().to_expression_with_map(
                                 workspace,
@@ -719,8 +737,7 @@ impl Transformer {
                             continue;
                         }
                     }
-
-                    out.set_from_view(&input);
+                    std::mem::swap(out, &mut tmp);
                 }
             }
         }
@@ -747,7 +764,7 @@ mod test {
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
-            Transformer::execute(
+            Transformer::execute_chain(
                 p.as_view(),
                 &[
                     Transformer::Expand(Some(State::get_symbol("v1"))),
@@ -769,7 +786,7 @@ mod test {
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
-            Transformer::execute(
+            Transformer::execute_chain(
                 p.as_view(),
                 &[Transformer::Split, Transformer::ArgCount(true)],
                 ws,
@@ -788,7 +805,7 @@ mod test {
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
-            Transformer::execute(
+            Transformer::execute_chain(
                 p.as_view(),
                 &[
                     Transformer::Product,
@@ -810,7 +827,7 @@ mod test {
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
-            Transformer::execute(
+            Transformer::execute_chain(
                 p.as_view(),
                 &[
                     Transformer::ReplaceAll(
@@ -844,7 +861,7 @@ mod test {
 
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
-            Transformer::execute(
+            Transformer::execute_chain(
                 p.as_view(),
                 &[Transformer::Repeat(vec![Transformer::Stats(
                     StatsOptions {
@@ -882,16 +899,9 @@ mod test {
     fn linearize() {
         let p = Atom::parse("f1(v1+v2,4*v3*v4+3)").unwrap();
 
-        let mut out = Atom::new();
-        Workspace::get_local().with(|ws| {
-            Transformer::execute(
-                p.as_view(),
-                &[Transformer::Linearize(Some(vec![State::get_symbol("v3")]))],
-                ws,
-                &mut out,
-            )
-            .unwrap()
-        });
+        let out = Transformer::Linearize(Some(vec![State::get_symbol("v3")]))
+            .execute(p.as_view())
+            .unwrap();
 
         let r = Atom::parse("f1(v1,3)+f1(v2,3)+4*v3*f1(v1,v4)+4*v3*f1(v2,v4)").unwrap();
         assert_eq!(out, r);
@@ -901,11 +911,7 @@ mod test {
     fn cycle_symmetrize() {
         let p = Atom::parse("f1(1,2,3,5,1,2,3,4)").unwrap();
 
-        let mut out = Atom::new();
-        Workspace::get_local().with(|ws| {
-            Transformer::execute(p.as_view(), &[Transformer::CycleSymmetrize], ws, &mut out)
-                .unwrap()
-        });
+        let out = Transformer::CycleSymmetrize.execute(p.as_view()).unwrap();
 
         let r = Atom::parse("f1(1,2,3,4,1,2,3,5)").unwrap();
         assert_eq!(out, r);

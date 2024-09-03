@@ -33,6 +33,8 @@ faster_alloc = ["tikv-jemallocator"]
 full_fn_cmp = []
 mathematica_api = ["wolfram-library-link"]
 python_api = ["pyo3", "bincode"]
+# do not create a Python module but allow other crates to do so
+python_no_module = ["python_api"]
 # build a module that is independent of the specific Python version
 python_abi3 = ["pyo3/abi3", "pyo3/abi3-py37"]
 

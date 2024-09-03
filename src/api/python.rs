@@ -13,7 +13,7 @@ use pyo3::{
     exceptions::{self, PyIndexError},
     pyclass,
     pyclass::CompareOp,
-    pyfunction, pymethods, pymodule,
+    pyfunction, pymethods,
     sync::GILOnceCell,
     types::{PyBytes, PyComplex, PyLong, PyModule, PyTuple, PyType},
     wrap_pyfunction, FromPyObject, IntoPy, Py, PyErr, PyObject, PyRef, PyResult, PyTypeInfo,
@@ -23,6 +23,9 @@ use rug::Complete;
 use self_cell::self_cell;
 use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
+
+#[cfg(not(feature = "python_no_module"))]
+use pyo3::pymodule;
 
 use crate::{
     atom::{Atom, AtomType, AtomView, ListIterator, Symbol},
@@ -62,10 +65,10 @@ use crate::{
     LicenseManager,
 };
 
-#[pymodule]
-fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
+/// Create a Symbolica Python module.
+pub fn create_symbolica_module(m: &PyModule) -> PyResult<&PyModule> {
     m.add_class::<PythonExpression>()?;
-    m.add_class::<PythonPattern>()?;
+    m.add_class::<PythonTransformer>()?;
     m.add_class::<PythonPolynomial>()?;
     m.add_class::<PythonIntegerPolynomial>()?;
     m.add_class::<PythonFiniteFieldPolynomial>()?;
@@ -99,7 +102,13 @@ fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
 
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
-    Ok(())
+    Ok(m)
+}
+
+#[cfg(not(feature = "python_no_module"))]
+#[pymodule]
+fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
+    create_symbolica_module(m).map(|_| ())
 }
 
 /// Get the current Symbolica version.
@@ -285,11 +294,11 @@ impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
 #[derive(FromPyObject)]
 pub enum ConvertibleToPattern {
     Literal(ConvertibleToExpression),
-    Pattern(PythonPattern),
+    Pattern(PythonTransformer),
 }
 
 impl ConvertibleToPattern {
-    pub fn to_pattern(self) -> PyResult<PythonPattern> {
+    pub fn to_pattern(self) -> PyResult<PythonTransformer> {
         match self {
             Self::Literal(l) => Ok(l.to_expression().expr.as_view().into_pattern().into()),
             Self::Pattern(e) => Ok(e),
@@ -313,15 +322,15 @@ impl<T> OneOrMultiple<T> {
 }
 
 /// Operations that transform an expression.
-#[pyclass(name = "Transformer", module = "symbolica")]
+#[pyclass(name = "Transformer", module = "symbolica", subclass)]
 #[derive(Clone)]
-pub struct PythonPattern {
+pub struct PythonTransformer {
     pub expr: Pattern,
 }
 
-impl From<Pattern> for PythonPattern {
+impl From<Pattern> for PythonTransformer {
     fn from(expr: Pattern) -> Self {
-        PythonPattern { expr }
+        PythonTransformer { expr }
     }
 }
 
@@ -339,10 +348,10 @@ macro_rules! append_transformer {
 }
 
 #[pymethods]
-impl PythonPattern {
+impl PythonTransformer {
     /// Create a new transformer for a term provided by `Expression.map`.
     #[new]
-    pub fn new() -> PythonPattern {
+    pub fn new() -> PythonTransformer {
         Pattern::Transformer(Box::new((None, vec![]))).into()
     }
 
@@ -366,7 +375,7 @@ impl PythonPattern {
             let mut out = Atom::new();
 
             Workspace::get_local()
-                .with(|ws| Transformer::execute(e.as_view(), &t.1, ws, &mut out))
+                .with(|ws| Transformer::execute_chain(e.as_view(), &t.1, ws, &mut out))
                 .map_err(|e| match e {
                     TransformerError::Interrupt => {
                         exceptions::PyKeyboardInterrupt::new_err("Interrupted by user")
@@ -391,7 +400,7 @@ impl PythonPattern {
     /// >>> f = Expression.symbol('f')
     /// >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
     /// >>> print(e)
-    pub fn expand(&self, var: Option<ConvertibleToExpression>) -> PyResult<PythonPattern> {
+    pub fn expand(&self, var: Option<ConvertibleToExpression>) -> PyResult<PythonTransformer> {
         if let Some(var) = var {
             let id = if let AtomView::Var(x) = var.to_expression().expr.as_view() {
                 x.get_symbol()
@@ -416,7 +425,7 @@ impl PythonPattern {
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(2,3).replace_all(f(x__), x__.transform().prod())
     /// >>> print(e)
-    pub fn prod(&self) -> PyResult<PythonPattern> {
+    pub fn prod(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::Product);
     }
 
@@ -429,7 +438,7 @@ impl PythonPattern {
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(2,3).replace_all(f(x__), x__.transform().sum())
     /// >>> print(e)
-    pub fn sum(&self) -> PyResult<PythonPattern> {
+    pub fn sum(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::Sum);
     }
 
@@ -448,7 +457,7 @@ impl PythonPattern {
     /// >>> e = f(2,3,4).replace_all(f(x__), x__.transform().nargs())
     /// >>> print(e)
     #[pyo3(signature = (only_for_arg_fun = false))]
-    pub fn nargs(&self, only_for_arg_fun: bool) -> PyResult<PythonPattern> {
+    pub fn nargs(&self, only_for_arg_fun: bool) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::ArgCount(only_for_arg_fun));
     }
 
@@ -463,7 +472,7 @@ impl PythonPattern {
     /// >>> print(e)
     ///
     /// yields `f(x,3)+f(y,3)+4*z*f(x,w)+4*z*f(y,w)`.
-    pub fn linearize(&self, symbols: Option<Vec<PythonExpression>>) -> PyResult<PythonPattern> {
+    pub fn linearize(&self, symbols: Option<Vec<PythonExpression>>) -> PyResult<PythonTransformer> {
         let mut c_symbols = vec![];
         if let Some(symbols) = symbols {
             for s in symbols {
@@ -496,7 +505,7 @@ impl PythonPattern {
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,2,1).replace_all(f(x__), x__.transform().sort())
     /// >>> print(e)
-    pub fn sort(&self) -> PyResult<PythonPattern> {
+    pub fn sort(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::Sort);
     }
 
@@ -511,7 +520,7 @@ impl PythonPattern {
     /// >>> print(e)
     ///
     /// Yields `f(1,2,3,1,2,4)`.
-    pub fn cycle_symmetrize(&self) -> PyResult<PythonPattern> {
+    pub fn cycle_symmetrize(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::CycleSymmetrize);
     }
 
@@ -527,7 +536,7 @@ impl PythonPattern {
     /// >>> print(e)
     ///
     /// Yields `f(1,2)`.
-    pub fn deduplicate(&self) -> PyResult<PythonPattern> {
+    pub fn deduplicate(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::Deduplicate);
     }
 
@@ -538,7 +547,7 @@ impl PythonPattern {
     /// >>> from symbolica import Expression, Function
     /// >>> e = Function.COEFF((x^2+1)/y^2).transform().from_coeff()
     /// >>> print(e)
-    pub fn from_coeff(&self) -> PyResult<PythonPattern> {
+    pub fn from_coeff(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::FromNumber);
     }
 
@@ -551,7 +560,7 @@ impl PythonPattern {
     /// >>> f = Expression.symbol('f')
     /// >>> e = (x + 1).replace_all(x__, f(x__.transform().split()))
     /// >>> print(e)
-    pub fn split(&self) -> PyResult<PythonPattern> {
+    pub fn split(&self) -> PyResult<PythonTransformer> {
         return append_transformer!(self, Transformer::Split);
     }
 
@@ -582,7 +591,7 @@ impl PythonPattern {
         bins: Vec<(ConvertibleToPattern, usize)>,
         fill_last: bool,
         repeat: bool,
-    ) -> PyResult<PythonPattern> {
+    ) -> PyResult<PythonTransformer> {
         let mut conv_bins = vec![];
 
         for (x, len) in bins {
@@ -622,7 +631,7 @@ impl PythonPattern {
     ///
     /// yields:
     /// `4*f(1,1,2,2)+4*f(1,2,1,2)+4*f(1,2,2,1)+4*f(2,1,1,2)+4*f(2,1,2,1)+4*f(2,2,1,1)`
-    pub fn permutations(&self, function_name: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn permutations(&self, function_name: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         let id = match &function_name.to_pattern()?.expr {
             Pattern::Literal(x) => {
                 if let AtomView::Var(x) = x.as_view() {
@@ -653,7 +662,7 @@ impl PythonPattern {
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
     /// >>> print(e)
-    pub fn map(&self, f: PyObject) -> PyResult<PythonPattern> {
+    pub fn map(&self, f: PyObject) -> PyResult<PythonTransformer> {
         let transformer = Transformer::Map(Box::new(move |expr, out| {
             let expr = PythonExpression {
                 expr: expr.to_owned(),
@@ -695,11 +704,11 @@ impl PythonPattern {
     /// >>> f = Expression.symbol('f')
     /// >>> e = (1+x).transform().split().for_each(Transformer().map(f)).execute()
     #[pyo3(signature = (*transformers))]
-    pub fn for_each(&self, transformers: &PyTuple) -> PyResult<PythonPattern> {
+    pub fn for_each(&self, transformers: &PyTuple) -> PyResult<PythonTransformer> {
         let mut rep_chain = vec![];
         // fuse all sub-transformers into one chain
         for r in transformers {
-            let p = r.extract::<PythonPattern>()?;
+            let p = r.extract::<PythonTransformer>()?;
 
             let Pattern::Transformer(t) = p.expr.borrow() else {
                 return Err(exceptions::PyValueError::new_err(
@@ -729,7 +738,7 @@ impl PythonPattern {
     /// >>> f = Expression.symbol('f')
     /// >>> f(10).transform().repeat(Transformer().replace_all(
     /// >>> f(x_), f(x_+1)).check_interrupt()).execute()
-    pub fn check_interrupt(&self) -> PyResult<PythonPattern> {
+    pub fn check_interrupt(&self) -> PyResult<PythonTransformer> {
         let transformer = Transformer::Map(Box::new(move |expr, out| {
             out.set_from_view(&expr);
             Python::with_gil(|py| py.check_signals()).map_err(|_| TransformerError::Interrupt)
@@ -751,11 +760,11 @@ impl PythonPattern {
     /// >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
     /// >>> ).execute()
     #[pyo3(signature = (*transformers))]
-    pub fn repeat(&self, transformers: &PyTuple) -> PyResult<PythonPattern> {
+    pub fn repeat(&self, transformers: &PyTuple) -> PyResult<PythonTransformer> {
         let mut rep_chain = vec![];
         // fuse all sub-transformers into one chain
         for r in transformers {
-            let p = r.extract::<PythonPattern>()?;
+            let p = r.extract::<PythonTransformer>()?;
 
             let Pattern::Transformer(t) = p.expr.borrow() else {
                 return Err(exceptions::PyValueError::new_err(
@@ -789,12 +798,12 @@ impl PythonPattern {
     /// >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
     /// >>> ).execute()
     #[pyo3(signature = (*transformers))]
-    pub fn chain(&self, transformers: &PyTuple) -> PyResult<PythonPattern> {
+    pub fn chain(&self, transformers: &PyTuple) -> PyResult<PythonTransformer> {
         if let Pattern::Transformer(b) = self.expr.borrow() {
             let mut ts = b.clone();
 
             for r in transformers {
-                let p = r.extract::<PythonPattern>()?;
+                let p = r.extract::<PythonTransformer>()?;
 
                 let Pattern::Transformer(t) = p.expr.borrow() else {
                     return Err(exceptions::PyValueError::new_err(
@@ -850,7 +859,7 @@ impl PythonPattern {
     }
 
     /// Create a transformer that derives `self` w.r.t the variable `x`.
-    pub fn derivative(&self, x: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn derivative(&self, x: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         let id = match &x.to_pattern()?.expr {
             Pattern::Literal(x) => {
                 if let AtomView::Var(x) = x.as_view() {
@@ -881,7 +890,7 @@ impl PythonPattern {
         depth: i64,
         depth_denom: i64,
         depth_is_absolute: bool,
-    ) -> PyResult<PythonPattern> {
+    ) -> PyResult<PythonTransformer> {
         let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
             x.get_symbol()
         } else {
@@ -926,7 +935,7 @@ impl PythonPattern {
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
         allow_new_wildcards_on_rhs: Option<bool>,
-    ) -> PyResult<PythonPattern> {
+    ) -> PyResult<PythonTransformer> {
         let mut settings = MatchSettings::default();
 
         if let Some(ngw) = non_greedy_wildcards {
@@ -980,7 +989,7 @@ impl PythonPattern {
     pub fn replace_all_multiple(
         &self,
         replacements: Vec<PythonReplacement>,
-    ) -> PyResult<PythonPattern> {
+    ) -> PyResult<PythonTransformer> {
         return append_transformer!(
             self,
             Transformer::ReplaceAllMultiple(
@@ -1025,7 +1034,7 @@ impl PythonPattern {
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
-    ) -> PyResult<PythonPattern> {
+    ) -> PyResult<PythonTransformer> {
         return append_transformer!(
             self,
             Transformer::Print(PrintOptions {
@@ -1070,10 +1079,10 @@ impl PythonPattern {
     pub fn stats(
         &self,
         tag: String,
-        transformer: PythonPattern,
+        transformer: PythonTransformer,
         color_medium_change_threshold: Option<f64>,
         color_large_change_threshold: Option<f64>,
-    ) -> PyResult<PythonPattern> {
+    ) -> PyResult<PythonTransformer> {
         let Pattern::Transformer(t) = transformer.expr.borrow() else {
             return Err(exceptions::PyValueError::new_err(
                 "Argument must be a transformer",
@@ -1094,7 +1103,7 @@ impl PythonPattern {
     }
 
     /// Add this transformer to `other`, returning the result.
-    pub fn __add__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn __add__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         let res = Workspace::get_local().with(|workspace| {
             Ok::<Pattern, PyErr>(self.expr.add(&rhs.to_pattern()?.expr, workspace))
         })?;
@@ -1103,23 +1112,23 @@ impl PythonPattern {
     }
 
     /// Add this transformer to `other`, returning the result.
-    pub fn __radd__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn __radd__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         self.__add__(rhs)
     }
 
     ///  Subtract `other` from this transformer, returning the result.
-    pub fn __sub__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn __sub__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         self.__add__(ConvertibleToPattern::Pattern(rhs.to_pattern()?.__neg__()?))
     }
 
     ///  Subtract this transformer from `other`, returning the result.
-    pub fn __rsub__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn __rsub__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         rhs.to_pattern()?
             .__add__(ConvertibleToPattern::Pattern(self.__neg__()?))
     }
 
     /// Add this transformer to `other`, returning the result.
-    pub fn __mul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn __mul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         let res = Workspace::get_local().with(|workspace| {
             Ok::<Pattern, PyErr>(self.expr.mul(&rhs.to_pattern()?.expr, workspace))
         });
@@ -1128,12 +1137,12 @@ impl PythonPattern {
     }
 
     /// Add this transformer to `other`, returning the result.
-    pub fn __rmul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn __rmul__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         self.__mul__(rhs)
     }
 
     /// Divide this transformer by `other`, returning the result.
-    pub fn __truediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn __truediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         let res = Workspace::get_local().with(|workspace| {
             Ok::<Pattern, PyErr>(self.expr.div(&rhs.to_pattern()?.expr, workspace))
         });
@@ -1142,7 +1151,7 @@ impl PythonPattern {
     }
 
     /// Divide `other` by this transformer, returning the result.
-    pub fn __rtruediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonPattern> {
+    pub fn __rtruediv__(&self, rhs: ConvertibleToPattern) -> PyResult<PythonTransformer> {
         rhs.to_pattern()?
             .__truediv__(ConvertibleToPattern::Pattern(self.clone()))
     }
@@ -1152,7 +1161,7 @@ impl PythonPattern {
         &self,
         rhs: ConvertibleToPattern,
         number: Option<i64>,
-    ) -> PyResult<PythonPattern> {
+    ) -> PyResult<PythonTransformer> {
         if number.is_some() {
             return Err(exceptions::PyValueError::new_err(
                 "Optional number argument not supported",
@@ -1170,27 +1179,27 @@ impl PythonPattern {
         &self,
         rhs: ConvertibleToPattern,
         number: Option<i64>,
-    ) -> PyResult<PythonPattern> {
+    ) -> PyResult<PythonTransformer> {
         rhs.to_pattern()?
             .__pow__(ConvertibleToPattern::Pattern(self.clone()), number)
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonPattern> {
+    pub fn __xor__(&self, _rhs: PyObject) -> PyResult<PythonTransformer> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
     /// Returns a warning that `**` should be used instead of `^` for taking a power.
-    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonPattern> {
+    pub fn __rxor__(&self, _rhs: PyObject) -> PyResult<PythonTransformer> {
         Err(exceptions::PyTypeError::new_err(
             "Cannot xor an expression. Did you mean to write a power? Use ** instead, i.e. x**2",
         ))
     }
 
     /// Negate the current transformer, returning the result.
-    pub fn __neg__(&self) -> PyResult<PythonPattern> {
+    pub fn __neg__(&self) -> PyResult<PythonTransformer> {
         let res =
             Workspace::get_local().with(|workspace| Ok::<Pattern, PyErr>(self.expr.neg(workspace)));
 
@@ -1227,7 +1236,7 @@ impl PythonPattern {
 ///     The built-in exponential function.
 /// LOG: Expression
 ///     The built-in logarithm function.
-#[pyclass(name = "Expression", module = "symbolica")]
+#[pyclass(name = "Expression", module = "symbolica", subclass)]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PythonExpression {
     pub expr: Atom,
@@ -1607,6 +1616,12 @@ impl PythonExpression {
         is_cyclesymmetric: Option<bool>,
         is_linear: Option<bool>,
     ) -> PyResult<PyObject> {
+        if names.is_empty() {
+            return Err(exceptions::PyValueError::new_err(
+                "At least one name must be provided",
+            ));
+        }
+
         if is_symmetric.is_none()
             && is_antisymmetric.is_none()
             && is_cyclesymmetric.is_none()
@@ -2138,12 +2153,12 @@ impl PythonExpression {
             }
 
             let p = Pattern::Fn(id, transformer_args);
-            Ok(PythonPattern::from(p).into_py(py))
+            Ok(PythonTransformer::from(p).into_py(py))
         }
     }
 
     /// Convert the input to a transformer, on which subsequent transformations can be applied.
-    pub fn transform(&self) -> PyResult<PythonPattern> {
+    pub fn transform(&self) -> PyResult<PythonTransformer> {
         Ok(Pattern::Transformer(Box::new((Some(self.expr.into_pattern()), vec![]))).into())
     }
 
@@ -2667,7 +2682,7 @@ impl PythonExpression {
     /// >>> print(r)
     pub fn map(
         &self,
-        op: PythonPattern,
+        op: PythonTransformer,
         py: Python,
         n_cores: Option<usize>,
     ) -> PyResult<PythonExpression> {
@@ -2695,7 +2710,7 @@ impl PythonExpression {
                 |x| {
                     let mut out = Atom::default();
                     Workspace::get_local().with(|ws| {
-                        Transformer::execute(x, &t, ws, &mut out).unwrap_or_else(|e| {
+                        Transformer::execute_chain(x, &t, ws, &mut out).unwrap_or_else(|e| {
                             // TODO: capture and abort the parallel run
                             panic!("Transformer failed during parallel execution: {:?}", e)
                         });
@@ -4303,7 +4318,7 @@ impl PythonSeries {
 
 /// A term streamer that can handle large expressions, by
 /// streaming terms to and from disk.
-#[pyclass(name = "TermStreamer", module = "symbolica")]
+#[pyclass(name = "TermStreamer", module = "symbolica", subclass)]
 pub struct PythonTermStreamer {
     pub stream: TermStreamer<CompressorWriter<BufWriter<File>>>,
 }
@@ -4371,7 +4386,7 @@ impl PythonTermStreamer {
     }
 
     /// Map the transformations to every term in the stream.
-    pub fn map(&mut self, op: PythonPattern, py: Python) -> PyResult<Self> {
+    pub fn map(&mut self, op: PythonTransformer, py: Python) -> PyResult<Self> {
         let t = match &op.expr {
             Pattern::Transformer(t) => {
                 if t.0.is_some() {
@@ -4396,7 +4411,7 @@ impl PythonTermStreamer {
             let m = self.stream.map(|x| {
                 let mut out = Atom::default();
                 Workspace::get_local().with(|ws| {
-                    Transformer::execute(x.as_view(), &t, ws, &mut out).unwrap_or_else(|e| {
+                    Transformer::execute_chain(x.as_view(), &t, ws, &mut out).unwrap_or_else(|e| {
                         // TODO: capture and abort the parallel run
                         panic!("Transformer failed during parallel execution: {:?}", e)
                     });
@@ -4409,7 +4424,7 @@ impl PythonTermStreamer {
     }
 
     /// Map the transformations to every term in the stream using a single thread.
-    pub fn map_single_thread(&mut self, op: PythonPattern) -> PyResult<Self> {
+    pub fn map_single_thread(&mut self, op: PythonTransformer) -> PyResult<Self> {
         let t = match &op.expr {
             Pattern::Transformer(t) => {
                 if t.0.is_some() {
@@ -4431,7 +4446,7 @@ impl PythonTermStreamer {
         let s = self.stream.map_single_thread(|x| {
             let mut out = Atom::default();
             Workspace::get_local().with(|ws| {
-                Transformer::execute(x.as_view(), &t, ws, &mut out)
+                Transformer::execute_chain(x.as_view(), &t, ws, &mut out)
                     .unwrap_or_else(|e| panic!("Transformer failed during execution: {:?}", e));
             });
             out
@@ -4553,7 +4568,7 @@ impl PythonReplaceIterator {
     }
 }
 
-#[pyclass(name = "Polynomial", module = "symbolica")]
+#[pyclass(name = "Polynomial", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonPolynomial {
     pub poly: MultivariatePolynomial<RationalField, u16>,
@@ -5193,7 +5208,7 @@ impl PythonPolynomial {
     }
 }
 
-#[pyclass(name = "IntegerPolynomial", module = "symbolica")]
+#[pyclass(name = "IntegerPolynomial", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonIntegerPolynomial {
     pub poly: MultivariatePolynomial<IntegerRing, u8>,
@@ -5250,7 +5265,7 @@ impl PythonIntegerPolynomial {
 }
 
 /// A Symbolica polynomial over finite fields.
-#[pyclass(name = "FiniteFieldPolynomial", module = "symbolica")]
+#[pyclass(name = "FiniteFieldPolynomial", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonFiniteFieldPolynomial {
     pub poly: MultivariatePolynomial<Zp, u16>,
@@ -5820,7 +5835,7 @@ impl PythonFiniteFieldPolynomial {
 }
 
 /// A Symbolica polynomial over Galois fields.
-#[pyclass(name = "PrimeTwoPolynomial", module = "symbolica")]
+#[pyclass(name = "PrimeTwoPolynomial", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonPrimeTwoPolynomial {
     pub poly: MultivariatePolynomial<Z2, u16>,
@@ -6355,7 +6370,7 @@ impl PythonPrimeTwoPolynomial {
 }
 
 /// A Symbolica polynomial over Z2 Galois fields.
-#[pyclass(name = "GaloisFieldPrimeTwoPolynomial", module = "symbolica")]
+#[pyclass(name = "GaloisFieldPrimeTwoPolynomial", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonGaloisFieldPrimeTwoPolynomial {
     pub poly: MultivariatePolynomial<AlgebraicExtension<Z2>, u16>,
@@ -6894,7 +6909,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
 }
 
 /// A Symbolica polynomial over Galois fields.
-#[pyclass(name = "GaloisFieldPolynomial", module = "symbolica")]
+#[pyclass(name = "GaloisFieldPolynomial", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonGaloisFieldPolynomial {
     pub poly: MultivariatePolynomial<AlgebraicExtension<Zp>, u16>,
@@ -7434,7 +7449,7 @@ impl PythonGaloisFieldPolynomial {
 }
 
 /// A Symbolica polynomial over number fields.
-#[pyclass(name = "NumberFieldPolynomial", module = "symbolica")]
+#[pyclass(name = "NumberFieldPolynomial", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonNumberFieldPolynomial {
     pub poly: MultivariatePolynomial<AlgebraicExtension<Q>, u16>,
@@ -8006,7 +8021,7 @@ impl PythonNumberFieldPolynomial {
 }
 
 /// A Symbolica rational polynomial.
-#[pyclass(name = "RationalPolynomial", module = "symbolica")]
+#[pyclass(name = "RationalPolynomial", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonRationalPolynomial {
     pub poly: RationalPolynomial<IntegerRing, u16>,
@@ -8320,7 +8335,7 @@ impl PythonRationalPolynomial {
 }
 
 /// A Symbolica rational polynomial over finite fields.
-#[pyclass(name = "FiniteFieldRationalPolynomial", module = "symbolica")]
+#[pyclass(name = "FiniteFieldRationalPolynomial", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonFiniteFieldRationalPolynomial {
     pub poly: RationalPolynomial<Zp, u16>,
@@ -8850,7 +8865,7 @@ pub enum ScalarOrMatrix {
 }
 
 /// A Symbolica matrix with rational polynomial coefficients.
-#[pyclass(name = "Matrix", module = "symbolica")]
+#[pyclass(name = "Matrix", module = "symbolica", subclass)]
 #[derive(Clone)]
 pub struct PythonMatrix {
     pub matrix: Matrix<RationalPolynomialField<IntegerRing, u16>>,

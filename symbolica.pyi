@@ -1605,6 +1605,79 @@ class Transformer:
     def derivative(self, x: Transformer | Expression) -> Transformer:
         """Create a transformer that derives `self` w.r.t the variable `x`."""
 
+    def set_coefficient_ring(self, vars: Sequence[Expression]) -> Transformer:
+        """
+        Create a transformer that sets the coefficient ring to contain the variables in the `vars` list.
+        This will move all variables into a rational polynomial function.
+
+        Parameters
+        ----------
+        vars : Sequence[Expression]
+                A list of variables
+        """
+
+    def collect(
+        self,
+        x: Expression,
+        key_map: Optional[Transformer] = None,
+        coeff_map: Optional[Transformer] = None,
+    ) -> Transformer:
+        """
+        Create a transformer that collect terms involving the same power of `x`,
+        where `x` is a variable or function name.
+        Return the list of key-coefficient pairs and the remainder that matched no key.
+
+        Both the key (the quantity collected in) and its coefficient can be mapped using
+        `key_map` and `coeff_map` transformers respectively.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> x, y = Expression.symbol('x', 'y')
+        >>> e = 5*x + x * y + x**2 + 5
+        >>>
+        >>> print(e.transform().collect(x).execute())
+
+        yields `x^2+x*(y+5)+5`.
+
+        >>> from symbolica import Expression
+        >>> x, y, x_, var, coeff = Expression.symbol('x', 'y', 'x_', 'var', 'coeff')
+        >>> e = 5*x + x * y + x**2 + 5
+        >>> print(e.collect(x, key_map=Transformer().replace_all(x_, var(x_)),
+                coeff_map=Transformer().replace_all(x_, coeff(x_))))
+
+        yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
+
+        Parameters
+        ----------
+        x: Expression
+            The variable to collect terms in
+        key_map: Transformer
+            A transformer to be applied to the quantity collected in
+        coeff_map: Transformer
+            A transformer to be applied to the coefficient
+        """
+
+    def coefficient(self, x: Expression) -> Transformer:
+        """Create a transformer that collects terms involving the literal occurrence of `x`.
+        """
+
+    def apart(self, x: Expression) -> Transformer:
+        """Create a transformer that computes the partial fraction decomposition in `x`.
+        """
+
+    def together(self) -> Transformer:
+        """Create a transformer that writes the expression over a common denominator.
+        """
+
+    def cancel(self) -> Transformer:
+        """Create a transformer that cancels common factors between numerators and denominators.
+        Any non-canceling parts of the expression will not be rewritten.
+        """
+
+    def factor(self) -> Transformer:
+        """Create a transformer that factors the expression over the rationals."""
+
     def series(
         self,
         x: Expression,

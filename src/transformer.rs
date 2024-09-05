@@ -5,7 +5,7 @@ use crate::{
     coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
     domains::rational::Rational,
-    id::{Condition, MatchSettings, Pattern, Replacement, WildcardAndRestriction},
+    id::{Condition, MatchSettings, Pattern, PatternOrMap, Replacement, WildcardAndRestriction},
     printer::{AtomPrinter, PrintOptions},
     state::{RecycledAtom, State, Workspace},
 };
@@ -72,7 +72,7 @@ pub enum Transformer {
     /// Apply find-and-replace on the lhs.
     ReplaceAll(
         Pattern,
-        Pattern,
+        PatternOrMap,
         Condition<WildcardAndRestriction>,
         MatchSettings,
     ),
@@ -80,7 +80,7 @@ pub enum Transformer {
     ReplaceAllMultiple(
         Vec<(
             Pattern,
-            Pattern,
+            PatternOrMap,
             Condition<WildcardAndRestriction>,
             MatchSettings,
         )>,
@@ -859,7 +859,7 @@ mod test {
                 &[
                     Transformer::ReplaceAll(
                         Pattern::parse("f1(x__)").unwrap(),
-                        Pattern::parse("x__").unwrap(),
+                        Pattern::parse("x__").unwrap().into(),
                         Condition::default(),
                         MatchSettings::default(),
                     ),
@@ -900,7 +900,7 @@ mod test {
                         Transformer::Print(PrintOptions::default()),
                         Transformer::ReplaceAll(
                             Pattern::parse("x_").unwrap(),
-                            Pattern::parse("x_-1").unwrap(),
+                            Pattern::parse("x_-1").unwrap().into(),
                             (
                                 State::get_symbol("x_"),
                                 PatternRestriction::Filter(Box::new(|x| {

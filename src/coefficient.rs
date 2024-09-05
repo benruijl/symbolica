@@ -1480,12 +1480,22 @@ mod test {
 
         let expr = Atom::new_var(v2)
             .into_pattern()
-            .replace_all(expr.as_view(), &Atom::new_num(3).into_pattern(), None, None)
+            .replace_all(
+                expr.as_view(),
+                &Atom::new_num(3).into_pattern().into(),
+                None,
+                None,
+            )
             .expand();
 
         let a = Atom::new_var(v2)
             .into_pattern()
-            .replace_all(a.as_view(), &Atom::new_num(3).into_pattern(), None, None)
+            .replace_all(
+                a.as_view(),
+                &Atom::new_num(3).into_pattern().into(),
+                None,
+                None,
+            )
             .expand();
 
         assert_eq!(a, expr);

@@ -14,7 +14,8 @@ fn main() {
                 false,
                 false,
             )],
-        ))),
+        )))
+        .into(),
         None,
         None,
     );

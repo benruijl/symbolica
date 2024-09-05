@@ -495,8 +495,38 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
     }
 }
 
+impl Atom {
+    /// Map the function `f` over all terms.
+    pub fn map_terms_single_core(&self, f: impl Fn(AtomView) -> Atom) -> Atom {
+        self.as_view().map_terms_single_core(f)
+    }
+
+    /// Map the function `f` over all terms, using parallel execution with `n_cores` cores.
+    pub fn map_terms(&self, f: impl Fn(AtomView) -> Atom + Send + Sync, n_cores: usize) -> Atom {
+        self.as_view().map_terms(f, n_cores)
+    }
+}
+
 impl<'a> AtomView<'a> {
-    /// Map the function `f` over all its terms, using parallel execution with `n_cores` cores.
+    /// Map the function `f` over all terms.
+    pub fn map_terms_single_core(&self, f: impl Fn(AtomView) -> Atom) -> Atom {
+        if let AtomView::Add(aa) = self {
+            return Workspace::get_local().with(|ws| {
+                let mut r = ws.new_atom();
+                let rr = r.to_add();
+                for arg in aa {
+                    rr.extend(f(arg).as_view());
+                }
+                let mut out = Atom::new();
+                r.as_view().normalize(ws, &mut out);
+                out
+            });
+        } else {
+            f(*self)
+        }
+    }
+
+    /// Map the function `f` over all terms, using parallel execution with `n_cores` cores.
     pub fn map_terms(&self, f: impl Fn(AtomView) -> Atom + Send + Sync, n_cores: usize) -> Atom {
         if let AtomView::Add(aa) = self {
             if n_cores < 2 {
@@ -583,7 +613,7 @@ mod test {
         streamer = streamer.map(|f| f);
 
         let pattern = Pattern::parse("f1(x_)").unwrap();
-        let rhs = Pattern::parse("f1(v1) + v1").unwrap();
+        let rhs = Pattern::parse("f1(v1) + v1").unwrap().into();
 
         streamer = streamer.map(|x| pattern.replace_all(x.as_view(), &rhs, None, None).expand());
 
@@ -608,7 +638,7 @@ mod test {
         streamer.push(input);
 
         let pattern = Pattern::parse("v1_").unwrap();
-        let rhs = Pattern::parse("v1").unwrap();
+        let rhs = Pattern::parse("v1").unwrap().into();
 
         streamer = streamer.map(|x| {
             pattern
@@ -639,7 +669,7 @@ mod test {
     fn memory_stream() {
         let input = Atom::parse("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3)").unwrap();
         let pattern = Pattern::parse("f1(x_)").unwrap();
-        let rhs = Pattern::parse("f1(v1) + v1").unwrap();
+        let rhs = Pattern::parse("f1(v1) + v1").unwrap().into();
 
         let mut stream = TermStreamer::<BufWriter<File>>::new(TermStreamerConfig::default());
         stream.push(input);

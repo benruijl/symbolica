@@ -1017,7 +1017,7 @@ class Expression:
     def replace(
         self,
         lhs: Transformer | Expression | int | float | Decimal,
-        rhs: Transformer | Expression | int | float | Decimal,
+        rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
         cond: Optional[PatternRestriction] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1049,7 +1049,7 @@ class Expression:
         lhs:
             The pattern to match.
         rhs:
-            The right-hand side to replace the matched subexpression with.
+            The right-hand side to replace the matched subexpression with. Can be a transformer, expression or a function that maps a dictionary of wildcards to an expression.
         cond:
             Conditions on the pattern.
         level_range:
@@ -1063,7 +1063,7 @@ class Expression:
     def replace_all(
         self,
         pattern: Transformer | Expression | int | float | Decimal,
-        rhs: Transformer | Expression | int | float | Decimal,
+        rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
         cond: Optional[PatternRestriction] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1090,7 +1090,7 @@ class Expression:
         pattern:
             The pattern to match.
         rhs:
-            The right-hand side to replace the matched subexpression with.
+            The right-hand side to replace the matched subexpression with. Can be a transformer, expression or a function that maps a dictionary of wildcards to an expression.
         cond:
             Conditions on the pattern.
         non_greedy_wildcards:
@@ -1298,7 +1298,7 @@ class Replacement:
     def __new__(
             cls,
             pattern: Transformer | Expression | int | float | Decimal,
-            rhs: Transformer | Expression | int | float | Decimal,
+            rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
             cond: Optional[PatternRestriction] = None,
             non_greedy_wildcards: Optional[Sequence[Expression]] = None,
             level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1705,7 +1705,7 @@ class Transformer:
     def replace_all(
         self,
         pat: Transformer | Expression | int | float | Decimal,
-        rhs: Transformer | Expression | int | float | Decimal,
+        rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
         cond: Optional[PatternRestriction] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
@@ -1729,7 +1729,7 @@ class Transformer:
         pat:
             The pattern to match.
         rhs:
-            The right-hand side to replace the matched subexpression with.
+            The right-hand side to replace the matched subexpression with. Can be a transformer, expression or a function that maps a dictionary of wildcards to an expression.
         cond:
             Conditions on the pattern.
         non_greedy_wildcards:

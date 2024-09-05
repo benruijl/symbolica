@@ -7,10 +7,10 @@ use symbolica::{
 fn main() {
     // prepare all patterns
     let pattern = Pattern::parse("f(x_)").unwrap();
-    let rhs = Pattern::parse("f(x_ - 1) + f(x_ - 2)").unwrap();
+    let rhs = Pattern::parse("f(x_ - 1) + f(x_ - 2)").unwrap().into();
     let lhs_zero_pat = Pattern::parse("f(0)").unwrap();
     let lhs_one_pat = Pattern::parse("f(1)").unwrap();
-    let rhs_one = Atom::new_num(1).into_pattern();
+    let rhs_one = Atom::new_num(1).into_pattern().into();
 
     // prepare the pattern restriction `x_ > 1`
     let restrictions = (

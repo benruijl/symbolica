@@ -8,7 +8,7 @@ fn main() {
     let pat_expr = Atom::parse("f(x_)").unwrap();
 
     let rhs_expr = Atom::parse("g(x_)").unwrap();
-    let rhs = rhs_expr.as_view().into_pattern();
+    let rhs = rhs_expr.as_view().into_pattern().into();
 
     let pattern = pat_expr.as_view().into_pattern();
     let restrictions = Condition::default();

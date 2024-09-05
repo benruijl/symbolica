@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{ops::DerefMut, str::FromStr};
 
 use ahash::HashSet;
 use dyn_clone::DynClone;
@@ -23,17 +23,45 @@ pub enum Pattern {
     Transformer(Box<(Option<Pattern>, Vec<Transformer>)>),
 }
 
+pub trait MatchMap: Fn(&MatchStack) -> Atom + DynClone + Send + Sync {}
+dyn_clone::clone_trait_object!(MatchMap);
+impl<T: Clone + Send + Sync + Fn(&MatchStack) -> Atom> MatchMap for T {}
+
+/// A pattern or a map from a list of matched wildcards to an atom.
+/// The latter can be used for complex replacements that cannot be
+/// expressed using atom transformations.
+#[derive(Clone)]
+pub enum PatternOrMap {
+    Pattern(Pattern),
+    Map(Box<dyn MatchMap>),
+}
+
+impl Into<PatternOrMap> for Pattern {
+    fn into(self) -> PatternOrMap {
+        PatternOrMap::Pattern(self)
+    }
+}
+
+impl std::fmt::Debug for PatternOrMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PatternOrMap::Pattern(p) => write!(f, "{:?}", p),
+            PatternOrMap::Map(_) => write!(f, "Map"),
+        }
+    }
+}
+
 /// A replacement, specified by a pattern and the right-hand side,
 /// with optional conditions and settings.
 pub struct Replacement<'a> {
     pat: &'a Pattern,
-    rhs: &'a Pattern,
+    rhs: &'a PatternOrMap,
     conditions: Option<&'a Condition<WildcardAndRestriction>>,
     settings: Option<&'a MatchSettings>,
 }
 
 impl<'a> Replacement<'a> {
-    pub fn new(pat: &'a Pattern, rhs: &'a Pattern) -> Self {
+    pub fn new(pat: &'a Pattern, rhs: &'a PatternOrMap) -> Self {
         Replacement {
             pat,
             rhs,
@@ -80,7 +108,7 @@ impl Atom {
     pub fn replace_all(
         &self,
         pattern: &Pattern,
-        rhs: &Pattern,
+        rhs: &PatternOrMap,
         conditions: Option<&Condition<WildcardAndRestriction>>,
         settings: Option<&MatchSettings>,
     ) -> Atom {
@@ -92,7 +120,7 @@ impl Atom {
     pub fn replace_all_into(
         &self,
         pattern: &Pattern,
-        rhs: &Pattern,
+        rhs: &PatternOrMap,
         conditions: Option<&Condition<WildcardAndRestriction>>,
         settings: Option<&MatchSettings>,
         out: &mut Atom,
@@ -244,7 +272,7 @@ impl<'a> AtomView<'a> {
     pub fn replace_all(
         &self,
         pattern: &Pattern,
-        rhs: &Pattern,
+        rhs: &PatternOrMap,
         conditions: Option<&Condition<WildcardAndRestriction>>,
         settings: Option<&MatchSettings>,
     ) -> Atom {
@@ -255,7 +283,7 @@ impl<'a> AtomView<'a> {
     pub fn replace_all_into(
         &self,
         pattern: &Pattern,
-        rhs: &Pattern,
+        rhs: &PatternOrMap,
         conditions: Option<&Condition<WildcardAndRestriction>>,
         settings: Option<&MatchSettings>,
         out: &mut Atom,
@@ -328,9 +356,17 @@ impl<'a> AtomView<'a> {
                 let mut it = AtomMatchIterator::new(r.pat, *self);
                 if let Some((_, used_flags)) = it.next(&mut match_stack) {
                     let mut rhs_subs = workspace.new_atom();
-                    r.rhs
-                        .substitute_wildcards(workspace, &mut rhs_subs, &match_stack)
-                        .unwrap(); // TODO: escalate?
+
+                    match r.rhs {
+                        PatternOrMap::Pattern(rhs) => {
+                            rhs.substitute_wildcards(workspace, &mut rhs_subs, &match_stack)
+                                .unwrap(); // TODO: escalate?
+                        }
+                        PatternOrMap::Map(f) => {
+                            let mut rhs = f(&match_stack);
+                            std::mem::swap(rhs_subs.deref_mut(), &mut rhs);
+                        }
+                    }
 
                     if used_flags.iter().all(|x| *x) {
                         // all used, return rhs
@@ -1049,7 +1085,7 @@ impl Pattern {
     pub fn replace_iter<'a>(
         &'a self,
         target: AtomView<'a>,
-        rhs: &'a Pattern,
+        rhs: &'a PatternOrMap,
         conditions: &'a Condition<WildcardAndRestriction>,
         settings: &'a MatchSettings,
     ) -> ReplaceIterator<'a, 'a> {
@@ -1061,7 +1097,7 @@ impl Pattern {
     pub fn replace_all(
         &self,
         target: AtomView<'_>,
-        rhs: &Pattern,
+        rhs: &PatternOrMap,
         conditions: Option<&Condition<WildcardAndRestriction>>,
         settings: Option<&MatchSettings>,
     ) -> Atom {
@@ -1077,7 +1113,7 @@ impl Pattern {
     pub fn replace_all_into(
         &self,
         target: AtomView<'_>,
-        rhs: &Pattern,
+        rhs: &PatternOrMap,
         conditions: Option<&Condition<WildcardAndRestriction>>,
         settings: Option<&MatchSettings>,
         out: &mut Atom,
@@ -1091,7 +1127,7 @@ impl Pattern {
     pub fn replace_all_with_ws_into(
         &self,
         target: AtomView<'_>,
-        rhs: &Pattern,
+        rhs: &PatternOrMap,
         workspace: &Workspace,
         conditions: Option<&Condition<WildcardAndRestriction>>,
         settings: Option<&MatchSettings>,
@@ -2557,7 +2593,7 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
 /// Replace a pattern in the target once. Every  call to `next`,
 /// will return a new match and replacement until the options are exhausted.
 pub struct ReplaceIterator<'a, 'b> {
-    rhs: &'b Pattern,
+    rhs: &'b PatternOrMap,
     pattern_tree_iterator: PatternAtomTreeIterator<'a, 'b>,
     target: AtomView<'a>,
 }
@@ -2566,7 +2602,7 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
     pub fn new(
         pattern: &'b Pattern,
         target: AtomView<'a>,
-        rhs: &'b Pattern,
+        rhs: &'b PatternOrMap,
         conditions: &'a Condition<WildcardAndRestriction>,
         settings: &'a MatchSettings,
     ) -> ReplaceIterator<'a, 'b> {
@@ -2703,9 +2739,16 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
             Workspace::get_local().with(|ws| {
                 let mut new_rhs = ws.new_atom();
 
-                self.rhs
-                    .substitute_wildcards(ws, &mut new_rhs, pattern_match.match_stack)
-                    .unwrap(); // TODO: escalate?
+                match self.rhs {
+                    PatternOrMap::Pattern(p) => {
+                        p.substitute_wildcards(ws, &mut new_rhs, pattern_match.match_stack)
+                            .unwrap(); // TODO: escalate?
+                    }
+                    PatternOrMap::Map(f) => {
+                        let mut new_atom = f(&pattern_match.match_stack);
+                        std::mem::swap(&mut new_atom, &mut new_rhs);
+                    }
+                }
 
                 let mut h = ws.new_atom();
                 ReplaceIterator::copy_and_replace(
@@ -2730,7 +2773,8 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 mod test {
     use crate::{
         atom::Atom,
-        id::{MatchSettings, Replacement},
+        id::{MatchSettings, PatternOrMap, Replacement},
+        state::State,
     };
 
     use super::Pattern;
@@ -2741,7 +2785,7 @@ mod test {
         let p = Pattern::parse("v2+v2^v1_").unwrap();
         let rhs = Pattern::parse("v2*(1+v2^(v1_-1))").unwrap();
 
-        let r = p.replace_all(a.as_view(), &rhs, None, None);
+        let r = p.replace_all(a.as_view(), &rhs.into(), None, None);
         let res = Atom::parse("v1*(v2+v2^2+1)+v2*(v2+1)").unwrap();
         assert_eq!(r, res);
     }
@@ -2754,7 +2798,7 @@ mod test {
 
         let r = p.replace_all(
             a.as_view(),
-            &rhs,
+            &rhs.into(),
             None,
             Some(&MatchSettings {
                 level_range: (1, Some(1)),
@@ -2774,10 +2818,36 @@ mod test {
         let p2 = Pattern::parse("v2").unwrap();
         let rhs2 = Pattern::parse("v1").unwrap();
 
-        let r =
-            a.replace_all_multiple(&[Replacement::new(&p1, &rhs1), Replacement::new(&p2, &rhs2)]);
+        let r = a.replace_all_multiple(&[
+            Replacement::new(&p1, &rhs1.into()),
+            Replacement::new(&p2, &rhs2.into()),
+        ]);
 
         let res = Atom::parse("f(v2,v1)").unwrap();
+        assert_eq!(r, res);
+    }
+
+    #[test]
+    fn map_rhs() {
+        let v1 = State::get_symbol("v1_");
+        let v2 = State::get_symbol("v2_");
+        let v4 = State::get_symbol("v4_");
+        let v5 = State::get_symbol("v5_");
+        let a = Atom::parse("v1(2,1)*v2(3,1)").unwrap();
+        let p = Pattern::parse("v1_(v2_,v3_)*v4_(v5_,v3_)").unwrap();
+        let rhs = PatternOrMap::Map(Box::new(move |m| {
+            Atom::parse(&format!(
+                "{}(mu{})*{}(mu{})",
+                m.get(v1).unwrap(),
+                m.get(v2).unwrap(),
+                m.get(v4).unwrap(),
+                m.get(v5).unwrap()
+            ))
+            .unwrap()
+        }));
+
+        let r = p.replace_all(a.as_view(), &rhs, None, None);
+        let res = Atom::parse("v1(mu2)*v2(mu3)").unwrap();
         assert_eq!(r, res);
     }
 }

@@ -47,7 +47,7 @@ use crate::{
     },
     id::{
         Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
-        PatternRestriction, ReplaceIterator, Replacement, WildcardAndRestriction,
+        PatternOrMap, PatternRestriction, ReplaceIterator, Replacement, WildcardAndRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
     parser::Token,
@@ -302,6 +302,35 @@ impl ConvertibleToPattern {
         match self {
             Self::Literal(l) => Ok(l.to_expression().expr.as_view().into_pattern().into()),
             Self::Pattern(e) => Ok(e),
+        }
+    }
+}
+
+#[derive(FromPyObject)]
+pub enum ConvertibleToPatternOrMap {
+    Pattern(ConvertibleToPattern),
+    Map(PyObject),
+}
+
+impl ConvertibleToPatternOrMap {
+    pub fn to_pattern_or_map(self) -> PyResult<PatternOrMap> {
+        match self {
+            Self::Pattern(p) => Ok(PatternOrMap::Pattern(p.to_pattern()?.expr)),
+            Self::Map(m) => Ok(PatternOrMap::Map(Box::new(move |match_stack| {
+                let match_stack: HashMap<PythonExpression, PythonExpression> = match_stack
+                    .get_matches()
+                    .iter()
+                    .map(|x| (Atom::new_var(x.0).into(), x.1.to_atom().into()))
+                    .collect();
+
+                Python::with_gil(|py| {
+                    m.call(py, (match_stack,), None)
+                        .expect("Bad callback function")
+                        .extract::<PythonExpression>(py)
+                        .expect("Match map does not return an expression")
+                })
+                .expr
+            }))),
         }
     }
 }
@@ -1131,7 +1160,7 @@ impl PythonTransformer {
     pub fn replace_all(
         &self,
         lhs: ConvertibleToPattern,
-        rhs: ConvertibleToPattern,
+        rhs: ConvertibleToPatternOrMap,
         cond: Option<PythonPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
@@ -1172,8 +1201,8 @@ impl PythonTransformer {
         return append_transformer!(
             self,
             Transformer::ReplaceAll(
-                lhs.to_pattern()?.expr.clone(),
-                rhs.to_pattern()?.expr.clone(),
+                lhs.to_pattern()?.expr,
+                rhs.to_pattern_or_map()?,
                 cond.map(|r| r.condition.clone()).unwrap_or_default(),
                 settings,
             )
@@ -2364,10 +2393,10 @@ impl PythonExpression {
             for arg in fn_args {
                 match arg {
                     ExpressionOrTransformer::Transformer(t) => {
-                        transformer_args.push(t.to_pattern()?.expr.clone());
+                        transformer_args.push(t.to_pattern()?.expr);
                     }
                     ExpressionOrTransformer::Expression(a) => {
-                        transformer_args.push(a.expr.as_view().into_pattern().clone());
+                        transformer_args.push(a.expr.as_view().into_pattern());
                     }
                 }
             }
@@ -3583,7 +3612,7 @@ impl PythonExpression {
     pub fn replace(
         &self,
         lhs: ConvertibleToPattern,
-        rhs: ConvertibleToPattern,
+        rhs: ConvertibleToPatternOrMap,
         cond: Option<PythonPatternRestriction>,
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
@@ -3603,7 +3632,7 @@ impl PythonExpression {
             (
                 lhs.to_pattern()?.expr,
                 self.expr.clone(),
-                rhs.to_pattern()?.expr,
+                rhs.to_pattern_or_map()?,
                 conditions,
                 settings,
             ),
@@ -3636,7 +3665,7 @@ impl PythonExpression {
     /// pattern: Transformer | Expression | int
     ///     The pattern to match.
     /// rhs: Transformer | Expression | int
-    ///     The right-hand side to replace the matched subexpression with.
+    ///     The right-hand side to replace the matched subexpression with. Can be a transformer, expression or a function that maps a dictionary of wildcards to an expression.
     /// cond: Optional[PatternRestriction]
     ///     Conditions on the pattern.
     /// level_range: (int, int), optional
@@ -3650,7 +3679,7 @@ impl PythonExpression {
     pub fn replace_all(
         &self,
         pattern: ConvertibleToPattern,
-        rhs: ConvertibleToPattern,
+        rhs: ConvertibleToPatternOrMap,
         cond: Option<PythonPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
@@ -3659,7 +3688,7 @@ impl PythonExpression {
         repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
-        let rhs = &rhs.to_pattern()?.expr;
+        let rhs = &rhs.to_pattern_or_map()?;
 
         let mut settings = MatchSettings::default();
 
@@ -4252,7 +4281,7 @@ impl PythonExpression {
 #[derive(Clone)]
 pub struct PythonReplacement {
     pattern: Pattern,
-    rhs: Pattern,
+    rhs: PatternOrMap,
     cond: Condition<WildcardAndRestriction>,
     settings: MatchSettings,
 }
@@ -4262,7 +4291,7 @@ impl PythonReplacement {
     #[new]
     pub fn new(
         pattern: ConvertibleToPattern,
-        rhs: ConvertibleToPattern,
+        rhs: ConvertibleToPatternOrMap,
         cond: Option<PythonPatternRestriction>,
         non_greedy_wildcards: Option<Vec<PythonExpression>>,
         level_range: Option<(usize, Option<usize>)>,
@@ -4270,7 +4299,7 @@ impl PythonReplacement {
         allow_new_wildcards_on_rhs: Option<bool>,
     ) -> PyResult<Self> {
         let pattern = pattern.to_pattern()?.expr;
-        let rhs = rhs.to_pattern()?.expr;
+        let rhs = rhs.to_pattern_or_map()?;
 
         let mut settings = MatchSettings::default();
 
@@ -4766,7 +4795,7 @@ impl PythonMatchIterator {
 type OwnedReplace = (
     Pattern,
     Atom,
-    Pattern,
+    PatternOrMap,
     Condition<WildcardAndRestriction>,
     MatchSettings,
 );

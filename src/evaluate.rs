@@ -1127,7 +1127,7 @@ impl<T: Default + Clone + Eq + Hash> ExpressionEvaluator<T> {
 
         for i in &mut self.result_indices {
             if *i >= self.reserved_indices {
-            *i = unfold[i];
+                *i = unfold[i];
             }
         }
 

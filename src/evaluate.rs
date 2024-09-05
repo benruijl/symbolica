@@ -260,7 +260,7 @@ impl<'de> Deserialize<'de> for BuiltinSymbol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Expression<T> {
     Const(T),
     Parameter(usize),

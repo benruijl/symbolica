@@ -30,8 +30,8 @@ pub struct Edge<EdgeData = Empty> {
 pub struct Empty;
 
 impl Display for Empty {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "_")
+    fn fmt(&self, _f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        Ok(())
     }
 }
 
@@ -107,6 +107,34 @@ impl<N: Display, E: Display> std::fmt::Display for Graph<N, E> {
     }
 }
 
+impl<N: Display, E: Display> Graph<N, E> {
+    pub fn to_dot(&self) -> String {
+        let mut out = String::new();
+        out.push_str("digraph G {\n");
+
+        for (i, x) in self.nodes.iter().enumerate() {
+            out.push_str(&format!("  {} [label=\"{}\"];\n", i, x.data));
+        }
+
+        for x in &self.edges {
+            if x.directed {
+                out.push_str(&format!(
+                    "  {} -> {} [label=\"{}\"];\n",
+                    x.vertices.0, x.vertices.1, x.data
+                ));
+            } else {
+                out.push_str(&format!(
+                    "  {} -> {} [dir=none,label=\"{}\"];\n",
+                    x.vertices.0, x.vertices.1, x.data
+                ));
+            }
+        }
+
+        out.push_str("}\n");
+        out
+    }
+}
+
 impl<N, E> Graph<N, E> {
     /// Create an empty graph.
     pub fn new() -> Self {
@@ -143,6 +171,27 @@ impl<N, E> Graph<N, E> {
         self.nodes[target].edges.push(index);
     }
 
+    /// Delete the last added edge. This operation is O(1).
+    pub fn delete_last_edge(&mut self) -> Option<Edge<E>> {
+        if let Some(edge) = self.edges.pop() {
+            self.nodes[edge.vertices.0].edges.pop();
+            self.nodes[edge.vertices.1].edges.pop();
+            Some(edge)
+        } else {
+            None
+        }
+    }
+
+    /// Remove the last added empty node. This operation is O(1).
+    pub fn delete_last_empty_node(&mut self) -> Option<Node<N>> {
+        if let Some(node) = self.nodes.last() {
+            if node.edges.is_empty() {
+                return self.nodes.pop();
+            }
+        }
+        None
+    }
+
     /// Get the node with index `index`.
     #[inline(always)]
     pub fn node(&self, index: usize) -> &Node<N> {
@@ -165,6 +214,326 @@ impl<N, E> Graph<N, E> {
     #[inline(always)]
     pub fn edges(&self) -> &[Edge<E>] {
         &self.edges
+    }
+
+    // Get the number of loop in the graph, using E - V + 1
+    pub fn num_loops(&self) -> usize {
+        self.edges.len() - self.nodes.len() + 1
+    }
+
+    /// Generate a spanning tree of the graph, starting at `start_vertex`.
+    /// Also returns the number of visited nodes.
+    pub fn get_spanning_tree(&self, start_vertex: usize) -> (Vec<usize>, usize) {
+        let mut nodes_to_visit = vec![start_vertex];
+        let mut node_discovered = vec![false; self.nodes.len()];
+        node_discovered[start_vertex] = true;
+
+        let mut edges = vec![];
+        while let Some(n) = nodes_to_visit.pop() {
+            for e in &self.node(n).edges {
+                let edge = self.edge(*e);
+                let target = if edge.vertices.0 == n {
+                    edge.vertices.1
+                } else {
+                    edge.vertices.0
+                };
+
+                if !node_discovered[target] {
+                    node_discovered[target] = true;
+                    nodes_to_visit.push(target);
+                    edges.push(*e);
+                }
+            }
+        }
+
+        (edges, node_discovered.iter().filter(|&&x| x).count())
+    }
+
+    /// Check if the graph is connected.
+    pub fn is_connected(&self) -> bool {
+        if self.nodes.is_empty() {
+            return true;
+        }
+
+        self.get_spanning_tree(0).1 == self.nodes.len()
+    }
+}
+
+impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
+    /// Generate all connected graphs with `external_edges` as external half-edges and the given allowed list
+    /// of vertex connections.
+    pub fn generate(
+        external_edges: &[E],
+        vertex_signatures: &[Vec<E>],
+        max_vertices: Option<usize>,
+        max_loops: Option<usize>,
+        allow_self_loops: bool,
+    ) -> Vec<Self> {
+        let vertex_sorted: Vec<_> = vertex_signatures
+            .iter()
+            .map(|x| {
+                let mut x = x.clone();
+                x.sort();
+                x
+            })
+            .collect();
+
+        let mut g = Self::new();
+        for _ in 0..external_edges.len() {
+            g.add_node(Empty);
+            g.add_node(Empty);
+        }
+
+        for (i, e) in external_edges.iter().enumerate() {
+            g.add_edge(i, external_edges.len() + i, false, e.clone());
+        }
+
+        if external_edges.len() == 0 {
+            g.add_node(Empty);
+        }
+
+        let mut out = vec![];
+        Self::generate_impl(
+            &mut g,
+            external_edges.len(),
+            external_edges.len(),
+            &vertex_sorted,
+            max_vertices,
+            max_loops,
+            allow_self_loops,
+            &mut out,
+        );
+        out
+    }
+
+    fn generate_impl(
+        &mut self,
+        n_external: usize,
+        cur_vertex: usize,
+        vertex_signatures: &[Vec<E>],
+        max_vertices: Option<usize>,
+        max_loops: Option<usize>,
+        allow_self_loops: bool,
+        out: &mut Vec<Self>,
+    ) {
+        if let Some(max_vertices) = max_vertices {
+            if self.nodes.len() > max_vertices {
+                return;
+            }
+        }
+
+        if let Some(max_loops) = max_loops {
+            // filter based on an underestimate of the loop count
+            // fuse every open vertex into one vertex
+            // use the minimal vertex degree to see how many minimal
+            // loops we need to fuse all open vertices into one
+            // connected component
+            //
+            // TODO: use the maximum vertex degree as well
+            let min_degree = vertex_signatures.iter().map(|x| x.len()).min().unwrap_or(0);
+
+            let open_vertices = self
+                .nodes
+                .iter()
+                .skip(cur_vertex)
+                .filter(|x| x.edges.len() < min_degree)
+                .count();
+
+            let mut extra_edges = self
+                .nodes
+                .iter()
+                .skip(cur_vertex)
+                .map(|x| {
+                    if x.edges.len() < min_degree {
+                        min_degree - x.edges.len()
+                    } else {
+                        0
+                    }
+                })
+                .sum::<usize>();
+            if extra_edges % 2 == 1 {
+                extra_edges = extra_edges / 2 + 1;
+            } else {
+                extra_edges /= 2;
+            }
+
+            let extra_loops = if extra_edges + 1 < open_vertices {
+                // cannot form one connected component
+                0
+            } else {
+                extra_edges + 1 - open_vertices
+            };
+
+            let loops = if open_vertices > 0 {
+                self.edges.len() + extra_loops + open_vertices - self.nodes.len()
+            } else {
+                self.edges.len() + 1 - self.nodes.len()
+            };
+
+            if loops > max_loops {
+                return;
+            }
+        }
+
+        if cur_vertex == self.nodes.len() {
+            if self.is_connected() {
+                out.push(self.clone());
+            }
+
+            return;
+        }
+
+        // find completions for the current vertex
+        let mut cur_edges: Vec<_> = self
+            .node(cur_vertex)
+            .edges
+            .iter()
+            .map(|e| self.edges[*e].data.clone())
+            .collect();
+        cur_edges.sort();
+        let mut edges_left: Vec<(E, usize)> = vec![];
+        let mut new_graphs = vec![];
+        'next_signature: for d in vertex_signatures {
+            // check if the current state is compatible
+            if d.len() < cur_edges.len() {
+                continue;
+            }
+
+            if *d == cur_edges {
+                self.generate_impl(
+                    n_external,
+                    cur_vertex + 1,
+                    vertex_signatures,
+                    max_vertices,
+                    max_loops,
+                    allow_self_loops,
+                    out,
+                );
+                continue;
+            }
+
+            edges_left.clear();
+            let mut edge_pos = 0;
+            for e in d {
+                if edge_pos < cur_edges.len() {
+                    if cur_edges[edge_pos] == *e {
+                        edge_pos += 1;
+                        continue;
+                    } else if cur_edges[edge_pos] < *e {
+                        // incompatible
+                        continue 'next_signature;
+                    }
+                }
+
+                if let Some(last) = edges_left.last_mut() {
+                    if last.0 == *e {
+                        last.1 += 1;
+                        continue;
+                    }
+                }
+
+                edges_left.push((e.clone(), 1));
+            }
+
+            new_graphs.clear();
+
+            self.distribute_edges(
+                cur_vertex,
+                cur_vertex,
+                &mut edges_left,
+                0,
+                vertex_signatures,
+                allow_self_loops,
+                &mut new_graphs,
+            );
+
+            for g in &mut new_graphs {
+                g.generate_impl(
+                    n_external,
+                    cur_vertex + 1,
+                    vertex_signatures,
+                    max_vertices,
+                    max_loops,
+                    allow_self_loops,
+                    out,
+                );
+            }
+        }
+    }
+
+    fn distribute_edges(
+        &mut self,
+        source: usize,
+        cur_target: usize,
+        edge_count: &mut [(E, usize)],
+        cur_edge_count_group_index: usize,
+        vertex_signatures: &[Vec<E>],
+        allow_self_loops: bool,
+        out: &mut Vec<Self>,
+    ) {
+        if edge_count.iter().all(|x| x.1 == 0) {
+            out.push(self.clone());
+            return;
+        }
+
+        let mut grown = false;
+        if cur_target == self.nodes.len() {
+            grown = true;
+            self.add_node(Empty);
+        } else {
+            self.distribute_edges(
+                source,
+                cur_target + 1,
+                edge_count,
+                0,
+                vertex_signatures,
+                allow_self_loops,
+                out,
+            );
+        }
+
+        let consume_count = if source == cur_target {
+            if !allow_self_loops {
+                return;
+            }
+
+            2
+        } else {
+            1
+        };
+
+        // TODO: do more extensive compatibility checks
+        if self.node(cur_target).edges.len() + consume_count
+            > vertex_signatures.iter().map(|x| x.len()).max().unwrap_or(0)
+        {
+            return;
+        }
+
+        if let Some((p, (e, count))) = edge_count[cur_edge_count_group_index..]
+            .iter_mut()
+            .enumerate()
+            .find(|x| x.1 .1 >= consume_count)
+        {
+            *count -= consume_count;
+            self.add_edge(source, cur_target, false, e.clone());
+            self.distribute_edges(
+                source,
+                cur_target,
+                edge_count,
+                cur_edge_count_group_index + p,
+                vertex_signatures,
+                allow_self_loops,
+                out,
+            );
+
+            self.delete_last_edge(); // TODO: cache edge data
+
+            edge_count[cur_edge_count_group_index + p].1 += consume_count;
+        }
+
+        if grown {
+            self.delete_last_empty_node().unwrap();
+        }
     }
 }
 
@@ -615,7 +984,7 @@ impl<I: NodeIndex> SearchTreeNode<I> {
 
 #[cfg(test)]
 mod test {
-    use crate::graph::{Graph, SearchTreeNode};
+    use crate::graph::{Empty, Graph, SearchTreeNode};
 
     #[test]
     fn directed() {
@@ -704,5 +1073,22 @@ mod test {
         let c = g.canonize();
 
         assert_eq!(c.1.edge(0).vertices, (0, 2));
+    }
+
+    #[test]
+    fn generate() {
+        let gs = Graph::<Empty, &str>::generate(
+            &["g", "g"],
+            &[
+                vec!["g", "g", "g"],
+                vec!["q", "q", "g"],
+                vec!["g", "g", "g", "g"],
+            ],
+            None,
+            Some(3),
+            false,
+        );
+
+        assert_eq!(gs.len(), 310);
     }
 }

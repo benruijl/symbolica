@@ -349,10 +349,14 @@ impl Token {
 
             Ok(())
         } else {
-            Err(format!(
-                "operator expected, but found '{}'. Are parentheses unbalanced?",
-                self
-            ))
+            if let Token::Number(n) = other {
+                Err(format!("operator expected between '{}' and '{}'", self, n))
+            } else {
+                Err(format!(
+                    "operator expected, but found '{}'. Are parentheses unbalanced?",
+                    self
+                ))
+            }
         }
     }
 
@@ -851,8 +855,16 @@ impl Token {
                     }
                     ']' => stack.push(Token::CloseBracket),
                     _ => {
-                        if unsafe { stack.last().unwrap_unchecked() }.is_normal() {
-                            // insert multiplication: x y -> x*y
+                        if unsafe { stack.last().unwrap_unchecked() }.is_normal()
+                            && (!c.is_ascii_digit()
+                                || !matches!(
+                                    unsafe { stack.last().unwrap_unchecked() },
+                                    Token::Number(_)
+                                ))
+                        {
+                            // insert implicit multiplication: x y -> x*y
+                            // do not allow implicit multiplication between two numbers as the risk
+                            // of a typo is too high
                             stack.push(Token::Op(true, true, Operator::Mul, vec![]));
                             extra_ops.push(c);
                         } else if c.is_ascii_digit() {
@@ -1324,7 +1336,7 @@ mod test {
 
     #[test]
     fn float() {
-        let input = Atom::parse("1.2`20x+1e-5`20+1e+5 1.1234e23 +2exp(5)").unwrap();
+        let input = Atom::parse("1.2`20x+1e-5`20+1e+5 * 1.1234e23 +2exp(5)").unwrap();
 
         let r = format!(
             "{}",

@@ -883,9 +883,21 @@ impl Pattern {
                 if name.get_wildcard_level() > 0 {
                     if let Some(w) = match_stack.get(name) {
                         if let Match::FunctionName(fname) = w {
-                            name = *fname
+                            name = *fname;
+                        } else if let Match::Single(a) = w {
+                            if let AtomView::Var(v) = a {
+                                name = v.get_symbol();
+                            } else {
+                                Err(TransformerError::ValueError(format!(
+                                    "Wildcard must be a function name instead of {}",
+                                    w.to_atom()
+                                )))?;
+                            }
                         } else {
-                            unreachable!("Wildcard must be a function name")
+                            Err(TransformerError::ValueError(format!(
+                                "Wildcard must be a function name instead of {}",
+                                w.to_atom()
+                            )))?;
                         }
                     } else if !match_stack.settings.allow_new_wildcards_on_rhs {
                         Err(TransformerError::ValueError(format!(

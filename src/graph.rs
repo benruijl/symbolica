@@ -135,6 +135,78 @@ impl<N: Display, E: Display> Graph<N, E> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct NodeInfo {
+    pub position: Option<usize>,
+    pub parent: usize,
+    pub chain_id: Option<usize>,
+    pub external: bool,
+    pub back_edges: Vec<usize>, // back edges starting from this node
+}
+
+/// A spanning tree representation of a graph.
+/// Parts of the graph may not be in the tree.
+#[derive(Clone, Debug)]
+pub struct SpanningTree {
+    pub nodes: Vec<NodeInfo>,
+    pub order: Vec<usize>,
+}
+
+impl SpanningTree {
+    pub fn is_connected(&self) -> bool {
+        self.nodes.iter().all(|x| x.position.is_some())
+    }
+
+    pub fn chain_decomposition(&mut self) {
+        // now build the chains, starting from the DFS root
+        for &n in &self.order {
+            let mut back_edge_index = 0;
+
+            while back_edge_index < self.nodes[n].back_edges.len() {
+                let node = self.nodes[n].back_edges[back_edge_index];
+                back_edge_index += 1;
+
+                if self.nodes[node].parent == n {
+                    continue;
+                }
+
+                // set blocker
+                if self.nodes[n].chain_id.is_none() {
+                    self.nodes[n].chain_id = Some(n);
+                }
+
+                let mut target = node;
+                while self.nodes[target].chain_id.is_none() {
+                    let nn = &mut self.nodes[target];
+                    nn.chain_id = Some(n);
+                    target = nn.parent;
+                }
+
+                // the start node is always excluded from the chain,
+                // as we define the chain to contain the edges
+                // that connect the node to its parent
+                if self.nodes[n].chain_id == Some(n) {
+                    self.nodes[n].chain_id = None;
+                }
+            }
+        }
+    }
+
+    /// Count non-external bridge nodes. Make sure to call [Self::chain_decomposition] first.
+    pub fn count_bridges(&self) -> usize {
+        self.nodes
+            .iter()
+            .enumerate()
+            .filter(|(n, x)| {
+                x.chain_id.is_none()
+                    && !self.nodes[x.parent].external
+                    && !x.external
+                    && !self.nodes[x.parent].back_edges.iter().any(|end| n == end)
+            })
+            .count()
+    }
+}
+
 impl<N, E> Graph<N, E> {
     /// Create an empty graph.
     pub fn new() -> Self {
@@ -222,14 +294,36 @@ impl<N, E> Graph<N, E> {
     }
 
     /// Generate a spanning tree of the graph, starting at `start_vertex`.
-    /// Also returns the number of visited nodes.
-    pub fn get_spanning_tree(&self, start_vertex: usize) -> (Vec<usize>, usize) {
-        let mut nodes_to_visit = vec![start_vertex];
-        let mut node_discovered = vec![false; self.nodes.len()];
-        node_discovered[start_vertex] = true;
+    pub fn get_spanning_tree(&self, start_vertex: usize) -> SpanningTree {
+        let mut nodes_to_visit = vec![(start_vertex, start_vertex)];
+        let mut tree_nodes: Vec<_> = self
+            .nodes
+            .iter()
+            .map(|n| NodeInfo {
+                position: None,
+                parent: 0,
+                chain_id: None,
+                external: n.edges.len() == 1,
+                back_edges: vec![],
+            })
+            .collect();
+        let mut order = vec![0; self.nodes.len()];
 
-        let mut edges = vec![];
-        while let Some(n) = nodes_to_visit.pop() {
+        let mut index = 0;
+        while let Some((n, parent)) = nodes_to_visit.pop() {
+            if let Some(p) = tree_nodes[n].position {
+                let par = &mut tree_nodes[parent];
+                if par.position.unwrap() < p {
+                    par.back_edges.push(n);
+                }
+                continue;
+            }
+
+            tree_nodes[n].position = Some(index);
+            tree_nodes[n].parent = parent;
+            order[index] = n;
+            index += 1;
+
             for e in &self.node(n).edges {
                 let edge = self.edge(*e);
                 let target = if edge.vertices.0 == n {
@@ -238,15 +332,16 @@ impl<N, E> Graph<N, E> {
                     edge.vertices.0
                 };
 
-                if !node_discovered[target] {
-                    node_discovered[target] = true;
-                    nodes_to_visit.push(target);
-                    edges.push(*e);
+                if tree_nodes[target].position.is_none() {
+                    nodes_to_visit.push((target, n));
                 }
             }
         }
 
-        (edges, node_discovered.iter().filter(|&&x| x).count())
+        SpanningTree {
+            nodes: tree_nodes,
+            order,
+        }
     }
 
     /// Check if the graph is connected.
@@ -255,11 +350,24 @@ impl<N, E> Graph<N, E> {
             return true;
         }
 
-        self.get_spanning_tree(0).1 == self.nodes.len()
+        self.get_spanning_tree(0)
+            .nodes
+            .iter()
+            .all(|x| x.position.is_some())
     }
 }
 
-impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
+struct GenerationSettings<'a, E> {
+    vertex_signatures: &'a [Vec<E>],
+    max_vertices: Option<usize>,
+    max_loops: Option<usize>,
+    max_bridges: Option<usize>,
+    allow_self_loops: bool,
+    min_degree: usize,
+    max_degree: usize,
+}
+
+impl<E: Clone + Ord> Graph<Empty, E> {
     /// Generate all connected graphs with `external_edges` as external half-edges and the given allowed list
     /// of vertex connections.
     pub fn generate(
@@ -267,6 +375,7 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
         vertex_signatures: &[Vec<E>],
         max_vertices: Option<usize>,
         max_loops: Option<usize>,
+        max_bridges: Option<usize>,
         allow_self_loops: bool,
     ) -> Vec<Self> {
         let vertex_sorted: Vec<_> = vertex_signatures
@@ -292,37 +401,34 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
             g.add_node(Empty);
         }
 
-        let mut out = vec![];
-        Self::generate_impl(
-            &mut g,
-            external_edges.len(),
-            external_edges.len(),
-            &vertex_sorted,
+        let settings = GenerationSettings {
+            vertex_signatures: &vertex_sorted,
             max_vertices,
             max_loops,
+            max_bridges,
             allow_self_loops,
-            &mut out,
-        );
+            min_degree: vertex_sorted.iter().map(|x| x.len()).min().unwrap_or(0),
+            max_degree: vertex_sorted.iter().map(|x| x.len()).max().unwrap_or(0),
+        };
+
+        let mut out = vec![];
+        g.generate_impl(external_edges.len(), &settings, &mut out);
         out
     }
 
     fn generate_impl(
         &mut self,
-        n_external: usize,
         cur_vertex: usize,
-        vertex_signatures: &[Vec<E>],
-        max_vertices: Option<usize>,
-        max_loops: Option<usize>,
-        allow_self_loops: bool,
+        settings: &GenerationSettings<E>,
         out: &mut Vec<Self>,
     ) {
-        if let Some(max_vertices) = max_vertices {
+        if let Some(max_vertices) = settings.max_vertices {
             if self.nodes.len() > max_vertices {
                 return;
             }
         }
 
-        if let Some(max_loops) = max_loops {
+        if let Some(max_loops) = settings.max_loops {
             // filter based on an underestimate of the loop count
             // fuse every open vertex into one vertex
             // use the minimal vertex degree to see how many minimal
@@ -330,13 +436,11 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
             // connected component
             //
             // TODO: use the maximum vertex degree as well
-            let min_degree = vertex_signatures.iter().map(|x| x.len()).min().unwrap_or(0);
-
             let open_vertices = self
                 .nodes
                 .iter()
                 .skip(cur_vertex)
-                .filter(|x| x.edges.len() < min_degree)
+                .filter(|x| x.edges.len() < settings.min_degree)
                 .count();
 
             let mut extra_edges = self
@@ -344,8 +448,8 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
                 .iter()
                 .skip(cur_vertex)
                 .map(|x| {
-                    if x.edges.len() < min_degree {
-                        min_degree - x.edges.len()
+                    if x.edges.len() < settings.min_degree {
+                        settings.min_degree - x.edges.len()
                     } else {
                         0
                     }
@@ -376,10 +480,20 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
         }
 
         if cur_vertex == self.nodes.len() {
-            if self.is_connected() {
-                out.push(self.clone());
+            let mut spanning_tree = self.get_spanning_tree(0);
+
+            if !spanning_tree.is_connected() {
+                return;
             }
 
+            if let Some(max_bridges) = settings.max_bridges {
+                spanning_tree.chain_decomposition();
+                if spanning_tree.count_bridges() > max_bridges {
+                    return;
+                }
+            }
+
+            out.push(self.clone());
             return;
         }
 
@@ -391,24 +505,16 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
             .map(|e| self.edges[*e].data.clone())
             .collect();
         cur_edges.sort();
+
         let mut edges_left: Vec<(E, usize)> = vec![];
-        let mut new_graphs = vec![];
-        'next_signature: for d in vertex_signatures {
+        'next_signature: for d in settings.vertex_signatures {
             // check if the current state is compatible
             if d.len() < cur_edges.len() {
                 continue;
             }
 
             if *d == cur_edges {
-                self.generate_impl(
-                    n_external,
-                    cur_vertex + 1,
-                    vertex_signatures,
-                    max_vertices,
-                    max_loops,
-                    allow_self_loops,
-                    out,
-                );
+                self.generate_impl(cur_vertex + 1, settings, out);
                 continue;
             }
 
@@ -435,29 +541,12 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
                 edges_left.push((e.clone(), 1));
             }
 
-            new_graphs.clear();
-
-            self.distribute_edges(
-                cur_vertex,
-                cur_vertex,
-                &mut edges_left,
-                0,
-                vertex_signatures,
-                allow_self_loops,
-                &mut new_graphs,
-            );
-
-            for g in &mut new_graphs {
-                g.generate_impl(
-                    n_external,
-                    cur_vertex + 1,
-                    vertex_signatures,
-                    max_vertices,
-                    max_loops,
-                    allow_self_loops,
-                    out,
-                );
+            if edge_pos < cur_edges.len() {
+                // incompatible
+                continue;
             }
+
+            self.distribute_edges(cur_vertex, cur_vertex, &mut edges_left, 0, settings, out);
         }
     }
 
@@ -467,13 +556,11 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
         cur_target: usize,
         edge_count: &mut [(E, usize)],
         cur_edge_count_group_index: usize,
-        vertex_signatures: &[Vec<E>],
-        allow_self_loops: bool,
+        settings: &GenerationSettings<E>,
         out: &mut Vec<Self>,
     ) {
         if edge_count.iter().all(|x| x.1 == 0) {
-            out.push(self.clone());
-            return;
+            return self.generate_impl(source + 1, settings, out);
         }
 
         let mut grown = false;
@@ -481,19 +568,11 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
             grown = true;
             self.add_node(Empty);
         } else {
-            self.distribute_edges(
-                source,
-                cur_target + 1,
-                edge_count,
-                0,
-                vertex_signatures,
-                allow_self_loops,
-                out,
-            );
+            self.distribute_edges(source, cur_target + 1, edge_count, 0, settings, out);
         }
 
         let consume_count = if source == cur_target {
-            if !allow_self_loops {
+            if !settings.allow_self_loops {
                 return;
             }
 
@@ -503,9 +582,7 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
         };
 
         // TODO: do more extensive compatibility checks
-        if self.node(cur_target).edges.len() + consume_count
-            > vertex_signatures.iter().map(|x| x.len()).max().unwrap_or(0)
-        {
+        if self.node(cur_target).edges.len() + consume_count > settings.max_degree {
             return;
         }
 
@@ -521,8 +598,7 @@ impl<E: Clone + Ord + Debug + Display> Graph<Empty, E> {
                 cur_target,
                 edge_count,
                 cur_edge_count_group_index + p,
-                vertex_signatures,
-                allow_self_loops,
+                settings,
                 out,
             );
 
@@ -1081,14 +1157,15 @@ mod test {
             &["g", "g"],
             &[
                 vec!["g", "g", "g"],
-                vec!["q", "q", "g"],
+                vec!["q", "qb", "g"],
                 vec!["g", "g", "g", "g"],
             ],
             None,
             Some(3),
+            Some(0),
             false,
         );
 
-        assert_eq!(gs.len(), 310);
+        assert_eq!(gs.len(), 129);
     }
 }

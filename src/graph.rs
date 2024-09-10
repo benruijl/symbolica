@@ -5,6 +5,8 @@ use std::{
     hash::Hash,
 };
 
+use crate::domains::integer::Integer;
+
 /// A node in a graph, with arbitrary data.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Node<NodeData = Empty> {
@@ -131,6 +133,31 @@ impl<N: Display, E: Display> Graph<N, E> {
         }
 
         out.push_str("}\n");
+        out
+    }
+
+    pub fn to_mermaid(&self) -> String {
+        let mut out = String::new();
+        out.push_str("graph TD;\n");
+
+        for (i, x) in self.nodes.iter().enumerate() {
+            out.push_str(&format!("  {}[{}];\n", i, x.data));
+        }
+
+        for x in &self.edges {
+            if x.directed {
+                out.push_str(&format!(
+                    "  {} --> {}[{}];\n",
+                    x.vertices.0, x.vertices.1, x.data
+                ));
+            } else {
+                out.push_str(&format!(
+                    "  {} --- {}[{}];\n",
+                    x.vertices.0, x.vertices.1, x.data
+                ));
+            }
+        }
+
         out
     }
 }
@@ -357,6 +384,40 @@ impl<N, E> Graph<N, E> {
     }
 }
 
+impl<N, E: Eq + Ord + Hash> Graph<N, E> {
+    /// Get the number of different ways to permute the multi-edges, leading
+    /// to the same graph, while keeping the vertices fixed.
+    pub fn get_edge_automorphism_group_size(&self) -> Integer {
+        let mut count = Integer::one();
+        let mut h = HashMap::default();
+
+        for e in &self.edges {
+            h.entry(e.vertices)
+                .or_insert(vec![])
+                .push((e.directed, &e.data));
+        }
+
+        for (_, mut v) in h.into_iter() {
+            v.sort();
+
+            let mut counter = 1;
+            let mut last = &v[0];
+            for d in v.iter().skip(1) {
+                if d == last {
+                    counter += 1;
+                } else {
+                    count *= Integer::factorial(counter);
+                    counter = 1;
+                    last = d;
+                }
+            }
+            count *= Integer::factorial(counter);
+        }
+
+        count
+    }
+}
+
 struct GenerationSettings<'a, E> {
     vertex_signatures: &'a [Vec<E>],
     max_vertices: Option<usize>,
@@ -367,17 +428,19 @@ struct GenerationSettings<'a, E> {
     max_degree: usize,
 }
 
-impl<E: Clone + Ord> Graph<Empty, E> {
-    /// Generate all connected graphs with `external_edges` as external half-edges and the given allowed list
+impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, E> {
+    /// Generate all connected graphs with `external_edges` half-edges and the given allowed list
     /// of vertex connections.
+    ///
+    /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
     pub fn generate(
-        external_edges: &[E],
+        external_edges: &[(N, E)],
         vertex_signatures: &[Vec<E>],
         max_vertices: Option<usize>,
         max_loops: Option<usize>,
         max_bridges: Option<usize>,
         allow_self_loops: bool,
-    ) -> Vec<Self> {
+    ) -> HashMap<Graph<N, E>, Integer> {
         let vertex_sorted: Vec<_> = vertex_signatures
             .iter()
             .map(|x| {
@@ -388,17 +451,17 @@ impl<E: Clone + Ord> Graph<Empty, E> {
             .collect();
 
         let mut g = Self::new();
-        for _ in 0..external_edges.len() {
-            g.add_node(Empty);
-            g.add_node(Empty);
+        for (n, _) in external_edges {
+            g.add_node(n.clone());
+            g.add_node(N::default());
         }
 
         for (i, e) in external_edges.iter().enumerate() {
-            g.add_edge(i, external_edges.len() + i, false, e.clone());
+            g.add_edge(i, external_edges.len() + i, false, e.1.clone());
         }
 
         if external_edges.len() == 0 {
-            g.add_node(Empty);
+            g.add_node(N::default());
         }
 
         let settings = GenerationSettings {
@@ -411,7 +474,7 @@ impl<E: Clone + Ord> Graph<Empty, E> {
             max_degree: vertex_sorted.iter().map(|x| x.len()).max().unwrap_or(0),
         };
 
-        let mut out = vec![];
+        let mut out = HashMap::default();
         g.generate_impl(external_edges.len(), &settings, &mut out);
         out
     }
@@ -420,7 +483,7 @@ impl<E: Clone + Ord> Graph<Empty, E> {
         &mut self,
         cur_vertex: usize,
         settings: &GenerationSettings<E>,
-        out: &mut Vec<Self>,
+        out: &mut HashMap<Graph<N, E>, Integer>,
     ) {
         if let Some(max_vertices) = settings.max_vertices {
             if self.nodes.len() > max_vertices {
@@ -493,7 +556,8 @@ impl<E: Clone + Ord> Graph<Empty, E> {
                 }
             }
 
-            out.push(self.clone());
+            let c = self.canonize();
+            out.insert(c.graph, c.automorphism_group_size);
             return;
         }
 
@@ -557,7 +621,7 @@ impl<E: Clone + Ord> Graph<Empty, E> {
         edge_count: &mut [(E, usize)],
         cur_edge_count_group_index: usize,
         settings: &GenerationSettings<E>,
-        out: &mut Vec<Self>,
+        out: &mut HashMap<Graph<N, E>, Integer>,
     ) {
         if edge_count.iter().all(|x| x.1 == 0) {
             return self.generate_impl(source + 1, settings, out);
@@ -566,7 +630,7 @@ impl<E: Clone + Ord> Graph<Empty, E> {
         let mut grown = false;
         if cur_target == self.nodes.len() {
             grown = true;
-            self.add_node(Empty);
+            self.add_node(N::default());
         } else {
             self.distribute_edges(source, cur_target + 1, edge_count, 0, settings, out);
         }
@@ -613,32 +677,51 @@ impl<E: Clone + Ord> Graph<Empty, E> {
     }
 }
 
+pub struct CanonicalForm<N, E> {
+    /// Mapping of the vertices from the input graph to the canonical graph.
+    pub vertex_map: Vec<usize>,
+    pub orbit_generators: Vec<Vec<Vec<usize>>>,
+    pub orbit: Vec<usize>,
+    /// The size of the automorphism group of the graph, including
+    /// the permutations stemming from identical edges.
+    pub automorphism_group_size: Integer,
+    pub graph: Graph<N, E>,
+}
+
 impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq + Hash> Graph<N, E> {
     /// Canonize the graph using McKay's canonical graph labeling algorithm,
     /// returning the vertex mapping and the canonical form.
-    pub fn canonize(&self) -> (Vec<usize>, Self) {
+    pub fn canonize(&self) -> CanonicalForm<N, E> {
         if self.nodes.is_empty() {
-            return (vec![], self.clone());
+            return CanonicalForm {
+                vertex_map: vec![],
+                orbit_generators: vec![],
+                orbit: vec![],
+                automorphism_group_size: Integer::one(),
+                graph: self.clone(),
+            };
         }
 
         if self.nodes.len() <= u16::MAX as usize {
-            let r = self.canonize_impl::<u16>();
-            (r.0.into_iter().map(|x| x as usize).collect(), r.1)
+            self.canonize_impl::<u16>(false)
         } else if self.nodes.len() <= u32::MAX as usize {
-            let r = self.canonize_impl::<u32>();
-            (r.0.into_iter().map(|x| x as usize).collect(), r.1)
+            self.canonize_impl::<u32>(false)
         } else {
-            self.canonize_impl::<usize>()
+            self.canonize_impl::<usize>(false)
         }
     }
 
-    fn canonize_impl<I: NodeIndex>(&self) -> (Vec<I>, Self) {
-        let mut stack = vec![SearchTreeNode::new(self)];
+    fn canonize_impl<I: NodeIndex>(&self, verbose: bool) -> CanonicalForm<N, E> {
+        let mut stack = vec![SearchTreeNode::<I>::new(self)];
         let mut automorphisms = vec![];
+        let mut minimal_representatives_per_generator = vec![];
         let mut leaf_nodes: HashMap<_, (Vec<_>, Vec<_>)> = HashMap::default(); // TODO: limit growth
         let mut current_best: Option<(Graph<&N, &E>, Vec<I>, Vec<Invariant<I>>)> = None;
 
         let mut node_buffer = vec![];
+
+        let mut automorphism_group_len = Integer::one();
+        let mut orbit = (0..self.nodes.len()).collect::<Vec<_>>();
 
         while let Some(mut node) = stack.pop() {
             if node.selected_vertex.is_none() {
@@ -699,7 +782,9 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                 if let Some((old_partition, old_path)) = leaf_nodes.get(&g) {
                     // construct the automorphism transformation
                     let mut seen = vec![false; partition.len()];
+
                     let mut fixed = vec![];
+                    let mut minimal_representatives = vec![];
                     let mut orbits = vec![];
                     for x in &partition {
                         let mut cur = *x;
@@ -730,23 +815,26 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                             fixed.push(orbit[0]);
                         } else {
                             // only store the minimal representative per orbit
-                            orbits.push(orbit[0]);
+                            minimal_representatives.push(orbit[0]);
+                            orbits.push(orbit);
                         }
                     }
 
-                    automorphisms.push((fixed, orbits));
+                    minimal_representatives_per_generator.push((fixed, minimal_representatives));
+                    automorphisms.push(orbits);
 
                     // fall back to common ancestor in the search tree
                     let mut i = 0;
-                    for (p1, p2) in old_path.iter().rev().zip(path.iter().rev()) {
-                        if p1 != p2 {
+                    for (p1, p2) in old_path.iter().zip(path.iter()) {
+                        if p1 == p2 {
                             i += 1;
                         } else {
                             break;
                         }
                     }
 
-                    node_buffer.extend(stack.drain(stack.len() + 1 - i..));
+                    // we will pop an extra node at the start of the next loop, hence + 1
+                    node_buffer.extend(stack.drain(i + 1..));
                     continue;
                 }
 
@@ -769,34 +857,106 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                 leaf_nodes.insert(g, (partition, path));
                 node_buffer.push(node);
             } else {
-                let p = if let Some(p) = node.selected_part {
-                    if node.children_to_visit.is_empty() {
-                        node_buffer.push(node);
-                        continue;
-                    }
-
+                let (x, p) = if let Some(p) = node.selected_part {
                     // upon a repeat visit, filter the list of possible children with
                     // the automorphism group, taking the smallest out of every orbit
-                    for (fixed, orbits) in &automorphisms {
-                        // only use automorphisms that fix the vertices that are fixed by the partition
-                        if !node
-                            .partition
-                            .iter()
-                            .filter(|x| x.len() == 1)
-                            .all(|x| fixed.contains(&x[0]))
-                        {
-                            continue;
-                        }
+                    // for non-left node children, we apply a simpler filter that does
+                    // not combine orbits and only takes the smallest vertex per orbit
 
-                        node.children_to_visit.retain(|x| orbits.contains(&x));
+                    for (i, o) in orbit.iter_mut().enumerate() {
+                        *o = i;
                     }
 
-                    if node.children_to_visit.is_empty() {
+                    if node.left_node {
+                        // TODO: we can update the orbit globally, as there is only one left path
+                        for s_orbits in automorphisms.iter() {
+                            // filter orbits that do not fix the vertices that are fixed by the selected path
+                            if stack
+                                .iter()
+                                .map(|x| x.selected_vertex.unwrap())
+                                .any(|x| s_orbits.iter().any(|o| o.contains(&x)))
+                            {
+                                continue;
+                            }
+
+                            for s_orbits in s_orbits {
+                                // find minimal representatives for each orbit
+                                let min =
+                                    s_orbits.iter().map(|x| orbit[x.to_usize()]).min().unwrap();
+                                for a in s_orbits {
+                                    let old_val = orbit[a.to_usize()];
+
+                                    if old_val == min {
+                                        continue;
+                                    }
+
+                                    for o in &mut orbit {
+                                        if *o == old_val {
+                                            *o = min;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        for (fixed, reps) in &minimal_representatives_per_generator {
+                            if stack
+                                .iter()
+                                .all(|x| fixed.contains(&x.selected_vertex.unwrap()))
+                            {
+                                node.children_to_visit
+                                    .retain(|x| reps.contains(&x) || fixed.contains(&x));
+                            }
+                        }
+                    }
+
+                    let orig = node.orig_selected_vertex.unwrap().to_usize();
+
+                    // check if the last vertex we tried turned out to be in the same orbit as the first one
+                    // due to newly found automorphisms
+                    if node.left_node {
+                        if orbit[node.selected_vertex.unwrap().to_usize()] == orig {
+                            node.children_visited_equal_to_first += 1;
+                        }
+                    }
+
+                    node.selected_vertex = None;
+                    while !node.children_to_visit.is_empty() {
+                        // individualize x
+                        let x = node.children_to_visit.remove(0);
+                        if node.left_node && orbit[x.to_usize()] == orig {
+                            node.children_visited_equal_to_first += 1;
+                        }
+
+                        if orbit[x.to_usize()] == x.to_usize() {
+                            node.selected_vertex = Some(x);
+                            break;
+                        }
+                    }
+
+                    if node.children_to_visit.is_empty() && node.selected_vertex.is_none() {
+                        // use the left-most path to determine the automorphism group size,
+                        // by applying the orbit-stabilizer theorem; we determined the number of child
+                        // vertices that are in the same orbit as the first child vertex
+                        // multiplying this number at every level gives the automorphism group size, since
+                        // at every level we stabilize the first vertex
+                        if node.left_node {
+                            if verbose {
+                                println!(
+                                    "Level={}, group size={}, orbit num={}",
+                                    stack.len(),
+                                    node.children_visited_equal_to_first,
+                                    orbit.iter().enumerate().filter(|(i, x)| *i == **x).count()
+                                );
+                            }
+                            automorphism_group_len *= node.children_visited_equal_to_first as u64;
+                        }
+
                         node_buffer.push(node);
                         continue;
                     }
 
-                    p.to_usize()
+                    (node.selected_vertex.unwrap(), p.to_usize())
                 } else {
                     // find the first minimal length non-trivial part to individualize
                     let smallest = node
@@ -816,23 +976,32 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
 
                     node.children_to_visit = part.clone();
                     node.selected_part = Some(I::from_usize(p));
-                    p
-                };
 
-                // individualize x
-                let x = node.children_to_visit.remove(0);
-                node.selected_vertex = Some(x);
+                    // individualize x
+                    let x = node.children_to_visit.remove(0);
+                    node.selected_vertex = Some(x);
+
+                    (x, p)
+                };
 
                 let mut new_node = match node_buffer.pop() {
                     Some(mut n) => {
                         n.partition.clear();
                         n.children_to_visit.clear();
+                        n.children_visited_equal_to_first = 0;
+                        n.orig_selected_vertex = None;
                         n.selected_part = None;
                         n.selected_vertex = None;
                         n
                     }
                     None => SearchTreeNode::default(),
                 };
+
+                new_node.left_node = node.left_node && node.orig_selected_vertex.is_none();
+
+                if node.orig_selected_vertex.is_none() {
+                    node.orig_selected_vertex = Some(x);
+                }
 
                 new_node
                     .partition
@@ -860,7 +1029,40 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
             g.add_edge(e.vertices.0, e.vertices.1, e.directed, e.data.clone());
         }
 
-        (map, g)
+        let inv_map: Vec<_> = (0..self.nodes.len())
+            .map(|x| {
+                map.iter()
+                    .position(|y| y.to_usize() == x)
+                    .unwrap()
+                    .to_usize()
+            })
+            .collect();
+
+        // transform the automorphisms to the new vertex numbering
+        let automorphisms: Vec<_> = automorphisms
+            .into_iter()
+            .map(|x| {
+                x.into_iter()
+                    .map(|y| {
+                        y.into_iter()
+                            .map(|z| inv_map[z.to_usize()])
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        let orbit = (0..orbit.len())
+            .map(|x| inv_map[orbit[map[x].to_usize()]])
+            .collect();
+
+        CanonicalForm {
+            vertex_map: inv_map,
+            orbit_generators: automorphisms,
+            automorphism_group_size: automorphism_group_len * g.get_edge_automorphism_group_size(),
+            orbit,
+            graph: g,
+        }
     }
 
     /// Returns `true` iff the graph is isomorphic to `other`.
@@ -895,7 +1097,7 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
             return false;
         }
 
-        self.canonize().1 == other.canonize().1
+        self.canonize().graph == other.canonize().graph
     }
 }
 
@@ -957,6 +1159,9 @@ struct SearchTreeNode<N: NodeIndex> {
     selected_part: Option<N>,
     selected_vertex: Option<N>,
     children_to_visit: Vec<N>,
+    left_node: bool,
+    orig_selected_vertex: Option<N>,
+    children_visited_equal_to_first: usize,
     invariant: Invariant<N>,
 }
 
@@ -977,6 +1182,9 @@ impl<I: NodeIndex> SearchTreeNode<I> {
             selected_part: None,
             selected_vertex: None,
             children_to_visit: vec![],
+            orig_selected_vertex: None,
+            left_node: true,
+            children_visited_equal_to_first: 0,
             invariant: Invariant::default(),
         }
     }
@@ -997,13 +1205,19 @@ impl<I: NodeIndex> SearchTreeNode<I> {
         let largest_partition = self.partition.iter().map(|x| x.len()).max().unwrap();
         let mut degrees = vec![(vec![], I::from_usize(0)); largest_partition];
 
+        let mut last_stable_index = 0; // no splits happened before this index in the last round
         'next: loop {
             for (ii, i) in self.partition.iter().enumerate() {
                 if i.len() == 1 {
                     continue;
                 }
 
-                for j in &self.partition {
+                for (jj, j) in self.partition.iter().enumerate() {
+                    if ii < last_stable_index && jj < last_stable_index {
+                        // this part is already tested and stable
+                        continue;
+                    }
+
                     // sorted edge colors of edges in i that connect to vertices in j
                     // the length of this vector is the degree of the vertex i in j
                     for ((edge_data, vert), v) in degrees.iter_mut().zip(i) {
@@ -1024,7 +1238,7 @@ impl<I: NodeIndex> SearchTreeNode<I> {
                                 }
                             }
                         }
-                        edge_data.sort();
+                        edge_data.sort_unstable();
                         *vert = *v;
                     }
 
@@ -1032,7 +1246,7 @@ impl<I: NodeIndex> SearchTreeNode<I> {
                         continue;
                     }
 
-                    degrees[..i.len()].sort();
+                    degrees[..i.len()].sort_unstable();
 
                     let mut degs = vec![];
                     let mut cur = vec![degrees[0].1];
@@ -1047,6 +1261,7 @@ impl<I: NodeIndex> SearchTreeNode<I> {
                     degs.push(cur);
 
                     self.partition.splice(ii..=ii, degs);
+                    last_stable_index = ii;
                     continue 'next;
                 }
             }
@@ -1060,7 +1275,7 @@ impl<I: NodeIndex> SearchTreeNode<I> {
 
 #[cfg(test)]
 mod test {
-    use crate::graph::{Empty, Graph, SearchTreeNode};
+    use crate::graph::{Graph, SearchTreeNode};
 
     #[test]
     fn directed() {
@@ -1148,13 +1363,15 @@ mod test {
 
         let c = g.canonize();
 
-        assert_eq!(c.1.edge(0).vertices, (0, 2));
+        assert_eq!(c.orbit_generators.len(), 2);
+        assert_eq!(c.automorphism_group_size, 8);
+        assert_eq!(c.graph.edge(0).vertices, (0, 2));
     }
 
     #[test]
     fn generate() {
-        let gs = Graph::<Empty, &str>::generate(
-            &["g", "g"],
+        let gs = Graph::<_, &str>::generate(
+            &[(1, "g"), (2, "g")],
             &[
                 vec!["g", "g", "g"],
                 vec!["q", "qb", "g"],
@@ -1166,6 +1383,6 @@ mod test {
             false,
         );
 
-        assert_eq!(gs.len(), 129);
+        assert_eq!(gs.len(), 94);
     }
 }

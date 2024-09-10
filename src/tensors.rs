@@ -138,7 +138,7 @@ impl<'a> AtomView<'a> {
             }
         }
 
-        let (_, gc) = g.canonize();
+        let gc = g.canonize().graph;
 
         let mut funcs = vec![];
         for n in gc.nodes() {

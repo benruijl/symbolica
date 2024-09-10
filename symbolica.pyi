@@ -3316,3 +3316,112 @@ class RandomNumberGenerator:
     def __new__(_cls, seed: int, stream_id: int):
         """Create a new random number generator with a given `seed` and `stream_id`. For parallel runs,
         each thread or instance generating samples should use the same `seed` but a different `stream_id`."""
+
+
+class Graph:
+    """A graph that supported directional edges, parallel edges, self-edges and expression data on the nodes and edges."""
+
+    def __new__(_cls):
+        """Create a new empty graph."""
+
+    def __str__(self) -> str:
+        """Print the graph in a human-readable format."""
+
+    def __hash__(self) -> int:
+        """Hash the graph."""
+
+    def __copy__(self) -> Graph:
+        """Copy the graph."""
+
+    def __len__(self) -> int:
+        """Get the number of nodes in the graph."""
+
+    def __eq__(self, other: Graph) -> bool:
+        """Compare two graphs."""
+
+    def __neq__(self, other: Graph) -> bool:
+        """Compare two graphs."""
+
+    def __getitem__(self, idx: int) -> tuple[Sequence[int], Expression]:
+        """Get the `idx`th node, consisting of the edge indices and the data."""
+
+    @classmethod
+    def generate(_cls,
+                 external_nodes: Sequence[tuple[Expression | int, Expression | int]],
+                 vertex_signatures: Sequence[Sequence[Expression | int]],
+                 max_vertices: Optional[int] = None,
+                 max_loops: Optional[int] = None,
+                 max_bridges: Optional[int] = None,
+                 allow_self_edges: bool = False,) -> dict[Graph, Expression]:
+        """Generate all connected graphs with `external_edges` half-edges and the given allowed list
+        of vertex connections.
+
+        Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> g, q, qb, gh, ghb = S('g', 'q', 'qb', 'gh', 'ghb')
+        >>> Graph.generate([(1, g), (2, g)],
+        >>>                 [[g, g, g], [g, g, g, g],
+        >>>                  [q, qb, g], [gh, ghb, g]], max_loops=2)
+        >>> for (g, sym) in graphs.items():
+        >>>     print(f'Symmetry factor = 1/{sym}:')
+        >>>     print(g.to_dot())
+
+        generates all connected graphs up to 2 loops with the specified vertices.
+
+        Parameters
+        ----------
+        external_nodes: Sequence[tuple[Expression | int, Expression | int]]
+            The external edges, consisting of a tuple of the node data and the edge data.
+            If the node data is the same, flip symmetries will be recongized.
+        vertex_signatures: Sequence[Sequence[Expression | int]]
+            The allowed connections for each vertex.
+        max_vertices: int, optional
+            The maximum number of vertices in the graph.
+        max_loops: int, optional
+            The maximum number of loops in the graph.
+        max_bridges: int, optional
+            The maximum number of bridges in the graph.
+        allow_self_edges: bool, optional
+            Whether self-edges are allowed.
+        """
+
+    def to_dot(self) -> str:
+        """Convert the graph to a graphviz dot string."""
+
+    def to_mermaid(self) -> str:
+        """Convert the graph to a mermaid string."""
+
+    def num_nodes(self) -> int:
+        """Get the number of nodes in the graph."""
+
+    def num_edges(self) -> int:
+        """Get the number of edges in the graph."""
+
+    def num_loops(self) -> int:
+        """Get the number of loops in the graph."""
+
+    def node(self, idx: int) -> tuple[Sequence[int], Expression]:
+        """Get the `idx`th node, consisting of the edge indices and the data."""
+
+    def edge(self, idx: int) -> tuple[int, int, bool, Expression]:
+        """Get the `idx`th edge, consisting of the the source vertex, target vertex, whether the edge is directed, and the data."""
+
+    def add_node(self, data: Optional[Expression | int] = None) -> int:
+        """Add a node with data `data` to the graph, returning the index of the node.
+        The default data is the number 0.
+        """
+
+    def add_edge(self, source: int, target: int, directed: bool = False, data: Optional[Expression | int] = None) -> int:
+        """Add an edge between the `source` and `target` nodes, returning the index of the edge.
+
+        Optionally, the edge can be set as directed. The default data is the number 0.
+        """
+
+    def canonize(self) -> Tuple[Graph, Sequence[int], Expression, Sequence[int]]:
+        """Write the graph in a canonical form. Returns the canonicalized graph, the vertex map, the automorphism group size, and the orbit."""
+
+    def is_isomorphic(self, other: Graph) -> bool:
+        """Check if the graph is isomorphic to another graph."""

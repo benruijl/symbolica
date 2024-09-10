@@ -255,7 +255,17 @@ impl<N, E> Graph<N, E> {
 
     /// Add an edge between vertex indices `source` and `target` to the graph, with arbitrary data.
     /// If `directed` is true, the edge is directed from `source` to `target`.
-    pub fn add_edge(&mut self, source: usize, target: usize, directed: bool, data: E) {
+    pub fn add_edge(
+        &mut self,
+        source: usize,
+        target: usize,
+        directed: bool,
+        data: E,
+    ) -> Result<usize, &'static str> {
+        if source >= self.nodes.len() || target >= self.nodes.len() {
+            return Err("Invalid node index");
+        }
+
         let index = self.edges.len();
         self.edges.push(Edge {
             vertices: if !directed && source > target {
@@ -268,6 +278,7 @@ impl<N, E> Graph<N, E> {
         });
         self.nodes[source].edges.push(index);
         self.nodes[target].edges.push(index);
+        Ok(index)
     }
 
     /// Delete the last added edge. This operation is O(1).
@@ -457,7 +468,8 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         }
 
         for (i, e) in external_edges.iter().enumerate() {
-            g.add_edge(i, external_edges.len() + i, false, e.1.clone());
+            g.add_edge(i, external_edges.len() + i, false, e.1.clone())
+                .unwrap();
         }
 
         if external_edges.len() == 0 {
@@ -656,7 +668,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             .find(|x| x.1 .1 >= consume_count)
         {
             *count -= consume_count;
-            self.add_edge(source, cur_target, false, e.clone());
+            self.add_edge(source, cur_target, false, e.clone()).unwrap();
             self.distribute_edges(
                 source,
                 cur_target,
@@ -774,7 +786,7 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
                 }
                 edges.sort();
                 for (v1, v2, dir, d) in edges {
-                    g.add_edge(v1, v2, dir, d);
+                    g.add_edge(v1, v2, dir, d).unwrap();
                 }
 
                 let path: Vec<_> = stack.iter().map(|x| x.selected_vertex.unwrap()).collect();
@@ -1026,7 +1038,8 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
             g.add_node(best.node(i).data.clone());
         }
         for e in &best.edges {
-            g.add_edge(e.vertices.0, e.vertices.1, e.directed, e.data.clone());
+            g.add_edge(e.vertices.0, e.vertices.1, e.directed, e.data.clone())
+                .unwrap();
         }
 
         let inv_map: Vec<_> = (0..self.nodes.len())
@@ -1097,7 +1110,13 @@ impl<N: Clone + PartialOrd + Ord + Eq + Hash, E: Clone + PartialOrd + Ord + Eq +
             return false;
         }
 
-        self.canonize().graph == other.canonize().graph
+        let other_canon = other.canonize().graph;
+
+        if *self == other_canon {
+            return true;
+        }
+
+        self.canonize().graph == other_canon
     }
 }
 
@@ -1282,8 +1301,8 @@ mod test {
         let mut g = Graph::new();
         let n0 = g.add_node(0);
         let n1 = g.add_node(0);
-        g.add_edge(n0, n1, false, 0);
-        g.add_edge(n0, n1, false, 1);
+        g.add_edge(n0, n1, false, 0).unwrap();
+        g.add_edge(n0, n1, false, 1).unwrap();
 
         let mut node = SearchTreeNode::<usize>::default();
         node.partition = vec![vec![0, 1]];
@@ -1293,8 +1312,8 @@ mod test {
         let mut g = Graph::new();
         let n0 = g.add_node(0);
         let n1 = g.add_node(0);
-        g.add_edge(n0, n1, true, 0);
-        g.add_edge(n0, n1, false, 1);
+        g.add_edge(n0, n1, true, 0).unwrap();
+        g.add_edge(n0, n1, false, 1).unwrap();
 
         let mut node = SearchTreeNode::<usize>::default();
         node.partition = vec![vec![0, 1]];
@@ -1306,20 +1325,20 @@ mod test {
     fn isomorphic() {
         let mut g = Graph::new();
         let n0 = g.add_node(0);
-        g.add_edge(n0, n0, false, 0);
-        g.add_edge(n0, n0, false, 0);
+        g.add_edge(n0, n0, false, 0).unwrap();
+        g.add_edge(n0, n0, false, 0).unwrap();
 
         let mut g1 = Graph::new();
         let n0 = g1.add_node(0);
-        g1.add_edge(n0, n0, false, 0);
+        g1.add_edge(n0, n0, false, 0).unwrap();
 
         assert!(!g.is_isomorphic(&g1));
 
-        g1.add_edge(n0, n0, true, 0);
+        g1.add_edge(n0, n0, true, 0).unwrap();
         assert!(!g.is_isomorphic(&g1));
 
-        g.add_edge(n0, n0, true, 0);
-        g1.add_edge(n0, n0, false, 0);
+        g.add_edge(n0, n0, true, 0).unwrap();
+        g1.add_edge(n0, n0, false, 0).unwrap();
         assert!(g.is_isomorphic(&g1));
 
         let _ = g.add_node(1);
@@ -1344,22 +1363,22 @@ mod test {
         let n7 = g.add_node(0);
         let n8 = g.add_node(1);
 
-        g.add_edge(n0, n1, false, 0);
-        g.add_edge(n0, n3, false, 0);
-        g.add_edge(n1, n2, false, 0);
-        g.add_edge(n1, n3, false, 0);
-        g.add_edge(n1, n4, false, 0);
-        g.add_edge(n1, n5, false, 0);
-        g.add_edge(n2, n5, false, 0);
-        g.add_edge(n3, n4, false, 0);
-        g.add_edge(n3, n6, false, 0);
-        g.add_edge(n3, n7, false, 0);
-        g.add_edge(n4, n5, false, 0);
-        g.add_edge(n4, n7, false, 0);
-        g.add_edge(n5, n7, false, 0);
-        g.add_edge(n5, n8, false, 0);
-        g.add_edge(n6, n7, false, 0);
-        g.add_edge(n7, n8, false, 0);
+        g.add_edge(n0, n1, false, 0).unwrap();
+        g.add_edge(n0, n3, false, 0).unwrap();
+        g.add_edge(n1, n2, false, 0).unwrap();
+        g.add_edge(n1, n3, false, 0).unwrap();
+        g.add_edge(n1, n4, false, 0).unwrap();
+        g.add_edge(n1, n5, false, 0).unwrap();
+        g.add_edge(n2, n5, false, 0).unwrap();
+        g.add_edge(n3, n4, false, 0).unwrap();
+        g.add_edge(n3, n6, false, 0).unwrap();
+        g.add_edge(n3, n7, false, 0).unwrap();
+        g.add_edge(n4, n5, false, 0).unwrap();
+        g.add_edge(n4, n7, false, 0).unwrap();
+        g.add_edge(n5, n7, false, 0).unwrap();
+        g.add_edge(n5, n8, false, 0).unwrap();
+        g.add_edge(n6, n7, false, 0).unwrap();
+        g.add_edge(n7, n8, false, 0).unwrap();
 
         let c = g.canonize();
 

@@ -45,6 +45,7 @@ use crate::{
         CompileOptions, CompiledEvaluator, EvaluationFn, ExpressionEvaluator, FunctionMap,
         InlineASM, OptimizationSettings,
     },
+    graph::Graph,
     id::{
         Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
         PatternOrMap, PatternRestriction, ReplaceIterator, Replacement, WildcardAndRestriction,
@@ -87,6 +88,7 @@ pub fn create_symbolica_module(m: &PyModule) -> PyResult<&PyModule> {
     m.add_class::<PythonPatternRestriction>()?;
     m.add_class::<PythonTermStreamer>()?;
     m.add_class::<PythonSeries>()?;
+    m.add_class::<PythonGraph>()?;
 
     m.add_function(wrap_pyfunction!(symbol_shorthand, m)?)?;
     m.add_function(wrap_pyfunction!(number_shorthand, m)?)?;
@@ -9957,5 +9959,217 @@ impl PythonNumericalIntegrator {
 
         let stats = self.grid.get_statistics();
         Ok((stats.avg, stats.err, stats.chi_sq / stats.cur_iter as f64))
+    }
+}
+
+/// A graph that supported directional edges, parallel edges, self-edges and custom data on the nodes and edges.
+#[pyclass(name = "Graph", module = "symbolica")]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct PythonGraph {
+    graph: Graph<Atom, Atom>,
+}
+
+#[pymethods]
+impl PythonGraph {
+    /// Create an empty graph.
+    #[new]
+    fn new() -> Self {
+        Self {
+            graph: Graph::new(),
+        }
+    }
+
+    /// Print the graph in a human-readable format.
+    fn __str__(&self) -> String {
+        format!("{}", self.graph)
+    }
+
+    /// Hash the graph.
+    fn __hash__(&self) -> u64 {
+        let mut hasher = ahash::AHasher::default();
+        self.graph.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Copy the graph.
+    fn __copy__(&self) -> PythonGraph {
+        Self {
+            graph: self.graph.clone(),
+        }
+    }
+
+    /// Get the number of nodes.
+    fn __len__(&self) -> usize {
+        self.graph.nodes().len()
+    }
+
+    /// Compare two graphs.
+    fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<bool> {
+        match op {
+            CompareOp::Eq => Ok(self.graph == other.graph),
+            CompareOp::Ne => Ok(self.graph != other.graph),
+            _ => Err(exceptions::PyTypeError::new_err(format!(
+                "Inequalities between graphs are not allowed",
+            ))),
+        }
+    }
+
+    /// Generate all connected graphs with `external_edges` half-edges and the given allowed list
+    /// of vertex connections.
+    ///
+    /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
+    #[classmethod]
+    fn generate(
+        _cls: &PyType,
+        external_edges: Vec<(ConvertibleToExpression, ConvertibleToExpression)>,
+        vertex_signatures: Vec<Vec<ConvertibleToExpression>>,
+        max_vertices: Option<usize>,
+        max_loops: Option<usize>,
+        max_bridges: Option<usize>,
+        allow_self_loops: Option<bool>,
+    ) -> PyResult<HashMap<PythonGraph, PythonExpression>> {
+        if max_vertices.is_none() && max_loops.is_none() {
+            return Err(exceptions::PyValueError::new_err(
+                "At least one of max_vertices or max_loop must be set",
+            ));
+        }
+
+        let external_edges: Vec<_> = external_edges
+            .into_iter()
+            .map(|(a, b)| (a.to_expression().expr, b.to_expression().expr))
+            .collect();
+        let vertex_signatures: Vec<_> = vertex_signatures
+            .into_iter()
+            .map(|v| v.into_iter().map(|x| x.to_expression().expr).collect())
+            .collect();
+
+        Ok(Graph::generate(
+            &external_edges,
+            &vertex_signatures,
+            max_vertices,
+            max_loops,
+            max_bridges,
+            allow_self_loops.unwrap_or(false),
+        )
+        .into_iter()
+        .map(|(k, v)| (Self { graph: k }, Atom::new_num(v).into()))
+        .collect())
+    }
+
+    /// Convert the graph to a graphviz dot string.
+    fn to_dot(&self) -> String {
+        self.graph.to_dot()
+    }
+
+    /// Convert the graph to a mermaid string.
+    fn to_mermaid(&self) -> String {
+        self.graph.to_mermaid()
+    }
+
+    /// Add a node with data `data` to the graph, returning the index of the node.
+    /// The default data is the number 0.
+    fn add_node(&mut self, data: Option<ConvertibleToExpression>) -> usize {
+        self.graph
+            .add_node(data.map(|x| x.to_expression().expr).unwrap_or_default())
+    }
+
+    /// Add an edge between the `source` and `target` nodes, returning the index of the edge.
+    /// Optionally, the edge can be set as directed. The default data is the number 0.
+    #[pyo3(signature = (source, target, directed = false, data = None))]
+    fn add_edge(
+        &mut self,
+        source: usize,
+        target: usize,
+        directed: bool,
+        data: Option<ConvertibleToExpression>,
+    ) -> PyResult<usize> {
+        self.graph
+            .add_edge(
+                source,
+                target,
+                directed,
+                data.map(|x| x.to_expression().expr).unwrap_or_default(),
+            )
+            .map_err(|e| exceptions::PyValueError::new_err(e))
+    }
+
+    /// Get the `idx`th node.
+    fn __getitem__(&self, idx: isize) -> PyResult<(Vec<usize>, PythonExpression)> {
+        self.node(idx)
+    }
+
+    /// Get the number of nodes.
+    fn num_nodes(&self) -> usize {
+        self.graph.nodes().len()
+    }
+
+    /// Get the number of edges.
+    fn num_edges(&self) -> usize {
+        self.graph.edges().len()
+    }
+
+    /// Get the number of loops.
+    fn num_loops(&self) -> usize {
+        self.graph.num_loops()
+    }
+
+    /// Get the `idx`th node, consisting of the edge indices and the data.
+    fn node(&self, idx: isize) -> PyResult<(Vec<usize>, PythonExpression)> {
+        if idx.unsigned_abs() < self.graph.nodes().len() {
+            let n = if idx < 0 {
+                self.graph
+                    .node(self.graph.nodes().len() - idx.abs() as usize)
+            } else {
+                self.graph.node(idx as usize)
+            };
+            Ok((n.edges.clone(), n.data.clone().into()))
+        } else {
+            Err(PyIndexError::new_err(format!(
+                "Index {} out of bounds: the graph only has {} nodes.",
+                idx,
+                self.graph.nodes().len(),
+            )))
+        }
+    }
+
+    /// Get the `idx`th edge, consisting of the the source vertex, target vertex, whether the edge is directed, and the data.
+    fn edge(&self, idx: isize) -> PyResult<(usize, usize, bool, PythonExpression)> {
+        if idx.unsigned_abs() < self.graph.edges().len() {
+            let e = if idx < 0 {
+                self.graph
+                    .edge(self.graph.edges().len() - idx.abs() as usize)
+            } else {
+                self.graph.edge(idx as usize)
+            };
+            Ok((
+                e.vertices.0,
+                e.vertices.1,
+                e.directed,
+                e.data.clone().into(),
+            ))
+        } else {
+            Err(PyIndexError::new_err(format!(
+                "Index {} out of bounds: the graph only has {} edges.",
+                idx,
+                self.graph.edges().len(),
+            )))
+        }
+    }
+
+    /// Write the graph in a canonical form.
+    /// Returns the canonicalized graph, the vertex map, the automorphism group size, and the orbit.
+    fn canonize(&self) -> (PythonGraph, Vec<usize>, PythonExpression, Vec<usize>) {
+        let c = self.graph.canonize();
+        (
+            Self { graph: c.graph },
+            c.vertex_map,
+            Atom::new_num(c.automorphism_group_size).into(),
+            c.orbit,
+        )
+    }
+
+    /// Return true `iff` the graph is isomorphic to `other`.
+    fn is_isomorphic(&self, other: &PythonGraph) -> bool {
+        self.graph.is_isomorphic(&other.graph)
     }
 }

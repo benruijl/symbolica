@@ -354,7 +354,8 @@ impl<'a> AtomView<'a> {
                                             .map(|c| c[p].into())
                                             .unwrap_or(Atom::Zero.into()),
                                     ),
-                                );
+                                )
+                                .unwrap();
                                 connections[p] = None;
                             } else {
                                 connections[p] = Some(n);
@@ -387,7 +388,8 @@ impl<'a> AtomView<'a> {
                                             .map(|c| c[p].into())
                                             .unwrap_or(Atom::Zero.into()),
                                     ),
-                                );
+                                )
+                                .unwrap();
                                 connections[p] = None;
                             } else {
                                 connections[p] = Some(start + i);
@@ -411,7 +413,8 @@ impl<'a> AtomView<'a> {
                                     },
                                     Atom::Zero.into(),
                                 ),
-                            );
+                            )
+                            .unwrap();
                         }
                     }
 
@@ -421,7 +424,8 @@ impl<'a> AtomView<'a> {
                             start,
                             true,
                             (HiddenData::new(0, 0), Atom::Zero.into()),
-                        );
+                        )
+                        .unwrap();
                     }
 
                     Ok(())

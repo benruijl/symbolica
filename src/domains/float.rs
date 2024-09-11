@@ -913,9 +913,7 @@ impl NumericalFloatLike for Float {
 
     #[inline]
     fn pow(&self, e: u64) -> Self {
-        rug::ops::Pow::pow(&self.0, e)
-            .complete(self.prec() as i64)
-            .into()
+        MultiPrecisionFloat::with_val(self.prec(), rug::ops::Pow::pow(&self.0, e)).into()
     }
 
     #[inline(always)]
@@ -994,7 +992,7 @@ impl Real for Float {
 
     #[inline(always)]
     fn sqrt(&self) -> Self {
-        self.0.sqrt_ref().complete(self.prec() as i64 + 1).into()
+        MultiPrecisionFloat::with_val(self.prec() + 1, self.0.sqrt_ref()).into()
     }
 
     #[inline(always)]
@@ -1002,10 +1000,11 @@ impl Real for Float {
         // Log grows in precision if the input is less than 1/e and more than e
         let e = self.0.get_exp().unwrap();
         if !(0..2).contains(&e) {
-            self.0
-                .ln_ref()
-                .complete((self.0.prec() + e.unsigned_abs().ilog2() + 1) as i64)
-                .into()
+            MultiPrecisionFloat::with_val(
+                self.0.prec() + e.unsigned_abs().ilog2() + 1,
+                self.0.ln_ref(),
+            )
+            .into()
         } else {
             self.0.clone().ln().into()
         }
@@ -1015,10 +1014,11 @@ impl Real for Float {
     fn exp(&self) -> Self {
         if let Some(e) = self.0.get_exp() {
             // Exp grows in precision when e < 0
-            self.0
-                .exp_ref()
-                .complete(1.max(self.0.prec() as i32 - e + 1) as i64)
-                .into()
+            MultiPrecisionFloat::with_val(
+                1.max(self.0.prec() as i32 - e + 1) as u32,
+                self.0.exp_ref(),
+            )
+            .into()
         } else {
             self.0.clone().exp().into()
         }
@@ -1068,11 +1068,11 @@ impl Real for Float {
     fn tanh(&self) -> Self {
         if let Some(e) = self.0.get_exp() {
             if e > 0 {
-                return self
-                    .0
-                    .tanh_ref()
-                    .complete((self.0.prec() + 3 * e.unsigned_abs() + 1) as i64)
-                    .into();
+                return MultiPrecisionFloat::with_val(
+                    self.0.prec() + 3 * e.unsigned_abs() + 1,
+                    self.0.tanh_ref(),
+                )
+                .into();
             }
         }
 

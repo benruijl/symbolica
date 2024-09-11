@@ -4,8 +4,6 @@ use std::{
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-use rug::integer::IntegerExt64;
-
 use crate::{
     poly::{gcd::LARGE_U32_PRIMES, polynomial::PolynomialRing, Exponent},
     printer::PrintOptions,
@@ -716,13 +714,18 @@ impl Rational {
                     Integer::Double(n) => u128::BITS as u64 - (*n as u128).leading_zeros() as u64,
                     Integer::Large(n) => {
                         let mut pos = 0;
-                        while let Some(p) = n.find_one_64(pos) {
-                            if p == i64::MAX as u64 {
+                        while let Some(p) = n.find_one(pos) {
+                            if let Some(p2) = pos.checked_add(p) {
+                                if p2 == u32::MAX {
+                                    return Err("Could not reconstruct, as the log is too large");
+                                }
+
+                                pos += 1;
+                            } else {
                                 return Err("Could not reconstruct, as the log is too large");
                             }
-                            pos = p + 1;
                         }
-                        pos
+                        pos as u64
                     }
                 };
 

@@ -7,7 +7,6 @@ use std::{
 
 use rand::Rng;
 use rug::{
-    integer::IntegerExt64,
     ops::{Pow, RemRounding},
     Complete, Integer as MultiPrecisionInteger,
 };
@@ -260,7 +259,9 @@ impl ToFiniteField<u64> for Integer {
                 }
             }
             &Integer::Double(n) => field.to_element(n.rem_euclid(field.get_prime() as i128) as u64),
-            Integer::Large(r) => field.to_element(r.mod_u64(field.get_prime())),
+            Integer::Large(r) => {
+                field.to_element(r.rem_euc(field.get_prime()).complete().to_u64().unwrap())
+            }
         }
     }
 }
@@ -292,7 +293,7 @@ impl ToFiniteField<Mersenne64> for Integer {
         match self {
             &Integer::Natural(n) => n.rem_euclid(Mersenne64::PRIME as i64) as u64,
             &Integer::Double(n) => n.rem_euclid(Mersenne64::PRIME as i128) as u64,
-            Integer::Large(r) => r.mod_u64(Mersenne64::PRIME),
+            Integer::Large(r) => r.rem_euc(Mersenne64::PRIME).complete().to_u64().unwrap(),
         }
     }
 }

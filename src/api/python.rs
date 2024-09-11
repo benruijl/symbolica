@@ -9963,6 +9963,8 @@ impl PythonNumericalIntegrator {
 }
 
 /// A graph that supported directional edges, parallel edges, self-edges and custom data on the nodes and edges.
+///
+/// Warning: modifying the graph if it is contained in a `dict` or `set` will invalidate the hash.
 #[pyclass(name = "Graph", module = "symbolica")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct PythonGraph {
@@ -10093,6 +10095,68 @@ impl PythonGraph {
             .map_err(|e| exceptions::PyValueError::new_err(e))
     }
 
+    /// Set the data of the node at index `index`, returning the old data.
+    pub fn set_node_data(
+        &mut self,
+        index: isize,
+        data: PythonExpression,
+    ) -> PyResult<PythonExpression> {
+        if index.unsigned_abs() < self.graph.nodes().len() {
+            let n = if index < 0 {
+                self.graph.nodes().len() - index.abs() as usize
+            } else {
+                index as usize
+            };
+            Ok(self.graph.set_node_data(n, data.expr).into())
+        } else {
+            Err(PyIndexError::new_err(format!(
+                "Index {} out of bounds: the graph only has {} nodes.",
+                index,
+                self.graph.nodes().len(),
+            )))
+        }
+    }
+
+    /// Set the data of the edge at index `index`, returning the old data.
+    pub fn set_edge_data(
+        &mut self,
+        index: isize,
+        data: PythonExpression,
+    ) -> PyResult<PythonExpression> {
+        if index.unsigned_abs() < self.graph.edges().len() {
+            let e = if index < 0 {
+                self.graph.edges().len() - index.abs() as usize
+            } else {
+                index as usize
+            };
+            Ok(self.graph.set_edge_data(e, data.expr).into())
+        } else {
+            Err(PyIndexError::new_err(format!(
+                "Index {} out of bounds: the graph only has {} edges.",
+                index,
+                self.graph.edges().len(),
+            )))
+        }
+    }
+
+    /// Set the directed status of the edge at index `index`, returning the old value.
+    pub fn set_directed(&mut self, index: isize, directed: bool) -> PyResult<bool> {
+        if index.unsigned_abs() < self.graph.edges().len() {
+            let e = if index < 0 {
+                self.graph.edges().len() - index.abs() as usize
+            } else {
+                index as usize
+            };
+            Ok(self.graph.set_directed(e, directed).into())
+        } else {
+            Err(PyIndexError::new_err(format!(
+                "Index {} out of bounds: the graph only has {} edges.",
+                index,
+                self.graph.edges().len(),
+            )))
+        }
+    }
+
     /// Get the `idx`th node.
     fn __getitem__(&self, idx: isize) -> PyResult<(Vec<usize>, PythonExpression)> {
         self.node(idx)
@@ -10166,6 +10230,11 @@ impl PythonGraph {
             Atom::new_num(c.automorphism_group_size).into(),
             c.orbit,
         )
+    }
+
+    /// Sort and relabel the edges of the graph, keeping the vertices fixed.
+    pub fn canonize_edges(&mut self) {
+        self.graph.canonize_edges();
     }
 
     /// Return true `iff` the graph is isomorphic to `other`.

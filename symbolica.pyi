@@ -3319,7 +3319,10 @@ class RandomNumberGenerator:
 
 
 class Graph:
-    """A graph that supported directional edges, parallel edges, self-edges and expression data on the nodes and edges."""
+    """A graph that supported directional edges, parallel edges, self-edges and expression data on the nodes and edges.
+
+    Warning: modifying the graph if it is contained in a `dict` or `set` will invalidate the hash.
+    """
 
     def __new__(_cls):
         """Create a new empty graph."""
@@ -3420,8 +3423,20 @@ class Graph:
         Optionally, the edge can be set as directed. The default data is the number 0.
         """
 
+    def set_node_data(self, index: int, data: Expression | int) -> Expression:
+        """Set the data of the node at index `index`, returning the old data."""
+
+    def set_edge_data(self, index: int, data: Expression | int) -> Expression:
+        """Set the data of the edge at index `index`, returning the old data."""
+
+    def set_directed(self, index: int, directed: bool) -> bool:
+        """Set the directed status of the edge at index `index`, returning the old value."""
+
     def canonize(self) -> Tuple[Graph, Sequence[int], Expression, Sequence[int]]:
         """Write the graph in a canonical form. Returns the canonicalized graph, the vertex map, the automorphism group size, and the orbit."""
+
+    def canonize_edges(self) -> None:
+        """Sort and relabel the edges of the graph, keeping the vertices fixed."""
 
     def is_isomorphic(self, other: Graph) -> bool:
         """Check if the graph is isomorphic to another graph."""

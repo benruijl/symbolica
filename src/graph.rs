@@ -277,8 +277,26 @@ impl<N, E> Graph<N, E> {
             data,
         });
         self.nodes[source].edges.push(index);
-        self.nodes[target].edges.push(index);
+
+        if source != target {
+            self.nodes[target].edges.push(index);
+        }
         Ok(index)
+    }
+
+    /// Set the data of the node at index `index`, returning the old data.
+    pub fn set_node_data(&mut self, index: usize, data: N) -> N {
+        std::mem::replace(&mut self.nodes[index].data, data)
+    }
+
+    /// Set the data of the edge at index `index`, returning the old data.
+    pub fn set_edge_data(&mut self, index: usize, data: E) -> E {
+        std::mem::replace(&mut self.edges[index].data, data)
+    }
+
+    /// Set the directed status of the edge at index `index`, returning the old value.
+    pub fn set_directed(&mut self, index: usize, directed: bool) -> bool {
+        std::mem::replace(&mut self.edges[index].directed, directed)
     }
 
     /// Delete the last added edge. This operation is O(1).
@@ -426,6 +444,22 @@ impl<N, E: Eq + Ord + Hash> Graph<N, E> {
         }
 
         count
+    }
+
+    /// Sort and relabel the edges of the graph, keeping the vertices fixed.
+    pub fn canonize_edges(&mut self) {
+        for n in &mut self.nodes {
+            n.edges.clear();
+        }
+
+        self.edges.sort();
+
+        for (i, e) in self.edges.iter().enumerate() {
+            self.nodes[e.vertices.0].edges.push(i);
+            if e.vertices.0 != e.vertices.1 {
+                self.nodes[e.vertices.1].edges.push(i);
+            }
+        }
     }
 }
 
@@ -1385,6 +1419,23 @@ mod test {
         assert_eq!(c.orbit_generators.len(), 2);
         assert_eq!(c.automorphism_group_size, 8);
         assert_eq!(c.graph.edge(0).vertices, (0, 2));
+    }
+
+    #[test]
+    fn canonize_edges() {
+        let mut g = Graph::new();
+        let n0 = g.add_node(0);
+        let n1 = g.add_node(1);
+        let n2 = g.add_node(2);
+
+        g.add_edge(n2, n1, true, 0).unwrap();
+        g.add_edge(n0, n0, false, 0).unwrap();
+        g.add_edge(n0, n1, true, 0).unwrap();
+        g.add_edge(n1, n0, false, 2).unwrap();
+
+        g.canonize_edges();
+
+        assert_eq!(g.node(0).edges, [0, 1, 2]);
     }
 
     #[test]

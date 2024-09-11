@@ -5,7 +5,7 @@ use crate::{
     coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
     domains::rational::Rational,
-    id::{Condition, MatchSettings, Pattern, PatternOrMap, Replacement, WildcardAndRestriction},
+    id::{Condition, MatchSettings, Pattern, PatternOrMap, PatternRestriction, Replacement},
     printer::{AtomPrinter, PrintOptions},
     state::{RecycledAtom, State, Workspace},
 };
@@ -73,7 +73,7 @@ pub enum Transformer {
     ReplaceAll(
         Pattern,
         PatternOrMap,
-        Condition<WildcardAndRestriction>,
+        Condition<PatternRestriction>,
         MatchSettings,
     ),
     /// Apply multiple find-and-replace on the lhs.
@@ -81,7 +81,7 @@ pub enum Transformer {
         Vec<(
             Pattern,
             PatternOrMap,
-            Condition<WildcardAndRestriction>,
+            Condition<PatternRestriction>,
             MatchSettings,
         )>,
     ),
@@ -287,6 +287,17 @@ impl FunView<'_> {
                                 let s = v.get_symbol();
                                 if symbols.map(|x| x.contains(&s)).unwrap_or(false) {
                                     c.extend(a);
+                                } else {
+                                    mul.extend(a);
+                                }
+                            } else if let AtomView::Pow(p) = a {
+                                if let AtomView::Var(v) = p.get_base() {
+                                    let s = v.get_symbol();
+                                    if symbols.map(|x| x.contains(&s)).unwrap_or(false) {
+                                        c.extend(a);
+                                    } else {
+                                        mul.extend(a);
+                                    }
                                 } else {
                                     mul.extend(a);
                                 }
@@ -777,7 +788,7 @@ impl Transformer {
 mod test {
     use crate::{
         atom::{Atom, FunctionBuilder},
-        id::{Condition, Match, MatchSettings, Pattern, PatternRestriction},
+        id::{Condition, Match, MatchSettings, Pattern, WildcardRestriction},
         printer::PrintOptions,
         state::{State, Workspace},
         transformer::StatsOptions,
@@ -903,7 +914,7 @@ mod test {
                             Pattern::parse("x_-1").unwrap().into(),
                             (
                                 State::get_symbol("x_"),
-                                PatternRestriction::Filter(Box::new(|x| {
+                                WildcardRestriction::Filter(Box::new(|x| {
                                     x != &Match::Single(Atom::new_num(0).as_view())
                                 })),
                             )
@@ -924,13 +935,14 @@ mod test {
 
     #[test]
     fn linearize() {
-        let p = Atom::parse("f1(v1+v2,4*v3*v4+3)").unwrap();
+        let p = Atom::parse("f1(v1+v2,4*v3*v4+3*v4/v3)").unwrap();
 
         let out = Transformer::Linearize(Some(vec![State::get_symbol("v3")]))
             .execute(p.as_view())
             .unwrap();
 
-        let r = Atom::parse("f1(v1,3)+f1(v2,3)+4*v3*f1(v1,v4)+4*v3*f1(v2,v4)").unwrap();
+        let r = Atom::parse("4*v3*f1(v1,v4)+4*v3*f1(v2,v4)+3*v3^-1*f1(v1,v4)+3*v3^-1*f1(v2,v4)")
+            .unwrap();
         assert_eq!(out, r);
     }
 

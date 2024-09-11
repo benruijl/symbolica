@@ -47,8 +47,9 @@ use crate::{
     },
     graph::Graph,
     id::{
-        Condition, Match, MatchSettings, MatchStack, Pattern, PatternAtomTreeIterator,
-        PatternOrMap, PatternRestriction, ReplaceIterator, Replacement, WildcardAndRestriction,
+        Condition, ConditionResult, Match, MatchSettings, MatchStack, Pattern,
+        PatternAtomTreeIterator, PatternOrMap, PatternRestriction, ReplaceIterator, Replacement,
+        WildcardRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
     parser::Token,
@@ -1493,11 +1494,11 @@ impl Deref for PythonExpression {
 #[pyclass(name = "PatternRestriction", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonPatternRestriction {
-    pub condition: Condition<WildcardAndRestriction>,
+    pub condition: Condition<PatternRestriction>,
 }
 
-impl From<Condition<WildcardAndRestriction>> for PythonPatternRestriction {
-    fn from(condition: Condition<WildcardAndRestriction>) -> Self {
+impl From<Condition<PatternRestriction>> for PythonPatternRestriction {
+    fn from(condition: Condition<PatternRestriction>) -> Self {
         PythonPatternRestriction { condition }
     }
 }
@@ -1517,6 +1518,44 @@ impl PythonPatternRestriction {
     /// Create a new pattern restriction that takes the logical 'not' of the current restriction.
     pub fn __invert__(&self) -> PythonPatternRestriction {
         (!self.condition.clone()).into()
+    }
+
+    /// Create a pattern restriction based on the current matched variables.
+    /// `match_fn` is a Python function that takes a dictionary of wildcards and their matched values
+    /// and should return an integer. If the integer is less than 0, the restriction is false.
+    /// If the integer is 0, the restriction is inconclusive.
+    /// If the integer is greater than 0, the restriction is true.
+    ///
+    /// If your pattern restriction cannot decide if it holds since not all the required variables
+    /// have been matched, it should return inclusive (0).
+    #[classmethod]
+    pub fn req_matches(_cls: &PyType, match_fn: PyObject) -> PyResult<PythonPatternRestriction> {
+        Ok(PythonPatternRestriction {
+            condition: PatternRestriction::MatchStack(Box::new(move |m| {
+                let matches: HashMap<PythonExpression, PythonExpression> = m
+                    .get_matches()
+                    .iter()
+                    .map(|(s, t)| (Atom::new_var(*s).into(), t.to_atom().into()))
+                    .collect();
+
+                let r = Python::with_gil(|py| {
+                    match_fn
+                        .call(py, (matches,), None)
+                        .expect("Bad callback function")
+                        .extract::<isize>(py)
+                        .expect("Pattern comparison does not return an integer")
+                });
+
+                if r < 0 {
+                    false.into()
+                } else if r == 0 {
+                    ConditionResult::Inconclusive
+                } else {
+                    true.into()
+                }
+            }))
+            .into(),
+        })
     }
 }
 
@@ -1711,7 +1750,7 @@ macro_rules! req_cmp {
                 Ok(PythonPatternRestriction {
                     condition: (
                         name,
-                        PatternRestriction::Filter(Box::new(move |v: &Match| {
+                        WildcardRestriction::Filter(Box::new(move |v: &Match| {
                             let k = num.expr.as_view();
 
                             if let Match::Single(m) = v {
@@ -1776,7 +1815,7 @@ macro_rules! req_wc_cmp {
         Ok(PythonPatternRestriction {
             condition: (
                 id,
-                PatternRestriction::Cmp(
+                WildcardRestriction::Cmp(
                     other_id,
                     Box::new(move |m1: &Match, m2: &Match| {
                         if let Match::Single(a1) = m1 {
@@ -2506,7 +2545,7 @@ impl PythonExpression {
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: (name, PatternRestriction::Length(min_length, max_length)).into(),
+                    condition: (name, WildcardRestriction::Length(min_length, max_length)).into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -2540,7 +2579,7 @@ impl PythonExpression {
                 Ok(PythonPatternRestriction {
                     condition: (
                         name,
-                        PatternRestriction::IsAtomType(match atom_type {
+                        WildcardRestriction::IsAtomType(match atom_type {
                             PythonAtomType::Num => AtomType::Num,
                             PythonAtomType::Var => AtomType::Var,
                             PythonAtomType::Add => AtomType::Add,
@@ -2571,7 +2610,7 @@ impl PythonExpression {
                 }
 
                 Ok(PythonPatternRestriction {
-                    condition: (name, PatternRestriction::IsLiteralWildcard(name)).into(),
+                    condition: (name, WildcardRestriction::IsLiteralWildcard(name)).into(),
                 })
             }
             _ => Err(exceptions::PyTypeError::new_err(
@@ -2741,7 +2780,7 @@ impl PythonExpression {
         Ok(PythonPatternRestriction {
             condition: (
                 id,
-                PatternRestriction::Filter(Box::new(move |m| {
+                WildcardRestriction::Filter(Box::new(move |m| {
                     let data: PythonExpression = m.to_atom().into();
 
                     Python::with_gil(|py| {
@@ -2901,7 +2940,7 @@ impl PythonExpression {
         Ok(PythonPatternRestriction {
             condition: (
                 id,
-                PatternRestriction::Cmp(
+                WildcardRestriction::Cmp(
                     other_id,
                     Box::new(move |m1, m2| {
                         let data1: PythonExpression = m1.to_atom().into();
@@ -4284,7 +4323,7 @@ impl PythonExpression {
 pub struct PythonReplacement {
     pattern: Pattern,
     rhs: PatternOrMap,
-    cond: Condition<WildcardAndRestriction>,
+    cond: Condition<PatternRestriction>,
     settings: MatchSettings,
 }
 
@@ -4756,12 +4795,7 @@ impl PythonAtomIterator {
     }
 }
 
-type OwnedMatch = (
-    Pattern,
-    Atom,
-    Condition<WildcardAndRestriction>,
-    MatchSettings,
-);
+type OwnedMatch = (Pattern, Atom, Condition<PatternRestriction>, MatchSettings);
 type MatchIterator<'a> = PatternAtomTreeIterator<'a, 'a>;
 
 self_cell!(
@@ -4798,7 +4832,7 @@ type OwnedReplace = (
     Pattern,
     Atom,
     PatternOrMap,
-    Condition<WildcardAndRestriction>,
+    Condition<PatternRestriction>,
     MatchSettings,
 );
 type ReplaceIteratorOne<'a> = ReplaceIterator<'a, 'a>;

@@ -1319,6 +1319,38 @@ class PatternRestriction:
     def __invert__(self) -> PatternRestriction:
         """Create a new pattern restriction that takes the logical 'not' of the current restriction."""
 
+    @classmethod
+    def req_matches(_cls, match_fn: Callable[[dict[Expression, Expression]], int]) -> PatternRestriction:
+        """Create a pattern restriction based on the current matched variables.
+        `match_fn` is a Python function that takes a dictionary of wildcards and their matched values
+        and should return an integer. If the integer is less than 0, the restriction is false.
+        If the integer is 0, the restriction is inconclusive.
+        If the integer is greater than 0, the restriction is true.
+
+        If your pattern restriction cannot decide if it holds since not all the required variables
+        have been matched, it should return inclusive (0).
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> f, x_, y_, z_ = S('f', 'x_', 'y_', 'z_')
+        >>>
+        >>> def filter(m: dict[Expression, Expression]) -> int:
+        >>>    if x_ in m and y_ in m:
+        >>>        if m[x_] > m[y_]:
+        >>>            return -1  # no match
+        >>>        if z_ in m:
+        >>>            if m[y_] > m[z_]:
+        >>>                return -1
+        >>>            return 1  # match
+        >>>
+        >>>    return 0  # inconclusive
+        >>>
+        >>>
+        >>> e = f(1, 2, 3).replace_all(f(x_, y_, z_), 1,
+        >>>         PatternRestriction.req_matches(filter))
+        """
+
 
 class CompareOp:
     """One of the following comparison operators: `<`,`>`,`<=`,`>=`,`==`,`!=`."""

@@ -56,7 +56,7 @@ impl std::fmt::Debug for PatternOrMap {
 pub struct Replacement<'a> {
     pat: &'a Pattern,
     rhs: &'a PatternOrMap,
-    conditions: Option<&'a Condition<WildcardAndRestriction>>,
+    conditions: Option<&'a Condition<PatternRestriction>>,
     settings: Option<&'a MatchSettings>,
 }
 
@@ -70,7 +70,7 @@ impl<'a> Replacement<'a> {
         }
     }
 
-    pub fn with_conditions(mut self, conditions: &'a Condition<WildcardAndRestriction>) -> Self {
+    pub fn with_conditions(mut self, conditions: &'a Condition<PatternRestriction>) -> Self {
         self.conditions = Some(conditions);
         self
     }
@@ -109,7 +109,7 @@ impl Atom {
         &self,
         pattern: &Pattern,
         rhs: &PatternOrMap,
-        conditions: Option<&Condition<WildcardAndRestriction>>,
+        conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
     ) -> Atom {
         self.as_view()
@@ -121,7 +121,7 @@ impl Atom {
         &self,
         pattern: &Pattern,
         rhs: &PatternOrMap,
-        conditions: Option<&Condition<WildcardAndRestriction>>,
+        conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
         out: &mut Atom,
     ) -> bool {
@@ -273,7 +273,7 @@ impl<'a> AtomView<'a> {
         &self,
         pattern: &Pattern,
         rhs: &PatternOrMap,
-        conditions: Option<&Condition<WildcardAndRestriction>>,
+        conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
     ) -> Atom {
         pattern.replace_all(*self, rhs, conditions, settings)
@@ -284,7 +284,7 @@ impl<'a> AtomView<'a> {
         &self,
         pattern: &Pattern,
         rhs: &PatternOrMap,
-        conditions: Option<&Condition<WildcardAndRestriction>>,
+        conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
         out: &mut Atom,
     ) -> bool {
@@ -1098,7 +1098,7 @@ impl Pattern {
         &'a self,
         target: AtomView<'a>,
         rhs: &'a PatternOrMap,
-        conditions: &'a Condition<WildcardAndRestriction>,
+        conditions: &'a Condition<PatternRestriction>,
         settings: &'a MatchSettings,
     ) -> ReplaceIterator<'a, 'a> {
         ReplaceIterator::new(self, target, rhs, conditions, settings)
@@ -1110,7 +1110,7 @@ impl Pattern {
         &self,
         target: AtomView<'_>,
         rhs: &PatternOrMap,
-        conditions: Option<&Condition<WildcardAndRestriction>>,
+        conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
     ) -> Atom {
         Workspace::get_local().with(|ws| {
@@ -1126,7 +1126,7 @@ impl Pattern {
         &self,
         target: AtomView<'_>,
         rhs: &PatternOrMap,
-        conditions: Option<&Condition<WildcardAndRestriction>>,
+        conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
         out: &mut Atom,
     ) -> bool {
@@ -1141,7 +1141,7 @@ impl Pattern {
         target: AtomView<'_>,
         rhs: &PatternOrMap,
         workspace: &Workspace,
-        conditions: Option<&Condition<WildcardAndRestriction>>,
+        conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
         out: &mut Atom,
     ) -> bool {
@@ -1167,7 +1167,7 @@ impl Pattern {
     pub fn pattern_match<'a: 'b, 'b>(
         &'b self,
         target: AtomView<'a>,
-        conditions: &'b Condition<WildcardAndRestriction>,
+        conditions: &'b Condition<PatternRestriction>,
         settings: &'b MatchSettings,
     ) -> PatternAtomTreeIterator<'a, 'b> {
         PatternAtomTreeIterator::new(self, target, conditions, settings)
@@ -1188,20 +1188,24 @@ impl std::fmt::Debug for Pattern {
     }
 }
 
-pub trait FilterFn: for<'a, 'b> Fn(&'a Match<'b>) -> bool + DynClone + Send + Sync {}
+pub trait FilterFn: Fn(&Match) -> bool + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(FilterFn);
-impl<T: Clone + Send + Sync + for<'a, 'b> Fn(&'a Match<'b>) -> bool> FilterFn for T {}
+impl<T: Clone + Send + Sync + Fn(&Match) -> bool> FilterFn for T {}
 
-pub trait CmpFn: for<'a, 'b> Fn(&Match<'_>, &Match<'_>) -> bool + DynClone + Send + Sync {}
+pub trait CmpFn: Fn(&Match, &Match) -> bool + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(CmpFn);
-impl<T: Clone + Send + Sync + for<'a, 'b> Fn(&Match<'_>, &Match<'_>) -> bool> CmpFn for T {}
+impl<T: Clone + Send + Sync + Fn(&Match, &Match) -> bool> CmpFn for T {}
+
+pub trait MatchStackFn: Fn(&MatchStack) -> ConditionResult + DynClone + Send + Sync {}
+dyn_clone::clone_trait_object!(MatchStackFn);
+impl<T: Clone + Send + Sync + Fn(&MatchStack) -> ConditionResult> MatchStackFn for T {}
 
 /// Restrictions for a wildcard. Note that a length restriction
 /// applies at any level and therefore
 /// `x_*f(x_) : length(x) == 2`
 /// does not match to `x*y*f(x*y)`, since the pattern `x_` has length
 /// 1 inside the function argument.
-pub enum PatternRestriction {
+pub enum WildcardRestriction {
     Length(usize, Option<usize>), // min-max range
     IsAtomType(AtomType),
     IsLiteralWildcard(Symbol),
@@ -1210,7 +1214,38 @@ pub enum PatternRestriction {
     NotGreedy,
 }
 
-pub type WildcardAndRestriction = (Symbol, PatternRestriction);
+pub type WildcardAndRestriction = (Symbol, WildcardRestriction);
+
+pub enum PatternRestriction {
+    /// A restriction for a wildcard.
+    Wildcard(WildcardAndRestriction),
+    /// A function that checks if the restriction is met based on the currently matched wildcards.
+    /// If more information is needed to test the restriction, the function should return `Inconclusive`.
+    MatchStack(Box<dyn MatchStackFn>),
+}
+
+impl Clone for PatternRestriction {
+    fn clone(&self) -> Self {
+        match self {
+            PatternRestriction::Wildcard(w) => PatternRestriction::Wildcard(w.clone()),
+            PatternRestriction::MatchStack(f) => {
+                PatternRestriction::MatchStack(dyn_clone::clone_box(f))
+            }
+        }
+    }
+}
+
+impl From<WildcardAndRestriction> for PatternRestriction {
+    fn from(value: WildcardAndRestriction) -> Self {
+        PatternRestriction::Wildcard(value)
+    }
+}
+
+impl From<WildcardAndRestriction> for Condition<PatternRestriction> {
+    fn from(value: WildcardAndRestriction) -> Self {
+        PatternRestriction::Wildcard(value).into()
+    }
+}
 
 /// A logical expression.
 #[derive(Clone, Debug, Default)]
@@ -1309,7 +1344,7 @@ impl From<bool> for ConditionResult {
     }
 }
 
-impl Condition<WildcardAndRestriction> {
+impl Condition<PatternRestriction> {
     /// Check if the conditions on `var` are met
     fn check_possible(&self, var: Symbol, value: &Match, stack: &MatchStack) -> ConditionResult {
         match self {
@@ -1322,10 +1357,17 @@ impl Condition<WildcardAndRestriction> {
             Condition::Not(n) => !n.check_possible(var, value, stack),
             Condition::True => ConditionResult::True,
             Condition::False => ConditionResult::False,
-            Condition::Yield((v, r)) => {
+            Condition::Yield(restriction) => {
+                let (v, r) = match restriction {
+                    PatternRestriction::Wildcard((v, r)) => (v, r),
+                    PatternRestriction::MatchStack(mf) => {
+                        return mf(stack);
+                    }
+                };
+
                 if *v != var {
                     match r {
-                        PatternRestriction::Cmp(v, _) if *v == var => {}
+                        WildcardRestriction::Cmp(v, _) if *v == var => {}
                         _ => {
                             return ConditionResult::Inconclusive;
                         }
@@ -1333,7 +1375,7 @@ impl Condition<WildcardAndRestriction> {
                 }
 
                 match r {
-                    PatternRestriction::IsAtomType(t) => {
+                    WildcardRestriction::IsAtomType(t) => {
                         let is_type = match t {
                             AtomType::Num => matches!(value, Match::Single(AtomView::Num(_))),
                             AtomType::Var => matches!(value, Match::Single(AtomView::Var(_))),
@@ -1355,16 +1397,16 @@ impl Condition<WildcardAndRestriction> {
                             AtomType::Fun => matches!(value, Match::Single(AtomView::Fun(_))),
                         };
 
-                        (is_type == matches!(r, PatternRestriction::IsAtomType(_))).into()
+                        (is_type == matches!(r, WildcardRestriction::IsAtomType(_))).into()
                     }
-                    PatternRestriction::IsLiteralWildcard(wc) => {
+                    WildcardRestriction::IsLiteralWildcard(wc) => {
                         if let Match::Single(AtomView::Var(v)) = value {
                             (wc == &v.get_symbol()).into()
                         } else {
                             false.into()
                         }
                     }
-                    PatternRestriction::Length(min, max) => match &value {
+                    WildcardRestriction::Length(min, max) => match &value {
                         Match::Single(_) | Match::FunctionName(_) => {
                             (*min <= 1 && max.map(|m| m >= 1).unwrap_or(true)).into()
                         }
@@ -1372,8 +1414,8 @@ impl Condition<WildcardAndRestriction> {
                             && max.map(|m| m >= slice.len()).unwrap_or(true))
                         .into(),
                     },
-                    PatternRestriction::Filter(f) => f(value).into(),
-                    PatternRestriction::Cmp(v2, f) => {
+                    WildcardRestriction::Filter(f) => f(value).into(),
+                    WildcardRestriction::Cmp(v2, f) => {
                         if *v == var {
                             if let Some((_, value2)) = stack.stack.iter().find(|(k, _)| k == v2) {
                                 f(value, value2).into()
@@ -1381,12 +1423,13 @@ impl Condition<WildcardAndRestriction> {
                                 ConditionResult::Inconclusive
                             }
                         } else if let Some((_, value2)) = stack.stack.iter().find(|(k, _)| k == v) {
+                            // var == v2 at this point
                             f(value2, value).into()
                         } else {
                             ConditionResult::Inconclusive
                         }
                     }
-                    PatternRestriction::NotGreedy => true.into(),
+                    WildcardRestriction::NotGreedy => true.into(),
                 }
             }
         }
@@ -1437,17 +1480,24 @@ impl Condition<WildcardAndRestriction> {
                 (None, None)
             }
             Condition::True | Condition::False => (None, None),
-            Condition::Yield((v, r)) => {
+            Condition::Yield(restriction) => {
+                let (v, r) = match restriction {
+                    PatternRestriction::Wildcard((v, r)) => (v, r),
+                    PatternRestriction::MatchStack(_) => {
+                        return (None, None);
+                    }
+                };
+
                 if *v != var {
                     return (None, None);
                 }
 
                 match r {
-                    PatternRestriction::Length(min, max) => (Some(*min), *max),
-                    PatternRestriction::IsAtomType(
+                    WildcardRestriction::Length(min, max) => (Some(*min), *max),
+                    WildcardRestriction::IsAtomType(
                         AtomType::Var | AtomType::Num | AtomType::Fun,
                     )
-                    | PatternRestriction::IsLiteralWildcard(_) => (Some(1), Some(1)),
+                    | WildcardRestriction::IsLiteralWildcard(_) => (Some(1), Some(1)),
                     _ => (None, None),
                 }
             }
@@ -1455,7 +1505,7 @@ impl Condition<WildcardAndRestriction> {
     }
 }
 
-impl Clone for PatternRestriction {
+impl Clone for WildcardRestriction {
     fn clone(&self) -> Self {
         match self {
             Self::Length(min, max) => Self::Length(*min, *max),
@@ -1468,7 +1518,7 @@ impl Clone for PatternRestriction {
     }
 }
 
-impl std::fmt::Debug for PatternRestriction {
+impl std::fmt::Debug for WildcardRestriction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Length(arg0, arg1) => f.debug_tuple("Length").field(arg0).field(arg1).finish(),
@@ -1479,6 +1529,15 @@ impl std::fmt::Debug for PatternRestriction {
             Self::Filter(_) => f.debug_tuple("Filter").finish(),
             Self::Cmp(arg0, _) => f.debug_tuple("Cmp").field(arg0).finish(),
             Self::NotGreedy => write!(f, "NotGreedy"),
+        }
+    }
+}
+
+impl std::fmt::Debug for PatternRestriction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PatternRestriction::Wildcard(arg0) => f.debug_tuple("Wildcard").field(arg0).finish(),
+            PatternRestriction::MatchStack(_) => f.debug_tuple("Match").finish(),
         }
     }
 }
@@ -1622,7 +1681,7 @@ pub struct MatchSettings {
 /// before inserting.
 pub struct MatchStack<'a, 'b> {
     stack: Vec<(Symbol, Match<'a>)>,
-    conditions: &'b Condition<WildcardAndRestriction>,
+    conditions: &'b Condition<PatternRestriction>,
     settings: &'b MatchSettings,
 }
 
@@ -1651,7 +1710,7 @@ impl<'a, 'b> std::fmt::Debug for MatchStack<'a, 'b> {
 impl<'a, 'b> MatchStack<'a, 'b> {
     /// Create a new match stack.
     pub fn new(
-        conditions: &'b Condition<WildcardAndRestriction>,
+        conditions: &'b Condition<PatternRestriction>,
         settings: &'b MatchSettings,
     ) -> MatchStack<'a, 'b> {
         MatchStack {
@@ -1677,12 +1736,17 @@ impl<'a, 'b> MatchStack<'a, 'b> {
 
         // test whether the current value passes all conditions
         // or returns an inconclusive result
-        if self.conditions.check_possible(key, &value, self) == ConditionResult::False {
-            return None;
-        }
-
         self.stack.push((key, value));
-        Some(self.stack.len() - 1)
+        if self
+            .conditions
+            .check_possible(key, &self.stack.last().unwrap().1, self)
+            == ConditionResult::False
+        {
+            self.stack.pop();
+            None
+        } else {
+            Some(self.stack.len() - 1)
+        }
     }
 
     /// Get the mapped value for the wildcard `key`.
@@ -2548,7 +2612,7 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
     pub fn new(
         pattern: &'b Pattern,
         target: AtomView<'a>,
-        conditions: &'b Condition<WildcardAndRestriction>,
+        conditions: &'b Condition<PatternRestriction>,
         settings: &'b MatchSettings,
     ) -> PatternAtomTreeIterator<'a, 'b> {
         PatternAtomTreeIterator {
@@ -2615,7 +2679,7 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
         pattern: &'b Pattern,
         target: AtomView<'a>,
         rhs: &'b PatternOrMap,
-        conditions: &'a Condition<WildcardAndRestriction>,
+        conditions: &'a Condition<PatternRestriction>,
         settings: &'a MatchSettings,
     ) -> ReplaceIterator<'a, 'b> {
         ReplaceIterator {
@@ -2785,7 +2849,10 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 mod test {
     use crate::{
         atom::Atom,
-        id::{MatchSettings, PatternOrMap, Replacement},
+        id::{
+            ConditionResult, MatchSettings, PatternOrMap, PatternRestriction, Replacement,
+            WildcardRestriction,
+        },
         state::State,
     };
 
@@ -2861,5 +2928,60 @@ mod test {
         let r = p.replace_all(a.as_view(), &rhs, None, None);
         let res = Atom::parse("v1(mu2)*v2(mu3)").unwrap();
         assert_eq!(r, res);
+    }
+
+    #[test]
+    fn repeat_replace() {
+        let mut a = Atom::parse("f(10)").unwrap();
+        let p1 = Pattern::parse("f(v1_)").unwrap();
+        let rhs1 = Pattern::parse("f(v1_ - 1)").unwrap().into();
+
+        let rest = (
+            State::get_symbol("v1_"),
+            WildcardRestriction::Filter(Box::new(|x| {
+                let n: Result<i64, _> = x.to_atom().try_into();
+                if let Ok(y) = n {
+                    y > 0i64
+                } else {
+                    false
+                }
+            })),
+        )
+            .into();
+
+        a.repeat_map(|e| e.replace_all(&p1, &rhs1, Some(&rest), None));
+
+        let res = Atom::parse("f(0)").unwrap();
+        assert_eq!(a, res);
+    }
+
+    #[test]
+    fn match_stack_filter() {
+        let a = Atom::parse("f(1,2,3,4)").unwrap();
+        let p1 = Pattern::parse("f(v1_,v2_,v3_,v4_)").unwrap();
+        let rhs1 = Pattern::parse("f(v4_,v3_,v2_,v1_)").unwrap().into();
+
+        let rest = PatternRestriction::MatchStack(Box::new(|m| {
+            for x in m.get_matches().windows(2) {
+                if x[0].1.to_atom() >= x[1].1.to_atom() {
+                    return false.into();
+                }
+            }
+
+            if m.get_matches().len() == 4 {
+                true.into()
+            } else {
+                ConditionResult::Inconclusive
+            }
+        }))
+        .into();
+
+        let r = a.replace_all(&p1, &rhs1, Some(&rest), None);
+        let res = Atom::parse("f(4,3,2,1)").unwrap();
+        assert_eq!(r, res);
+
+        let b = Atom::parse("f(1,2,4,3)").unwrap();
+        let r = b.replace_all(&p1, &rhs1, Some(&rest), None);
+        assert_eq!(r, b);
     }
 }

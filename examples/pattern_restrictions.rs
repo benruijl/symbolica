@@ -2,7 +2,7 @@ use symbolica::{
     atom::{Atom, AtomView},
     coefficient::CoefficientView,
     domains::finite_field,
-    id::{Condition, Match, MatchSettings, PatternRestriction},
+    id::{Condition, Match, MatchSettings, WildcardRestriction},
     state::State,
 };
 fn main() {
@@ -16,11 +16,11 @@ fn main() {
     let z = State::get_symbol("z__");
     let w = State::get_symbol("w__");
 
-    let conditions = Condition::from((x, PatternRestriction::Length(0, Some(2))))
-        & (y, PatternRestriction::Length(0, Some(4)))
+    let conditions = Condition::from((x, WildcardRestriction::Length(0, Some(2))))
+        & (y, WildcardRestriction::Length(0, Some(4)))
         & (
             y,
-            PatternRestriction::Cmp(
+            WildcardRestriction::Cmp(
                 x,
                 Box::new(|y, x| {
                     let len_x = match x {
@@ -37,7 +37,7 @@ fn main() {
         )
         & (
             z,
-            PatternRestriction::Filter(Box::new(|x: &Match| {
+            WildcardRestriction::Filter(Box::new(|x: &Match| {
                 if let Match::Single(AtomView::Num(num)) = x {
                     if let CoefficientView::Natural(x, y) = num.get_coeff_view() {
                         y == 1 && x > 0 && finite_field::is_prime_u64(x as u64)
@@ -49,7 +49,7 @@ fn main() {
                 }
             })),
         )
-        & (w, PatternRestriction::Length(0, None));
+        & (w, WildcardRestriction::Length(0, None));
     let settings = MatchSettings::default();
 
     println!(

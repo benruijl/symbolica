@@ -589,7 +589,7 @@ mod test {
 
     use crate::{
         atom::{Atom, AtomType},
-        id::{Pattern, PatternRestriction},
+        id::{Pattern, WildcardRestriction},
         state::State,
         streaming::{TermStreamer, TermStreamerConfig},
     };
@@ -648,7 +648,7 @@ mod test {
                     Some(
                         &(
                             State::get_symbol("v1_"),
-                            PatternRestriction::IsAtomType(AtomType::Var),
+                            WildcardRestriction::IsAtomType(AtomType::Var),
                         )
                             .into(),
                     ),

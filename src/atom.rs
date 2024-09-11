@@ -616,6 +616,18 @@ impl Atom {
         self.as_view().is_one()
     }
 
+    /// Repeatedly apply an operation on the atom until the atom no longer changes.
+    pub fn repeat_map<F: Fn(AtomView) -> Atom>(&mut self, op: F) {
+        let mut res;
+        loop {
+            res = op(self.as_view());
+            if res == *self {
+                break;
+            }
+            std::mem::swap(self, &mut res);
+        }
+    }
+
     #[inline]
     pub fn to_num(&mut self, coeff: Coefficient) -> &mut Num {
         let buffer = std::mem::replace(self, Atom::Zero).into_raw();

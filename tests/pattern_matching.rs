@@ -1,6 +1,6 @@
 use symbolica::{
     atom::{Atom, AtomView},
-    id::{Condition, Match, MatchSettings, Pattern, PatternRestriction},
+    id::{Condition, Match, MatchSettings, Pattern, WildcardRestriction},
     state::{RecycledAtom, State},
 };
 
@@ -16,7 +16,7 @@ fn fibonacci() {
     // prepare the pattern restriction `x_ > 1`
     let restrictions = (
         State::get_symbol("x_"),
-        PatternRestriction::Filter(Box::new(|v: &Match| match v {
+        WildcardRestriction::Filter(Box::new(|v: &Match| match v {
             Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
             _ => false,
         })),

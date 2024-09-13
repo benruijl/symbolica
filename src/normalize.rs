@@ -1121,6 +1121,14 @@ impl<'a> AtomView<'a> {
                     ff.set_normalized(true);
                     std::mem::swap(ff, out_f);
                 }
+
+                if let Some(f) = State::get_normalization_function(id) {
+                    let mut fs = workspace.new_atom();
+                    if f(out.as_view(), &mut fs) {
+                        std::mem::swap(out, fs.deref_mut());
+                    }
+                    debug_assert!(!out.as_view().needs_normalization());
+                }
             }
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();

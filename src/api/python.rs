@@ -173,13 +173,14 @@ fn get_license_key(email: String) -> PyResult<()> {
 }
 
 /// Shorthand notation for :func:`Expression.symbol`.
-#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None))]
+#[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None))]
 fn symbol_shorthand(
     names: &PyTuple,
     is_symmetric: Option<bool>,
     is_antisymmetric: Option<bool>,
     is_cyclesymmetric: Option<bool>,
     is_linear: Option<bool>,
+    custom_normalization: Option<PythonTransformer>,
     py: Python<'_>,
 ) -> PyResult<PyObject> {
     PythonExpression::symbol(
@@ -190,6 +191,7 @@ fn symbol_shorthand(
         is_antisymmetric,
         is_cyclesymmetric,
         is_linear,
+        custom_normalization,
     )
 }
 
@@ -1848,7 +1850,8 @@ impl PythonExpression {
     /// cyclesymmetric using `is_cyclesymmetric=True` and
     /// multilinear using `is_linear=True`. If no attributes
     /// are specified, the attributes are inherited from the symbol if it was already defined,
-    /// otherwise all attributes are set to `false`.
+    /// otherwise all attributes are set to `false`.  A transformer that is executed
+    /// after normalization can be defined with `custom_normalization`.
     ///
     /// Once attributes are defined on a symbol, they cannot be redefined later.
     ///
@@ -1877,7 +1880,12 @@ impl PythonExpression {
     /// >>> dot = Expression.symbol('dot', is_symmetric=True, is_linear=True)
     /// >>> e = dot(p2+2*p3,p1+3*p2-p3)
     /// dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
-    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None))]
+    ///
+    ///
+    /// Define a custom normalization function:
+    /// >>> e = S('real_log', custom_normalization=Transformer().replace_all(E("x_(exp(x1_))"), E("x1_")))
+    /// >>> E("real_log(exp(x)) + real_log(5)")
+    #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None))]
     #[classmethod]
     pub fn symbol(
         _cls: &PyType,
@@ -1887,6 +1895,7 @@ impl PythonExpression {
         is_antisymmetric: Option<bool>,
         is_cyclesymmetric: Option<bool>,
         is_linear: Option<bool>,
+        custom_normalization: Option<PythonTransformer>,
     ) -> PyResult<PyObject> {
         if names.is_empty() {
             return Err(exceptions::PyValueError::new_err(
@@ -1915,6 +1924,7 @@ impl PythonExpression {
             && is_antisymmetric.is_none()
             && is_cyclesymmetric.is_none()
             && is_linear.is_none()
+            && custom_normalization.is_none()
         {
             if names.len() == 1 {
                 let name = names[0].extract::<&str>()?;
@@ -1965,17 +1975,73 @@ impl PythonExpression {
 
         if names.len() == 1 {
             let name = names[0].extract::<&str>()?;
+            let name = name_check(name)?;
 
-            let id = State::get_symbol_with_attributes(name_check(name)?, &opts)
-                .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+            let id = if let Some(f) = custom_normalization {
+                if let Pattern::Transformer(t) = f.expr {
+                    if !t.0.is_none() {
+                        Err(exceptions::PyValueError::new_err(
+                            "Transformer must be unbound",
+                        ))?;
+                    }
+
+                    State::get_symbol_with_attributes_and_function(
+                        name,
+                        &opts,
+                        Box::new(move |input, out| {
+                            Workspace::get_local()
+                                .with(|ws| {
+                                    Transformer::execute_chain(input, &t.1, ws, out).map_err(|e| e)
+                                })
+                                .unwrap();
+                            true
+                        }),
+                    )
+                } else {
+                    return Err(exceptions::PyValueError::new_err("Transformer expected"));
+                }
+            } else {
+                State::get_symbol_with_attributes(name, &opts)
+            }
+            .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+
             let r = PythonExpression::from(Atom::new_var(id));
             Ok(r.into_py(py))
         } else {
             let mut result = vec![];
             for a in names {
                 let name = a.extract::<&str>()?;
-                let id = State::get_symbol_with_attributes(name_check(name)?, &opts)
-                    .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
+                let name = name_check(name)?;
+
+                let id = if let Some(f) = &custom_normalization {
+                    if let Pattern::Transformer(t) = &f.expr {
+                        if !t.0.is_none() {
+                            Err(exceptions::PyValueError::new_err(
+                                "Transformer must be unbound",
+                            ))?;
+                        }
+
+                        let t = t.1.clone();
+                        State::get_symbol_with_attributes_and_function(
+                            name,
+                            &opts,
+                            Box::new(move |input, out| {
+                                Workspace::get_local()
+                                    .with(|ws| {
+                                        Transformer::execute_chain(input, &t, ws, out)
+                                            .map_err(|e| e)
+                                    })
+                                    .unwrap();
+                                true
+                            }),
+                        )
+                    } else {
+                        return Err(exceptions::PyValueError::new_err("Transformer expected"));
+                    }
+                } else {
+                    State::get_symbol_with_attributes(name, &opts)
+                }
+                .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
                 let r = PythonExpression::from(Atom::new_var(id));
                 result.push(r);
             }

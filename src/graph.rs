@@ -147,13 +147,13 @@ impl<N: Display, E: Display> Graph<N, E> {
         for x in &self.edges {
             if x.directed {
                 out.push_str(&format!(
-                    "  {} --> {}[{}];\n",
-                    x.vertices.0, x.vertices.1, x.data
+                    "  {} -->|{}| {};\n",
+                    x.vertices.0, x.data, x.vertices.1,
                 ));
             } else {
                 out.push_str(&format!(
-                    "  {} --- {}[{}];\n",
-                    x.vertices.0, x.vertices.1, x.data
+                    "  {} ---|{}| {};\n",
+                    x.vertices.0, x.data, x.vertices.1,
                 ));
             }
         }

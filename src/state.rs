@@ -17,6 +17,7 @@ use byteorder::LittleEndian;
 use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
+use crate::atom::AtomView;
 use crate::domains::finite_field::Zp64;
 use crate::poly::Variable;
 use crate::{
@@ -54,8 +55,18 @@ impl StateMap {
     }
 }
 
+/// A function that is called after normalization of the arguments.
+/// If the input, the first argument, is normalized, the function should return `false`.
+/// Otherwise, the function must return `true` and set the second argument to the normalized value.
+pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Atom) -> bool + Send + Sync>;
+
+struct SymbolData {
+    name: String,
+    function: Option<NormalizationFunction>,
+}
+
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
-static ID_TO_STR: AppendOnlyVec<(Symbol, String)> = AppendOnlyVec::new();
+static ID_TO_STR: AppendOnlyVec<(Symbol, SymbolData)> = AppendOnlyVec::new();
 static FINITE_FIELDS: AppendOnlyVec<Zp64> = AppendOnlyVec::new();
 static VARIABLE_LISTS: AppendOnlyVec<Arc<Vec<Variable>>> = AppendOnlyVec::new();
 static SYMBOL_OFFSET: AtomicUsize = AtomicUsize::new(0);
@@ -197,7 +208,7 @@ impl State {
         ID_TO_STR
             .iter()
             .skip(SYMBOL_OFFSET.load(Ordering::Relaxed))
-            .map(|s| (s.0, s.1.as_str()))
+            .map(|s| (s.0, s.1.name.as_str()))
     }
 
     /// Returns `true` iff this identifier is defined by Symbolica.
@@ -234,7 +245,13 @@ impl State {
                 // as the state itself is behind a mutex
                 let id = ID_TO_STR.len() - offset;
                 let new_symbol = Symbol::init_var(id as u32, wildcard_level);
-                let id_ret = ID_TO_STR.push((new_symbol, name.into())) - offset;
+                let id_ret = ID_TO_STR.push((
+                    new_symbol,
+                    SymbolData {
+                        name: name.into(),
+                        function: None,
+                    },
+                )) - offset;
                 assert_eq!(id, id_ret);
 
                 v.insert(new_symbol);
@@ -279,7 +296,7 @@ impl State {
                 if r == new_id {
                     Ok(r)
                 } else {
-                    Err(format!("Function {} redefined with new attributes", name).into())
+                    Err(format!("Symbol {} redefined with new attributes", name).into())
                 }
             }
             Entry::Vacant(v) => {
@@ -309,7 +326,13 @@ impl State {
                     attributes.contains(&FunctionAttribute::Linear),
                 );
 
-                let id_ret = ID_TO_STR.push((new_symbol, name.into())) - offset;
+                let id_ret = ID_TO_STR.push((
+                    new_symbol,
+                    SymbolData {
+                        name: name.into(),
+                        function: None,
+                    },
+                )) - offset;
                 assert_eq!(id, id_ret);
 
                 v.insert(new_symbol);
@@ -319,9 +342,86 @@ impl State {
         }
     }
 
+    /// Register a new symbol with the given attributes and a specific function
+    /// that is called after normalization of the arguments. This function cannot
+    /// be exported, and therefore before importing a state, symbols with special
+    /// normalization functions must be registered explicitly.
+    ///
+    /// If the symbol already exists, an error is returned.
+    pub fn get_symbol_with_attributes_and_function<S: AsRef<str>>(
+        name: S,
+        attributes: &[FunctionAttribute],
+        f: NormalizationFunction,
+    ) -> Result<Symbol, String> {
+        STATE
+            .write()
+            .unwrap()
+            .get_symbol_with_attributes_and_function_impl(name.as_ref(), attributes, f)
+    }
+
+    pub(crate) fn get_symbol_with_attributes_and_function_impl(
+        &mut self,
+        name: &str,
+        attributes: &[FunctionAttribute],
+        f: NormalizationFunction,
+    ) -> Result<Symbol, String> {
+        if self.str_to_id.contains_key(name) {
+            Err(format!("Symbol {} already defined", name).into())
+        } else {
+            let offset = SYMBOL_OFFSET.load(Ordering::Relaxed);
+            if ID_TO_STR.len() - offset == u32::MAX as usize - 1 {
+                panic!("Too many variables defined");
+            }
+
+            // there is no synchronization issue since only one thread can insert at a time
+            // as the state itself is behind a mutex
+            let id = ID_TO_STR.len() - offset;
+
+            let mut wildcard_level = 0;
+            for x in name.chars().rev() {
+                if x != '_' {
+                    break;
+                }
+                wildcard_level += 1;
+            }
+
+            let new_symbol = Symbol::init_fn(
+                id as u32,
+                wildcard_level,
+                attributes.contains(&FunctionAttribute::Symmetric),
+                attributes.contains(&FunctionAttribute::Antisymmetric),
+                attributes.contains(&FunctionAttribute::Cyclesymmetric),
+                attributes.contains(&FunctionAttribute::Linear),
+            );
+
+            let id_ret = ID_TO_STR.push((
+                new_symbol,
+                SymbolData {
+                    name: name.into(),
+                    function: Some(f),
+                },
+            )) - offset;
+            assert_eq!(id, id_ret);
+
+            self.str_to_id.insert(name.into(), new_symbol);
+
+            Ok(new_symbol)
+        }
+    }
+
     /// Get the name for a given symbol.
     pub fn get_name(id: Symbol) -> &'static str {
-        &ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)].1
+        &ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)]
+            .1
+            .name
+    }
+
+    /// Get the user-specified normalization function for the symbol.
+    pub fn get_normalization_function(id: Symbol) -> Option<&'static NormalizationFunction> {
+        ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)]
+            .1
+            .function
+            .as_ref()
     }
 
     pub fn get_finite_field(fi: FiniteFieldIndex) -> &'static Zp64 {
@@ -734,6 +834,8 @@ impl Drop for RecycledAtom {
 mod tests {
     use std::io::Cursor;
 
+    use crate::atom::{Atom, AtomView};
+
     use super::State;
 
     #[test]
@@ -743,5 +845,34 @@ mod tests {
 
         let i = State::import(Cursor::new(&export), None).unwrap();
         assert!(i.is_empty());
+    }
+
+    #[test]
+    fn custom_normalization() {
+        let _real_log = State::get_symbol_with_attributes_and_function(
+            "custom_normalization_real_log",
+            &[],
+            Box::new(|input, out| {
+                if let AtomView::Fun(f) = input {
+                    if f.get_nargs() == 1 {
+                        let arg = f.iter().next().unwrap();
+                        if let AtomView::Fun(f2) = arg {
+                            if f2.get_symbol() == State::EXP {
+                                if f2.get_nargs() == 1 {
+                                    out.set_from_view(&f2.iter().next().unwrap());
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                false
+            }),
+        )
+        .unwrap();
+
+        let e = Atom::parse("custom_normalization_real_log(exp(x))").unwrap();
+        assert_eq!(e, Atom::parse("x").unwrap());
     }
 }

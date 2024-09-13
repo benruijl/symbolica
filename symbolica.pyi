@@ -42,7 +42,8 @@ def S(name: str,
       is_symmetric: Optional[bool] = None,
       is_antisymmetric: Optional[bool] = None,
       is_cyclesymmetric: Optional[bool] = None,
-      is_linear: Optional[bool] = None) -> Expression:
+      is_linear: Optional[bool] = None,
+      custom_normalization: Optional[Transformer] = None) -> Expression:
     """Shorthand notation for :func:`Expression.symbol`"""
 
 
@@ -51,7 +52,8 @@ def S(*names: str,
       is_symmetric: Optional[bool] = None,
       is_antisymmetric: Optional[bool] = None,
       is_cyclesymmetric: Optional[bool] = None,
-      is_linear: Optional[bool] = None) -> Sequence[Expression]:
+      is_linear: Optional[bool] = None,
+      custom_normalization: Optional[Transformer] = None) -> Sequence[Expression]:
     """Shorthand notation for :func:`Expression.symbol`"""
 
 
@@ -193,7 +195,8 @@ class Expression:
                is_symmetric: Optional[bool] = None,
                is_antisymmetric: Optional[bool] = None,
                is_cyclesymmetric: Optional[bool] = None,
-               is_linear: Optional[bool] = None) -> Sequence[Expression]:
+               is_linear: Optional[bool] = None,
+               custom_normalization: Optional[Transformer] = None) -> Sequence[Expression]:
         """
         Create new symbols from `names`. Symbols carry information about their attributes.
         The symbol can signal that it is symmetric if it is used as a function
@@ -201,7 +204,8 @@ class Expression:
         cyclesymmetric using `is_cyclesymmetric=True`, and
         multilinear using `is_linear=True`. If no attributes
         are specified, the attributes are inherited from the symbol if it was already defined,
-        otherwise all attributes are set to `false`.
+        otherwise all attributes are set to `false`. A transformer that is executed
+        after normalization can be defined with `custom_normalization`.
 
         Once attributes are defined on a symbol, they cannot be redefined later.
 
@@ -232,19 +236,10 @@ class Expression:
         >>> dot = Expression.symbol('dot', is_symmetric=True, is_linear=True)
         >>> e = dot(p2+2*p3,p1+3*p2-p3)
         dot(p1,p2)+2*dot(p1,p3)+3*dot(p2,p2)-dot(p2,p3)+6*dot(p2,p3)-2*dot(p3,p3)
-        """
 
-    @classmethod
-    def symbols(_cls, *names: str, is_symmetric: Optional[bool] = None, is_antisymmetric: Optional[bool] = None, is_cyclesymmetric: Optional[bool] = None, is_linear: Optional[bool] = None) -> Sequence[Expression]:
-        """
-        Create a Symbolica symbol for every name in `*names`. See `Expression.symbol` for more information.
-
-        Examples
-        --------
-        >>> f, x = Expression.symbol('x', 'f')
-        >>> e = f(1,x)
-        >>> print(e)
-        f(1,x)
+        Define a custom normalization function:
+        >>> e = S('real_log', custom_normalization=Transformer().replace_all(E("x_(exp(x1_))"), E("x1_")))
+        >>> E("real_log(exp(x)) + real_log(5)")
         """
 
     @overload
@@ -3465,7 +3460,7 @@ class Graph:
         """Set the directed status of the edge at index `index`, returning the old value."""
 
     def canonize(self) -> Tuple[Graph, Sequence[int], Expression, Sequence[int]]:
-        """Write the graph in a canonical form. Returns the canonicalized graph, the vertex map, the automorphism group size, and the orbit."""
+        """Write the graph in a canonical form. Returns the canonized graph, the vertex map, the automorphism group size, and the orbit."""
 
     def canonize_edges(self) -> None:
         """Sort and relabel the edges of the graph, keeping the vertices fixed."""

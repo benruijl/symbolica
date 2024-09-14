@@ -2209,6 +2209,11 @@ impl PythonExpression {
         self.expr.clone().into()
     }
 
+    /// Convert the expression into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(self.to_string())
+    }
+
     /// Convert the expression into a human-readable string.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", AtomPrinter::new(self.expr.as_view())))
@@ -4572,6 +4577,11 @@ impl PythonSeries {
         }
     }
 
+    /// Convert the series into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.series))
+    }
+
     pub fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", self.series))
     }
@@ -5037,6 +5047,17 @@ impl PythonPolynomial {
                     latex
                 },
             )
+        ))
+    }
+
+    /// Convert the polynomial into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::file()
+            }
         ))
     }
 
@@ -5724,6 +5745,17 @@ impl PythonFiniteFieldPolynomial {
         ))
     }
 
+    /// Convert the polynomial into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::file()
+            }
+        ))
+    }
+
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(format!(
@@ -6294,6 +6326,17 @@ impl PythonPrimeTwoPolynomial {
         ))
     }
 
+    /// Convert the polynomial into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::file()
+            }
+        ))
+    }
+
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(format!(
@@ -6826,6 +6869,17 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                     latex
                 },
             )
+        ))
+    }
+
+    /// Convert the polynomial into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::file()
+            }
         ))
     }
 
@@ -7365,6 +7419,17 @@ impl PythonGaloisFieldPolynomial {
                     latex
                 },
             )
+        ))
+    }
+
+    /// Convert the polynomial into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::file()
+            }
         ))
     }
 
@@ -7908,6 +7973,17 @@ impl PythonNumberFieldPolynomial {
         ))
     }
 
+    /// Convert the polynomial into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            PolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::file()
+            }
+        ))
+    }
+
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(format!(
@@ -8446,6 +8522,18 @@ impl PythonRationalPolynomial {
         Ok(var_list)
     }
 
+    /// Convert the rational polynomial into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            RationalPolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::file(),
+                add_parentheses: false,
+            }
+        ))
+    }
+
     /// Print the rational polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(format!(
@@ -8758,6 +8846,18 @@ impl PythonFiniteFieldRationalPolynomial {
         }
 
         Ok(var_list)
+    }
+
+    /// Convert the rational polynomial into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            RationalPolynomialPrinter {
+                poly: &self.poly,
+                opts: PrintOptions::file(),
+                add_parentheses: false,
+            }
+        ))
     }
 
     /// Print the rational polynomial in a human-readable format.
@@ -9595,6 +9695,11 @@ impl PythonMatrix {
         }
     }
 
+    /// Convert the matrix into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.matrix))
+    }
+
     /// Convert the matrix into a human-readable string.
     pub fn __str__(&self) -> PyResult<String> {
         Ok(format!("{}", self.matrix))
@@ -10079,6 +10184,11 @@ impl PythonGraph {
         Self {
             graph: Graph::new(),
         }
+    }
+
+    /// Convert the graph into a portable string.
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.graph))
     }
 
     /// Print the graph in a human-readable format.

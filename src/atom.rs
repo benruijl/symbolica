@@ -6,8 +6,9 @@ use representation::{InlineNum, InlineVar};
 use crate::{
     coefficient::Coefficient,
     parser::Token,
-    printer::AtomPrinter,
+    printer::{AtomPrinter, PrintOptions},
     state::{RecycledAtom, Workspace},
+    transformer::StatsOptions,
 };
 use std::{cmp::Ordering, hash::Hash, ops::DerefMut, str::FromStr};
 
@@ -346,6 +347,20 @@ impl<'a> AtomView<'a> {
         target.set_from_view(self);
     }
 
+    /// Print the view using the portable [`PrintOptions::file()`] options.
+    pub fn to_string(&self) -> String {
+        format!("{}", self.printer(PrintOptions::file()))
+    }
+
+    /// Print statistics about the operation `op`, such as its duration and term growth.
+    pub fn with_stats<F: Fn(AtomView) -> Atom>(&self, op: F, o: &StatsOptions) -> Atom {
+        let t = std::time::Instant::now();
+        let out = op(*self);
+        let dt = t.elapsed();
+        o.print(*self, out.as_view(), dt);
+        out
+    }
+
     #[inline]
     pub fn is_zero(&self) -> bool {
         if let AtomView::Num(n) = self {
@@ -614,6 +629,16 @@ impl Atom {
     #[inline]
     pub fn is_one(&self) -> bool {
         self.as_view().is_one()
+    }
+
+    /// Print the atom using the portable [`PrintOptions::file()`] options.
+    pub fn to_string(&self) -> String {
+        format!("{}", self.printer(PrintOptions::file()))
+    }
+
+    /// Print statistics about the operation `op`, such as its duration and term growth.
+    pub fn with_stats<F: Fn(AtomView) -> Atom>(&self, op: F, o: &StatsOptions) -> Atom {
+        self.as_view().with_stats(op, o)
     }
 
     /// Repeatedly apply an operation on the atom until the atom no longer changes.

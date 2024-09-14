@@ -1369,6 +1369,8 @@ impl Condition<PatternRestriction> {
                     match r {
                         WildcardRestriction::Cmp(v, _) if *v == var => {}
                         _ => {
+                            // TODO: we can actually return True if the v is in the match stack
+                            // same for cmp if both are in the stack
                             return ConditionResult::Inconclusive;
                         }
                     }

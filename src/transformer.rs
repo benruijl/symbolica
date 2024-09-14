@@ -50,6 +50,50 @@ impl StatsOptions {
     pub fn format_count(&self, count: usize) -> String {
         format!("{}", count)
     }
+
+    pub fn print(&self, input: AtomView, output: AtomView, dt: std::time::Duration) {
+        let in_nterms = if let AtomView::Add(a) = input {
+            a.get_nargs()
+        } else {
+            1
+        };
+        let in_size = input.get_byte_size();
+
+        let out_nterms = if let AtomView::Add(a) = output {
+            a.get_nargs()
+        } else {
+            1
+        };
+        let out_size = output.get_byte_size();
+
+        let in_nterms_s = self.format_count(in_nterms);
+        let out_nterms_s = self.format_count(out_nterms);
+
+        println!(
+            "Stats for {}:
+\tIn  │ {:>width$} │ {:>8} │
+\tOut │ {:>width$} │ {:>8} │ ⧗ {:#.2?}",
+            self.tag.bold(),
+            in_nterms_s,
+            self.format_size(in_size),
+            if out_nterms as f64 / in_nterms as f64
+                > self.color_medium_change_threshold.unwrap_or(f64::INFINITY)
+            {
+                if out_nterms as f64 / in_nterms as f64
+                    > self.color_large_change_threshold.unwrap_or(f64::INFINITY)
+                {
+                    out_nterms_s.red()
+                } else {
+                    out_nterms_s.bright_magenta()
+                }
+            } else {
+                out_nterms_s.as_str().into()
+            },
+            self.format_size(out_size),
+            dt,
+            width = in_nterms_s.len().max(out_nterms_s.len()).min(6),
+        );
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -719,50 +763,10 @@ impl Transformer {
                     std::mem::swap(out, &mut tmp);
                 }
                 Transformer::Stats(o, r) => {
-                    let in_nterms = if let AtomView::Add(a) = cur_input {
-                        a.get_nargs()
-                    } else {
-                        1
-                    };
-                    let in_size = cur_input.get_byte_size();
-
                     let t = Instant::now();
                     Self::execute_chain(cur_input, r, workspace, out)?;
-
-                    let out_nterms = if let AtomView::Add(a) = out.as_view() {
-                        a.get_nargs()
-                    } else {
-                        1
-                    };
-                    let out_size = out.as_view().get_byte_size();
-
-                    let in_nterms_s = o.format_count(in_nterms);
-                    let out_nterms_s = o.format_count(out_nterms);
-
-                    println!(
-                        "Stats for {}:
-\tIn  │ {:>width$} │ {:>8} │
-\tOut │ {:>width$} │ {:>8} │ ⧗ {:#.2?}",
-                        o.tag.bold(),
-                        in_nterms_s,
-                        o.format_size(in_size),
-                        if out_nterms as f64 / in_nterms as f64
-                            > o.color_medium_change_threshold.unwrap_or(f64::INFINITY)
-                        {
-                            if out_nterms as f64 / in_nterms as f64
-                                > o.color_large_change_threshold.unwrap_or(f64::INFINITY)
-                            {
-                                out_nterms_s.red()
-                            } else {
-                                out_nterms_s.bright_magenta()
-                            }
-                        } else {
-                            out_nterms_s.as_str().into()
-                        },
-                        o.format_size(out_size),
-                        Instant::now().duration_since(t),
-                        width = in_nterms_s.len().max(out_nterms_s.len()).min(6),
-                    );
+                    let dt = t.elapsed();
+                    o.print(cur_input, out.as_view(), dt);
                 }
                 Transformer::FromNumber => {
                     if let AtomView::Num(n) = cur_input {

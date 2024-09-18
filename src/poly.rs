@@ -366,6 +366,16 @@ impl From<Symbol> for Variable {
     }
 }
 
+impl From<Atom> for Variable {
+    fn from(i: Atom) -> Variable {
+        match i {
+            Atom::Var(v) => Variable::Symbol(v.get_symbol()),
+            Atom::Fun(f) => Variable::Function(f.get_symbol(), Arc::new(Atom::Fun(f))),
+            _ => Variable::Other(Arc::new(i)),
+        }
+    }
+}
+
 impl Variable {
     pub fn to_id(&self) -> Option<Symbol> {
         match self {

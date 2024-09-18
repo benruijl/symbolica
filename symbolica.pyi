@@ -2263,6 +2263,21 @@ class Polynomial:
         >>> p.replace(x, r)
         """
 
+    @classmethod
+    def interpolate(_cls, x: Expression, sample_points: Sequence[Expression | int], values: Sequence[Polynomial]) -> Polynomial:
+        """Perform Newton interpolation in the variable `x` given the sample points
+        `sample_points` and the values `values`.
+
+        Examples
+        --------
+        >>> x, y = S('x', 'y')
+        >>> a = Polynomial.interpolate(
+        >>>         x, [4, 5], [(y**2+5).to_polynomial(), (y**3).to_polynomial()])
+        >>> print(a)
+
+        yields `25-5*x+5*y^2-y^2*x-4*y^3+y^3*x`.
+        """
+
 
 class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""

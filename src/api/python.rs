@@ -29,6 +29,7 @@ use pyo3::pymodule;
 
 use crate::{
     atom::{Atom, AtomType, AtomView, ListIterator, Symbol},
+    coefficient::CoefficientView,
     domains::{
         algebraic_number::AlgebraicExtension,
         atom::AtomField,
@@ -5393,26 +5394,16 @@ impl PythonPolynomial {
     /// >>> r = Expression.parse('y+1').to_polynomial())
     /// >>> p.replace(x, r)
     pub fn replace(&self, x: PythonExpression, v: Self) -> PyResult<Self> {
-        let id = match x.expr.as_view() {
-            AtomView::Var(x) => x.get_symbol(),
-            _ => {
-                return Err(exceptions::PyValueError::new_err(
-                    "Derivative must be taken wrt a variable",
-                ))
-            }
-        };
+        let var: Variable = x.expr.into();
 
         let x = self
             .poly
             .get_vars_ref()
             .iter()
-            .position(|x| match x {
-                Variable::Symbol(y) => *y == id,
-                _ => false,
-            })
+            .position(|x| x == &var)
             .ok_or(exceptions::PyValueError::new_err(format!(
                 "Variable {} not found in polynomial",
-                x.__str__()?
+                var
             )))?;
 
         if self.poly.get_vars_ref() == v.poly.get_vars_ref() {
@@ -5592,6 +5583,78 @@ impl PythonPolynomial {
     /// >>> print(e - p.to_expression())
     pub fn to_expression(&self) -> PyResult<PythonExpression> {
         Ok(self.poly.to_expression().into())
+    }
+
+    /// Perform Newton interpolation in the variable `x` given the sample points
+    /// `sample_points` and the values `values`.
+    ///
+    /// Examples
+    /// --------
+    /// >>> x, y = S('x', 'y')
+    /// >>> a = Polynomial.interpolate(
+    /// >>>         x, [4, 5], [(y**2+5).to_polynomial(), (y**3).to_polynomial()])
+    /// >>> print(a)
+    ///
+    /// yields `25-5*x+5*y^2-y^2*x-4*y^3+y^3*x`.
+    #[classmethod]
+    pub fn interpolate(
+        _cls: &PyType,
+        x: PythonExpression,
+        sample_points: Vec<ConvertibleToExpression>,
+        values: Vec<PythonPolynomial>,
+    ) -> PyResult<Self> {
+        if values.is_empty() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Values must be provided"
+            )));
+        }
+
+        if sample_points.len() != values.len() {
+            return Err(exceptions::PyValueError::new_err(format!(
+                "Sample points and values must have the same length"
+            )));
+        }
+
+        let var = x.expr.into();
+
+        let sample_points: Vec<Rational> = sample_points
+            .into_iter()
+            .map(|x| {
+                if let AtomView::Num(x) = x.to_expression().expr.as_view() {
+                    match x.get_coeff_view() {
+                        CoefficientView::Natural(r, d) => Ok(Rational::from_unchecked(r, d)),
+                        CoefficientView::Large(r) => Ok(r.to_rat()),
+                        _ => Err(exceptions::PyValueError::new_err(format!(
+                            "Sample points must be rational numbers"
+                        ))),
+                    }
+                } else {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Sample points must be rational numbers"
+                    )))?
+                }
+            })
+            .collect::<Result<_, _>>()?;
+
+        let mut values: Vec<_> = values.into_iter().map(|x| x.poly).collect();
+
+        // add the variable to all the polynomials
+        for v in &mut values {
+            v.add_variable(&var);
+        }
+
+        MultivariatePolynomial::unify_variables_list(&mut values);
+
+        // find the index of the variable
+        let index = values[0]
+            .get_vars_ref()
+            .iter()
+            .position(|v| v == &var)
+            .unwrap();
+
+        Ok(Self {
+            poly: MultivariatePolynomial::newton_interpolation(&sample_points, &values, index),
+        })
     }
 }
 

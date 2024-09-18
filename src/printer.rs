@@ -14,7 +14,7 @@ use crate::{
     },
     poly::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder},
     state::State,
-    tensors::matrix::Matrix,
+    tensors::matrix::{Matrix, Vector},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -1482,6 +1482,68 @@ impl<'a, F: Ring + Display> Display for MatrixPrinter<'a, F> {
                 }
                 f.write_char('}')?;
                 if ri + 1 < self.matrix.nrows as usize {
+                    f.write_char(',')?;
+                }
+            }
+            f.write_char('}')
+        }
+    }
+}
+
+pub struct VectorPrinter<'a, F: Ring + Display> {
+    pub vector: &'a Vector<F>,
+    pub opts: PrintOptions,
+}
+
+impl<'a, F: Ring + Display> VectorPrinter<'a, F> {
+    pub fn new(vector: &'a Vector<F>) -> VectorPrinter<'a, F> {
+        VectorPrinter {
+            vector,
+            opts: PrintOptions::default(),
+        }
+    }
+
+    pub fn new_with_options(vector: &'a Vector<F>, opts: PrintOptions) -> VectorPrinter<'a, F> {
+        VectorPrinter { vector, opts }
+    }
+}
+
+impl<'a, F: Ring + Display> Display for VectorPrinter<'a, F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.opts.latex {
+            f.write_str("\\begin{pvector}")?;
+
+            for (ri, r) in self.vector.data.iter().enumerate() {
+                f.write_fmt(format_args!(
+                    "{}",
+                    RingPrinter {
+                        ring: &self.vector.field,
+                        element: r,
+                        opts: self.opts,
+                        in_product: false,
+                    },
+                ))?;
+
+                if ri + 1 < self.vector.data.len() {
+                    f.write_str(" & ")?;
+                }
+            }
+
+            f.write_str("\\end{pvector}")
+        } else {
+            f.write_char('{')?;
+            for (ri, r) in self.vector.data.iter().enumerate() {
+                f.write_fmt(format_args!(
+                    "{}",
+                    RingPrinter {
+                        ring: &self.vector.field,
+                        element: r,
+                        opts: self.opts,
+                        in_product: false,
+                    },
+                ))?;
+
+                if ri + 1 < self.vector.data.len() {
                     f.write_char(',')?;
                 }
             }

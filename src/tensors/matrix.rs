@@ -6,8 +6,257 @@ use std::{
 
 use crate::{
     domains::{EuclideanDomain, Field, Ring},
-    printer::MatrixPrinter,
+    printer::{MatrixPrinter, VectorPrinter},
 };
+
+/// An n-dimensional vector.
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct Vector<F: Ring> {
+    pub(crate) data: Vec<F::Element>,
+    pub(crate) field: F,
+}
+
+impl<F: Ring> Vector<F> {
+    /// Create a new vector from a list of scalars.
+    pub fn new(data: Vec<F::Element>, field: F) -> Vector<F> {
+        Vector { data, field }
+    }
+
+    /// Create a new zero vector from an existing one.
+    pub fn new_zero(&self) -> Vector<F> {
+        Vector {
+            data: vec![self.field.zero(); self.data.len()],
+            field: self.field.clone(),
+        }
+    }
+
+    /// Create a column vector. This operation is very cheap.
+    pub fn into_matrix(self) -> Matrix<F> {
+        Matrix {
+            nrows: 1,
+            ncols: self.data.len() as u32,
+            data: self.data,
+            field: self.field,
+        }
+    }
+
+    pub fn norm_squared(&self) -> F::Element {
+        let mut res = self.field.zero();
+        for e in &self.data {
+            self.field.add_mul_assign(&mut res, e, e);
+        }
+        res
+    }
+
+    /// Take the Euclidean scalar product of two column or row vectors.
+    pub fn dot(&self, rhs: &Self) -> F::Element {
+        if self.data.len() != rhs.data.len() {
+            panic!(
+                "Vectors do not have equal dimension: {} vs {}",
+                self.data.len(),
+                rhs.data.len()
+            );
+        }
+
+        let mut res = self.field.zero();
+        for (e1, e2) in self.data.iter().zip(&rhs.data) {
+            self.field.add_mul_assign(&mut res, e1, e2);
+        }
+
+        res
+    }
+
+    /// Compute the Euclidean cross product in three dimensions.
+    pub fn cross_product(&self, rhs: &Self) -> Vector<F> {
+        if self.data.len() != rhs.data.len() {
+            panic!(
+                "Vectors do not have equal dimension: {} vs {}",
+                self.data.len(),
+                rhs.data.len()
+            );
+        }
+        if self.data.len() != 3 {
+            panic!(
+                "Vectors must be three-dimensional instead of {}",
+                self.data.len(),
+            );
+        }
+
+        Vector {
+            data: vec![
+                self.field.sub(
+                    &self.field.mul(&self.data[1], &rhs.data[2]),
+                    &self.field.mul(&self.data[2], &rhs.data[1]),
+                ),
+                self.field.sub(
+                    &self.field.mul(&self.data[2], &rhs.data[0]),
+                    &self.field.mul(&self.data[0], &rhs.data[2]),
+                ),
+                self.field.sub(
+                    &self.field.mul(&self.data[0], &rhs.data[1]),
+                    &self.field.mul(&self.data[1], &rhs.data[0]),
+                ),
+            ],
+            field: self.field.clone(),
+        }
+    }
+}
+
+impl<F: Ring> Mul<F::Element> for Vector<F> {
+    type Output = Vector<F>;
+
+    fn mul(mut self, rhs: F::Element) -> Self::Output {
+        for x in &mut self.data {
+            self.field.mul_assign(x, &rhs);
+        }
+        self
+    }
+}
+
+impl<F: Ring> Mul<F::Element> for &Vector<F> {
+    type Output = Vector<F>;
+
+    fn mul(self, rhs: F::Element) -> Self::Output {
+        self.clone() * rhs
+    }
+}
+
+impl<F: Field> Vector<F> {
+    /// Project the vector onto the `target` vector.
+    pub fn project(&self, target: &Self) -> Self {
+        target.clone() * self.field.div(&self.dot(target), &target.norm_squared())
+    }
+
+    /// Use the Gram–Schmidt method to create an orthogonal basis.
+    pub fn orthogonalize(system: &[Self]) -> Vec<Vector<F>> {
+        let mut res = vec![];
+
+        for s in system {
+            let mut new_vec = s.clone();
+            for x in &res {
+                new_vec -= &new_vec.project(x);
+            }
+
+            res.push(new_vec);
+        }
+
+        res
+    }
+}
+
+impl<F: Ring> Index<u32> for Vector<F> {
+    type Output = F::Element;
+
+    /// Get the `i`th entry of the vector.
+    #[inline]
+    fn index(&self, index: u32) -> &Self::Output {
+        &self.data[index as usize]
+    }
+}
+
+impl<F: Ring> IndexMut<u32> for Vector<F> {
+    /// Get the `i`th entry of the vector.
+    #[inline]
+    fn index_mut(&mut self, index: u32) -> &mut F::Element {
+        &mut self.data[index as usize]
+    }
+}
+
+impl<F: Ring> Display for Vector<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        VectorPrinter::new(self).fmt(f)
+    }
+}
+
+impl<F: Ring> Add<&Vector<F>> for &Vector<F> {
+    type Output = Vector<F>;
+
+    /// Add two vectors.
+    fn add(self, rhs: &Vector<F>) -> Self::Output {
+        if self.data.len() != rhs.data.len() {
+            panic!(
+                "Cannot add vectors of different dimensions: {}  vs {}",
+                self.data.len(),
+                rhs.data.len()
+            );
+        }
+
+        let mut m = self.new_zero();
+        for (c, (a, b)) in m.data.iter_mut().zip(self.data.iter().zip(rhs.data.iter())) {
+            *c = self.field.add(a, b);
+        }
+
+        m
+    }
+}
+
+impl<F: Ring> AddAssign<&Vector<F>> for Vector<F> {
+    ///Add two vectors in place.
+    fn add_assign(&mut self, rhs: &Vector<F>) {
+        if self.data.len() != rhs.data.len() {
+            panic!(
+                "Cannot add vectors of different dimensions: {}  vs {}",
+                self.data.len(),
+                rhs.data.len()
+            );
+        }
+
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            self.field.add_assign(a, b);
+        }
+    }
+}
+
+impl<F: Ring> Sub<&Vector<F>> for &Vector<F> {
+    type Output = Vector<F>;
+
+    /// Subtract two vectors.
+    fn sub(self, rhs: &Vector<F>) -> Self::Output {
+        if self.data.len() != rhs.data.len() {
+            panic!(
+                "Cannot subtract vectors of different dimensions: {}  vs {}",
+                self.data.len(),
+                rhs.data.len()
+            );
+        }
+
+        let mut m = self.new_zero();
+        for (c, (a, b)) in m.data.iter_mut().zip(self.data.iter().zip(rhs.data.iter())) {
+            *c = self.field.sub(a, b);
+        }
+
+        m
+    }
+}
+
+impl<F: Ring> SubAssign<&Vector<F>> for Vector<F> {
+    fn sub_assign(&mut self, rhs: &Vector<F>) {
+        if self.data.len() != rhs.data.len() {
+            panic!(
+                "Cannot subtract vectors of different dimensions: {}  vs {}",
+                self.data.len(),
+                rhs.data.len()
+            );
+        }
+
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            self.field.sub_assign(a, b);
+        }
+    }
+}
+
+impl<F: Ring> Neg for Vector<F> {
+    type Output = Vector<F>;
+
+    /// Negate each entry of the vector.
+    fn neg(mut self) -> Self::Output {
+        for e in &mut self.data {
+            *e = self.field.neg(e);
+        }
+
+        self
+    }
+}
 
 /// A matrix with entries that are elements of a ring `F`.
 /// A vector can be represented as a matrix with one row or one column.
@@ -199,6 +448,28 @@ impl<F: Ring> Matrix<F> {
             nrows: self.nrows,
             ncols: self.ncols,
             field,
+        }
+    }
+
+    /// Get the squared Euclidean norm of the matrix.
+    pub fn norm_squared(&self) -> F::Element {
+        let mut norm = self.field.zero();
+        for d in &self.data {
+            self.field.add_mul_assign(&mut norm, d, d);
+        }
+        norm
+    }
+
+    /// Convert a matrix that is a row or column vector into a [Vector].
+    /// Will panic if the input is not vector-like.
+    pub fn into_vector(self) -> Vector<F> {
+        if self.nrows != 1 && self.ncols != 1 {
+            panic!("The matrix is not a vector");
+        }
+
+        Vector {
+            data: self.data,
+            field: self.field,
         }
     }
 }
@@ -643,68 +914,102 @@ impl<F: Field> Matrix<F> {
         Ok(det)
     }
 
-    /// Solves `A * x = 0` for the first `max_col` columns in x.
-    /// The other columns are augmented.
-    pub fn solve_subsystem(&mut self, max_col: u32) -> Result<u32, MatrixError<F>> {
-        let (neqs, ncols) = (self.nrows, self.ncols);
+    /// Write the matrix in echelon form.
+    fn gaussian_elimination(
+        &mut self,
+        max_col: u32,
+        early_return: bool,
+    ) -> Result<u32, MatrixError<F>> {
         let zero = self.field.zero();
 
-        // A fast check.
-        if neqs < max_col {
-            return Err(MatrixError::Underdetermined {
-                min_rank: 0,
-                max_rank: neqs,
-                row_reduced_matrix: None,
-            });
-        }
-
-        // Gaussian elimination:
-        // First, transform the augmented matrix into the row echelon form.
         let mut i = 0;
         for j in 0..max_col {
             if F::is_zero(&self[(i, j)]) {
                 // Select a non-zero pivot.
-                for k in i + 1..neqs {
+                for k in i + 1..self.nrows {
                     if !F::is_zero(&self[(k, j)]) {
                         // Swap i-th row and k-th row.
-                        for l in j..ncols {
-                            let old = self[(i, l)].clone();
-                            self[(i, l)] = self[(k, l)].clone();
-                            self[(k, l)] = old;
+                        for l in j..self.ncols {
+                            self.data
+                                .swap((self.nrows * i + l) as usize, (self.nrows * k + l) as usize);
                         }
                         break;
                     }
                 }
                 if F::is_zero(&self[(i, j)]) {
-                    // NOTE: complete pivoting may give an increase of the rank.
-                    return Err(MatrixError::Underdetermined {
-                        min_rank: i,
-                        max_rank: max_col - 1,
-                        row_reduced_matrix: None,
-                    });
+                    if early_return {
+                        return Err(MatrixError::Underdetermined {
+                            min_rank: i,
+                            max_rank: max_col - 1,
+                            row_reduced_matrix: None,
+                        });
+                    } else {
+                        continue;
+                    }
                 }
             }
             let x = self[(i, j)].clone();
             let inv_x = self.field.inv(&x);
-            for k in i + 1..neqs {
+            for k in i + 1..self.nrows {
                 if !F::is_zero(&self[(k, j)]) {
                     let s = self.field.mul(&self[(k, j)], &inv_x);
                     self[(k, j)] = self.field.zero();
-                    for l in j + 1..ncols {
+                    for l in j + 1..self.ncols {
                         let mut e = std::mem::replace(&mut self[(k, l)], zero.clone());
                         self.field.sub_mul_assign(&mut e, &self[(i, l)], &s);
                         self[(k, l)] = e;
                     }
                 }
             }
+
             i += 1;
-            if i >= neqs {
+            if i >= self.nrows {
                 break;
             }
         }
 
-        // Return the rank
         Ok(i)
+    }
+
+    /// Create a row-reduced matrix from a matrix in echelon form.
+    fn back_substitution(&mut self, max_col: u32) {
+        let field = self.field.clone();
+        for i in (0..self.nrows).rev() {
+            if let Some(j) = (0..max_col).find(|&j| !F::is_zero(&self[(i, j)])) {
+                if !field.is_one(&self[(i, j)]) {
+                    let inv_x = field.inv(&self[(i, j)]);
+
+                    for k in j..self.ncols {
+                        field.mul_assign(&mut self[(i, k)], &inv_x);
+                    }
+                }
+
+                for k in 0..i {
+                    if !F::is_zero(&self[(k, j)]) {
+                        let scale = std::mem::replace(&mut self[(k, j)], field.zero());
+                        for l in j + 1..self.ncols {
+                            let mut e = std::mem::replace(&mut self[(k, l)], field.zero());
+                            field.sub_mul_assign(&mut e, &self[(i, l)], &scale);
+                            self[(k, l)] = e;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Solves `A * x = 0` for the first `max_col` columns in x.
+    /// The other columns are augmented.
+    pub fn solve_subsystem(&mut self, max_col: u32) -> Result<u32, MatrixError<F>> {
+        if self.nrows < max_col {
+            return Err(MatrixError::Underdetermined {
+                min_rank: 0,
+                max_rank: self.nrows,
+                row_reduced_matrix: None,
+            });
+        }
+
+        self.gaussian_elimination(max_col, true)
     }
 
     /// Solve `A * x = b` for `x`, where `A` is `self`.
@@ -793,13 +1098,27 @@ impl<F: Field> Matrix<F> {
 
         Ok(result)
     }
+
+    /// Row-reduce the matrix in-place using Gaussian elimination and return the rank.
+    pub fn row_reduce(&mut self) -> usize {
+        let rank = self.gaussian_elimination(self.ncols, false).unwrap() as usize;
+        self.back_substitution(self.ncols);
+        rank
+    }
+
+    /// Get the rank of the matrix.
+    pub fn rank(&self) -> usize {
+        self.clone()
+            .gaussian_elimination(self.ncols, false)
+            .unwrap() as usize
+    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{
         domains::{integer::Z, rational::Q},
-        tensors::matrix::Matrix,
+        tensors::matrix::{Matrix, Vector},
     };
 
     #[test]
@@ -892,5 +1211,61 @@ mod test {
 
         let r = a.solve(&b).unwrap();
         assert_eq!(r.data, vec![(-1, 3).into(), (2, 3).into(), 0.into()]);
+    }
+
+    #[test]
+    fn row_reduce() {
+        let mut a = Matrix::from_linear(
+            vec![
+                1u64.into(),
+                2u64.into(),
+                3u64.into(),
+                4u64.into(),
+                5u64.into(),
+                6u64.into(),
+                7u64.into(),
+                8u64.into(),
+                9u64.into(),
+            ],
+            3,
+            3,
+            Q,
+        )
+        .unwrap();
+
+        assert_eq!(a.row_reduce(), 2);
+
+        assert_eq!(
+            a.data,
+            vec![
+                1.into(),
+                0.into(),
+                (-1).into(),
+                0.into(),
+                1.into(),
+                2.into(),
+                0.into(),
+                0.into(),
+                0.into()
+            ]
+        );
+    }
+
+    #[test]
+    fn orthogonalize() {
+        let a = vec![
+            Vector::new(vec![1u64.into(), 2u64.into(), 3u64.into()], Q),
+            Vector::new(vec![4u64.into(), 5u64.into(), 6u64.into()], Q),
+            Vector::new(vec![7u64.into(), 8u64.into(), 9u64.into()], Q),
+        ];
+
+        let res = Vector::orthogonalize(&a);
+        for x in &res {
+            for y in &res {
+                if x != y {
+                    assert_eq!(x.dot(y), (0, 1).into());
+                }
+            }
+        }
     }
 }

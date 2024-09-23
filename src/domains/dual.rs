@@ -1,3 +1,39 @@
+//! A hyperdual number is a number that keep track of (higher order) derivatives in one or multiple
+//! variables.
+//! ```
+//! use symbolica::{
+//! create_hyperdual_from_components, create_hyperdual_single_derivative,
+//! domains::{float::NumericalFloatLike, rational::Rational},
+//! };
+//!
+//! create_hyperdual_single_derivative!(SingleDual, 3);
+//!
+//! create_hyperdual_from_components!(
+//! Dual,
+//! [
+//!     [0, 0, 0],
+//!     [1, 0, 0],
+//!     [0, 1, 0],
+//!     [0, 0, 1],
+//!     [1, 1, 0],
+//!     [1, 0, 1],
+//!     [0, 1, 1],
+//!     [1, 1, 1],
+//!     [2, 0, 0]
+//! ]
+//! );
+//!
+//! fn main() {
+//! let x = Dual::<Rational>::new_variable(0, (1, 1).into());
+//! let y = Dual::new_variable(1, (2, 1).into());
+//! let z = Dual::new_variable(2, (3, 1).into());
+//!
+//! let t3 = x * y * z;
+//!
+//! println!("{}", t3.inv());
+//! }
+//! ```
+
 /// Get the size of a dual number with the given maximum depth per variable.
 pub const fn get_dual_size<const N: usize>(x: &[usize; N]) -> usize {
     let mut c = 1;
@@ -147,10 +183,29 @@ pub const fn get_mult_table<const N: usize, const C: usize, const T: usize>(
 }
 
 /// Create a new hyperdual number, with only single derivatives and with `$var` variables.
+///
+/// For example:
+/// ```
+/// # use symbolica::{
+/// # create_hyperdual_single_derivative,
+/// # domains::{float::NumericalFloatLike, rational::Rational},
+/// # };
+/// create_hyperdual_single_derivative!(Dual, 3);
+///
+/// fn main() {
+///     let x = Dual::<Rational>::new_variable(0, (1, 1).into());
+///     let y = Dual::new_variable(1, (2, 1).into());
+///     let z = Dual::new_variable(2, (3, 1).into());
+///
+///     let t3 = x * y * z;
+///
+///     println!("{}", t3.inv());
+/// }
+/// ```
 #[macro_export]
 macro_rules! create_hyperdual_single_derivative {
     ($t: ident, $var: expr) => {
-        create_hyperdual_from_components!(
+        $crate::create_hyperdual_from_components!(
             $t,
             $crate::domains::dual::get_single_derivative_dual_components::<{ $var }, { $var + 1 }>(
             )
@@ -162,7 +217,7 @@ macro_rules! create_hyperdual_single_derivative {
 #[macro_export]
 macro_rules! create_hyperdual_from_depths {
     ($t: ident, $var: expr) => {
-        create_hyperdual_from_components!(
+        $crate::create_hyperdual_from_components!(
             $t,
             $crate::domains::dual::get_dual_components::<
                 { $var.len() },
@@ -174,6 +229,38 @@ macro_rules! create_hyperdual_from_depths {
 
 /// Create a new hyperdual number, from a specification of the components.
 /// The first components must be the real value and the single derivatives of the variables in order.
+///
+/// For example:
+/// ```
+/// # use symbolica::{
+/// # create_hyperdual_from_components,
+/// # domains::{float::NumericalFloatLike, rational::Rational},
+/// # };
+/// create_hyperdual_from_components!(
+///     Dual,
+///     [
+///         [0, 0, 0],
+///         [1, 0, 0],
+///         [0, 1, 0],
+///         [0, 0, 1],
+///         [1, 1, 0],
+///         [1, 0, 1],
+///         [0, 1, 1],
+///         [1, 1, 1],
+///         [2, 0, 0]
+///     ]
+/// );
+///
+/// fn main() {
+///     let x = Dual::<Rational>::new_variable(0, (1, 1).into());
+///     let y = Dual::new_variable(1, (2, 1).into());
+///     let z = Dual::new_variable(2, (3, 1).into());
+///
+///     let t3 = x * y * z;
+///
+///     println!("{}", t3.inv());
+/// }
+/// ```
 #[macro_export]
 macro_rules! create_hyperdual_from_components {
     ($t: ident, $var: expr) => {

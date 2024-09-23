@@ -1931,6 +1931,31 @@ impl NumericalFloatLike for Rational {
     }
 }
 
+impl ConstructibleFloat for Rational {
+    fn new_one() -> Self {
+        Rational::one()
+    }
+
+    fn new_from_usize(a: usize) -> Self {
+        (a, 1).into()
+    }
+
+    fn new_from_i64(a: i64) -> Self {
+        (a, 1).into()
+    }
+
+    fn new_sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self {
+        let rng1 = rng.gen::<i64>();
+        let rng2 = rng.gen::<i64>();
+
+        if rng1 > rng2 {
+            (rng2, rng1).into()
+        } else {
+            (rng1, rng2).into()
+        }
+    }
+}
+
 impl SingleFloat for Rational {
     #[inline(always)]
     fn is_zero(&self) -> bool {

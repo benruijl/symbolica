@@ -1,5 +1,6 @@
 pub mod algebraic_number;
 pub mod atom;
+pub mod dual;
 pub mod factorized_rational_polynomial;
 pub mod finite_field;
 pub mod float;

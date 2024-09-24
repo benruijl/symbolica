@@ -75,8 +75,8 @@ Variables ending with a `_` are wildcards that match to any subexpression.
 In the following example we try to match the pattern `f(w1_,w2_)`:
 
 ```python
-from symbolica import Expression
-x, y, w1_, w2_, f = Expression.symbols('x','y','w1_','w2_', 'f')
+from symbolica import *
+x, y, w1_, w2_, f = S('x','y','w1_','w2_', 'f')
 e = f(3,x)*y**2+5
 r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2))
 print(r)
@@ -88,9 +88,9 @@ which yields `y^2*f(2,x^2)+5`.
 Solve a linear system in `x` and `y` with a parameter `c`:
 
 ```python
-from symbolica import Expression
+from symbolica import *
 
-x, y, c, f = Expression.symbols('x', 'y', 'c', 'f')
+x, y, c, f = S('x', 'y', 'c', 'f')
 
 x_r, y_r = Expression.solve_linear_system(
     [f(c)*x + y + c, y + c**2], [x, y])
@@ -103,20 +103,19 @@ which yields `x = (-c+c^2)*f(c)^-1` and `y = -c^2`.
 Perform a series expansion in `x`:
 
 ```python
-from symbolica import Expression
-x = Expression.symbol('x')
-e = Expression.parse('exp(5+x)/(1-x)').series(x, 0, 3)
+from symbolica import *
+e = E('exp(5+x)/(1-x)').series(S('x'), 0, 3)
 
 print(e)
 ```
-which yields `(exp(5))+(2*exp(5))*x+(5/2*exp(5))*x^2+(8/3*exp(5))*x^3+O(x^4)`.
+which yields `(exp(5))+(2*exp(5))*x+(5/2*exp(5))*x^2+(8/3*exp(5))*x^3+𝒪(x^4)`.
 
 ### Rational arithmetic
 
 Symbolica is world-class in rational arithmetic, outperforming Mathematica, Maple, Form, Fermat, and other computer algebra packages. Simply convert an expression to a rational polynomial:
 ```python
-from symbolica import Expression
-p = Expression.parse('(x*y^2*5+5)^2/(2*x+5)+(x+4)/(6*x^2+1)').to_rational_polynomial()
+from symbolica import *
+p = E('(x*y^2*5+5)^2/(2*x+5)+(x+4)/(6*x^2+1)').to_rational_polynomial()
 print(p)
 ```
 which yields `(45+13*x+50*x*y^2+152*x^2+25*x^2*y^4+300*x^3*y^2+150*x^4*y^4)/(5+2*x+30*x^2+12*x^3)`.

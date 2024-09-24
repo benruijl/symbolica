@@ -375,6 +375,11 @@ impl<F: Ring> Series<F> {
     }
 
     #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.coefficients.len() == 0
+    }
+
+    #[inline]
     pub fn is_one(&self) -> bool {
         self.coefficients.len() == 1 && self.field.is_one(&self.coefficients[0]) && self.shift == 0
     }

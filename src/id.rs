@@ -751,7 +751,7 @@ impl Pattern {
 impl Pattern {
     /// A quick check to see if a pattern can match.
     #[inline]
-    pub fn could_match(&self, target: AtomView) -> bool {
+    fn could_match(&self, target: AtomView) -> bool {
         match (self, target) {
             (Pattern::Fn(f1, _), AtomView::Fun(f2)) => {
                 f1.get_wildcard_level() > 0 || *f1 == f2.get_symbol()

@@ -218,9 +218,7 @@ impl Add for Coefficient {
                 }
             }
             (Coefficient::Rational(r), Coefficient::Float(f))
-            | (Coefficient::Float(f), Coefficient::Rational(r)) => {
-                Coefficient::Float(r.to_multi_prec_float(f.prec()) + f)
-            }
+            | (Coefficient::Float(f), Coefficient::Rational(r)) => Coefficient::Float(f + r),
             (Coefficient::Float(f1), Coefficient::Float(f2)) => Coefficient::Float(f1 + f2),
             (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
                 panic!("Cannot add float to finite-field number or rational polynomial");
@@ -279,9 +277,7 @@ impl Mul for Coefficient {
                 }
             }
             (Coefficient::Rational(r), Coefficient::Float(f))
-            | (Coefficient::Float(f), Coefficient::Rational(r)) => {
-                Coefficient::Float(r.to_multi_prec_float(f.prec()) * f)
-            }
+            | (Coefficient::Float(f), Coefficient::Rational(r)) => Coefficient::Float(f * r),
             (Coefficient::Float(f1), Coefficient::Float(f2)) => Coefficient::Float(f1 * f2),
             (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
                 panic!("Cannot add float to finite-field number or rational polynomial");
@@ -568,6 +564,7 @@ impl CoefficientView<'_> {
                 }
             }
             (&CoefficientView::Float(f), &CoefficientView::Natural(n2, d2)) => {
+                // FIXME: what precision should be used?
                 let f = f.to_float();
                 let p = f.prec();
                 (
@@ -744,13 +741,13 @@ impl Add<CoefficientView<'_>> for CoefficientView<'_> {
             (CoefficientView::Natural(n, d), CoefficientView::Float(f))
             | (CoefficientView::Float(f), CoefficientView::Natural(n, d)) => {
                 let f = f.to_float();
-                Coefficient::Float(Rational::from((n, d)).to_multi_prec_float(f.prec()) + f)
+                Coefficient::Float(f + Rational::from((n, d)))
             }
             (CoefficientView::Large(r), CoefficientView::Float(f))
             | (CoefficientView::Float(f), CoefficientView::Large(r)) => {
                 let r = r.to_rat();
                 let f = f.to_float();
-                Coefficient::Float(r.to_multi_prec_float(f.prec()) + f)
+                Coefficient::Float(f + r)
             }
             (CoefficientView::Float(f1), CoefficientView::Float(f2)) => {
                 Coefficient::Float(f1.to_float() + f2.to_float())
@@ -841,13 +838,13 @@ impl Mul for CoefficientView<'_> {
             (CoefficientView::Natural(n, d), CoefficientView::Float(f))
             | (CoefficientView::Float(f), CoefficientView::Natural(n, d)) => {
                 let f = f.to_float();
-                Coefficient::Float(Rational::from((n, d)).to_multi_prec_float(f.prec()) * f)
+                Coefficient::Float(f * Rational::from((n, d)))
             }
             (CoefficientView::Large(r), CoefficientView::Float(f))
             | (CoefficientView::Float(f), CoefficientView::Large(r)) => {
                 let r = r.to_rat();
                 let f = f.to_float();
-                Coefficient::Float(r.to_multi_prec_float(f.prec()) * f)
+                Coefficient::Float(f * r)
             }
             (CoefficientView::Float(f1), CoefficientView::Float(f2)) => {
                 Coefficient::Float(f1.to_float() * f2.to_float())

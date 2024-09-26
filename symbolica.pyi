@@ -1064,6 +1064,7 @@ class Expression:
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
         allow_new_wildcards_on_rhs: Optional[bool] = False,
+        rhs_cache_size: Optional[int] = None,
         repeat: Optional[bool] = False,
     ) -> Expression:
         """
@@ -1096,6 +1097,8 @@ class Expression:
             If set to `True`, the level is increased when going one level deeper in the expression tree.
         allow_new_wildcards_on_rhs: bool, optional
             If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
+        rhs_cache_size: int, optional
+            Cache the first `rhs_cache_size` substituted patterns. If set to `None`, an internally determined cache size is used.
         repeat: bool, optional
             If set to `True`, the entire operation will be repeated until there are no more matches.
         """
@@ -1767,6 +1770,8 @@ class Transformer:
             If set to `True`, the level is increased when going one level deeper in the expression tree.
         allow_new_wildcards_on_rhs:
             If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
+        rhs_cache_size: int, optional
+            Cache the first `rhs_cache_size` substituted patterns. If set to `None`, an internally determined cache size is used.
         repeat:
             If set to `True`, the entire operation will be repeated until there are no more matches.
         """

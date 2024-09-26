@@ -1,6 +1,6 @@
 use std::{ops::DerefMut, str::FromStr};
 
-use ahash::HashSet;
+use ahash::{HashMap, HashSet};
 use dyn_clone::DynClone;
 
 use crate::{
@@ -306,7 +306,8 @@ impl<'a> AtomView<'a> {
         out: &mut Atom,
     ) -> bool {
         Workspace::get_local().with(|ws| {
-            let matched = self.replace_all_no_norm(replacements, ws, 0, 0, out);
+            let mut rhs_cache = HashMap::default();
+            let matched = self.replace_all_no_norm(replacements, ws, 0, 0, &mut rhs_cache, out);
 
             if matched {
                 let mut norm = ws.new_atom();
@@ -325,6 +326,7 @@ impl<'a> AtomView<'a> {
         workspace: &Workspace,
         tree_level: usize,
         fn_level: usize,
+        rhs_cache: &mut HashMap<Vec<(Symbol, Match<'a>)>, Atom>,
         out: &mut Atom,
     ) -> bool {
         let mut beyond_max_level = true;
@@ -355,6 +357,11 @@ impl<'a> AtomView<'a> {
 
                 let mut it = AtomMatchIterator::new(r.pat, *self);
                 if let Some((_, used_flags)) = it.next(&mut match_stack) {
+                    if let Some(rhs) = rhs_cache.get(&match_stack.stack) {
+                        out.set_from_view(&rhs.as_view());
+                        return true;
+                    }
+
                     let mut rhs_subs = workspace.new_atom();
 
                     match r.rhs {
@@ -371,6 +378,13 @@ impl<'a> AtomView<'a> {
                     if used_flags.iter().all(|x| *x) {
                         // all used, return rhs
                         out.set_from_view(&rhs_subs.as_view());
+
+                        if rhs_cache.len() < settings.rhs_cache_size
+                            && !matches!(r.rhs, PatternOrMap::Pattern(Pattern::Literal(_)))
+                        {
+                            rhs_cache.insert(match_stack.stack.clone(), rhs_subs.into_inner());
+                        }
+
                         return true;
                     }
 
@@ -402,6 +416,12 @@ impl<'a> AtomView<'a> {
                         }
                     }
 
+                    if rhs_cache.len() < settings.rhs_cache_size
+                        && !matches!(r.rhs, PatternOrMap::Pattern(Pattern::Literal(_)))
+                    {
+                        rhs_cache.insert(match_stack.stack.clone(), rhs_subs.into_inner());
+                    }
+
                     return true;
                 }
             }
@@ -426,6 +446,7 @@ impl<'a> AtomView<'a> {
                         workspace,
                         tree_level + 1,
                         fn_level + 1,
+                        rhs_cache,
                         &mut child_buf,
                     );
 
@@ -444,6 +465,7 @@ impl<'a> AtomView<'a> {
                     workspace,
                     tree_level + 1,
                     fn_level,
+                    rhs_cache,
                     &mut base_out,
                 );
 
@@ -453,6 +475,7 @@ impl<'a> AtomView<'a> {
                     workspace,
                     tree_level + 1,
                     fn_level,
+                    rhs_cache,
                     &mut exp_out,
                 );
 
@@ -471,6 +494,7 @@ impl<'a> AtomView<'a> {
                         workspace,
                         tree_level + 1,
                         fn_level,
+                        rhs_cache,
                         &mut child_buf,
                     );
 
@@ -491,6 +515,7 @@ impl<'a> AtomView<'a> {
                         workspace,
                         tree_level + 1,
                         fn_level,
+                        rhs_cache,
                         &mut child_buf,
                     );
 
@@ -1153,7 +1178,15 @@ impl Pattern {
             rep = rep.with_settings(s);
         }
 
-        let matched = target.replace_all_no_norm(std::slice::from_ref(&rep), workspace, 0, 0, out);
+        let mut rhs_cache = HashMap::default();
+        let matched = target.replace_all_no_norm(
+            std::slice::from_ref(&rep),
+            workspace,
+            0,
+            0,
+            &mut rhs_cache,
+            out,
+        );
 
         if matched {
             let mut norm = workspace.new_atom();
@@ -1545,7 +1578,7 @@ impl std::fmt::Debug for PatternRestriction {
 }
 
 /// A part of an expression that was matched to a wildcard.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Match<'a> {
     /// A matched single atom.
     Single(AtomView<'a>),
@@ -1664,7 +1697,7 @@ impl<'a> Match<'a> {
 }
 
 /// Settings related to pattern matching.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct MatchSettings {
     /// Specifies wildcards that try to match as little as possible.
     pub non_greedy_wildcards: Vec<Symbol>,
@@ -1676,6 +1709,21 @@ pub struct MatchSettings {
     pub level_is_tree_depth: bool,
     /// Allow wildcards on the right-hand side that do not appear in the pattern.
     pub allow_new_wildcards_on_rhs: bool,
+    /// The maximum size of the cache for the right-hand side of a replacement.
+    /// This can be used to prevent expensive recomputations.
+    pub rhs_cache_size: usize,
+}
+
+impl Default for MatchSettings {
+    fn default() -> Self {
+        Self {
+            non_greedy_wildcards: Vec::new(),
+            level_range: (0, None),
+            level_is_tree_depth: false,
+            allow_new_wildcards_on_rhs: false,
+            rhs_cache_size: 100,
+        }
+    }
 }
 
 /// An insertion-ordered map of wildcard identifiers to a subexpressions.

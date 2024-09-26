@@ -1156,6 +1156,9 @@ impl PythonTransformer {
     /// The first level is 0 and the level is increased when going into a function or one level deeper in the expression tree,
     /// depending on `level_is_tree_depth`.
     ///
+    /// For efficiency, the first `rhs_cache_size` substituted patterns are cached.
+    /// If set to `None`, an internally determined cache size is used.
+    ///
     /// Examples
     /// --------
     ///
@@ -1172,6 +1175,7 @@ impl PythonTransformer {
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
         allow_new_wildcards_on_rhs: Option<bool>,
+        rhs_cache_size: Option<usize>,
     ) -> PyResult<PythonTransformer> {
         let mut settings = MatchSettings::default();
 
@@ -1202,6 +1206,9 @@ impl PythonTransformer {
         }
         if let Some(allow_new_wildcards_on_rhs) = allow_new_wildcards_on_rhs {
             settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
+        }
+        if let Some(rhs_cache_size) = rhs_cache_size {
+            settings.rhs_cache_size = rhs_cache_size;
         }
 
         return append_transformer!(
@@ -3787,6 +3794,8 @@ impl PythonExpression {
     ///     If set to `True`, the level is increased when going one level deeper in the expression tree.
     /// allow_new_wildcards_on_rhs: bool, optional
     ///     If set to `True`, wildcards that do not appear ion the pattern are allowed on the right-hand side.
+    /// rhs_cache_size: int, optional
+    ///      Cache the first `rhs_cache_size` substituted patterns. If set to `None`, an internally determined cache size is used.
     /// repeat: bool, optional
     ///     If set to `True`, the entire operation will be repeated until there are no more matches.
     pub fn replace_all(
@@ -3798,6 +3807,7 @@ impl PythonExpression {
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
         allow_new_wildcards_on_rhs: Option<bool>,
+        rhs_cache_size: Option<usize>,
         repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
         let pattern = &pattern.to_pattern()?.expr;
@@ -3832,6 +3842,9 @@ impl PythonExpression {
         }
         if let Some(allow_new_wildcards_on_rhs) = allow_new_wildcards_on_rhs {
             settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
+        }
+        if let Some(rhs_cache_size) = rhs_cache_size {
+            settings.rhs_cache_size = rhs_cache_size;
         }
 
         let mut expr_ref = self.expr.as_view();
@@ -4410,6 +4423,7 @@ impl PythonReplacement {
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
         allow_new_wildcards_on_rhs: Option<bool>,
+        rhs_cache_size: Option<usize>,
     ) -> PyResult<Self> {
         let pattern = pattern.to_pattern()?.expr;
         let rhs = rhs.to_pattern_or_map()?;
@@ -4443,6 +4457,9 @@ impl PythonReplacement {
         }
         if let Some(allow_new_wildcards_on_rhs) = allow_new_wildcards_on_rhs {
             settings.allow_new_wildcards_on_rhs = allow_new_wildcards_on_rhs;
+        }
+        if let Some(rhs_cache_size) = rhs_cache_size {
+            settings.rhs_cache_size = rhs_cache_size;
         }
 
         let cond = cond

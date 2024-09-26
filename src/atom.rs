@@ -110,7 +110,7 @@ pub enum AtomType {
     Fun,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SliceType {
     Add,
     Mul,

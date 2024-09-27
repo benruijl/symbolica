@@ -23,7 +23,7 @@ use std::{
     collections::HashMap,
     env,
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpStream, ToSocketAddrs},
     process::abort,
     sync::atomic::{AtomicBool, Ordering::Relaxed},
     thread::ThreadId,
@@ -82,17 +82,35 @@ const MULTIPLE_INSTANCE_WARNING: &str = "┌────────────
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
 ;
 
-const NETWORK_ERROR: &str = "┌────────────────────────────────────────────────┐
+const RESOLVE_ERROR: &str = "
+┌───────────────────────────────────────────────────────────┐
+│ Could not resolve the IP of the Symbolica license server. │
+│                                                           │
+│ Please check your DNS configuration.                      │
+└───────────────────────────────────────────────────────────┘";
+
+const CONNECTION_ERROR: &str = "
+┌────────────────────────────────────────────────┐
 │ Could not connect to Symbolica license server. │
 │                                                │
-│ Please check your network configuration.       │
+│ Some networks block traffic to uncommon ports. │
+│ Consider switching networks or using a VPN.    │
 └────────────────────────────────────────────────┘";
 
-const ACTIVATION_ERROR: &str = "┌──────────────────────────────────────────┐
+const NETWORK_ERROR: &str = "
+┌───────────────────────────────────────────────────┐
+│ Connection to Symbolica license server timed out. │
+│                                                   │
+│ Please check your network configuration.          │
+└───────────────────────────────────────────────────┘";
+
+const ACTIVATION_ERROR: &str = "
+┌──────────────────────────────────────────┐
 │ Could not activate the Symbolica license │
 └──────────────────────────────────────────┘";
 
-const MISSING_LICENSE_ERROR: &str = "┌───────────────────────────────┐
+const MISSING_LICENSE_ERROR: &str = "
+┌───────────────────────────────┐
 │ Symbolica license key missing │
 └───────────────────────────────┘";
 
@@ -216,7 +234,7 @@ impl LicenseManager {
                 let mut v = JsonValue::from(m).stringify().unwrap();
                 v.push('\n');
 
-                if let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") {
+                if let Ok(mut stream) = Self::connect() {
                     let _ = stream.write_all(v.as_bytes());
                 };
             });
@@ -276,13 +294,33 @@ impl LicenseManager {
         Ok(())
     }
 
-    fn check_registration(key: String) -> Result<(), String> {
-        let mut stream = match TcpStream::connect("symbolica.io:12012") {
+    fn connect() -> Result<TcpStream, String> {
+        let mut ip = ("symbolica.io", 12012)
+            .to_socket_addrs()
+            .map_err(|e| format!("{}\nError: {}", RESOLVE_ERROR, e))?;
+        let Some(n) = ip.next() else {
+            return Err(RESOLVE_ERROR.to_owned());
+        };
+
+        let stream = match TcpStream::connect_timeout(&n, Duration::from_secs(5)) {
             Ok(stream) => stream,
             Err(_) => {
-                return Err(NETWORK_ERROR.to_owned());
+                return Err(CONNECTION_ERROR.to_owned());
             }
         };
+
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .map_err(|e| e.to_string())?;
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .map_err(|e| e.to_string())?;
+
+        Ok(stream)
+    }
+
+    fn check_registration(key: String) -> Result<(), String> {
+        let mut stream = Self::connect()?;
 
         let mut m: HashMap<String, JsonValue> = HashMap::default();
         m.insert(
@@ -380,7 +418,7 @@ Error: {}",
     /// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address
     /// `email`.
     pub fn request_hobbyist_license(name: &str, email: &str) -> Result<(), String> {
-        if let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") {
+        if let Ok(mut stream) = Self::connect() {
             let mut m: HashMap<String, JsonValue> = HashMap::default();
             m.insert("name".to_owned(), name.to_owned().into());
             m.insert("email".to_owned(), email.to_owned().into());
@@ -412,33 +450,30 @@ Error: {}",
     /// Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address
     /// `email`.
     pub fn request_trial_license(name: &str, email: &str, company: &str) -> Result<(), String> {
-        if let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") {
-            let mut m: HashMap<String, JsonValue> = HashMap::default();
-            m.insert("name".to_owned(), name.to_owned().into());
-            m.insert("email".to_owned(), email.to_owned().into());
-            m.insert("company".to_owned(), company.to_owned().into());
-            m.insert("type".to_owned(), "trial".to_owned().into());
-            let mut v = JsonValue::from(m).stringify().unwrap();
-            v.push('\n');
+        let mut stream = Self::connect()?;
+        let mut m: HashMap<String, JsonValue> = HashMap::default();
+        m.insert("name".to_owned(), name.to_owned().into());
+        m.insert("email".to_owned(), email.to_owned().into());
+        m.insert("company".to_owned(), company.to_owned().into());
+        m.insert("type".to_owned(), "trial".to_owned().into());
+        let mut v = JsonValue::from(m).stringify().unwrap();
+        v.push('\n');
 
-            stream.write_all(v.as_bytes()).unwrap();
+        stream.write_all(v.as_bytes()).unwrap();
 
-            let mut buf = Vec::new();
-            stream.read_to_end(&mut buf).unwrap();
-            let read_str = std::str::from_utf8(&buf).unwrap();
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).unwrap();
+        let read_str = std::str::from_utf8(&buf).unwrap();
 
-            if read_str == "{\"status\":\"email sent\"}\n" {
-                Ok(())
-            } else if read_str.is_empty() {
-                Err("Empty response".to_owned())
-            } else {
-                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-                let message_parsed: &HashMap<_, _> = message.get().unwrap();
-                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-                Err(status.clone())
-            }
+        if read_str == "{\"status\":\"email sent\"}\n" {
+            Ok(())
+        } else if read_str.is_empty() {
+            Err("Empty response".to_owned())
         } else {
-            Err("Could not connect to the license server".to_owned())
+            let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
+            let message_parsed: &HashMap<_, _> = message.get().unwrap();
+            let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+            Err(status.clone())
         }
     }
 
@@ -450,63 +485,57 @@ Error: {}",
         company: &str,
         super_license: &str,
     ) -> Result<(), String> {
-        if let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") {
-            let mut m: HashMap<String, JsonValue> = HashMap::default();
-            m.insert("name".to_owned(), name.to_owned().into());
-            m.insert("email".to_owned(), email.to_owned().into());
-            m.insert("company".to_owned(), company.to_owned().into());
-            m.insert("type".to_owned(), "sublicense".to_owned().into());
-            m.insert("super_license".to_owned(), super_license.to_owned().into());
-            let mut v = JsonValue::from(m).stringify().unwrap();
-            v.push('\n');
+        let mut stream = Self::connect()?;
+        let mut m: HashMap<String, JsonValue> = HashMap::default();
+        m.insert("name".to_owned(), name.to_owned().into());
+        m.insert("email".to_owned(), email.to_owned().into());
+        m.insert("company".to_owned(), company.to_owned().into());
+        m.insert("type".to_owned(), "sublicense".to_owned().into());
+        m.insert("super_license".to_owned(), super_license.to_owned().into());
+        let mut v = JsonValue::from(m).stringify().unwrap();
+        v.push('\n');
 
-            stream.write_all(v.as_bytes()).unwrap();
+        stream.write_all(v.as_bytes()).unwrap();
 
-            let mut buf = Vec::new();
-            stream.read_to_end(&mut buf).unwrap();
-            let read_str = std::str::from_utf8(&buf).unwrap();
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).unwrap();
+        let read_str = std::str::from_utf8(&buf).unwrap();
 
-            if read_str == "{\"status\":\"email sent\"}\n" {
-                Ok(())
-            } else if read_str.is_empty() {
-                Err("Empty response".to_owned())
-            } else {
-                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-                let message_parsed: &HashMap<_, _> = message.get().unwrap();
-                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-                Err(status.clone())
-            }
+        if read_str == "{\"status\":\"email sent\"}\n" {
+            Ok(())
+        } else if read_str.is_empty() {
+            Err("Empty response".to_owned())
         } else {
-            Err("Could not connect to the license server".to_owned())
+            let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
+            let message_parsed: &HashMap<_, _> = message.get().unwrap();
+            let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+            Err(status.clone())
         }
     }
 
     /// Get the license key for the account registered with the provided email address.
     pub fn get_license_key(email: &str) -> Result<(), String> {
-        if let Ok(mut stream) = TcpStream::connect("symbolica.io:12012") {
-            let mut m: HashMap<String, JsonValue> = HashMap::default();
-            m.insert("email".to_owned(), email.to_owned().into());
-            let mut v = JsonValue::from(m).stringify().unwrap();
-            v.push('\n');
+        let mut stream = Self::connect()?;
+        let mut m: HashMap<String, JsonValue> = HashMap::default();
+        m.insert("email".to_owned(), email.to_owned().into());
+        let mut v = JsonValue::from(m).stringify().unwrap();
+        v.push('\n');
 
-            stream.write_all(v.as_bytes()).unwrap();
+        stream.write_all(v.as_bytes()).unwrap();
 
-            let mut buf = Vec::new();
-            stream.read_to_end(&mut buf).unwrap();
-            let read_str = std::str::from_utf8(&buf).unwrap();
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).unwrap();
+        let read_str = std::str::from_utf8(&buf).unwrap();
 
-            if read_str == "{\"status\":\"email sent\"}\n" {
-                Ok(())
-            } else if read_str.is_empty() {
-                Err("Empty response".to_owned())
-            } else {
-                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-                let message_parsed: &HashMap<_, _> = message.get().unwrap();
-                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-                Err(status.clone())
-            }
+        if read_str == "{\"status\":\"email sent\"}\n" {
+            Ok(())
+        } else if read_str.is_empty() {
+            Err("Empty response".to_owned())
         } else {
-            Err("Could not connect to the license server".to_owned())
+            let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
+            let message_parsed: &HashMap<_, _> = message.get().unwrap();
+            let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+            Err(status.clone())
         }
     }
 }

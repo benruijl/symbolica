@@ -640,8 +640,8 @@ impl Add<i64> for Float {
         let e2 = rhs.unsigned_abs().ilog2() + 1;
         let old_prec = self.prec();
 
-        if e1 < 0 || e1.unsigned_abs() < e2 {
-            self.set_prec(self.prec() + e2.checked_add_signed(-e1).unwrap() + 1);
+        if e1.unsigned_abs() <= e2 {
+            self.set_prec(old_prec + (e2 as i32 - e1) as u32 + 1);
         }
 
         let mut r = self.0 + rhs;
@@ -752,8 +752,8 @@ impl Add<Rational> for Float {
 
         let old_prec = self.prec();
 
-        if e1 < 0 || e1 < e2 {
-            self.set_prec(self.prec() + (e2 - e1) as u32 + 1);
+        if e1 <= e2 {
+            self.set_prec(old_prec + (e2 - e1) as u32 + 1);
         }
 
         let np = self.prec();

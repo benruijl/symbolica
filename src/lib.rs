@@ -415,66 +415,60 @@ Error: {}",
         env!("SYMBOLICA_VERSION")
     }
 
-    /// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address
-    /// `email`.
-    pub fn request_hobbyist_license(name: &str, email: &str) -> Result<(), String> {
-        if let Ok(mut stream) = Self::connect() {
-            let mut m: HashMap<String, JsonValue> = HashMap::default();
-            m.insert("name".to_owned(), name.to_owned().into());
-            m.insert("email".to_owned(), email.to_owned().into());
-            m.insert("type".to_owned(), "hobbyist".to_owned().into());
-            let mut v = JsonValue::from(m).stringify().unwrap();
-            v.push('\n');
-
-            stream.write_all(v.as_bytes()).unwrap();
-
-            let mut buf = Vec::new();
-            stream.read_to_end(&mut buf).unwrap();
-            let read_str = std::str::from_utf8(&buf).unwrap();
-
-            if read_str == "{\"status\":\"email sent\"}\n" {
-                Ok(())
-            } else if read_str.is_empty() {
-                Err("Empty response".to_owned())
-            } else {
-                let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-                let message_parsed: &HashMap<_, _> = message.get().unwrap();
-                let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-                Err(status.clone())
-            }
-        } else {
-            Err("Could not connect to the license server".to_owned())
-        }
-    }
-
-    /// Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address
-    /// `email`.
-    pub fn request_trial_license(name: &str, email: &str, company: &str) -> Result<(), String> {
+    fn request_license_email(data: HashMap<String, JsonValue>) -> Result<(), String> {
         let mut stream = Self::connect()?;
-        let mut m: HashMap<String, JsonValue> = HashMap::default();
-        m.insert("name".to_owned(), name.to_owned().into());
-        m.insert("email".to_owned(), email.to_owned().into());
-        m.insert("company".to_owned(), company.to_owned().into());
-        m.insert("type".to_owned(), "trial".to_owned().into());
-        let mut v = JsonValue::from(m).stringify().unwrap();
+        let mut v = JsonValue::from(data).stringify().unwrap();
         v.push('\n');
 
-        stream.write_all(v.as_bytes()).unwrap();
+        stream
+            .write_all(v.as_bytes())
+            .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
 
         let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).unwrap();
-        let read_str = std::str::from_utf8(&buf).unwrap();
+        stream
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("{}\nError: {}", NETWORK_ERROR, e))?;
+        let read_str = std::str::from_utf8(&buf).map_err(|_| "Bad server response".to_string())?;
 
         if read_str == "{\"status\":\"email sent\"}\n" {
             Ok(())
         } else if read_str.is_empty() {
             Err("Empty response".to_owned())
         } else {
-            let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-            let message_parsed: &HashMap<_, _> = message.get().unwrap();
-            let status: &String = message_parsed.get("status").unwrap().get().unwrap();
+            let message: JsonValue = read_str[..read_str.len() - 1]
+                .parse()
+                .map_err(|_| "Bad server response".to_string())?;
+            let message_parsed: &HashMap<_, _> = message
+                .get()
+                .ok_or_else(|| "Bad server response".to_string())?;
+            let status: &String = message_parsed
+                .get("status")
+                .unwrap()
+                .get()
+                .ok_or_else(|| "Bad server response".to_string())?;
             Err(status.clone())
         }
+    }
+
+    /// Request a key for **non-professional** use for the user `name`, that will be sent to the e-mail address
+    /// `email`.
+    pub fn request_hobbyist_license(name: &str, email: &str) -> Result<(), String> {
+        let mut m: HashMap<String, JsonValue> = HashMap::default();
+        m.insert("name".to_owned(), name.to_owned().into());
+        m.insert("email".to_owned(), email.to_owned().into());
+        m.insert("type".to_owned(), "hobbyist".to_owned().into());
+        Self::request_license_email(m)
+    }
+
+    /// Request a key for a trial license for the user `name` working at `company`, that will be sent to the e-mail address
+    /// `email`.
+    pub fn request_trial_license(name: &str, email: &str, company: &str) -> Result<(), String> {
+        let mut m: HashMap<String, JsonValue> = HashMap::default();
+        m.insert("name".to_owned(), name.to_owned().into());
+        m.insert("email".to_owned(), email.to_owned().into());
+        m.insert("company".to_owned(), company.to_owned().into());
+        m.insert("type".to_owned(), "trial".to_owned().into());
+        Self::request_license_email(m)
     }
 
     /// Request a sublicense key for the user `name` working at `company` that has the site-wide license `super_license`.
@@ -485,57 +479,19 @@ Error: {}",
         company: &str,
         super_license: &str,
     ) -> Result<(), String> {
-        let mut stream = Self::connect()?;
         let mut m: HashMap<String, JsonValue> = HashMap::default();
         m.insert("name".to_owned(), name.to_owned().into());
         m.insert("email".to_owned(), email.to_owned().into());
         m.insert("company".to_owned(), company.to_owned().into());
         m.insert("type".to_owned(), "sublicense".to_owned().into());
         m.insert("super_license".to_owned(), super_license.to_owned().into());
-        let mut v = JsonValue::from(m).stringify().unwrap();
-        v.push('\n');
-
-        stream.write_all(v.as_bytes()).unwrap();
-
-        let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).unwrap();
-        let read_str = std::str::from_utf8(&buf).unwrap();
-
-        if read_str == "{\"status\":\"email sent\"}\n" {
-            Ok(())
-        } else if read_str.is_empty() {
-            Err("Empty response".to_owned())
-        } else {
-            let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-            let message_parsed: &HashMap<_, _> = message.get().unwrap();
-            let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-            Err(status.clone())
-        }
+        Self::request_license_email(m)
     }
 
     /// Get the license key for the account registered with the provided email address.
     pub fn get_license_key(email: &str) -> Result<(), String> {
-        let mut stream = Self::connect()?;
         let mut m: HashMap<String, JsonValue> = HashMap::default();
         m.insert("email".to_owned(), email.to_owned().into());
-        let mut v = JsonValue::from(m).stringify().unwrap();
-        v.push('\n');
-
-        stream.write_all(v.as_bytes()).unwrap();
-
-        let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).unwrap();
-        let read_str = std::str::from_utf8(&buf).unwrap();
-
-        if read_str == "{\"status\":\"email sent\"}\n" {
-            Ok(())
-        } else if read_str.is_empty() {
-            Err("Empty response".to_owned())
-        } else {
-            let message: JsonValue = read_str[..read_str.len() - 1].parse().unwrap();
-            let message_parsed: &HashMap<_, _> = message.get().unwrap();
-            let status: &String = message_parsed.get("status").unwrap().get().unwrap();
-            Err(status.clone())
-        }
+        Self::request_license_email(m)
     }
 }

@@ -794,6 +794,12 @@ impl Div<Rational> for Float {
     }
 }
 
+impl From<f64> for Float {
+    fn from(value: f64) -> Self {
+        Float::with_val(53, value)
+    }
+}
+
 impl Float {
     pub fn new(prec: u32) -> Self {
         Float(MultiPrecisionFloat::new(prec))

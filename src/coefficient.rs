@@ -952,6 +952,37 @@ impl<'a> TryFrom<AtomView<'a>> for Rational {
     }
 }
 
+impl TryFrom<Atom> for Float {
+    type Error = &'static str;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl TryFrom<&Atom> for Float {
+    type Error = &'static str;
+
+    fn try_from(value: &Atom) -> Result<Self, Self::Error> {
+        value.as_view().try_into()
+    }
+}
+
+impl<'a> TryFrom<AtomView<'a>> for Float {
+    type Error = &'static str;
+
+    fn try_from(value: AtomView<'a>) -> Result<Self, Self::Error> {
+        if let AtomView::Num(n) = value {
+            match n.get_coeff_view() {
+                CoefficientView::Float(f) => Ok(f.to_float()),
+                _ => Err("Not a float"),
+            }
+        } else {
+            Err("Not a number")
+        }
+    }
+}
+
 impl Atom {
     /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
     pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {

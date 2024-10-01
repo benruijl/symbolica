@@ -1,6 +1,7 @@
 use std::{
     f64::consts::{LOG10_2, LOG2_10},
     fmt::{self, Debug, Display, Formatter, LowerExp, Write},
+    hash::Hash,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
@@ -10,11 +11,207 @@ use wide::{f64x2, f64x4};
 
 use crate::domains::integer::Integer;
 
-use super::rational::Rational;
+use super::{rational::Rational, EuclideanDomain, Field, InternalOrdering, Ring};
 use rug::{
     ops::{CompleteRound, Pow},
     Assign, Float as MultiPrecisionFloat,
 };
+
+/// A field of floating point type `T`. For `f64` fields, use [`FloatField<F64>`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FloatField<T> {
+    rep: T,
+}
+
+impl<T> FloatField<T> {
+    pub fn from_rep(rep: T) -> Self {
+        FloatField { rep }
+    }
+}
+
+impl FloatField<F64> {
+    pub fn new() -> Self {
+        FloatField { rep: (0.).into() }
+    }
+}
+
+impl FloatField<Float> {
+    pub fn new(prec: u32) -> Self {
+        FloatField {
+            rep: Float::new(prec),
+        }
+    }
+}
+
+impl<T> Display for FloatField<T> {
+    fn fmt(&self, _: &mut Formatter<'_>) -> fmt::Result {
+        Ok(())
+    }
+}
+
+impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring for FloatField<T> {
+    type Element = T;
+
+    #[inline(always)]
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() + b.clone()
+    }
+
+    #[inline(always)]
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() - b.clone()
+    }
+
+    #[inline(always)]
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() * b.clone()
+    }
+
+    #[inline(always)]
+    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a += b;
+    }
+
+    #[inline(always)]
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a -= b;
+    }
+
+    #[inline(always)]
+    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a *= b;
+    }
+
+    #[inline(always)]
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        // a += b * c
+        *a = b.mul_add(c, a);
+    }
+
+    #[inline(always)]
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        // a -= b * c
+        *a = b.mul_add(&-c.clone(), a);
+    }
+
+    #[inline(always)]
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        -a.clone()
+    }
+
+    #[inline(always)]
+    fn zero(&self) -> Self::Element {
+        self.rep.zero()
+    }
+
+    #[inline(always)]
+    fn one(&self) -> Self::Element {
+        self.rep.one()
+    }
+
+    #[inline(always)]
+    fn nth(&self, n: u64) -> Self::Element {
+        self.rep.from_usize(n as usize)
+    }
+
+    #[inline(always)]
+    fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
+        b.pow(e)
+    }
+
+    #[inline(always)]
+    fn is_zero(a: &Self::Element) -> bool {
+        a.is_zero()
+    }
+
+    #[inline(always)]
+    fn is_one(&self, a: &Self::Element) -> bool {
+        a.is_one()
+    }
+
+    #[inline(always)]
+    fn one_is_gcd_unit() -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn characteristic(&self) -> Integer {
+        0.into()
+    }
+
+    #[inline(always)]
+    fn size(&self) -> Integer {
+        0.into()
+    }
+
+    #[inline(always)]
+    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
+        self.rep.from_i64(rng.gen_range(range.0..range.1))
+    }
+
+    #[inline(always)]
+    fn fmt_display(
+        &self,
+        element: &Self::Element,
+        _opts: &crate::printer::PrintOptions,
+        _in_product: bool, // can be used to add parentheses
+        f: &mut Formatter<'_>,
+    ) -> Result<(), fmt::Error> {
+        Display::fmt(element, f)
+    }
+
+    #[inline(always)]
+    fn printer<'a>(&'a self, element: &'a Self::Element) -> super::RingPrinter<'a, Self> {
+        super::RingPrinter::new(self, element)
+    }
+}
+
+impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> EuclideanDomain
+    for FloatField<T>
+{
+    #[inline(always)]
+    fn rem(&self, a: &Self::Element, _: &Self::Element) -> Self::Element {
+        a.zero()
+    }
+
+    #[inline(always)]
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        (a.clone() / b, a.zero())
+    }
+
+    #[inline(always)]
+    fn gcd(&self, a: &Self::Element, _: &Self::Element) -> Self::Element {
+        a.one()
+    }
+}
+
+impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Field for FloatField<T> {
+    #[inline(always)]
+    fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        a.clone() / b
+    }
+
+    #[inline(always)]
+    fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        *a /= b;
+    }
+
+    #[inline(always)]
+    fn inv(&self, a: &Self::Element) -> Self::Element {
+        a.inv()
+    }
+}
+
+#[test]
+fn test2() {
+    let f = FloatField::<F64>::new();
+    let a = f.add(&1.0.into(), &2.0.into());
+    assert_eq!(a, 3.0.into());
+
+    let f = FloatField::<Float>::new(53);
+    let a = f.add(&f.rep.one(), &f.rep.from_i64(2));
+    assert_eq!(a, a.from_i64(3));
+}
 
 pub trait NumericalFloatLike:
     PartialEq
@@ -40,6 +237,7 @@ pub trait NumericalFloatLike:
     + MulAssign<Self>
     + DivAssign<Self>
 {
+    /// Perform `(self * a) + b`.
     fn mul_add(&self, a: &Self, b: &Self) -> Self;
     fn neg(&self) -> Self;
     fn zero(&self) -> Self;
@@ -68,6 +266,8 @@ pub trait SingleFloat: NumericalFloatLike {
     fn is_zero(&self) -> bool;
     fn is_one(&self) -> bool;
     fn is_finite(&self) -> bool;
+    /// Convert a rational to a float with the same precision as the current float.
+    fn from_rational(&self, rat: &Rational) -> Self;
 }
 
 pub trait RealNumberLike: SingleFloat {
@@ -186,6 +386,11 @@ impl SingleFloat for f64 {
     #[inline(always)]
     fn is_finite(&self) -> bool {
         (*self).is_finite()
+    }
+
+    #[inline(always)]
+    fn from_rational(&self, rat: &Rational) -> Self {
+        rat.to_f64()
     }
 }
 
@@ -320,6 +525,379 @@ impl From<Rational> for f64 {
     }
 }
 
+/// A wrapper around `f64` that implements `Eq`, `Ord`, and `Hash`.
+/// All `NaN` values are considered equal, and `-0` is considered equal to `0`.
+#[derive(Debug, Copy, Clone)]
+pub struct F64(f64);
+
+impl NumericalFloatLike for F64 {
+    #[inline(always)]
+    fn mul_add(&self, a: &Self, b: &Self) -> Self {
+        self.0.mul_add(a.0, b.0).into()
+    }
+
+    #[inline(always)]
+    fn neg(&self) -> Self {
+        (-self.0).into()
+    }
+
+    #[inline(always)]
+    fn zero(&self) -> Self {
+        (0.).into()
+    }
+
+    #[inline(always)]
+    fn new_zero() -> Self {
+        (0.).into()
+    }
+
+    #[inline(always)]
+    fn one(&self) -> Self {
+        (1.).into()
+    }
+
+    #[inline(always)]
+    fn pow(&self, e: u64) -> Self {
+        NumericalFloatLike::pow(&self.0, e).into()
+    }
+
+    #[inline(always)]
+    fn inv(&self) -> Self {
+        self.0.inv().into()
+    }
+
+    #[inline(always)]
+    fn from_usize(&self, a: usize) -> Self {
+        self.0.from_usize(a).into()
+    }
+
+    #[inline(always)]
+    fn from_i64(&self, a: i64) -> Self {
+        self.0.from_i64(a).into()
+    }
+
+    #[inline(always)]
+    fn get_precision(&self) -> u32 {
+        self.0.get_precision().into()
+    }
+
+    #[inline(always)]
+    fn get_epsilon(&self) -> f64 {
+        self.0.get_epsilon().into()
+    }
+
+    #[inline(always)]
+    fn fixed_precision(&self) -> bool {
+        self.0.fixed_precision().into()
+    }
+
+    #[inline(always)]
+    fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self {
+        self.0.sample_unit(rng).into()
+    }
+}
+
+impl Neg for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn neg(self) -> Self::Output {
+        self.0.neg().into()
+    }
+}
+
+impl Add<&F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: &Self) -> Self::Output {
+        (self.0 + rhs.0).into()
+    }
+}
+
+impl Add<F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        (self.0 + rhs.0).into()
+    }
+}
+
+impl Sub<&F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: &Self) -> Self::Output {
+        (self.0 - rhs.0).into()
+    }
+}
+
+impl Sub<F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        (self.0 - rhs.0).into()
+    }
+}
+
+impl Mul<&F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: &Self) -> Self::Output {
+        (self.0 * rhs.0).into()
+    }
+}
+
+impl Mul<F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        (self.0 * rhs.0).into()
+    }
+}
+
+impl Div<&F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: &Self) -> Self::Output {
+        (self.0 / rhs.0).into()
+    }
+}
+
+impl Div<F64> for F64 {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: Self) -> Self::Output {
+        (self.0 / rhs.0).into()
+    }
+}
+
+impl AddAssign<&F64> for F64 {
+    #[inline]
+    fn add_assign(&mut self, rhs: &F64) {
+        self.0 += rhs.0;
+    }
+}
+
+impl AddAssign<F64> for F64 {
+    #[inline]
+    fn add_assign(&mut self, rhs: F64) {
+        self.0 += rhs.0;
+    }
+}
+
+impl SubAssign<&F64> for F64 {
+    #[inline]
+    fn sub_assign(&mut self, rhs: &F64) {
+        self.0 -= rhs.0;
+    }
+}
+
+impl SubAssign<F64> for F64 {
+    #[inline]
+    fn sub_assign(&mut self, rhs: F64) {
+        self.0 -= rhs.0;
+    }
+}
+
+impl MulAssign<&F64> for F64 {
+    #[inline]
+    fn mul_assign(&mut self, rhs: &F64) {
+        self.0 *= rhs.0;
+    }
+}
+
+impl MulAssign<F64> for F64 {
+    #[inline]
+    fn mul_assign(&mut self, rhs: F64) {
+        self.0 *= rhs.0;
+    }
+}
+
+impl DivAssign<&F64> for F64 {
+    #[inline]
+    fn div_assign(&mut self, rhs: &F64) {
+        self.0 /= rhs.0
+    }
+}
+
+impl DivAssign<F64> for F64 {
+    #[inline]
+    fn div_assign(&mut self, rhs: F64) {
+        self.0 /= rhs.0
+    }
+}
+
+impl SingleFloat for F64 {
+    #[inline(always)]
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+
+    #[inline(always)]
+    fn is_one(&self) -> bool {
+        self.0.is_one()
+    }
+
+    #[inline(always)]
+    fn is_finite(&self) -> bool {
+        self.0.is_finite()
+    }
+
+    #[inline(always)]
+    fn from_rational(&self, rat: &Rational) -> Self {
+        rat.to_f64().into()
+    }
+}
+
+impl Real for F64 {
+    #[inline(always)]
+    fn norm(&self) -> Self {
+        self.0.norm().into()
+    }
+
+    #[inline(always)]
+    fn sqrt(&self) -> Self {
+        self.0.sqrt().into()
+    }
+
+    #[inline(always)]
+    fn log(&self) -> Self {
+        self.0.ln().into()
+    }
+
+    #[inline(always)]
+    fn exp(&self) -> Self {
+        self.0.exp().into()
+    }
+
+    #[inline(always)]
+    fn sin(&self) -> Self {
+        self.0.sin().into()
+    }
+
+    #[inline(always)]
+    fn cos(&self) -> Self {
+        self.0.cos().into()
+    }
+
+    #[inline(always)]
+    fn tan(&self) -> Self {
+        self.0.tan().into()
+    }
+
+    #[inline(always)]
+    fn asin(&self) -> Self {
+        self.0.asin().into()
+    }
+
+    #[inline(always)]
+    fn acos(&self) -> Self {
+        self.0.acos().into()
+    }
+
+    #[inline(always)]
+    fn atan2(&self, x: &Self) -> Self {
+        self.0.atan2(x.0).into()
+    }
+
+    #[inline(always)]
+    fn sinh(&self) -> Self {
+        self.0.sinh().into()
+    }
+
+    #[inline(always)]
+    fn cosh(&self) -> Self {
+        self.0.cosh().into()
+    }
+
+    #[inline(always)]
+    fn tanh(&self) -> Self {
+        self.0.tanh().into()
+    }
+
+    #[inline(always)]
+    fn asinh(&self) -> Self {
+        self.0.asinh().into()
+    }
+
+    #[inline(always)]
+    fn acosh(&self) -> Self {
+        self.0.acosh().into()
+    }
+
+    #[inline(always)]
+    fn atanh(&self) -> Self {
+        self.0.atanh().into()
+    }
+
+    #[inline(always)]
+    fn powf(&self, e: &Self) -> Self {
+        self.0.powf(e.0).into()
+    }
+}
+
+impl From<f64> for F64 {
+    #[inline(always)]
+    fn from(value: f64) -> Self {
+        F64(value)
+    }
+}
+
+impl PartialEq for F64 {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.is_nan() == other.0.is_nan() {
+            true
+        } else {
+            self.0 == other.0
+        }
+    }
+}
+
+impl PartialOrd for F64 {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl InternalOrdering for F64 {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl Display for F64 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl LowerExp for F64 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        LowerExp::fmt(&self.0, f)
+    }
+}
+
+impl Eq for F64 {}
+
+impl Hash for F64 {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        if self.0.is_nan() {
+            state.write_u64(0x7ff8000000000000);
+        } else if self.0 == 0. {
+            state.write_u64(0);
+        } else {
+            state.write_u64(self.0.to_bits());
+        }
+    }
+}
+
 /// A multi-precision floating point type. Operations on this type
 /// loosely track the precision of the result, but always overestimate.
 /// Some operations may improve precision, such as `sqrt` or adding an
@@ -327,12 +905,51 @@ impl From<Rational> for f64 {
 ///
 /// Floating point output with less than five significant binary digits
 /// should be considered unreliable.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct Float(MultiPrecisionFloat);
 
 impl Debug for Float {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Debug::fmt(&self.0, f)
+    }
+}
+
+impl PartialEq for Float {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.is_nan() && other.0.is_nan() {
+            return true;
+        } else {
+            self.0 == other.0
+        }
+    }
+}
+
+impl Eq for Float {}
+
+impl Hash for Float {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        if self.0.is_nan() {
+            state.write_u64(0x7ff8000000000000);
+            return;
+        }
+
+        if self.0.is_zero() {
+            state.write_u64(0);
+            return;
+        }
+
+        self.0.get_exp().hash(state);
+        if let Some(s) = self.0.get_significand() {
+            s.hash(state);
+        } else {
+            state.write_u64(0x7ff8000000000000)
+        }
+    }
+}
+
+impl InternalOrdering for Float {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
 
@@ -894,7 +1511,7 @@ impl From<MultiPrecisionFloat> for Float {
 impl NumericalFloatLike for Float {
     #[inline(always)]
     fn mul_add(&self, a: &Self, b: &Self) -> Self {
-        a.clone() * b + self
+        self.clone() * a + b
     }
 
     #[inline(always)]
@@ -973,6 +1590,11 @@ impl SingleFloat for Float {
     #[inline(always)]
     fn is_finite(&self) -> bool {
         self.0.is_finite()
+    }
+
+    #[inline(always)]
+    fn from_rational(&self, rat: &Rational) -> Self {
+        rat.to_multi_prec_float(self.prec())
     }
 }
 
@@ -1425,7 +2047,7 @@ impl<T: NumericalFloatLike + PartialOrd> PartialOrd for ErrorPropagatingFloat<T>
 
 impl<T: RealNumberLike> NumericalFloatLike for ErrorPropagatingFloat<T> {
     fn mul_add(&self, a: &Self, b: &Self) -> Self {
-        a.clone() * b + self
+        self.clone() * a + b
     }
 
     fn neg(&self) -> Self {
@@ -1515,6 +2137,13 @@ impl<T: RealNumberLike> SingleFloat for ErrorPropagatingFloat<T> {
 
     fn is_finite(&self) -> bool {
         self.value.is_finite()
+    }
+
+    fn from_rational(&self, rat: &Rational) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.from_rational(rat),
+            prec: self.prec,
+        }
     }
 }
 
@@ -1952,6 +2581,11 @@ impl SingleFloat for Rational {
     fn is_finite(&self) -> bool {
         true
     }
+
+    #[inline(always)]
+    fn from_rational(&self, rat: &Rational) -> Self {
+        rat.clone()
+    }
 }
 
 impl RealNumberLike for Rational {
@@ -1964,7 +2598,7 @@ impl RealNumberLike for Rational {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Complex<T> {
     pub re: T,
@@ -2551,12 +3185,20 @@ impl<T: SingleFloat> SingleFloat for Complex<T> {
     fn is_finite(&self) -> bool {
         true
     }
+
+    #[inline(always)]
+    fn from_rational(&self, rat: &Rational) -> Self {
+        Complex {
+            re: self.re.from_rational(rat),
+            im: self.im.zero(),
+        }
+    }
 }
 
 impl<T: NumericalFloatLike> NumericalFloatLike for Complex<T> {
     #[inline]
     fn mul_add(&self, a: &Self, b: &Self) -> Self {
-        self.clone() + (a.clone() * b)
+        self.clone() * a + b
     }
 
     #[inline]

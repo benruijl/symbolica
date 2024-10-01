@@ -3,11 +3,11 @@ use std::{ops::Neg, sync::Arc};
 use crate::{
     atom::{Atom, AtomView, Symbol},
     domains::{
-        atom::AtomField,
-        float::{Float, Real, SingleFloat},
+        float::{FloatField, Real, SingleFloat},
         integer::{IntegerRing, Z},
-        rational::{Rational, Q},
+        rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
+        InternalOrdering,
     },
     evaluate::FunctionMap,
     poly::{Exponent, Variable},
@@ -16,7 +16,7 @@ use crate::{
 
 impl<'a> AtomView<'a> {
     /// Find the root of a function in `x` numerically over the reals using Newton's method.
-    pub fn nsolve<N: SingleFloat + Real + PartialOrd + From<Rational>>(
+    pub fn nsolve<N: SingleFloat + Real + PartialOrd>(
         &self,
         x: Symbol,
         init: N,
@@ -34,8 +34,8 @@ impl<'a> AtomView<'a> {
             .unwrap()
             .optimize(0, 0, None, false);
 
-        let mut f_e = f.map_coeff(&|x| x.clone().into());
-        let mut df_e = df.map_coeff(&|x| x.clone().into());
+        let mut f_e = f.map_coeff(&|x| init.from_rational(x));
+        let mut df_e = df.map_coeff(&|x| init.from_rational(x));
 
         let mut cur = init.clone();
 
@@ -57,15 +57,34 @@ impl<'a> AtomView<'a> {
     }
 
     /// Solve a non-linear system numerically over the reals using Newton's method.
-    pub fn nsolve_system(
+    pub fn nsolve_system<
+        N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
+    >(
         system: &[AtomView],
         vars: &[Symbol],
-        init: &[Float],
-        prec: Float,
+        init: &[N],
+        prec: N,
         max_iterations: usize,
-    ) -> Result<Vec<Float>, String> {
+    ) -> Result<Vec<N>, String> {
         if system.len() != vars.len() {
             Err("System must have same number of equations as there are unknowns".to_owned())?;
+        }
+
+        if vars.len() != init.len() {
+            Err("Initial values must be provided for all unknowns".to_owned())?;
+        }
+
+        if system.is_empty() {
+            return Ok(vec![]);
+        }
+
+        if system.len() == 1 {
+            return Ok(vec![system[0].nsolve(
+                vars[0],
+                init[0].clone(),
+                prec,
+                max_iterations,
+            )?]);
         }
 
         let avars = vars.iter().map(|v| Atom::new_var(*v)).collect::<Vec<_>>();
@@ -76,7 +95,7 @@ impl<'a> AtomView<'a> {
                 a.to_evaluation_tree(&FunctionMap::new(), &avars)
                     .unwrap()
                     .optimize(0, 0, None, false)
-                    .map_coeff(&|x| x.to_multi_prec_float(init[0].prec()))
+                    .map_coeff(&|x| init[0].from_rational(x))
             })
             .collect::<Vec<_>>();
 
@@ -90,44 +109,42 @@ impl<'a> AtomView<'a> {
                     .to_evaluation_tree(&FunctionMap::new(), &avars)
                     .unwrap()
                     .optimize(0, 0, None, false)
-                    .map_coeff(&|x| x.to_multi_prec_float(init[0].prec()));
+                    .map_coeff(&|x| init[0].from_rational(x));
 
                 row.push(a);
             }
             jacobian.extend_from_slice(&row);
         }
 
+        let field = FloatField::from_rep(init[0].clone());
         let mut cur = init.to_vec();
-        let mut ci = Matrix::new_vec(
-            init.iter().map(|i| Atom::new_num(i.clone())).collect(),
-            AtomField::new(),
-        );
 
         for _ in 0..max_iterations {
             let f = fs
                 .iter_mut()
-                .map(|a| Atom::new_num(a.evaluate_single(&cur)))
+                .map(|a| a.evaluate_single(&cur))
                 .collect::<Vec<_>>();
-            let f = Matrix::new_vec(f, AtomField::new());
+            let f = Matrix::new_vec(f, field.clone());
 
             let df = jacobian
                 .iter_mut()
-                .map(|a| Atom::new_num(a.evaluate_single(&cur)))
+                .map(|a| a.evaluate_single(&cur))
                 .collect::<Vec<_>>();
 
-            let df =
-                Matrix::from_linear(df, system.len() as u32, vars.len() as u32, AtomField::new())
-                    .unwrap();
+            let df = Matrix::from_linear(df, system.len() as u32, vars.len() as u32, field.clone())
+                .unwrap();
 
             let Ok(i) = df.inv() else {
                 return Err("Could not invert Jacobian".to_owned());
             };
 
-            ci = &ci - &(&i * &f);
+            let mut ci = Matrix::new_vec(cur.to_vec(), field.clone());
 
-            cur = ci.data.iter().map(|x| x.try_into().unwrap()).collect();
+            ci -= &(&i * &f);
 
-            if f.data.iter().all(|x| Float::try_from(x).unwrap() < prec) {
+            cur = ci.data;
+
+            if f.data.iter().all(|x| x < &prec) {
                 return Ok(cur);
             }
         }
@@ -218,7 +235,7 @@ mod test {
     use crate::{
         atom::{Atom, AtomView},
         domains::{
-            float::{Float, Real},
+            float::{Real, F64},
             integer::Z,
             rational::Q,
             rational_polynomial::{RationalPolynomial, RationalPolynomialField},
@@ -337,13 +354,13 @@ mod test {
         let r = AtomView::nsolve_system(
             &[a.as_view(), b.as_view()],
             &[State::get_symbol("x"), State::get_symbol("y")],
-            &[Float::with_val(53, 1.), Float::with_val(53, 1.)],
-            Float::with_val(53, 1e-10),
+            &[F64::from(1.), F64::from(1.)],
+            F64::from(1e-10),
             100,
         )
         .unwrap();
 
-        assert!((r[0].clone() - Float::from(-5.0533137563948738e-1)).norm() < 1e-10.into());
-        assert!((r[1].clone() - Float::from(7.0504070797868401e-1)).norm() < 1e-10.into());
+        assert!((r[0].clone() - F64::from(5.6729734993961234e-1)).norm() < 1e-10.into());
+        assert!((r[1].clone() - F64::from(-3.0944227920271083e-1)).norm() < 1e-10.into());
     }
 }

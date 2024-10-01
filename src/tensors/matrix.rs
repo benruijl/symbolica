@@ -739,7 +739,7 @@ impl<F: Field> Matrix<F> {
                 ncols: 2,
                 data: vec![
                     f.mul(&self.data[3], &d_inv),
-                    f.mul(&f.neg(&self.data[2]), &d_inv),
+                    f.mul(&f.neg(&self.data[1]), &d_inv),
                     f.mul(&f.neg(&self.data[2]), &d_inv),
                     f.mul(&self.data[0], &d_inv),
                 ],
@@ -805,37 +805,10 @@ impl<F: Field> Matrix<F> {
             m[(r, self.nrows + r)] = self.field.one();
         }
 
-        let rank = m
-            .solve_subsystem(self.ncols)
-            .map_err(|_| MatrixError::Singular)?;
+        let rank = m.row_reduce();
 
-        if rank < self.nrows {
+        if rank < self.nrows as usize {
             return Err(MatrixError::Singular);
-        }
-
-        // do back substitution
-        let mut i = self.nrows - 1;
-        for j in (0..self.ncols).rev() {
-            if !m.field.is_one(&m[(i, j)]) {
-                let inv_x = m.field.inv(&m[(i, j)]);
-
-                for c in self.ncols..self.ncols * 2 {
-                    self.field.mul_assign(&mut m[(i, c)], &inv_x);
-                }
-            }
-            for k in 0..i {
-                if !F::is_zero(&m[(k, j)]) {
-                    for c in self.ncols..self.ncols * 2 {
-                        let mut e = std::mem::replace(&mut m[(k, c)], self.field.zero());
-                        self.field.sub_mul_assign(&mut e, &m[(i, c)], &m[(k, j)]);
-                        m[(k, c)] = e;
-                    }
-                }
-            }
-            if i == 0 {
-                break;
-            }
-            i -= 1;
         }
 
         for r in 0..self.nrows {
@@ -931,7 +904,7 @@ impl<F: Field> Matrix<F> {
                         // Swap i-th row and k-th row.
                         for l in j..self.ncols {
                             self.data
-                                .swap((self.nrows * i + l) as usize, (self.nrows * k + l) as usize);
+                                .swap((self.ncols * i + l) as usize, (self.ncols * k + l) as usize);
                         }
                         break;
                     }
@@ -1267,5 +1240,68 @@ mod test {
                 }
             }
         }
+    }
+
+    #[test]
+    fn inverse() {
+        let a = Matrix::from_linear(
+            vec![3u64.into(), 2u64.into(), 15u64.into(), 4u64.into()],
+            2,
+            2,
+            Q,
+        )
+        .unwrap();
+
+        let inv = a.inv().unwrap();
+        assert_eq!(&a * &inv, Matrix::identity(2, Q));
+
+        let a = Matrix::from_linear(
+            vec![
+                3u64.into(),
+                2u64.into(),
+                15u64.into(),
+                4u64.into(),
+                9u64.into(),
+                6u64.into(),
+                7u64.into(),
+                8u64.into(),
+                17u64.into(),
+            ],
+            3,
+            3,
+            Q,
+        )
+        .unwrap();
+
+        let inv = a.inv().unwrap();
+        assert_eq!(&a * &inv, Matrix::identity(3, Q));
+
+        let a = Matrix::from_linear(
+            vec![
+                3u64.into(),
+                2u64.into(),
+                15u64.into(),
+                4u64.into(),
+                9u64.into(),
+                6u64.into(),
+                7u64.into(),
+                8u64.into(),
+                17u64.into(),
+                45u64.into(),
+                23u64.into(),
+                12u64.into(),
+                13u64.into(),
+                14u64.into(),
+                15u64.into(),
+                16u64.into(),
+            ],
+            4,
+            4,
+            Q,
+        )
+        .unwrap();
+
+        let inv = a.inv().unwrap();
+        assert_eq!(&a * &inv, Matrix::identity(4, Q));
     }
 }

@@ -1144,6 +1144,81 @@ class Expression:
         >>> print('x =', x_r, ', y =', y_r)
         """
 
+    @overload
+    def nsolve(
+        self,
+        variable: Expression,
+        init: float,
+        prec: float = 1e-4,
+        max_iter: int = 10000,
+    ) -> float:
+        """Find the root of an expression in `x` numerically over the reals using Newton's method.
+        Use `init` as the initial guess for the root. This method uses the same precision as `init`.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> a = E("x^2-2").nsolve(E("x"), 1., 0.0001, 1000000)
+        """
+
+    @overload
+    def nsolve(
+        self,
+        variable: Expression,
+        init: Decimal,
+        prec: float = 1e-4,
+        max_iter: int = 10000,
+    ) -> Decimal:
+        """Find the root of an expression in `x` numerically over the reals using Newton's method.
+        Use `init` as the initial guess for the root. This method uses the same precision as `init`.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> a = E("x^2-2").nsolve(E("x"),
+                      Decimal("1.000000000000000000000000000000000000000000000000000000000000000000000000"), 1e-74, 1000000)
+        """
+
+    @overload
+    @classmethod
+    def nsolve_system(
+        _cls,
+        system: Sequence[Expression],
+        variables: Sequence[Expression],
+        init: Sequence[float],
+        prec: float = 1e-4,
+        max_iter: int = 10000,
+    ) -> Sequence[float]:
+        """Find a common root of multiple expressions in `variables` numerically over the reals using Newton's method.
+        Use `init` as the initial guess for the root. This method uses the same precision as `init`.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> a = Expression.nsolve_system([E("5x^2+x*y^2+sin(2y)^2 - 2"), E("exp(2x-y)+4y - 3")], [S("x"), S("y")],
+                             [Decimal("1.00000000000000000"), Decimal("1.00000000000000000")], 1e-20, 1000000)
+        """
+
+    @overload
+    @classmethod
+    def nsolve_system(
+        _cls,
+        system: Sequence[Expression],
+        variables: Sequence[Expression],
+        init: Sequence[Decimal],
+        prec: float = 1e-4,
+        max_iter: int = 10000,
+    ) -> Sequence[Decimal]:
+        """Find a common root of multiple expressions in `variables` numerically over the reals using Newton's method.
+        Use `init` as the initial guess for the root. This method uses the same precision as `init`.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> a = Expression.nsolve_system([E("5x^2+x*y^2+sin(2y)^2 - 2"), E("exp(2x-y)+4y - 3")], [S("x"), S("y")],
+                             [1., 1.], 1e-20, 1000000)
+        """
+
     def evaluate(
         self, constants: dict[Expression, float], funs: dict[Expression, Callable[[Sequence[float]], float]]
     ) -> float:

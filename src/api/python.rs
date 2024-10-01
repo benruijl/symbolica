@@ -34,7 +34,7 @@ use crate::{
         algebraic_number::AlgebraicExtension,
         atom::AtomField,
         finite_field::{ToFiniteField, Zp, Z2},
-        float::{Complex, Float},
+        float::{Complex, Float, RealNumberLike, F64},
         integer::{FromFiniteField, Integer, IntegerRing, Z},
         rational::{Rational, RationalField, Q},
         rational_polynomial::{
@@ -1677,6 +1677,7 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
             let digits = a
                 .chars()
                 .skip_while(|x| *x == '.' || *x == '0')
+                .filter(|x| *x != '.')
                 .take_while(|x| x.is_ascii_digit())
                 .count();
 
@@ -3955,6 +3956,130 @@ impl PythonExpression {
         })?;
 
         Ok(res.into_iter().map(|x| x.into()).collect())
+    }
+
+    /// Find the root of an expression in `x` numerically over the reals using Newton's method.
+    /// Use `init` as the initial guess for the root.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x, y, c = Expression.symbol('x', 'y', 'c')
+    /// >>> f = Expression.symbol('f')
+    /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
+    /// >>> print('x =', x_r, ', y =', y_r)
+    #[pyo3(signature =
+        (variable,
+        init,
+        prec = 1e-4,
+        max_iterations = 1000),
+        )]
+    pub fn nsolve(
+        &self,
+        variable: PythonExpression,
+        init: PythonMultiPrecisionFloat,
+        prec: f64,
+        max_iterations: usize,
+        py: Python,
+    ) -> PyResult<PyObject> {
+        let id = if let AtomView::Var(x) = variable.expr.as_view() {
+            x.get_symbol()
+        } else {
+            return Err(exceptions::PyValueError::new_err(
+                "Expected variable instead of expression",
+            ));
+        };
+
+        if init.0.prec() == 53 {
+            let r = self
+                .expr
+                .nsolve::<F64>(id, init.0.to_f64().into(), prec.into(), max_iterations)
+                .map_err(|e| {
+                    exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+                })?;
+            Ok(r.into_inner().into_py(py))
+        } else {
+            Ok(PythonMultiPrecisionFloat(
+                self.expr
+                    .nsolve(id, init.0, prec.into(), max_iterations)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+                    })?,
+            )
+            .to_object(py))
+        }
+    }
+
+    /// Find a common root of multiple expressions in `variables` numerically over the reals using Newton's method.
+    /// Use `init` as the initial guess for the root.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import Expression
+    /// >>> x, y, c = Expression.symbol('x', 'y', 'c')
+    /// >>> f = Expression.symbol('f')
+    /// >>> x_r, y_r = Expression.solve_linear_system([f(c)*x + y/c - 1, y-c/2], [x, y])
+    /// >>> print('x =', x_r, ', y =', y_r)
+    #[pyo3(signature =
+        (system,
+        variables,
+        init,
+        prec = 1e-4,
+        max_iterations = 1000),
+        )]
+    #[classmethod]
+    pub fn nsolve_system(
+        _cls: &PyType,
+        system: Vec<ConvertibleToExpression>,
+        variables: Vec<PythonExpression>,
+        init: Vec<PythonMultiPrecisionFloat>,
+        prec: f64,
+        max_iterations: usize,
+        py: Python,
+    ) -> PyResult<Vec<PyObject>> {
+        let system: Vec<_> = system.into_iter().map(|x| x.to_expression()).collect();
+        let system_b: Vec<_> = system.iter().map(|x| x.expr.as_view()).collect();
+
+        let mut vars = vec![];
+        for v in variables {
+            match v.expr.as_view() {
+                AtomView::Var(v) => vars.push(v.get_symbol().into()),
+                e => {
+                    Err(exceptions::PyValueError::new_err(format!(
+                        "Expected variable instead of {}",
+                        e
+                    )))?;
+                }
+            }
+        }
+
+        if init[0].0.prec() == 53 {
+            let init: Vec<_> = init.into_iter().map(|x| x.0.to_f64().into()).collect();
+
+            let res: Vec<F64> =
+                AtomView::nsolve_system(&system_b, &vars, &init, prec.into(), max_iterations)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+                    })?;
+
+            Ok(res
+                .into_iter()
+                .map(|x| x.into_inner().into_py(py))
+                .collect())
+        } else {
+            let init: Vec<_> = init.into_iter().map(|x| x.0).collect();
+
+            let res: Vec<Float> =
+                AtomView::nsolve_system(&system_b, &vars, &init, prec.into(), max_iterations)
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
+                    })?;
+
+            Ok(res
+                .into_iter()
+                .map(|x| PythonMultiPrecisionFloat(x).to_object(py))
+                .collect())
+        }
     }
 
     /// Evaluate the expression, using a map of all the constants and

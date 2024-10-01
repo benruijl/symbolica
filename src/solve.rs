@@ -14,6 +14,41 @@ use crate::{
     tensors::matrix::Matrix,
 };
 
+impl Atom {
+    /// Find the root of a function in `x` numerically over the reals using Newton's method.
+    pub fn nsolve<N: SingleFloat + Real + PartialOrd>(
+        &self,
+        x: Symbol,
+        init: N,
+        prec: N,
+        max_iterations: usize,
+    ) -> Result<N, String> {
+        self.as_view().nsolve(x, init, prec, max_iterations)
+    }
+
+    /// Solve a non-linear system numerically over the reals using Newton's method.
+    pub fn nsolve_system<
+        N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
+    >(
+        system: &[AtomView],
+        vars: &[Symbol],
+        init: &[N],
+        prec: N,
+        max_iterations: usize,
+    ) -> Result<Vec<N>, String> {
+        AtomView::nsolve_system(system, vars, init, prec, max_iterations)
+    }
+
+    /// Solve a system that is linear in `vars`, if possible.
+    /// Each expression in `system` is understood to yield 0.
+    pub fn solve_linear_system<E: Exponent>(
+        system: &[AtomView],
+        vars: &[Symbol],
+    ) -> Result<Vec<Atom>, String> {
+        AtomView::solve_linear_system::<E>(system, vars)
+    }
+}
+
 impl<'a> AtomView<'a> {
     /// Find the root of a function in `x` numerically over the reals using Newton's method.
     pub fn nsolve<N: SingleFloat + Real + PartialOrd>(

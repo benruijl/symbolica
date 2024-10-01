@@ -530,6 +530,12 @@ impl From<Rational> for f64 {
 #[derive(Debug, Copy, Clone)]
 pub struct F64(f64);
 
+impl F64 {
+    pub fn into_inner(self) -> f64 {
+        self.0
+    }
+}
+
 impl NumericalFloatLike for F64 {
     #[inline(always)]
     fn mul_add(&self, a: &Self, b: &Self) -> Self {

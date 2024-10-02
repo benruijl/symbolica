@@ -1196,7 +1196,7 @@ class Expression:
         --------
         >>> from symbolica import *
         >>> a = Expression.nsolve_system([E("5x^2+x*y^2+sin(2y)^2 - 2"), E("exp(2x-y)+4y - 3")], [S("x"), S("y")],
-                             [Decimal("1.00000000000000000"), Decimal("1.00000000000000000")], 1e-20, 1000000)
+                             [1., 1.], 1e-20, 1000000)
         """
 
     @overload
@@ -1216,7 +1216,7 @@ class Expression:
         --------
         >>> from symbolica import *
         >>> a = Expression.nsolve_system([E("5x^2+x*y^2+sin(2y)^2 - 2"), E("exp(2x-y)+4y - 3")], [S("x"), S("y")],
-                             [1., 1.], 1e-20, 1000000)
+                             [Decimal("1.00000000000000000"), Decimal("1.00000000000000000")], 1e-20, 1000000)
         """
 
     def evaluate(

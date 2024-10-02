@@ -7,6 +7,29 @@ permissions:
   contents: read
 
 jobs:
+  linux:
+    runs-on: ${{ matrix.runner[0] }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [[ubuntu-latest, x86_64]]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.runner[1] }}
+          args: --release --out dist
+          sccache: 'true'
+          manylinux: auto
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.runner[1] }}
+          path: dist  
   macos:
     runs-on: ${{ matrix.runner[0] }}
     strategy:

@@ -357,34 +357,33 @@ impl<'a> AtomView<'a> {
 
                 let mut it = AtomMatchIterator::new(r.pat, *self);
                 if let Some((_, used_flags)) = it.next(&mut match_stack) {
-                    if let Some(rhs) = rhs_cache.get(&match_stack.stack) {
-                        out.set_from_view(&rhs.as_view());
-                        return true;
-                    }
-
                     let mut rhs_subs = workspace.new_atom();
 
-                    match r.rhs {
-                        PatternOrMap::Pattern(rhs) => {
-                            rhs.substitute_wildcards(workspace, &mut rhs_subs, &match_stack)
-                                .unwrap(); // TODO: escalate?
+                    if let Some(rhs) = rhs_cache.get(&match_stack.stack) {
+                        rhs_subs.set_from_view(&rhs.as_view());
+                    } else {
+                        match r.rhs {
+                            PatternOrMap::Pattern(rhs) => {
+                                rhs.substitute_wildcards(workspace, &mut rhs_subs, &match_stack)
+                                    .unwrap(); // TODO: escalate?
+                            }
+                            PatternOrMap::Map(f) => {
+                                let mut rhs = f(&match_stack);
+                                std::mem::swap(rhs_subs.deref_mut(), &mut rhs);
+                            }
                         }
-                        PatternOrMap::Map(f) => {
-                            let mut rhs = f(&match_stack);
-                            std::mem::swap(rhs_subs.deref_mut(), &mut rhs);
+
+                        if rhs_cache.len() < settings.rhs_cache_size
+                            && !matches!(r.rhs, PatternOrMap::Pattern(Pattern::Literal(_)))
+                        {
+                            rhs_cache
+                                .insert(match_stack.stack.clone(), rhs_subs.deref_mut().clone());
                         }
                     }
 
                     if used_flags.iter().all(|x| *x) {
                         // all used, return rhs
                         out.set_from_view(&rhs_subs.as_view());
-
-                        if rhs_cache.len() < settings.rhs_cache_size
-                            && !matches!(r.rhs, PatternOrMap::Pattern(Pattern::Literal(_)))
-                        {
-                            rhs_cache.insert(match_stack.stack.clone(), rhs_subs.into_inner());
-                        }
-
                         return true;
                     }
 
@@ -414,12 +413,6 @@ impl<'a> AtomView<'a> {
                         _ => {
                             out.set_from_view(&rhs_subs.as_view());
                         }
-                    }
-
-                    if rhs_cache.len() < settings.rhs_cache_size
-                        && !matches!(r.rhs, PatternOrMap::Pattern(Pattern::Literal(_)))
-                    {
-                        rhs_cache.insert(match_stack.stack.clone(), rhs_subs.into_inner());
                     }
 
                     return true;
@@ -3033,5 +3026,20 @@ mod test {
         let b = Atom::parse("f(1,2,4,3)").unwrap();
         let r = b.replace_all(&p1, &rhs1, Some(&rest), None);
         assert_eq!(r, b);
+    }
+
+    #[test]
+    fn match_cache() {
+        let mut expr = Atom::parse("f1(1)*f1(2)+f1(1)*f1(2)*f2").unwrap();
+
+        expr = Pattern::parse("v1_(id1_)*v2_(id2_)").unwrap().replace_all(
+            expr.as_view(),
+            &Pattern::parse("f1(id1_)").unwrap().into(),
+            None,
+            None,
+        );
+
+        let res = Atom::parse("f1(1)+f2*f1(1)").unwrap();
+        assert_eq!(expr, res);
     }
 }

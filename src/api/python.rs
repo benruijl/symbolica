@@ -9987,7 +9987,7 @@ impl PythonMatrix {
 }
 
 /// A sample from the Symbolica integrator. It could consist of discrete layers,
-/// accessible with `d` (empty when there are not discrete layers), and the final continous layer `c` if it is present.
+/// accessible with `d` (empty when there are not discrete layers), and the final continuous layer `c` if it is present.
 #[pyclass(name = "Sample", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonSample {
@@ -10277,11 +10277,11 @@ impl PythonNumericalIntegrator {
     /// >>>     print('Iteration {}: {:.6} +- {:.6}, chi={:.6}'.format(i+1, avg, err, chi_sq))
     fn update(
         &mut self,
-        discrete_learing_rate: f64,
-        continuous_learing_rate: f64,
+        discrete_learning_rate: f64,
+        continuous_learning_rate: f64,
     ) -> PyResult<(f64, f64, f64)> {
         self.grid
-            .update(discrete_learing_rate, continuous_learing_rate);
+            .update(discrete_learning_rate, continuous_learning_rate);
 
         let stats = self.grid.get_statistics();
         Ok((stats.avg, stats.err, stats.chi_sq / stats.cur_iter as f64))

@@ -330,7 +330,7 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
 
     // compute the prefactor
     let mut counter = vec![];
-    let mut bin_goups: HashMap<&(B, Vec<T>), usize> = HashMap::default();
+    let mut bin_groups: HashMap<&(B, Vec<T>), usize> = HashMap::default();
     for (pref, sol) in &mut res {
         for (e, _) in &element_sorted {
             counter.clear();
@@ -345,10 +345,10 @@ pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
 
         // count the number of unique bins
         for named_bin in &*sol {
-            *bin_goups.entry(named_bin).or_insert(0) += 1;
+            *bin_groups.entry(named_bin).or_insert(0) += 1;
         }
 
-        for (_, p) in bin_goups.drain() {
+        for (_, p) in bin_groups.drain() {
             *pref /= &Integer::new(p as i64);
         }
     }

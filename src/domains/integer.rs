@@ -537,7 +537,7 @@ impl Integer {
 
     pub fn pow(&self, e: u64) -> Integer {
         if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
+            panic!("Power of exponentiation is larger than 2^32: {}", e);
         }
         let e = e as u32;
 
@@ -1947,7 +1947,7 @@ impl Ring for MultiPrecisionIntegerRing {
     #[inline]
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
         if e > u32::MAX as u64 {
-            panic!("Power of exponentation is larger than 2^32: {}", e);
+            panic!("Power of exponentiation is larger than 2^32: {}", e);
         }
         b.clone().pow(e as u32)
     }

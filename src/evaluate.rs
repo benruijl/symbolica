@@ -2452,7 +2452,7 @@ impl<T: Clone + Default + PartialEq> EvalTree<T> {
 }
 
 impl EvalTree<Rational> {
-    /// Find a near-optimal Horner scheme that minimzes the number of multiplications
+    /// Find a near-optimal Horner scheme that minimizes the number of multiplications
     /// and additions, using `iterations` iterations of the optimization algorithm
     /// and `n_cores` cores. Optionally, a starting scheme can be provided.
     pub fn optimize(
@@ -2489,7 +2489,7 @@ impl EvalTree<Rational> {
         }
     }
 
-    /// Find a near-optimal Horner scheme that minimzes the number of multiplications
+    /// Find a near-optimal Horner scheme that minimizes the number of multiplications
     /// and additions, using `iterations` iterations of the optimization algorithm
     /// and `n_cores` cores. Optionally, a starting scheme can be provided.
     pub fn optimize_horner_scheme(

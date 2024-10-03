@@ -1278,7 +1278,7 @@ impl Token {
                 }
             }
 
-            // contruct a new term
+            // construct a new term
             poly.append_monomial(coeff, &exponents);
 
             if input.is_empty() {

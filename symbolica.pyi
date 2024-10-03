@@ -2089,7 +2089,7 @@ class TermStreamer:
         """Check if the term stream fits in memory."""
 
     def push(self, expr: Expression) -> None:
-        """Push an expresssion to the term stream."""
+        """Push an expression to the term stream."""
 
     def normalize(self) -> None:
         """Sort and fuse all terms in the stream."""
@@ -2115,7 +2115,7 @@ class MatchIterator:
 
 
 class ReplaceIterator:
-    """An iterator over single replacments."""
+    """An iterator over single replacements."""
 
     def __iter__(self) -> ReplaceIterator:
         """Create the iterator."""
@@ -3417,7 +3417,7 @@ class NumericalIntegrator:
 
 class Sample:
     """A sample from the Symbolica integrator. It could consist of discrete layers,
-    accessible with `d` (empty when there are not discrete layers), and the final continous layer `c` if it is present."""
+    accessible with `d` (empty when there are not discrete layers), and the final continuous layer `c` if it is present."""
 
     """ The weights the integrator assigned to this sample point, given in descending order:
     first the discrete layer weights and then the continuous layer weight."""
@@ -3500,7 +3500,7 @@ class Graph:
         ----------
         external_nodes: Sequence[tuple[Expression | int, Expression | int]]
             The external edges, consisting of a tuple of the node data and the edge data.
-            If the node data is the same, flip symmetries will be recongized.
+            If the node data is the same, flip symmetries will be recognized.
         vertex_signatures: Sequence[Sequence[Expression | int]]
             The allowed connections for each vertex.
         max_vertices: int, optional

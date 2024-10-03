@@ -2084,7 +2084,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
                 return gcd;
             }
 
-            // remove the content from the gcd before the divison test as the odds
+            // remove the content from the gcd before the division test as the odds
             // of an unlucky content are high
             let content = gcd.content();
             gcd = gcd.div_coeff(&content);

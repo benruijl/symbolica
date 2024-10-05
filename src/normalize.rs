@@ -1071,6 +1071,14 @@ impl<'a> AtomView<'a> {
 
                             out_f.set_normalized(true);
 
+                            if let Some(f) = State::get_normalization_function(id) {
+                                let mut fs = workspace.new_atom();
+                                if f(handle.as_view(), &mut fs) {
+                                    std::mem::swap(&mut handle, &mut fs);
+                                }
+                                debug_assert!(!handle.as_view().needs_normalization());
+                            }
+
                             let m = out.to_mul();
                             m.extend(handle.as_view());
                             handle.to_num((-1).into());

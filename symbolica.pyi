@@ -147,7 +147,8 @@ class Expression:
                is_symmetric: Optional[bool] = None,
                is_antisymmetric: Optional[bool] = None,
                is_cyclesymmetric: Optional[bool] = None,
-               is_linear: Optional[bool] = None) -> Expression:
+               is_linear: Optional[bool] = None,
+               custom_normalization: Optional[Transformer] = None) -> Expression:
         """
         Create a new symbol from a `name`. Symbols carry information about their attributes.
         The symbol can signal that it is symmetric if it is used as a function
@@ -1634,6 +1635,17 @@ class Transformer:
         >>> f = Expression.symbol('f')
         >>> e = f(2).replace_all(f(x_), x_.transform().map(lambda r: r**2))
         >>> print(e)
+        """
+
+    def map_terms(self, *transformers: Transformer, n_cores: int = 1) -> Transformer:
+        """Map a chain of transformer over the terms of the expression, optionally using multiple cores.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> x, y = S('x', 'y')
+        >>> t = Transformer().map_terms(Transformer().print(), n_cores=2)
+        >>> e = t(x + y)
         """
 
     def for_each(self, *transformers: Transformer) -> Transformer:
@@ -3260,6 +3272,7 @@ class CompiledEvaluator:
         _cls,
         filename: str,
         function_name: str,
+        input_len: int,
         output_len: int,
     ) -> CompiledEvaluator:
         """Load a compiled library, previously generated with `Evaluator.compile()`."""

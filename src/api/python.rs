@@ -729,6 +729,55 @@ impl PythonTransformer {
         return append_transformer!(self, transformer);
     }
 
+    /// Map a chain of transformers over the terms of the expression, optionally using multiple cores.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> x, y = S('x', 'y')
+    /// >>> t = Transformer().map_terms(Transformer().print(), n_cores=2)
+    /// >>> e = t(x + y)
+    #[pyo3(signature = (*transformers, n_cores=1))]
+    pub fn map_terms(&self, transformers: &PyTuple, n_cores: usize) -> PyResult<PythonTransformer> {
+        let mut rep_chain = vec![];
+        // fuse all sub-transformers into one chain
+        for r in transformers {
+            let p = r.extract::<PythonTransformer>()?;
+
+            let Pattern::Transformer(t) = p.expr.borrow() else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Argument must be a transformer",
+                ));
+            };
+
+            if t.0.is_some() {
+                return Err(exceptions::PyValueError::new_err(
+                    "Transformers in a for_each must be unbound. Use Transformer() to create it.",
+                ));
+            }
+
+            rep_chain.extend_from_slice(&t.1);
+        }
+
+        let pool = if n_cores < 2 || !LicenseManager::is_licensed() {
+            None
+        } else {
+            Some(Arc::new(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(n_cores)
+                    .build()
+                    .map_err(|e| {
+                        exceptions::PyValueError::new_err(format!(
+                            "Could not create thread pool: {}",
+                            e
+                        ))
+                    })?,
+            ))
+        };
+
+        return append_transformer!(self, Transformer::MapTerms(rep_chain, pool));
+    }
+
     /// Create a transformer that applies a transformer chain to every argument of the `arg()` function.
     /// If the input is not `arg()`, the transformer is applied to the input.
     ///

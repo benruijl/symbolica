@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use crate::{
     atom::{representation::FunView, Atom, AtomView, Fun, Symbol},
@@ -12,6 +12,7 @@ use crate::{
 use ahash::HashMap;
 use colored::Colorize;
 use dyn_clone::DynClone;
+use rayon::ThreadPool;
 
 pub trait Map:
     Fn(AtomView, &mut Atom) -> Result<(), TransformerError> + DynClone + Send + Sync
@@ -145,6 +146,8 @@ pub enum Transformer {
     /// Apply a transformation to each argument of the `arg()` function.
     /// If the input is not `arg()`, map the current input.
     ForEach(Vec<Transformer>),
+    /// Map the transformers over the terms, potentially in parallel
+    MapTerms(Vec<Transformer>, Option<Arc<ThreadPool>>),
     /// Split a `Mul` or `Add` into a list of arguments.
     Split,
     Partition(Vec<(Symbol, usize)>, bool, bool),
@@ -177,6 +180,7 @@ impl std::fmt::Debug for Transformer {
             Transformer::ArgCount(p) => f.debug_tuple("ArgCount").field(p).finish(),
             Transformer::Linearize(s) => f.debug_tuple("Linearize").field(s).finish(),
             Transformer::Map(_) => f.debug_tuple("Map").finish(),
+            Transformer::MapTerms(v, c) => f.debug_tuple("Map").field(v).field(c).finish(),
             Transformer::ForEach(t) => f.debug_tuple("ForEach").field(t).finish(),
             Transformer::Split => f.debug_tuple("Split").finish(),
             Transformer::Partition(g, b1, b2) => f
@@ -425,6 +429,28 @@ impl Transformer {
             match t {
                 Transformer::Map(f) => {
                     f(cur_input, out)?;
+                }
+                Transformer::MapTerms(t, p) => {
+                    if let Some(p) = p {
+                        *out = cur_input.map_terms_with_pool(
+                            |arg| {
+                                Workspace::get_local().with(|ws| {
+                                    let mut a = Atom::new();
+                                    Self::execute_chain(arg, t, ws, &mut a).unwrap();
+                                    a
+                                })
+                            },
+                            p,
+                        );
+                    } else {
+                        *out = cur_input.map_terms_single_core(|arg| {
+                            Workspace::get_local().with(|ws| {
+                                let mut a = Atom::new();
+                                Self::execute_chain(arg, t, ws, &mut a).unwrap();
+                                a
+                            })
+                        })
+                    }
                 }
                 Transformer::ForEach(t) => {
                     if let AtomView::Fun(f) = cur_input {

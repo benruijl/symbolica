@@ -7,7 +7,7 @@ use std::{
 
 use brotli::{CompressorWriter, Decompressor};
 use rand::{thread_rng, Rng};
-use rayon::prelude::*;
+use rayon::{prelude::*, ThreadPool};
 
 use crate::{
     atom::{Atom, AtomView},
@@ -528,32 +528,36 @@ impl<'a> AtomView<'a> {
 
     /// Map the function `f` over all terms, using parallel execution with `n_cores` cores.
     pub fn map_terms(&self, f: impl Fn(AtomView) -> Atom + Send + Sync, n_cores: usize) -> Atom {
-        if let AtomView::Add(aa) = self {
-            if n_cores < 2 {
-                return Workspace::get_local().with(|ws| {
-                    let mut r = ws.new_atom();
-                    let rr = r.to_add();
-                    for arg in aa {
-                        rr.extend(f(arg).as_view());
-                    }
-                    let mut out = Atom::new();
-                    r.as_view().normalize(ws, &mut out);
-                    out
-                });
-            }
+        if n_cores < 2 || !LicenseManager::is_licensed() {
+            return self.map_terms_single_core(f);
+        }
 
-            let out_wrap = Mutex::new(vec![]);
-
+        if let AtomView::Add(_) = self {
             let t = rayon::ThreadPoolBuilder::new()
-                .num_threads(if LicenseManager::is_licensed() {
-                    n_cores
-                } else {
-                    1
-                })
+                .num_threads(n_cores)
                 .build()
                 .unwrap();
 
-            t.install(
+            self.map_terms_with_pool(f, &t)
+        } else {
+            f(*self)
+        }
+    }
+
+    /// Map the function `f` over all terms, using parallel execution with `n_cores` cores.
+    pub fn map_terms_with_pool(
+        &self,
+        f: impl Fn(AtomView) -> Atom + Send + Sync,
+        p: &ThreadPool,
+    ) -> Atom {
+        if !LicenseManager::is_licensed() {
+            return self.map_terms_single_core(f);
+        }
+
+        if let AtomView::Add(aa) = self {
+            let out_wrap = Mutex::new(vec![]);
+
+            p.install(
                 #[inline(always)]
                 || {
                     aa.iter().par_bridge().for_each(|x| {

@@ -1984,6 +1984,7 @@ pub struct SubSliceIterator<'a, 'b> {
     matches: Vec<usize>,   // track match stack length
     complete: bool,        // match needs to consume entire target
     ordered_gapless: bool, // pattern should appear ordered and have no gaps
+    cyclic: bool,          // pattern is cyclic
     do_not_match_to_single_atom_in_list: bool,
     do_not_match_entire_slice: bool,
 }
@@ -2071,6 +2072,7 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
             initialized: shortcut_done,
             complete: false,
             ordered_gapless: false,
+            cyclic: false,
             do_not_match_to_single_atom_in_list,
             do_not_match_entire_slice,
         }
@@ -2080,10 +2082,10 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
     pub fn from_list(
         pattern: &'b [Pattern],
         target: ListSlice<'a>,
-
         match_stack: &MatchStack<'a, 'b>,
         complete: bool,
         ordered: bool,
+        cyclic: bool,
     ) -> SubSliceIterator<'a, 'b> {
         let mut shortcut_done = false;
 
@@ -2118,10 +2120,10 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
             matches: Vec::with_capacity(pattern.len()),
             used_flag: vec![false; target.len()],
             target,
-
             initialized: shortcut_done,
             complete,
             ordered_gapless: ordered,
+            cyclic,
             do_not_match_to_single_atom_in_list: false,
             do_not_match_entire_slice: false,
         }
@@ -2264,7 +2266,22 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                     'next_wildcard_match: loop {
                         // a wildcard collects indices in increasing order
                         // find the starting point where the last index can be moved to
-                        let start_index = w.indices.last().map(|x| *x as usize + 1).unwrap_or(0);
+                        let start_index =
+                            w.indices
+                                .last()
+                                .map(|x| *x as usize + 1)
+                                .unwrap_or_else(|| {
+                                    if self.cyclic {
+                                        let mut pos =
+                                            self.used_flag.iter().position(|x| *x).unwrap_or(0);
+                                        while self.used_flag[pos] {
+                                            pos = (pos + 1) % self.used_flag.len();
+                                        }
+                                        pos
+                                    } else {
+                                        0
+                                    }
+                                });
 
                         if !wildcard_forward_pass {
                             let last_iterator_empty = w.indices.is_empty();
@@ -2286,8 +2303,13 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                     break;
                                 }
                             } else if self.ordered_gapless {
-                                // drain the entire constructed range and start from scratch
-                                continue 'next_wildcard_match;
+                                // early terminate if a gap would be made
+                                // do not early terminate if the first placement
+                                // in a cyclic structure has not been fixed
+                                if !self.cyclic || self.used_flag.iter().any(|x| *x) {
+                                    // drain the entire constructed range and start from scratch
+                                    continue 'next_wildcard_match;
+                                }
                             }
                         }
 
@@ -2305,12 +2327,27 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                         }
 
                         let mut tried_first_option = false;
-                        for k in start_index..self.target.len() {
+                        let mut k = start_index;
+                        loop {
+                            if k == self.target.len() {
+                                if self.cyclic && w.indices.len() > 0 {
+                                    // allow the wildcard to wrap around
+                                    k = 0;
+                                } else {
+                                    break;
+                                }
+                            }
+
                             if self.ordered_gapless && tried_first_option {
                                 break;
                             }
 
                             if self.used_flag[k] {
+                                if self.cyclic {
+                                    break;
+                                }
+
+                                k += 1;
                                 continue;
                             }
 
@@ -2358,6 +2395,8 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                     self.used_flag[k] = false;
                                 }
                             }
+
+                            k += 1;
                         }
 
                         // no match found, try to increase the index of the current last element
@@ -2388,18 +2427,36 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                 *jj + 1
                             }
                         }
-                        None => 0,
+                        None => {
+                            if self.cyclic && !self.used_flag.iter().all(|u| *u) {
+                                // start after the last used index
+                                let mut pos = self.used_flag.iter().position(|x| *x).unwrap_or(0);
+                                while self.used_flag[pos] {
+                                    pos = (pos + 1) % self.used_flag.len();
+                                }
+                                pos
+                            } else {
+                                0
+                            }
+                        }
                     };
 
                     // find a new match and create a new iterator
                     while ii < self.target.len() {
                         if self.used_flag[ii] {
+                            if self.cyclic {
+                                break;
+                            }
+
                             ii += 1;
                             continue;
                         }
 
                         if self.ordered_gapless && tried_first_option {
-                            break;
+                            // cyclic sequences can start at any position
+                            if !self.cyclic || self.used_flag.iter().any(|x| *x) {
+                                break;
+                            }
                         }
 
                         tried_first_option = true;
@@ -2420,15 +2477,14 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                 f.get_symbol() == *name
                             };
 
-                            let ordered = !name.is_antisymmetric() && !name.is_symmetric();
-
                             if name_match {
                                 let mut it = SubSliceIterator::from_list(
                                     args,
                                     f.to_slice(),
                                     match_stack,
                                     true,
-                                    ordered,
+                                    !name.is_antisymmetric() && !name.is_symmetric(),
+                                    name.is_cyclesymmetric(),
                                 );
 
                                 if let Some((x, _)) = it.next(match_stack) {
@@ -2460,17 +2516,35 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                             tried_first_option = true;
                             *jj + 1
                         }
-                        None => 0,
+                        None => {
+                            if self.cyclic && !self.used_flag.iter().all(|u| *u) {
+                                // start after the last used index
+                                let mut pos = self.used_flag.iter().position(|x| *x).unwrap_or(0);
+                                while self.used_flag[pos] {
+                                    pos = (pos + 1) % self.used_flag.len();
+                                }
+                                pos
+                            } else {
+                                0
+                            }
+                        }
                     };
 
                     while ii < self.target.len() {
                         if self.used_flag[ii] {
+                            if self.cyclic {
+                                break;
+                            }
+
                             ii += 1;
                             continue;
                         }
 
                         if self.ordered_gapless && tried_first_option {
-                            break;
+                            // cyclic sequences can start at any position
+                            if !self.cyclic || self.used_flag.iter().any(|x| *x) {
+                                break;
+                            }
                         }
 
                         tried_first_option = true;
@@ -2500,18 +2574,36 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                                 *jj + 1
                             }
                         }
-                        None => 0,
+                        None => {
+                            if self.cyclic && !self.used_flag.iter().all(|u| *u) {
+                                // start after the last used index
+                                let mut pos = self.used_flag.iter().position(|x| *x).unwrap_or(0);
+                                while self.used_flag[pos] {
+                                    pos = (pos + 1) % self.used_flag.len();
+                                }
+                                pos
+                            } else {
+                                0
+                            }
+                        }
                     };
 
                     // find a new match and create a new iterator
                     while ii < self.target.len() {
                         if self.used_flag[ii] {
+                            if self.cyclic {
+                                break;
+                            }
+
                             ii += 1;
                             continue;
                         }
 
                         if self.ordered_gapless && tried_first_option {
-                            break;
+                            // cyclic sequences can start at any position
+                            if !self.cyclic || self.used_flag.iter().any(|x| *x) {
+                                break;
+                            }
                         }
 
                         tried_first_option = true;
@@ -2532,8 +2624,14 @@ impl<'a, 'b> SubSliceIterator<'a, 'b> {
                             _ => unreachable!(),
                         };
 
-                        let mut it =
-                            SubSliceIterator::from_list(pattern, slice, match_stack, true, ordered);
+                        let mut it = SubSliceIterator::from_list(
+                            pattern,
+                            slice,
+                            match_stack,
+                            true,
+                            ordered,
+                            false,
+                        );
 
                         if let Some((x, _)) = it.next(match_stack) {
                             *index = Some(ii);
@@ -3041,5 +3139,39 @@ mod test {
 
         let res = Atom::parse("f1(1)+f2*f1(1)").unwrap();
         assert_eq!(expr, res);
+    }
+
+    #[test]
+    fn match_cyclic() {
+        let rhs = Pattern::parse("1").unwrap().into();
+
+        // literal wrap
+        let expr = Atom::parse("fc1(1,2,3)").unwrap();
+        let p = Pattern::parse("fc1(v1__,v1_,1)").unwrap();
+        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        assert_eq!(expr, Atom::new_num(1));
+
+        // multiple wildcard wrap
+        let expr = Atom::parse("fc1(1,2,3)").unwrap();
+        let p = Pattern::parse("fc1(v1__,2)").unwrap();
+        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        assert_eq!(expr, Atom::new_num(1));
+
+        // wildcard wrap
+        let expr = Atom::parse("fc1(1,2,3)").unwrap();
+        let p = Pattern::parse("fc1(v1__,v1_,2)").unwrap();
+        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        assert_eq!(expr, Atom::new_num(1));
+
+        let expr = Atom::parse("fc1(v1,4,3,5,4)").unwrap();
+        let p = Pattern::parse("fc1(v1__,v1_,v2_,v1_)").unwrap();
+        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        assert_eq!(expr, Atom::new_num(1));
+
+        // function shift
+        let expr = Atom::parse("fc1(f1(1),f1(2),f1(3))").unwrap();
+        let p = Pattern::parse("fc1(f1(v1_),f1(2),f1(3))").unwrap();
+        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        assert_eq!(expr, Atom::new_num(1));
     }
 }

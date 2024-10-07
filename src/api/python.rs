@@ -397,7 +397,11 @@ impl PythonTransformer {
     /// --------
     /// >>> x = Expression.symbol('x')
     /// >>> e = Transformer().expand()((1+x)**2)
-    pub fn __call__(&self, expr: ConvertibleToExpression) -> PyResult<PythonExpression> {
+    pub fn __call__(
+        &self,
+        expr: ConvertibleToExpression,
+        py: Python,
+    ) -> PyResult<PythonExpression> {
         let e = expr.to_expression();
 
         if let Pattern::Transformer(t) = &self.expr {
@@ -409,14 +413,16 @@ impl PythonTransformer {
 
             let mut out = Atom::new();
 
-            Workspace::get_local()
-                .with(|ws| Transformer::execute_chain(e.as_view(), &t.1, ws, &mut out))
-                .map_err(|e| match e {
-                    TransformerError::Interrupt => {
-                        exceptions::PyKeyboardInterrupt::new_err("Interrupted by user")
-                    }
-                    TransformerError::ValueError(v) => exceptions::PyValueError::new_err(v),
-                })?;
+            py.allow_threads(|| {
+                Workspace::get_local()
+                    .with(|ws| Transformer::execute_chain(e.as_view(), &t.1, ws, &mut out))
+                    .map_err(|e| match e {
+                        TransformerError::Interrupt => {
+                            exceptions::PyKeyboardInterrupt::new_err("Interrupted by user")
+                        }
+                        TransformerError::ValueError(v) => exceptions::PyValueError::new_err(v),
+                    })
+            })?;
 
             Ok(out.into())
         } else {
@@ -922,22 +928,25 @@ impl PythonTransformer {
     /// >>> e = (x+1)**5
     /// >>> e = e.transform().expand().execute()
     /// >>> print(e)
-    pub fn execute(&self) -> PyResult<PythonExpression> {
+    pub fn execute(&self, py: Python) -> PyResult<PythonExpression> {
         let mut out = Atom::default();
-        Workspace::get_local()
-            .with(|workspace| {
-                self.expr.substitute_wildcards(
-                    workspace,
-                    &mut out,
-                    &MatchStack::new(&Condition::default(), &MatchSettings::default()),
-                )
-            })
-            .map_err(|e| match e {
-                TransformerError::Interrupt => {
-                    exceptions::PyKeyboardInterrupt::new_err("Interrupted by user")
-                }
-                TransformerError::ValueError(v) => exceptions::PyValueError::new_err(v),
-            })?;
+
+        py.allow_threads(|| {
+            Workspace::get_local()
+                .with(|workspace| {
+                    self.expr.substitute_wildcards(
+                        workspace,
+                        &mut out,
+                        &MatchStack::new(&Condition::default(), &MatchSettings::default()),
+                    )
+                })
+                .map_err(|e| match e {
+                    TransformerError::Interrupt => {
+                        exceptions::PyKeyboardInterrupt::new_err("Interrupted by user")
+                    }
+                    TransformerError::ValueError(v) => exceptions::PyValueError::new_err(v),
+                })
+        })?;
 
         Ok(out.into())
     }

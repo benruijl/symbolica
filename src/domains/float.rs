@@ -2509,8 +2509,8 @@ impl LowerExp for Rational {
 }
 
 impl NumericalFloatLike for Rational {
-    fn mul_add(&self, a: &Self, c: &Self) -> Self {
-        &(self * a) + c
+    fn mul_add(&self, a: &Self, b: &Self) -> Self {
+        self * a + b
     }
 
     fn neg(&self) -> Self {

@@ -1100,6 +1100,7 @@ class Expression:
             If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         rhs_cache_size: int, optional
             Cache the first `rhs_cache_size` substituted patterns. If set to `None`, an internally determined cache size is used.
+            **Warning**: caching should be disabled (`rhs_cache_size=0`) if the right-hand side contains side effects, such as updating a global variable.
         repeat: bool, optional
             If set to `True`, the entire operation will be repeated until there are no more matches.
         """
@@ -1377,7 +1378,8 @@ class Replacement:
             non_greedy_wildcards: Optional[Sequence[Expression]] = None,
             level_range: Optional[Tuple[int, Optional[int]]] = None,
             level_is_tree_depth: Optional[bool] = False,
-            allow_new_wildcards_on_rhs: Optional[bool] = False) -> Replacement:
+            allow_new_wildcards_on_rhs: Optional[bool] = False,
+            rhs_cache_size: Optional[int] = None) -> Replacement:
         """Create a new replacement. See `replace_all` for more information."""
 
 
@@ -1859,6 +1861,7 @@ class Transformer:
             If set to `True`, allow wildcards that do not appear in the pattern on the right-hand side.
         rhs_cache_size: int, optional
             Cache the first `rhs_cache_size` substituted patterns. If set to `None`, an internally determined cache size is used.
+            **Warning**: caching should be disabled (`rhs_cache_size=0`) if the right-hand side contains side effects, such as updating a global variable.
         repeat:
             If set to `True`, the entire operation will be repeated until there are no more matches.
         """

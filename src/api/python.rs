@@ -1216,6 +1216,7 @@ impl PythonTransformer {
     ///
     /// For efficiency, the first `rhs_cache_size` substituted patterns are cached.
     /// If set to `None`, an internally determined cache size is used.
+    /// Caching should be disabled (`rhs_cache_size=0`) if the right-hand side contains side effects, such as updating a global variable.
     ///
     /// Examples
     /// --------
@@ -1235,7 +1236,7 @@ impl PythonTransformer {
         allow_new_wildcards_on_rhs: Option<bool>,
         rhs_cache_size: Option<usize>,
     ) -> PyResult<PythonTransformer> {
-        let mut settings = MatchSettings::default();
+        let mut settings = MatchSettings::cached();
 
         if let Some(ngw) = non_greedy_wildcards {
             settings.non_greedy_wildcards = ngw
@@ -3855,6 +3856,7 @@ impl PythonExpression {
     ///     If set to `True`, wildcards that do not appear ion the pattern are allowed on the right-hand side.
     /// rhs_cache_size: int, optional
     ///      Cache the first `rhs_cache_size` substituted patterns. If set to `None`, an internally determined cache size is used.
+    ///      Warning: caching should be disabled (`rhs_cache_size=0`) if the right-hand side contains side effects, such as updating a global variable.
     /// repeat: bool, optional
     ///     If set to `True`, the entire operation will be repeated until there are no more matches.
     pub fn replace_all(
@@ -3872,7 +3874,7 @@ impl PythonExpression {
         let pattern = &pattern.to_pattern()?.expr;
         let rhs = &rhs.to_pattern_or_map()?;
 
-        let mut settings = MatchSettings::default();
+        let mut settings = MatchSettings::cached();
 
         if let Some(ngw) = non_greedy_wildcards {
             settings.non_greedy_wildcards = ngw
@@ -4611,7 +4613,7 @@ impl PythonReplacement {
         let pattern = pattern.to_pattern()?.expr;
         let rhs = rhs.to_pattern_or_map()?;
 
-        let mut settings = MatchSettings::default();
+        let mut settings = MatchSettings::cached();
 
         if let Some(ngw) = non_greedy_wildcards {
             settings.non_greedy_wildcards = ngw

@@ -326,11 +326,11 @@ impl<'a> AtomView<'a> {
         workspace: &Workspace,
         tree_level: usize,
         fn_level: usize,
-        rhs_cache: &mut HashMap<Vec<(Symbol, Match<'a>)>, Atom>,
+        rhs_cache: &mut HashMap<(usize, Vec<(Symbol, Match<'a>)>), Atom>,
         out: &mut Atom,
     ) -> bool {
         let mut beyond_max_level = true;
-        for r in replacements {
+        for (rep_id, r) in replacements.iter().enumerate() {
             let def_c = Condition::default();
             let def_s = MatchSettings::default();
             let conditions = r.conditions.unwrap_or(&def_c);
@@ -359,9 +359,14 @@ impl<'a> AtomView<'a> {
                 if let Some((_, used_flags)) = it.next(&mut match_stack) {
                     let mut rhs_subs = workspace.new_atom();
 
-                    if let Some(rhs) = rhs_cache.get(&match_stack.stack) {
+                    let key = (rep_id, std::mem::take(&mut match_stack.stack));
+
+                    if let Some(rhs) = rhs_cache.get(&key) {
+                        match_stack.stack = key.1;
                         rhs_subs.set_from_view(&rhs.as_view());
                     } else {
+                        match_stack.stack = key.1;
+
                         match r.rhs {
                             PatternOrMap::Pattern(rhs) => {
                                 rhs.substitute_wildcards(workspace, &mut rhs_subs, &match_stack)
@@ -376,8 +381,10 @@ impl<'a> AtomView<'a> {
                         if rhs_cache.len() < settings.rhs_cache_size
                             && !matches!(r.rhs, PatternOrMap::Pattern(Pattern::Literal(_)))
                         {
-                            rhs_cache
-                                .insert(match_stack.stack.clone(), rhs_subs.deref_mut().clone());
+                            rhs_cache.insert(
+                                (rep_id, match_stack.stack.clone()),
+                                rhs_subs.deref_mut().clone(),
+                            );
                         }
                     }
 
@@ -1707,14 +1714,28 @@ pub struct MatchSettings {
     pub rhs_cache_size: usize,
 }
 
-impl Default for MatchSettings {
-    fn default() -> Self {
+impl MatchSettings {
+    /// Create default match settings, but enable caching of the rhs.
+    pub fn cached() -> Self {
         Self {
             non_greedy_wildcards: Vec::new(),
             level_range: (0, None),
             level_is_tree_depth: false,
             allow_new_wildcards_on_rhs: false,
             rhs_cache_size: 100,
+        }
+    }
+}
+
+impl Default for MatchSettings {
+    /// Create default match settings. Use [`MatchSettings::cached`] to enable caching.
+    fn default() -> Self {
+        Self {
+            non_greedy_wildcards: Vec::new(),
+            level_range: (0, None),
+            level_is_tree_depth: false,
+            allow_new_wildcards_on_rhs: false,
+            rhs_cache_size: 0,
         }
     }
 }

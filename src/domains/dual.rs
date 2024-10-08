@@ -578,7 +578,7 @@ macro_rules! create_hyperdual_from_components {
         {
             #[inline(always)]
             fn mul_add(&self, a: &Self, b: &Self) -> Self {
-                a.clone() * b + self
+                self.clone() * a + b
             }
 
             #[inline(always)]

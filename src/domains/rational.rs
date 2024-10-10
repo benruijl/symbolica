@@ -695,6 +695,18 @@ impl Rational {
         }
     }
 
+    pub fn floor(&self) -> Integer {
+        self.numerator_ref() / self.denominator_ref()
+    }
+
+    pub fn round_to_nearest_integer(&self) -> Integer {
+        if self.is_negative() {
+            (self - &(1, 2).into()).floor()
+        } else {
+            (self + &(1, 2).into()).floor()
+        }
+    }
+
     /// Reconstruct a rational number `q` from a value `v` in a prime field `p`,
     /// such that `q ≡ v mod p`.
     ///

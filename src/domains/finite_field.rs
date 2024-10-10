@@ -353,17 +353,26 @@ impl Ring for Zp {
     /// Compute b^e % n.
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
-        let mut b = *b;
-        let mut x = self.one();
-        while e != 0 {
-            if e & 1 != 0 {
-                x = self.mul(&x, &b);
+        if e >= self.get_prime() as u64 - 1 {
+            e = e % (self.get_prime() as u64 - 1);
+        }
+
+        if e == 0 {
+            return self.one();
+        }
+
+        let mut x = *b;
+        let mut y = self.one();
+        while e != 1 {
+            if e % 2 == 1 {
+                y = self.mul(&y, &x);
             }
-            b = self.mul(&b, &b);
+
+            x = self.mul(&x, &x);
             e /= 2;
         }
 
-        x
+        self.mul(&x, &y)
     }
 
     #[inline]
@@ -643,17 +652,26 @@ impl Ring for Zp64 {
     /// Compute b^e % n.
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
-        let mut b = *b;
-        let mut x = self.one();
-        while e != 0 {
-            if e & 1 != 0 {
-                x = self.mul(&x, &b);
+        if e >= self.get_prime() as u64 - 1 {
+            e = e % (self.get_prime() as u64 - 1);
+        }
+
+        if e == 0 {
+            return self.one();
+        }
+
+        let mut x = *b;
+        let mut y = self.one();
+        while e != 1 {
+            if e % 2 == 1 {
+                y = self.mul(&y, &x);
             }
-            b = self.mul(&b, &b);
+
+            x = self.mul(&x, &x);
             e /= 2;
         }
 
-        x
+        self.mul(&x, &y)
     }
 
     #[inline]
@@ -1154,17 +1172,26 @@ impl Ring for FiniteField<Mersenne64> {
     /// Compute b^e % n.
     #[inline]
     fn pow(&self, b: &Self::Element, mut e: u64) -> Self::Element {
-        let mut b = *b;
-        let mut x = self.one();
-        while e != 0 {
-            if e & 1 != 0 {
-                x = self.mul(&x, &b);
+        if e >= self.get_prime().0 - 1 {
+            e = e % (self.get_prime().0 - 1);
+        }
+
+        if e == 0 {
+            return self.one();
+        }
+
+        let mut x = *b;
+        let mut y = self.one();
+        while e != 1 {
+            if e % 2 == 1 {
+                y = self.mul(&y, &x);
             }
-            b = self.mul(&b, &b);
+
+            x = self.mul(&x, &x);
             e /= 2;
         }
 
-        x
+        self.mul(&x, &y)
     }
 
     #[inline]
@@ -1553,5 +1580,24 @@ impl Iterator for PrimeIteratorU64 {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{FiniteFieldCore, Zp};
+    use crate::domains::Ring;
+
+    #[test]
+    fn pow() {
+        let field = Zp::new(31);
+
+        let mut q = field.one();
+        let x = field.to_element(3);
+        for i in 0..100 {
+            let r = field.pow(&x, i);
+            assert_eq!(r, q);
+            q = field.mul(&q, &x);
+        }
     }
 }

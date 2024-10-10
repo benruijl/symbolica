@@ -5,7 +5,11 @@ use std::{
 };
 
 use crate::{
-    domains::{EuclideanDomain, Field, Ring},
+    domains::{
+        integer::Z,
+        rational::{Rational, Q},
+        EuclideanDomain, Field, Ring,
+    },
     printer::{MatrixPrinter, VectorPrinter},
 };
 
@@ -37,6 +41,14 @@ impl<F: Ring> Vector<F> {
             ncols: self.data.len() as u32,
             data: self.data,
             field: self.field,
+        }
+    }
+
+    /// Apply a function `f` to each entry of the vector.
+    pub fn map<G: Ring>(&self, f: impl Fn(&F::Element) -> G::Element, field: G) -> Vector<G> {
+        Vector {
+            data: self.data.iter().map(f).collect(),
+            field,
         }
     }
 
@@ -138,6 +150,75 @@ impl<F: Field> Vector<F> {
             }
 
             res.push(new_vec);
+        }
+
+        res
+    }
+
+    /// Apply the Gram-Schmidt method in-place and compute its factors.
+    pub fn gram_schmidt(system: &mut [Self], factor: &mut [F::Element]) {
+        for s in 0..system.len() {
+            let mut res = system[s].clone();
+            for j in 0..s {
+                factor[s * system.len() + j] = system[0]
+                    .field
+                    .div(&system[s].dot(&system[j]), &factor[j * system.len() + j]);
+                res -= &(system[j].clone() * factor[s * system.len() + j].clone());
+            }
+
+            factor[s * system.len() + s] = res.norm_squared();
+            system[s] = res;
+        }
+    }
+}
+
+impl Vector<Z> {
+    /// Apply the LLL lattice basis reduction algorithm.
+    /// `delta` should be a constant between `1/4` and `1`. The most commonly used value is `3/4`.
+    pub fn basis_reduction(system: &[Self], delta: Rational) -> Vec<Vector<Z>> {
+        let mut res = system.to_vec();
+
+        let mut mus = vec![0.into(); system.len() * system.len()];
+        let mut b: Vec<Vector<Q>> = system
+            .iter()
+            .map(|v| v.map(|e| e.into(), Q))
+            .collect::<Vec<_>>();
+
+        Vector::gram_schmidt(&mut b, &mut mus);
+
+        let mut k = 1;
+        while k < system.len() {
+            for j in (0..k).rev() {
+                if mus[k * system.len() + j].abs() < (1, 2).into() {
+                    continue;
+                }
+
+                let m = &res[j] * mus[k * system.len() + j].round_to_nearest_integer();
+                res[k] -= &m;
+
+                // reset b
+                for (bb, rr) in b.iter_mut().zip(res.iter()) {
+                    *bb = rr.map(|e| e.into(), Q);
+                }
+
+                Vector::gram_schmidt(&mut b, &mut mus); // TODO: do partial GS
+            }
+
+            if mus[k * system.len() + k]
+                > &mus[(k - 1) * &system.len() + (k - 1)]
+                    * &(&delta - &(&mus[k * system.len() + k - 1] * &mus[k * system.len() + k - 1]))
+            {
+                k += 1;
+            } else {
+                res.swap(k, k - 1);
+
+                for (bb, rr) in b.iter_mut().zip(res.iter()) {
+                    *bb = rr.map(|e| e.into(), Q);
+                }
+                Vector::gram_schmidt(&mut b, &mut mus);
+
+                k = 1.max(k - 1);
+            }
         }
 
         res
@@ -1303,5 +1384,17 @@ mod test {
 
         let inv = a.inv().unwrap();
         assert_eq!(&a * &inv, Matrix::identity(4, Q));
+    }
+
+    #[test]
+    fn basis_reduction() {
+        let v1 = Vector::new(vec![1.into(), 0.into(), 0.into(), 31416.into()], Z);
+        let v2 = Vector::new(vec![0.into(), 1.into(), 0.into(), 27183.into()], Z);
+        let v3 = Vector::new(vec![0.into(), 0.into(), 1.into(), (-320177).into()], Z);
+
+        let basis = Vector::basis_reduction(&[v1, v2, v3], (3, 4).into());
+
+        // 32.0177 = 5 * pi + 6 * e
+        assert_eq!(basis[0].data, &[5, 6, 1, 1]);
     }
 }

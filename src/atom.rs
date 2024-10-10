@@ -352,6 +352,15 @@ impl<'a> AtomView<'a> {
         format!("{}", self.printer(PrintOptions::file()))
     }
 
+    /// Get the number of terms.
+    pub fn nterms(&self) -> usize {
+        if let AtomView::Add(a) = self {
+            a.get_nargs()
+        } else {
+            1
+        }
+    }
+
     /// Print statistics about the operation `op`, such as its duration and term growth.
     pub fn with_stats<F: Fn(AtomView) -> Atom>(&self, op: F, o: &StatsOptions) -> Atom {
         let t = std::time::Instant::now();
@@ -377,17 +386,6 @@ impl<'a> AtomView<'a> {
         } else {
             false
         }
-    }
-
-    /// Add two atoms and return the buffer that contains the unnormalized result.
-    fn add_no_norm(&self, workspace: &Workspace, rhs: AtomView<'_>) -> RecycledAtom {
-        let mut e = workspace.new_atom();
-        let a = e.to_add();
-
-        // TODO: check if self or rhs is add
-        a.extend(*self);
-        a.extend(rhs);
-        e
     }
 
     /// Subtract two atoms and return the buffer that contains the unnormalized result.
@@ -435,9 +433,7 @@ impl<'a> AtomView<'a> {
 
     /// Add `self` and `rhs`, writing the result in `out`.
     pub fn add_with_ws_into(&self, workspace: &Workspace, rhs: AtomView<'_>, out: &mut Atom) {
-        self.add_no_norm(workspace, rhs)
-            .as_view()
-            .normalize(workspace, out);
+        self.add_normalized(rhs, workspace, out);
     }
 
     /// Subtract `rhs` from `self, writing the result in `out`.
@@ -629,6 +625,10 @@ impl Atom {
     #[inline]
     pub fn is_one(&self) -> bool {
         self.as_view().is_one()
+    }
+
+    pub fn nterms(&self) -> usize {
+        self.as_view().nterms()
     }
 
     /// Print the atom using the portable [`PrintOptions::file()`] options.

@@ -887,6 +887,13 @@ impl Add {
     pub(crate) unsafe fn from_raw(raw: RawAtom) -> Add {
         Add { data: raw }
     }
+
+    pub(crate) fn grow_capacity(&mut self, size: usize) {
+        if size > self.data.capacity() {
+            let additional = size - self.data.capacity();
+            self.data.reserve(additional);
+        }
+    }
 }
 
 impl<'a> VarView<'a> {

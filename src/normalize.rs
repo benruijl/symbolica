@@ -1354,6 +1354,117 @@ impl<'a> AtomView<'a> {
             }
         }
     }
+
+    /// Add two atoms and normalize the result.
+    pub(crate) fn add_normalized(&self, rhs: AtomView, ws: &Workspace, out: &mut Atom) {
+        let a = out.to_add();
+        a.grow_capacity(self.get_byte_size() + rhs.get_byte_size());
+
+        let mut helper = ws.new_atom();
+        let mut b = ws.new_atom();
+        if let AtomView::Add(a1) = self {
+            if let AtomView::Add(a2) = rhs {
+                let mut s = a1.iter();
+                let mut t = a2.iter();
+
+                let mut curs = s.next();
+                let mut curst = t.next();
+                while curs.is_some() || curst.is_some() {
+                    if let Some(ss) = curs {
+                        if let Some(tt) = curst {
+                            match ss.cmp_terms(&tt) {
+                                Ordering::Less => {
+                                    a.extend(ss);
+                                    curs = s.next();
+                                }
+                                Ordering::Greater => {
+                                    a.extend(tt);
+                                    curst = t.next();
+                                }
+                                Ordering::Equal => {
+                                    b.set_from_view(&ss);
+                                    if b.merge_terms(tt, &mut helper) {
+                                        if let AtomView::Num(n) = a.as_view() {
+                                            if !n.is_zero() {
+                                                a.extend(b.as_view());
+                                            }
+                                        } else {
+                                            a.extend(b.as_view());
+                                        }
+                                    } else {
+                                        unreachable!("Equal terms do not merge");
+                                    }
+
+                                    curst = t.next();
+                                    curs = s.next();
+                                }
+                            }
+                        } else {
+                            a.extend(ss);
+                            curs = s.next();
+                        }
+                    } else if let Some(tt) = curst {
+                        a.extend(tt);
+                        curst = t.next();
+                    }
+                }
+
+                a.set_normalized(true);
+                return;
+            }
+        }
+
+        if let AtomView::Add(a1) = self {
+            let mut found = false;
+            for x in a1.iter() {
+                // TODO: find the position of rhs in self with a binary search
+                if found {
+                    a.extend(x);
+                    continue;
+                }
+
+                match x.cmp_terms(&rhs) {
+                    Ordering::Less => {
+                        a.extend(x);
+                    }
+                    Ordering::Equal => {
+                        found = true;
+                        b.set_from_view(&x);
+                        if b.merge_terms(rhs, &mut helper) {
+                            if let AtomView::Num(n) = a.as_view() {
+                                if !n.is_zero() {
+                                    a.extend(b.as_view());
+                                }
+                            } else {
+                                a.extend(b.as_view());
+                            }
+                        } else {
+                            unreachable!("Equal terms do not merge");
+                        }
+                    }
+                    Ordering::Greater => {
+                        found = true;
+                        a.extend(rhs);
+                        a.extend(x);
+                    }
+                }
+            }
+
+            if !found {
+                a.extend(rhs);
+            }
+
+            a.set_normalized(true);
+        } else if let AtomView::Add(_) = rhs {
+            rhs.add_normalized(*self, ws, out);
+        } else {
+            let mut e = ws.new_atom();
+            let a = e.to_add();
+            a.extend(*self);
+            a.extend(rhs);
+            e.as_view().normalize(ws, out);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1420,5 +1531,20 @@ mod test {
         } else {
             panic!("Expected a Mul");
         }
+    }
+
+    #[test]
+    fn add_normalized() {
+        let a = Atom::parse("v1 + v2 + v3").unwrap();
+        let b = Atom::parse("1 + v2 + v4 + v5").unwrap();
+        assert_eq!(a + b, Atom::parse("v1+2*v2+v3+v4+v5+1").unwrap());
+
+        let a = Atom::parse("v1 + v2 + v3").unwrap();
+        let b = Atom::parse("v4").unwrap();
+        assert_eq!(a + b, Atom::parse("v1+v2+v3+v4").unwrap());
+
+        let a = Atom::parse("v2 + v3 + v4").unwrap();
+        let b = Atom::parse("v1").unwrap();
+        assert_eq!(a + b, Atom::parse("v1+v2+v3+v4").unwrap());
     }
 }

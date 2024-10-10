@@ -1415,6 +1415,11 @@ impl<'a> AtomView<'a> {
         }
 
         if let AtomView::Add(a1) = self {
+            if rhs.is_zero() {
+                self.clone_into(out);
+                return;
+            }
+
             let mut found = false;
             for x in a1.iter() {
                 // TODO: find the position of rhs in self with a binary search

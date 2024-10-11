@@ -1420,21 +1420,53 @@ impl<'a> AtomView<'a> {
                 return;
             }
 
-            let mut found = false;
-            for x in a1.iter() {
-                // TODO: find the position of rhs in self with a binary search
-                if found {
-                    a.extend(x);
-                    continue;
+            if a1.get_nargs() < 50 {
+                let mut found = false;
+                for x in a1.iter() {
+                    if found {
+                        a.extend(x);
+                        continue;
+                    }
+
+                    match x.cmp_terms(&rhs) {
+                        Ordering::Less => {
+                            a.extend(x);
+                        }
+                        Ordering::Equal => {
+                            found = true;
+                            b.set_from_view(&x);
+                            if b.merge_terms(rhs, &mut helper) {
+                                if let AtomView::Num(n) = a.as_view() {
+                                    if !n.is_zero() {
+                                        a.extend(b.as_view());
+                                    }
+                                } else {
+                                    a.extend(b.as_view());
+                                }
+                            } else {
+                                unreachable!("Equal terms do not merge");
+                            }
+                        }
+                        Ordering::Greater => {
+                            found = true;
+                            a.extend(rhs);
+                            a.extend(x);
+                        }
+                    }
                 }
 
-                match x.cmp_terms(&rhs) {
-                    Ordering::Less => {
-                        a.extend(x);
-                    }
-                    Ordering::Equal => {
-                        found = true;
-                        b.set_from_view(&x);
+                if !found {
+                    a.extend(rhs);
+                }
+            } else {
+                let v: Vec<_> = a1.iter().collect();
+                match v.binary_search_by(|a| a.cmp_terms(&rhs)) {
+                    Ok(p) => {
+                        for x in v.iter().take(p) {
+                            a.extend(*x);
+                        }
+
+                        b.set_from_view(&v[p]);
                         if b.merge_terms(rhs, &mut helper) {
                             if let AtomView::Num(n) = a.as_view() {
                                 if !n.is_zero() {
@@ -1446,17 +1478,23 @@ impl<'a> AtomView<'a> {
                         } else {
                             unreachable!("Equal terms do not merge");
                         }
+
+                        for x in v.iter().skip(p + 1) {
+                            a.extend(*x);
+                        }
                     }
-                    Ordering::Greater => {
-                        found = true;
+                    Err(p) => {
+                        for x in v.iter().take(p) {
+                            a.extend(*x);
+                        }
+
                         a.extend(rhs);
-                        a.extend(x);
+
+                        for x in v.iter().skip(p) {
+                            a.extend(*x);
+                        }
                     }
                 }
-            }
-
-            if !found {
-                a.extend(rhs);
             }
 
             a.set_normalized(true);

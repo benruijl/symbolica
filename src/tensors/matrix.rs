@@ -512,6 +512,22 @@ impl<F: Ring> Matrix<F> {
         }
     }
 
+    // Swap the i-th row with the j-th row.
+    pub fn swap_rows(&mut self, i: u32, j: u32) {
+        for k in 0..self.ncols {
+            self.data
+                .swap((i * self.ncols + k) as usize, (j * self.ncols + k) as usize);
+        }
+    }
+
+    // Swap the i-th column with the j-th column.
+    pub fn swap_cols(&mut self, i: u32, j: u32) {
+        for k in 0..self.nrows {
+            self.data
+                .swap((k * self.ncols + i) as usize, (k * self.ncols + j) as usize);
+        }
+    }
+
     /// Multiply the scalar `e` to each entry of the matrix.
     pub fn mul_scalar(&self, e: &F::Element) -> Matrix<F> {
         Matrix {

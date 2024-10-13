@@ -1552,7 +1552,8 @@ pub fn is_prime_u64(n: u64) -> bool {
     true
 }
 
-/// An interator over consecutive 64-bit primes.
+/// An iterator over consecutive 64-bit primes.
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub struct PrimeIteratorU64 {
     current_number: u64,
 }

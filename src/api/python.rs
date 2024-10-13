@@ -33,9 +33,9 @@ use crate::{
     domains::{
         algebraic_number::AlgebraicExtension,
         atom::AtomField,
-        finite_field::{ToFiniteField, Zp, Z2},
+        finite_field::{is_prime_u64, PrimeIteratorU64, ToFiniteField, Zp, Z2},
         float::{Complex, Float, RealNumberLike, F64},
-        integer::{FromFiniteField, Integer, IntegerRing, Z},
+        integer::{FromFiniteField, Integer, IntegerRelationError, IntegerRing, Z},
         rational::{Rational, RationalField, Q},
         rational_polynomial::{
             FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
@@ -91,6 +91,7 @@ pub fn create_symbolica_module(m: &PyModule) -> PyResult<&PyModule> {
     m.add_class::<PythonTermStreamer>()?;
     m.add_class::<PythonSeries>()?;
     m.add_class::<PythonGraph>()?;
+    m.add_class::<PythonInteger>()?;
 
     m.add_function(wrap_pyfunction!(symbol_shorthand, m)?)?;
     m.add_function(wrap_pyfunction!(number_shorthand, m)?)?;
@@ -1688,6 +1689,23 @@ impl<'a> FromPyObject<'a> for Integer {
     }
 }
 
+impl ToPyObject for Integer {
+    fn to_object(&self, py: Python) -> PyObject {
+        match self {
+            Integer::Natural(n) => n.to_object(py),
+            Integer::Double(d) => d.to_object(py),
+            Integer::Large(l) => unsafe {
+                py.from_owned_ptr::<PyLong>(pyo3::ffi::PyLong_FromString(
+                    l.to_string().as_str().as_ptr() as *const i8,
+                    std::ptr::null_mut(),
+                    10,
+                ))
+                .to_object(py)
+            },
+        }
+    }
+}
+
 pub struct ConvertibleToExpression(PythonExpression);
 
 impl ConvertibleToExpression {
@@ -2647,7 +2665,7 @@ impl PythonExpression {
         s
     }
 
-    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// Convert all coefficients to floats with a given precision `decimal_prec`.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
     pub fn coefficients_to_float(&self, decimal_prec: u32) -> PythonExpression {
         self.expr.coefficients_to_float(decimal_prec).into()
@@ -10715,5 +10733,93 @@ impl PythonGraph {
     /// Return true `iff` the graph is isomorphic to `other`.
     fn is_isomorphic(&self, other: &PythonGraph) -> bool {
         self.graph.is_isomorphic(&other.graph)
+    }
+}
+
+#[pyclass(name = "Integer", module = "symbolica")]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct PythonInteger {}
+
+#[pymethods]
+impl PythonInteger {
+    /// Create an iterator over all 64-bit prime numbers starting from `start`.
+    #[pyo3(signature = (start = 1))]
+    #[classmethod]
+    fn prime_iter(_cls: &PyType, start: u64) -> PyResult<PythonPrimeIterator> {
+        Ok(PythonPrimeIterator {
+            cur: PrimeIteratorU64::new(start),
+        })
+    }
+
+    /// Check if the 64-bit number `n` is a prime number.
+    #[classmethod]
+    fn is_prime(_cls: &PyType, n: u64) -> bool {
+        is_prime_u64(n)
+    }
+
+    /// Use the PSLQ algorithm to find a vector of integers `a` that satisfies `a.x = 0`,
+    /// where every element of `a` is less than `max_coeff`, using a specified tolerance and number
+    /// of iterations. The parameter `gamma` must be more than or equal to `2/sqrt(3)`.
+    ///
+    /// Examples
+    /// --------
+    /// Solve a `32.0177=b*pi+c*e` where `b` and `c` are integers:
+    ///
+    /// >>> r = Integer.solve_integer_relation([-32.0177, 3.1416, 2.7183], 1e-5, 100)
+    /// >>> print(r)
+    ///
+    /// yields `[1,5,6]`.
+    #[pyo3(signature = (x, tolerance, max_iter = 1000, max_coeff = None, gamma = None))]
+    #[classmethod]
+    fn solve_integer_relation(
+        _cls: &PyType,
+        x: Vec<PythonMultiPrecisionFloat>,
+        tolerance: PythonMultiPrecisionFloat,
+        max_iter: usize,
+        max_coeff: Option<Integer>,
+        gamma: Option<PythonMultiPrecisionFloat>,
+        py: Python,
+    ) -> PyResult<Vec<PyObject>> {
+        let x: Vec<_> = x.into_iter().map(|x| x.0).collect();
+
+        let res = Integer::solve_integer_relation(
+            &x,
+            tolerance.0,
+            max_iter,
+            max_coeff,
+            gamma.map(|x| x.0),
+        )
+        .map_err(|e| match e {
+            IntegerRelationError::CoefficientLimit => {
+                exceptions::PyValueError::new_err("Coefficient limit exceeded")
+            }
+            IntegerRelationError::IterationLimit(_) => {
+                exceptions::PyValueError::new_err("Iteration limit exceeded")
+            }
+            IntegerRelationError::PrecisionLimit => {
+                exceptions::PyValueError::new_err("Precision limit exceeded")
+            }
+        })?;
+
+        Ok(res.into_iter().map(|x| x.to_object(py)).collect())
+    }
+}
+
+#[pyclass(name = "PrimeIterator", module = "symbolica")]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct PythonPrimeIterator {
+    cur: PrimeIteratorU64,
+}
+
+#[pymethods]
+impl PythonPrimeIterator {
+    /// Create the iterator.
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// Return the next prime.
+    fn __next__(&mut self) -> Option<u64> {
+        self.cur.next()
     }
 }

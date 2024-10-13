@@ -11,13 +11,14 @@ use rug::{
     Complete, Integer as MultiPrecisionInteger,
 };
 
-use crate::{printer::PrintOptions, utils};
+use crate::{printer::PrintOptions, tensors::matrix::Matrix, utils};
 
 use super::{
     finite_field::{
         FiniteField, FiniteFieldCore, FiniteFieldWorkspace, Mersenne64, ToFiniteField, Two, Zp,
         Zp64, Z2,
     },
+    float::{FloatField, NumericalFloatLike, Real, RealNumberLike, SingleFloat},
     rational::Rational,
     EuclideanDomain, InternalOrdering, Ring,
 };
@@ -62,6 +63,13 @@ impl InternalOrdering for Integer {
     fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
         Ord::cmp(self, other)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum IntegerRelationError {
+    PrecisionLimit,
+    IterationLimit(Vec<Integer>),
+    CoefficientLimit,
 }
 
 macro_rules! from_with_cast {
@@ -786,6 +794,199 @@ impl Integer {
         }
 
         t0
+    }
+
+    /// Use the PSLQ algorithm to find a vector of integers `a` that satisfies `a.x = 0`,
+    /// where every element of `a` is less than `max_coeff`, using a specified tolerance and number
+    /// of iterations. The parameter `gamma` must be more than or equal to `2/sqrt(3)`.
+    ///
+    /// If the procedure runs out of iterations, the current best solution is returned.
+    pub fn solve_integer_relation<
+        T: NumericalFloatLike
+            + RealNumberLike
+            + Real
+            + SingleFloat
+            + std::hash::Hash
+            + Eq
+            + InternalOrdering
+            + PartialOrd,
+    >(
+        x: &[T],
+        tolerance: T,
+        max_iter: usize,
+        max_coeff: Option<Integer>,
+        gamma: Option<T>,
+    ) -> Result<Vec<Integer>, IntegerRelationError> {
+        let gamma = gamma.unwrap_or_else(|| x[0].from_usize(2) / x[0].from_usize(3).sqrt());
+        let field = FloatField::from_rep(x[0].clone());
+        let n = x.len();
+
+        let mut s = Vec::with_capacity(n);
+        let mut sum = x[0].zero();
+        for xx in x.iter().rev() {
+            sum += xx.clone() * xx;
+            s.push(sum.sqrt());
+        }
+        s.reverse();
+
+        // normalize the input
+        let t = s[0].clone();
+        let mut y = x
+            .iter()
+            .map(|xx| xx.clone() / t.clone())
+            .collect::<Vec<_>>();
+        for ss in &mut s {
+            *ss /= &t;
+        }
+
+        // construct orthogonal matrix h
+        let mut h = Matrix::new(n as u32, n as u32 - 1, field.clone());
+        for i in 0..n {
+            if i < n - 1 {
+                h[(i as u32, i as u32)] = s[i + 1].clone() / &s[i];
+            }
+
+            for j in 0..i {
+                h[(i as u32, j as u32)] = -y[i].clone() * &y[j] / (s[j].clone() * &s[j + 1]);
+            }
+        }
+
+        let mut b = Matrix::identity(n as u32, IntegerRing);
+
+        macro_rules! hermite_reduction {
+            ($i: expr, $j: expr) => {
+                if h[($j, $j)].is_zero() {
+                    return Err(IntegerRelationError::PrecisionLimit);
+                }
+
+                let t = (h[($i, $j)].clone() / &h[($j, $j)]).round_to_nearest_integer();
+
+                if t.is_zero() {
+                    continue;
+                }
+
+                let t_f = x[0].from_rational(&(t.clone(), Integer::one()).into());
+                let r = t_f.clone() * &y[$i as usize];
+                y[$j as usize] += r;
+
+                for k in 0..$j + 1 {
+                    let r = t_f.clone() * &h[($j, k)];
+                    h[($i, k)] -= r;
+                }
+                for k in 0..n as u32 {
+                    let r = t.clone() * &b[(k, $i)];
+                    b[(k, $j)] += r;
+                }
+            };
+        }
+
+        // Hermite reduction
+        for i in 1..n as u32 {
+            for j in (0..i).rev() {
+                hermite_reduction!(i, j);
+            }
+        }
+
+        for i in 0..max_iter {
+            let mut gamma_max = gamma.clone();
+            let ms: Vec<_> = (0..n as u32 - 1)
+                .map(|i| {
+                    if !h[(i, i)].is_finite() {
+                        return Err(IntegerRelationError::PrecisionLimit);
+                    }
+
+                    let r = h[(i, i)].norm() * &gamma_max;
+                    gamma_max *= &gamma;
+                    Ok((i, r))
+                })
+                .collect::<Result<_, _>>()?;
+            let m = ms
+                .iter()
+                .max_by(|(_, x), (_, y)| x.partial_cmp(y).unwrap())
+                .unwrap()
+                .0;
+
+            y.swap(m as usize, m as usize + 1);
+            h.swap_rows(m, m + 1);
+            b.swap_cols(m, m + 1);
+
+            // make h lower trapezoidal
+            if m < n as u32 - 2 {
+                let t0 = (h[(m, m)].clone() * &h[(m, m)] + h[(m, m + 1)].clone() * &h[(m, m + 1)])
+                    .sqrt();
+
+                if t0.is_zero() {
+                    return Err(IntegerRelationError::PrecisionLimit);
+                }
+
+                let t1 = h[(m, m)].clone() / &t0;
+                let t2 = h[(m, m + 1)].clone() / &t0;
+                for i in m..n as u32 {
+                    let t3 = h[(i, m)].clone();
+                    let t4 = h[(i, m + 1)].clone();
+                    h[(i, m)] = t1.clone() * t3.clone() + t2.clone() * t4.clone();
+                    h[(i, m + 1)] = -t2.clone() * t3.clone() + t1.clone() * t4.clone();
+                }
+            }
+
+            for i in (m + 1)..n as u32 {
+                for j in (0..i.min(m + 2)).rev() {
+                    hermite_reduction!(i, j);
+                }
+            }
+
+            if let Some(i) = y.iter().position(|yy| yy.norm() < tolerance) {
+                let res = (0..n as u32)
+                    .map(|j| b[(j, i as u32)].clone())
+                    .collect::<Vec<_>>();
+
+                if let Some(max_coeff) = &max_coeff {
+                    if res.iter().all(|r| &r.abs() <= max_coeff) {
+                        return Ok(res);
+                    }
+                } else {
+                    return Ok(res);
+                }
+            }
+
+            // check the norm of the largest element once in a while
+            if let Some(max_coeff) = &max_coeff {
+                if i % 20 == 0 {
+                    let mut norm = x[0].zero();
+                    for i in 0..n as u32 {
+                        let mut row_norm_sq = x[0].zero();
+                        for j in 0..n as u32 - 1 {
+                            row_norm_sq += h[(i, j)].clone() * &h[(i, j)];
+                        }
+
+                        if row_norm_sq > norm {
+                            norm = row_norm_sq;
+                        }
+                    }
+
+                    if &norm.sqrt().inv().round_to_nearest_integer() > max_coeff {
+                        return Err(IntegerRelationError::CoefficientLimit);
+                    }
+                }
+            }
+        }
+
+        // return the best estimate
+        let min = y
+            .iter()
+            .enumerate()
+            .min_by(|(_, xx), (_, yy)| {
+                xx.norm()
+                    .partial_cmp(&yy.norm())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap()
+            .0;
+        let res = (0..n as u32)
+            .map(|j| b[(j, min as u32)].clone())
+            .collect::<Vec<_>>();
+
+        Err(IntegerRelationError::IterationLimit(res))
     }
 }
 
@@ -2010,6 +2211,8 @@ mod test {
 
     use rug::Complete;
 
+    use crate::domains::float::{Float, F64};
+
     use super::Integer;
 
     #[test]
@@ -2090,5 +2293,40 @@ mod test {
             ),
             rem
         );
+    }
+
+    #[test]
+    fn pslq_small() {
+        let result = Integer::solve_integer_relation(
+            &[F64::from(-32.0177), F64::from(3.1416), F64::from(2.7183)],
+            F64::from(1e-4),
+            1,
+            Some(Integer::from(100000u64)),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result, &[1, 5, 6]);
+    }
+
+    #[test]
+    fn pslq_medium() {
+        let pi = Float::with_val(300, rug::float::Constant::Pi);
+        let e = Float::with_val(300, rug::float::Constant::Euler);
+        let log2 = Float::with_val(300, rug::float::Constant::Log2);
+        let r = pi.clone() * 178236781263123
+            + e.clone() * -712365671253675
+            + log2.clone() * 712637812361762786;
+
+        let result = Integer::solve_integer_relation(
+            &[pi, e, log2, -r],
+            Float::with_val(300, 1e-90),
+            400,
+            Some(Integer::from(1000000000000000000000000000000u128)),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.iter().last().unwrap().abs(), 1);
     }
 }

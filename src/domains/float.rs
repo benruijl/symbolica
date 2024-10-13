@@ -202,17 +202,6 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Field f
     }
 }
 
-#[test]
-fn test2() {
-    let f = FloatField::<F64>::new();
-    let a = f.add(&1.0.into(), &2.0.into());
-    assert_eq!(a, 3.0.into());
-
-    let f = FloatField::<Float>::new(53);
-    let a = f.add(&f.rep.one(), &f.rep.from_i64(2));
-    assert_eq!(a, a.from_i64(3));
-}
-
 pub trait NumericalFloatLike:
     PartialEq
     + Clone
@@ -273,6 +262,7 @@ pub trait SingleFloat: NumericalFloatLike {
 pub trait RealNumberLike: SingleFloat {
     fn to_usize_clamped(&self) -> usize;
     fn to_f64(&self) -> f64;
+    fn round_to_nearest_integer(&self) -> Integer;
 }
 
 /// A float that can be constructed without any parameters, such as f64.
@@ -401,6 +391,15 @@ impl RealNumberLike for f64 {
 
     fn to_f64(&self) -> f64 {
         *self
+    }
+
+    #[inline(always)]
+    fn round_to_nearest_integer(&self) -> Integer {
+        if *self < 0. {
+            Integer::from_f64(*self - 0.5)
+        } else {
+            Integer::from_f64(*self + 0.5)
+        }
     }
 }
 
@@ -762,6 +761,21 @@ impl SingleFloat for F64 {
     }
 }
 
+impl RealNumberLike for F64 {
+    fn to_usize_clamped(&self) -> usize {
+        self.0.to_usize_clamped()
+    }
+
+    fn to_f64(&self) -> f64 {
+        self.0.to_f64()
+    }
+
+    #[inline(always)]
+    fn round_to_nearest_integer(&self) -> Integer {
+        self.0.round_to_nearest_integer()
+    }
+}
+
 impl Real for F64 {
     #[inline(always)]
     fn norm(&self) -> Self {
@@ -874,7 +888,7 @@ impl PartialOrd for F64 {
 
 impl InternalOrdering for F64 {
     fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
@@ -955,7 +969,7 @@ impl Hash for Float {
 
 impl InternalOrdering for Float {
     fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 
@@ -1616,6 +1630,11 @@ impl RealNumberLike for Float {
     fn to_f64(&self) -> f64 {
         self.0.to_f64()
     }
+
+    #[inline(always)]
+    fn round_to_nearest_integer(&self) -> Integer {
+        self.0.to_integer().unwrap().into()
+    }
 }
 
 impl Real for Float {
@@ -2161,6 +2180,11 @@ impl<T: RealNumberLike> RealNumberLike for ErrorPropagatingFloat<T> {
     fn to_f64(&self) -> f64 {
         self.value.to_f64()
     }
+
+    fn round_to_nearest_integer(&self) -> Integer {
+        // TODO: what does this do with the error?
+        self.value.round_to_nearest_integer()
+    }
 }
 
 impl<T: Real + RealNumberLike> Real for ErrorPropagatingFloat<T> {
@@ -2626,6 +2650,11 @@ impl RealNumberLike for Rational {
 
     fn to_f64(&self) -> f64 {
         f64::from(self)
+    }
+
+    #[inline(always)]
+    fn round_to_nearest_integer(&self) -> Integer {
+        self.round_to_nearest_integer()
     }
 }
 

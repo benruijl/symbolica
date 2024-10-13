@@ -3578,3 +3578,29 @@ class Graph:
 
     def is_isomorphic(self, other: Graph) -> bool:
         """Check if the graph is isomorphic to another graph."""
+
+
+class Integer:
+    @classmethod
+    def prime_iter(_cls, start: int = 1) -> Iterator[int]:
+        """Create an iterator over all 64-bit prime numbers starting from `start`."""
+
+    @classmethod
+    def is_prime(_cls, n: int) -> bool:
+        """Check if the 64-bit number `n` is a prime number."""
+
+    @classmethod
+    def solve_integer_relation(_cls, x: Sequence[int | float | Decimal], tolerance: float, max_coeff: Optional[int] = None, gamma: Optional[float | Decimal] = None) -> Sequence[int]:
+        """Use the PSLQ algorithm to find a vector of integers `a` that satisfies `a.x = 0`,
+        where every element of `a` is less than `max_coeff`, using a specified tolerance and number
+        of iterations. The parameter `gamma` must be more than or equal to `2/sqrt(3)`.
+
+        Examples
+        --------
+        Solve a `32.0177=b*pi+c*e` where `b` and `c` are integers:
+
+        >>> r = Integer.solve_integer_relation([-32.0177, 3.1416, 2.7183], 1e-5, 100)
+        >>> print(r)
+
+        yields `[1,5,6]`.
+        """

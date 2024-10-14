@@ -3590,7 +3590,7 @@ class Integer:
         """Check if the 64-bit number `n` is a prime number."""
 
     @classmethod
-    def solve_integer_relation(_cls, x: Sequence[int | float | Decimal], tolerance: float, max_coeff: Optional[int] = None, gamma: Optional[float | Decimal] = None) -> Sequence[int]:
+    def solve_integer_relation(_cls, x: Sequence[int | float | Decimal], tolerance: float | Decimal, max_coeff: Optional[int] = None, gamma: Optional[float | Decimal] = None) -> Sequence[int]:
         """Use the PSLQ algorithm to find a vector of integers `a` that satisfies `a.x = 0`,
         where every element of `a` is less than `max_coeff`, using a specified tolerance and number
         of iterations. The parameter `gamma` must be more than or equal to `2/sqrt(3)`.

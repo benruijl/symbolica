@@ -199,12 +199,21 @@ impl State {
         }
     }
 
+    #[inline(always)]
     pub(crate) unsafe fn symbol_from_id(id: u32) -> Symbol {
+        if ID_TO_STR.len() == 0 {
+            let _ = *STATE; // initialize the state
+        }
+
         ID_TO_STR[id as usize].0
     }
 
     /// Iterate over all defined symbols.
     pub fn symbol_iter() -> impl Iterator<Item = (Symbol, &'static str)> {
+        if ID_TO_STR.len() == 0 {
+            let _ = *STATE; // initialize the state
+        }
+
         ID_TO_STR
             .iter()
             .skip(SYMBOL_OFFSET.load(Ordering::Relaxed))
@@ -410,14 +419,24 @@ impl State {
     }
 
     /// Get the name for a given symbol.
+    #[inline]
     pub fn get_name(id: Symbol) -> &'static str {
+        if ID_TO_STR.len() == 0 {
+            let _ = *STATE; // initialize the state
+        }
+
         &ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)]
             .1
             .name
     }
 
     /// Get the user-specified normalization function for the symbol.
+    #[inline]
     pub fn get_normalization_function(id: Symbol) -> Option<&'static NormalizationFunction> {
+        if ID_TO_STR.len() == 0 {
+            let _ = *STATE; // initialize the state
+        }
+
         ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)]
             .1
             .function

@@ -275,6 +275,15 @@ pub trait ConstructibleFloat: NumericalFloatLike {
 }
 
 pub trait Real: NumericalFloatLike {
+    /// The constant π, 3.1415926535...
+    fn pi(&self) -> Self;
+    /// Euler's number, 2.7182818...
+    fn e(&self) -> Self;
+    /// The Euler-Mascheroni constant, 0.5772156649...
+    fn euler(&self) -> Self;
+    /// The golden ratio, 1.6180339887...
+    fn phi(&self) -> Self;
+
     fn norm(&self) -> Self;
     fn sqrt(&self) -> Self;
     fn log(&self) -> Self;
@@ -426,6 +435,26 @@ impl ConstructibleFloat for f64 {
 }
 
 impl Real for f64 {
+    #[inline(always)]
+    fn pi(&self) -> Self {
+        std::f64::consts::PI
+    }
+
+    #[inline(always)]
+    fn e(&self) -> Self {
+        std::f64::consts::E
+    }
+
+    #[inline(always)]
+    fn euler(&self) -> Self {
+        0.57721566490153286
+    }
+
+    #[inline(always)]
+    fn phi(&self) -> Self {
+        1.6180339887498948
+    }
+
     #[inline(always)]
     fn norm(&self) -> Self {
         f64::abs(*self)
@@ -777,6 +806,26 @@ impl RealNumberLike for F64 {
 }
 
 impl Real for F64 {
+    #[inline(always)]
+    fn pi(&self) -> Self {
+        std::f64::consts::PI.into()
+    }
+
+    #[inline(always)]
+    fn e(&self) -> Self {
+        std::f64::consts::E.into()
+    }
+
+    #[inline(always)]
+    fn euler(&self) -> Self {
+        0.57721566490153286.into()
+    }
+
+    #[inline(always)]
+    fn phi(&self) -> Self {
+        1.6180339887498948.into()
+    }
+
     #[inline(always)]
     fn norm(&self) -> Self {
         self.0.norm().into()
@@ -1639,6 +1688,26 @@ impl RealNumberLike for Float {
 
 impl Real for Float {
     #[inline(always)]
+    fn pi(&self) -> Self {
+        MultiPrecisionFloat::with_val(self.prec(), rug::float::Constant::Pi).into()
+    }
+
+    #[inline(always)]
+    fn e(&self) -> Self {
+        self.one().exp()
+    }
+
+    #[inline(always)]
+    fn euler(&self) -> Self {
+        MultiPrecisionFloat::with_val(self.prec(), rug::float::Constant::Euler).into()
+    }
+
+    #[inline(always)]
+    fn phi(&self) -> Self {
+        (self.one() + self.from_i64(5).sqrt()) / 2
+    }
+
+    #[inline(always)]
     fn norm(&self) -> Self {
         self.0.clone().abs().into()
     }
@@ -2188,6 +2257,34 @@ impl<T: RealNumberLike> RealNumberLike for ErrorPropagatingFloat<T> {
 }
 
 impl<T: Real + RealNumberLike> Real for ErrorPropagatingFloat<T> {
+    fn pi(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.pi(),
+            prec: self.prec,
+        }
+    }
+
+    fn e(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.e(),
+            prec: self.prec,
+        }
+    }
+
+    fn euler(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.euler(),
+            prec: self.prec,
+        }
+    }
+
+    fn phi(&self) -> Self {
+        ErrorPropagatingFloat {
+            value: self.value.phi(),
+            prec: self.prec,
+        }
+    }
+
     fn norm(&self) -> Self {
         ErrorPropagatingFloat {
             value: self.value.norm(),
@@ -2422,6 +2519,26 @@ macro_rules! simd_impl {
         }
 
         impl Real for $t {
+            #[inline(always)]
+            fn pi(&self) -> Self {
+                std::f64::consts::PI.into()
+            }
+
+            #[inline(always)]
+            fn e(&self) -> Self {
+                std::f64::consts::E.into()
+            }
+
+            #[inline(always)]
+            fn euler(&self) -> Self {
+                0.57721566490153286.into()
+            }
+
+            #[inline(always)]
+            fn phi(&self) -> Self {
+                1.6180339887498948.into()
+            }
+
             #[inline(always)]
             fn norm(&self) -> Self {
                 (*self).abs()
@@ -3344,6 +3461,26 @@ impl<T: NumericalFloatLike> NumericalFloatLike for Complex<T> {
 
 /// Following the same conventions and formulas as num::Complex.
 impl<T: Real> Real for Complex<T> {
+    #[inline]
+    fn pi(&self) -> Self {
+        Complex::new(self.re.pi(), self.im.zero())
+    }
+
+    #[inline]
+    fn e(&self) -> Self {
+        Complex::new(self.re.e(), self.im.zero())
+    }
+
+    #[inline]
+    fn euler(&self) -> Self {
+        Complex::new(self.re.euler(), self.im.zero())
+    }
+
+    #[inline]
+    fn phi(&self) -> Self {
+        Complex::new(self.re.phi(), self.im.zero())
+    }
+
     #[inline]
     fn norm(&self) -> Self {
         Complex::new(self.norm_squared().sqrt(), self.im.zero())

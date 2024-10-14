@@ -732,6 +732,34 @@ macro_rules! create_hyperdual_from_components {
 
         impl<T: $crate::domains::float::Real> $crate::domains::float::Real for $t<T> {
             #[inline(always)]
+            fn pi(&self) -> Self {
+                let mut res = self.zero();
+                res.values[0] = self.values[0].pi();
+                res
+            }
+
+            #[inline(always)]
+            fn e(&self) -> Self {
+                let mut res = self.zero();
+                res.values[0] = self.values[0].e();
+                res
+            }
+
+            #[inline(always)]
+            fn euler(&self) -> Self {
+                let mut res = self.zero();
+                res.values[0] = self.values[0].euler();
+                res
+            }
+
+            #[inline(always)]
+            fn phi(&self) -> Self {
+                let mut res = self.zero();
+                res.values[0] = self.values[0].phi();
+                res
+            }
+
+            #[inline(always)]
             fn norm(&self) -> Self {
                 let n = self.values[0].norm();
                 if n == self.values[0] {

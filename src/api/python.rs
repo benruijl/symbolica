@@ -1753,7 +1753,7 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
             // get the number of accurate digits
             let digits = a
                 .chars()
-                .skip_while(|x| *x == '.' || *x == '0')
+                .skip_while(|x| *x == '.' || *x == '0' || *x == '-')
                 .filter(|x| *x != '.')
                 .take_while(|x| x.is_ascii_digit())
                 .count();

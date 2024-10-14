@@ -4086,10 +4086,14 @@ impl<'a> AtomView<'a> {
                     "Rational polynomial coefficient not yet supported for evaluation".to_string(),
                 ),
             },
-            AtomView::Var(v) => Err(format!(
-                "Variable {} not in constant map",
-                State::get_name(v.get_symbol())
-            )),
+            AtomView::Var(v) => match v.get_symbol() {
+                State::E => Ok(coeff_map(&1.into()).e()),
+                State::PI => Ok(coeff_map(&1.into()).pi()),
+                _ => Err(format!(
+                    "Variable {} not in constant map",
+                    State::get_name(v.get_symbol())
+                )),
+            },
             AtomView::Fun(f) => {
                 let name = f.get_symbol();
                 if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {

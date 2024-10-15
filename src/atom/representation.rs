@@ -1,5 +1,6 @@
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
+use smartstring::alias::String;
 use std::{
     cmp::Ordering,
     io::{Read, Write},
@@ -7,7 +8,7 @@ use std::{
 
 use crate::{
     coefficient::{Coefficient, CoefficientView},
-    state::{StateMap, Workspace},
+    state::{State, StateMap, Workspace},
 };
 
 use super::{
@@ -167,7 +168,33 @@ impl Atom {
         Ok(())
     }
 
-    pub fn import<R: Read>(source: R, state_map: &StateMap) -> Result<Atom, std::io::Error> {
+    /// Export the atom and state to a binary stream. It can be loaded
+    /// with [Atom::import].
+    pub fn export<W: Write>(&self, dest: W) -> Result<(), std::io::Error> {
+        self.as_view().export(dest)
+    }
+
+    /// Import an expression and its state from a binary stream. The state will be merged
+    /// with the current one. If a symbol has conflicting attributes, the conflict
+    /// can be resolved using the renaming function `conflict_fn`.
+    ///
+    /// Expressions can be exported using [Atom::export].
+    pub fn import<R: Read>(
+        mut source: R,
+        conflict_fn: Option<Box<dyn Fn(&str) -> String>>,
+    ) -> Result<Atom, std::io::Error> {
+        let state_map = State::import(&mut source, conflict_fn)?;
+
+        let mut a = Atom::new();
+        a.read(source)?;
+        Ok(a.as_view().rename(&state_map))
+    }
+
+    /// Read a stateless expression from a binary stream, renaming the symbols using the provided state map.
+    pub fn import_with_map<R: Read>(
+        source: R,
+        state_map: &StateMap,
+    ) -> Result<Atom, std::io::Error> {
         let mut a = Atom::new();
         a.read(source)?;
         Ok(a.as_view().rename(state_map))
@@ -1476,6 +1503,18 @@ impl<'a> AtomView<'a> {
             AtomView::Mul(t) => t.data,
             AtomView::Add(e) => e.data,
         }
+    }
+
+    /// Export the atom and state to a binary stream. It can be loaded
+    /// with [Atom::import].
+    #[inline(always)]
+    pub fn export<W: Write>(&self, mut dest: W) -> Result<(), std::io::Error> {
+        State::export(&mut dest)?;
+
+        let d = self.get_data();
+        dest.write_u8(0)?;
+        dest.write_u64::<LittleEndian>(d.len() as u64)?;
+        dest.write_all(d)
     }
 
     /// Write the expression to a binary stream. The format is the byte-length first

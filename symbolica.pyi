@@ -330,6 +330,49 @@ class Expression:
         Convert the expression into a human-readable string.
         """
 
+    @classmethod
+    def load(_cls, filename: str, conflict_fn: Callable[[str], str]) -> Expression:
+        """Load an expression and its state from a file. The state will be merged
+        with the current one. If a symbol has conflicting attributes, the conflict
+        can be resolved using the renaming function `conflict_fn`.
+
+        Expressions can be saved using `Expression.save`.
+
+        Examples
+        --------
+        If `export.dat` contains a serialized expression: `f(x)+f(y)`:
+        >>> e = Expression.load('export.dat')
+
+        whill yield `f(x)+f(y)`.
+
+        If we have defined symbols in a different order:
+        >>> y, x = S('y', 'x')
+        >>> e = Expression.load('export.dat')
+
+        we get `f(y)+f(x)`.
+
+        If we define a symbol with conflicting attributes, we can resolve the conflict
+        using a renaming function:
+
+        >>> x = S('x', is_symmetric=True)
+        >>> e = Expression.load('export.dat', lambda x: x + '_new')
+        print(e)
+
+        will yield `f(x_new)+f(y)`.
+        """
+
+    def save(self, filename: str, compression_level: int = 9):
+        """Save the expression and its state to a binary file.
+        The data is compressed and the compression level can be set between 0 and 11.
+
+        The data can be loaded using `Expression.load`.
+
+        Examples
+        --------
+        >>> e = E("f(x)+f(y)").expand()
+        >>> e.save('export.dat')
+        """
+
     def get_byte_size(self) -> int:
         """ Get the number of bytes that this expression takes up in memory."""
 

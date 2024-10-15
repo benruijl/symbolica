@@ -2,7 +2,7 @@ use std::{
     borrow::Borrow,
     fs::File,
     hash::{Hash, Hasher},
-    io::BufWriter,
+    io::{BufReader, BufWriter},
     ops::{Deref, Neg},
     sync::Arc,
 };
@@ -2397,6 +2397,76 @@ impl PythonExpression {
         let mut hasher = ahash::AHasher::default();
         self.expr.hash(&mut hasher);
         hasher.finish()
+    }
+
+    /// Save the expression and its state to a binary file.
+    /// The data is compressed and the compression level can be set between 0 and 11.
+    ///
+    /// The expression can be loaded using `Expression.load`.
+    ///
+    /// Examples
+    /// --------
+    /// >>> e = E("f(x)+f(y)").expand()
+    /// >>> e.save('export.dat')
+    #[pyo3(signature = (filename, compression_level=9))]
+    pub fn save(&self, filename: &str, compression_level: u32) -> PyResult<()> {
+        let f = File::create(filename)
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not create file: {}", e)))?;
+        let mut writer = CompressorWriter::new(BufWriter::new(f), 4096, compression_level, 22);
+
+        self.expr
+            .as_view()
+            .export(&mut writer)
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not write file: {}", e)))
+    }
+
+    /// Load an expression and its state from a file. The state will be merged
+    /// with the current one. If a symbol has conflicting attributes, the conflict
+    /// can be resolved using the renaming function `conflict_fn`.
+    ///
+    /// Expressions can be saved using `Expression.save`.
+    ///
+    /// Examples
+    /// --------
+    /// If `export.dat` contains a serialized expression: `f(x)+f(y)`:
+    /// >>> e = Expression.load('export.dat')
+    ///
+    /// whill yield `f(x)+f(y)`.
+    ///
+    /// If we have defined symbols in a different order:
+    /// >>> y, x = S('y', 'x')
+    /// >>> e = Expression.load('export.dat')
+    ///
+    /// we get `f(y)+f(x)`.
+    ///
+    /// If we define a symbol with conflicting attributes, we can resolve the conflict
+    /// using a renaming function:
+    ///
+    /// >>> x = S('x', is_symmetric=True)
+    /// >>> e = Expression.load('export.dat', lambda x: x + '_new')
+    /// print(e)
+    ///
+    /// will yield `f(x_new)+f(y)`.
+    #[classmethod]
+    pub fn load(_cls: &PyType, filename: &str, conflict_fn: Option<PyObject>) -> PyResult<Self> {
+        let f = File::open(filename)
+            .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {}", e)))?;
+        let mut reader = brotli::Decompressor::new(BufReader::new(f), 4096);
+
+        Atom::import(
+            &mut reader,
+            match conflict_fn {
+                Some(f) => Some(Box::new(move |name: &str| -> SmartString<LazyCompact> {
+                    Python::with_gil(|py| {
+                        f.call1(py, (name,)).unwrap().extract::<String>(py).unwrap()
+                    })
+                    .into()
+                })),
+                None => None,
+            },
+        )
+        .map(|a| a.into())
+        .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {}", e)))
     }
 
     /// Get the type of the atom.

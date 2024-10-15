@@ -27,12 +27,12 @@ fn conflict() {
     State::get_symbol("f");
 
     let state_map = State::import(
-        Cursor::new(&state_export),
+        &mut Cursor::new(&state_export),
         Some(Box::new(|old_name| SmartString::from(old_name) + "1")),
     )
     .unwrap();
 
-    let a_rec = Atom::import(Cursor::new(&a_export), &state_map).unwrap();
+    let a_rec = Atom::import_with_map(Cursor::new(&a_export), &state_map).unwrap();
 
     let r = Atom::parse("x^2*f1(y, x)").unwrap();
     assert_eq!(a_rec, r);
@@ -55,9 +55,9 @@ fn rational_rename() {
 
     State::get_symbol("y");
 
-    let state_map = State::import(Cursor::new(&state_export), None).unwrap();
+    let state_map = State::import(&mut Cursor::new(&state_export), None).unwrap();
 
-    let a_rec = Atom::import(Cursor::new(&a_export), &state_map).unwrap();
+    let a_rec = Atom::import_with_map(Cursor::new(&a_export), &state_map).unwrap();
 
     let r = Atom::parse("x^2*coeff(x)").unwrap();
     assert_eq!(a_rec, r);

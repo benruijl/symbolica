@@ -27,6 +27,7 @@ use crate::{
     LicenseManager,
 };
 
+pub const SYMBOLICA_MAGIC: u32 = 0x37871367;
 pub const EXPORT_FORMAT_VERSION: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -486,7 +487,8 @@ impl State {
 
     /// Write the state to a binary stream.
     #[inline(always)]
-    pub fn export<W: Write>(mut dest: W) -> Result<(), std::io::Error> {
+    pub fn export<W: Write>(dest: &mut W) -> Result<(), std::io::Error> {
+        dest.write_u32::<LittleEndian>(SYMBOLICA_MAGIC)?;
         dest.write_u16::<LittleEndian>(EXPORT_FORMAT_VERSION)?;
 
         dest.write_u64::<LittleEndian>(
@@ -539,13 +541,22 @@ impl State {
 
     /// Import a state, merging it with the current state.
     /// Upon a conflict, i.e. when a symbol with the same name but different attributes is
-    /// encountered, the conflict_fn is called with the conflicting name as argument which
+    /// encountered, `conflict_fn` is called with the conflicting name as argument which
     /// should yield a new name for the symbol.
     #[inline(always)]
     pub fn import<R: Read>(
-        mut source: R,
+        source: &mut R,
         conflict_fn: Option<Box<dyn Fn(&str) -> String>>,
     ) -> Result<StateMap, std::io::Error> {
+        let magic = source.read_u32::<LittleEndian>()?;
+
+        if magic != SYMBOLICA_MAGIC {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid magic number: the file is not exported from Symbolica",
+            ));
+        }
+
         let version = source.read_u16::<LittleEndian>()?;
         if version != EXPORT_FORMAT_VERSION {
             return Err(std::io::Error::new(
@@ -661,14 +672,14 @@ impl State {
                         };
 
                         let mut f = Atom::new();
-                        f.read(&mut source)?;
+                        f.read(&mut *source)?;
 
                         let f_r = f.as_view().rename(&state_map);
                         variables.push(Variable::Function(symb, Arc::new(f_r)));
                     }
                     3 => {
                         let mut f = Atom::new();
-                        f.read(&mut source)?;
+                        f.read(&mut *source)?;
 
                         let f_r = f.as_view().rename(&state_map);
                         variables.push(Variable::Other(Arc::new(f_r)));
@@ -862,7 +873,7 @@ mod tests {
         let mut export = vec![];
         State::export(&mut export).unwrap();
 
-        let i = State::import(Cursor::new(&export), None).unwrap();
+        let i = State::import(&mut Cursor::new(&export), None).unwrap();
         assert!(i.is_empty());
     }
 

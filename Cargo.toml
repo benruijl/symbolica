@@ -39,9 +39,9 @@ python_no_module = ["python_api"]
 python_abi3 = ["pyo3/abi3", "pyo3/abi3-py37"]
 
 [dependencies.pyo3]
-features = ["extension-module", "abi3"]
+features = ["extension-module", "abi3", "py-clone"]
 optional = true
-version = "0.20"
+version = "0.22"
 
 [dev-dependencies]
 tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}

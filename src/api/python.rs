@@ -11,14 +11,18 @@ use ahash::HashMap;
 use brotli::CompressorWriter;
 use pyo3::{
     exceptions::{self, PyIndexError},
-    pyclass,
+    pybacked::PyBackedStr,
     pyclass::CompareOp,
     pyfunction, pymethods,
     sync::GILOnceCell,
-    types::{PyBytes, PyComplex, PyLong, PyModule, PyTuple, PyType},
-    wrap_pyfunction, FromPyObject, IntoPy, Py, PyErr, PyObject, PyRef, PyResult, PyTypeInfo,
+    types::{
+        PyAnyMethods, PyBytes, PyComplex, PyComplexMethods, PyLong, PyModule, PyTuple,
+        PyTupleMethods, PyType, PyTypeMethods,
+    },
+    wrap_pyfunction, Bound, FromPyObject, IntoPy, Py, PyErr, PyObject, PyRef, PyResult, PyTypeInfo,
     Python, ToPyObject,
 };
+use pyo3::{pyclass, types::PyModuleMethods};
 use rug::Complete;
 use self_cell::self_cell;
 use smallvec::SmallVec;
@@ -69,7 +73,9 @@ use crate::{
 };
 
 /// Create a Symbolica Python module.
-pub fn create_symbolica_module(m: &PyModule) -> PyResult<&PyModule> {
+pub fn create_symbolica_module<'a, 'b>(
+    m: &'b Bound<'a, PyModule>,
+) -> PyResult<&'b Bound<'a, PyModule>> {
     m.add_class::<PythonExpression>()?;
     m.add_class::<PythonTransformer>()?;
     m.add_class::<PythonPolynomial>()?;
@@ -112,7 +118,7 @@ pub fn create_symbolica_module(m: &PyModule) -> PyResult<&PyModule> {
 
 #[cfg(not(feature = "python_no_module"))]
 #[pymodule]
-fn symbolica(_py: Python, m: &PyModule) -> PyResult<()> {
+fn symbolica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     create_symbolica_module(m).map(|_| ())
 }
 
@@ -177,7 +183,7 @@ fn get_license_key(email: String) -> PyResult<()> {
 /// Shorthand notation for :func:`Expression.symbol`.
 #[pyfunction(name = "S", signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None))]
 fn symbol_shorthand(
-    names: &PyTuple,
+    names: &Bound<'_, PyTuple>,
     is_symmetric: Option<bool>,
     is_antisymmetric: Option<bool>,
     is_cyclesymmetric: Option<bool>,
@@ -186,7 +192,7 @@ fn symbol_shorthand(
     py: Python<'_>,
 ) -> PyResult<PyObject> {
     PythonExpression::symbol(
-        PythonExpression::type_object(py),
+        &PythonExpression::type_object_bound(py),
         py,
         names,
         is_symmetric,
@@ -198,24 +204,30 @@ fn symbol_shorthand(
 }
 
 /// Shorthand notation for :func:`Expression.symbol`.
-#[pyfunction(name = "N")]
+#[pyfunction(name = "N", signature = (num,relative_error=None))]
 fn number_shorthand(
     num: PyObject,
     relative_error: Option<f64>,
     py: Python<'_>,
 ) -> PyResult<PythonExpression> {
-    PythonExpression::num(PythonExpression::type_object(py), py, num, relative_error)
+    PythonExpression::num(
+        &PythonExpression::type_object_bound(py),
+        py,
+        num,
+        relative_error,
+    )
 }
 
 /// Shorthand notation for :func:`Expression.parse`.
 #[pyfunction(name = "E")]
 fn expression_shorthand(expr: &str, py: Python) -> PyResult<PythonExpression> {
-    PythonExpression::parse(PythonExpression::type_object(py), expr)
+    PythonExpression::parse(&PythonExpression::type_object_bound(py), expr)
 }
 
 /// Specifies the type of the atom.
 #[derive(Clone, Copy)]
-#[pyclass(name = "AtomType", module = "symbolica")]
+#[pyclass(name = "AtomType", module = "symbolica", eq, eq_int)]
+#[derive(PartialEq, Eq, Hash)]
 pub enum PythonAtomType {
     Num,
     Var,
@@ -331,7 +343,7 @@ impl ConvertibleToPatternOrMap {
                     .collect();
 
                 Python::with_gil(|py| {
-                    m.call(py, (match_stack,), None)
+                    m.call_bound(py, (match_stack,), None)
                         .expect("Bad callback function")
                         .extract::<PythonExpression>(py)
                         .expect("Match map does not return an expression")
@@ -442,6 +454,7 @@ impl PythonTransformer {
     /// >>> f = Expression.symbol('f')
     /// >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
     /// >>> print(e)
+    #[pyo3(signature = (var = None))]
     pub fn expand(&self, var: Option<ConvertibleToExpression>) -> PyResult<PythonTransformer> {
         if let Some(var) = var {
             let id = if let AtomView::Var(x) = var.to_expression().expr.as_view() {
@@ -514,6 +527,7 @@ impl PythonTransformer {
     /// >>> print(e)
     ///
     /// yields `f(x,3)+f(y,3)+4*z*f(x,w)+4*z*f(y,w)`.
+    #[pyo3(signature = (symbols = None))]
     pub fn linearize(&self, symbols: Option<Vec<PythonExpression>>) -> PyResult<PythonTransformer> {
         let mut c_symbols = vec![];
         if let Some(symbols) = symbols {
@@ -711,7 +725,7 @@ impl PythonTransformer {
             };
 
             let res = Python::with_gil(|py| {
-                f.call(py, (expr,), None)
+                f.call_bound(py, (expr,), None)
                     .map_err(|e| {
                         TransformerError::ValueError(format!("Bad callback function: {}", e))
                     })?
@@ -745,7 +759,11 @@ impl PythonTransformer {
     /// >>> t = Transformer().map_terms(Transformer().print(), n_cores=2)
     /// >>> e = t(x + y)
     #[pyo3(signature = (*transformers, n_cores=1))]
-    pub fn map_terms(&self, transformers: &PyTuple, n_cores: usize) -> PyResult<PythonTransformer> {
+    pub fn map_terms(
+        &self,
+        transformers: &Bound<'_, PyTuple>,
+        n_cores: usize,
+    ) -> PyResult<PythonTransformer> {
         let mut rep_chain = vec![];
         // fuse all sub-transformers into one chain
         for r in transformers {
@@ -795,7 +813,7 @@ impl PythonTransformer {
     /// >>> f = Expression.symbol('f')
     /// >>> e = (1+x).transform().split().for_each(Transformer().map(f)).execute()
     #[pyo3(signature = (*transformers))]
-    pub fn for_each(&self, transformers: &PyTuple) -> PyResult<PythonTransformer> {
+    pub fn for_each(&self, transformers: &Bound<'_, PyTuple>) -> PyResult<PythonTransformer> {
         let mut rep_chain = vec![];
         // fuse all sub-transformers into one chain
         for r in transformers {
@@ -851,7 +869,7 @@ impl PythonTransformer {
     /// >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
     /// >>> ).execute()
     #[pyo3(signature = (*transformers))]
-    pub fn repeat(&self, transformers: &PyTuple) -> PyResult<PythonTransformer> {
+    pub fn repeat(&self, transformers: &Bound<'_, PyTuple>) -> PyResult<PythonTransformer> {
         let mut rep_chain = vec![];
         // fuse all sub-transformers into one chain
         for r in transformers {
@@ -889,7 +907,7 @@ impl PythonTransformer {
     /// >>>     Transformer().replace_all(f(x_), f(x_ - 1) + f(x_ - 2), x_.req_gt(1))
     /// >>> ).execute()
     #[pyo3(signature = (*transformers))]
-    pub fn chain(&self, transformers: &PyTuple) -> PyResult<PythonTransformer> {
+    pub fn chain(&self, transformers: &Bound<'_, PyTuple>) -> PyResult<PythonTransformer> {
         if let Pattern::Transformer(b) = self.expr.borrow() {
             let mut ts = b.clone();
 
@@ -1017,6 +1035,7 @@ impl PythonTransformer {
     ///     A transformer to be applied to the quantity collected in
     /// coeff_map: Transformer
     ///     A transformer to be applied to the coefficient
+    #[pyo3(signature = (x, key_map = None, coeff_map = None))]
     pub fn collect(
         &self,
         x: ConvertibleToExpression,
@@ -1226,6 +1245,7 @@ impl PythonTransformer {
     /// >>> f = Expression.symbol('f')
     /// >>> e = f(3,x)
     /// >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
+    #[pyo3(signature = (lhs, rhs, cond = None, non_greedy_wildcards = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None, rhs_cache_size = None))]
     pub fn replace_all(
         &self,
         lhs: ConvertibleToPattern,
@@ -1599,7 +1619,10 @@ impl PythonPatternRestriction {
     /// If your pattern restriction cannot decide if it holds since not all the required variables
     /// have been matched, it should return inclusive (0).
     #[classmethod]
-    pub fn req_matches(_cls: &PyType, match_fn: PyObject) -> PyResult<PythonPatternRestriction> {
+    pub fn req_matches(
+        _cls: &Bound<'_, PyType>,
+        match_fn: PyObject,
+    ) -> PyResult<PythonPatternRestriction> {
         Ok(PythonPatternRestriction {
             condition: PatternRestriction::MatchStack(Box::new(move |m| {
                 let matches: HashMap<PythonExpression, PythonExpression> = m
@@ -1610,7 +1633,7 @@ impl PythonPatternRestriction {
 
                 let r = Python::with_gil(|py| {
                     match_fn
-                        .call(py, (matches,), None)
+                        .call_bound(py, (matches,), None)
                         .expect("Bad callback function")
                         .extract::<isize>(py)
                         .expect("Pattern comparison does not return an integer")
@@ -1630,16 +1653,16 @@ impl PythonPatternRestriction {
 }
 
 impl<'a> FromPyObject<'a> for ConvertibleToExpression {
-    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonExpression>() {
             Ok(ConvertibleToExpression(a))
         } else if let Ok(num) = ob.extract::<i64>() {
             Ok(ConvertibleToExpression(Atom::new_num(num).into()))
-        } else if let Ok(num) = ob.extract::<&PyLong>() {
+        } else if let Ok(num) = ob.downcast::<PyLong>() {
             let a = format!("{}", num);
             let i = Integer::from(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(Atom::new_num(i).into()))
-        } else if let Ok(_) = ob.extract::<&str>() {
+        } else if let Ok(_) = ob.extract::<PyBackedStr>() {
             // disallow direct string conversion
             Err(exceptions::PyValueError::new_err(
                 "Cannot convert to expression",
@@ -1655,7 +1678,7 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
 }
 
 impl<'a> FromPyObject<'a> for Symbol {
-    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonExpression>() {
             match a.expr.as_view() {
                 AtomView::Var(v) => Ok(v.get_symbol()),
@@ -1671,16 +1694,16 @@ impl<'a> FromPyObject<'a> for Symbol {
 }
 
 impl<'a> FromPyObject<'a> for Variable {
-    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
-        Ok(Variable::Symbol(Symbol::extract(ob)?))
+    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
+        Ok(Variable::Symbol(Symbol::extract_bound(ob)?))
     }
 }
 
 impl<'a> FromPyObject<'a> for Integer {
-    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(num) = ob.extract::<i64>() {
             Ok(num.into())
-        } else if let Ok(num) = ob.extract::<&PyLong>() {
+        } else if let Ok(num) = ob.downcast::<PyLong>() {
             let a = format!("{}", num);
             Ok(Integer::from(rug::Integer::parse(&a).unwrap().complete()))
         } else {
@@ -1695,11 +1718,14 @@ impl ToPyObject for Integer {
             Integer::Natural(n) => n.to_object(py),
             Integer::Double(d) => d.to_object(py),
             Integer::Large(l) => unsafe {
-                py.from_owned_ptr::<PyLong>(pyo3::ffi::PyLong_FromString(
-                    l.to_string().as_str().as_ptr() as *const i8,
-                    std::ptr::null_mut(),
-                    10,
-                ))
+                Bound::from_owned_ptr(
+                    py,
+                    pyo3::ffi::PyLong_FromString(
+                        l.to_string().as_str().as_ptr() as *const i8,
+                        std::ptr::null_mut(),
+                        10,
+                    ),
+                )
                 .to_object(py)
             },
         }
@@ -1726,7 +1752,7 @@ static PYDECIMAL: GILOnceCell<Py<PyType>> = GILOnceCell::new();
 
 fn get_decimal(py: Python) -> &Py<PyType> {
     PYDECIMAL.get_or_init(py, || {
-        py.import("decimal")
+        py.import_bound("decimal")
             .unwrap()
             .getattr("Decimal")
             .unwrap()
@@ -1738,17 +1764,19 @@ fn get_decimal(py: Python) -> &Py<PyType> {
 impl ToPyObject for PythonMultiPrecisionFloat {
     fn to_object(&self, py: Python) -> PyObject {
         get_decimal(py)
-            .as_ref(py)
-            .call1((self.0.to_string(),))
+            .call1(py, (self.0.to_string(),))
             .expect("failed to call decimal.Decimal(value)")
             .to_object(py)
     }
 }
 
 impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
-    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
-        if ob.is_instance(get_decimal(ob.py()).as_ref(ob.py()))? {
-            let a = ob.call_method0("__str__").unwrap().extract::<&str>()?;
+    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
+        if ob.is_instance(get_decimal(ob.py()).as_any().bind(ob.py()))? {
+            let a = ob
+                .call_method0("__str__")
+                .unwrap()
+                .extract::<PyBackedStr>()?;
 
             // get the number of accurate digits
             let digits = a
@@ -1759,13 +1787,13 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
                 .count();
 
             Ok(Float::parse(
-                a,
+                &*a,
                 Some((digits as f64 * std::f64::consts::LOG2_10).ceil() as u32),
             )
             .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
             .into())
-        } else if let Ok(a) = ob.extract::<&str>() {
-            Ok(Float::parse(a, None)
+        } else if let Ok(a) = ob.extract::<PyBackedStr>() {
+            Ok(Float::parse(&*a, None)
                 .map_err(|_| exceptions::PyValueError::new_err("Not a floating point number"))?
                 .into())
         } else if let Ok(a) = ob.extract::<f64>() {
@@ -1785,10 +1813,10 @@ impl<'a> FromPyObject<'a> for PythonMultiPrecisionFloat {
 }
 
 impl<'a> FromPyObject<'a> for Complex<f64> {
-    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<f64>() {
             Ok(Complex::new(a, 0.))
-        } else if let Ok(a) = ob.extract::<&PyComplex>() {
+        } else if let Ok(a) = ob.downcast::<PyComplex>() {
             Ok(Complex::new(a.real(), a.imag()))
         } else {
             Err(exceptions::PyValueError::new_err(
@@ -1799,11 +1827,11 @@ impl<'a> FromPyObject<'a> for Complex<f64> {
 }
 
 impl<'a> FromPyObject<'a> for Complex<Float> {
-    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(a) = ob.extract::<PythonMultiPrecisionFloat>() {
             let zero = Float::new(a.0.prec());
             Ok(Complex::new(a.0, zero))
-        } else if let Ok(a) = ob.extract::<&PyComplex>() {
+        } else if let Ok(a) = ob.downcast::<PyComplex>() {
             Ok(Complex::new(
                 Float::with_val(53, a.real()).into(),
                 Float::with_val(53, a.imag()).into(),
@@ -1974,9 +2002,9 @@ impl PythonExpression {
     #[pyo3(signature = (*names,is_symmetric=None,is_antisymmetric=None,is_cyclesymmetric=None,is_linear=None,custom_normalization=None))]
     #[classmethod]
     pub fn symbol(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         py: Python,
-        names: &PyTuple,
+        names: &Bound<'_, PyTuple>,
         is_symmetric: Option<bool>,
         is_antisymmetric: Option<bool>,
         is_cyclesymmetric: Option<bool>,
@@ -2013,16 +2041,16 @@ impl PythonExpression {
             && custom_normalization.is_none()
         {
             if names.len() == 1 {
-                let name = names[0].extract::<&str>()?;
+                let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
 
-                let id = State::get_symbol(name_check(name)?);
+                let id = State::get_symbol(name_check(&*name)?);
                 let r = PythonExpression::from(Atom::new_var(id));
                 return Ok(r.into_py(py));
             } else {
                 let mut result = vec![];
                 for a in names {
-                    let name = a.extract::<&str>()?;
-                    let id = State::get_symbol(name_check(name)?);
+                    let name = a.extract::<PyBackedStr>()?;
+                    let id = State::get_symbol(name_check(&*name)?);
                     let r = PythonExpression::from(Atom::new_var(id));
                     result.push(r);
                 }
@@ -2060,8 +2088,8 @@ impl PythonExpression {
         }
 
         if names.len() == 1 {
-            let name = names[0].extract::<&str>()?;
-            let name = name_check(name)?;
+            let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
+            let name = name_check(&*name)?;
 
             let id = if let Some(f) = custom_normalization {
                 if let Pattern::Transformer(t) = f.expr {
@@ -2096,8 +2124,8 @@ impl PythonExpression {
         } else {
             let mut result = vec![];
             for a in names {
-                let name = a.extract::<&str>()?;
-                let name = name_check(name)?;
+                let name = a.extract::<PyBackedStr>()?;
+                let name = name_check(&*name)?;
 
                 let id = if let Some(f) = &custom_normalization {
                     if let Pattern::Transformer(t) = &f.expr {
@@ -2154,16 +2182,17 @@ impl PythonExpression {
     /// 1/3
     /// 3.33e-1
     /// 1.2340e-1
+    #[pyo3(signature = (num, relative_error = None))]
     #[classmethod]
     pub fn num(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         py: Python,
         num: PyObject,
         relative_error: Option<f64>,
     ) -> PyResult<PythonExpression> {
         if let Ok(num) = num.extract::<i64>(py) {
             Ok(Atom::new_num(num).into())
-        } else if let Ok(num) = num.extract::<&PyLong>(py) {
+        } else if let Ok(num) = num.downcast_bound::<PyLong>(py) {
             let a = format!("{}", num);
             PythonExpression::parse(_cls, &a)
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
@@ -2238,7 +2267,7 @@ impl PythonExpression {
 
     /// Return all defined symbol names (function names and variables).
     #[classmethod]
-    pub fn get_all_symbol_names(_cls: &PyType) -> PyResult<Vec<String>> {
+    pub fn get_all_symbol_names(_cls: &Bound<'_, PyType>) -> PyResult<Vec<String>> {
         Ok(State::symbol_iter().map(|(_, x)| x.to_string()).collect())
     }
 
@@ -2261,7 +2290,7 @@ impl PythonExpression {
     ///     If the input is not a valid Symbolica expression.
     ///
     #[classmethod]
-    pub fn parse(_cls: &PyType, input: &str) -> PyResult<PythonExpression> {
+    pub fn parse(_cls: &Bound<'_, PyType>, input: &str) -> PyResult<PythonExpression> {
         let e = Atom::parse(input).map_err(exceptions::PyValueError::new_err)?;
         Ok(e.into())
     }
@@ -2286,8 +2315,8 @@ impl PythonExpression {
     }
 
     /// Get the default positional arguments for `__new__`.
-    pub fn __getnewargs__<'py>(&self, py: Python<'py>) -> PyResult<&'py PyTuple> {
-        Ok(PyTuple::empty(py))
+    pub fn __getnewargs__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        Ok(PyTuple::empty_bound(py))
     }
 
     /// Copy the expression.
@@ -2447,8 +2476,13 @@ impl PythonExpression {
     /// print(e)
     ///
     /// will yield `f(x_new)+f(y)`.
+    #[pyo3(signature = (filename, conflict_fn=None))]
     #[classmethod]
-    pub fn load(_cls: &PyType, filename: &str, conflict_fn: Option<PyObject>) -> PyResult<Self> {
+    pub fn load(
+        _cls: &Bound<'_, PyType>,
+        filename: &str,
+        conflict_fn: Option<PyObject>,
+    ) -> PyResult<Self> {
         let f = File::open(filename)
             .map_err(|e| exceptions::PyIOError::new_err(format!("Could not read file: {}", e)))?;
         let mut reader = brotli::Decompressor::new(BufReader::new(f), 4096);
@@ -2607,7 +2641,7 @@ impl PythonExpression {
     /// >>> print(e)
     /// f(3,x)
     #[pyo3(signature = (*args,))]
-    pub fn __call__(&self, args: &PyTuple, py: Python) -> PyResult<PyObject> {
+    pub fn __call__(&self, args: &Bound<'_, PyTuple>, py: Python) -> PyResult<PyObject> {
         let id = match self.expr.as_view() {
             AtomView::Var(v) => v.get_symbol(),
             _ => {
@@ -2757,6 +2791,7 @@ impl PythonExpression {
     }
 
     /// Create a pattern restriction based on the wildcard length before downcasting.
+    #[pyo3(signature = (min_length, max_length=None))]
     pub fn req_len(
         &self,
         min_length: usize,
@@ -3012,7 +3047,7 @@ impl PythonExpression {
 
                     Python::with_gil(|py| {
                         filter_fn
-                            .call(py, (data,), None)
+                            .call_bound(py, (data,), None)
                             .expect("Bad callback function")
                             .extract::<bool>(py)
                             .expect("Pattern filter does not return a boolean")
@@ -3175,7 +3210,7 @@ impl PythonExpression {
 
                         Python::with_gil(|py| {
                             cmp_fn
-                                .call(py, (data1, data2), None)
+                                .call_bound(py, (data1, data2), None)
                                 .expect("Bad callback function")
                                 .extract::<bool>(py)
                                 .expect("Pattern comparison does not return a boolean")
@@ -3211,6 +3246,7 @@ impl PythonExpression {
     /// >>> e = (1+x)**2
     /// >>> r = e.map(Transformer().expand().replace_all(x, 6))
     /// >>> print(r)
+    #[pyo3(signature = (op, n_cores = None))]
     pub fn map(
         &self,
         op: PythonTransformer,
@@ -3282,6 +3318,7 @@ impl PythonExpression {
     }
 
     /// Expand the expression. Optionally, expand in `var` only.
+    #[pyo3(signature = (var = None))]
     pub fn expand(&self, var: Option<ConvertibleToExpression>) -> PyResult<PythonExpression> {
         if let Some(var) = var {
             let id = if let AtomView::Var(x) = var.to_expression().expr.as_view() {
@@ -3325,6 +3362,7 @@ impl PythonExpression {
     /// >>> print(e.collect(x, key_map=lambda x: exp(x), coeff_map=lambda x: coeff(x)))
     ///
     /// yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
+    #[pyo3(signature = (x, key_map = None, coeff_map = None))]
     pub fn collect(
         &self,
         x: ConvertibleToExpression,
@@ -3348,7 +3386,7 @@ impl PythonExpression {
 
                         out.set_from_view(
                             &key_map
-                                .call(py, (key,), None)
+                                .call_bound(py, (key,), None)
                                 .expect("Bad callback function")
                                 .extract::<PythonExpression>(py)
                                 .expect("Key map should return an expression")
@@ -3367,7 +3405,7 @@ impl PythonExpression {
 
                         out.set_from_view(
                             &coeff_map
-                                .call(py, (coeff,), None)
+                                .call_bound(py, (coeff,), None)
                                 .expect("Bad callback function")
                                 .extract::<PythonExpression>(py)
                                 .expect("Coeff map should return an expression")
@@ -3603,6 +3641,7 @@ impl PythonExpression {
     /// If a `minimal_poly` is provided, the polynomial will be converted to a number field with the given minimal polynomial.
     /// The minimal polynomial must be a monic, irreducible univariate polynomial. If a `modulus` is provided as well,
     /// the Galois field will be created with `minimal_poly` as the minimal polynomial.
+    #[pyo3(signature = (modulus = None, extension = None, minimal_poly = None, vars = None))]
     pub fn to_polynomial(
         &self,
         modulus: Option<u32>,
@@ -3746,6 +3785,7 @@ impl PythonExpression {
     /// --------
     /// >>> a = Expression.parse('(1 + 3*x1 + 5*x2 + 7*x3 + 9*x4 + 11*x5 + 13*x6 + 15*x7)^2 - 1').to_rational_polynomial()
     /// >>> print(a)
+    #[pyo3(signature = (vars = None))]
     pub fn to_rational_polynomial(
         &self,
         vars: Option<Vec<PythonExpression>>,
@@ -3788,7 +3828,7 @@ impl PythonExpression {
     /// >>> for match in e.match(f(x_)):
     /// >>>    for map in match:
     /// >>>        print(map[0],'=', map[1])
-    #[pyo3(name = "r#match")]
+    #[pyo3(name = "r#match", signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
     pub fn pattern_match(
         &self,
         lhs: ConvertibleToPattern,
@@ -3828,6 +3868,7 @@ impl PythonExpression {
     /// >>> f = Expression.symbol('f')
     /// >>> if f(1).matches(f(2)):
     /// >>>    print('match')
+    #[pyo3(signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
     pub fn matches(
         &self,
         lhs: ConvertibleToPattern,
@@ -3877,6 +3918,7 @@ impl PythonExpression {
     /// f(1)*f(3)*f(3)
     /// f(1)*f(2)*f(4)
     /// ```
+    #[pyo3(signature = (lhs, rhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
     pub fn replace(
         &self,
         lhs: ConvertibleToPattern,
@@ -3947,6 +3989,7 @@ impl PythonExpression {
     ///      Warning: caching should be disabled (`rhs_cache_size=0`) if the right-hand side contains side effects, such as updating a global variable.
     /// repeat: bool, optional
     ///     If set to `True`, the entire operation will be repeated until there are no more matches.
+    #[pyo3(signature = (pattern, rhs, cond = None, non_greedy_wildcards = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None, rhs_cache_size = None, repeat = None))]
     pub fn replace_all(
         &self,
         pattern: ConvertibleToPattern,
@@ -4037,6 +4080,7 @@ impl PythonExpression {
     ///     The list of replacements to apply.
     /// repeat: bool, optional
     ///     If set to `True`, the entire operation will be repeated until there are no more matches.
+    #[pyo3(signature = (replacements, repeat = None))]
     pub fn replace_all_multiple(
         &self,
         replacements: Vec<PythonReplacement>,
@@ -4079,7 +4123,7 @@ impl PythonExpression {
     /// >>> print('x =', x_r, ', y =', y_r)
     #[classmethod]
     pub fn solve_linear_system(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         system: Vec<ConvertibleToExpression>,
         variables: Vec<PythonExpression>,
     ) -> PyResult<Vec<PythonExpression>> {
@@ -4177,7 +4221,7 @@ impl PythonExpression {
         )]
     #[classmethod]
     pub fn nsolve_system(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         system: Vec<ConvertibleToExpression>,
         variables: Vec<PythonExpression>,
         init: Vec<PythonMultiPrecisionFloat>,
@@ -4268,7 +4312,7 @@ impl PythonExpression {
                     id,
                     EvaluationFn::new(Box::new(move |args, _, _, _| {
                         Python::with_gil(|py| {
-                            v.call(py, (args.to_vec(),), None)
+                            v.call_bound(py, (args.to_vec(),), None)
                                 .expect("Bad callback function")
                                 .extract::<f64>(py)
                                 .expect("Function does not return a float")
@@ -4338,7 +4382,7 @@ impl PythonExpression {
                     EvaluationFn::new(Box::new(move |args: &[Float], _, _, _| {
                         Python::with_gil(|py| {
                             let mut vv = v
-                                .call(
+                                .call_bound(
                                     py,
                                     (args
                                         .iter()
@@ -4388,7 +4432,7 @@ impl PythonExpression {
         py: Python<'py>,
         constants: HashMap<PythonExpression, Complex<f64>>,
         functions: HashMap<Variable, PyObject>,
-    ) -> PyResult<&'py PyComplex> {
+    ) -> PyResult<Bound<'py, PyComplex>> {
         let mut cache = HashMap::default();
 
         let constants = constants
@@ -4412,11 +4456,11 @@ impl PythonExpression {
                     id,
                     EvaluationFn::new(Box::new(move |args: &[Complex<f64>], _, _, _| {
                         Python::with_gil(|py| {
-                            v.call(
+                            v.call_bound(
                                 py,
                                 (args
                                     .iter()
-                                    .map(|x| PyComplex::from_doubles(py, x.re, x.im))
+                                    .map(|x| PyComplex::from_doubles_bound(py, x.re, x.im))
                                     .collect::<Vec<_>>(),),
                                 None,
                             )
@@ -4435,7 +4479,7 @@ impl PythonExpression {
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
             })?;
-        Ok(PyComplex::from_doubles(py, r.re, r.im))
+        Ok(PyComplex::from_doubles_bound(py, r.re, r.im))
     }
 
     /// Create an evaluator that can evaluate (nested) expressions in an optimized fashion.
@@ -4555,7 +4599,7 @@ impl PythonExpression {
         verbose = false),
         )]
     pub fn evaluator_multiple(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         exprs: Vec<PythonExpression>,
         constants: HashMap<PythonExpression, PythonExpression>,
         functions: HashMap<(Variable, String, Vec<Variable>), PythonExpression>,
@@ -4638,6 +4682,7 @@ impl PythonExpression {
     /// >>>
     /// >>> print(e.canonize_tensors([mu1, mu2, mu3, mu4]))
     /// yields `g(mu1,mu2)*fc(mu1,mu3,mu2,k1,mu3,k1)`.
+    #[pyo3(signature = (contracted_indices, index_group=None))]
     fn canonize_tensors(
         &self,
         contracted_indices: Vec<ConvertibleToExpression>,
@@ -4687,6 +4732,7 @@ pub struct PythonReplacement {
 
 #[pymethods]
 impl PythonReplacement {
+    #[pyo3(signature = (pattern, rhs, cond=None, non_greedy_wildcards=None, level_range=None, level_is_tree_depth=None, allow_new_wildcards_on_rhs=None, rhs_cache_size=None))]
     #[new]
     pub fn new(
         pattern: ConvertibleToPattern,
@@ -4999,6 +5045,7 @@ pub struct PythonTermStreamer {
 impl PythonTermStreamer {
     /// Create a new term streamer with a given path for its files,
     /// the maximum size of the memory buffer and the number of cores.
+    #[pyo3(signature = (path = None, max_mem_bytes = None, n_cores = None))]
     #[new]
     pub fn __new__(
         path: Option<&str>,
@@ -5593,6 +5640,7 @@ impl PythonPolynomial {
     /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
+    #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
@@ -5726,15 +5774,15 @@ impl PythonPolynomial {
     /// ValueError
     ///     If the input is not a valid Symbolica polynomial.
     #[classmethod]
-    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
+    pub fn parse(_cls: &Bound<'_, PyType>, arg: &str, vars: Vec<PyBackedStr>) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
             SmallVec::new();
 
         for v in vars {
-            let id = State::get_symbol(v);
+            let id = State::get_symbol(&*v);
             var_map.push(id.into());
-            var_name_map.push(v.into());
+            var_name_map.push((*v).into());
         }
 
         let e = Token::parse(arg)
@@ -5807,7 +5855,7 @@ impl PythonPolynomial {
     #[pyo3(signature = (system, grevlex = true, print_stats = false))]
     #[classmethod]
     pub fn groebner_basis(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         system: Vec<Self>,
         grevlex: bool,
         print_stats: bool,
@@ -5888,7 +5936,7 @@ impl PythonPolynomial {
     /// yields `25-5*x+5*y^2-y^2*x-4*y^3+y^3*x`.
     #[classmethod]
     pub fn interpolate(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         x: PythonExpression,
         sample_points: Vec<ConvertibleToExpression>,
         values: Vec<PythonPolynomial>,
@@ -5972,14 +6020,14 @@ impl PythonIntegerPolynomial {
     /// ValueError
     ///     If the input is not a valid Symbolica polynomial.
     #[classmethod]
-    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
+    pub fn parse(_cls: &Bound<'_, PyType>, arg: &str, vars: Vec<PyBackedStr>) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_symbol(v);
+            let id = State::get_symbol(&*v);
             var_map.push(id.into());
-            var_name_map.push(v.into());
+            var_name_map.push((*v).into());
         }
 
         let e = Token::parse(arg)
@@ -6350,6 +6398,7 @@ impl PythonFiniteFieldPolynomial {
     /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
+    #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
@@ -6486,7 +6535,7 @@ impl PythonFiniteFieldPolynomial {
     #[pyo3(signature = (system, grevlex = true, print_stats = false))]
     #[classmethod]
     pub fn groebner_basis(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         system: Vec<Self>,
         grevlex: bool,
         print_stats: bool,
@@ -6556,14 +6605,19 @@ impl PythonFiniteFieldPolynomial {
     /// ValueError
     ///     If the input is not a valid Symbolica polynomial.
     #[classmethod]
-    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>, prime: u32) -> PyResult<Self> {
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        arg: &str,
+        vars: Vec<PyBackedStr>,
+        prime: u32,
+    ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_symbol(v);
+            let id = State::get_symbol(&*v);
             var_map.push(id.into());
-            var_name_map.push(v.into());
+            var_name_map.push((*v).into());
         }
 
         let e = Token::parse(arg)
@@ -6931,6 +6985,7 @@ impl PythonPrimeTwoPolynomial {
     /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
+    #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
@@ -7067,7 +7122,7 @@ impl PythonPrimeTwoPolynomial {
     #[pyo3(signature = (system, grevlex = true, print_stats = false))]
     #[classmethod]
     pub fn groebner_basis(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         system: Vec<Self>,
         grevlex: bool,
         print_stats: bool,
@@ -7477,6 +7532,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
+    #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
@@ -7613,7 +7669,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     #[pyo3(signature = (system, grevlex = true, print_stats = false))]
     #[classmethod]
     pub fn groebner_basis(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         system: Vec<Self>,
         grevlex: bool,
         print_stats: bool,
@@ -8027,6 +8083,7 @@ impl PythonGaloisFieldPolynomial {
     /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
+    #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
@@ -8163,7 +8220,7 @@ impl PythonGaloisFieldPolynomial {
     #[pyo3(signature = (system, grevlex = true, print_stats = false))]
     #[classmethod]
     pub fn groebner_basis(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         system: Vec<Self>,
         grevlex: bool,
         print_stats: bool,
@@ -8578,6 +8635,7 @@ impl PythonNumberFieldPolynomial {
     /// >>> p = Expression.parse('x*y+2*x+x^2').to_polynomial()
     /// >>> for n, pp in p.coefficient_list(x):
     /// >>>     print(n, pp)
+    #[pyo3(signature = (vars = None))]
     pub fn coefficient_list(
         &self,
         vars: Option<OneOrMultiple<PythonExpression>>,
@@ -8714,7 +8772,7 @@ impl PythonNumberFieldPolynomial {
     #[pyo3(signature = (system, grevlex = true, print_stats = false))]
     #[classmethod]
     pub fn groebner_basis(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         system: Vec<Self>,
         grevlex: bool,
         print_stats: bool,
@@ -9109,14 +9167,14 @@ impl PythonRationalPolynomial {
     /// ValueError
     ///     If the input is not a valid Symbolica rational polynomial.
     #[classmethod]
-    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>) -> PyResult<Self> {
+    pub fn parse(_cls: &Bound<'_, PyType>, arg: &str, vars: Vec<PyBackedStr>) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_symbol(v);
+            let id = State::get_symbol(&*v);
             var_map.push(id.into());
-            var_name_map.push(v.into());
+            var_name_map.push((*v).into());
         }
 
         let e = Token::parse(arg)
@@ -9406,14 +9464,19 @@ impl PythonFiniteFieldRationalPolynomial {
     /// ValueError
     ///     If the input is not a valid Symbolica rational polynomial.
     #[classmethod]
-    pub fn parse(_cls: &PyType, arg: &str, vars: Vec<&str>, prime: u32) -> PyResult<Self> {
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        arg: &str,
+        vars: Vec<PyBackedStr>,
+        prime: u32,
+    ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_symbol(v);
+            let id = State::get_symbol(&*v);
             var_map.push(id.into());
-            var_name_map.push(v.into());
+            var_name_map.push((*v).into());
         }
 
         let field = Zp::new(prime);
@@ -9468,7 +9531,7 @@ impl PythonCompiledExpressionEvaluator {
     /// Load a compiled library, previously generated with `compile`.
     #[classmethod]
     fn load(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         filename: &str,
         function_name: &str,
         input_len: usize,
@@ -9503,9 +9566,9 @@ impl PythonCompiledExpressionEvaluator {
         &mut self,
         py: Python<'py>,
         inputs: Vec<Complex<f64>>,
-    ) -> Vec<&'py PyComplex> {
+    ) -> Vec<Bound<'py, PyComplex>> {
         let n_inputs = inputs.len() / self.input_len;
-        let mut res = vec![PyComplex::from_doubles(py, 0., 0.); self.output_len * n_inputs];
+        let mut res = vec![PyComplex::from_doubles_bound(py, 0., 0.); self.output_len * n_inputs];
         let mut tmp = vec![Complex::new_zero(); self.output_len];
         for (r, s) in res
             .chunks_mut(self.output_len)
@@ -9513,7 +9576,7 @@ impl PythonCompiledExpressionEvaluator {
         {
             self.eval.evaluate(s, &mut tmp);
             for (rr, t) in r.iter_mut().zip(&tmp) {
-                *rr = PyComplex::from_doubles(py, t.re, t.im);
+                *rr = PyComplex::from_doubles_bound(py, t.re, t.im);
             }
         }
 
@@ -9537,14 +9600,14 @@ impl PythonCompiledExpressionEvaluator {
         &mut self,
         python: Python<'py>,
         inputs: Vec<Vec<Complex<f64>>>,
-    ) -> Vec<Vec<&'py PyComplex>> {
+    ) -> Vec<Vec<Bound<'py, PyComplex>>> {
         let mut v = vec![Complex::new_zero(); self.output_len];
         inputs
             .iter()
             .map(|s| {
                 self.eval.evaluate(s, &mut v);
                 v.iter()
-                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
+                    .map(|x| PyComplex::from_doubles_bound(python, x.re, x.im))
                     .collect()
             })
             .collect()
@@ -9574,11 +9637,11 @@ impl PythonExpressionEvaluator {
         &mut self,
         py: Python<'py>,
         inputs: Vec<Complex<f64>>,
-    ) -> Vec<&'py PyComplex> {
+    ) -> Vec<Bound<'py, PyComplex>> {
         let mut eval = self.eval.clone().map_coeff(&|x| Complex::new(*x, 0.));
         let n_inputs = inputs.len() / self.eval.get_input_len();
         let mut res =
-            vec![PyComplex::from_doubles(py, 0., 0.); self.eval.get_output_len() * n_inputs];
+            vec![PyComplex::from_doubles_bound(py, 0., 0.); self.eval.get_output_len() * n_inputs];
         let mut tmp = vec![Complex::new_zero(); self.eval.get_output_len()];
         for (r, s) in res
             .chunks_mut(self.eval.get_output_len())
@@ -9586,7 +9649,7 @@ impl PythonExpressionEvaluator {
         {
             eval.evaluate(s, &mut tmp);
             for (rr, t) in r.iter_mut().zip(&tmp) {
-                *rr = PyComplex::from_doubles(py, t.re, t.im);
+                *rr = PyComplex::from_doubles_bound(py, t.re, t.im);
             }
         }
 
@@ -9610,7 +9673,7 @@ impl PythonExpressionEvaluator {
         &mut self,
         python: Python<'py>,
         inputs: Vec<Vec<Complex<f64>>>,
-    ) -> Vec<Vec<&'py PyComplex>> {
+    ) -> Vec<Vec<Bound<'py, PyComplex>>> {
         let mut eval = self.eval.clone().map_coeff(&|x| Complex::new(*x, 0.));
 
         let mut v = vec![Complex::new_zero(); self.eval.get_output_len()];
@@ -9619,7 +9682,7 @@ impl PythonExpressionEvaluator {
             .map(|s| {
                 eval.evaluate(s, &mut v);
                 v.iter()
-                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
+                    .map(|x| PyComplex::from_doubles_bound(python, x.re, x.im))
                     .collect()
             })
             .collect()
@@ -9765,7 +9828,7 @@ impl PythonMatrix {
 
     /// Create a new square matrix with `nrows` rows and ones on the main diagonal and zeroes elsewhere.
     #[classmethod]
-    pub fn identity(_cls: &PyType, nrows: u32) -> PyResult<PythonMatrix> {
+    pub fn identity(_cls: &Bound<'_, PyType>, nrows: u32) -> PyResult<PythonMatrix> {
         if nrows == 0 {
             return Err(exceptions::PyValueError::new_err(
                 "The matrix must have at least one row and one column",
@@ -9780,7 +9843,7 @@ impl PythonMatrix {
     /// Create a new matrix with the scalars `diag` on the main diagonal and zeroes elsewhere.
     #[classmethod]
     pub fn eye(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         diag: Vec<ConvertibleToRationalPolynomial>,
     ) -> PyResult<PythonMatrix> {
         if diag.is_empty() {
@@ -9812,7 +9875,7 @@ impl PythonMatrix {
     /// Create a new column vector from a list of scalars.
     #[classmethod]
     pub fn vec(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         entries: Vec<ConvertibleToRationalPolynomial>,
     ) -> PyResult<PythonMatrix> {
         if entries.is_empty() {
@@ -9844,7 +9907,7 @@ impl PythonMatrix {
     /// Create a new row vector from a list of scalars.
     #[classmethod]
     pub fn from_linear(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         nrows: u32,
         ncols: u32,
         entries: Vec<ConvertibleToRationalPolynomial>,
@@ -9879,7 +9942,7 @@ impl PythonMatrix {
     /// Create a new matrix from a 2-dimensional vector of scalars.
     #[classmethod]
     pub fn from_nested(
-        cls: &PyType,
+        cls: &Bound<'_, PyType>,
         entries: Vec<Vec<ConvertibleToRationalPolynomial>>,
     ) -> PyResult<PythonMatrix> {
         if entries.is_empty() || entries.iter().any(|x| x.is_empty()) {
@@ -10246,7 +10309,7 @@ impl PythonNumericalIntegrator {
         train_on_avg = false)
     )]
     pub fn continuous(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         n_dims: usize,
         n_bins: usize,
         min_samples_for_update: usize,
@@ -10288,7 +10351,7 @@ impl PythonNumericalIntegrator {
         train_on_avg = false)
     )]
     pub fn discrete(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         bins: Vec<Option<PythonNumericalIntegrator>>,
         max_prob_ratio: f64,
         train_on_avg: bool,
@@ -10304,7 +10367,11 @@ impl PythonNumericalIntegrator {
     /// Each thread of instance of the integrator should have its own random number generator,
     /// that is initialized with the same seed but with a different stream id.
     #[classmethod]
-    pub fn rng(_cls: &PyType, seed: u64, stream_id: usize) -> PythonRandomNumberGenerator {
+    pub fn rng(
+        _cls: &Bound<'_, PyType>,
+        seed: u64,
+        stream_id: usize,
+    ) -> PythonRandomNumberGenerator {
         PythonRandomNumberGenerator::new(seed, stream_id)
     }
 
@@ -10351,7 +10418,7 @@ impl PythonNumericalIntegrator {
     /// Import an exported grid from another thread or machine.
     /// Use `export_grid` to export the grid.
     #[classmethod]
-    fn import_grid(_cls: &PyType, grid: &[u8]) -> PyResult<Self> {
+    fn import_grid(_cls: &Bound<'_, PyType>, grid: &[u8]) -> PyResult<Self> {
         let grid = bincode::deserialize(grid)
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
 
@@ -10360,9 +10427,9 @@ impl PythonNumericalIntegrator {
 
     /// Export the grid, so that it can be sent to another thread or machine.
     /// Use `import_grid` to load the grid.
-    fn export_grid<'p>(&self, py: Python<'p>) -> PyResult<&'p PyBytes> {
+    fn export_grid<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
         bincode::serialize(&self.grid)
-            .map(|a| PyBytes::new(py, &a))
+            .map(|a| PyBytes::new_bound(py, &a))
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
 
@@ -10485,7 +10552,7 @@ impl PythonNumericalIntegrator {
             let p_samples: Vec<_> = samples.iter().map(PythonSample::from_sample).collect();
 
             let res = integrand
-                .call(py, (p_samples,), None)?
+                .call_bound(py, (p_samples,), None)?
                 .extract::<Vec<f64>>(py)?;
 
             if res.len() != n_samples_per_iter {
@@ -10583,9 +10650,10 @@ impl PythonGraph {
     /// of vertex connections.
     ///
     /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
+    #[pyo3(signature = (external_edges, vertex_signatures, max_vertices = None, max_loops = None, max_bridges = None, allow_self_loops = None))]
     #[classmethod]
     fn generate(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         external_edges: Vec<(ConvertibleToExpression, ConvertibleToExpression)>,
         vertex_signatures: Vec<Vec<ConvertibleToExpression>>,
         max_vertices: Option<usize>,
@@ -10633,6 +10701,7 @@ impl PythonGraph {
 
     /// Add a node with data `data` to the graph, returning the index of the node.
     /// The default data is the number 0.
+    #[pyo3(signature = (data = None))]
     fn add_node(&mut self, data: Option<ConvertibleToExpression>) -> usize {
         self.graph
             .add_node(data.map(|x| x.to_expression().expr).unwrap_or_default())
@@ -10815,7 +10884,7 @@ impl PythonInteger {
     /// Create an iterator over all 64-bit prime numbers starting from `start`.
     #[pyo3(signature = (start = 1))]
     #[classmethod]
-    fn prime_iter(_cls: &PyType, start: u64) -> PyResult<PythonPrimeIterator> {
+    fn prime_iter(_cls: &Bound<'_, PyType>, start: u64) -> PyResult<PythonPrimeIterator> {
         Ok(PythonPrimeIterator {
             cur: PrimeIteratorU64::new(start),
         })
@@ -10823,7 +10892,7 @@ impl PythonInteger {
 
     /// Check if the 64-bit number `n` is a prime number.
     #[classmethod]
-    fn is_prime(_cls: &PyType, n: u64) -> bool {
+    fn is_prime(_cls: &Bound<'_, PyType>, n: u64) -> bool {
         is_prime_u64(n)
     }
 
@@ -10842,7 +10911,7 @@ impl PythonInteger {
     #[pyo3(signature = (x, tolerance, max_iter = 1000, max_coeff = None, gamma = None))]
     #[classmethod]
     fn solve_integer_relation(
-        _cls: &PyType,
+        _cls: &Bound<'_, PyType>,
         x: Vec<PythonMultiPrecisionFloat>,
         tolerance: PythonMultiPrecisionFloat,
         max_iter: usize,

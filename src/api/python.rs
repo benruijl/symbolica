@@ -5793,6 +5793,40 @@ impl PythonPolynomial {
         Ok(Self { poly: e })
     }
 
+    /// Isolate the real roots of the polynomial. The result is a list of intervals with rational bounds that contain exactly one root,
+    /// and the multiplicity of that root.
+    /// Optionally, the intervals can be refined to a given precision.
+    #[pyo3(signature = (refine = None))]
+    pub fn isolate_roots(
+        &self,
+        refine: Option<PythonMultiPrecisionFloat>,
+    ) -> PyResult<Vec<(PythonExpression, PythonExpression, usize)>> {
+        let refine = refine.map(|x| x.0.to_rational());
+
+        let var = if self.poly.nvars() == 1 {
+            0
+        } else {
+            let degs: Vec<_> = (0..self.poly.nvars())
+                .filter(|x| self.poly.degree(*x) > 0)
+                .collect();
+            if degs.len() > 1 {
+                Err(exceptions::PyValueError::new_err(
+                    "Polynomial is not univariate",
+                ))?
+            } else {
+                degs[0]
+            }
+        };
+
+        let uni = self.poly.to_univariate_from_univariate(var);
+
+        Ok(uni
+            .isolate_roots(refine)
+            .into_iter()
+            .map(|(l, r, m)| (Atom::new_num(l).into(), Atom::new_num(r).into(), m))
+            .collect())
+    }
+
     /// Convert the polynomial to a polynomial with integer coefficients, if possible.
     pub fn to_integer_polynomial(&self) -> PyResult<PythonIntegerPolynomial> {
         let mut poly_int =

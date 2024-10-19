@@ -2279,6 +2279,28 @@ class Polynomial:
     def to_finite_field(self, prime: int) -> FiniteFieldPolynomial:
         """Convert the coefficients of the polynomial to a finite field with prime `prime`."""
 
+    def isolate_roots(self, refine: Optional[float | Decimal] = None) -> list[Tuple[Expression, Expression, int]]:
+        """Isolate the real roots of the polynomial. The result is a list of intervals with rational bounds that contain exactly one root,
+        and the multiplicity of that root. Optionally, the intervals can be refined to a given precision.
+
+        Examples
+        --------
+        >>> from symbolica import Expression
+        >>> p = Expression.parse('2016+5808*x+5452*x^2+1178*x^3+-753*x^4+-232*x^5+41*x^6').to_polynomial()
+        >>> for a, b, n in p.isolate_roots():
+        >>>     print('({},{}): {}'.format(a, b, n))
+
+        yields
+        ```
+        (-56/45,-77/62): 1
+        (-98/79,-119/96): 1
+        (-119/96,-21/17): 1
+        (-7/6,0): 1
+        (0,6): 1
+        (6,12): 1
+        ```
+        """
+
     def factor_square_free(self) -> list[Tuple[Polynomial, int]]:
         """Compute the square-free factorization of the polynomial.
 

@@ -5,11 +5,16 @@ use std::{
 };
 
 use crate::{
-    domains::{integer::Integer, EuclideanDomain, Field, InternalOrdering, Ring, RingPrinter},
+    domains::{
+        integer::{Integer, IntegerRing, Z},
+        rational::{Rational, RationalField, Q},
+        EuclideanDomain, Field, InternalOrdering, Ring, RingPrinter,
+    },
     printer::PrintOptions,
 };
 
 use super::{
+    factor::Factorize,
     polynomial::{MultivariatePolynomial, PolynomialRing},
     Exponent, Variable,
 };
@@ -403,6 +408,30 @@ impl<F: Ring> UnivariatePolynomial<F> {
         a
     }
 
+    pub fn div_exp(&self, exp: usize) -> Self {
+        if exp == 0 {
+            return self.clone();
+        }
+
+        let mut a = self.zero();
+
+        if self.degree() < exp {
+            return a;
+        }
+
+        a.coefficients = vec![self.field.zero(); self.degree() - exp + 1];
+
+        for (cn, c) in a
+            .coefficients
+            .iter_mut()
+            .zip(self.coefficients.iter().skip(exp))
+        {
+            *cn = c.clone();
+        }
+
+        a
+    }
+
     pub fn mul_coeff(mut self, coeff: &F::Element) -> Self {
         for c in &mut self.coefficients {
             if !F::is_zero(c) {
@@ -436,31 +465,19 @@ impl<F: Ring> UnivariatePolynomial<F> {
         self.coefficients.truncate(self.coefficients.len() - d);
     }
 
+    /// Evaluate the polynomial, using Horner's method.
     pub fn evaluate(&self, x: &F::Element) -> F::Element {
-        let mut res = self.field.zero();
-
-        let mut last_non_zero = 0;
-        for c in self.coefficients.iter().rev() {
-            if !F::is_zero(c) {
-                if last_non_zero == 1 {
-                    self.field.mul_assign(&mut res, x);
-                } else {
-                    let p = self.field.pow(x, last_non_zero + 1); // TODO: cache powers?
-                    self.field.mul_assign(&mut res, &p);
-                }
-
-                self.field.add_assign(&mut res, c);
-                last_non_zero = 0;
-            } else {
-                last_non_zero += 1;
-            }
+        if self.is_constant() {
+            return self.get_constant();
         }
 
-        if last_non_zero == 1 {
-            self.field.mul_assign(&mut res, x);
-        } else if last_non_zero > 1 {
-            let p = self.field.pow(x, last_non_zero + 1);
-            self.field.mul_assign(&mut res, &p);
+        let mut res = self.coefficients.last().unwrap().clone();
+        for c in self.coefficients.iter().rev().skip(1) {
+            if !F::is_zero(c) {
+                res = self.field.add(&self.field.mul(&res, x), c);
+            } else {
+                self.field.mul_assign(&mut res, x);
+            }
         }
 
         res
@@ -503,6 +520,444 @@ impl<F: Ring> UnivariatePolynomial<F> {
         }
 
         res
+    }
+
+    /// Shift the variable `var` to `var+shift`.
+    pub fn shift_var(&self, shift: &F::Element) -> Self {
+        let d = self.degree();
+        let mut poly = self.clone();
+
+        // TODO: improve with caching
+        for k in 0..d {
+            for j in (k..d).rev() {
+                let (s, c) = poly.coefficients.split_at_mut(j + 1);
+                self.field.add_mul_assign(&mut s[j], &c[0], shift);
+            }
+        }
+
+        poly
+    }
+}
+
+impl UnivariatePolynomial<RationalField> {
+    /// Isolate the real roots of the polynomial. The result is a list of intervals with rational bounds that contain exactly one root,
+    /// and the multiplicity of that root.
+    /// Optionally, the intervals can be refined to a given precision.
+    pub fn isolate_roots(&self, refine: Option<Rational>) -> Vec<(Rational, Rational, usize)> {
+        let c = self.content();
+
+        let stripped = self.map_coeff(
+            |coeff| {
+                let coeff = self.field.div(coeff, &c);
+                debug_assert!(coeff.is_integer());
+                coeff.numerator()
+            },
+            Z,
+        );
+
+        stripped.isolate_roots(refine)
+    }
+
+    /// Approximate the single root of the polynomial in the interval (lower, higher) with a given tolerance
+    /// using bisection.
+    pub fn refine_root_interval(
+        &self,
+        mut interval: (Rational, Rational),
+        tolerance: &Rational,
+    ) -> (Rational, Rational) {
+        if interval.0 == interval.1 {
+            return interval;
+        }
+
+        // make the input square free, so that the derivative is non-zero at the roots
+        let mut u = self.one();
+        for (f, _pow) in self
+            .clone()
+            .to_multivariate::<u16>()
+            .square_free_factorization()
+        {
+            if !f.is_constant() {
+                u = u * &f.to_univariate_from_univariate(0);
+            }
+        }
+
+        let left_bound_neg = match u.evaluate(&interval.0).cmp(&(0, 1).into()) {
+            Ordering::Less => true,
+            Ordering::Greater => false,
+            Ordering::Equal => u.derivative().evaluate(&interval.0).is_negative(),
+        };
+        debug_assert!(u.evaluate(&interval.1).is_negative() != left_bound_neg);
+
+        while (&interval.1 - &interval.0) / (&interval.0 + &interval.1).abs() > *tolerance {
+            let mid = (&interval.0 + &interval.1) / &(2, 1).into();
+            let mid_val = u.evaluate(&mid);
+
+            if mid_val.is_negative() == left_bound_neg {
+                interval.0 = mid;
+            } else {
+                interval.1 = mid;
+            }
+        }
+
+        interval
+    }
+
+    /// Refine the intervals of two polynomials until they are disjoint.
+    /// The polynomials must be square free.
+    fn refine_root_interval_until_disjoint(
+        &self,
+        mut interval: (Rational, Rational),
+        other: &Self,
+        mut other_interval: (Rational, Rational),
+    ) -> ((Rational, Rational), (Rational, Rational)) {
+        if !(interval.0 >= other_interval.0 && interval.0 < other_interval.1
+            || interval.1 > other_interval.0 && interval.1 <= other_interval.1)
+        {
+            return (interval, other_interval);
+        }
+
+        let left_bound_neg = match self.evaluate(&interval.0).cmp(&(0, 1).into()) {
+            Ordering::Less => true,
+            Ordering::Greater => false,
+            Ordering::Equal => self.derivative().evaluate(&interval.0).is_negative(),
+        };
+        let other_left_bound_neg = match other.evaluate(&other_interval.0).cmp(&(0, 1).into()) {
+            Ordering::Less => true,
+            Ordering::Greater => false,
+            Ordering::Equal => other.derivative().evaluate(&other_interval.0).is_negative(),
+        };
+
+        while interval.0 >= other_interval.0 && interval.0 < other_interval.1
+            || interval.1 > other_interval.0 && interval.1 <= other_interval.1
+        {
+            if interval.0 != interval.1 {
+                let mid = (&interval.0 + &interval.1) / &(2, 1).into();
+                let mid_val = self.evaluate(&mid);
+
+                if mid_val.is_negative() == left_bound_neg {
+                    interval.0 = mid;
+                } else {
+                    interval.1 = mid;
+                }
+            }
+
+            if other_interval.0 != other_interval.1 {
+                let mid = (&other_interval.0 + &other_interval.1) / &(2, 1).into();
+                let mid_val = other.evaluate(&mid);
+
+                if mid_val.is_negative() == other_left_bound_neg {
+                    other_interval.0 = mid;
+                } else {
+                    other_interval.1 = mid;
+                }
+            }
+        }
+
+        (interval, other_interval)
+    }
+}
+
+impl UnivariatePolynomial<IntegerRing> {
+    /// Approximate the single root of the polynomial in the interval (lower, higher) with a given tolerance
+    /// using bisection.
+    pub fn refine_root_interval(
+        &self,
+        interval: (Rational, Rational),
+        tolerance: &Rational,
+    ) -> (Rational, Rational) {
+        self.map_coeff(|c| c.into(), Q)
+            .refine_root_interval(interval, tolerance)
+    }
+
+    /// Get the number of sign changes in the polynomial.
+    pub fn sign_changes(&self) -> usize {
+        let mut sign_changes = 0;
+        let mut last_sign = 0;
+        for c in &self.coefficients {
+            let sign = if c < &0 {
+                -1
+            } else if c > &0 {
+                1
+            } else {
+                0
+            };
+
+            if sign != 0 && sign != last_sign {
+                if last_sign != 0 {
+                    sign_changes += 1;
+                }
+                last_sign = sign;
+            }
+        }
+        sign_changes
+    }
+
+    /// Isolate the real roots of the polynomial. The result is a list of intervals with rational bounds that contain exactly one root,
+    /// and the multiplicity of that root.
+    /// Optionally, the intervals can be refined to a given precision.
+    pub fn isolate_roots(&self, refine: Option<Rational>) -> Vec<(Rational, Rational, usize)> {
+        let fs = self.clone().to_multivariate::<u16>();
+        let mut intervals = vec![];
+
+        for (f, pow) in fs.square_free_factorization() {
+            if f.is_constant() {
+                continue;
+            }
+
+            let f = f.to_univariate_from_univariate(0);
+            let mut neg_f = f.clone();
+            for c in neg_f.coefficients.iter_mut().skip(1).step_by(2) {
+                *c = -c.clone();
+            }
+
+            let f_rat = f.map_coeff(|c| c.to_rational(), Q);
+
+            for (i, p) in [neg_f, f].into_iter().enumerate() {
+                for mut x in p.isolate_roots_square_free() {
+                    if i == 0 {
+                        std::mem::swap(&mut x.0, &mut x.1);
+                        x.0 = -x.0;
+                        x.1 = -x.1;
+                    }
+
+                    if i == 1 || !x.0.is_zero() || !x.1.is_zero() {
+                        intervals.push(((x.0, x.1), f_rat.clone(), pow));
+                    }
+                }
+            }
+        }
+
+        for i in 0..intervals.len() {
+            for j in i + 1..intervals.len() {
+                let (a1, p1, _) = &intervals[i];
+                let (a2, p2, _) = &intervals[j];
+
+                if p1 == p2 {
+                    continue;
+                }
+
+                let (a1, a2) = p1.refine_root_interval_until_disjoint(a1.clone(), &p2, a2.clone());
+                intervals[i].0 = a1;
+                intervals[j].0 = a2;
+            }
+        }
+
+        intervals.sort_by(|a, b| a.0.cmp(&b.0));
+
+        if let Some(threshold) = refine {
+            for (int, p, _) in &mut intervals {
+                *int = p.refine_root_interval(int.clone(), &threshold);
+            }
+        }
+
+        intervals
+            .into_iter()
+            .map(|(x, _, pow)| (x.0, x.1, pow))
+            .collect()
+    }
+
+    /// Compute an upper bound for the maximal positive real root of the polynomial.
+    pub fn max_root_bound(&self) -> Rational {
+        // use the local-max root bound
+        // TODO: also implement first-lambda bound
+        if self.degree() == 0 {
+            return Rational::zero();
+        }
+
+        let sign_flip = self.coefficients.last().unwrap() < &0;
+
+        let mut j = self.coefficients.len() - 1;
+        let mut t = 1;
+
+        let mut bound = Rational::zero();
+        for i in (0..self.coefficients.len()).rev() {
+            if !sign_flip && self.coefficients[i] < 0 || sign_flip && self.coefficients[i] > 0 {
+                // TODO: what if precision is not enough?
+                let tmp: f64 = (-2f64.powf(t as f64) * self.coefficients[i].to_rational().to_f64()
+                    / self.coefficients[j].to_rational().to_f64())
+                .powf(1. / (j - i) as f64);
+                let tmp = Rational::from(tmp);
+                if tmp > bound {
+                    bound = tmp;
+                }
+
+                t += 1;
+            } else if !sign_flip && self.coefficients[i] > self.coefficients[j]
+                || sign_flip && self.coefficients[i] < self.coefficients[j]
+            {
+                j = i;
+                t = 1;
+            }
+        }
+
+        bound
+    }
+
+    /// Isolate the roots of the polynomial using VAS-CF.
+    pub fn isolate_roots_square_free(&self) -> Vec<(Rational, Rational)> {
+        let mut roots = vec![];
+
+        let mut p = self.clone();
+        if p.coefficients[0] == 0 {
+            roots.push((Rational::zero(), Rational::zero()));
+
+            p = p.div_exp(1);
+        }
+
+        let max_root = p.max_root_bound().ceil();
+
+        // map the polynomial to the interval (0, max_root)
+        for c in p.coefficients.iter_mut().enumerate() {
+            *c.1 *= max_root.pow(c.0 as u64);
+        }
+        p.coefficients.reverse();
+        p = p.shift_var(&Integer::from(1));
+
+        if p.coefficients[0] == 0 {
+            roots.push((
+                (max_root.clone(), Integer::one()).into(),
+                (max_root.clone(), Integer::one()).into(),
+            ));
+            p = p.div_exp(1);
+        }
+
+        let s = p.sign_changes();
+        if s == 0 {
+            return roots;
+        }
+
+        if s == 1 {
+            roots.push((0.into(), max_root.into()));
+            return roots;
+        }
+
+        struct Interval {
+            a: Integer,
+            b: Integer,
+            c: Integer,
+            d: Integer,
+            p: UnivariatePolynomial<IntegerRing>,
+            s: usize,
+        }
+
+        let mut intervals = vec![Interval {
+            a: Integer::zero(),
+            b: max_root,
+            c: Integer::one(),
+            d: Integer::one(),
+            p,
+            s,
+        }];
+
+        while let Some(Interval {
+            mut a,
+            mut b,
+            mut c,
+            mut d,
+            mut p,
+            mut s,
+        }) = intervals.pop()
+        {
+            // compute lower bound on root
+            p.coefficients.reverse();
+            let upper_bound = p.max_root_bound();
+            p.coefficients.reverse();
+            let mut lower_bound = upper_bound.inv().floor();
+
+            // rescale x if the lower bound is large
+            if lower_bound > 16 {
+                for (i, c) in p.coefficients.iter_mut().enumerate() {
+                    if c != &0 {
+                        *c *= lower_bound.pow(i as u64);
+                    }
+                }
+
+                a *= &lower_bound;
+                c *= &lower_bound;
+                lower_bound = Integer::one();
+            }
+
+            // move the lower bound of the interval
+            if lower_bound >= 1 {
+                p = p.shift_var(&lower_bound);
+                b += &a * &lower_bound;
+                d += &c * &lower_bound;
+
+                if p.coefficients[0] == 0 {
+                    roots.push(((b.clone(), d.clone()).into(), (b.clone(), d.clone()).into()));
+                    p = p.div_exp(1);
+                }
+
+                s = p.sign_changes();
+                if s == 0 {
+                    continue;
+                } else if s == 1 {
+                    let b1 = (b.clone(), d.clone()).into();
+                    let b2 = (a.clone(), c.clone()).into();
+                    roots.push(if b1 < b2 { (b1, b2) } else { (b2, b1) });
+                    continue;
+                }
+            }
+
+            let mut n1 = Interval {
+                a: a.clone(),
+                b: &a + &b,
+                c: c.clone(),
+                d: &c + &d,
+                p: p.shift_var(&1.into()),
+                s: 0,
+            };
+            let mut r = 0;
+            if n1.p.coefficients[0] == 0 {
+                roots.push((
+                    (n1.b.clone(), n1.d.clone()).into(),
+                    (n1.b.clone(), n1.d.clone()).into(),
+                ));
+
+                n1.p = n1.p.div_exp(1);
+                r = 1;
+            }
+            n1.s = n1.p.sign_changes();
+
+            let mut n2 = Interval {
+                a: b.clone(),
+                b: a + b,
+                c: d.clone(),
+                d: c + d,
+                p: p.zero(),
+                s: s - n1.s - r,
+            };
+            if n2.s > 1 {
+                //construct (x+1)^m p(1/(x+1))
+                n2.p = p.clone();
+                n2.p.coefficients.reverse();
+                n2.p = n2.p.shift_var(&Integer::from(1));
+
+                if n2.p.coefficients[0] == 0 {
+                    n2.p = n2.p.div_exp(1);
+                }
+
+                n2.s = n2.p.sign_changes();
+            }
+
+            if n1.s < n2.s {
+                std::mem::swap(&mut n1, &mut n2);
+            }
+
+            for int in [n1, n2] {
+                if int.s == 0 {
+                    continue;
+                } else if int.s == 1 {
+                    let b1 = (int.b.clone(), int.d.clone()).into();
+                    let b2 = (int.a.clone(), int.c.clone()).into();
+                    roots.push(if b1 < b2 { (b1, b2) } else { (b2, b1) });
+                } else {
+                    intervals.push(int);
+                }
+            }
+        }
+
+        roots
     }
 }
 
@@ -1101,57 +1556,105 @@ impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
     }
 }
 
-#[test]
-fn derivative_integrate() {
-    use crate::atom::Atom;
-    use crate::domains::rational::Q;
-    let a = Atom::parse("x^2+5x+x^7+3")
+#[cfg(test)]
+mod test {
+    use crate::{atom::Atom, domains::rational::Q};
+
+    #[test]
+    fn derivative_integrate() {
+        use crate::atom::Atom;
+        use crate::domains::rational::Q;
+        let a = Atom::parse("x^2+5x+x^7+3")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Q, None)
+            .to_univariate_from_univariate(0);
+
+        let r = a.integrate().derivative();
+
+        assert_eq!(a, r);
+    }
+
+    #[test]
+    fn test_uni() {
+        use crate::atom::Atom;
+        use crate::domains::integer::Z;
+        let a = Atom::parse("x^2+5x+x^7+3")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None)
+            .to_univariate_from_univariate(0);
+        let b = Atom::parse("x^2 + 6")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None)
+            .to_univariate_from_univariate(0);
+
+        let a_plus_b = Atom::parse("9+5*x+2*x^2+x^7")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None)
+            .to_univariate_from_univariate(0);
+
+        let a_mul_b = Atom::parse("18+30*x+9*x^2+5*x^3+x^4+6*x^7+x^9")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None)
+            .to_univariate_from_univariate(0);
+
+        let a_quot_b = Atom::parse("1+36*x+-6*x^3+x^5")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None)
+            .to_univariate_from_univariate(0);
+
+        let a_rem_b = Atom::parse("-3+-211*x")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None)
+            .to_univariate_from_univariate(0);
+
+        assert_eq!(&a + &b, a_plus_b);
+        assert_eq!(&a * &b, a_mul_b);
+        assert_eq!(a.quot_rem(&b), (a_quot_b, a_rem_b));
+
+        let c = a.evaluate(&5.into());
+        assert_eq!(c, 78178);
+    }
+
+    #[test]
+    fn isolate() {
+        let p =
+        Atom::parse("-13559717115*x^6+624134407779*x^7+-13046815434285*x^8+163110612017313*x^9+-1347733455544188*x^10+7635969738026784*x^11+-29444295941654904*x^12+71604709665043392*x^13+-77045857071990336*x^14+-99619711608972096*x^15+375578692434494208*x^16+66256662107418624*x^17+-1548072112541055488*x^18+800263217632600064*x^19+4816054475648851968*x^20+-4271696436901249024*x^21+-12066471810013724672*x^22+10894783995791278080*x^23+28270081588804452352*x^24+-17402041731641245696*x^25+-56047633173904883712*x^26+8535267319469834240*x^27+82086860869945262080*x^28+30788799964221800448*x^29+-66898313364436418560*x^30+-66318040948916879360*x^31+44159548067414016*x^32+31084367995645984768*x^33+20957883496015069184*x^34+6860635897973440512*x^35+1254041389990150144*x^36+123004564822556672*x^37+5066549580791808*x^38")
         .unwrap()
-        .to_polynomial::<_, u8>(&Q, None)
+        .to_polynomial::<_, u32>(&Q, None)
         .to_univariate_from_univariate(0);
 
-    let r = a.integrate().derivative();
+        let roots = p.isolate_roots(None);
 
-    assert_eq!(a, r);
-}
+        assert_eq!(
+            roots,
+            vec![
+                ((-7, 1).into(), (-7, 2).into(), 6),
+                ((-1, 1).into(), (-1, 1).into(), 3),
+                ((0, 1).into(), (0, 1).into(), 6),
+                ((1, 8).into(), (3, 16).into(), 3),
+                ((15, 64).into(), (9, 32).into(), 1),
+                ((3, 4).into(), (1, 1).into(), 1),
+            ],
+        );
 
-#[test]
-fn test_uni() {
-    use crate::atom::Atom;
-    use crate::domains::integer::Z;
-    let a = Atom::parse("x^2+5x+x^7+3")
-        .unwrap()
-        .to_polynomial::<_, u8>(&Z, None)
-        .to_univariate_from_univariate(0);
-    let b = Atom::parse("x^2 + 6")
-        .unwrap()
-        .to_polynomial::<_, u8>(&Z, None)
-        .to_univariate_from_univariate(0);
+        let ref_roots: Vec<_> = roots
+            .into_iter()
+            .map(|x| {
+                let r = p.refine_root_interval((x.0, x.1), &(1, 1000).into());
+                (r.0, r.1, x.2)
+            })
+            .collect();
 
-    let a_plus_b = Atom::parse("9+5*x+2*x^2+x^7")
-        .unwrap()
-        .to_polynomial::<_, u8>(&Z, None)
-        .to_univariate_from_univariate(0);
-
-    let a_mul_b = Atom::parse("18+30*x+9*x^2+5*x^3+x^4+6*x^7+x^9")
-        .unwrap()
-        .to_polynomial::<_, u8>(&Z, None)
-        .to_univariate_from_univariate(0);
-
-    let a_quot_b = Atom::parse("1+36*x+-6*x^3+x^5")
-        .unwrap()
-        .to_polynomial::<_, u8>(&Z, None)
-        .to_univariate_from_univariate(0);
-
-    let a_rem_b = Atom::parse("-3+-211*x")
-        .unwrap()
-        .to_polynomial::<_, u8>(&Z, None)
-        .to_univariate_from_univariate(0);
-
-    assert_eq!(&a + &b, a_plus_b);
-    assert_eq!(&a * &b, a_mul_b);
-    assert_eq!(a.quot_rem(&b), (a_quot_b, a_rem_b));
-
-    let c = a.evaluate(&5.into());
-    assert_eq!(c, 78178);
+        assert_eq!(
+            ref_roots,
+            vec![
+                ((-3955, 1024).into(), (-987, 256).into(), 6),
+                ((-1, 1).into(), (-1, 1).into(), 3),
+                ((0, 1).into(), (0, 1).into(), 6),
+                ((723, 4096).into(), (181, 1024).into(), 3),
+                ((1023, 4096).into(), (2049, 8192).into(), 1),
+                ((995, 1024).into(), (249, 256).into(), 1),
+            ],
+        );
+    }
 }

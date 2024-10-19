@@ -695,8 +695,18 @@ impl Rational {
         }
     }
 
+    /// Round to the nearest integer towards zero.
     pub fn floor(&self) -> Integer {
         self.numerator_ref() / self.denominator_ref()
+    }
+
+    /// Round to the nearest integer away from zero.
+    pub fn ceil(&self) -> Integer {
+        if self.is_negative() {
+            (self.numerator().clone() + 1) / self.denominator_ref() - 1
+        } else {
+            ((self.numerator().clone() - 1) / self.denominator_ref()) + 1
+        }
     }
 
     pub fn round_to_nearest_integer(&self) -> Integer {

@@ -1384,7 +1384,7 @@ impl<'a> AtomView<'a> {
                                 Ordering::Equal => {
                                     b.set_from_view(&ss);
                                     if b.merge_terms(tt, &mut helper) {
-                                        if let AtomView::Num(n) = a.as_view() {
+                                        if let AtomView::Num(n) = b.as_view() {
                                             if !n.is_zero() {
                                                 a.extend(b.as_view());
                                             }
@@ -1436,7 +1436,7 @@ impl<'a> AtomView<'a> {
                             found = true;
                             b.set_from_view(&x);
                             if b.merge_terms(rhs, &mut helper) {
-                                if let AtomView::Num(n) = a.as_view() {
+                                if let AtomView::Num(n) = b.as_view() {
                                     if !n.is_zero() {
                                         a.extend(b.as_view());
                                     }
@@ -1468,7 +1468,7 @@ impl<'a> AtomView<'a> {
 
                         b.set_from_view(&v[p]);
                         if b.merge_terms(rhs, &mut helper) {
-                            if let AtomView::Num(n) = a.as_view() {
+                            if let AtomView::Num(n) = b.as_view() {
                                 if !n.is_zero() {
                                     a.extend(b.as_view());
                                 }

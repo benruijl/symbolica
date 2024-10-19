@@ -13,6 +13,7 @@ use std::hash::Hash;
 
 use integer::Integer;
 
+use crate::poly::Variable;
 use crate::printer::PrintOptions;
 
 pub trait InternalOrdering {
@@ -61,6 +62,12 @@ macro_rules! impl_internal_ordering_range {
 
 impl_internal_ordering_range!([T]);
 impl_internal_ordering_range!(Vec<T>);
+
+/// A ring that supports a derivative.
+pub trait Derivable: Ring {
+    /// Take the derivative of `e` in `x`.
+    fn derivative(&self, e: &<Self as Ring>::Element, x: &Variable) -> <Self as Ring>::Element;
+}
 
 pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     type Element: Clone + PartialEq + Eq + Hash + InternalOrdering + Debug;

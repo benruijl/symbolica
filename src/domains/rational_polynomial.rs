@@ -21,7 +21,7 @@ use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::{Integer, IntegerRing, Z},
     rational::RationalField,
-    EuclideanDomain, Field, InternalOrdering, Ring,
+    Derivable, EuclideanDomain, Field, InternalOrdering, Ring,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -825,6 +825,19 @@ where
         );
 
         &a - &b
+    }
+}
+
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Derivable for RationalPolynomialField<R, E>
+where
+    RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
+{
+    fn derivative(&self, p: &RationalPolynomial<R, E>, x: &Variable) -> RationalPolynomial<R, E> {
+        if let Some(pos) = p.get_variables().iter().position(|v| v == x) {
+            p.derivative(pos)
+        } else {
+            self.zero()
+        }
     }
 }
 

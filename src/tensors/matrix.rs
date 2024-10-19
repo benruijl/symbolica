@@ -8,8 +8,9 @@ use crate::{
     domains::{
         integer::Z,
         rational::{Rational, Q},
-        EuclideanDomain, Field, Ring,
+        Derivable, EuclideanDomain, Field, Ring,
     },
+    poly::Variable,
     printer::{MatrixPrinter, VectorPrinter},
 };
 
@@ -34,6 +35,10 @@ impl<F: Ring> Vector<F> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
     /// Create a column vector. This operation is very cheap.
     pub fn into_matrix(self) -> Matrix<F> {
         Matrix {
@@ -42,6 +47,11 @@ impl<F: Ring> Vector<F> {
             data: self.data,
             field: self.field,
         }
+    }
+
+    /// Yield the vector as a list of scalars.
+    pub fn into_vec(self) -> Vec<F::Element> {
+        self.data
     }
 
     /// Apply a function `f` to each entry of the vector.
@@ -111,6 +121,82 @@ impl<F: Ring> Vector<F> {
             ],
             field: self.field.clone(),
         }
+    }
+}
+
+impl<F: Derivable> Vector<F> {
+    /// Compute the derivative in the variable `x`.
+    pub fn derivative(&self, x: &Variable) -> Vector<F> {
+        self.map(|e| self.field.derivative(e, x), self.field.clone())
+    }
+
+    /// Compute the gradient in the variables `x`.
+    pub fn grad(&self, x: &[Variable]) -> Vector<F> {
+        if self.len() != x.len() {
+            panic!(
+                "The number of variables ({}) does not match the number of entries ({})",
+                x.len(),
+                self.len()
+            );
+        }
+
+        Vector::new(
+            self.data
+                .iter()
+                .zip(x)
+                .map(|(e, v)| self.field.derivative(e, v))
+                .collect(),
+            self.field.clone(),
+        )
+    }
+
+    /// Compute the curl of the vector in the variables `x`.
+    pub fn curl(&self, x: &[Variable]) -> Vector<F> {
+        if self.len() != 3 || x.len() != 3 {
+            panic!("Vector and variable list must be three-dimensional");
+        }
+
+        Vector {
+            data: vec![
+                self.field.sub(
+                    &self.field.derivative(&self.data[2], &x[1]),
+                    &self.field.derivative(&self.data[1], &x[2]),
+                ),
+                self.field.sub(
+                    &self.field.derivative(&self.data[0], &x[2]),
+                    &self.field.derivative(&self.data[2], &x[0]),
+                ),
+                self.field.sub(
+                    &self.field.derivative(&self.data[1], &x[0]),
+                    &self.field.derivative(&self.data[0], &x[1]),
+                ),
+            ],
+            field: self.field.clone(),
+        }
+    }
+
+    /// Compute the Jacobian matrix of the vector of functions in the variables `x`.
+    pub fn jacobian(&self, x: &[Variable]) -> Matrix<F> {
+        let mut jacobian = Vec::with_capacity(self.data.len());
+
+        for e in &self.data {
+            for v in x {
+                jacobian.push(self.field.derivative(e, v));
+            }
+        }
+
+        Matrix {
+            data: jacobian,
+            ncols: x.len() as u32,
+            nrows: self.len() as u32,
+            field: self.field.clone(),
+        }
+    }
+}
+
+impl<F: Derivable> Matrix<F> {
+    pub fn derivative(&self, x: &Variable) -> Matrix<F> {
+        self.map(|e| self.field.derivative(e, x), self.field.clone())
     }
 }
 
@@ -1187,7 +1273,9 @@ impl<F: Field> Matrix<F> {
 #[cfg(test)]
 mod test {
     use crate::{
-        domains::{integer::Z, rational::Q},
+        atom::Atom,
+        domains::{atom::AtomField, integer::Z, rational::Q},
+        symb,
         tensors::matrix::{Matrix, Vector},
     };
 
@@ -1412,5 +1500,33 @@ mod test {
 
         // 32.0177 = 5 * pi + 6 * e
         assert_eq!(basis[0].data, &[5, 6, 1, 1]);
+    }
+
+    #[test]
+    fn jacobian() {
+        let a = Vector::new(
+            vec![
+                Atom::parse("x^2+y+z").unwrap(),
+                Atom::parse("y+z").unwrap(),
+                Atom::parse("z+x").unwrap(),
+            ],
+            AtomField::new(),
+        );
+
+        let b = a.jacobian(&[symb!("x").into(), symb!("y").into(), symb!("z").into()]);
+        assert_eq!(
+            b.data,
+            [
+                Atom::parse("2*x").unwrap(),
+                Atom::new_num(1),
+                Atom::new_num(1),
+                Atom::new_num(0),
+                Atom::new_num(1),
+                Atom::new_num(1),
+                Atom::new_num(1),
+                Atom::new_num(0),
+                Atom::new_num(1)
+            ]
+        );
     }
 }

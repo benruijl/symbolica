@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::{RationalField, Q};
-use crate::domains::{EuclideanDomain, Field, InternalOrdering, Ring};
+use crate::domains::{Derivable, EuclideanDomain, Field, InternalOrdering, Ring};
 use crate::printer::{PolynomialPrinter, PrintOptions};
 
 use super::gcd::PolynomialGCD;
@@ -3411,6 +3411,20 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         poly
+    }
+}
+
+impl<R: Ring, E: Exponent> Derivable for PolynomialRing<R, E> {
+    fn derivative(
+        &self,
+        p: &MultivariatePolynomial<R, E>,
+        x: &Variable,
+    ) -> MultivariatePolynomial<R, E> {
+        if let Some(pos) = p.get_vars_ref().iter().position(|v| v == x) {
+            p.derivative(pos)
+        } else {
+            self.zero()
+        }
     }
 }
 

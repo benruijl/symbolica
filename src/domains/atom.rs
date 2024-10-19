@@ -1,6 +1,9 @@
-use crate::atom::{Atom, AtomView};
+use crate::{
+    atom::{Atom, AtomView},
+    poly::Variable,
+};
 
-use super::{integer::Integer, EuclideanDomain, Field, InternalOrdering, Ring};
+use super::{integer::Integer, Derivable, EuclideanDomain, Field, InternalOrdering, Ring};
 
 use rand::Rng;
 
@@ -173,5 +176,14 @@ impl Field for AtomField {
     fn inv(&self, a: &Self::Element) -> Self::Element {
         let one = Atom::new_num(1);
         self.div(&one, a)
+    }
+}
+
+impl Derivable for AtomField {
+    fn derivative(&self, e: &Atom, x: &Variable) -> Atom {
+        match x {
+            Variable::Symbol(s) => e.derivative(*s),
+            _ => panic!("Cannot take derivative of non-symbol"),
+        }
     }
 }

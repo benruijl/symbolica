@@ -54,15 +54,13 @@ Symbolica can be installed for Python >3.5 using `pip`:
 pip install symbolica
 ```
 
-The installation may take some time on Mac OS and Windows, as it may have to compile Symbolica.
-
 ## Rust
 
 If you want to use Symbolica as a library in Rust, simply include it in the `Cargo.toml`:
 
 ```toml
 [dependencies]
-symbolica = "0.12"
+symbolica = "0.13"
 ```
 
 # Examples

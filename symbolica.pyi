@@ -1148,7 +1148,7 @@ class Expression:
             If set to `True`, the entire operation will be repeated until there are no more matches.
         """
 
-    def replace_all_multiple(self, replacements: Sequence[Replacement],  repeat: Optional[bool] = False) -> Expression:
+    def replace_all_multiple(self, *replacements: Replacement,  repeat: Optional[bool] = False) -> Expression:
         """
         Replace all atoms matching the patterns. See `replace_all` for more information.
 
@@ -1424,6 +1424,9 @@ class Replacement:
             allow_new_wildcards_on_rhs: Optional[bool] = False,
             rhs_cache_size: Optional[int] = None) -> Replacement:
         """Create a new replacement. See `replace_all` for more information."""
+
+    def specialize(self, wildcards: dict[Expression, Expression | int | float | Decimal]) -> Replacement:
+        """Specialize the replacement by providing the wildcards that should be replaced."""
 
 
 class PatternRestriction:

@@ -4080,12 +4080,17 @@ impl PythonExpression {
     ///     The list of replacements to apply.
     /// repeat: bool, optional
     ///     If set to `True`, the entire operation will be repeated until there are no more matches.
-    #[pyo3(signature = (replacements, repeat = None))]
+    #[pyo3(signature = (*replacements, repeat = None))]
     pub fn replace_all_multiple(
         &self,
-        replacements: Vec<PythonReplacement>,
+        replacements: &Bound<'_, PyTuple>,
         repeat: Option<bool>,
     ) -> PyResult<PythonExpression> {
+        let replacements = replacements
+            .iter()
+            .map(|x| x.extract::<PythonReplacement>())
+            .collect::<PyResult<Vec<_>>>()?;
+
         let reps = replacements
             .iter()
             .map(|x| {
@@ -4791,6 +4796,28 @@ impl PythonReplacement {
             rhs,
             cond,
             settings,
+        })
+    }
+
+    /// Specialize the replacement by providing the wildcards that should be replaced.
+    pub fn specialize(
+        &self,
+        wildcard_map: HashMap<PythonExpression, ConvertibleToExpression>,
+    ) -> PyResult<PythonReplacement> {
+        let wildcard_map: HashMap<Symbol, Atom> = wildcard_map
+            .into_iter()
+            .map(|(k, v)| Ok(((&k.expr).try_into()?, v.to_expression().expr)))
+            .collect::<Result<HashMap<_, _>, String>>()
+            .map_err(|e| exceptions::PyValueError::new_err(e))?;
+
+        Ok(PythonReplacement {
+            pattern: self.pattern.specialize(&wildcard_map),
+            rhs: match &self.rhs {
+                PatternOrMap::Pattern(p) => PatternOrMap::Pattern(p.specialize(&wildcard_map)),
+                PatternOrMap::Map(f) => PatternOrMap::Map(f.clone()),
+            },
+            cond: self.cond.clone(),
+            settings: self.settings.clone(),
         })
     }
 }

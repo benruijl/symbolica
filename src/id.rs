@@ -53,6 +53,26 @@ impl std::fmt::Debug for PatternOrMap {
 
 /// A replacement, specified by a pattern and the right-hand side,
 /// with optional conditions and settings.
+pub struct OwnedReplacement {
+    pat: Pattern,
+    rhs: PatternOrMap,
+    conditions: Option<Condition<PatternRestriction>>,
+    settings: Option<MatchSettings>,
+}
+
+impl OwnedReplacement {
+    pub fn borrow<'a>(&'a self) -> Replacement<'a> {
+        Replacement {
+            pat: &self.pat,
+            rhs: &self.rhs,
+            conditions: self.conditions.as_ref(),
+            settings: self.settings.as_ref(),
+        }
+    }
+}
+
+/// A replacement, specified by a pattern and the right-hand side,
+/// with optional conditions and settings.
 pub struct Replacement<'a> {
     pat: &'a Pattern,
     rhs: &'a PatternOrMap,
@@ -78,6 +98,19 @@ impl<'a> Replacement<'a> {
     pub fn with_settings(mut self, settings: &'a MatchSettings) -> Self {
         self.settings = Some(settings);
         self
+    }
+
+    /// Specialize the replacement by replacing wildcards.
+    pub fn specialize(&self, wildcard_map: &HashMap<Symbol, Atom>) -> OwnedReplacement {
+        OwnedReplacement {
+            pat: self.pat.specialize(wildcard_map),
+            rhs: match self.rhs {
+                PatternOrMap::Pattern(p) => PatternOrMap::Pattern(p.specialize(wildcard_map)),
+                PatternOrMap::Map(f) => PatternOrMap::Map(f.clone()),
+            },
+            conditions: self.conditions.cloned(),
+            settings: self.settings.cloned(),
+        }
     }
 }
 
@@ -547,6 +580,59 @@ impl Pattern {
     pub fn parse(input: &str) -> Result<Pattern, String> {
         // TODO: use workspace instead of owned atom
         Ok(Atom::parse(input)?.into_pattern())
+    }
+
+    /// Specialize the pattern by replacing wildcards.
+    pub fn specialize(&self, wildcard_map: &HashMap<Symbol, Atom>) -> Pattern {
+        if let Ok(mut a) = self.to_atom() {
+            for (s, r) in wildcard_map {
+                a = a.replace_all(
+                    &Pattern::Literal(Atom::new_var(*s)),
+                    &r.into_pattern().into(),
+                    None,
+                    None,
+                );
+            }
+
+            return a.into_pattern();
+        }
+
+        match self {
+            Pattern::Mul(arg) => {
+                let mut new_args = vec![];
+                for a in arg {
+                    new_args.push(a.specialize(&wildcard_map));
+                }
+                Pattern::Mul(new_args)
+            }
+            Pattern::Add(arg) => {
+                let mut new_args = vec![];
+                for a in arg {
+                    new_args.push(a.specialize(&wildcard_map));
+                }
+                Pattern::Add(new_args)
+            }
+            Pattern::Fn(symbol, arg) => {
+                let mut new_args = vec![];
+                for a in arg {
+                    new_args.push(a.specialize(&wildcard_map));
+                }
+                Pattern::Fn(*symbol, new_args)
+            }
+            Pattern::Pow(p) => Pattern::Pow(Box::new([
+                p[0].specialize(wildcard_map),
+                p[1].specialize(wildcard_map),
+            ])),
+            Pattern::Transformer(t) => {
+                if let Some(p) = &t.0 {
+                    let p = p.specialize(wildcard_map);
+                    Pattern::Transformer(Box::new((Some(p), t.1.clone())))
+                } else {
+                    self.clone()
+                }
+            }
+            _ => unreachable!(),
+        }
     }
 
     /// Convert the pattern to an atom, if there are not transformers present.

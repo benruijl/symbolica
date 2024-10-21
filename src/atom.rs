@@ -41,6 +41,15 @@ impl std::fmt::Debug for Symbol {
     }
 }
 
+impl TryFrom<&Atom> for Symbol {
+    type Error = String;
+
+    fn try_from(v: &Atom) -> Result<Symbol, Self::Error> {
+        v.get_symbol()
+            .ok_or_else(|| format!("{} is not a variable or a function", v))
+    }
+}
+
 impl Symbol {
     /// Create a new variable symbol. This constructor should be used with care as there are no checks
     /// about the validity of the identifier.

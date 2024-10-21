@@ -590,7 +590,10 @@ impl Pattern {
                     &Pattern::Literal(Atom::new_var(*s)),
                     &r.into_pattern().into(),
                     None,
-                    None,
+                    Some(&MatchSettings {
+                        allow_new_wildcards_on_rhs: true,
+                        ..Default::default()
+                    }),
                 );
             }
 

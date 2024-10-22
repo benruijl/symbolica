@@ -6,7 +6,11 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
     /// Compute the resultant using Brown's polynomial remainder sequence algorithm.
     pub fn resultant_prs(&self, other: &Self) -> F::Element {
         if self.degree() < other.degree() {
-            return other.resultant_prs(self);
+            if self.degree() % 2 == 1 && other.degree() % 2 == 1 {
+                return self.field.neg(&other.resultant_prs(self));
+            } else {
+                return other.resultant_prs(self);
+            }
         }
 
         if other.is_constant() {
@@ -21,6 +25,8 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         let mut init = false;
         let mut beta = self.field.pow(&self.field.neg(&self.field.one()), deg + 1);
         let mut psi = self.field.neg(&self.field.one());
+
+        let mut lcs = vec![(a.lcoeff(), a.degree() as u64)];
         while !a_new.is_constant() {
             if init {
                 psi = if deg == 0 {
@@ -51,10 +57,104 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
                 r = -r;
             }
 
+            lcs.push((a_new.lcoeff(), a_new.degree() as u64));
+
             (a, a_new) = (a_new, r.div_coeff(&beta));
         }
 
-        self.field.pow(&a_new.coefficients.pop().unwrap(), deg)
+        lcs.push((a_new.lcoeff(), 0));
+
+        if a_new.is_zero() {
+            return self.field.zero();
+        }
+
+        // compute the resultant from the PRS, using the fundamental theorem
+        let mut rho = self.field.one();
+        let mut den = self.field.one();
+        for k in 1..lcs.len() {
+            let mut deg = lcs[k as usize - 1].1 as i64 - lcs[k as usize].1 as i64;
+            for l in k..lcs.len() - 1 {
+                deg *= 1 - (lcs[l as usize].1 as i64 - lcs[l as usize + 1].1 as i64) as i64;
+            }
+
+            if deg > 0 {
+                self.field
+                    .mul_assign(&mut rho, &self.field.pow(&lcs[k].0, deg as u64));
+            } else if deg < 0 {
+                self.field
+                    .mul_assign(&mut den, &self.field.pow(&lcs[k].0, (-deg) as u64));
+            }
+        }
+
+        self.field.quot_rem(&rho, &den).0
+    }
+
+    /// Compute the resultant using a primitive polynomial remainder sequence.
+    pub fn resultant_primitive(&self, other: &Self) -> F::Element {
+        if self.degree() < other.degree() {
+            if self.degree() % 2 == 1 && other.degree() % 2 == 1 {
+                return self.field.neg(&other.resultant_primitive(self));
+            } else {
+                return other.resultant_primitive(self);
+            }
+        }
+
+        let mut a = self.clone();
+        let mut a_new = other.clone();
+
+        let mut v = vec![a.degree()];
+        let mut c = vec![a.lcoeff()];
+        let mut ab = vec![(self.field.one(), self.field.one())];
+
+        while !a_new.is_constant() {
+            let n = a.degree() as u64 + 1 - a_new.degree() as u64;
+            let alpha = self.field.pow(&a_new.lcoeff(), n);
+
+            let (_, mut r) = a.clone().mul_coeff(&alpha).quot_rem(&a_new);
+
+            let beta = r.content();
+            r = r.div_coeff(&beta);
+
+            (a, a_new) = (a_new, r);
+
+            v.push(a.degree());
+            c.push(a.lcoeff());
+            ab.push((alpha, beta));
+        }
+
+        let r = a_new.lcoeff();
+        if F::is_zero(&r) {
+            return r;
+        }
+
+        let mut sign = 0;
+        for w in v.windows(2) {
+            sign += w[0] * w[1];
+        }
+
+        let mut res = self.field.pow(&r, *v.last().unwrap() as u64);
+        if sign % 2 == 1 {
+            res = self.field.neg(&res);
+        };
+
+        v.push(0);
+        let mut num = self.field.one();
+        let mut den = self.field.one();
+        for i in 1..c.len() {
+            self.field.mul_assign(
+                &mut res,
+                &self.field.pow(&c[i], v[i - 1] as u64 - v[i + 1] as u64),
+            );
+
+            self.field
+                .mul_assign(&mut num, &self.field.pow(&ab[i].1, v[i] as u64));
+            self.field
+                .mul_assign(&mut den, &self.field.pow(&ab[i].0, v[i] as u64));
+        }
+
+        let (q, r) = self.field.quot_rem(&self.field.mul(&num, &res), &den);
+        assert!(F::is_zero(&r));
+        q
     }
 }
 
@@ -104,10 +204,16 @@ impl<F: Field> UnivariatePolynomial<F> {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use crate::atom::Atom;
     use crate::domains::integer::Z;
     use crate::domains::rational::Q;
+    use crate::domains::rational_polynomial::{
+        FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
+    };
     use crate::poly::polynomial::MultivariatePolynomial;
+    use crate::symb;
 
     #[test]
     fn resultant() {
@@ -121,6 +227,34 @@ mod test {
             .to_univariate_from_univariate(0);
         let r = a.resultant(&b);
         assert_eq!(r, 11149673028381u64.into());
+    }
+
+    #[test]
+    fn res_methods() {
+        let (x, y, z) = symb!("v1", "v2", "v3");
+        let vars = Arc::new(vec![x.into(), y.into(), z.into()]);
+        let a = Atom::parse("2v1^2")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, Some(vars.clone()));
+
+        let aa = a.to_univariate(0).map_coeff(
+            |x| RationalPolynomial::from_num_den(x.clone(), x.one(), &x.ring, false),
+            RationalPolynomialField::from_poly(&a),
+        );
+        let b = Atom::parse("v3^2+v1^5")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, Some(vars.clone()))
+            .to_univariate(0)
+            .map_coeff(
+                |x| RationalPolynomial::from_num_den(x.clone(), x.one(), &x.ring, false),
+                RationalPolynomialField::from_poly(&a),
+            );
+
+        let prs = aa.resultant_prs(&b);
+        let prim = aa.resultant_primitive(&b);
+        let res = aa.resultant(&b);
+        assert_eq!(prs, prim);
+        assert_eq!(prim, res);
     }
 
     #[test]

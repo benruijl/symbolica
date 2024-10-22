@@ -3434,15 +3434,19 @@ impl<R: Ring, E: Exponent> MultivariatePolynomial<AlgebraicExtension<R>, E> {
     pub fn from_number_field(&self) -> MultivariatePolynomial<R, E> {
         let var = &self.ring.poly().get_vars_ref()[0];
 
-        let var_map = if !self.get_vars_ref().contains(var) {
+        let (var_map, var_index) = if let Some(p) =
+            self.get_vars_ref().iter().position(|v| v == var)
+        {
+            if self.degree(p) > E::zero() {
+                panic!("The variable of the minimal polynomial of the coefficient field also appears in the polynomial");
+            }
+            (self.variables.clone(), p)
+        } else {
+            let p = self.get_vars_ref().len();
             let mut v = self.get_vars_ref().to_vec();
             v.push(var.clone());
-            Arc::new(v)
-        } else {
-            self.variables.clone()
+            (Arc::new(v), p)
         };
-
-        let var_index = var_map.iter().position(|x| x == var).unwrap();
 
         let mut poly =
             MultivariatePolynomial::new(&self.ring.poly().ring, self.nterms().into(), var_map);

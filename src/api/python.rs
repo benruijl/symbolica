@@ -5809,7 +5809,7 @@ impl PythonPolynomial {
             let degs: Vec<_> = (0..self.poly.nvars())
                 .filter(|x| self.poly.degree(*x) > 0)
                 .collect();
-            if degs.len() > 1 {
+            if degs.len() > 1 || degs.is_empty() {
                 Err(exceptions::PyValueError::new_err(
                     "Polynomial is not univariate",
                 ))?

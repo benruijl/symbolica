@@ -303,7 +303,9 @@ impl<N, E> Graph<N, E> {
     pub fn delete_last_edge(&mut self) -> Option<Edge<E>> {
         if let Some(edge) = self.edges.pop() {
             self.nodes[edge.vertices.0].edges.pop();
-            self.nodes[edge.vertices.1].edges.pop();
+            if edge.vertices.0 != edge.vertices.1 {
+                self.nodes[edge.vertices.1].edges.pop();
+            }
             Some(edge)
         } else {
             None
@@ -473,7 +475,11 @@ struct GenerationSettings<'a, E> {
     max_degree: usize,
 }
 
-impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, E> {
+impl<
+        N: Default + Clone + Eq + Hash + Ord + Display,
+        E: Clone + Ord + Eq + Hash + Debug + Display,
+    > Graph<N, E>
+{
     /// Generate all connected graphs with `external_edges` half-edges and the given allowed list
     /// of vertex connections.
     ///
@@ -486,6 +492,10 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         max_bridges: Option<usize>,
         allow_self_loops: bool,
     ) -> HashMap<Graph<N, E>, Integer> {
+        if max_vertices.is_none() && max_loops.is_none() {
+            panic!("At least one of max_vertices or max_loops must be set");
+        }
+
         let vertex_sorted: Vec<_> = vertex_signatures
             .iter()
             .map(|x| {
@@ -498,12 +508,6 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         let mut g = Self::new();
         for (n, _) in external_edges {
             g.add_node(n.clone());
-            g.add_node(N::default());
-        }
-
-        for (i, e) in external_edges.iter().enumerate() {
-            g.add_edge(i, external_edges.len() + i, false, e.1.clone())
-                .unwrap();
         }
 
         if external_edges.len() == 0 {
@@ -521,12 +525,13 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         };
 
         let mut out = HashMap::default();
-        g.generate_impl(external_edges.len(), &settings, &mut out);
+        g.generate_impl(external_edges, 0, &settings, &mut out);
         out
     }
 
     fn generate_impl(
         &mut self,
+        external_edges: &[(N, E)],
         cur_vertex: usize,
         settings: &GenerationSettings<E>,
         out: &mut HashMap<Graph<N, E>, Integer>,
@@ -548,16 +553,23 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             let open_vertices = self
                 .nodes
                 .iter()
+                .enumerate()
                 .skip(cur_vertex)
-                .filter(|x| x.edges.len() < settings.min_degree)
+                .filter(|(i, x)| {
+                    *i < external_edges.len() && x.edges.is_empty()
+                        || *i >= external_edges.len() && x.edges.len() < settings.min_degree
+                })
                 .count();
 
             let mut extra_edges = self
                 .nodes
                 .iter()
+                .enumerate()
                 .skip(cur_vertex)
-                .map(|x| {
-                    if x.edges.len() < settings.min_degree {
+                .map(|(i, x)| {
+                    if i < external_edges.len() && x.edges.is_empty() {
+                        1
+                    } else if i >= external_edges.len() && x.edges.len() < settings.min_degree {
                         settings.min_degree - x.edges.len()
                     } else {
                         0
@@ -578,7 +590,12 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             };
 
             let loops = if open_vertices > 0 {
-                self.edges.len() + extra_loops + open_vertices - self.nodes.len()
+                let e = self.edges.len() + extra_loops + open_vertices;
+                if e < self.nodes.len() {
+                    // cannot form one connected component
+                    return;
+                }
+                e - self.nodes.len()
             } else {
                 self.edges.len() + 1 - self.nodes.len()
             };
@@ -608,6 +625,29 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         }
 
         // find completions for the current vertex
+        if cur_vertex < external_edges.len() {
+            // generate a single connection with the external edge
+            let n = self.node(cur_vertex).edges.len();
+            if n == 0 {
+                let mut edges_left: Vec<(E, usize)> =
+                    vec![(external_edges[cur_vertex].1.clone(), 1)];
+
+                self.distribute_edges(
+                    cur_vertex,
+                    external_edges.len(), // do not allow connections to other external edges
+                    external_edges,
+                    &mut edges_left,
+                    0,
+                    settings,
+                    out,
+                );
+            } else if n == 1 {
+                self.generate_impl(external_edges, cur_vertex + 1, settings, out);
+            }
+
+            return;
+        }
+
         let mut cur_edges: Vec<_> = self
             .node(cur_vertex)
             .edges
@@ -624,7 +664,7 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             }
 
             if *d == cur_edges {
-                self.generate_impl(cur_vertex + 1, settings, out);
+                self.generate_impl(external_edges, cur_vertex + 1, settings, out);
                 continue;
             }
 
@@ -656,7 +696,15 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
                 continue;
             }
 
-            self.distribute_edges(cur_vertex, cur_vertex, &mut edges_left, 0, settings, out);
+            self.distribute_edges(
+                cur_vertex,
+                cur_vertex,
+                external_edges,
+                &mut edges_left,
+                0,
+                settings,
+                out,
+            );
         }
     }
 
@@ -664,13 +712,14 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         &mut self,
         source: usize,
         cur_target: usize,
+        external_edges: &[(N, E)],
         edge_count: &mut [(E, usize)],
         cur_edge_count_group_index: usize,
         settings: &GenerationSettings<E>,
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) {
         if edge_count.iter().all(|x| x.1 == 0) {
-            return self.generate_impl(source + 1, settings, out);
+            return self.generate_impl(external_edges, source + 1, settings, out);
         }
 
         let mut grown = false;
@@ -678,7 +727,15 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             grown = true;
             self.add_node(N::default());
         } else {
-            self.distribute_edges(source, cur_target + 1, edge_count, 0, settings, out);
+            self.distribute_edges(
+                source,
+                cur_target + 1,
+                external_edges,
+                edge_count,
+                0,
+                settings,
+                out,
+            );
         }
 
         let consume_count = if source == cur_target {
@@ -692,7 +749,12 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
         };
 
         // TODO: do more extensive compatibility checks
-        if self.node(cur_target).edges.len() + consume_count > settings.max_degree {
+        let max_degree = if cur_target < external_edges.len() {
+            1
+        } else {
+            settings.max_degree
+        };
+        if self.node(cur_target).edges.len() + consume_count > max_degree {
             return;
         }
 
@@ -701,11 +763,16 @@ impl<N: Default + Clone + Eq + Hash + Ord, E: Clone + Ord + Eq + Hash> Graph<N, 
             .enumerate()
             .find(|x| x.1 .1 >= consume_count)
         {
+            if cur_target < external_edges.len() && e != &external_edges[cur_target].1 {
+                return;
+            }
+
             *count -= consume_count;
             self.add_edge(source, cur_target, false, e.clone()).unwrap();
             self.distribute_edges(
                 source,
                 cur_target,
+                external_edges,
                 edge_count,
                 cur_edge_count_group_index + p,
                 settings,
@@ -1450,9 +1517,25 @@ mod test {
             None,
             Some(3),
             Some(0),
-            false,
+            true,
         );
 
-        assert_eq!(gs.len(), 94);
+        assert_eq!(gs.len(), 138);
+    }
+
+    #[test]
+    fn generate_tree() {
+        let external_edges = vec![(1, "g"), (2, "g"), (3, "g"), (4, "g")];
+        let vertex_signatures = vec![vec!["g", "g", "g"], vec!["g", "g", "g", "g"]];
+
+        let graphs = Graph::generate(
+            &external_edges,
+            &vertex_signatures,
+            None,
+            Some(0),
+            None,
+            true,
+        );
+        assert_eq!(graphs.len(), 4);
     }
 }

@@ -10688,8 +10688,11 @@ impl PythonGraph {
     #[classmethod]
     fn generate(
         _cls: &Bound<'_, PyType>,
-        external_edges: Vec<(ConvertibleToExpression, ConvertibleToExpression)>,
-        vertex_signatures: Vec<Vec<ConvertibleToExpression>>,
+        external_edges: Vec<(
+            ConvertibleToExpression,
+            (Option<bool>, ConvertibleToExpression),
+        )>,
+        vertex_signatures: Vec<Vec<(Option<bool>, ConvertibleToExpression)>>,
         max_vertices: Option<usize>,
         max_loops: Option<usize>,
         max_bridges: Option<usize>,
@@ -10703,11 +10706,15 @@ impl PythonGraph {
 
         let external_edges: Vec<_> = external_edges
             .into_iter()
-            .map(|(a, b)| (a.to_expression().expr, b.to_expression().expr))
+            .map(|(a, b)| (a.to_expression().expr, (b.0, b.1.to_expression().expr)))
             .collect();
         let vertex_signatures: Vec<_> = vertex_signatures
             .into_iter()
-            .map(|v| v.into_iter().map(|x| x.to_expression().expr).collect())
+            .map(|v| {
+                v.into_iter()
+                    .map(|x| (x.0, x.1.to_expression().expr))
+                    .collect()
+            })
             .collect();
 
         Ok(Graph::generate(

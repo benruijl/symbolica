@@ -3553,24 +3553,26 @@ class Graph:
 
     @classmethod
     def generate(_cls,
-                 external_nodes: Sequence[tuple[Expression | int, Expression | int]],
-                 vertex_signatures: Sequence[Sequence[Expression | int]],
+                 external_nodes: Sequence[tuple[Expression | int, Tuple[Optional[bool], Expression | int]]],
+                 vertex_signatures: Sequence[Sequence[Tuple[Optional[bool], Expression | int]]],
                  max_vertices: Optional[int] = None,
                  max_loops: Optional[int] = None,
                  max_bridges: Optional[int] = None,
                  allow_self_edges: bool = False,) -> dict[Graph, Expression]:
         """Generate all connected graphs with `external_edges` half-edges and the given allowed list
-        of vertex connections.
+        of vertex connections. The vertex signatures are given in terms of an edge direction (or `None` if
+        there is no direction) and edge data.
 
         Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
 
         Examples
         --------
         >>> from symbolica import *
-        >>> g, q, qb, gh, ghb = S('g', 'q', 'qb', 'gh', 'ghb')
-        >>> Graph.generate([(1, g), (2, g)],
-        >>>                 [[g, g, g], [g, g, g, g],
-        >>>                  [q, qb, g], [gh, ghb, g]], max_loops=2)
+        >>> g, q, gh = S('g', 'q', 'gh')
+        >>> gp, qp, qbp, ghp, ghbp = (None, g), (True, q), (False, q), (True, gh), (False, gh)
+        >>> graphs = Graph.generate([(1, gp), (2, gp)],
+        >>>                         [[gp, gp, gp], [gp, gp, gp, gp],
+        >>>                         [qp, qbp, gp], [ghp, ghbp, gp]], max_loops=2)
         >>> for (g, sym) in graphs.items():
         >>>     print(f'Symmetry factor = 1/{sym}:')
         >>>     print(g.to_dot())
@@ -3579,10 +3581,10 @@ class Graph:
 
         Parameters
         ----------
-        external_nodes: Sequence[tuple[Expression | int, Expression | int]]
-            The external edges, consisting of a tuple of the node data and the edge data.
+        external_nodes: Sequence[tuple[Expression | int, Tuple[Optional[bool], Expression | int]]]
+            The external edges, consisting of a tuple of the node data and a tuple of the edge direction and edge data.
             If the node data is the same, flip symmetries will be recognized.
-        vertex_signatures: Sequence[Sequence[Expression | int]]
+        vertex_signatures: Sequence[Sequence[Tuple[Optional[bool], Expression | int]]]
             The allowed connections for each vertex.
         max_vertices: int, optional
             The maximum number of vertices in the graph.

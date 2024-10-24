@@ -466,7 +466,7 @@ impl<N, E: Eq + Ord + Hash> Graph<N, E> {
 }
 
 struct GenerationSettings<'a, E> {
-    vertex_signatures: &'a [Vec<E>],
+    vertex_signatures: &'a [Vec<(Option<bool>, E)>],
     max_vertices: Option<usize>,
     max_loops: Option<usize>,
     max_bridges: Option<usize>,
@@ -485,8 +485,8 @@ impl<
     ///
     /// Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
     pub fn generate(
-        external_edges: &[(N, E)],
-        vertex_signatures: &[Vec<E>],
+        external_edges: &[(N, (Option<bool>, E))],
+        vertex_signatures: &[Vec<(Option<bool>, E)>],
         max_vertices: Option<usize>,
         max_loops: Option<usize>,
         max_bridges: Option<usize>,
@@ -531,7 +531,7 @@ impl<
 
     fn generate_impl(
         &mut self,
-        external_edges: &[(N, E)],
+        external_edges: &[(N, (Option<bool>, E))],
         cur_vertex: usize,
         settings: &GenerationSettings<E>,
         out: &mut HashMap<Graph<N, E>, Integer>,
@@ -629,7 +629,7 @@ impl<
             // generate a single connection with the external edge
             let n = self.node(cur_vertex).edges.len();
             if n == 0 {
-                let mut edges_left: Vec<(E, usize)> =
+                let mut edges_left: Vec<(_, usize)> =
                     vec![(external_edges[cur_vertex].1.clone(), 1)];
 
                 self.distribute_edges(
@@ -652,11 +652,20 @@ impl<
             .node(cur_vertex)
             .edges
             .iter()
-            .map(|e| self.edges[*e].data.clone())
+            .map(|e| {
+                (
+                    if self.edges[*e].directed {
+                        Some(self.edges[*e].vertices.0 == cur_vertex)
+                    } else {
+                        None
+                    },
+                    self.edges[*e].data.clone(),
+                )
+            })
             .collect();
         cur_edges.sort();
 
-        let mut edges_left: Vec<(E, usize)> = vec![];
+        let mut edges_left: Vec<((Option<bool>, E), usize)> = vec![];
         'next_signature: for d in settings.vertex_signatures {
             // check if the current state is compatible
             if d.len() < cur_edges.len() {
@@ -712,8 +721,8 @@ impl<
         &mut self,
         source: usize,
         cur_target: usize,
-        external_edges: &[(N, E)],
-        edge_count: &mut [(E, usize)],
+        external_edges: &[(N, (Option<bool>, E))],
+        edge_count: &mut [((Option<bool>, E), usize)],
         cur_edge_count_group_index: usize,
         settings: &GenerationSettings<E>,
         out: &mut HashMap<Graph<N, E>, Integer>,
@@ -758,17 +767,32 @@ impl<
             return;
         }
 
-        if let Some((p, (e, count))) = edge_count[cur_edge_count_group_index..]
-            .iter_mut()
-            .enumerate()
-            .find(|x| x.1 .1 >= consume_count)
-        {
+        for p in cur_edge_count_group_index..edge_count.len() {
+            let (e, count) = &mut edge_count[p];
+
+            if *count < consume_count {
+                continue;
+            }
+
             if cur_target < external_edges.len() && e != &external_edges[cur_target].1 {
-                return;
+                continue;
             }
 
             *count -= consume_count;
-            self.add_edge(source, cur_target, false, e.clone()).unwrap();
+
+            if let Some(dir) = e.0 {
+                if dir {
+                    self.add_edge(source, cur_target, true, e.1.clone())
+                        .unwrap();
+                } else {
+                    self.add_edge(cur_target, source, true, e.1.clone())
+                        .unwrap();
+                }
+            } else {
+                self.add_edge(source, cur_target, false, e.1.clone())
+                    .unwrap();
+            }
+
             self.distribute_edges(
                 source,
                 cur_target,
@@ -1508,11 +1532,11 @@ mod test {
     #[test]
     fn generate() {
         let gs = Graph::<_, &str>::generate(
-            &[(1, "g"), (2, "g")],
+            &[(1, (None, "g")), (2, (None, "g"))],
             &[
-                vec!["g", "g", "g"],
-                vec!["q", "qb", "g"],
-                vec!["g", "g", "g", "g"],
+                vec![(None, "g"), (None, "g"), (None, "g")],
+                vec![(Some(true), "q"), (Some(false), "q"), (None, "g")],
+                vec![(None, "g"), (None, "g"), (None, "g"), (None, "g")],
             ],
             None,
             Some(3),
@@ -1520,13 +1544,21 @@ mod test {
             true,
         );
 
-        assert_eq!(gs.len(), 138);
+        assert_eq!(gs.len(), 210);
     }
 
     #[test]
     fn generate_tree() {
-        let external_edges = vec![(1, "g"), (2, "g"), (3, "g"), (4, "g")];
-        let vertex_signatures = vec![vec!["g", "g", "g"], vec!["g", "g", "g", "g"]];
+        let external_edges = vec![
+            (1, (None, "g")),
+            (2, (None, "g")),
+            (3, (None, "g")),
+            (4, (None, "g")),
+        ];
+        let vertex_signatures = vec![
+            vec![(None, "g"), (None, "g"), (None, "g")],
+            vec![(None, "g"), (None, "g"), (None, "g"), (None, "g")],
+        ];
 
         let graphs = Graph::generate(
             &external_edges,

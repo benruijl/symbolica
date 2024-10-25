@@ -768,14 +768,14 @@ impl<
                 cur_target,
                 external_edges,
                 edge_count,
-                cur_edge_count_group_index + p,
+                p,
                 settings,
                 out,
             );
 
             self.delete_last_edge(); // TODO: cache edge data
 
-            edge_count[cur_edge_count_group_index + p].1 += consume_count;
+            edge_count[p].1 += consume_count;
         }
 
         if grown {

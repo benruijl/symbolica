@@ -348,7 +348,7 @@ impl<N, E> Graph<N, E> {
 
     // Get the number of loop in the graph, using E - V + 1
     pub fn num_loops(&self) -> usize {
-        self.edges.len() - self.nodes.len() + 1
+        self.edges.len() + 1 - self.nodes.len()
     }
 
     /// Generate a spanning tree of the graph, starting at `start_vertex`.
@@ -418,11 +418,17 @@ impl<N, E> Graph<N, E> {
 impl<N, E: Eq + Ord + Hash> Graph<N, E> {
     /// Get the number of different ways to permute the multi-edges, leading
     /// to the same graph, while keeping the vertices fixed.
+    ///
+    /// Every self-loop yields an additional factor two.
     pub fn get_edge_automorphism_group_size(&self) -> Integer {
         let mut count = Integer::one();
         let mut h = HashMap::default();
 
         for e in &self.edges {
+            if e.vertices.0 == e.vertices.1 {
+                count *= 2;
+            }
+
             h.entry(e.vertices)
                 .or_insert(vec![])
                 .push((e.directed, &e.data));
@@ -544,23 +550,8 @@ impl<
 
         if let Some(max_loops) = settings.max_loops {
             // filter based on an underestimate of the loop count
-            // fuse every open vertex into one vertex
-            // use the minimal vertex degree to see how many minimal
-            // loops we need to fuse all open vertices into one
-            // connected component
-            //
-            // TODO: use the maximum vertex degree as well
-            let open_vertices = self
-                .nodes
-                .iter()
-                .enumerate()
-                .skip(cur_vertex)
-                .filter(|(i, x)| {
-                    *i < external_edges.len() && x.edges.is_empty()
-                        || *i >= external_edges.len() && x.edges.len() < settings.min_degree
-                })
-                .count();
-
+            // determine the minimal number of additional edges
+            // and assume that we create one connected component
             let mut extra_edges = self
                 .nodes
                 .iter()
@@ -576,31 +567,10 @@ impl<
                     }
                 })
                 .sum::<usize>();
-            if extra_edges % 2 == 1 {
-                extra_edges = extra_edges / 2 + 1;
-            } else {
-                extra_edges /= 2;
-            }
+            extra_edges = (extra_edges + 1) / 2;
 
-            let extra_loops = if extra_edges + 1 < open_vertices {
-                // cannot form one connected component
-                0
-            } else {
-                extra_edges + 1 - open_vertices
-            };
-
-            let loops = if open_vertices > 0 {
-                let e = self.edges.len() + extra_loops + open_vertices;
-                if e < self.nodes.len() {
-                    // cannot form one connected component
-                    return;
-                }
-                e - self.nodes.len()
-            } else {
-                self.edges.len() + 1 - self.nodes.len()
-            };
-
-            if loops > max_loops {
+            let e = self.edges.len() + extra_edges + 1;
+            if e > max_loops + self.nodes.len() {
                 return;
             }
         }
@@ -1564,10 +1534,11 @@ mod test {
             &external_edges,
             &vertex_signatures,
             None,
+            Some(2),
             Some(0),
-            None,
             true,
         );
-        assert_eq!(graphs.len(), 4);
+
+        assert_eq!(graphs.len(), 278);
     }
 }

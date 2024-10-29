@@ -13,6 +13,7 @@ use smallvec::{smallvec, SmallVec};
 use crate::{
     atom::{Atom, AtomView},
     domains::{
+        atom::AtomField,
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
         },
@@ -412,6 +413,20 @@ impl ConvertToRing for IntegerRing {
                 panic!("Cannot convert rational polynomial to integer")
             }
         }
+    }
+}
+
+impl ConvertToRing for AtomField {
+    fn element_from_integer(&self, number: Integer) -> Self::Element {
+        Atom::new_num(number)
+    }
+
+    fn element_from_coefficient(&self, number: Coefficient) -> Self::Element {
+        Atom::new_num(number)
+    }
+
+    fn element_from_coefficient_view(&self, number: CoefficientView<'_>) -> Self::Element {
+        Atom::new_num(number.to_owned())
     }
 }
 

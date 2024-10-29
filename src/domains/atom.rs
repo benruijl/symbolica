@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use crate::{
     atom::{Atom, AtomView},
     poly::Variable,
@@ -131,6 +133,10 @@ impl Ring for AtomField {
         mut in_product: bool, // can be used to add parentheses
         f: &mut std::fmt::Formatter<'_>,
     ) -> Result<(), std::fmt::Error> {
+        if f.sign_plus() {
+            f.write_char('+')?;
+        }
+
         if !matches!(element.as_view(), AtomView::Add(_)) {
             in_product = false;
         }

@@ -21,6 +21,7 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::atom::{Atom, AtomView, Symbol};
 use crate::coefficient::{Coefficient, CoefficientView, ConvertToRing};
+use crate::domains::atom::AtomField;
 use crate::domains::factorized_rational_polynomial::{
     FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
 };
@@ -803,6 +804,86 @@ impl<'a> AtomView<'a> {
         }
     }
 
+    /// Convert the atom to a polynomial in specific variables.
+    /// All other parts will be collected into the coefficient, which
+    /// is a general expression.
+    ///
+    /// This routine does not perform expansions.
+    pub fn to_polynomial_in_vars<E: Exponent>(
+        &self,
+        var_map: &Arc<Vec<Variable>>,
+    ) -> MultivariatePolynomial<AtomField, E> {
+        let field = AtomField::new();
+        // see if the current term can be cast into a polynomial using a fast routine
+        if let Ok(num) = self.to_polynomial_expanded(&field, Some(var_map), false) {
+            return num;
+        }
+
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) => {
+                MultivariatePolynomial::new(&field, None, var_map.clone()).constant(self.to_owned())
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+
+                if let AtomView::Num(n) = exp {
+                    let num_n = n.get_coeff_view();
+                    if let CoefficientView::Natural(nn, nd) = num_n {
+                        if nd == 1 && nn > 0 && nn < u32::MAX as i64 {
+                            return base.to_polynomial_in_vars(var_map).pow(nn as usize);
+                        }
+                    }
+                }
+
+                if let Some(id) = var_map.iter().position(|v| match v {
+                    Variable::Other(vv) => vv.as_view() == *self,
+                    _ => false,
+                }) {
+                    let mut exp = vec![E::zero(); var_map.len()];
+                    exp[id] = E::one();
+                    MultivariatePolynomial::new(&field, None, var_map.clone())
+                        .monomial(field.one(), exp)
+                } else {
+                    MultivariatePolynomial::new(&field, None, var_map.clone())
+                        .constant(self.to_owned())
+                }
+            }
+            AtomView::Fun(_) => {
+                if let Some(id) = var_map.iter().position(|v| match v {
+                    Variable::Function(_, vv) => vv.as_view() == *self,
+                    _ => false,
+                }) {
+                    let mut exp = vec![E::zero(); var_map.len()];
+                    exp[id] = E::one();
+                    MultivariatePolynomial::new(&field, None, var_map.clone())
+                        .monomial(field.one(), exp)
+                } else {
+                    MultivariatePolynomial::new(&field, None, var_map.clone())
+                        .constant(self.to_owned())
+                }
+            }
+            AtomView::Mul(m) => {
+                let mut r = MultivariatePolynomial::new(&field, None, var_map.clone())
+                    .constant(field.one());
+                for arg in m {
+                    let mut arg_r = arg.to_polynomial_in_vars(&r.variables);
+                    r.unify_variables(&mut arg_r);
+                    r = &r * &arg_r;
+                }
+                r
+            }
+            AtomView::Add(a) => {
+                let mut r = MultivariatePolynomial::new(&field, None, var_map.clone());
+                for arg in a {
+                    let mut arg_r = arg.to_polynomial_in_vars(&r.variables);
+                    r.unify_variables(&mut arg_r);
+                    r = &r + &arg_r;
+                }
+                r
+            }
+        }
+    }
+
     /// Convert the atom to a rational polynomial, optionally in the variable ordering
     /// specified by `var_map`. If new variables are encountered, they are
     /// added to the variable map. Similarly, non-rational polynomial parts are automatically
@@ -1092,6 +1173,64 @@ impl<'a> AtomView<'a> {
                 r
             }
         }
+    }
+}
+
+impl<E: Exponent, O: MonomialOrder> MultivariatePolynomial<AtomField, E, O> {
+    /// Convert the polynomial to an expression.
+    pub fn to_nested_expression(&self) -> Atom {
+        let mut out = Atom::default();
+        Workspace::get_local().with(|ws| self.to_nested_expression_into_impl(ws, &mut out));
+        out
+    }
+
+    fn to_nested_expression_into_impl(&self, workspace: &Workspace, out: &mut Atom) {
+        if self.is_zero() {
+            out.set_from_view(&workspace.new_num(0).as_view());
+            return;
+        }
+
+        let add = out.to_add();
+
+        let mut mul_h = workspace.new_atom();
+        let mut var_h = workspace.new_atom();
+        let mut num_h = workspace.new_atom();
+        let mut pow_h = workspace.new_atom();
+
+        for monomial in self {
+            let mul = mul_h.to_mul();
+
+            for (var_id, &pow) in self.variables.iter().zip(monomial.exponents) {
+                if pow > E::zero() {
+                    match var_id {
+                        Variable::Symbol(v) => {
+                            var_h.to_var(*v);
+                        }
+                        Variable::Temporary(_) => {
+                            unreachable!("Temporary variable in expression")
+                        }
+                        Variable::Function(_, a) | Variable::Other(a) => {
+                            var_h.set_from_view(&a.as_view());
+                        }
+                    }
+
+                    if pow > E::one() {
+                        num_h.to_num((pow.to_u32() as i64).into());
+                        pow_h.to_pow(var_h.as_view(), num_h.as_view());
+                        mul.extend(pow_h.as_view());
+                    } else {
+                        mul.extend(var_h.as_view());
+                    }
+                }
+            }
+
+            mul.extend(monomial.coefficient.as_view());
+            add.extend(mul_h.as_view());
+        }
+
+        let mut norm = workspace.new_atom();
+        out.as_view().normalize(workspace, &mut norm);
+        std::mem::swap(norm.deref_mut(), out);
     }
 }
 

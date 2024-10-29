@@ -5827,6 +5827,44 @@ impl PythonPolynomial {
             .collect())
     }
 
+    /// Approximate all complex roots of a univariate polynomial, given a maximal number of iterations
+    /// and a given tolerance.
+    pub fn approximate_roots<'py>(
+        &self,
+        max_iterations: usize,
+        tolerance: f64,
+        py: Python<'py>,
+    ) -> PyResult<Vec<(Bound<'py, PyComplex>, usize)>> {
+        let var = if self.poly.nvars() == 1 {
+            0
+        } else {
+            let degs: Vec<_> = (0..self.poly.nvars())
+                .filter(|x| self.poly.degree(*x) > 0)
+                .collect();
+            if degs.len() > 1 || degs.is_empty() {
+                Err(exceptions::PyValueError::new_err(
+                    "Polynomial is not univariate",
+                ))?
+            } else {
+                degs[0]
+            }
+        };
+
+        let uni = self.poly.to_univariate_from_univariate(var);
+
+        Ok(uni
+            .approximate_roots::<F64>(iterations, &tolerance.into())
+            .unwrap_or_else(|e| e)
+            .into_iter()
+            .map(|(r, p)| {
+                (
+                    PyComplex::from_doubles_bound(py, r.re.to_f64(), r.im.to_f64()),
+                    p,
+                )
+            })
+            .collect())
+    }
+
     /// Convert the polynomial to a polynomial with integer coefficients, if possible.
     pub fn to_integer_polynomial(&self) -> PyResult<PythonIntegerPolynomial> {
         let mut poly_int =

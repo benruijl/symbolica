@@ -805,6 +805,28 @@ impl RealNumberLike for F64 {
     }
 }
 
+impl ConstructibleFloat for F64 {
+    #[inline(always)]
+    fn new_one() -> Self {
+        f64::new_one().into()
+    }
+
+    #[inline(always)]
+    fn new_from_usize(a: usize) -> Self {
+        f64::new_from_usize(a).into()
+    }
+
+    #[inline(always)]
+    fn new_from_i64(a: i64) -> Self {
+        f64::new_from_i64(a).into()
+    }
+
+    #[inline(always)]
+    fn new_sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self {
+        f64::new_sample_unit(rng).into()
+    }
+}
+
 impl Real for F64 {
     #[inline(always)]
     fn pi(&self) -> Self {
@@ -921,7 +943,7 @@ impl From<f64> for F64 {
 
 impl PartialEq for F64 {
     fn eq(&self, other: &Self) -> bool {
-        if self.0.is_nan() == other.0.is_nan() {
+        if self.0.is_nan() && other.0.is_nan() {
             true
         } else {
             self.0 == other.0
@@ -2791,6 +2813,14 @@ impl<T: Default> Default for Complex<T> {
     }
 }
 
+impl<T: InternalOrdering> InternalOrdering for Complex<T> {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.re
+            .internal_cmp(&other.re)
+            .then_with(|| self.im.internal_cmp(&other.im))
+    }
+}
+
 impl<T: ConstructibleFloat + Real> ConstructibleFloat for Complex<T> {
     fn new_from_i64(a: i64) -> Self {
         Complex {
@@ -3360,7 +3390,7 @@ impl<T: SingleFloat> SingleFloat for Complex<T> {
 
     #[inline(always)]
     fn is_finite(&self) -> bool {
-        true
+        self.re.is_finite() && self.im.is_finite()
     }
 
     #[inline(always)]
@@ -3603,6 +3633,13 @@ impl<T: Real> Real for Complex<T> {
         } else {
             (e * self.log()).exp()
         }
+    }
+}
+
+impl<T: NumericalFloatLike> From<T> for Complex<T> {
+    fn from(value: T) -> Self {
+        let zero = value.zero();
+        Complex::new(value, zero)
     }
 }
 

@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     domains::{
+        float::{Complex, FloatField, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, RationalField, Q},
         EuclideanDomain, Field, InternalOrdering, Ring, RingPrinter,
@@ -655,9 +656,64 @@ impl UnivariatePolynomial<RationalField> {
 
         (interval, other_interval)
     }
+
+    /// Approximate all complex roots of the polynomial.
+    /// Returns `Ok(roots)` when all roots were found up to the tolerance, and `Err(roots)` when the number of iterations ran out.
+    /// In that case, the current-best estimate for each root is returned.
+    pub fn approximate_roots<
+        F: Real + SingleFloat + std::hash::Hash + Eq + PartialOrd + InternalOrdering,
+    >(
+        &self,
+        max_iterations: usize,
+        tolerance: &F,
+    ) -> Result<Vec<(Complex<F>, usize)>, Vec<(Complex<F>, usize)>> {
+        let mut roots = vec![];
+        let mut iter_bound = false;
+        for (f, pow) in self
+            .clone()
+            .to_multivariate::<u16>()
+            .square_free_factorization()
+        {
+            let f = f.to_univariate_from_univariate(0);
+
+            match f
+                .map_coeff(
+                    |c| tolerance.from_rational(&c).into(),
+                    FloatField::from_rep(tolerance.clone().into()),
+                )
+                .roots(max_iterations, tolerance)
+            {
+                Ok(r) => roots.extend(r.into_iter().map(|r| (r, pow))),
+                Err(r) => {
+                    roots.extend(r.into_iter().map(|r| (r, pow)));
+                    iter_bound = true;
+                }
+            }
+        }
+
+        if iter_bound {
+            Err(roots)
+        } else {
+            Ok(roots)
+        }
+    }
 }
 
 impl UnivariatePolynomial<IntegerRing> {
+    /// Approximate all complex roots of the polynomial.
+    /// Returns `Ok(roots)` when all roots were found up to the tolerance, and `Err(roots)` when the number of iterations ran out.
+    /// In that case, the current-best estimate for each root is returned.
+    pub fn approximate_roots<
+        F: Real + SingleFloat + std::hash::Hash + Eq + PartialOrd + InternalOrdering,
+    >(
+        &self,
+        max_iterations: usize,
+        tolerance: &F,
+    ) -> Result<Vec<(Complex<F>, usize)>, Vec<(Complex<F>, usize)>> {
+        self.map_coeff(|c| c.into(), Q)
+            .approximate_roots(max_iterations, tolerance)
+    }
+
     /// Approximate the single root of the polynomial in the interval (lower, higher) with a given tolerance
     /// using bisection.
     pub fn refine_root_interval(
@@ -757,7 +813,7 @@ impl UnivariatePolynomial<IntegerRing> {
     }
 
     /// Compute an upper bound for the maximal positive real root of the polynomial.
-    pub fn max_root_bound(&self) -> Rational {
+    pub fn max_real_root_bound(&self) -> Rational {
         // use the local-max root bound
         // TODO: also implement first-lambda bound
         if self.degree() == 0 {
@@ -804,7 +860,7 @@ impl UnivariatePolynomial<IntegerRing> {
             p = p.div_exp(1);
         }
 
-        let max_root = p.max_root_bound().ceil();
+        let max_root = p.max_real_root_bound().ceil();
 
         // map the polynomial to the interval (0, max_root)
         for c in p.coefficients.iter_mut().enumerate() {
@@ -860,7 +916,7 @@ impl UnivariatePolynomial<IntegerRing> {
         {
             // compute lower bound on root
             p.coefficients.reverse();
-            let upper_bound = p.max_root_bound();
+            let upper_bound = p.max_real_root_bound();
             p.coefficients.reverse();
             let mut lower_bound = upper_bound.inv().floor();
 
@@ -958,6 +1014,116 @@ impl UnivariatePolynomial<IntegerRing> {
         }
 
         roots
+    }
+}
+
+impl<R: Real + SingleFloat + std::hash::Hash + Eq + PartialOrd + InternalOrdering>
+    UnivariatePolynomial<FloatField<Complex<R>>>
+{
+    /// Get an upper bound on the norm of all (complex) roots.
+    pub fn get_root_upper_bound(&self) -> R {
+        if self.is_zero() {
+            return self.field.zero().re;
+        }
+
+        let last = self.coefficients.last().unwrap();
+        let mut max = last.zero().re;
+        for c in self.coefficients.iter().rev().skip(1) {
+            let r = (c / last).norm().re;
+            if r > max {
+                max = r;
+            }
+        }
+
+        max + self.field.one().re
+    }
+
+    /// Get a lower bound on the norm of all (complex) roots.
+    pub fn get_root_lower_bound(&self) -> R {
+        if self.is_zero() {
+            return self.field.zero().re;
+        }
+
+        let last = &self.coefficients[0];
+        let mut max = last.zero().re;
+        for c in self.coefficients.iter().skip(1) {
+            let r = (c / last).norm().re;
+            if r > max {
+                max = r;
+            }
+        }
+
+        self.field.one().re / (max + self.field.one().re)
+    }
+
+    /// Compute all complex roots of the polynomial using Aberth's method.
+    /// Returns `Ok(roots)` when all roots were found up to the tolerance, and `Err(roots)` when the number of iterations ran out.
+    /// In that case, the current-best estimate for each root is returned.
+    ///
+    /// For better performance, square-free factor the polynomial first.
+    pub fn roots(
+        &self,
+        max_iterations: usize,
+        tolerance: &R,
+    ) -> Result<Vec<Complex<R>>, Vec<Complex<R>>> {
+        if self.get_constant().is_zero() {
+            match self.div_exp(1).roots(max_iterations, tolerance) {
+                Ok(mut roots) => {
+                    roots.push(self.field.zero());
+                    return Ok(roots);
+                }
+                Err(mut roots) => {
+                    roots.push(self.field.zero());
+                    return Err(roots);
+                }
+            }
+        }
+
+        let upper = self.get_root_upper_bound();
+        let lower = self.get_root_lower_bound();
+
+        let df = self.derivative();
+
+        let mut rng = rand::thread_rng();
+        let mut n: Vec<_> = (0..self.degree())
+            .map(|_| {
+                let r = upper.sample_unit(&mut rng) * (upper.clone() - &lower) + &lower;
+                let phi = upper.sample_unit(&mut rng) * upper.pi() * upper.from_usize(2);
+                Complex::from_polar_coordinates(r, phi)
+            })
+            .collect();
+
+        let t_sq = tolerance.clone() * tolerance;
+        for _ in 0..max_iterations {
+            for i in 0..n.len() {
+                let e = self.evaluate(&n[i]) / df.evaluate(&n[i]);
+
+                let mut rep = e.zero();
+                for j in 0..n.len() {
+                    if i != j && n[i] != n[j] {
+                        rep += (n[i].clone() - &n[j]).inv();
+                    }
+                }
+
+                n[i] -= &e / (rep.one() - &e * rep); // immediately use the new value
+            }
+
+            if n.iter().all(|x| self.evaluate(x).norm_squared() < t_sq) {
+                n.sort_unstable_by(|a, b| {
+                    a.re.partial_cmp(&b.re)
+                        .unwrap_or(Ordering::Equal)
+                        .then(a.im.partial_cmp(&b.im).unwrap_or(Ordering::Equal))
+                });
+                return Ok(n);
+            }
+        }
+
+        n.sort_unstable_by(|a, b| {
+            a.re.partial_cmp(&b.re)
+                .unwrap_or(Ordering::Equal)
+                .then(a.im.partial_cmp(&b.im).unwrap_or(Ordering::Equal))
+        });
+        Err(n)
     }
 }
 
@@ -1558,7 +1724,10 @@ impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
 
 #[cfg(test)]
 mod test {
-    use crate::{atom::Atom, domains::rational::Q};
+    use crate::{
+        atom::Atom,
+        domains::{float::F64, rational::Q},
+    };
 
     #[test]
     fn derivative_integrate() {
@@ -1656,5 +1825,16 @@ mod test {
                 ((995, 1024).into(), (249, 256).into(), 1),
             ],
         );
+    }
+
+    #[test]
+    fn complex_roots() {
+        let p = Atom::parse("x^10+9x^7+4x^3+2x+1")
+            .unwrap()
+            .to_polynomial::<_, u16>(&Q, None)
+            .to_univariate_from_univariate(0);
+        let pc = p.approximate_roots::<F64>(10000, &1e-8.into()).unwrap();
+        assert!(pc[0].0.re < 2f64.into());
+        assert!(pc[9].0.re > 1f64.into());
     }
 }

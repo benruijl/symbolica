@@ -2301,6 +2301,18 @@ class Polynomial:
         ```
         """
 
+    def approximate_roots(self, max_iterations: int, tolerance: float) -> list[Tuple[complex, int]]:
+        """Approximate all complex roots of a univariate polynomial, given a maximal number of iterations
+        and a given tolerance. Returns the roots and their multiplicity.
+
+        Examples
+        --------
+
+        >>> p = E('x^10+9x^7+4x^3+2x+1').to_polynomial()
+        >>> for (r, m) in p.approximate_roots(1000, 1e-10):
+        >>>     print(r, m)
+        """
+
     def factor_square_free(self) -> list[Tuple[Polynomial, int]]:
         """Compute the square-free factorization of the polynomial.
 

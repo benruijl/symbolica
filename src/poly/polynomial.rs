@@ -1918,7 +1918,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             .map(|i| 1 + self.degree(i).to_u32() as usize + rhs.degree(i).to_u32() as usize)
             .collect::<Vec<_>>();
 
-        if max_degs_rev.iter().filter(|x| **x > 0).count() == 1 {
+        if max_degs_rev.iter().filter(|x| **x > 1).count() == 1 {
             if max_degs_rev.iter().sum::<usize>() < 10000 {
                 return Some(self.mul_univariate_dense(rhs, None));
             }

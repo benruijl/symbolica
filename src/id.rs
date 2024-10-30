@@ -94,6 +94,14 @@ impl Atom {
         out
     }
 
+    /// Get all variables and functions in the expression.
+    pub fn get_all_indeterminates<'a>(&'a self, enter_functions: bool) -> HashSet<AtomView<'a>> {
+        let mut out = HashSet::default();
+        self.as_view()
+            .get_all_indeterminates_impl(enter_functions, &mut out);
+        out
+    }
+
     /// Returns true iff `self` contains the symbol `s`.
     pub fn contains_symbol(&self, s: Symbol) -> bool {
         self.as_view().contains_symbol(s)
@@ -184,6 +192,46 @@ impl<'a> AtomView<'a> {
             AtomView::Add(a) => {
                 for child in a {
                     child.get_all_symbols_impl(include_function_symbols, out);
+                }
+            }
+        }
+    }
+
+    /// Get all variables and functions in the expression.
+    pub fn get_all_indeterminates(&self, enter_functions: bool) -> HashSet<AtomView<'a>> {
+        let mut out = HashSet::default();
+        self.get_all_indeterminates_impl(enter_functions, &mut out);
+        out
+    }
+
+    fn get_all_indeterminates_impl(&self, enter_functions: bool, out: &mut HashSet<AtomView<'a>>) {
+        match self {
+            AtomView::Num(_) => {}
+            AtomView::Var(_) => {
+                out.insert(*self);
+            }
+            AtomView::Fun(f) => {
+                out.insert(*self);
+
+                if enter_functions {
+                    for arg in f {
+                        arg.get_all_indeterminates_impl(enter_functions, out);
+                    }
+                }
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+                base.get_all_indeterminates_impl(enter_functions, out);
+                exp.get_all_indeterminates_impl(enter_functions, out);
+            }
+            AtomView::Mul(m) => {
+                for child in m {
+                    child.get_all_indeterminates_impl(enter_functions, out);
+                }
+            }
+            AtomView::Add(a) => {
+                for child in a {
+                    child.get_all_indeterminates_impl(enter_functions, out);
                 }
             }
         }

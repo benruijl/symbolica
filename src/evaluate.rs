@@ -97,7 +97,7 @@ impl<'a, T> FunctionMap<'a, T> {
     pub fn add_tagged_function(
         &mut self,
         name: Symbol,
-        tags: Vec<AtomOrView>,
+        tags: Vec<AtomOrView<'a>>,
         rename: String,
         args: Vec<Symbol>,
         body: AtomView<'a>,
@@ -108,9 +108,10 @@ impl<'a, T> FunctionMap<'a, T> {
             }
         }
 
+        let tag_len = tags.len();
         self.map.insert(
-            AtomOrTaggedFunction::Atom(Atom::new_var(name).into()),
-            ConstOrExpr::Expr(rename, tags.len(), args, body),
+            AtomOrTaggedFunction::TaggedFunction(name, tags),
+            ConstOrExpr::Expr(rename, tag_len, args, body),
         );
 
         Ok(())
@@ -3892,8 +3893,8 @@ impl<'a> AtomView<'a> {
         if let Some(c) = fn_map.get(*self) {
             return match c {
                 ConstOrExpr::Const(c) => Ok(Expression::Const(c.clone())),
-                ConstOrExpr::Expr(name, tag_len, args, v) => {
-                    if args.len() != *tag_len {
+                ConstOrExpr::Expr(name, _tag_len, args, v) => {
+                    if args.len() != 0 {
                         return Err(format!(
                             "Function {} called with wrong number of arguments: 0 vs {}",
                             self,

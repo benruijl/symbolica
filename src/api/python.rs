@@ -2757,13 +2757,27 @@ impl PythonExpression {
 
     /// Get all symbols in the current expression, optionally including function symbols.
     /// The symbols are sorted in Symbolica's internal ordering.
-    #[pyo3(signature =(include_function_symbols = true))]
+    #[pyo3(signature = (include_function_symbols = true))]
     pub fn get_all_symbols(&self, include_function_symbols: bool) -> Vec<PythonExpression> {
         let mut s: Vec<PythonExpression> = self
             .expr
             .get_all_symbols(include_function_symbols)
             .into_iter()
             .map(|x| Atom::new_var(x).into())
+            .collect();
+        s.sort_by(|x, y| x.expr.cmp(&y.expr));
+        s
+    }
+
+    /// Get all symbols and functions in the current expression, optionally considering function arguments as well.
+    /// The symbols are sorted in Symbolica's internal ordering.
+    #[pyo3(signature = (enter_functions = true))]
+    pub fn get_all_indeterminates(&self, enter_functions: bool) -> Vec<PythonExpression> {
+        let mut s: Vec<PythonExpression> = self
+            .expr
+            .get_all_indeterminates(enter_functions)
+            .into_iter()
+            .map(|x| x.to_owned().into())
             .collect();
         s.sort_by(|x, y| x.expr.cmp(&y.expr));
         s
@@ -5853,7 +5867,7 @@ impl PythonPolynomial {
         let uni = self.poly.to_univariate_from_univariate(var);
 
         Ok(uni
-            .approximate_roots::<F64>(iterations, &tolerance.into())
+            .approximate_roots::<F64>(max_iterations, &tolerance.into())
             .unwrap_or_else(|e| e)
             .into_iter()
             .map(|(r, p)| {

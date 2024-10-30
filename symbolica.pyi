@@ -534,6 +534,11 @@ class Expression:
         The symbols are sorted in Symbolica's internal ordering.
         """
 
+    def get_all_indeterminates(self, enter_functions: bool = True) -> Sequence[Expression]:
+        """ Get all symbols and functions in the current expression, optionally including function symbols.
+        The symbols are sorted in Symbolica's internal ordering.
+        """
+
     def coefficients_to_float(self, decimal_prec: int) -> Expression:
         """Convert all coefficients to floats with a given precision `decimal_prec`.
         The precision of floating point coefficients in the input will be truncated to `decimal_prec`."""

@@ -712,7 +712,8 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    const ATOM_BUFFER_MAX: usize = 25;
+    const ATOM_BUFFER_MAX: usize = 30;
+    const ATOM_CACHE_SIZE_MAX: usize = 10_000_000;
 
     /// Create a new workspace.
     const fn new() -> Self {
@@ -844,6 +845,10 @@ impl Drop for RecycledAtom {
     #[inline]
     fn drop(&mut self) {
         if let Atom::Zero = self.0 {
+            return;
+        }
+
+        if self.0.as_view().get_byte_size() > Workspace::ATOM_CACHE_SIZE_MAX {
             return;
         }
 

@@ -193,7 +193,8 @@ impl SpanningTree {
                 let node = self.nodes[n].back_edges[back_edge_index];
                 back_edge_index += 1;
 
-                if self.nodes[node].parent == n {
+                if node == n {
+                    // self-loop
                     continue;
                 }
 
@@ -389,6 +390,10 @@ impl<N, E> Graph<N, E> {
                 } else {
                     edge.vertices.0
                 };
+
+                if n == target {
+                    tree_nodes[n].back_edges.push(n);
+                }
 
                 if tree_nodes[target].position.is_none() {
                     nodes_to_visit.push((target, n));

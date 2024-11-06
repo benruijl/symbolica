@@ -1,7 +1,6 @@
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::hash::Hash;
 use std::io::{Read, Write};
-use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread::LocalKey;
@@ -73,11 +72,8 @@ static VARIABLE_LISTS: AppendOnlyVec<Arc<Vec<Variable>>> = AppendOnlyVec::new();
 static SYMBOL_OFFSET: AtomicUsize = AtomicUsize::new(0);
 
 thread_local!(
-    /// A thread-local workspace, that stores recyclable atoms. By making it const and
-    /// `ManuallyDrop`, the fastest implementation is chosen for the current platform.
-    /// In principle this leaks memory, but Symbolica only uses thread pools that live as
-    /// long as the main thread, so this is no issue.
-    static WORKSPACE: ManuallyDrop<Workspace> = const { ManuallyDrop::new(Workspace::new()) }
+    /// A thread-local workspace, that stores recyclable atoms.
+    static WORKSPACE: Workspace = const { Workspace::new() }
 );
 
 /// A global state, that stores mappings from variable and function names to ids.
@@ -713,7 +709,7 @@ pub struct Workspace {
 
 impl Workspace {
     const ATOM_BUFFER_MAX: usize = 30;
-    const ATOM_CACHE_SIZE_MAX: usize = 10_000_000;
+    const ATOM_CACHE_SIZE_MAX: usize = 20_000_000;
 
     /// Create a new workspace.
     const fn new() -> Self {
@@ -724,7 +720,7 @@ impl Workspace {
 
     /// Get a thread-local workspace.
     #[inline]
-    pub fn get_local() -> &'static LocalKey<ManuallyDrop<Workspace>> {
+    pub fn get_local() -> &'static LocalKey<Workspace> {
         LicenseManager::check();
 
         &WORKSPACE
@@ -848,7 +844,7 @@ impl Drop for RecycledAtom {
             return;
         }
 
-        if self.0.as_view().get_byte_size() > Workspace::ATOM_CACHE_SIZE_MAX {
+        if self.0.get_capacity() > Workspace::ATOM_CACHE_SIZE_MAX {
             return;
         }
 

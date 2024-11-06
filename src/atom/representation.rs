@@ -212,6 +212,19 @@ impl Atom {
             _ => unreachable!("Unknown type {}", raw[0]),
         }
     }
+
+    /// Get the capacity of the underlying buffer.
+    pub(crate) fn get_capacity(&self) -> usize {
+        match self {
+            Atom::Num(n) => n.data.capacity(),
+            Atom::Var(v) => v.data.capacity(),
+            Atom::Fun(f) => f.data.capacity(),
+            Atom::Mul(m) => m.data.capacity(),
+            Atom::Add(a) => a.data.capacity(),
+            Atom::Pow(p) => p.data.capacity(),
+            Atom::Zero => 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -376,7 +376,7 @@ class Expression:
     def get_byte_size(self) -> int:
         """ Get the number of bytes that this expression takes up in memory."""
 
-    def pretty_str(
+    def format(
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
@@ -390,6 +390,7 @@ class Expression:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
+        precision: Optional[int] = None,
     ) -> str:
         """
         Convert the expression into a human-readable string, with tunable settings.
@@ -397,7 +398,7 @@ class Expression:
         Examples
         --------
         >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
-        >>> print(a.pretty_str(number_thousands_separator='_', multiplication_operator=' '))
+        >>> print(a.format(number_thousands_separator='_', multiplication_operator=' '))
 
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
         """
@@ -2219,7 +2220,7 @@ class Polynomial:
     def to_latex(self) -> str:
         """Convert the polynomial into a LaTeX string."""
 
-    def pretty_str(
+    def format(
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
@@ -2233,6 +2234,7 @@ class Polynomial:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
+        precision: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2240,7 +2242,7 @@ class Polynomial:
         Examples
         --------
         >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-        >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+        >>> print(p.format(symmetric_representation_for_finite_field=True))
 
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
         """
@@ -2488,7 +2490,7 @@ class IntegerPolynomial:
     def to_latex(self) -> str:
         """Convert the polynomial into a LaTeX string."""
 
-    def pretty_str(
+    def format(
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
@@ -2502,6 +2504,7 @@ class IntegerPolynomial:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
+        precision: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2509,7 +2512,7 @@ class IntegerPolynomial:
         Examples
         --------
         >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-        >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+        >>> print(p.format(symmetric_representation_for_finite_field=True))
 
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
         """
@@ -2649,7 +2652,7 @@ class NumberFieldPolynomial:
     def to_latex(self) -> str:
         """Convert the polynomial into a LaTeX string."""
 
-    def pretty_str(
+    def format(
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
@@ -2663,6 +2666,7 @@ class NumberFieldPolynomial:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
+        precision: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2670,7 +2674,7 @@ class NumberFieldPolynomial:
         Examples
         --------
         >>> p = FiniteFieldNumberFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-        >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+        >>> print(p.format(symmetric_representation_for_finite_field=True))
 
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
         """
@@ -2859,7 +2863,7 @@ class FiniteFieldPolynomial:
     def to_latex(self) -> str:
         """Convert the polynomial into a LaTeX string."""
 
-    def pretty_str(
+    def format(
         self,
         terms_on_new_line: bool = False,
         color_top_level_sum: bool = True,
@@ -2873,6 +2877,7 @@ class FiniteFieldPolynomial:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
+        precision: Optional[int] = None,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2880,7 +2885,7 @@ class FiniteFieldPolynomial:
         Examples
         --------
         >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-        >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+        >>> print(p.format(symmetric_representation_for_finite_field=True))
 
         Yields `z³⁴+x^(x+2)+y⁴+f(x,x²)+128_378_127_123 z^(2/3) w² x⁻¹ y⁻¹+3/5`.
         """

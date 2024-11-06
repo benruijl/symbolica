@@ -11,7 +11,7 @@ use wide::{f64x2, f64x4};
 
 use crate::domains::integer::Integer;
 
-use super::{rational::Rational, EuclideanDomain, Field, InternalOrdering, Ring};
+use super::{rational::Rational, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
 use rug::{
     ops::{CompleteRound, Pow},
     Assign, Float as MultiPrecisionFloat,
@@ -150,19 +150,99 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
     }
 
     #[inline(always)]
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
-        _opts: &crate::printer::PrintOptions,
-        _in_product: bool, // can be used to add parentheses
-        f: &mut Formatter<'_>,
-    ) -> Result<(), fmt::Error> {
-        Display::fmt(element, f)
+        opts: &crate::printer::PrintOptions,
+        state: crate::printer::PrintState,
+        f: &mut W,
+    ) -> Result<bool, fmt::Error> {
+        if let Some(p) = opts.precision {
+            if state.in_sum {
+                f.write_fmt(format_args!("{:+.*}", p, element))?
+            } else {
+                f.write_fmt(format_args!("{:.*}", p, element))?
+            }
+        } else if state.in_sum {
+            f.write_fmt(format_args!("{:+}", element))?
+        } else {
+            f.write_fmt(format_args!("{}", element))?
+        }
+
+        Ok(false)
     }
 
     #[inline(always)]
     fn printer<'a>(&'a self, element: &'a Self::Element) -> super::RingPrinter<'a, Self> {
         super::RingPrinter::new(self, element)
+    }
+}
+
+impl SelfRing for F64 {
+    #[inline(always)]
+    fn is_zero(&self) -> bool {
+        SingleFloat::is_zero(self)
+    }
+
+    #[inline(always)]
+    fn is_one(&self) -> bool {
+        SingleFloat::is_one(self)
+    }
+
+    #[inline(always)]
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &crate::printer::PrintOptions,
+        state: crate::printer::PrintState,
+        f: &mut W,
+    ) -> Result<bool, fmt::Error> {
+        if let Some(p) = opts.precision {
+            if state.in_sum {
+                f.write_fmt(format_args!("{:+.*}", p, self))?
+            } else {
+                f.write_fmt(format_args!("{:.*}", p, self))?
+            }
+        } else if state.in_sum {
+            f.write_fmt(format_args!("{:+}", self))?
+        } else {
+            f.write_fmt(format_args!("{}", self))?
+        }
+
+        Ok(false)
+    }
+}
+
+impl SelfRing for Float {
+    #[inline(always)]
+    fn is_zero(&self) -> bool {
+        SingleFloat::is_zero(self)
+    }
+
+    #[inline(always)]
+    fn is_one(&self) -> bool {
+        SingleFloat::is_one(self)
+    }
+
+    #[inline(always)]
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &crate::printer::PrintOptions,
+        state: crate::printer::PrintState,
+        f: &mut W,
+    ) -> Result<bool, fmt::Error> {
+        if let Some(p) = opts.precision {
+            if state.in_sum {
+                f.write_fmt(format_args!("{:+.*}", p, self))?
+            } else {
+                f.write_fmt(format_args!("{:.*}", p, self))?
+            }
+        } else if state.in_sum {
+            f.write_fmt(format_args!("{:+}", self))?
+        } else {
+            f.write_fmt(format_args!("{}", self))?
+        }
+
+        Ok(false)
     }
 }
 
@@ -1050,11 +1130,19 @@ impl Display for Float {
         // the original float value may not be reconstructible
         // from this output
         if f.precision().is_none() {
-            f.write_fmt(format_args!(
-                "{0:.1$}",
-                self.0,
-                (self.0.prec() as f64 * LOG10_2).floor() as usize
-            ))
+            if f.sign_plus() {
+                f.write_fmt(format_args!(
+                    "{0:+.1$}",
+                    self.0,
+                    (self.0.prec() as f64 * LOG10_2).floor() as usize
+                ))
+            } else {
+                f.write_fmt(format_args!(
+                    "{0:.1$}",
+                    self.0,
+                    (self.0.prec() as f64 * LOG10_2).floor() as usize
+                ))
+            }
         } else {
             Display::fmt(&self.0, f)
         }

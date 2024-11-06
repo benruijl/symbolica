@@ -1,4 +1,4 @@
-use std::fmt::{self, Display, Write};
+use std::fmt::{self, Error, Write};
 
 use colored::Colorize;
 
@@ -8,13 +8,8 @@ use crate::{
         VarView,
     },
     coefficient::CoefficientView,
-    domains::{
-        factorized_rational_polynomial::FactorizedRationalPolynomial,
-        finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
-    },
-    poly::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder},
+    domains::{finite_field::FiniteFieldCore, SelfRing},
     state::State,
-    tensors::matrix::{Matrix, Vector},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -31,6 +26,7 @@ pub struct PrintOptions {
     pub square_brackets_for_function: bool,
     pub num_exp_as_superscript: bool,
     pub latex: bool,
+    pub precision: Option<usize>,
 }
 
 impl PrintOptions {
@@ -49,6 +45,7 @@ impl PrintOptions {
             square_brackets_for_function: true,
             num_exp_as_superscript: false,
             latex: false,
+            precision: None,
         }
     }
 
@@ -67,6 +64,7 @@ impl PrintOptions {
             square_brackets_for_function: false,
             num_exp_as_superscript: false,
             latex: true,
+            precision: None,
         }
     }
 
@@ -85,6 +83,7 @@ impl PrintOptions {
             square_brackets_for_function: false,
             num_exp_as_superscript: false,
             latex: false,
+            precision: None,
         }
     }
 
@@ -94,6 +93,18 @@ impl PrintOptions {
             double_star_for_exponentiation: true,
             ..Self::file()
         }
+    }
+
+    pub fn from_fmt(f: &std::fmt::Formatter) -> PrintOptions {
+        PrintOptions {
+            precision: f.precision(),
+            ..Default::default()
+        }
+    }
+
+    pub fn update_with_fmt(mut self, f: &std::fmt::Formatter) -> Self {
+        self.precision = f.precision();
+        self
     }
 }
 
@@ -112,16 +123,62 @@ impl Default for PrintOptions {
             square_brackets_for_function: false,
             num_exp_as_superscript: false,
             latex: false,
+            precision: None,
         }
     }
 }
 
 #[derive(Debug, Copy, Clone)]
 pub struct PrintState {
-    pub level: usize,
+    pub in_sum: bool,
+    pub in_product: bool,
+    pub suppress_one: bool,
+    pub in_exp: bool,
     pub top_level_add_child: bool,
-    pub explicit_sign: bool,
     pub superscript: bool,
+    pub level: u16,
+}
+
+impl Default for PrintState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PrintState {
+    pub const fn new() -> PrintState {
+        Self {
+            in_sum: false,
+            in_product: false,
+            in_exp: false,
+            suppress_one: false,
+            top_level_add_child: true,
+            superscript: false,
+            level: 0,
+        }
+    }
+
+    pub fn from_fmt(f: &std::fmt::Formatter) -> PrintState {
+        PrintState {
+            in_sum: f.sign_plus(),
+            ..Default::default()
+        }
+    }
+
+    pub fn update_with_fmt(mut self, f: &std::fmt::Formatter) -> Self {
+        self.in_sum = f.sign_plus();
+        self
+    }
+
+    pub fn step(self, in_sum: bool, in_product: bool, in_exp: bool) -> Self {
+        Self {
+            in_sum,
+            in_product,
+            in_exp,
+            level: self.level + 1,
+            ..self
+        }
+    }
 }
 
 macro_rules! define_formatters {
@@ -133,12 +190,12 @@ macro_rules! define_formatters {
                 f: &mut fmt::Formatter,
             ) -> fmt::Result;
 
-            fn fmt_output(
+            fn fmt_output<W: std::fmt::Write>(
                 &self,
-                f: &mut fmt::Formatter,
+                f: &mut W,
                 print_opts: &PrintOptions,
                 print_state: PrintState,
-            ) -> fmt::Result;
+            ) -> Result<bool, Error>;
         })+
     };
 }
@@ -174,12 +231,17 @@ impl<'a> AtomPrinter<'a> {
 impl<'a> fmt::Display for AtomPrinter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let print_state = PrintState {
+            in_sum: false,
+            in_product: false,
+            in_exp: false,
+            suppress_one: false,
             level: 0,
             top_level_add_child: false,
-            explicit_sign: false,
             superscript: false,
         };
-        self.atom.fmt_output(f, &self.print_opts, print_state)
+        self.atom
+            .format(f, &self.print_opts, print_state)
+            .map(|_| ())
     }
 }
 
@@ -215,12 +277,12 @@ impl<'a> AtomView<'a> {
         }
     }
 
-    fn fmt_output(
+    pub fn format<W: std::fmt::Write>(
         &self,
-        fmt: &mut fmt::Formatter,
+        fmt: &mut W,
         opts: &PrintOptions,
         print_state: PrintState,
-    ) -> fmt::Result {
+    ) -> Result<bool, Error> {
         match self {
             AtomView::Num(n) => n.fmt_output(fmt, opts, print_state),
             AtomView::Var(v) => v.fmt_output(fmt, opts, print_state),
@@ -378,13 +440,13 @@ impl<'a> fmt::Debug for AtomView<'a> {
 }
 
 impl<'a> FormattedPrintVar for VarView<'a> {
-    fn fmt_output(
+    fn fmt_output<W: std::fmt::Write>(
         &self,
-        f: &mut fmt::Formatter,
+        f: &mut W,
         opts: &PrintOptions,
         print_state: PrintState,
-    ) -> fmt::Result {
-        if print_state.explicit_sign {
+    ) -> Result<bool, Error> {
+        if print_state.in_sum {
             if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
@@ -408,7 +470,9 @@ impl<'a> FormattedPrintVar for VarView<'a> {
             f.write_fmt(format_args!("{}", name.purple()))
         } else {
             f.write_str(name)
-        }
+        }?;
+
+        Ok(false)
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -421,18 +485,18 @@ impl<'a> FormattedPrintNum for NumView<'a> {
         <Self as std::fmt::Debug>::fmt(self, f)
     }
 
-    fn fmt_output(
+    fn fmt_output<W: std::fmt::Write>(
         &self,
-        f: &mut fmt::Formatter,
+        f: &mut W,
         opts: &PrintOptions,
-        print_state: PrintState,
-    ) -> fmt::Result {
+        mut print_state: PrintState,
+    ) -> Result<bool, Error> {
         /// Input must be digits only.
-        fn format_num(
+        fn format_num<W: std::fmt::Write>(
             mut s: String,
             opts: &PrintOptions,
             print_state: &PrintState,
-            f: &mut fmt::Formatter,
+            f: &mut W,
         ) -> fmt::Result {
             if print_state.superscript {
                 let map = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
@@ -477,16 +541,24 @@ impl<'a> FormattedPrintNum for NumView<'a> {
             } else {
                 f.write_char('-')?;
             }
-        } else if print_state.explicit_sign {
+
+            print_state.in_sum = false;
+        } else if print_state.in_sum {
             if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
             }
+
+            print_state.in_sum = false;
         }
 
         match d {
             CoefficientView::Natural(num, den) => {
+                if den == 1 && print_state.suppress_one && (num == 1 || num == -1) {
+                    return Ok(true);
+                }
+
                 if !opts.latex
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
@@ -495,20 +567,21 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                         f.write_char('/')?;
                         format_num(den.to_string(), opts, &print_state, f)?;
                     }
-                    Ok(())
                 } else if den != 1 {
                     if opts.latex {
-                        f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", num.unsigned_abs(), den))
+                        f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", num.unsigned_abs(), den))?;
                     } else {
-                        f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))
+                        f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))?;
                     }
                 } else {
-                    f.write_fmt(format_args!("{}", num.unsigned_abs()))
+                    f.write_fmt(format_args!("{}", num.unsigned_abs()))?;
                 }
+
+                Ok(false)
             }
             CoefficientView::Float(fl) => {
-                let float = fl.to_float();
-                f.write_fmt(format_args!("{}", float))
+                fl.to_float().format(opts, print_state, f)?;
+                Ok(false)
             }
             CoefficientView::Large(r) => {
                 let rat = r.to_rat().abs();
@@ -520,24 +593,24 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                         f.write_char('/')?;
                         format_num(rat.denominator().to_string(), opts, &print_state, f)?;
                     }
-                    Ok(())
                 } else if !rat.is_integer() {
                     if opts.latex {
                         f.write_fmt(format_args!(
                             "\\frac{{{}}}{{{}}}",
                             rat.numerator(),
                             rat.denominator(),
-                        ))
+                        ))?;
                     } else {
                         f.write_fmt(format_args!(
                             "{}/{}",
                             rat.numerator_ref(),
                             rat.denominator_ref()
-                        ))
+                        ))?;
                     }
                 } else {
-                    f.write_fmt(format_args!("{}", rat.numerator_ref()))
+                    f.write_fmt(format_args!("{}", rat.numerator_ref()))?;
                 }
+                Ok(false)
             }
             CoefficientView::FiniteField(num, fi) => {
                 let ff = State::get_finite_field(fi);
@@ -545,16 +618,13 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                     "[{}%{}]",
                     ff.from_element(&num),
                     ff.get_prime()
-                ))
+                ))?;
+                Ok(false)
             }
-            CoefficientView::RationalPolynomial(p) => f.write_fmt(format_args!(
-                "[{}]",
-                RationalPolynomialPrinter {
-                    poly: &p.deserialize(),
-                    opts: *opts,
-                    add_parentheses: false,
-                }
-            )),
+            CoefficientView::RationalPolynomial(p) => {
+                f.write_char('[')?;
+                p.deserialize().format(opts, print_state, f)
+            }
         }
     }
 }
@@ -564,12 +634,23 @@ impl<'a> FormattedPrintMul for MulView<'a> {
         <Self as std::fmt::Debug>::fmt(self, f)
     }
 
-    fn fmt_output(
+    fn fmt_output<W: std::fmt::Write>(
         &self,
-        f: &mut fmt::Formatter,
+        f: &mut W,
         opts: &PrintOptions,
         mut print_state: PrintState,
-    ) -> fmt::Result {
+    ) -> Result<bool, Error> {
+        let add_paren = print_state.in_exp;
+        if add_paren {
+            if print_state.in_sum {
+                print_state.in_sum = false;
+                f.write_char('+')?;
+            }
+
+            f.write_char('(')?;
+            print_state.in_exp = false;
+        }
+
         // write the coefficient first
         let mut first = true;
         let mut skip_num = false;
@@ -589,7 +670,7 @@ impl<'a> FormattedPrintMul for MulView<'a> {
             }
 
             skip_num = true;
-        } else if print_state.explicit_sign {
+        } else if print_state.in_sum {
             if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
@@ -599,7 +680,7 @@ impl<'a> FormattedPrintMul for MulView<'a> {
 
         print_state.top_level_add_child = false;
         print_state.level += 1;
-        print_state.explicit_sign = false;
+        print_state.in_sum = false;
         for x in self.iter().take(if skip_num {
             self.get_nargs() - 1
         } else {
@@ -620,28 +701,32 @@ impl<'a> FormattedPrintMul for MulView<'a> {
                 } else {
                     f.write_char('(')?;
                 }
-                x.fmt_output(f, opts, print_state)?;
+                x.format(f, opts, print_state)?;
                 if opts.latex {
                     f.write_str("\\right)")?;
                 } else {
                     f.write_char(')')?;
                 }
             } else {
-                x.fmt_output(f, opts, print_state)?;
+                x.format(f, opts, print_state)?;
             }
         }
-        Ok(())
+
+        if add_paren {
+            f.write_char(')')?;
+        }
+        Ok(false)
     }
 }
 
 impl<'a> FormattedPrintFn for FunView<'a> {
-    fn fmt_output(
+    fn fmt_output<W: std::fmt::Write>(
         &self,
-        f: &mut fmt::Formatter,
+        f: &mut W,
         opts: &PrintOptions,
         mut print_state: PrintState,
-    ) -> fmt::Result {
-        if print_state.explicit_sign {
+    ) -> Result<bool, Error> {
+        if print_state.in_sum {
             if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
@@ -676,7 +761,8 @@ impl<'a> FormattedPrintFn for FunView<'a> {
 
         print_state.top_level_add_child = false;
         print_state.level += 1;
-        print_state.explicit_sign = false;
+        print_state.in_sum = false;
+        print_state.suppress_one = false;
         let mut first = true;
         for x in self.iter() {
             if !first {
@@ -684,16 +770,18 @@ impl<'a> FormattedPrintFn for FunView<'a> {
             }
             first = false;
 
-            x.fmt_output(f, opts, print_state)?;
+            x.format(f, opts, print_state)?;
         }
 
         if opts.latex {
-            f.write_str("\\right)")
+            f.write_str("\\right)")?;
         } else if opts.square_brackets_for_function {
-            f.write_char(']')
+            f.write_char(']')?;
         } else {
-            f.write_char(')')
+            f.write_char(')')?;
         }
+
+        Ok(false)
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -702,13 +790,13 @@ impl<'a> FormattedPrintFn for FunView<'a> {
 }
 
 impl<'a> FormattedPrintPow for PowView<'a> {
-    fn fmt_output(
+    fn fmt_output<W: std::fmt::Write>(
         &self,
-        f: &mut fmt::Formatter,
+        f: &mut W,
         opts: &PrintOptions,
         mut print_state: PrintState,
-    ) -> fmt::Result {
-        if print_state.explicit_sign {
+    ) -> Result<bool, Error> {
+        if print_state.in_sum {
             if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
@@ -721,7 +809,8 @@ impl<'a> FormattedPrintPow for PowView<'a> {
 
         print_state.top_level_add_child = false;
         print_state.level += 1;
-        print_state.explicit_sign = false;
+        print_state.in_sum = false;
+        print_state.suppress_one = false;
 
         let mut superscript_exponent = false;
         if opts.latex {
@@ -729,8 +818,9 @@ impl<'a> FormattedPrintPow for PowView<'a> {
                 if n.get_coeff_view() == CoefficientView::Natural(-1, 1) {
                     // TODO: construct the numerator
                     f.write_str("\\frac{1}{")?;
-                    b.fmt_output(f, opts, print_state)?;
-                    return f.write_char('}');
+                    b.format(f, opts, print_state)?;
+                    f.write_char('}')?;
+                    return Ok(false);
                 }
             }
         } else if opts.num_exp_as_superscript {
@@ -762,14 +852,14 @@ impl<'a> FormattedPrintPow for PowView<'a> {
             } else {
                 f.write_char('(')?;
             }
-            b.fmt_output(f, opts, print_state)?;
+            b.format(f, opts, print_state)?;
             if opts.latex {
                 f.write_str("\\right)")?;
             } else {
                 f.write_char(')')?;
             }
         } else {
-            b.fmt_output(f, opts, print_state)?;
+            b.format(f, opts, print_state)?;
         }
 
         if !superscript_exponent {
@@ -782,8 +872,8 @@ impl<'a> FormattedPrintPow for PowView<'a> {
 
         if opts.latex {
             f.write_char('{')?;
-            e.fmt_output(f, opts, print_state)?;
-            f.write_char('}')
+            e.format(f, opts, print_state)?;
+            f.write_char('}')?;
         } else {
             let exp_needs_parentheses = matches!(e, AtomView::Add(_) | AtomView::Mul(_))
                 || if let AtomView::Num(n) = e {
@@ -794,13 +884,15 @@ impl<'a> FormattedPrintPow for PowView<'a> {
 
             if exp_needs_parentheses {
                 f.write_char('(')?;
-                e.fmt_output(f, opts, print_state)?;
-                f.write_char(')')
+                e.format(f, opts, print_state)?;
+                f.write_char(')')?;
             } else {
                 print_state.superscript = superscript_exponent;
-                e.fmt_output(f, opts, print_state)
+                e.format(f, opts, print_state)?;
             }
         }
+
+        Ok(false)
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -809,746 +901,52 @@ impl<'a> FormattedPrintPow for PowView<'a> {
 }
 
 impl<'a> FormattedPrintAdd for AddView<'a> {
-    fn fmt_output(
+    fn fmt_output<W: std::fmt::Write>(
         &self,
-        f: &mut fmt::Formatter,
+        f: &mut W,
         opts: &PrintOptions,
         mut print_state: PrintState,
-    ) -> fmt::Result {
+    ) -> Result<bool, Error> {
         let mut first = true;
         print_state.top_level_add_child = print_state.level == 0;
         print_state.level += 1;
+        print_state.suppress_one = false;
+
+        let add_paren = print_state.in_product || print_state.in_exp;
+        if add_paren {
+            if print_state.in_sum {
+                if print_state.top_level_add_child && opts.color_top_level_sum {
+                    f.write_fmt(format_args!("{}", "+".yellow()))?;
+                } else {
+                    f.write_char('+')?;
+                }
+            }
+
+            print_state.in_sum = false;
+            print_state.in_product = false;
+            print_state.in_exp = false;
+            f.write_char('(')?;
+        }
 
         for x in self.iter() {
             if !first && print_state.top_level_add_child && opts.terms_on_new_line {
                 f.write_char('\n')?;
                 f.write_char('\t')?;
             }
-            print_state.explicit_sign = !first;
             first = false;
 
-            x.fmt_output(f, opts, print_state)?;
+            x.format(f, opts, print_state)?;
+            print_state.in_sum = true;
         }
-        Ok(())
+
+        if add_paren {
+            f.write_char(')')?;
+        }
+        Ok(false)
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         <Self as std::fmt::Debug>::fmt(self, f)
-    }
-}
-
-pub struct FactorizedRationalPolynomialPrinter<'a, R: Ring, E: Exponent> {
-    pub poly: &'a FactorizedRationalPolynomial<R, E>,
-    pub opts: PrintOptions,
-    pub add_parentheses: bool,
-}
-
-impl<'a, R: Ring, E: Exponent> FactorizedRationalPolynomialPrinter<'a, R, E> {
-    pub fn new(
-        poly: &'a FactorizedRationalPolynomial<R, E>,
-    ) -> FactorizedRationalPolynomialPrinter<'a, R, E> {
-        FactorizedRationalPolynomialPrinter {
-            poly,
-            opts: PrintOptions::default(),
-            add_parentheses: false,
-        }
-    }
-
-    pub fn new_with_options(
-        poly: &'a FactorizedRationalPolynomial<R, E>,
-        opts: PrintOptions,
-    ) -> FactorizedRationalPolynomialPrinter<'a, R, E> {
-        FactorizedRationalPolynomialPrinter {
-            poly,
-            opts,
-            add_parentheses: false,
-        }
-    }
-}
-
-impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'a, R, E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.opts.explicit_rational_polynomial {
-            if !R::is_zero(&self.poly.numer_coeff)
-                && !self.poly.numerator.ring.is_one(&self.poly.numer_coeff)
-            {
-                f.write_fmt(format_args!(
-                    "[{}]*",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.numer_coeff,
-                        opts: self.opts,
-                        in_product: false
-                    }
-                ))?;
-            }
-
-            if self.poly.denominators.is_empty()
-                && self.poly.numerator.ring.is_one(&self.poly.denom_coeff)
-            {
-                if self.poly.numerator.is_zero() {
-                    f.write_char('0')?;
-                } else {
-                    f.write_fmt(format_args!(
-                        "[{}]",
-                        PolynomialPrinter {
-                            poly: &self.poly.numerator,
-                            opts: self.opts,
-                        }
-                    ))?;
-                }
-            } else {
-                f.write_fmt(format_args!(
-                    "[{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-
-                        opts: self.opts,
-                    },
-                ))?;
-
-                if !self.poly.numerator.ring.is_one(&self.poly.denom_coeff) {
-                    f.write_fmt(format_args!(
-                        ",{},1",
-                        RingPrinter {
-                            ring: &self.poly.numerator.ring,
-                            element: &self.poly.denom_coeff,
-                            opts: self.opts,
-                            in_product: false
-                        },
-                    ))?;
-                }
-
-                for (d, p) in &self.poly.denominators {
-                    f.write_fmt(format_args!(
-                        ",{}",
-                        PolynomialPrinter {
-                            poly: d,
-
-                            opts: self.opts,
-                        }
-                    ))?;
-                    f.write_fmt(format_args!(",{}", p))?;
-                }
-
-                f.write_char(']')?;
-            }
-
-            return Ok(());
-        }
-
-        if R::is_zero(&self.poly.numer_coeff) {
-            return f.write_char('0');
-        }
-
-        if self.poly.denominators.is_empty()
-            && self.poly.numerator.ring.is_one(&self.poly.denom_coeff)
-        {
-            if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.numer_coeff,
-                        opts: self.opts,
-                        in_product: false
-                    }
-                ))?;
-            }
-
-            if (self.poly.numerator.ring.is_one(&self.poly.numer_coeff) && !self.add_parentheses)
-                || self.poly.numerator.nterms() < 2
-            {
-                if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                    if self.poly.numerator.is_one() {
-                        return Ok(());
-                    }
-
-                    f.write_char('*')?;
-                }
-
-                f.write_fmt(format_args!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-
-                        opts: self.opts,
-                    }
-                ))
-            } else {
-                if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                    if self.poly.numerator.is_one() {
-                        return Ok(());
-                    }
-
-                    f.write_char('*')?;
-                }
-
-                f.write_fmt(format_args!(
-                    "({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-
-                        opts: self.opts,
-                    }
-                ))
-            }
-        } else {
-            if self.opts.latex {
-                if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                    f.write_fmt(format_args!(
-                        "{} ",
-                        RingPrinter {
-                            ring: &self.poly.numerator.ring,
-                            element: &self.poly.numer_coeff,
-                            opts: self.opts,
-                            in_product: false
-                        }
-                    ))?;
-                }
-
-                f.write_fmt(format_args!(
-                    "\\frac{{{}}}{{",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-
-                        opts: self.opts,
-                    },
-                ))?;
-
-                if !self.poly.numerator.ring.is_one(&self.poly.denom_coeff) {
-                    f.write_fmt(format_args!(
-                        "{}",
-                        RingPrinter {
-                            ring: &self.poly.numerator.ring,
-                            element: &self.poly.denom_coeff,
-                            opts: self.opts,
-                            in_product: false
-                        }
-                    ))?;
-                }
-
-                for (d, p) in &self.poly.denominators {
-                    if *p == 1 {
-                        f.write_fmt(format_args!(
-                            "({})",
-                            PolynomialPrinter {
-                                poly: d,
-                                opts: self.opts,
-                            }
-                        ))?;
-                    } else {
-                        f.write_fmt(format_args!(
-                            "({})^{}",
-                            PolynomialPrinter {
-                                poly: d,
-                                opts: self.opts,
-                            },
-                            p
-                        ))?;
-                    }
-                }
-
-                return f.write_str("}}");
-            }
-
-            if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                f.write_fmt(format_args!(
-                    "{}*",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.numer_coeff,
-                        opts: self.opts,
-                        in_product: false
-                    }
-                ))?;
-            }
-
-            if self.poly.numerator.nterms() < 2 {
-                f.write_fmt(format_args!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))?;
-            } else {
-                f.write_fmt(format_args!(
-                    "({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))?;
-            }
-
-            f.write_char('/')?;
-
-            if self.poly.denominators.is_empty() {
-                return f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.denom_coeff,
-                        opts: self.opts,
-                        in_product: true
-                    }
-                ));
-            }
-
-            if self.poly.numerator.ring.is_one(&self.poly.denom_coeff)
-                && self.poly.denominators.len() == 1
-                && self.poly.denominators[0].0.nterms() == 1
-                && self.poly.denominators[0].1 == 1
-            {
-                let (d, _) = &self.poly.denominators[0];
-                let var_count = d.exponents.iter().filter(|x| !x.is_zero()).count();
-
-                if var_count == 0 || d.ring.is_one(&d.coefficients[0]) && var_count == 1 {
-                    return f.write_fmt(format_args!(
-                        "{}",
-                        PolynomialPrinter {
-                            poly: d,
-                            opts: self.opts,
-                        }
-                    ));
-                }
-            }
-
-            f.write_char('(')?; // TODO: add special cases for 1 argument
-
-            if !self.poly.numerator.ring.is_one(&self.poly.denom_coeff) {
-                f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.denom_coeff,
-                        opts: self.opts,
-                        in_product: true
-                    }
-                ))?;
-            }
-
-            for (d, p) in &self.poly.denominators {
-                if *p == 1 {
-                    f.write_fmt(format_args!(
-                        "({})",
-                        PolynomialPrinter {
-                            poly: d,
-                            opts: self.opts,
-                        }
-                    ))?;
-                } else {
-                    f.write_fmt(format_args!(
-                        "({}){}{}",
-                        PolynomialPrinter {
-                            poly: d,
-                            opts: self.opts,
-                        },
-                        if self.opts.double_star_for_exponentiation {
-                            "**"
-                        } else {
-                            "^"
-                        },
-                        p
-                    ))?;
-                }
-            }
-
-            f.write_char(')')
-        }
-    }
-}
-
-pub struct RationalPolynomialPrinter<'a, R: Ring, E: Exponent> {
-    pub poly: &'a RationalPolynomial<R, E>,
-    pub opts: PrintOptions,
-    pub add_parentheses: bool,
-}
-
-impl<'a, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, R, E> {
-    pub fn new(poly: &'a RationalPolynomial<R, E>) -> RationalPolynomialPrinter<'a, R, E> {
-        RationalPolynomialPrinter {
-            poly,
-            opts: PrintOptions::default(),
-            add_parentheses: false,
-        }
-    }
-
-    pub fn new_with_options(
-        poly: &'a RationalPolynomial<R, E>,
-        opts: PrintOptions,
-    ) -> RationalPolynomialPrinter<'a, R, E> {
-        RationalPolynomialPrinter {
-            poly,
-            opts,
-            add_parentheses: false,
-        }
-    }
-}
-
-impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.opts.explicit_rational_polynomial {
-            if self.poly.denominator.is_one() {
-                if self.poly.numerator.is_zero() {
-                    f.write_char('0')?;
-                } else {
-                    f.write_fmt(format_args!(
-                        "[{}]",
-                        PolynomialPrinter {
-                            poly: &self.poly.numerator,
-                            opts: self.opts,
-                        }
-                    ))?;
-                }
-            } else {
-                f.write_fmt(format_args!(
-                    "[{},{}]",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    },
-                    PolynomialPrinter {
-                        poly: &self.poly.denominator,
-                        opts: self.opts,
-                    }
-                ))?;
-            }
-
-            return Ok(());
-        }
-
-        if self.poly.denominator.is_one() {
-            if !self.add_parentheses || self.poly.numerator.nterms() < 2 {
-                f.write_fmt(format_args!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))
-            } else {
-                f.write_fmt(format_args!(
-                    "({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))
-            }
-        } else {
-            if self.opts.latex {
-                return f.write_fmt(format_args!(
-                    "\\frac{{{}}}{{{}}}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    },
-                    PolynomialPrinter {
-                        poly: &self.poly.denominator,
-                        opts: self.opts,
-                    }
-                ));
-            }
-
-            if self.poly.numerator.nterms() < 2 {
-                f.write_fmt(format_args!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))?;
-            } else {
-                f.write_fmt(format_args!(
-                    "({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))?;
-            }
-
-            if self.poly.denominator.nterms() == 1 {
-                let var_count = self
-                    .poly
-                    .denominator
-                    .exponents
-                    .iter()
-                    .filter(|x| !x.is_zero())
-                    .count();
-
-                if var_count == 0
-                    || self
-                        .poly
-                        .denominator
-                        .ring
-                        .is_one(&self.poly.denominator.coefficients[0])
-                        && var_count == 1
-                {
-                    return f.write_fmt(format_args!(
-                        "/{}",
-                        PolynomialPrinter {
-                            poly: &self.poly.denominator,
-                            opts: self.opts,
-                        }
-                    ));
-                }
-            }
-
-            f.write_fmt(format_args!(
-                "/({})",
-                PolynomialPrinter {
-                    poly: &self.poly.denominator,
-
-                    opts: self.opts,
-                }
-            ))
-        }
-    }
-}
-pub struct PolynomialPrinter<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> {
-    pub poly: &'a MultivariatePolynomial<F, E, O>,
-    pub opts: PrintOptions,
-}
-
-impl<'a, R: Ring + Display, E: Exponent, O: MonomialOrder> PolynomialPrinter<'a, R, E, O> {
-    pub fn new(poly: &'a MultivariatePolynomial<R, E, O>) -> PolynomialPrinter<'a, R, E, O> {
-        PolynomialPrinter {
-            poly,
-            opts: PrintOptions::default(),
-        }
-    }
-
-    pub fn new_with_options(
-        poly: &'a MultivariatePolynomial<R, E, O>,
-        opts: PrintOptions,
-    ) -> PolynomialPrinter<'a, R, E, O> {
-        PolynomialPrinter { poly, opts }
-    }
-}
-
-impl<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
-    for PolynomialPrinter<'a, F, E, O>
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if f.sign_plus() {
-            f.write_char('+')?;
-        }
-
-        let var_map: Vec<String> = self
-            .poly
-            .variables
-            .as_ref()
-            .iter()
-            .map(|v| v.to_string())
-            .collect();
-
-        let mut is_first_term = true;
-        for monomial in self.poly {
-            let mut is_first_factor = true;
-            if self.poly.ring.is_one(monomial.coefficient) {
-                if !is_first_term {
-                    write!(f, "+")?;
-                }
-            } else if monomial
-                .coefficient
-                .eq(&self.poly.ring.neg(&self.poly.ring.one()))
-            {
-                write!(f, "-")?;
-            } else {
-                if is_first_term {
-                    self.poly
-                        .ring
-                        .fmt_display(monomial.coefficient, &self.opts, true, f)?;
-                } else {
-                    write!(
-                        f,
-                        "{:+}",
-                        RingPrinter {
-                            ring: &self.poly.ring,
-                            element: monomial.coefficient,
-                            opts: self.opts,
-                            in_product: true
-                        }
-                    )?;
-                }
-                is_first_factor = false;
-            }
-            is_first_term = false;
-            for (var_id, e) in var_map.iter().zip(monomial.exponents) {
-                if e.is_zero() {
-                    continue;
-                }
-                if is_first_factor {
-                    is_first_factor = false;
-                } else if !self.opts.latex {
-                    write!(f, "*")?;
-                }
-
-                f.write_str(var_id)?;
-
-                if e.to_u32() != 1 {
-                    if self.opts.latex {
-                        write!(f, "^{{{}}}", e)?;
-                    } else if self.opts.double_star_for_exponentiation {
-                        write!(f, "**{}", e)?;
-                    } else {
-                        write!(f, "^{}", e)?;
-                    }
-                }
-            }
-            if is_first_factor {
-                write!(f, "1")?;
-            }
-        }
-        if is_first_term {
-            write!(f, "0")?;
-        }
-
-        if self.opts.print_finite_field {
-            Display::fmt(&self.poly.ring, f)?;
-        }
-
-        Ok(())
-    }
-}
-
-pub struct MatrixPrinter<'a, F: Ring + Display> {
-    pub matrix: &'a Matrix<F>,
-    pub opts: PrintOptions,
-}
-
-impl<'a, F: Ring + Display> MatrixPrinter<'a, F> {
-    pub fn new(matrix: &'a Matrix<F>) -> MatrixPrinter<'a, F> {
-        MatrixPrinter {
-            matrix,
-
-            opts: PrintOptions::default(),
-        }
-    }
-
-    pub fn new_with_options(matrix: &'a Matrix<F>, opts: PrintOptions) -> MatrixPrinter<'a, F> {
-        MatrixPrinter { matrix, opts }
-    }
-}
-
-impl<'a, F: Ring + Display> Display for MatrixPrinter<'a, F> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.opts.latex {
-            f.write_str("\\begin{pmatrix}")?;
-
-            for (ri, r) in self.matrix.row_iter().enumerate() {
-                for (ci, c) in r.iter().enumerate() {
-                    f.write_fmt(format_args!(
-                        "{}",
-                        RingPrinter {
-                            ring: &self.matrix.field,
-                            element: c,
-                            opts: self.opts,
-                            in_product: false,
-                        },
-                    ))?;
-
-                    if ci + 1 < self.matrix.ncols as usize {
-                        f.write_str(" & ")?;
-                    }
-                }
-                if ri + 1 < self.matrix.nrows as usize {
-                    f.write_str(r" \\ ")?;
-                }
-            }
-
-            f.write_str("\\end{pmatrix}")
-        } else {
-            f.write_char('{')?;
-            for (ri, r) in self.matrix.row_iter().enumerate() {
-                f.write_char('{')?;
-                for (ci, c) in r.iter().enumerate() {
-                    f.write_fmt(format_args!(
-                        "{}",
-                        RingPrinter {
-                            ring: &self.matrix.field,
-                            element: c,
-                            opts: self.opts,
-                            in_product: false,
-                        },
-                    ))?;
-
-                    if ci + 1 < self.matrix.ncols as usize {
-                        f.write_char(',')?;
-                    }
-                }
-                f.write_char('}')?;
-                if ri + 1 < self.matrix.nrows as usize {
-                    f.write_char(',')?;
-                }
-            }
-            f.write_char('}')
-        }
-    }
-}
-
-pub struct VectorPrinter<'a, F: Ring + Display> {
-    pub vector: &'a Vector<F>,
-    pub opts: PrintOptions,
-}
-
-impl<'a, F: Ring + Display> VectorPrinter<'a, F> {
-    pub fn new(vector: &'a Vector<F>) -> VectorPrinter<'a, F> {
-        VectorPrinter {
-            vector,
-            opts: PrintOptions::default(),
-        }
-    }
-
-    pub fn new_with_options(vector: &'a Vector<F>, opts: PrintOptions) -> VectorPrinter<'a, F> {
-        VectorPrinter { vector, opts }
-    }
-}
-
-impl<'a, F: Ring + Display> Display for VectorPrinter<'a, F> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.opts.latex {
-            f.write_str("\\begin{pvector}")?;
-
-            for (ri, r) in self.vector.data.iter().enumerate() {
-                f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.vector.field,
-                        element: r,
-                        opts: self.opts,
-                        in_product: false,
-                    },
-                ))?;
-
-                if ri + 1 < self.vector.data.len() {
-                    f.write_str(" & ")?;
-                }
-            }
-
-            f.write_str("\\end{pvector}")
-        } else {
-            f.write_char('{')?;
-            for (ri, r) in self.vector.data.iter().enumerate() {
-                f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.vector.field,
-                        element: r,
-                        opts: self.opts,
-                        in_product: false,
-                    },
-                ))?;
-
-                if ri + 1 < self.vector.data.len() {
-                    f.write_char(',')?;
-                }
-            }
-            f.write_char('}')
-        }
     }
 }
 
@@ -1558,8 +956,8 @@ mod test {
 
     use crate::{
         atom::Atom,
-        domains::{finite_field::Zp, integer::Z},
-        printer::{AtomPrinter, PolynomialPrinter, PrintOptions},
+        domains::{finite_field::Zp, integer::Z, SelfRing},
+        printer::{AtomPrinter, PrintOptions, PrintState},
         state::{FunctionAttribute, State},
     };
 
@@ -1612,20 +1010,20 @@ mod test {
         let a = Atom::parse("15 x^2")
             .unwrap()
             .to_polynomial::<_, u8>(&Zp::new(17), None);
-        assert_eq!(
-            format!(
-                "{}",
-                PolynomialPrinter::new_with_options(
-                    &a,
-                    PrintOptions {
-                        print_finite_field: true,
-                        symmetric_representation_for_finite_field: true,
-                        ..PrintOptions::file()
-                    }
-                )
-            ),
-            "-2*x^2 % 17"
-        );
+
+        let mut s = String::new();
+        a.format(
+            &PrintOptions {
+                print_finite_field: true,
+                symmetric_representation_for_finite_field: true,
+                ..PrintOptions::file()
+            },
+            PrintState::new(),
+            &mut s,
+        )
+        .unwrap();
+
+        assert_eq!(s, "-2*x^2 % 17");
     }
 
     #[test]
@@ -1647,16 +1045,27 @@ mod test {
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
-            format!("{}", a) == "15*x^2/((1+x)(2+x))" || format!("{}", a) == "15*x^2/((2+x)(1+x))"
+            format!("{}", a) == "15*x^2/((1+x)*(2+x))"
+                || format!("{}", a) == "15*x^2/((2+x)*(1+x))"
         );
 
         let a = Atom::parse("(15 x^2 + 6) / ((1+x)(x+2))")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
-            format!("{}", a) == "3*(2+5*x^2)/((1+x)(2+x))"
-                || format!("{}", a) == "3*(2+5*x^2)/((2+x)(1+x))"
+            format!("{}", a) == "3*(2+5*x^2)/((1+x)*(2+x))"
+                || format!("{}", a) == "3*(2+5*x^2)/((2+x)*(1+x))"
         );
+
+        let a = Atom::parse("1/(v1*v2)")
+            .unwrap()
+            .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        assert!(format!("{}", a) == "1/(v1*v2)" || format!("{}", a) == "1/(v2*v1)");
+
+        let a = Atom::parse("-1/(2+v1)")
+            .unwrap()
+            .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        assert!(format!("{}", a) == "-1/(2+v1)");
     }
 
     #[test]

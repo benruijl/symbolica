@@ -11,8 +11,8 @@ use std::sync::Arc;
 use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::{RationalField, Q};
-use crate::domains::{Derivable, EuclideanDomain, Field, InternalOrdering, Ring};
-use crate::printer::{PolynomialPrinter, PrintOptions};
+use crate::domains::{Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing};
+use crate::printer::{PrintOptions, PrintState};
 
 use super::gcd::PolynomialGCD;
 use super::univariate::UnivariatePolynomial;
@@ -149,35 +149,14 @@ impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
         todo!("Sampling a polynomial is not possible yet")
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_product: bool,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> Result<(), std::fmt::Error> {
-        if f.sign_plus() {
-            f.write_str("+")?;
-        }
-
-        if in_product {
-            f.write_str("(")?;
-        }
-
-        write!(
-            f,
-            "{}",
-            PolynomialPrinter {
-                poly: element,
-                opts: *opts,
-            }
-        )?;
-
-        if in_product {
-            f.write_str(")")?;
-        }
-
-        Ok(())
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        element.format(opts, state, f)
     }
 }
 
@@ -730,6 +709,114 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     }
 }
 
+impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial<F, E, O> {
+    #[inline]
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    #[inline]
+    fn is_one(&self) -> bool {
+        self.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        if self.is_constant() {
+            if self.is_zero() {
+                if state.in_sum {
+                    f.write_str("+")?;
+                }
+                f.write_char('0')?;
+                return Ok(false);
+            } else {
+                return self.ring.format(&self.coefficients[0], opts, state, f);
+            }
+        }
+
+        let add_paren = self.nterms() > 1 && state.in_product
+            || (state.in_exp
+                && (self.nterms() > 1
+                    || self.exponents(0).iter().filter(|e| **e > E::zero()).count() > 1
+                    || !self.ring.is_one(&self.coefficients[0])));
+
+        if add_paren {
+            if state.in_sum {
+                f.write_str("+")?;
+                state.in_sum = false;
+            }
+
+            state.in_product = false;
+            state.in_exp = false;
+            f.write_str("(")?;
+        }
+        let in_product = state.in_product;
+
+        let var_map: Vec<String> = self
+            .variables
+            .as_ref()
+            .iter()
+            .map(|v| {
+                v.to_string_with_state(PrintState {
+                    in_exp: true,
+                    ..state
+                })
+            })
+            .collect();
+
+        for monomial in self {
+            let has_var = monomial.exponents.iter().any(|e| !e.is_zero());
+            state.in_product = in_product || has_var;
+            state.suppress_one = has_var; // any products before should not be considered
+
+            let mut suppressed_one = self.ring.format(monomial.coefficient, opts, state, f)?;
+
+            for (var_id, e) in var_map.iter().zip(monomial.exponents) {
+                if e.is_zero() {
+                    continue;
+                }
+                if suppressed_one {
+                    suppressed_one = false;
+                } else if !opts.latex {
+                    f.write_char(opts.multiplication_operator)?;
+                }
+
+                f.write_str(var_id)?;
+
+                if e.to_u32() != 1 {
+                    if opts.latex {
+                        write!(f, "^{{{}}}", e)?;
+                    } else if opts.double_star_for_exponentiation {
+                        write!(f, "**{}", e)?;
+                    } else {
+                        write!(f, "^{}", e)?;
+                    }
+                }
+            }
+
+            state.in_sum = true;
+        }
+
+        if self.is_zero() {
+            f.write_char('0')?;
+        }
+
+        if opts.print_finite_field {
+            f.write_fmt(format_args!("{}", self.ring))?;
+        }
+
+        if add_paren {
+            f.write_str(")")?;
+        }
+
+        Ok(false)
+    }
+}
+
 impl<F: Ring + std::fmt::Debug, E: Exponent + std::fmt::Debug, O: MonomialOrder> std::fmt::Debug
     for MultivariatePolynomial<F, E, O>
 {
@@ -757,7 +844,8 @@ impl<F: Ring + std::fmt::Debug, E: Exponent + std::fmt::Debug, O: MonomialOrder>
 
 impl<F: Ring + Display, E: Exponent, O: MonomialOrder> Display for MultivariatePolynomial<F, E, O> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        PolynomialPrinter::new(self).fmt(f)
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
+            .map(|_| ())
     }
 }
 
@@ -1702,7 +1790,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             return p;
         }
 
-        p.coefficients = vec![p.field.zero(); self.degree(var).to_u32() as usize + 1];
+        p.coefficients = vec![p.ring.zero(); self.degree(var).to_u32() as usize + 1];
         for (q, e) in self.coefficients.iter().zip(self.exponents_iter()) {
             p.coefficients[e[var].to_u32() as usize] = q.clone();
         }

@@ -8,10 +8,10 @@ use crate::{
     domains::{
         integer::Z,
         rational::{Rational, Q},
-        Derivable, EuclideanDomain, Field, Ring,
+        Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
     },
     poly::Variable,
-    printer::{MatrixPrinter, VectorPrinter},
+    printer::{PrintOptions, PrintState},
 };
 
 /// An n-dimensional vector.
@@ -121,6 +121,62 @@ impl<F: Ring> Vector<F> {
             ],
             field: self.field.clone(),
         }
+    }
+}
+
+impl<F: Ring> SelfRing for Vector<F> {
+    fn is_one(&self) -> bool {
+        self.data.iter().all(|e| self.field.is_one(e))
+    }
+
+    fn is_zero(&self) -> bool {
+        self.data.iter().all(F::is_zero)
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        if state.in_sum {
+            f.write_char('+')?;
+        }
+        state.in_sum = false;
+        state.in_product = false;
+        state.in_exp = false;
+
+        if opts.latex {
+            f.write_str("\\begin{pvector}")?;
+
+            for (ri, r) in self.data.iter().enumerate() {
+                self.field.format(r, opts, PrintState::new(), f)?;
+
+                if ri + 1 < self.data.len() {
+                    f.write_str(" & ")?;
+                }
+            }
+
+            f.write_str("\\end{pvector}")?;
+            Ok(false)
+        } else {
+            f.write_char('{')?;
+            for (ri, r) in self.data.iter().enumerate() {
+                self.field.format(r, opts, PrintState::new(), f)?;
+
+                if ri + 1 < self.data.len() {
+                    f.write_char(',')?;
+                }
+            }
+            f.write_char('}')?;
+            Ok(false)
+        }
+    }
+}
+
+impl<F: Ring> InternalOrdering for Vector<F> {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.data.internal_cmp(&other.data)
     }
 }
 
@@ -331,7 +387,8 @@ impl<F: Ring> IndexMut<u32> for Vector<F> {
 
 impl<F: Ring> Display for Vector<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        VectorPrinter::new(self).fmt(f)
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
+            .map(|_| ())
     }
 }
 
@@ -657,6 +714,78 @@ impl<F: Ring> Matrix<F> {
     }
 }
 
+impl<F: Ring> SelfRing for Matrix<F> {
+    fn is_one(&self) -> bool {
+        self.data.iter().enumerate().all(|(i, e)| {
+            i as u32 % self.ncols == i as u32 / self.ncols && self.field.is_one(e) || F::is_zero(e)
+        })
+    }
+
+    fn is_zero(&self) -> bool {
+        self.data.iter().all(F::is_zero)
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        if state.in_sum {
+            f.write_char('+')?;
+        }
+        state.in_sum = false;
+        state.in_product = false;
+        state.in_exp = false;
+
+        if opts.latex {
+            f.write_str("\\begin{pmatrix}")?;
+
+            for (ri, r) in self.row_iter().enumerate() {
+                for (ci, c) in r.iter().enumerate() {
+                    self.field.format(c, opts, state, f)?;
+
+                    if ci + 1 < self.ncols as usize {
+                        f.write_str(" & ")?;
+                    }
+                }
+                if ri + 1 < self.nrows as usize {
+                    f.write_str(r" \\ ")?;
+                }
+            }
+
+            f.write_str("\\end{pmatrix}")?;
+            Ok(false)
+        } else {
+            f.write_char('{')?;
+            for (ri, r) in self.row_iter().enumerate() {
+                f.write_char('{')?;
+                for (ci, c) in r.iter().enumerate() {
+                    self.field.format(c, opts, state, f)?;
+
+                    if ci + 1 < self.ncols as usize {
+                        f.write_char(',')?;
+                    }
+                }
+                f.write_char('}')?;
+                if ri + 1 < self.nrows as usize {
+                    f.write_char(',')?;
+                }
+            }
+            f.write_char('}')?;
+            Ok(false)
+        }
+    }
+}
+
+impl<F: Ring> InternalOrdering for Matrix<F> {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.nrows, self.ncols)
+            .cmp(&(other.nrows, other.ncols))
+            .then_with(|| self.data.internal_cmp(&other.data))
+    }
+}
+
 impl<F: Ring> Index<u32> for Matrix<F> {
     type Output = [F::Element];
 
@@ -687,7 +816,8 @@ impl<F: Ring> IndexMut<(u32, u32)> for Matrix<F> {
 
 impl<F: Ring> Display for Matrix<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        MatrixPrinter::new(self).fmt(f)
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
+            .map(|_| ())
     }
 }
 

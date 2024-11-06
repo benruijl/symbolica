@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    fmt::{Display, Error, Formatter, Write},
+    fmt::{Display, Error},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
     sync::Arc,
@@ -12,14 +12,14 @@ use crate::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent,
         Variable,
     },
-    printer::{FactorizedRationalPolynomialPrinter, PrintOptions},
+    printer::{PrintOptions, PrintState},
 };
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::{Integer, IntegerRing, Z},
     rational::RationalField,
-    EuclideanDomain, Field, InternalOrdering, Ring,
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -144,6 +144,244 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
             && self.denominators.is_empty()
             && self.numerator.ring.is_one(&self.numer_coeff)
             && self.numerator.ring.is_one(&self.denom_coeff)
+    }
+}
+
+impl<R: Ring, E: Exponent> SelfRing for FactorizedRationalPolynomial<R, E> {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        let has_numer_coeff = !self.numerator.ring.is_one(&self.numer_coeff);
+        let has_denom_coeff = !self.numerator.ring.is_one(&self.denom_coeff);
+
+        if opts.explicit_rational_polynomial {
+            if state.in_sum {
+                f.write_char('+')?;
+            }
+
+            if !R::is_zero(&self.numer_coeff) && has_numer_coeff {
+                f.write_char('[')?;
+                self.numerator
+                    .ring
+                    .format(&self.numer_coeff, opts, PrintState::new(), f)?;
+                f.write_str("]*")?;
+            }
+
+            if self.denominators.is_empty() && !has_denom_coeff {
+                if self.numerator.is_zero() {
+                    if state.in_sum {
+                        f.write_str("+0")?;
+                    } else {
+                        f.write_char('0')?;
+                    }
+                } else {
+                    f.write_char('[')?;
+                    self.numerator.format(opts, PrintState::new(), f)?;
+                    f.write_str("]")?;
+                }
+            } else {
+                f.write_char('[')?;
+                self.numerator.format(opts, PrintState::new(), f)?;
+
+                if has_denom_coeff {
+                    f.write_char(',')?;
+                    self.numerator
+                        .ring
+                        .format(&self.denom_coeff, opts, PrintState::new(), f)?;
+                    f.write_str(",1")?;
+                }
+
+                for (d, p) in &self.denominators {
+                    f.write_char(',')?;
+                    d.format(opts, PrintState::new(), f)?;
+                    f.write_fmt(format_args!(",{}", p))?;
+                }
+
+                f.write_char(']')?;
+            }
+
+            return Ok(false);
+        }
+
+        if R::is_zero(&self.numer_coeff) {
+            if state.in_sum {
+                f.write_str("+0")?;
+            } else {
+                f.write_char('0')?;
+            }
+
+            return Ok(false);
+        }
+
+        if self.denominators.is_empty() && !has_denom_coeff {
+            let write_par = has_numer_coeff && !self.numerator.is_one() && state.in_exp;
+            if write_par {
+                if state.in_sum {
+                    state.in_sum = false;
+                    f.write_char('+')?;
+                }
+
+                f.write_char('(')?;
+                state.in_exp = false;
+            }
+
+            if has_numer_coeff {
+                state.in_product |= !self.numerator.is_one();
+                self.numerator
+                    .ring
+                    .format(&self.numer_coeff, opts, state, f)?;
+                state.in_sum = false;
+
+                if self.numerator.is_one() {
+                    return Ok(false);
+                }
+                f.write_char(opts.multiplication_operator)?;
+            }
+
+            if write_par {
+                self.numerator.format(opts, state, f)?;
+                f.write_char(')')?;
+                return Ok(false);
+            } else {
+                return self.numerator.format(opts, state, f);
+            }
+        }
+
+        state.suppress_one = false;
+
+        let write_par = state.in_exp;
+        if write_par {
+            if state.in_sum {
+                state.in_sum = false;
+                f.write_char('+')?;
+            }
+
+            f.write_char('(')?;
+            state.in_exp = false;
+        }
+
+        if opts.latex {
+            if has_numer_coeff {
+                state.suppress_one = true;
+                state.in_product = true;
+                self.numerator
+                    .ring
+                    .format(&self.numer_coeff, opts, state, f)?;
+                state.suppress_one = false;
+            }
+
+            f.write_str("\\frac{")?;
+            self.numerator.format(opts, PrintState::new(), f)?;
+            f.write_str("}{")?;
+
+            if has_denom_coeff {
+                self.numerator.ring.format(
+                    &self.denom_coeff,
+                    opts,
+                    state.step(false, !self.denominators.is_empty(), false),
+                    f,
+                )?;
+            }
+
+            for (d, p) in &self.denominators {
+                d.format(opts, state.step(false, true, *p != 1), f)?;
+
+                if *p != 1 {
+                    f.write_fmt(format_args!("^{}", p))?;
+                }
+            }
+
+            f.write_char('}')?;
+
+            if write_par {
+                f.write_char(')')?;
+            }
+
+            return Ok(false);
+        }
+
+        state.in_product = true;
+        if has_numer_coeff || self.numerator.is_one() {
+            self.numerator
+                .ring
+                .format(&self.numer_coeff, opts, state, f)?;
+            state.in_sum = false;
+
+            if !self.numerator.is_one() {
+                f.write_char(opts.multiplication_operator)?;
+            }
+        }
+
+        if !self.numerator.is_one() {
+            self.numerator.format(opts, state, f)?;
+        }
+
+        f.write_char('/')?;
+
+        if self.denominators.is_empty() {
+            return self.numerator.ring.format(
+                &self.denom_coeff,
+                opts,
+                state.step(false, true, false),
+                f,
+            );
+        }
+
+        state.in_product = has_denom_coeff || self.denominators.len() > 1;
+
+        if state.in_product {
+            f.write_char('(')?;
+        }
+
+        if has_denom_coeff {
+            self.numerator.ring.format(
+                &self.denom_coeff,
+                opts,
+                state.step(false, true, false),
+                f,
+            )?;
+        }
+
+        for (i, (d, p)) in self.denominators.iter().enumerate() {
+            if has_denom_coeff || i > 0 {
+                f.write_char(opts.multiplication_operator)?;
+            }
+
+            d.format(opts, state.step(false, true, *p != 1), f)?;
+
+            if *p != 1 {
+                f.write_fmt(format_args!(
+                    "{}{}",
+                    if opts.double_star_for_exponentiation {
+                        "**"
+                    } else {
+                        "^"
+                    },
+                    p
+                ))?;
+            }
+        }
+
+        if state.in_product {
+            f.write_char(')')?;
+        }
+
+        if write_par {
+            f.write_char(')')?;
+        }
+
+        Ok(false)
     }
 }
 
@@ -491,7 +729,8 @@ where
 
 impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        FactorizedRationalPolynomialPrinter::new(self).fmt(f)
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
+            .map(|_| ())
     }
 }
 
@@ -614,25 +853,14 @@ where
         todo!("Sampling a polynomial is not possible yet")
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
-        if f.sign_plus() {
-            f.write_char('+')?;
-        }
-
-        f.write_fmt(format_args!(
-            "{}",
-            FactorizedRationalPolynomialPrinter {
-                poly: element,
-                opts: *opts,
-                add_parentheses: in_product
-            },
-        ))
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        element.format(opts, state, f)
     }
 }
 

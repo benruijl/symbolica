@@ -9,10 +9,12 @@ use crate::{
     atom::{Atom, AtomView, FunctionBuilder},
     coefficient::CoefficientView,
     domains::{
-        atom::AtomField, integer::Integer, rational::Rational, EuclideanDomain, InternalOrdering,
-        Ring, RingPrinter,
+        atom::AtomField,
+        integer::Integer,
+        rational::{Rational, Q},
+        EuclideanDomain, InternalOrdering, Ring,
     },
-    printer::PrintOptions,
+    printer::{PrintOptions, PrintState},
     state::State,
 };
 
@@ -53,60 +55,8 @@ impl<F: Ring + std::fmt::Debug> std::fmt::Debug for Series<F> {
 
 impl<F: Ring + std::fmt::Display> std::fmt::Display for Series<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let v = self.variable.to_string();
-
-        if self.coefficients.is_empty() {
-            return write!(f, "𝒪({}^{})", v, self.absolute_order());
-        }
-
-        let mut first = true;
-        for (e, c) in self.coefficients.iter().enumerate() {
-            if F::is_zero(c) {
-                continue;
-            }
-
-            if first {
-                first = false;
-            } else {
-                write!(f, "+")?;
-            }
-
-            let p = RingPrinter {
-                element: c,
-                ring: &self.field,
-                opts: PrintOptions::default(),
-                in_product: true,
-            };
-
-            let e = self.get_exponent(e);
-
-            if e.is_zero() {
-                write!(f, "{}", p)?;
-            } else if e.is_one() {
-                if self.field.is_one(c) {
-                    write!(f, "{}", v)?;
-                } else {
-                    write!(f, "{}*{}", p, v)?;
-                }
-            } else if self.field.is_one(c) {
-                if e.is_integer() {
-                    write!(f, "{}^{}", v, e)?;
-                } else {
-                    write!(f, "{}^({})", v, e)?;
-                }
-            } else if e.is_integer() {
-                write!(f, "{}*{}^{}", p, v, e)?;
-            } else {
-                write!(f, "{}*{}^({})", p, v, e)?;
-            }
-        }
-
-        let o = self.absolute_order();
-        if o.is_integer() {
-            write!(f, "+𝒪({}^{})", v, o)
-        } else {
-            write!(f, "+𝒪({}^({}))", v, o)
-        }
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
+            .map(|_| ())
     }
 }
 
@@ -514,6 +464,78 @@ impl<F: Ring> Series<F> {
         }
 
         self
+    }
+
+    pub fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        let v = self.variable.to_string_with_state(PrintState {
+            in_exp: true,
+            ..state
+        });
+
+        if self.coefficients.is_empty() {
+            write!(f, "𝒪({}^{})", v, self.absolute_order())?;
+            return Ok(false);
+        }
+
+        let add_paren = state.in_product || state.in_exp;
+        if add_paren {
+            if state.in_sum {
+                f.write_str("+")?;
+                state.in_sum = false;
+            }
+
+            state.in_product = false;
+            state.in_exp = false;
+            f.write_str("(")?;
+        }
+
+        for (e, c) in self.coefficients.iter().enumerate() {
+            if F::is_zero(c) {
+                continue;
+            }
+
+            let e = self.get_exponent(e);
+
+            state.suppress_one = !e.is_zero();
+            let suppressed_one = self.field.format(
+                c,
+                opts,
+                state.step(state.in_sum, state.in_product, false),
+                f,
+            )?;
+
+            if !suppressed_one && !e.is_zero() {
+                f.write_char(opts.multiplication_operator)?;
+            }
+
+            if e.is_one() {
+                write!(f, "{}", v)?;
+            } else if !e.is_zero() {
+                write!(f, "{}^", v)?;
+                Q.format(&e, opts, state.step(false, false, true), f)?;
+            }
+
+            state.in_sum = true;
+            state.in_product = true;
+        }
+
+        let o = self.absolute_order();
+        if o.is_integer() {
+            write!(f, "+𝒪({}^{})", v, o)?;
+        } else {
+            write!(f, "+𝒪({}^({}))", v, o)?;
+        }
+
+        if add_paren {
+            f.write_str(")")?;
+        }
+
+        Ok(false)
     }
 }
 

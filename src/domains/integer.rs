@@ -11,7 +11,11 @@ use rug::{
     Complete, Integer as MultiPrecisionInteger,
 };
 
-use crate::{printer::PrintOptions, tensors::matrix::Matrix, utils};
+use crate::{
+    printer::{PrintOptions, PrintState},
+    tensors::matrix::Matrix,
+    utils,
+};
 
 use super::{
     finite_field::{
@@ -20,7 +24,7 @@ use super::{
     },
     float::{FloatField, NumericalFloatLike, Real, RealNumberLike, SingleFloat},
     rational::Rational,
-    EuclideanDomain, InternalOrdering, Ring,
+    EuclideanDomain, InternalOrdering, Ring, SelfRing,
 };
 
 pub const SMALL_PRIMES: [i64; 100] = [
@@ -1168,32 +1172,82 @@ impl Ring for IntegerRing {
         Integer::Natural(r)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
-        if opts.explicit_rational_polynomial {
-            match element {
-                Integer::Natural(n) => n.fmt(f),
-                Integer::Double(n) => n.fmt(f),
-                Integer::Large(r) => {
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        element.format(opts, state, f)
+    }
+}
+
+impl SelfRing for Integer {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        match self {
+            Integer::Natural(n) => {
+                if state.suppress_one {
+                    if *n == 1 {
+                        if state.in_sum {
+                            write!(f, "+")?;
+                            return Ok(true);
+                        } else {
+                            write!(f, "")?;
+                            return Ok(true);
+                        }
+                    } else if *n == -1 {
+                        write!(f, "-")?;
+                        return Ok(true);
+                    }
+                }
+
+                if state.in_sum {
+                    write!(f, "{:+}", n)?
+                } else {
+                    write!(f, "{}", n)?
+                }
+            }
+            Integer::Double(n) => {
+                if state.in_sum {
+                    write!(f, "{:+}", n)?
+                } else {
+                    write!(f, "{}", n)?
+                }
+            }
+            Integer::Large(r) => {
+                if opts.explicit_rational_polynomial {
                     // write the GMP number in hexadecimal representation,
                     // since the conversion is much faster than for the decimal representation
                     if r.is_negative() {
-                        write!(f, "-#{:X}", r.as_abs())
-                    } else if f.sign_plus() {
-                        write!(f, "+#{:X}", r)
+                        write!(f, "-#{:X}", r.as_abs())?
+                    } else if state.in_sum {
+                        write!(f, "+#{:X}", r)?
                     } else {
-                        write!(f, "#{:X}", r)
+                        write!(f, "#{:X}", r)?
                     }
+                } else if state.in_sum {
+                    write!(f, "{:+}", r)?
+                } else {
+                    write!(f, "{}", r)?
                 }
             }
-        } else {
-            element.fmt(f)
         }
+
+        Ok(false)
     }
 }
 
@@ -2180,14 +2234,20 @@ impl Ring for MultiPrecisionIntegerRing {
         MultiPrecisionInteger::from(r)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         _opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
-        element.fmt(f)
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        if state.in_sum {
+            write!(f, "{:+}", element)?
+        } else {
+            write!(f, "{}", element)?
+        }
+
+        Ok(false)
     }
 }
 

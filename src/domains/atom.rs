@@ -1,11 +1,11 @@
-use std::fmt::Write;
-
 use crate::{
     atom::{Atom, AtomView},
     poly::Variable,
 };
 
-use super::{integer::Integer, Derivable, EuclideanDomain, Field, InternalOrdering, Ring};
+use super::{
+    integer::Integer, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+};
 
 use rand::Rng;
 
@@ -126,32 +126,33 @@ impl Ring for AtomField {
         0.into()
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
-        _opts: &crate::printer::PrintOptions,
-        mut in_product: bool, // can be used to add parentheses
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> Result<(), std::fmt::Error> {
-        if f.sign_plus() {
-            f.write_char('+')?;
-        }
+        opts: &crate::printer::PrintOptions,
+        state: crate::printer::PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        element.as_view().format(f, opts, state)
+    }
+}
 
-        if !matches!(element.as_view(), AtomView::Add(_)) {
-            in_product = false;
-        }
+impl SelfRing for Atom {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
 
-        if in_product {
-            write!(f, "(")?;
-        }
+    fn is_one(&self) -> bool {
+        self.is_one()
+    }
 
-        std::fmt::Display::fmt(element, f)?;
-
-        if in_product {
-            write!(f, ")")?;
-        }
-
-        Ok(())
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &crate::printer::PrintOptions,
+        state: crate::printer::PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        self.as_view().format(f, opts, state)
     }
 }
 

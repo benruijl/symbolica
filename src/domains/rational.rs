@@ -1,12 +1,12 @@
 use std::{
     borrow::Cow,
-    fmt::{Display, Error, Formatter, Write},
+    fmt::{Display, Error, Formatter},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
 use crate::{
     poly::{gcd::LARGE_U32_PRIMES, polynomial::PolynomialRing, Exponent},
-    printer::PrintOptions,
+    printer::{PrintOptions, PrintState},
 };
 
 use super::{
@@ -14,7 +14,7 @@ use super::{
         FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Two, Zp, Z2,
     },
     integer::{Integer, IntegerRing, Z},
-    EuclideanDomain, Field, InternalOrdering, Ring,
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
 /// The field of rational numbers.
@@ -118,6 +118,13 @@ pub struct Fraction<R: Ring> {
 }
 
 impl<R: Ring> Fraction<R> {
+    pub fn new(numerator: R::Element, denominator: R::Element) -> Fraction<R> {
+        Fraction {
+            numerator,
+            denominator,
+        }
+    }
+
     pub fn numerator(&self) -> R::Element {
         self.numerator.clone()
     }
@@ -323,20 +330,119 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
         }
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
-        self.ring.fmt_display(&element.numerator, opts, true, f)?;
-        if !self.ring.is_one(&element.denominator) {
-            f.write_char('/')?;
-            self.ring.fmt_display(&element.denominator, opts, true, f)?;
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        let has_denom = !self.ring.is_one(&element.denominator);
+
+        let write_par = has_denom && state.in_exp;
+        if write_par {
+            if state.in_sum {
+                state.in_sum = false;
+                f.write_char('+')?;
+            }
+
+            f.write_char('(')?;
+            state.in_exp = false;
         }
 
-        Ok(())
+        if self.ring.format(
+            &element.numerator,
+            opts,
+            PrintState {
+                in_product: state.in_product || has_denom,
+                suppress_one: state.suppress_one && !has_denom,
+                level: state.level + 1,
+                ..state
+            },
+            f,
+        )? {
+            return Ok(true);
+        };
+
+        if has_denom {
+            f.write_char('/')?;
+            self.ring
+                .format(&element.denominator, opts, state.step(false, true, true), f)?;
+        }
+
+        if write_par {
+            f.write_char(')')?;
+        }
+
+        Ok(false)
+    }
+}
+
+impl<R: Ring> SelfRing for Fraction<R>
+where
+    R::Element: SelfRing,
+{
+    fn is_zero(&self) -> bool {
+        self.numerator.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.numerator.is_one() && self.denominator.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        let has_denom = !self.denominator.is_one();
+
+        let write_par = has_denom && state.in_exp;
+        if write_par {
+            if state.in_sum {
+                state.in_sum = false;
+                f.write_char('+')?;
+            }
+
+            f.write_char('(')?;
+            state.in_exp = false;
+        }
+
+        if self.numerator.format(
+            opts,
+            PrintState {
+                in_product: state.in_product || has_denom,
+                suppress_one: state.suppress_one && !has_denom,
+                level: state.level + 1,
+                ..state
+            },
+            f,
+        )? {
+            return Ok(true);
+        }
+
+        if has_denom {
+            f.write_char('/')?;
+            self.denominator
+                .format(opts, state.step(false, true, true), f)?;
+        }
+
+        if write_par {
+            f.write_char(')')?;
+        }
+
+        Ok(false)
+    }
+}
+
+impl<R: Ring> Display for Fraction<R>
+where
+    R::Element: SelfRing,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.format(&PrintOptions::default(), PrintState::new(), f)
+            .map(|_| ())
     }
 }
 
@@ -423,17 +529,6 @@ impl Default for Rational {
     }
 }
 
-impl Display for Rational {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.numerator.fmt(f)?;
-        if self.denominator != 1 {
-            f.write_char('/')?;
-            write!(f, "{}", self.denominator)?;
-        }
-
-        Ok(())
-    }
-}
 impl From<f64> for Rational {
     /// Convert a floating point number to its exact rational number equivalent.
     /// Use [`Rational::truncate_denominator`] to get an approximation with a smaller denominator.

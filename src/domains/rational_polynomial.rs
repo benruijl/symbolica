@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    fmt::{Display, Error, Formatter, Write},
+    fmt::{Display, Error},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
     sync::Arc,
@@ -14,14 +14,14 @@ use crate::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial,
         univariate::UnivariatePolynomial, Exponent, Variable,
     },
-    printer::{PrintOptions, RationalPolynomialPrinter},
+    printer::{PrintOptions, PrintState},
 };
 
 use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::{Integer, IntegerRing, Z},
     rational::RationalField,
-    Derivable, EuclideanDomain, Field, InternalOrdering, Ring,
+    Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -162,6 +162,85 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
             field,
             true,
         )
+    }
+}
+
+impl<R: Ring, E: Exponent> SelfRing for RationalPolynomial<R, E> {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.numerator.is_one() && self.denominator.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        if opts.explicit_rational_polynomial {
+            if state.in_sum {
+                f.write_char('+')?;
+            }
+
+            if self.denominator.is_one() {
+                if self.numerator.is_zero() {
+                    f.write_char('0')?;
+                } else {
+                    f.write_char('[')?;
+                    self.numerator.format(opts, PrintState::new(), f)?;
+                    f.write_char(']')?;
+                }
+            } else {
+                f.write_char('[')?;
+                self.numerator.format(opts, PrintState::new(), f)?;
+                f.write_char(',')?;
+                self.denominator.format(opts, PrintState::new(), f)?;
+                f.write_char(']')?;
+            }
+
+            return Ok(false);
+        }
+
+        if self.denominator.is_one() {
+            self.numerator.format(opts, state, f)
+        } else {
+            let write_par = state.in_exp;
+            if write_par {
+                if state.in_sum {
+                    state.in_sum = false;
+                    f.write_char('+')?;
+                }
+
+                f.write_char('(')?;
+                state.in_exp = false;
+            }
+
+            if opts.latex {
+                if state.in_sum {
+                    f.write_char('+')?;
+                }
+                f.write_str("\\frac{")?;
+                self.numerator.format(opts, PrintState::new(), f)?;
+                f.write_str("}{")?;
+                self.denominator.format(opts, PrintState::new(), f)?;
+                f.write_str("}")?;
+            } else {
+                state.suppress_one = false;
+                self.numerator
+                    .format(opts, state.step(state.in_sum, true, false), f)?;
+                f.write_char('/')?;
+                self.denominator
+                    .format(opts, state.step(false, false, true), f)?;
+            }
+
+            if write_par {
+                f.write_char(')')?;
+            }
+            Ok(false)
+        }
     }
 }
 
@@ -434,8 +513,8 @@ where
     ) -> RationalPolynomial<R, E> {
         if f.is_zero() {
             return RationalPolynomial {
-                numerator: MultivariatePolynomial::new_zero(&f.field.ring),
-                denominator: MultivariatePolynomial::new_one(&f.field.ring),
+                numerator: MultivariatePolynomial::new_zero(&f.ring.ring),
+                denominator: MultivariatePolynomial::new_one(&f.ring.ring),
             };
         }
 
@@ -456,7 +535,7 @@ where
             });
 
         let mut res =
-            RationalPolynomial::new(&f.field.ring, f.coefficients[0].get_variables().clone());
+            RationalPolynomial::new(&f.ring.ring, f.coefficients[0].get_variables().clone());
 
         let mut exp = vec![E::zero(); f.coefficients[0].get_variables().len()];
         exp[pos] = E::one();
@@ -473,7 +552,8 @@ where
 
 impl<R: Ring, E: Exponent> Display for RationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        RationalPolynomialPrinter::new(self).fmt(f)
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
+            .map(|_| ())
     }
 }
 
@@ -593,25 +673,14 @@ where
         todo!("Sampling a polynomial is not possible yet")
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
-        if f.sign_plus() {
-            f.write_char('+')?;
-        }
-
-        f.write_fmt(format_args!(
-            "{}",
-            RationalPolynomialPrinter {
-                poly: element,
-                opts: *opts,
-                add_parentheses: in_product
-            },
-        ))
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        element.format(opts, state, f)
     }
 }
 
@@ -1034,7 +1103,7 @@ where
 
                 d_exp[i - 1] = d_exp[i - 1].clone()
                     + s_cor
-                    + t_cor.derivative().div_coeff(&(t_cor.field.nth(i as u64)));
+                    + t_cor.derivative().div_coeff(&(t_cor.ring.nth(i as u64)));
 
                 let t_full = Self::from_univariate(t_cor);
 
@@ -1117,7 +1186,7 @@ where
                     .to_multivariate_polynomial_list(&[var, new_var], true);
 
                 let mut bivar_poly = MultivariatePolynomial::new(
-                    &p.field,
+                    &p.ring,
                     Some(ll.len()),
                     p.coefficients[0].get_variables().clone(),
                 );
@@ -1128,7 +1197,7 @@ where
                 // convert defining polynomial to a univariate polynomial in t with rational polynomial coefficients
                 let def_uni = sqf
                     .to_univariate(new_var)
-                    .map_coeff(|c| c.clone().into(), p.field.clone());
+                    .map_coeff(|c| c.clone().into(), p.ring.clone());
 
                 // write the polynomial in x and t as a polynomial in x with rational polynomial coefficients in t and
                 // all other variables and solve a diophantine equation
@@ -1158,7 +1227,7 @@ where
                 let monic = bivar_poly_scaled.rem(&def_biv);
 
                 // convert the result to a multivariate rational polynomial
-                let mut res = p.field.zero();
+                let mut res = p.ring.zero();
                 for t in &monic {
                     let mut exp = vec![E::zero(); p.lcoeff().numerator.nvars()];
                     exp.copy_from_slice(t.exponents);
@@ -1181,7 +1250,7 @@ where
 
                         let eval = monic.replace(new_var, &sol);
 
-                        let mut res = p.field.zero();
+                        let mut res = p.ring.zero();
                         for t in &eval {
                             let mut exp = vec![E::zero(); p.lcoeff().numerator.nvars()];
                             exp.copy_from_slice(t.exponents);

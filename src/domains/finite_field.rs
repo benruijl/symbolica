@@ -6,7 +6,7 @@ use std::ops::{Deref, Neg};
 use crate::domains::integer::Integer;
 use crate::poly::gcd::PolynomialGCD;
 use crate::poly::Variable::Temporary;
-use crate::printer::PrintOptions;
+use crate::printer::{PrintOptions, PrintState};
 
 use super::algebraic_number::AlgebraicExtension;
 use super::integer::Z;
@@ -402,17 +402,17 @@ impl Ring for Zp {
         FiniteFieldElement(r as u32)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            self.from_element(element).fmt(f)
+            Z.format(&self.from_element(element).into(), opts, state, f)
         }
     }
 }
@@ -701,17 +701,17 @@ impl Ring for Zp64 {
         FiniteFieldElement(r as u64)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            self.from_element(element).fmt(f)
+            Z.format(&self.from_element(element).into(), opts, state, f)
         }
     }
 }
@@ -970,17 +970,17 @@ impl Ring for FiniteField<Two> {
         rng.gen_range(0..2)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            self.from_element(element).fmt(f)
+            Z.format(&self.from_element(element).0.into(), opts, state, f)
         }
     }
 }
@@ -1222,17 +1222,17 @@ impl Ring for FiniteField<Mersenne64> {
         r as u64
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            self.from_element(element).fmt(f)
+            Z.format(&self.from_element(element).0.into(), opts, state, f)
         }
     }
 }
@@ -1426,17 +1426,17 @@ impl Ring for FiniteField<Integer> {
         Z.sample(rng, range).symmetric_mod(&self.p)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
-    ) -> Result<(), Error> {
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            self.from_element(element).fmt(f)
+            Z.format(&self.from_element(element).into(), opts, state, f)
         }
     }
 }

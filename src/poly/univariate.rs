@@ -9,9 +9,9 @@ use crate::{
         float::{Complex, FloatField, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, RationalField, Q},
-        EuclideanDomain, Field, InternalOrdering, Ring, RingPrinter,
+        EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
     },
-    printer::PrintOptions,
+    printer::{PrintOptions, PrintState},
 };
 
 use super::{
@@ -36,7 +36,7 @@ impl<R: Ring> UnivariatePolynomialRing<R> {
 
     pub fn new_from_poly(poly: &UnivariatePolynomial<R>) -> UnivariatePolynomialRing<R> {
         UnivariatePolynomialRing {
-            ring: poly.field.clone(),
+            ring: poly.ring.clone(),
             variable: poly.variable.clone(),
         }
     }
@@ -127,28 +127,14 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
         todo!("Sampling a polynomial is not possible yet")
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
-        _opts: &PrintOptions,
-        in_product: bool,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> Result<(), std::fmt::Error> {
-        if f.sign_plus() {
-            f.write_str("+")?;
-        }
-
-        if in_product {
-            f.write_str("(")?;
-        }
-
-        <Self::Element as std::fmt::Display>::fmt(element, f)?;
-
-        if in_product {
-            f.write_str(")")?;
-        }
-
-        Ok(())
+        opts: &PrintOptions,
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        element.format(opts, state, f)
     }
 }
 
@@ -171,7 +157,7 @@ impl<R: EuclideanDomain> EuclideanDomain for UnivariatePolynomialRing<R> {
 pub struct UnivariatePolynomial<F: Ring> {
     pub coefficients: Vec<F::Element>,
     pub variable: Arc<Variable>,
-    pub field: F,
+    pub ring: F,
 }
 
 impl<R: Ring> InternalOrdering for UnivariatePolynomial<R> {
@@ -202,46 +188,8 @@ impl<F: Ring + std::fmt::Debug> std::fmt::Debug for UnivariatePolynomial<F> {
 
 impl<F: Ring + std::fmt::Display> std::fmt::Display for UnivariatePolynomial<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        if self.is_zero() {
-            return write!(f, "0");
-        }
-
-        let v = self.variable.to_string();
-
-        let mut first = true;
-        for (e, c) in self.coefficients.iter().enumerate() {
-            if F::is_zero(c) {
-                continue;
-            }
-
-            if first {
-                first = false;
-            } else {
-                write!(f, "+")?;
-            }
-
-            let p = RingPrinter {
-                element: c,
-                ring: &self.field,
-                opts: PrintOptions::default(),
-                in_product: true,
-            };
-
-            if e == 0 {
-                write!(f, "{}", p)?;
-            } else if e == 1 {
-                if self.field.is_one(c) {
-                    write!(f, "{}", v)?;
-                } else {
-                    write!(f, "{}*{}", p, v)?;
-                }
-            } else if self.field.is_one(c) {
-                write!(f, "{}^{}", v, e)?;
-            } else {
-                write!(f, "{}*{}^{}", p, v, e)?;
-            }
-        }
-        Ok(())
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
+            .map(|_| ())
     }
 }
 
@@ -253,7 +201,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
     pub fn new(field: &F, cap: Option<usize>, variable: Arc<Variable>) -> Self {
         Self {
             coefficients: Vec::with_capacity(cap.unwrap_or(0)),
-            field: field.clone(),
+            ring: field.clone(),
             variable,
         }
     }
@@ -263,7 +211,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
     pub fn zero(&self) -> Self {
         Self {
             coefficients: vec![],
-            field: self.field.clone(),
+            ring: self.ring.clone(),
             variable: self.variable.clone(),
         }
     }
@@ -274,7 +222,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
     pub fn zero_with_capacity(&self, cap: usize) -> Self {
         Self {
             coefficients: Vec::with_capacity(cap),
-            field: self.field.clone(),
+            ring: self.ring.clone(),
             variable: self.variable.clone(),
         }
     }
@@ -289,7 +237,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
 
         Self {
             coefficients: vec![coeff],
-            field: self.field.clone(),
+            ring: self.ring.clone(),
             variable: self.variable.clone(),
         }
     }
@@ -298,8 +246,8 @@ impl<F: Ring> UnivariatePolynomial<F> {
     #[inline]
     pub fn one(&self) -> Self {
         Self {
-            coefficients: vec![self.field.one()],
-            field: self.field.clone(),
+            coefficients: vec![self.ring.one()],
+            ring: self.ring.clone(),
             variable: self.variable.clone(),
         }
     }
@@ -311,12 +259,12 @@ impl<F: Ring> UnivariatePolynomial<F> {
             return self.zero();
         }
 
-        let mut coefficients = vec![self.field.zero(); exponent + 1];
+        let mut coefficients = vec![self.ring.zero(); exponent + 1];
         coefficients[exponent] = coeff;
 
         Self {
             coefficients,
-            field: self.field.clone(),
+            ring: self.ring.clone(),
             variable: self.variable.clone(),
         }
     }
@@ -328,7 +276,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
 
     #[inline]
     pub fn is_one(&self) -> bool {
-        self.coefficients.len() == 1 && self.field.is_one(&self.coefficients[0])
+        self.coefficients.len() == 1 && self.ring.is_one(&self.coefficients[0])
     }
 
     /// Returns true if the polynomial is constant.
@@ -341,7 +289,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
     #[inline]
     pub fn get_constant(&self) -> F::Element {
         if self.is_zero() {
-            return self.field.zero();
+            return self.ring.zero();
         }
 
         self.coefficients[0].clone()
@@ -361,7 +309,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
     pub fn lcoeff(&self) -> F::Element {
         self.coefficients
             .last()
-            .unwrap_or(&self.field.zero())
+            .unwrap_or(&self.ring.zero())
             .clone()
     }
 
@@ -400,7 +348,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
         }
 
         let mut a = self.zero();
-        a.coefficients = vec![self.field.zero(); self.degree() + exp + 1];
+        a.coefficients = vec![self.ring.zero(); self.degree() + exp + 1];
 
         for (cn, c) in a.coefficients.iter_mut().skip(exp).zip(&self.coefficients) {
             *cn = c.clone();
@@ -420,7 +368,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
             return a;
         }
 
-        a.coefficients = vec![self.field.zero(); self.degree() - exp + 1];
+        a.coefficients = vec![self.ring.zero(); self.degree() - exp + 1];
 
         for (cn, c) in a
             .coefficients
@@ -436,7 +384,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
     pub fn mul_coeff(mut self, coeff: &F::Element) -> Self {
         for c in &mut self.coefficients {
             if !F::is_zero(c) {
-                self.field.mul_assign(c, coeff);
+                self.ring.mul_assign(c, coeff);
             }
         }
 
@@ -475,9 +423,9 @@ impl<F: Ring> UnivariatePolynomial<F> {
         let mut res = self.coefficients.last().unwrap().clone();
         for c in self.coefficients.iter().rev().skip(1) {
             if !F::is_zero(c) {
-                res = self.field.add(&self.field.mul(&res, x), c);
+                res = self.ring.add(&self.ring.mul(&res, x), c);
             } else {
-                self.field.mul_assign(&mut res, x);
+                self.ring.mul_assign(&mut res, x);
             }
         }
 
@@ -492,7 +440,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
 
         let mut res = self.zero();
         res.coefficients
-            .resize(self.coefficients.len() - 1, self.field.zero());
+            .resize(self.coefficients.len() - 1, self.ring.zero());
 
         for (p, (nc, oc)) in res
             .coefficients
@@ -501,7 +449,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
             .enumerate()
         {
             if !F::is_zero(oc) {
-                *nc = self.field.mul(oc, &self.field.nth(p as u64 + 1));
+                *nc = self.ring.mul(oc, &self.ring.nth(p as u64 + 1));
             }
         }
 
@@ -511,7 +459,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
     /// Convert from a univariate polynomial to a multivariate polynomial.
     pub fn to_multivariate<E: Exponent>(self) -> MultivariatePolynomial<F, E> {
         let mut res = MultivariatePolynomial::new(
-            &self.field,
+            &self.ring,
             self.degree().into(),
             Arc::new(vec![self.variable.as_ref().clone()]),
         );
@@ -532,11 +480,106 @@ impl<F: Ring> UnivariatePolynomial<F> {
         for k in 0..d {
             for j in (k..d).rev() {
                 let (s, c) = poly.coefficients.split_at_mut(j + 1);
-                self.field.add_mul_assign(&mut s[j], &c[0], shift);
+                self.ring.add_mul_assign(&mut s[j], &c[0], shift);
             }
         }
 
         poly
+    }
+}
+
+impl<F: Ring> SelfRing for UnivariatePolynomial<F> {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        if self.is_constant() {
+            if self.is_zero() {
+                if state.in_sum {
+                    f.write_str("+")?;
+                }
+                f.write_char('0')?;
+                return Ok(false);
+            } else {
+                return self.ring.format(&self.coefficients[0], opts, state, f);
+            }
+        }
+
+        let non_zero = self.coefficients.iter().filter(|c| !F::is_zero(c)).count();
+
+        let add_paren = non_zero > 1 && state.in_product
+            || (state.in_exp
+                && (non_zero > 1
+                    || self
+                        .coefficients
+                        .iter()
+                        .filter(|c| !self.ring.is_one(c))
+                        .count()
+                        > 0));
+
+        if add_paren {
+            if state.in_sum {
+                f.write_str("+")?;
+                state.in_sum = false;
+            }
+
+            state.in_product = false;
+            state.in_exp = false;
+            f.write_str("(")?;
+        }
+
+        let v = self.variable.to_string_with_state(PrintState {
+            in_exp: true,
+            ..state
+        });
+
+        for (e, c) in self.coefficients.iter().enumerate() {
+            state.suppress_one = e > 0;
+
+            if F::is_zero(c) {
+                continue;
+            }
+
+            let suppressed_one = self.ring.format(
+                c,
+                opts,
+                state.step(state.in_sum, state.in_product, false),
+                f,
+            )?;
+
+            if !suppressed_one && e > 0 {
+                f.write_char(opts.multiplication_operator)?;
+            }
+
+            if e == 1 {
+                write!(f, "{}", v)?;
+            } else if e > 1 {
+                write!(f, "{}^{}", v, e)?;
+            }
+
+            state.in_sum = true;
+            state.in_product = true;
+        }
+
+        if self.is_zero() {
+            f.write_char('0')?;
+        }
+
+        if add_paren {
+            f.write_str(")")?;
+        }
+
+        Ok(false)
     }
 }
 
@@ -549,7 +592,7 @@ impl UnivariatePolynomial<RationalField> {
 
         let stripped = self.map_coeff(
             |coeff| {
-                let coeff = self.field.div(coeff, &c);
+                let coeff = self.ring.div(coeff, &c);
                 debug_assert!(coeff.is_integer());
                 coeff.numerator()
             },
@@ -1023,7 +1066,7 @@ impl<R: Real + SingleFloat + std::hash::Hash + Eq + PartialOrd + InternalOrderin
     /// Get an upper bound on the norm of all (complex) roots.
     pub fn get_root_upper_bound(&self) -> R {
         if self.is_zero() {
-            return self.field.zero().re;
+            return self.ring.zero().re;
         }
 
         let last = self.coefficients.last().unwrap();
@@ -1035,13 +1078,13 @@ impl<R: Real + SingleFloat + std::hash::Hash + Eq + PartialOrd + InternalOrderin
             }
         }
 
-        max + self.field.one().re
+        max + self.ring.one().re
     }
 
     /// Get a lower bound on the norm of all (complex) roots.
     pub fn get_root_lower_bound(&self) -> R {
         if self.is_zero() {
-            return self.field.zero().re;
+            return self.ring.zero().re;
         }
 
         let last = &self.coefficients[0];
@@ -1053,7 +1096,7 @@ impl<R: Real + SingleFloat + std::hash::Hash + Eq + PartialOrd + InternalOrderin
             }
         }
 
-        self.field.one().re / (max + self.field.one().re)
+        self.ring.one().re / (max + self.ring.one().re)
     }
 
     /// Compute all complex roots of the polynomial using Aberth's method.
@@ -1069,11 +1112,11 @@ impl<R: Real + SingleFloat + std::hash::Hash + Eq + PartialOrd + InternalOrderin
         if self.get_constant().is_zero() {
             match self.div_exp(1).roots(max_iterations, tolerance) {
                 Ok(mut roots) => {
-                    roots.push(self.field.zero());
+                    roots.push(self.ring.zero());
                     return Ok(roots);
                 }
                 Err(mut roots) => {
-                    roots.push(self.field.zero());
+                    roots.push(self.ring.zero());
                     return Err(roots);
                 }
             }
@@ -1180,7 +1223,7 @@ impl<F: Ring> Add for UnivariatePolynomial<F> {
     type Output = Self;
 
     fn add(mut self, mut other: Self) -> Self::Output {
-        assert_eq!(self.field, other.field);
+        assert_eq!(self.ring, other.ring);
 
         if self.variable != other.variable {
             panic!("Cannot multiply polynomials with different variables");
@@ -1198,7 +1241,7 @@ impl<F: Ring> Add for UnivariatePolynomial<F> {
         }
 
         for (i, c) in other.coefficients.iter().enumerate() {
-            self.field.add_assign(&mut self.coefficients[i], c);
+            self.ring.add_assign(&mut self.coefficients[i], c);
         }
 
         self.truncate();
@@ -1236,7 +1279,7 @@ impl<F: Ring> Neg for UnivariatePolynomial<F> {
     fn neg(mut self) -> Self::Output {
         // Negate coefficients of all terms.
         for c in &mut self.coefficients {
-            *c = self.field.neg(c);
+            *c = self.ring.neg(c);
         }
         self
     }
@@ -1247,7 +1290,7 @@ impl<'a, 'b, F: Ring> Mul<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynom
 
     #[inline]
     fn mul(self, rhs: &'a UnivariatePolynomial<F>) -> Self::Output {
-        assert_eq!(self.field, rhs.field);
+        assert_eq!(self.ring, rhs.ring);
 
         if self.is_zero() || rhs.is_zero() {
             return self.zero();
@@ -1263,7 +1306,7 @@ impl<'a, 'b, F: Ring> Mul<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynom
         if n == 0 {
             let mut r = rhs.clone();
             for c in &mut r.coefficients {
-                self.field.mul_assign(c, &self.coefficients[0]);
+                self.ring.mul_assign(c, &self.coefficients[0]);
             }
             return r;
         }
@@ -1271,13 +1314,13 @@ impl<'a, 'b, F: Ring> Mul<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynom
         if m == 0 {
             let mut r = self.clone();
             for c in &mut r.coefficients {
-                self.field.mul_assign(c, &rhs.coefficients[0]);
+                self.ring.mul_assign(c, &rhs.coefficients[0]);
             }
             return r;
         }
 
         let mut res = self.zero();
-        res.coefficients = vec![self.field.zero(); n + m + 1];
+        res.coefficients = vec![self.ring.zero(); n + m + 1];
 
         for (e1, c1) in self.coefficients.iter().enumerate() {
             if F::is_zero(c1) {
@@ -1286,7 +1329,7 @@ impl<'a, 'b, F: Ring> Mul<&'a UnivariatePolynomial<F>> for &'b UnivariatePolynom
 
             for (e2, c2) in rhs.coefficients.iter().enumerate() {
                 if !F::is_zero(c2) {
-                    self.field
+                    self.ring
                         .add_mul_assign(&mut res.coefficients[e1 + e2], c1, c2);
                 }
             }
@@ -1327,16 +1370,16 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
     /// Get the content from the coefficients.
     pub fn content(&self) -> F::Element {
         if self.coefficients.is_empty() {
-            return self.field.zero();
+            return self.ring.zero();
         }
         let mut c = self.coefficients.first().unwrap().clone();
         for cc in self.coefficients.iter().skip(1) {
             // early return if possible (not possible for rationals)
-            if F::one_is_gcd_unit() && self.field.is_one(&c) {
+            if F::one_is_gcd_unit() && self.ring.is_one(&c) {
                 break;
             }
 
-            c = self.field.gcd(&c, cc);
+            c = self.ring.gcd(&c, cc);
         }
         c
     }
@@ -1344,7 +1387,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
     /// Divide every coefficient with `other`.
     pub fn div_coeff(mut self, other: &F::Element) -> Self {
         for c in &mut self.coefficients {
-            let (quot, rem) = self.field.quot_rem(c, other);
+            let (quot, rem) = self.ring.quot_rem(c, other);
             debug_assert!(F::is_zero(&rem));
             *c = quot;
         }
@@ -1371,7 +1414,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         }
 
         // check if the leading coefficients divide
-        if !F::is_zero(&self.field.rem(&self.lcoeff(), &div.lcoeff())) {
+        if !F::is_zero(&self.ring.rem(&self.lcoeff(), &div.lcoeff())) {
             return None;
         }
 
@@ -1379,33 +1422,33 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
             return None;
         }
 
-        if self.field.characteristic().is_zero() {
+        if self.ring.characteristic().is_zero() {
             // test division of constant term (evaluation at x_i = 0)
             let c = div.get_constant();
             if !F::is_zero(&c)
-                && !self.field.is_one(&c)
-                && !F::is_zero(&self.field.rem(&self.get_constant(), &c))
+                && !self.ring.is_one(&c)
+                && !F::is_zero(&self.ring.rem(&self.get_constant(), &c))
             {
                 return None;
             }
 
             // test division at x_i = 1
-            let mut num = self.field.zero();
+            let mut num = self.ring.zero();
             for c in &self.coefficients {
                 if !F::is_zero(c) {
-                    self.field.add_assign(&mut num, c);
+                    self.ring.add_assign(&mut num, c);
                 }
             }
-            let mut den = self.field.zero();
+            let mut den = self.ring.zero();
             for c in &div.coefficients {
                 if !F::is_zero(c) {
-                    self.field.add_assign(&mut den, c);
+                    self.ring.add_assign(&mut den, c);
                 }
             }
 
             if !F::is_zero(&den)
-                && !self.field.is_one(&den)
-                && !F::is_zero(&self.field.rem(&num, &den))
+                && !self.ring.is_one(&den)
+                && !F::is_zero(&self.ring.rem(&num, &den))
             {
                 return None;
             }
@@ -1445,14 +1488,12 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         }
 
         let mut q = self.zero();
-        q.coefficients = vec![self.field.zero(); n + 1 - m];
+        q.coefficients = vec![self.ring.zero(); n + 1 - m];
 
         let mut r = self.clone();
 
         while n >= m {
-            let (qq, rr) = self
-                .field
-                .quot_rem(&r.coefficients[n], &div.coefficients[m]);
+            let (qq, rr) = self.ring.quot_rem(&r.coefficients[n], &div.coefficients[m]);
             if !F::is_zero(&rr) {
                 return (self.zero(), r);
             }
@@ -1498,7 +1539,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
 
         let mut res = self.zero();
         res.coefficients
-            .resize(self.coefficients.len() + 1, self.field.zero());
+            .resize(self.coefficients.len() + 1, self.ring.zero());
 
         for (p, (nc, oc)) in res
             .coefficients
@@ -1508,7 +1549,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
             .enumerate()
         {
             if !F::is_zero(oc) {
-                let (q, r) = self.field.quot_rem(oc, &self.field.nth(p as u64 + 1));
+                let (q, r) = self.ring.quot_rem(oc, &self.ring.nth(p as u64 + 1));
                 if !F::is_zero(&r) {
                     panic!("Could not compute integral since there is a remainder in the division of the exponent number.");
                 }
@@ -1524,8 +1565,8 @@ impl<F: Field> UnivariatePolynomial<F> {
     /// Make the polynomial monic, i.e., make the leading coefficient `1` by
     /// multiplying all monomials with `1/lcoeff`.
     pub fn make_monic(self) -> Self {
-        if self.lcoeff() != self.field.one() {
-            let ci = self.field.inv(&self.lcoeff());
+        if self.lcoeff() != self.ring.one() {
+            let ci = self.ring.inv(&self.lcoeff());
             self.mul_coeff(&ci)
         } else {
             self
@@ -1563,10 +1604,10 @@ impl<F: Field> UnivariatePolynomial<F> {
 
         let mut r0 = self.clone().make_monic();
         let mut r1 = other.clone().make_monic();
-        let mut s0 = self.constant(self.field.inv(&self.lcoeff()));
+        let mut s0 = self.constant(self.ring.inv(&self.lcoeff()));
         let mut s1 = self.zero();
         let mut t0 = self.zero();
-        let mut t1 = self.constant(self.field.inv(&other.lcoeff()));
+        let mut t1 = self.constant(self.ring.inv(&other.lcoeff()));
 
         while !r1.is_zero() {
             let (q, r) = r0.quot_rem(&r1);
@@ -1574,7 +1615,7 @@ impl<F: Field> UnivariatePolynomial<F> {
                 return (r1, s1, t1);
             }
 
-            let a = self.field.inv(&r.lcoeff());
+            let a = self.ring.inv(&r.lcoeff());
             (r1, r0) = (r.mul_coeff(&a), r1);
             (s1, s0) = ((s0 - &q * &s1).mul_coeff(&a), s1);
             (t1, t0) = ((t0 - q * &t1).mul_coeff(&a), t1);
@@ -1646,7 +1687,7 @@ impl<F: Field> UnivariatePolynomial<F> {
         // normalize the gcd
         let l = d.coefficients.last().unwrap().clone();
         for x in &mut d.coefficients {
-            self.field.div_assign(x, &l);
+            self.ring.div_assign(x, &l);
         }
 
         d
@@ -1669,15 +1710,15 @@ impl<F: Field> UnivariatePolynomial<F> {
         let mut n = self.degree();
         let m = div.degree();
 
-        let u = self.field.inv(&div.coefficients[m]);
+        let u = self.ring.inv(&div.coefficients[m]);
 
         let mut q = self.zero();
-        q.coefficients = vec![self.field.zero(); n - m + 1];
+        q.coefficients = vec![self.ring.zero(); n - m + 1];
 
         let mut r = self.clone();
 
         while n >= m {
-            let qq = self.field.mul(&r.coefficients[n], &u);
+            let qq = self.ring.mul(&r.coefficients[n], &u);
             r = r - div.mul_exp(n - m).mul_coeff(&qq);
             q.coefficients[n - m] = qq;
             n = r.degree();
@@ -1693,7 +1734,7 @@ impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
     /// Convert a univariate polynomial of multivariate polynomials to a multivariate polynomial.
     pub fn flatten(self) -> MultivariatePolynomial<R, E> {
         if self.is_zero() {
-            return self.field.zero();
+            return self.ring.zero();
         }
 
         let Some(pos) = self.coefficients[0]
@@ -1706,7 +1747,7 @@ impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
 
         let n_vars = self.coefficients[0].get_vars().len();
         let mut res = MultivariatePolynomial::new(
-            &self.field.ring,
+            &self.ring.ring,
             self.degree().into(),
             self.coefficients[0].get_vars().clone(),
         );

@@ -9,7 +9,6 @@ use crate::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent,
         Variable,
     },
-    printer::PolynomialPrinter,
 };
 
 use super::{
@@ -18,7 +17,7 @@ use super::{
     },
     integer::Integer,
     rational::Rational,
-    EuclideanDomain, Field, InternalOrdering, Ring,
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
 /// An algebraic number ring, with a monic, irreducible defining polynomial.
@@ -488,35 +487,14 @@ impl<R: Ring> Ring for AlgebraicExtension<R> {
         AlgebraicNumber { poly }
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &crate::printer::PrintOptions,
-        in_product: bool, // can be used to add parentheses
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> Result<(), std::fmt::Error> {
-        if f.sign_plus() {
-            f.write_str("+")?;
-        }
-
-        if in_product {
-            f.write_str("(")?;
-        }
-
-        write!(
-            f,
-            "{}",
-            PolynomialPrinter {
-                poly: &element.poly,
-                opts: *opts,
-            }
-        )?;
-
-        if in_product {
-            f.write_str(")")?;
-        }
-
-        Ok(())
+        state: crate::printer::PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        element.poly.format(opts, state, f)
     }
 }
 

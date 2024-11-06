@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    fmt::{Display, Error, Formatter, Write},
+    fmt::{Display, Error},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
     sync::Arc,
@@ -14,7 +14,7 @@ use crate::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial,
         univariate::UnivariatePolynomial, Exponent, Variable,
     },
-    printer::{PrintOptions, RationalPolynomialPrinter},
+    printer::PrintOptions,
 };
 
 use super::{
@@ -162,6 +162,92 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
             field,
             true,
         )
+    }
+
+    pub fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut in_sum: bool,
+        in_product: bool,
+        f: &mut W,
+    ) -> Result<(), Error> {
+        if in_sum && in_product {
+            in_sum = false;
+            f.write_char('+')?;
+        }
+
+        if opts.explicit_rational_polynomial {
+            if self.denominator.is_one() {
+                if self.numerator.is_zero() {
+                    f.write_char('0')?;
+                } else {
+                    f.write_char('[')?;
+                    self.numerator.format(opts, false, false, f)?;
+                    f.write_char(']')?;
+                }
+            } else {
+                f.write_char('[')?;
+                self.numerator.format(opts, false, false, f)?;
+                f.write_char(',')?;
+                self.denominator.format(opts, false, false, f)?;
+                f.write_char(']')?;
+            }
+
+            return Ok(());
+        }
+
+        if self.denominator.is_one() {
+            if !in_product || self.numerator.nterms() < 2 {
+                self.numerator.format(opts, in_sum, false, f)
+            } else {
+                f.write_char('(')?;
+                self.numerator.format(opts, false, false, f)?;
+                f.write_char(')')
+            }
+        } else {
+            if opts.latex {
+                if in_sum {
+                    f.write_char('+')?;
+                }
+                f.write_str("\\frac{")?;
+                self.numerator.format(opts, false, false, f)?;
+                f.write_str("}{")?;
+                self.denominator.format(opts, false, false, f)?;
+                return f.write_str("}");
+            }
+
+            if self.numerator.nterms() < 2 {
+                self.numerator.format(opts, in_sum, true, f)?;
+            } else {
+                f.write_char('(')?;
+                self.numerator.format(opts, false, true, f)?;
+                f.write_char(')')?;
+            }
+
+            if self.denominator.nterms() == 1 {
+                let var_count = self
+                    .denominator
+                    .exponents
+                    .iter()
+                    .filter(|x| !x.is_zero())
+                    .count();
+
+                if var_count == 0
+                    || self
+                        .denominator
+                        .ring
+                        .is_one(&self.denominator.coefficients[0])
+                        && var_count == 1
+                {
+                    f.write_char('/')?;
+                    return self.denominator.format(opts, false, false, f);
+                }
+            }
+
+            f.write_str("/(")?;
+            self.denominator.format(opts, false, true, f)?;
+            f.write_char(')')
+        }
     }
 }
 
@@ -473,7 +559,7 @@ where
 
 impl<R: Ring, E: Exponent> Display for RationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        RationalPolynomialPrinter::new(self).fmt(f)
+        self.format(&PrintOptions::default(), false, false, f)
     }
 }
 
@@ -593,25 +679,15 @@ where
         todo!("Sampling a polynomial is not possible yet")
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
+        in_sum: bool,
         in_product: bool,
-        f: &mut Formatter<'_>,
+        f: &mut W,
     ) -> Result<(), Error> {
-        if f.sign_plus() {
-            f.write_char('+')?;
-        }
-
-        f.write_fmt(format_args!(
-            "{}",
-            RationalPolynomialPrinter {
-                poly: element,
-                opts: *opts,
-                add_parentheses: in_product
-            },
-        ))
+        element.format(opts, in_sum, in_product, f)
     }
 }
 

@@ -150,14 +150,20 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
     }
 
     #[inline(always)]
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         _opts: &crate::printer::PrintOptions,
-        _in_product: bool, // can be used to add parentheses
-        f: &mut Formatter<'_>,
+        in_sum: bool,
+        _in_product: bool,
+        f: &mut W,
     ) -> Result<(), fmt::Error> {
-        Display::fmt(element, f)
+        if in_sum {
+            f.write_char('+')?;
+        }
+
+        // FIXME: pass options, floatlike needs to implement format
+        f.write_fmt(format_args!("{}", element))
     }
 
     #[inline(always)]

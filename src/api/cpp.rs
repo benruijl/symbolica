@@ -13,9 +13,7 @@ use crate::poly::Variable;
 use crate::LicenseManager;
 use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
-    domains::rational_polynomial::RationalPolynomial,
-    printer::{FactorizedRationalPolynomialPrinter, PrintOptions, RationalPolynomialPrinter},
-    state::State,
+    domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, state::State,
 };
 
 struct LocalState {
@@ -180,16 +178,8 @@ unsafe extern "C" fn simplify(
                     .unwrap();
 
                 symbolica.local_state.buffer.clear();
-                write!(
-                    &mut symbolica.local_state.buffer,
-                    "{}\0", // add the NUL character
-                    RationalPolynomialPrinter {
-                        poly: &r,
-                        opts,
-                        add_parentheses: false,
-                    }
-                )
-                .unwrap();
+                r.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                    .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
                 let field = Zp::new(prime as u32);
                 let rf: RationalPolynomial<Zp, $exp_size> = token
@@ -202,16 +192,8 @@ unsafe extern "C" fn simplify(
                     .unwrap();
 
                 symbolica.local_state.buffer.clear();
-                write!(
-                    &mut symbolica.local_state.buffer,
-                    "{}\0", // add the NUL character
-                    RationalPolynomialPrinter {
-                        poly: &rf,
-                        opts,
-                        add_parentheses: false,
-                    }
-                )
-                .unwrap();
+                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                    .unwrap();
             } else if prime == Mersenne64::PRIME {
                 let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
                 let rf: RationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
@@ -224,16 +206,8 @@ unsafe extern "C" fn simplify(
                     .unwrap();
 
                 symbolica.local_state.buffer.clear();
-                write!(
-                    &mut symbolica.local_state.buffer,
-                    "{}\0", // add the NUL character
-                    RationalPolynomialPrinter {
-                        poly: &rf,
-                        opts,
-                        add_parentheses: false,
-                    }
-                )
-                .unwrap();
+                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                    .unwrap();
             } else {
                 let field = Zp64::new(prime as u64);
                 let rf: RationalPolynomial<Zp64, $exp_size> = token
@@ -246,16 +220,8 @@ unsafe extern "C" fn simplify(
                     .unwrap();
 
                 symbolica.local_state.buffer.clear();
-                write!(
-                    &mut symbolica.local_state.buffer,
-                    "{}\0", // add the NUL character
-                    RationalPolynomialPrinter {
-                        poly: &rf,
-                        opts,
-                        add_parentheses: false,
-                    }
-                )
-                .unwrap();
+                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                    .unwrap();
             }
         };
     }
@@ -264,10 +230,18 @@ unsafe extern "C" fn simplify(
         symbolica.local_state.input_has_rational_numbers,
         symbolica.local_state.exp_fits_in_u8,
     ) {
-        (false, true) => to_rational!(Z, u8),
-        (true, true) => to_rational!(Q, u8),
-        (false, false) => to_rational!(Z, u16),
-        (true, false) => to_rational!(Q, u16),
+        (false, true) => {
+            to_rational!(Z, u8);
+        }
+        (true, true) => {
+            to_rational!(Q, u8);
+        }
+        (false, false) => {
+            to_rational!(Z, u16);
+        }
+        (true, false) => {
+            to_rational!(Q, u16);
+        }
     }
 
     unsafe { CStr::from_bytes_with_nul_unchecked(symbolica.local_state.buffer.as_bytes()) }.as_ptr()
@@ -307,16 +281,8 @@ unsafe extern "C" fn simplify_factorized(
                     .unwrap();
 
                 symbolica.local_state.buffer.clear();
-                write!(
-                    &mut symbolica.local_state.buffer,
-                    "{}\0", // add the NUL character
-                    FactorizedRationalPolynomialPrinter {
-                        poly: &r,
-                        opts,
-                        add_parentheses: false,
-                    }
-                )
-                .unwrap();
+                r.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                    .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
                 let field = Zp::new(prime as u32);
                 let rf: FactorizedRationalPolynomial<Zp, $exp_size> = token
@@ -329,16 +295,8 @@ unsafe extern "C" fn simplify_factorized(
                     .unwrap();
 
                 symbolica.local_state.buffer.clear();
-                write!(
-                    &mut symbolica.local_state.buffer,
-                    "{}\0", // add the NUL character
-                    FactorizedRationalPolynomialPrinter {
-                        poly: &rf,
-                        opts,
-                        add_parentheses: false,
-                    }
-                )
-                .unwrap();
+                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                    .unwrap();
             } else if prime == Mersenne64::PRIME {
                 let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
                 let rf: FactorizedRationalPolynomial<FiniteField<Mersenne64>, $exp_size> = token
@@ -351,16 +309,8 @@ unsafe extern "C" fn simplify_factorized(
                     .unwrap();
 
                 symbolica.local_state.buffer.clear();
-                write!(
-                    &mut symbolica.local_state.buffer,
-                    "{}\0", // add the NUL character
-                    FactorizedRationalPolynomialPrinter {
-                        poly: &rf,
-                        opts,
-                        add_parentheses: false,
-                    }
-                )
-                .unwrap();
+                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                    .unwrap();
             } else {
                 let field = Zp64::new(prime as u64);
                 let rf: FactorizedRationalPolynomial<Zp64, $exp_size> = token
@@ -373,17 +323,15 @@ unsafe extern "C" fn simplify_factorized(
                     .unwrap();
 
                 symbolica.local_state.buffer.clear();
-                write!(
-                    &mut symbolica.local_state.buffer,
-                    "{}\0", // add the NUL character
-                    FactorizedRationalPolynomialPrinter {
-                        poly: &rf,
-                        opts,
-                        add_parentheses: false,
-                    }
-                )
-                .unwrap();
+                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                    .unwrap();
             }
+
+            write!(
+                &mut symbolica.local_state.buffer,
+                "\0", // add the NUL character
+            )
+            .unwrap()
         };
     }
 
@@ -391,10 +339,18 @@ unsafe extern "C" fn simplify_factorized(
         symbolica.local_state.input_has_rational_numbers,
         symbolica.local_state.exp_fits_in_u8,
     ) {
-        (false, true) => to_rational!(Z, u8),
-        (true, true) => to_rational!(Q, u8),
-        (false, false) => to_rational!(Z, u16),
-        (true, false) => to_rational!(Q, u16),
+        (false, true) => {
+            to_rational!(Z, u8);
+        }
+        (true, true) => {
+            to_rational!(Q, u8);
+        }
+        (false, false) => {
+            to_rational!(Z, u16);
+        }
+        (true, false) => {
+            to_rational!(Q, u16);
+        }
     }
 
     unsafe { CStr::from_bytes_with_nul_unchecked(symbolica.local_state.buffer.as_bytes()) }.as_ptr()

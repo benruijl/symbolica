@@ -1,5 +1,3 @@
-use std::fmt::Write;
-
 use crate::{
     atom::{Atom, AtomView},
     poly::Variable,
@@ -126,14 +124,17 @@ impl Ring for AtomField {
         0.into()
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         _opts: &crate::printer::PrintOptions,
+        in_sum: bool,
         mut in_product: bool, // can be used to add parentheses
-        f: &mut std::fmt::Formatter<'_>,
+        f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        if f.sign_plus() {
+        // FIXME: improve, pass minus sign info
+        // to atom writer
+        if in_sum {
             f.write_char('+')?;
         }
 
@@ -145,7 +146,7 @@ impl Ring for AtomField {
             write!(f, "(")?;
         }
 
-        std::fmt::Display::fmt(element, f)?;
+        f.write_fmt(format_args!("{}", element))?;
 
         if in_product {
             write!(f, ")")?;

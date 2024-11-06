@@ -1168,31 +1168,46 @@ impl Ring for IntegerRing {
         Integer::Natural(r)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
+        in_sum: bool,
         _in_product: bool,
-        f: &mut Formatter<'_>,
+        f: &mut W,
     ) -> Result<(), Error> {
-        if opts.explicit_rational_polynomial {
-            match element {
-                Integer::Natural(n) => n.fmt(f),
-                Integer::Double(n) => n.fmt(f),
-                Integer::Large(r) => {
+        match element {
+            Integer::Natural(n) => {
+                if in_sum {
+                    write!(f, "{:+}", n)
+                } else {
+                    write!(f, "{}", n)
+                }
+            }
+            Integer::Double(n) => {
+                if in_sum {
+                    write!(f, "{:+}", n)
+                } else {
+                    write!(f, "{}", n)
+                }
+            }
+            Integer::Large(r) => {
+                if opts.explicit_rational_polynomial {
                     // write the GMP number in hexadecimal representation,
                     // since the conversion is much faster than for the decimal representation
                     if r.is_negative() {
                         write!(f, "-#{:X}", r.as_abs())
-                    } else if f.sign_plus() {
+                    } else if in_sum {
                         write!(f, "+#{:X}", r)
                     } else {
                         write!(f, "#{:X}", r)
                     }
+                } else if in_sum {
+                    write!(f, "{:+}", r)
+                } else {
+                    write!(f, "{}", r)
                 }
             }
-        } else {
-            element.fmt(f)
         }
     }
 }
@@ -2180,14 +2195,19 @@ impl Ring for MultiPrecisionIntegerRing {
         MultiPrecisionInteger::from(r)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         _opts: &PrintOptions,
+        in_sum: bool,
         _in_product: bool,
-        f: &mut Formatter<'_>,
+        f: &mut W,
     ) -> Result<(), Error> {
-        element.fmt(f)
+        if in_sum {
+            write!(f, "{:+}", element)
+        } else {
+            write!(f, "{}", element)
+        }
     }
 }
 

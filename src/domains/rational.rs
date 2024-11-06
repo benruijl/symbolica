@@ -323,17 +323,20 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
         }
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
+        in_sum: bool,
         _in_product: bool,
-        f: &mut Formatter<'_>,
+        f: &mut W,
     ) -> Result<(), Error> {
-        self.ring.fmt_display(&element.numerator, opts, true, f)?;
+        self.ring
+            .format(&element.numerator, opts, in_sum, true, f)?;
         if !self.ring.is_one(&element.denominator) {
             f.write_char('/')?;
-            self.ring.fmt_display(&element.denominator, opts, true, f)?;
+            self.ring
+                .format(&element.denominator, opts, false, true, f)?;
         }
 
         Ok(())

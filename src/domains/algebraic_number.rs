@@ -9,7 +9,6 @@ use crate::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent,
         Variable,
     },
-    printer::PolynomialPrinter,
 };
 
 use super::{
@@ -488,35 +487,15 @@ impl<R: Ring> Ring for AlgebraicExtension<R> {
         AlgebraicNumber { poly }
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &crate::printer::PrintOptions,
-        in_product: bool, // can be used to add parentheses
-        f: &mut std::fmt::Formatter<'_>,
+        in_sum: bool,
+        in_product: bool,
+        f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        if f.sign_plus() {
-            f.write_str("+")?;
-        }
-
-        if in_product {
-            f.write_str("(")?;
-        }
-
-        write!(
-            f,
-            "{}",
-            PolynomialPrinter {
-                poly: &element.poly,
-                opts: *opts,
-            }
-        )?;
-
-        if in_product {
-            f.write_str(")")?;
-        }
-
-        Ok(())
+        element.poly.format(opts, in_sum, in_product, f)
     }
 }
 

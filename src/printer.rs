@@ -10,12 +10,22 @@ use crate::{
     coefficient::CoefficientView,
     domains::{
         factorized_rational_polynomial::FactorizedRationalPolynomial,
-        finite_field::FiniteFieldCore, rational_polynomial::RationalPolynomial, Ring, RingPrinter,
+        finite_field::FiniteFieldCore, Ring,
     },
-    poly::{polynomial::MultivariatePolynomial, Exponent, MonomialOrder},
+    poly::Exponent,
     state::State,
     tensors::matrix::{Matrix, Vector},
 };
+
+pub trait Format {
+    fn format(
+        &self,
+        opts: &PrintOptions,
+        in_sum: bool,
+        in_product: bool,
+        f: &mut fmt::Formatter,
+    ) -> fmt::Result;
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct PrintOptions {
@@ -547,14 +557,10 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                     ff.get_prime()
                 ))
             }
-            CoefficientView::RationalPolynomial(p) => f.write_fmt(format_args!(
-                "[{}]",
-                RationalPolynomialPrinter {
-                    poly: &p.deserialize(),
-                    opts: *opts,
-                    add_parentheses: false,
-                }
-            )),
+            CoefficientView::RationalPolynomial(p) => {
+                f.write_char('[')?;
+                p.deserialize().format(opts, false, false, f)
+            }
         }
     }
 }
@@ -866,555 +872,6 @@ impl<'a, R: Ring, E: Exponent> FactorizedRationalPolynomialPrinter<'a, R, E> {
     }
 }
 
-impl<'a, R: Ring, E: Exponent> Display for FactorizedRationalPolynomialPrinter<'a, R, E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.opts.explicit_rational_polynomial {
-            if !R::is_zero(&self.poly.numer_coeff)
-                && !self.poly.numerator.ring.is_one(&self.poly.numer_coeff)
-            {
-                f.write_fmt(format_args!(
-                    "[{}]*",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.numer_coeff,
-                        opts: self.opts,
-                        in_product: false
-                    }
-                ))?;
-            }
-
-            if self.poly.denominators.is_empty()
-                && self.poly.numerator.ring.is_one(&self.poly.denom_coeff)
-            {
-                if self.poly.numerator.is_zero() {
-                    f.write_char('0')?;
-                } else {
-                    f.write_fmt(format_args!(
-                        "[{}]",
-                        PolynomialPrinter {
-                            poly: &self.poly.numerator,
-                            opts: self.opts,
-                        }
-                    ))?;
-                }
-            } else {
-                f.write_fmt(format_args!(
-                    "[{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-
-                        opts: self.opts,
-                    },
-                ))?;
-
-                if !self.poly.numerator.ring.is_one(&self.poly.denom_coeff) {
-                    f.write_fmt(format_args!(
-                        ",{},1",
-                        RingPrinter {
-                            ring: &self.poly.numerator.ring,
-                            element: &self.poly.denom_coeff,
-                            opts: self.opts,
-                            in_product: false
-                        },
-                    ))?;
-                }
-
-                for (d, p) in &self.poly.denominators {
-                    f.write_fmt(format_args!(
-                        ",{}",
-                        PolynomialPrinter {
-                            poly: d,
-
-                            opts: self.opts,
-                        }
-                    ))?;
-                    f.write_fmt(format_args!(",{}", p))?;
-                }
-
-                f.write_char(']')?;
-            }
-
-            return Ok(());
-        }
-
-        if R::is_zero(&self.poly.numer_coeff) {
-            return f.write_char('0');
-        }
-
-        if self.poly.denominators.is_empty()
-            && self.poly.numerator.ring.is_one(&self.poly.denom_coeff)
-        {
-            if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.numer_coeff,
-                        opts: self.opts,
-                        in_product: false
-                    }
-                ))?;
-            }
-
-            if (self.poly.numerator.ring.is_one(&self.poly.numer_coeff) && !self.add_parentheses)
-                || self.poly.numerator.nterms() < 2
-            {
-                if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                    if self.poly.numerator.is_one() {
-                        return Ok(());
-                    }
-
-                    f.write_char('*')?;
-                }
-
-                f.write_fmt(format_args!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-
-                        opts: self.opts,
-                    }
-                ))
-            } else {
-                if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                    if self.poly.numerator.is_one() {
-                        return Ok(());
-                    }
-
-                    f.write_char('*')?;
-                }
-
-                f.write_fmt(format_args!(
-                    "({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-
-                        opts: self.opts,
-                    }
-                ))
-            }
-        } else {
-            if self.opts.latex {
-                if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                    f.write_fmt(format_args!(
-                        "{} ",
-                        RingPrinter {
-                            ring: &self.poly.numerator.ring,
-                            element: &self.poly.numer_coeff,
-                            opts: self.opts,
-                            in_product: false
-                        }
-                    ))?;
-                }
-
-                f.write_fmt(format_args!(
-                    "\\frac{{{}}}{{",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-
-                        opts: self.opts,
-                    },
-                ))?;
-
-                if !self.poly.numerator.ring.is_one(&self.poly.denom_coeff) {
-                    f.write_fmt(format_args!(
-                        "{}",
-                        RingPrinter {
-                            ring: &self.poly.numerator.ring,
-                            element: &self.poly.denom_coeff,
-                            opts: self.opts,
-                            in_product: false
-                        }
-                    ))?;
-                }
-
-                for (d, p) in &self.poly.denominators {
-                    if *p == 1 {
-                        f.write_fmt(format_args!(
-                            "({})",
-                            PolynomialPrinter {
-                                poly: d,
-                                opts: self.opts,
-                            }
-                        ))?;
-                    } else {
-                        f.write_fmt(format_args!(
-                            "({})^{}",
-                            PolynomialPrinter {
-                                poly: d,
-                                opts: self.opts,
-                            },
-                            p
-                        ))?;
-                    }
-                }
-
-                return f.write_str("}}");
-            }
-
-            if !self.poly.numerator.ring.is_one(&self.poly.numer_coeff) {
-                f.write_fmt(format_args!(
-                    "{}*",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.numer_coeff,
-                        opts: self.opts,
-                        in_product: false
-                    }
-                ))?;
-            }
-
-            if self.poly.numerator.nterms() < 2 {
-                f.write_fmt(format_args!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))?;
-            } else {
-                f.write_fmt(format_args!(
-                    "({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))?;
-            }
-
-            f.write_char('/')?;
-
-            if self.poly.denominators.is_empty() {
-                return f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.denom_coeff,
-                        opts: self.opts,
-                        in_product: true
-                    }
-                ));
-            }
-
-            if self.poly.numerator.ring.is_one(&self.poly.denom_coeff)
-                && self.poly.denominators.len() == 1
-                && self.poly.denominators[0].0.nterms() == 1
-                && self.poly.denominators[0].1 == 1
-            {
-                let (d, _) = &self.poly.denominators[0];
-                let var_count = d.exponents.iter().filter(|x| !x.is_zero()).count();
-
-                if var_count == 0 || d.ring.is_one(&d.coefficients[0]) && var_count == 1 {
-                    return f.write_fmt(format_args!(
-                        "{}",
-                        PolynomialPrinter {
-                            poly: d,
-                            opts: self.opts,
-                        }
-                    ));
-                }
-            }
-
-            f.write_char('(')?; // TODO: add special cases for 1 argument
-
-            if !self.poly.numerator.ring.is_one(&self.poly.denom_coeff) {
-                f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.poly.numerator.ring,
-                        element: &self.poly.denom_coeff,
-                        opts: self.opts,
-                        in_product: true
-                    }
-                ))?;
-            }
-
-            for (d, p) in &self.poly.denominators {
-                if *p == 1 {
-                    f.write_fmt(format_args!(
-                        "({})",
-                        PolynomialPrinter {
-                            poly: d,
-                            opts: self.opts,
-                        }
-                    ))?;
-                } else {
-                    f.write_fmt(format_args!(
-                        "({}){}{}",
-                        PolynomialPrinter {
-                            poly: d,
-                            opts: self.opts,
-                        },
-                        if self.opts.double_star_for_exponentiation {
-                            "**"
-                        } else {
-                            "^"
-                        },
-                        p
-                    ))?;
-                }
-            }
-
-            f.write_char(')')
-        }
-    }
-}
-
-pub struct RationalPolynomialPrinter<'a, R: Ring, E: Exponent> {
-    pub poly: &'a RationalPolynomial<R, E>,
-    pub opts: PrintOptions,
-    pub add_parentheses: bool,
-}
-
-impl<'a, R: Ring, E: Exponent> RationalPolynomialPrinter<'a, R, E> {
-    pub fn new(poly: &'a RationalPolynomial<R, E>) -> RationalPolynomialPrinter<'a, R, E> {
-        RationalPolynomialPrinter {
-            poly,
-            opts: PrintOptions::default(),
-            add_parentheses: false,
-        }
-    }
-
-    pub fn new_with_options(
-        poly: &'a RationalPolynomial<R, E>,
-        opts: PrintOptions,
-    ) -> RationalPolynomialPrinter<'a, R, E> {
-        RationalPolynomialPrinter {
-            poly,
-            opts,
-            add_parentheses: false,
-        }
-    }
-}
-
-impl<'a, R: Ring, E: Exponent> Display for RationalPolynomialPrinter<'a, R, E> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.opts.explicit_rational_polynomial {
-            if self.poly.denominator.is_one() {
-                if self.poly.numerator.is_zero() {
-                    f.write_char('0')?;
-                } else {
-                    f.write_fmt(format_args!(
-                        "[{}]",
-                        PolynomialPrinter {
-                            poly: &self.poly.numerator,
-                            opts: self.opts,
-                        }
-                    ))?;
-                }
-            } else {
-                f.write_fmt(format_args!(
-                    "[{},{}]",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    },
-                    PolynomialPrinter {
-                        poly: &self.poly.denominator,
-                        opts: self.opts,
-                    }
-                ))?;
-            }
-
-            return Ok(());
-        }
-
-        if self.poly.denominator.is_one() {
-            if !self.add_parentheses || self.poly.numerator.nterms() < 2 {
-                f.write_fmt(format_args!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))
-            } else {
-                f.write_fmt(format_args!(
-                    "({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))
-            }
-        } else {
-            if self.opts.latex {
-                return f.write_fmt(format_args!(
-                    "\\frac{{{}}}{{{}}}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    },
-                    PolynomialPrinter {
-                        poly: &self.poly.denominator,
-                        opts: self.opts,
-                    }
-                ));
-            }
-
-            if self.poly.numerator.nterms() < 2 {
-                f.write_fmt(format_args!(
-                    "{}",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))?;
-            } else {
-                f.write_fmt(format_args!(
-                    "({})",
-                    PolynomialPrinter {
-                        poly: &self.poly.numerator,
-                        opts: self.opts,
-                    }
-                ))?;
-            }
-
-            if self.poly.denominator.nterms() == 1 {
-                let var_count = self
-                    .poly
-                    .denominator
-                    .exponents
-                    .iter()
-                    .filter(|x| !x.is_zero())
-                    .count();
-
-                if var_count == 0
-                    || self
-                        .poly
-                        .denominator
-                        .ring
-                        .is_one(&self.poly.denominator.coefficients[0])
-                        && var_count == 1
-                {
-                    return f.write_fmt(format_args!(
-                        "/{}",
-                        PolynomialPrinter {
-                            poly: &self.poly.denominator,
-                            opts: self.opts,
-                        }
-                    ));
-                }
-            }
-
-            f.write_fmt(format_args!(
-                "/({})",
-                PolynomialPrinter {
-                    poly: &self.poly.denominator,
-
-                    opts: self.opts,
-                }
-            ))
-        }
-    }
-}
-pub struct PolynomialPrinter<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> {
-    pub poly: &'a MultivariatePolynomial<F, E, O>,
-    pub opts: PrintOptions,
-}
-
-impl<'a, R: Ring + Display, E: Exponent, O: MonomialOrder> PolynomialPrinter<'a, R, E, O> {
-    pub fn new(poly: &'a MultivariatePolynomial<R, E, O>) -> PolynomialPrinter<'a, R, E, O> {
-        PolynomialPrinter {
-            poly,
-            opts: PrintOptions::default(),
-        }
-    }
-
-    pub fn new_with_options(
-        poly: &'a MultivariatePolynomial<R, E, O>,
-        opts: PrintOptions,
-    ) -> PolynomialPrinter<'a, R, E, O> {
-        PolynomialPrinter { poly, opts }
-    }
-}
-
-impl<'a, F: Ring + Display, E: Exponent, O: MonomialOrder> Display
-    for PolynomialPrinter<'a, F, E, O>
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if f.sign_plus() {
-            f.write_char('+')?;
-        }
-
-        let var_map: Vec<String> = self
-            .poly
-            .variables
-            .as_ref()
-            .iter()
-            .map(|v| v.to_string())
-            .collect();
-
-        let mut is_first_term = true;
-        for monomial in self.poly {
-            let mut is_first_factor = true;
-            if self.poly.ring.is_one(monomial.coefficient) {
-                if !is_first_term {
-                    write!(f, "+")?;
-                }
-            } else if monomial
-                .coefficient
-                .eq(&self.poly.ring.neg(&self.poly.ring.one()))
-            {
-                write!(f, "-")?;
-            } else {
-                if is_first_term {
-                    self.poly
-                        .ring
-                        .fmt_display(monomial.coefficient, &self.opts, true, f)?;
-                } else {
-                    write!(
-                        f,
-                        "{:+}",
-                        RingPrinter {
-                            ring: &self.poly.ring,
-                            element: monomial.coefficient,
-                            opts: self.opts,
-                            in_product: true
-                        }
-                    )?;
-                }
-                is_first_factor = false;
-            }
-            is_first_term = false;
-            for (var_id, e) in var_map.iter().zip(monomial.exponents) {
-                if e.is_zero() {
-                    continue;
-                }
-                if is_first_factor {
-                    is_first_factor = false;
-                } else if !self.opts.latex {
-                    write!(f, "*")?;
-                }
-
-                f.write_str(var_id)?;
-
-                if e.to_u32() != 1 {
-                    if self.opts.latex {
-                        write!(f, "^{{{}}}", e)?;
-                    } else if self.opts.double_star_for_exponentiation {
-                        write!(f, "**{}", e)?;
-                    } else {
-                        write!(f, "^{}", e)?;
-                    }
-                }
-            }
-            if is_first_factor {
-                write!(f, "1")?;
-            }
-        }
-        if is_first_term {
-            write!(f, "0")?;
-        }
-
-        if self.opts.print_finite_field {
-            Display::fmt(&self.poly.ring, f)?;
-        }
-
-        Ok(())
-    }
-}
-
 pub struct MatrixPrinter<'a, F: Ring + Display> {
     pub matrix: &'a Matrix<F>,
     pub opts: PrintOptions,
@@ -1441,15 +898,7 @@ impl<'a, F: Ring + Display> Display for MatrixPrinter<'a, F> {
 
             for (ri, r) in self.matrix.row_iter().enumerate() {
                 for (ci, c) in r.iter().enumerate() {
-                    f.write_fmt(format_args!(
-                        "{}",
-                        RingPrinter {
-                            ring: &self.matrix.field,
-                            element: c,
-                            opts: self.opts,
-                            in_product: false,
-                        },
-                    ))?;
+                    self.matrix.field.format(c, &self.opts, false, false, f)?;
 
                     if ci + 1 < self.matrix.ncols as usize {
                         f.write_str(" & ")?;
@@ -1466,15 +915,7 @@ impl<'a, F: Ring + Display> Display for MatrixPrinter<'a, F> {
             for (ri, r) in self.matrix.row_iter().enumerate() {
                 f.write_char('{')?;
                 for (ci, c) in r.iter().enumerate() {
-                    f.write_fmt(format_args!(
-                        "{}",
-                        RingPrinter {
-                            ring: &self.matrix.field,
-                            element: c,
-                            opts: self.opts,
-                            in_product: false,
-                        },
-                    ))?;
+                    self.matrix.field.format(c, &self.opts, false, false, f)?;
 
                     if ci + 1 < self.matrix.ncols as usize {
                         f.write_char(',')?;
@@ -1514,15 +955,7 @@ impl<'a, F: Ring + Display> Display for VectorPrinter<'a, F> {
             f.write_str("\\begin{pvector}")?;
 
             for (ri, r) in self.vector.data.iter().enumerate() {
-                f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.vector.field,
-                        element: r,
-                        opts: self.opts,
-                        in_product: false,
-                    },
-                ))?;
+                self.vector.field.format(r, &self.opts, false, false, f)?;
 
                 if ri + 1 < self.vector.data.len() {
                     f.write_str(" & ")?;
@@ -1533,15 +966,7 @@ impl<'a, F: Ring + Display> Display for VectorPrinter<'a, F> {
         } else {
             f.write_char('{')?;
             for (ri, r) in self.vector.data.iter().enumerate() {
-                f.write_fmt(format_args!(
-                    "{}",
-                    RingPrinter {
-                        ring: &self.vector.field,
-                        element: r,
-                        opts: self.opts,
-                        in_product: false,
-                    },
-                ))?;
+                self.vector.field.format(r, &self.opts, false, false, f)?;
 
                 if ri + 1 < self.vector.data.len() {
                     f.write_char(',')?;
@@ -1559,7 +984,7 @@ mod test {
     use crate::{
         atom::Atom,
         domains::{finite_field::Zp, integer::Z},
-        printer::{AtomPrinter, PolynomialPrinter, PrintOptions},
+        printer::{AtomPrinter, PrintOptions},
         state::{FunctionAttribute, State},
     };
 
@@ -1612,20 +1037,21 @@ mod test {
         let a = Atom::parse("15 x^2")
             .unwrap()
             .to_polynomial::<_, u8>(&Zp::new(17), None);
-        assert_eq!(
-            format!(
-                "{}",
-                PolynomialPrinter::new_with_options(
-                    &a,
-                    PrintOptions {
-                        print_finite_field: true,
-                        symmetric_representation_for_finite_field: true,
-                        ..PrintOptions::file()
-                    }
-                )
-            ),
-            "-2*x^2 % 17"
-        );
+
+        let mut s = String::new();
+        a.format(
+            &PrintOptions {
+                print_finite_field: true,
+                symmetric_representation_for_finite_field: true,
+                ..PrintOptions::file()
+            },
+            false,
+            false,
+            &mut s,
+        )
+        .unwrap();
+
+        assert_eq!(s, "-2*x^2 % 17");
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    fmt::{Display, Error, Formatter, Write},
+    fmt::{Display, Error},
     marker::PhantomData,
     ops::{Add, Div, Mul, Neg, Sub},
     sync::Arc,
@@ -12,7 +12,7 @@ use crate::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent,
         Variable,
     },
-    printer::{FactorizedRationalPolynomialPrinter, PrintOptions},
+    printer::PrintOptions,
 };
 
 use super::{
@@ -144,6 +144,193 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
             && self.denominators.is_empty()
             && self.numerator.ring.is_one(&self.numer_coeff)
             && self.numerator.ring.is_one(&self.denom_coeff)
+    }
+
+    pub fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        in_sum: bool,
+        in_product: bool,
+        f: &mut W,
+    ) -> Result<(), Error> {
+        if opts.explicit_rational_polynomial {
+            if in_sum {
+                f.write_char('+')?;
+            }
+
+            if !R::is_zero(&self.numer_coeff) && !self.numerator.ring.is_one(&self.numer_coeff) {
+                f.write_char('[')?;
+                self.numerator
+                    .ring
+                    .format(&self.numer_coeff, opts, false, false, f)?;
+                f.write_str("]*")?;
+            }
+
+            if self.denominators.is_empty() && self.numerator.ring.is_one(&self.denom_coeff) {
+                if self.numerator.is_zero() {
+                    if in_sum {
+                        f.write_str("+0")?;
+                    } else {
+                        f.write_char('0')?;
+                    }
+                } else {
+                    f.write_char('[')?;
+                    self.numerator.format(opts, false, false, f)?;
+                    f.write_str("]*")?;
+                }
+            } else {
+                f.write_char('[')?;
+                self.numerator.format(opts, false, false, f)?;
+
+                if !self.numerator.ring.is_one(&self.denom_coeff) {
+                    f.write_char(',')?;
+                    self.numerator
+                        .ring
+                        .format(&self.denom_coeff, opts, false, false, f)?;
+                    f.write_str(",1")?;
+                }
+
+                for (d, p) in &self.denominators {
+                    f.write_char(',')?;
+                    d.format(opts, false, false, f)?;
+                    f.write_fmt(format_args!(",{}", p))?;
+                }
+
+                f.write_char(']')?;
+            }
+
+            return Ok(());
+        }
+
+        if R::is_zero(&self.numer_coeff) {
+            if in_sum {
+                return f.write_str("+0");
+            } else {
+                return f.write_char('0');
+            }
+        }
+
+        if self.denominators.is_empty() && self.numerator.ring.is_one(&self.denom_coeff) {
+            if !self.numerator.ring.is_one(&self.numer_coeff) {
+                self.numerator
+                    .ring
+                    .format(&self.numer_coeff, opts, false, false, f)?;
+            }
+
+            if (self.numerator.ring.is_one(&self.numer_coeff) && !in_product)
+                || self.numerator.nterms() < 2
+            {
+                if !self.numerator.ring.is_one(&self.numer_coeff) {
+                    if self.numerator.is_one() {
+                        return Ok(());
+                    }
+
+                    f.write_char('*')?;
+                }
+
+                self.numerator.format(opts, in_sum, in_product, f)
+            } else {
+                if !self.numerator.ring.is_one(&self.numer_coeff) {
+                    if self.numerator.is_one() {
+                        return Ok(());
+                    }
+
+                    f.write_char('*')?;
+                }
+
+                // FIXME: which params?
+                self.numerator.format(opts, in_sum, in_product, f)
+            }
+        } else {
+            if opts.latex {
+                if !self.numerator.ring.is_one(&self.numer_coeff) {
+                    self.numerator
+                        .ring
+                        .format(&self.numer_coeff, opts, in_sum, false, f)?;
+                }
+
+                f.write_str("\\frac{")?;
+                self.numerator.format(opts, in_sum, in_product, f)?;
+                f.write_str("}{")?;
+
+                if !self.numerator.ring.is_one(&self.denom_coeff) {
+                    self.numerator
+                        .ring
+                        .format(&self.denom_coeff, opts, false, true, f)?;
+                }
+
+                for (d, p) in &self.denominators {
+                    if *p == 1 {
+                        d.format(opts, false, true, f)?;
+                    } else {
+                        f.write_char('(')?;
+                        d.format(opts, false, true, f)?;
+                        f.write_str(")^")?;
+                        f.write_fmt(format_args!(")^{}", p))?;
+                    }
+                }
+
+                return f.write_str("}}");
+            }
+
+            if !self.numerator.ring.is_one(&self.numer_coeff) {
+                self.numerator
+                    .ring
+                    .format(&self.numer_coeff, opts, false, true, f)?;
+                f.write_char('*')?;
+            }
+
+            self.numerator.format(opts, false, true, f)?;
+
+            f.write_char('/')?;
+
+            if self.denominators.is_empty() {
+                return self
+                    .numerator
+                    .ring
+                    .format(&self.denom_coeff, opts, false, true, f);
+            }
+
+            if self.numerator.ring.is_one(&self.denom_coeff)
+                && self.denominators.len() == 1
+                && self.denominators[0].0.nterms() == 1
+                && self.denominators[0].1 == 1
+            {
+                let (d, _) = &self.denominators[0];
+                let var_count = d.exponents.iter().filter(|x| !x.is_zero()).count();
+
+                if var_count == 0 || d.ring.is_one(&d.coefficients[0]) && var_count == 1 {
+                    return d.format(opts, false, true, f);
+                }
+            }
+
+            f.write_char('(')?; // TODO: add special cases for 1 argument
+
+            if !self.numerator.ring.is_one(&self.denom_coeff) {
+                self.numerator
+                    .ring
+                    .format(&self.denom_coeff, opts, false, true, f)?;
+            }
+
+            for (d, p) in &self.denominators {
+                f.write_char('(')?;
+                d.format(opts, false, true, f)?;
+
+                if *p != 1 {
+                    f.write_fmt(format_args!(
+                        "{}{}",
+                        if opts.double_star_for_exponentiation {
+                            "**"
+                        } else {
+                            "^"
+                        },
+                        p
+                    ))?;
+                }
+            }
+
+            f.write_char(')')
+        }
     }
 }
 
@@ -491,7 +678,7 @@ where
 
 impl<R: Ring, E: Exponent> Display for FactorizedRationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        FactorizedRationalPolynomialPrinter::new(self).fmt(f)
+        self.format(&PrintOptions::default(), false, false, f)
     }
 }
 
@@ -614,25 +801,15 @@ where
         todo!("Sampling a polynomial is not possible yet")
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
+        in_sum: bool,
         in_product: bool,
-        f: &mut Formatter<'_>,
+        f: &mut W,
     ) -> Result<(), Error> {
-        if f.sign_plus() {
-            f.write_char('+')?;
-        }
-
-        f.write_fmt(format_args!(
-            "{}",
-            FactorizedRationalPolynomialPrinter {
-                poly: element,
-                opts: *opts,
-                add_parentheses: in_product
-            },
-        ))
+        element.format(opts, in_sum, in_product, f)
     }
 }
 

@@ -9,7 +9,7 @@ use crate::{
         float::{Complex, FloatField, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, RationalField, Q},
-        EuclideanDomain, Field, InternalOrdering, Ring, RingPrinter,
+        EuclideanDomain, Field, InternalOrdering, Ring,
     },
     printer::PrintOptions,
 };
@@ -127,28 +127,15 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
         todo!("Sampling a polynomial is not possible yet")
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
-        _opts: &PrintOptions,
+        opts: &PrintOptions,
+        in_sum: bool,
         in_product: bool,
-        f: &mut std::fmt::Formatter<'_>,
+        f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        if f.sign_plus() {
-            f.write_str("+")?;
-        }
-
-        if in_product {
-            f.write_str("(")?;
-        }
-
-        <Self::Element as std::fmt::Display>::fmt(element, f)?;
-
-        if in_product {
-            f.write_str(")")?;
-        }
-
-        Ok(())
+        element.format(opts, in_sum, in_product, f)
     }
 }
 
@@ -202,46 +189,7 @@ impl<F: Ring + std::fmt::Debug> std::fmt::Debug for UnivariatePolynomial<F> {
 
 impl<F: Ring + std::fmt::Display> std::fmt::Display for UnivariatePolynomial<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        if self.is_zero() {
-            return write!(f, "0");
-        }
-
-        let v = self.variable.to_string();
-
-        let mut first = true;
-        for (e, c) in self.coefficients.iter().enumerate() {
-            if F::is_zero(c) {
-                continue;
-            }
-
-            if first {
-                first = false;
-            } else {
-                write!(f, "+")?;
-            }
-
-            let p = RingPrinter {
-                element: c,
-                ring: &self.field,
-                opts: PrintOptions::default(),
-                in_product: true,
-            };
-
-            if e == 0 {
-                write!(f, "{}", p)?;
-            } else if e == 1 {
-                if self.field.is_one(c) {
-                    write!(f, "{}", v)?;
-                } else {
-                    write!(f, "{}*{}", p, v)?;
-                }
-            } else if self.field.is_one(c) {
-                write!(f, "{}^{}", v, e)?;
-            } else {
-                write!(f, "{}*{}^{}", p, v, e)?;
-            }
-        }
-        Ok(())
+        self.format(&PrintOptions::default(), f.sign_plus(), false, f)
     }
 }
 
@@ -537,6 +485,61 @@ impl<F: Ring> UnivariatePolynomial<F> {
         }
 
         poly
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        in_sum: bool,
+        in_product: bool,
+        f: &mut W,
+    ) -> Result<(), std::fmt::Error> {
+        if self.is_zero() {
+            if in_sum {
+                return write!(f, "+0");
+            } else {
+                return write!(f, "0");
+            }
+        }
+
+        if in_sum && in_product {
+            f.write_str("+")?;
+        }
+
+        if in_product {
+            f.write_str("(")?;
+        }
+
+        let v = self.variable.to_string();
+
+        for (e, c) in self.coefficients.iter().enumerate() {
+            if F::is_zero(c) {
+                continue;
+            }
+
+            if e == 0 {
+                self.field
+                    .format(c, opts, in_sum && !in_product, false, f)?;
+            } else if e == 1 {
+                if self.field.is_one(c) {
+                    write!(f, "+{}", v)?;
+                } else {
+                    self.field.format(c, opts, true, true, f)?;
+                    write!(f, "*{}", v)?;
+                }
+            } else if self.field.is_one(c) {
+                write!(f, "+{}^{}", v, e)?;
+            } else {
+                self.field.format(c, opts, true, true, f)?;
+                write!(f, "*{}^{}", v, e)?;
+            }
+        }
+
+        if in_product {
+            f.write_str(")")?;
+        }
+
+        Ok(())
     }
 }
 

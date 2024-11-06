@@ -95,12 +95,13 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     fn size(&self) -> Integer;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
+        in_sum: bool,     // can be used to add + or -, similar to {:+}
         in_product: bool, // can be used to add parentheses
-        f: &mut Formatter<'_>,
+        f: &mut W,
     ) -> Result<(), Error>;
 
     fn printer<'a>(&'a self, element: &'a Self::Element) -> RingPrinter<'a, Self> {
@@ -124,6 +125,7 @@ pub struct RingPrinter<'a, R: Ring> {
     pub ring: &'a R,
     pub element: &'a R::Element,
     pub opts: PrintOptions,
+    pub in_sum: bool,
     pub in_product: bool,
 }
 
@@ -133,6 +135,7 @@ impl<'a, R: Ring> RingPrinter<'a, R> {
             ring,
             element,
             opts: PrintOptions::default(),
+            in_sum: false,
             in_product: false,
         }
     }
@@ -141,6 +144,6 @@ impl<'a, R: Ring> RingPrinter<'a, R> {
 impl<'a, R: Ring> Display for RingPrinter<'a, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.ring
-            .fmt_display(self.element, &self.opts, self.in_product, f)
+            .format(self.element, &self.opts, self.in_sum, self.in_product, f)
     }
 }

@@ -402,17 +402,26 @@ impl Ring for Zp {
         FiniteFieldElement(r as u32)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
+        in_sum: bool,
+        in_product: bool,
+        f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(
+                &self.to_symmetric_integer(element),
+                opts,
+                in_sum,
+                in_product,
+                f,
+            )
+        } else if in_sum {
+            write!(f, "{:+}", self.from_element(element))
         } else {
-            self.from_element(element).fmt(f)
+            write!(f, "{}", self.from_element(element))
         }
     }
 }
@@ -701,17 +710,26 @@ impl Ring for Zp64 {
         FiniteFieldElement(r as u64)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
+        in_sum: bool,
+        in_product: bool,
+        f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(
+                &self.to_symmetric_integer(element),
+                opts,
+                in_sum,
+                in_product,
+                f,
+            )
+        } else if in_sum {
+            write!(f, "{:+}", self.from_element(element))
         } else {
-            self.from_element(element).fmt(f)
+            write!(f, "{}", self.from_element(element))
         }
     }
 }
@@ -970,17 +988,26 @@ impl Ring for FiniteField<Two> {
         rng.gen_range(0..2)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
+        in_sum: bool,
+        in_product: bool,
+        f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(
+                &self.to_symmetric_integer(element),
+                opts,
+                in_sum,
+                in_product,
+                f,
+            )
+        } else if in_sum {
+            write!(f, "{:+}", self.from_element(element))
         } else {
-            self.from_element(element).fmt(f)
+            write!(f, "{}", self.from_element(element))
         }
     }
 }
@@ -1222,17 +1249,26 @@ impl Ring for FiniteField<Mersenne64> {
         r as u64
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
+        in_sum: bool,
+        in_product: bool,
+        f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(
+                &self.to_symmetric_integer(element),
+                opts,
+                in_sum,
+                in_product,
+                f,
+            )
+        } else if in_sum {
+            write!(f, "{:+}", self.from_element(element))
         } else {
-            self.from_element(element).fmt(f)
+            write!(f, "{}", self.from_element(element))
         }
     }
 }
@@ -1426,17 +1462,24 @@ impl Ring for FiniteField<Integer> {
         Z.sample(rng, range).symmetric_mod(&self.p)
     }
 
-    fn fmt_display(
+    fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        _in_product: bool,
-        f: &mut Formatter<'_>,
+        in_sum: bool,
+        in_product: bool,
+        f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            self.to_symmetric_integer(element).fmt(f)
+            Z.format(
+                &self.to_symmetric_integer(element),
+                opts,
+                in_sum,
+                in_product,
+                f,
+            )
         } else {
-            self.from_element(element).fmt(f)
+            Z.format(&self.from_element(element), opts, in_sum, in_product, f)
         }
     }
 }

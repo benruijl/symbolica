@@ -725,7 +725,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         }
 
         if self.nterms() < 2 {
-            //in_product = false; // TODO
+            in_product = false;
         }
 
         if in_sum && in_product {

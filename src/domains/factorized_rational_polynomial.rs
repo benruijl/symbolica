@@ -150,7 +150,7 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
         &self,
         opts: &PrintOptions,
         in_sum: bool,
-        in_product: bool,
+        mut in_product: bool,
         f: &mut W,
     ) -> Result<(), Error> {
         if opts.explicit_rational_polynomial {
@@ -176,7 +176,7 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
                 } else {
                     f.write_char('[')?;
                     self.numerator.format(opts, false, false, f)?;
-                    f.write_str("]*")?;
+                    f.write_str("]")?;
                 }
             } else {
                 f.write_char('[')?;
@@ -212,9 +212,10 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
 
         if self.denominators.is_empty() && self.numerator.ring.is_one(&self.denom_coeff) {
             if !self.numerator.ring.is_one(&self.numer_coeff) {
+                in_product |= !self.numerator.is_one();
                 self.numerator
                     .ring
-                    .format(&self.numer_coeff, opts, false, false, f)?;
+                    .format(&self.numer_coeff, opts, false, in_product, f)?;
             }
 
             if (self.numerator.ring.is_one(&self.numer_coeff) && !in_product)
@@ -238,15 +239,15 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
                     f.write_char('*')?;
                 }
 
-                // FIXME: which params?
                 self.numerator.format(opts, in_sum, in_product, f)
             }
         } else {
             if opts.latex {
                 if !self.numerator.ring.is_one(&self.numer_coeff) {
+                    in_product |= !self.numerator.is_one();
                     self.numerator
                         .ring
-                        .format(&self.numer_coeff, opts, in_sum, false, f)?;
+                        .format(&self.numer_coeff, opts, in_sum, in_product, f)?;
                 }
 
                 f.write_str("\\frac{")?;
@@ -264,8 +265,7 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
                         d.format(opts, false, true, f)?;
                     } else {
                         f.write_char('(')?;
-                        d.format(opts, false, true, f)?;
-                        f.write_str(")^")?;
+                        d.format(opts, false, false, f)?;
                         f.write_fmt(format_args!(")^{}", p))?;
                     }
                 }
@@ -314,7 +314,8 @@ impl<R: Ring, E: Exponent> FactorizedRationalPolynomial<R, E> {
 
             for (d, p) in &self.denominators {
                 f.write_char('(')?;
-                d.format(opts, false, true, f)?;
+                d.format(opts, false, false, f)?;
+                f.write_char(')')?;
 
                 if *p != 1 {
                     f.write_fmt(format_args!(

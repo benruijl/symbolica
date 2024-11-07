@@ -7,7 +7,7 @@ use smartstring::{LazyCompact, SmartString};
 use symbolica::{
     domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial},
     parser::Token,
-    printer::{PrintOptions, RationalPolynomialPrinter},
+    printer::PrintOptions,
     state::State,
 };
 
@@ -56,16 +56,9 @@ fn main() {
             .to_rational_polynomial(&Q, &Z, &vars, &var_names)
             .unwrap();
 
-        let out_str = format!(
-            "{}",
-            RationalPolynomialPrinter {
-                poly: &r,
-                opts: print_opt,
-                add_parentheses: false
-            }
-        );
-
-        writeln!(&mut stdout, "{}", out_str).unwrap();
+        buffer.clear();
+        r.format(&print_opt, false, false, &mut buffer).unwrap();
+        writeln!(stdout, "{}", buffer).unwrap();
 
         buffer.clear();
     }

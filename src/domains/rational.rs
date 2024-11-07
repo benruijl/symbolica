@@ -328,15 +328,16 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
         element: &Self::Element,
         opts: &PrintOptions,
         in_sum: bool,
-        _in_product: bool,
+        in_product: bool,
         f: &mut W,
     ) -> Result<(), Error> {
+        let has_denom = !self.ring.is_one(&element.denominator);
         self.ring
-            .format(&element.numerator, opts, in_sum, true, f)?;
-        if !self.ring.is_one(&element.denominator) {
+            .format(&element.numerator, opts, in_sum, in_product || has_denom, f)?;
+        if has_denom {
             f.write_char('/')?;
             self.ring
-                .format(&element.denominator, opts, false, true, f)?;
+                .format(&element.denominator, opts, false, true, f)?; // TODO: set in_pow
         }
 
         Ok(())

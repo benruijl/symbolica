@@ -167,6 +167,7 @@ unsafe extern "C" fn simplify(
 
     macro_rules! to_rational {
         ($in_field: expr, $exp_size: ty) => {
+            symbolica.local_state.buffer.clear();
             if prime == 0 {
                 let r: RationalPolynomial<IntegerRing, $exp_size> = token
                     .to_rational_polynomial(
@@ -177,7 +178,6 @@ unsafe extern "C" fn simplify(
                     )
                     .unwrap();
 
-                symbolica.local_state.buffer.clear();
                 r.format(&opts, false, false, &mut symbolica.local_state.buffer)
                     .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
@@ -191,7 +191,6 @@ unsafe extern "C" fn simplify(
                     )
                     .unwrap();
 
-                symbolica.local_state.buffer.clear();
                 rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
                     .unwrap();
             } else if prime == Mersenne64::PRIME {
@@ -205,7 +204,6 @@ unsafe extern "C" fn simplify(
                     )
                     .unwrap();
 
-                symbolica.local_state.buffer.clear();
                 rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
                     .unwrap();
             } else {
@@ -219,10 +217,15 @@ unsafe extern "C" fn simplify(
                     )
                     .unwrap();
 
-                symbolica.local_state.buffer.clear();
                 rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
                     .unwrap();
             }
+
+            write!(
+                &mut symbolica.local_state.buffer,
+                "\0", // add the NUL character
+            )
+            .unwrap()
         };
     }
 
@@ -270,6 +273,7 @@ unsafe extern "C" fn simplify_factorized(
 
     macro_rules! to_rational {
         ($in_field: expr, $exp_size: ty) => {
+            symbolica.local_state.buffer.clear();
             if prime == 0 {
                 let r: FactorizedRationalPolynomial<IntegerRing, $exp_size> = token
                     .to_factorized_rational_polynomial(
@@ -280,7 +284,6 @@ unsafe extern "C" fn simplify_factorized(
                     )
                     .unwrap();
 
-                symbolica.local_state.buffer.clear();
                 r.format(&opts, false, false, &mut symbolica.local_state.buffer)
                     .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
@@ -294,7 +297,6 @@ unsafe extern "C" fn simplify_factorized(
                     )
                     .unwrap();
 
-                symbolica.local_state.buffer.clear();
                 rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
                     .unwrap();
             } else if prime == Mersenne64::PRIME {
@@ -308,7 +310,6 @@ unsafe extern "C" fn simplify_factorized(
                     )
                     .unwrap();
 
-                symbolica.local_state.buffer.clear();
                 rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
                     .unwrap();
             } else {
@@ -322,7 +323,6 @@ unsafe extern "C" fn simplify_factorized(
                     )
                     .unwrap();
 
-                symbolica.local_state.buffer.clear();
                 rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
                     .unwrap();
             }

@@ -167,16 +167,15 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     pub fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
-        mut in_sum: bool,
+        in_sum: bool,
         in_product: bool,
         f: &mut W,
     ) -> Result<(), Error> {
-        if in_sum && in_product {
-            in_sum = false;
-            f.write_char('+')?;
-        }
-
         if opts.explicit_rational_polynomial {
+            if in_sum {
+                f.write_char('+')?;
+            }
+
             if self.denominator.is_one() {
                 if self.numerator.is_zero() {
                     f.write_char('0')?;
@@ -197,13 +196,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         }
 
         if self.denominator.is_one() {
-            if !in_product || self.numerator.nterms() < 2 {
-                self.numerator.format(opts, in_sum, false, f)
-            } else {
-                f.write_char('(')?;
-                self.numerator.format(opts, false, false, f)?;
-                f.write_char(')')
-            }
+            self.numerator.format(opts, in_sum, in_product, f)
         } else {
             if opts.latex {
                 if in_sum {
@@ -216,14 +209,9 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
                 return f.write_str("}");
             }
 
-            if self.numerator.nterms() < 2 {
-                self.numerator.format(opts, in_sum, true, f)?;
-            } else {
-                f.write_char('(')?;
-                self.numerator.format(opts, false, true, f)?;
-                f.write_char(')')?;
-            }
+            self.numerator.format(opts, in_sum, true, f)?;
 
+            // TODO: introduce in_pow flag
             if self.denominator.nterms() == 1 {
                 let var_count = self
                     .denominator
@@ -245,7 +233,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
             }
 
             f.write_str("/(")?;
-            self.denominator.format(opts, false, true, f)?;
+            self.denominator.format(opts, false, false, f)?;
             f.write_char(')')
         }
     }

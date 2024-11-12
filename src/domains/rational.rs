@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     poly::{gcd::LARGE_U32_PRIMES, polynomial::PolynomialRing, Exponent},
-    printer::PrintOptions,
+    printer::{PrintOptions, PrintState},
 };
 
 use super::{
@@ -118,6 +118,13 @@ pub struct Fraction<R: Ring> {
 }
 
 impl<R: Ring> Fraction<R> {
+    pub fn new(numerator: R::Element, denominator: R::Element) -> Fraction<R> {
+        Fraction {
+            numerator,
+            denominator,
+        }
+    }
+
     pub fn numerator(&self) -> R::Element {
         self.numerator.clone()
     }
@@ -327,17 +334,42 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        mut state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
         let has_denom = !self.ring.is_one(&element.denominator);
-        self.ring
-            .format(&element.numerator, opts, in_sum, in_product || has_denom, f)?;
+
+        let write_par = has_denom && state.in_exp;
+        if write_par {
+            if state.in_sum {
+                state.in_sum = false;
+                f.write_char('+')?;
+            }
+
+            f.write_char('(')?;
+            state.in_exp = false;
+        }
+
+        self.ring.format(
+            &element.numerator,
+            opts,
+            PrintState {
+                in_product: state.in_product || has_denom,
+                suppress_one: state.suppress_one && !has_denom,
+                level: state.level + 1,
+                ..state
+            },
+            f,
+        )?;
+
         if has_denom {
             f.write_char('/')?;
             self.ring
-                .format(&element.denominator, opts, false, true, f)?; // TODO: set in_pow
+                .format(&element.denominator, opts, state.step(false, true, true), f)?;
+        }
+
+        if write_par {
+            f.write_char(')')?;
         }
 
         Ok(())
@@ -438,6 +470,7 @@ impl Display for Rational {
         Ok(())
     }
 }
+
 impl From<f64> for Rational {
     /// Convert a floating point number to its exact rational number equivalent.
     /// Use [`Rational::truncate_denominator`] to get an approximation with a smaller denominator.

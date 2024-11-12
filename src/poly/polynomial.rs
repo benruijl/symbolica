@@ -12,7 +12,7 @@ use crate::domains::algebraic_number::AlgebraicExtension;
 use crate::domains::integer::{Integer, IntegerRing};
 use crate::domains::rational::{RationalField, Q};
 use crate::domains::{Derivable, EuclideanDomain, Field, InternalOrdering, Ring};
-use crate::printer::PrintOptions;
+use crate::printer::{PrintOptions, PrintState};
 
 use super::gcd::PolynomialGCD;
 use super::univariate::UnivariatePolynomial;
@@ -153,11 +153,10 @@ impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        element.format(opts, in_sum, in_product, f)
+        element.format(opts, state, f)
     }
 }
 
@@ -712,29 +711,22 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
     pub fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
-        in_sum: bool,
-        mut in_product: bool,
+        mut state: PrintState,
         f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        if self.is_zero() {
-            if in_sum {
-                return write!(f, "+0");
-            } else {
-                return write!(f, "0");
+        let add_paren = self.nterms() > 1 && state.in_product || state.in_exp;
+
+        if add_paren {
+            if state.in_sum {
+                f.write_str("+")?;
+                state.in_sum = false;
             }
-        }
 
-        if self.nterms() < 2 {
-            in_product = false;
-        }
-
-        if in_sum && in_product {
-            f.write_str("+")?;
-        }
-
-        if in_product {
+            state.in_product = false;
+            state.in_exp = false;
             f.write_str("(")?;
         }
+        let in_product = state.in_product;
 
         let var_map: Vec<String> = self
             .variables
@@ -745,25 +737,22 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
 
         let mut is_first_term = true;
         for monomial in self {
-            let mut is_first_factor = true;
-            if self.ring.is_one(monomial.coefficient) {
-                if !is_first_term || in_sum && !in_product {
-                    write!(f, "+")?;
-                }
-            } else if monomial.coefficient.eq(&self.ring.neg(&self.ring.one())) {
-                write!(f, "-")?;
-            } else {
-                self.ring.format(
-                    monomial.coefficient,
-                    opts,
-                    !is_first_term || in_sum && !in_product,
-                    true, // TODO: may be wrong if its the constant term
-                    f,
-                )?;
-
-                is_first_factor = false;
-            }
+            state.in_product = in_product || monomial.exponents.iter().any(|e| !e.is_zero());
+            state.in_sum |= !is_first_term;
+            state.suppress_one = true;
             is_first_term = false;
+
+            self.ring.format(monomial.coefficient, opts, state, f)?;
+
+            // TODO: is there a better way to avoid `-*`?
+            let mut is_first_factor = if self.ring.is_one(monomial.coefficient) {
+                true
+            } else if monomial.coefficient.eq(&self.ring.neg(&self.ring.one())) {
+                true
+            } else {
+                false
+            };
+
             for (var_id, e) in var_map.iter().zip(monomial.exponents) {
                 if e.is_zero() {
                     continue;
@@ -786,16 +775,17 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
                     }
                 }
             }
-            if is_first_factor {
-                write!(f, "1")?;
-            }
+        }
+
+        if self.is_zero() {
+            f.write_char('0')?;
         }
 
         if opts.print_finite_field {
             f.write_fmt(format_args!("{}", self.ring))?;
         }
 
-        if in_product {
+        if add_paren {
             f.write_str(")")?;
         }
 
@@ -830,7 +820,7 @@ impl<F: Ring + std::fmt::Debug, E: Exponent + std::fmt::Debug, O: MonomialOrder>
 
 impl<F: Ring + Display, E: Exponent, O: MonomialOrder> Display for MultivariatePolynomial<F, E, O> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.format(&PrintOptions::default(), false, false, f)
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
     }
 }
 

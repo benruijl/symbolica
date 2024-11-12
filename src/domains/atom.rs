@@ -127,32 +127,11 @@ impl Ring for AtomField {
     fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
-        _opts: &crate::printer::PrintOptions,
-        in_sum: bool,
-        mut in_product: bool, // can be used to add parentheses
+        opts: &crate::printer::PrintOptions,
+        state: crate::printer::PrintState,
         f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        // FIXME: improve, pass minus sign info
-        // to atom writer
-        if in_sum {
-            f.write_char('+')?;
-        }
-
-        if !matches!(element.as_view(), AtomView::Add(_)) {
-            in_product = false;
-        }
-
-        if in_product {
-            write!(f, "(")?;
-        }
-
-        f.write_fmt(format_args!("{}", element))?;
-
-        if in_product {
-            write!(f, ")")?;
-        }
-
-        Ok(())
+        element.as_view().format(f, opts, state)
     }
 }
 

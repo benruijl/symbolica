@@ -12,7 +12,7 @@ use crate::{
         atom::AtomField, integer::Integer, rational::Rational, EuclideanDomain, InternalOrdering,
         Ring,
     },
-    printer::PrintOptions,
+    printer::{PrintOptions, PrintState},
     state::State,
 };
 
@@ -53,7 +53,7 @@ impl<F: Ring + std::fmt::Debug> std::fmt::Debug for Series<F> {
 
 impl<F: Ring + std::fmt::Display> std::fmt::Display for Series<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.format(&PrintOptions::default(), false, false, f)
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
     }
 }
 
@@ -466,8 +466,7 @@ impl<F: Ring> Series<F> {
     pub fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), std::fmt::Error> {
         let v = self.variable.to_string();
@@ -484,30 +483,41 @@ impl<F: Ring> Series<F> {
             let e = self.get_exponent(e);
 
             if e.is_zero() {
-                self.field
-                    .format(c, opts, in_sum && !in_product, false, f)?;
+                self.field.format(
+                    c,
+                    opts,
+                    state.step(state.in_sum && !state.in_product, false, false),
+                    f,
+                )?;
             } else if e.is_one() {
                 if self.field.is_one(c) {
                     write!(f, "+{}", v)?;
                 } else {
-                    self.field.format(c, opts, true, true, f)?;
+                    self.field
+                        .format(c, opts, state.step(true, true, false), f)?;
                     write!(f, "*{}", v)?;
                 }
             } else if self.field.is_one(c) {
                 write!(f, "+{}^{}", v, e)?;
             } else {
-                self.field.format(c, opts, true, true, f)?;
+                self.field
+                    .format(c, opts, state.step(true, true, false), f)?;
                 write!(f, "*{}^{}", v, e)?;
             }
 
             if e.is_zero() {
-                self.field
-                    .format(c, opts, in_sum && !in_product, false, f)?;
+                self.field.format(
+                    c,
+                    opts,
+                    state.step(state.in_sum && !state.in_product, false, false),
+                    f,
+                )?;
             } else if e.is_one() {
                 if self.field.is_one(c) {
                     write!(f, "{}", v)?;
                 } else {
-                    self.field.format(c, opts, true, true, f)?;
+                    self.field
+                        .format(c, opts, state.step(true, true, false), f)?;
                     write!(f, "{}", v)?;
                 }
             } else if self.field.is_one(c) {
@@ -517,10 +527,12 @@ impl<F: Ring> Series<F> {
                     write!(f, "{}^({})", v, e)?;
                 }
             } else if e.is_integer() {
-                self.field.format(c, opts, true, true, f)?;
+                self.field
+                    .format(c, opts, state.step(true, true, false), f)?;
                 write!(f, "*{}^{}", v, e)?;
             } else {
-                self.field.format(c, opts, true, true, f)?;
+                self.field
+                    .format(c, opts, state.step(true, true, false), f)?;
                 write!(f, "*{}^({})", v, e)?;
             }
         }

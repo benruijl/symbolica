@@ -6,7 +6,7 @@ use std::ops::{Deref, Neg};
 use crate::domains::integer::Integer;
 use crate::poly::gcd::PolynomialGCD;
 use crate::poly::Variable::Temporary;
-use crate::printer::PrintOptions;
+use crate::printer::{PrintOptions, PrintState};
 
 use super::algebraic_number::AlgebraicExtension;
 use super::integer::Z;
@@ -406,22 +406,13 @@ impl Ring for Zp {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            Z.format(
-                &self.to_symmetric_integer(element),
-                opts,
-                in_sum,
-                in_product,
-                f,
-            )
-        } else if in_sum {
-            write!(f, "{:+}", self.from_element(element))
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            write!(f, "{}", self.from_element(element))
+            Z.format(&self.from_element(element).into(), opts, state, f)
         }
     }
 }
@@ -714,22 +705,13 @@ impl Ring for Zp64 {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            Z.format(
-                &self.to_symmetric_integer(element),
-                opts,
-                in_sum,
-                in_product,
-                f,
-            )
-        } else if in_sum {
-            write!(f, "{:+}", self.from_element(element))
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            write!(f, "{}", self.from_element(element))
+            Z.format(&self.from_element(element).into(), opts, state, f)
         }
     }
 }
@@ -992,22 +974,13 @@ impl Ring for FiniteField<Two> {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            Z.format(
-                &self.to_symmetric_integer(element),
-                opts,
-                in_sum,
-                in_product,
-                f,
-            )
-        } else if in_sum {
-            write!(f, "{:+}", self.from_element(element))
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            write!(f, "{}", self.from_element(element))
+            Z.format(&self.from_element(element).0.into(), opts, state, f)
         }
     }
 }
@@ -1253,22 +1226,13 @@ impl Ring for FiniteField<Mersenne64> {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            Z.format(
-                &self.to_symmetric_integer(element),
-                opts,
-                in_sum,
-                in_product,
-                f,
-            )
-        } else if in_sum {
-            write!(f, "{:+}", self.from_element(element))
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            write!(f, "{}", self.from_element(element))
+            Z.format(&self.from_element(element).0.into(), opts, state, f)
         }
     }
 }
@@ -1466,20 +1430,13 @@ impl Ring for FiniteField<Integer> {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
         if opts.symmetric_representation_for_finite_field {
-            Z.format(
-                &self.to_symmetric_integer(element),
-                opts,
-                in_sum,
-                in_product,
-                f,
-            )
+            Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
-            Z.format(&self.from_element(element), opts, in_sum, in_product, f)
+            Z.format(&self.from_element(element).into(), opts, state, f)
         }
     }
 }

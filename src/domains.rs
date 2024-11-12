@@ -14,7 +14,7 @@ use std::hash::Hash;
 use integer::Integer;
 
 use crate::poly::Variable;
-use crate::printer::PrintOptions;
+use crate::printer::{PrintOptions, PrintState};
 
 pub trait InternalOrdering {
     /// Compare two elements using an internal ordering.
@@ -99,8 +99,7 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,     // can be used to add + or -, similar to {:+}
-        in_product: bool, // can be used to add parentheses
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error>;
 
@@ -125,8 +124,7 @@ pub struct RingPrinter<'a, R: Ring> {
     pub ring: &'a R,
     pub element: &'a R::Element,
     pub opts: PrintOptions,
-    pub in_sum: bool,
-    pub in_product: bool,
+    pub state: PrintState,
 }
 
 impl<'a, R: Ring> RingPrinter<'a, R> {
@@ -135,15 +133,18 @@ impl<'a, R: Ring> RingPrinter<'a, R> {
             ring,
             element,
             opts: PrintOptions::default(),
-            in_sum: false,
-            in_product: false,
+            state: PrintState::default(),
         }
     }
 }
 
 impl<'a, R: Ring> Display for RingPrinter<'a, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.ring
-            .format(self.element, &self.opts, self.in_sum, self.in_product, f)
+        self.ring.format(
+            self.element,
+            &self.opts.clone().update_with_fmt(f),
+            self.state.clone().update_with_fmt(f),
+            f,
+        )
     }
 }

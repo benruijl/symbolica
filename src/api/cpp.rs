@@ -13,7 +13,8 @@ use crate::poly::Variable;
 use crate::LicenseManager;
 use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
-    domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, state::State,
+    domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, printer::PrintState,
+    state::State,
 };
 
 struct LocalState {
@@ -178,7 +179,7 @@ unsafe extern "C" fn simplify(
                     )
                     .unwrap();
 
-                r.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                r.format(&opts, PrintState::new(), &mut symbolica.local_state.buffer)
                     .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
                 let field = Zp::new(prime as u32);
@@ -191,7 +192,7 @@ unsafe extern "C" fn simplify(
                     )
                     .unwrap();
 
-                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                rf.format(&opts, PrintState::new(), &mut symbolica.local_state.buffer)
                     .unwrap();
             } else if prime == Mersenne64::PRIME {
                 let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
@@ -204,7 +205,7 @@ unsafe extern "C" fn simplify(
                     )
                     .unwrap();
 
-                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                rf.format(&opts, PrintState::new(), &mut symbolica.local_state.buffer)
                     .unwrap();
             } else {
                 let field = Zp64::new(prime as u64);
@@ -217,7 +218,7 @@ unsafe extern "C" fn simplify(
                     )
                     .unwrap();
 
-                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                rf.format(&opts, PrintState::new(), &mut symbolica.local_state.buffer)
                     .unwrap();
             }
 
@@ -284,7 +285,7 @@ unsafe extern "C" fn simplify_factorized(
                     )
                     .unwrap();
 
-                r.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                r.format(&opts, PrintState::new(), &mut symbolica.local_state.buffer)
                     .unwrap();
             } else if prime <= u32::MAX as c_ulonglong {
                 let field = Zp::new(prime as u32);
@@ -297,7 +298,7 @@ unsafe extern "C" fn simplify_factorized(
                     )
                     .unwrap();
 
-                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                rf.format(&opts, PrintState::new(), &mut symbolica.local_state.buffer)
                     .unwrap();
             } else if prime == Mersenne64::PRIME {
                 let field = FiniteField::<Mersenne64>::new(Mersenne64::new());
@@ -310,7 +311,7 @@ unsafe extern "C" fn simplify_factorized(
                     )
                     .unwrap();
 
-                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                rf.format(&opts, PrintState::new(), &mut symbolica.local_state.buffer)
                     .unwrap();
             } else {
                 let field = Zp64::new(prime as u64);
@@ -323,7 +324,7 @@ unsafe extern "C" fn simplify_factorized(
                     )
                     .unwrap();
 
-                rf.format(&opts, false, false, &mut symbolica.local_state.buffer)
+                rf.format(&opts, PrintState::new(), &mut symbolica.local_state.buffer)
                     .unwrap();
             }
 

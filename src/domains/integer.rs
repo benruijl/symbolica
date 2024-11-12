@@ -11,7 +11,11 @@ use rug::{
     Complete, Integer as MultiPrecisionInteger,
 };
 
-use crate::{printer::PrintOptions, tensors::matrix::Matrix, utils};
+use crate::{
+    printer::{PrintOptions, PrintState},
+    tensors::matrix::Matrix,
+    utils,
+};
 
 use super::{
     finite_field::{
@@ -1172,20 +1176,31 @@ impl Ring for IntegerRing {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        _in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
         match element {
             Integer::Natural(n) => {
-                if in_sum {
+                if state.suppress_one {
+                    if *n == 1 {
+                        if state.in_sum {
+                            return write!(f, "+");
+                        } else {
+                            return write!(f, "");
+                        }
+                    } else if *n == -1 {
+                        return write!(f, "-");
+                    }
+                }
+
+                if state.in_sum {
                     write!(f, "{:+}", n)
                 } else {
                     write!(f, "{}", n)
                 }
             }
             Integer::Double(n) => {
-                if in_sum {
+                if state.in_sum {
                     write!(f, "{:+}", n)
                 } else {
                     write!(f, "{}", n)
@@ -1197,12 +1212,12 @@ impl Ring for IntegerRing {
                     // since the conversion is much faster than for the decimal representation
                     if r.is_negative() {
                         write!(f, "-#{:X}", r.as_abs())
-                    } else if in_sum {
+                    } else if state.in_sum {
                         write!(f, "+#{:X}", r)
                     } else {
                         write!(f, "#{:X}", r)
                     }
-                } else if in_sum {
+                } else if state.in_sum {
                     write!(f, "{:+}", r)
                 } else {
                     write!(f, "{}", r)
@@ -2199,11 +2214,10 @@ impl Ring for MultiPrecisionIntegerRing {
         &self,
         element: &Self::Element,
         _opts: &PrintOptions,
-        in_sum: bool,
-        _in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
-        if in_sum {
+        if state.in_sum {
             write!(f, "{:+}", element)
         } else {
             write!(f, "{}", element)

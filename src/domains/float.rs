@@ -153,17 +153,23 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
     fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
-        _opts: &crate::printer::PrintOptions,
-        in_sum: bool,
-        _in_product: bool,
+        opts: &crate::printer::PrintOptions,
+        state: crate::printer::PrintState,
         f: &mut W,
     ) -> Result<(), fmt::Error> {
-        if in_sum {
-            f.write_char('+')?;
+        if opts.precision.is_none() {
+            if state.in_sum {
+                f.write_fmt(format_args!("{:+}", element))
+            } else {
+                f.write_fmt(format_args!("{}", element))
+            }
+        } else {
+            if state.in_sum {
+                f.write_fmt(format_args!("{:+.*}", opts.precision.unwrap(), element))
+            } else {
+                f.write_fmt(format_args!("{:.*}", opts.precision.unwrap(), element))
+            }
         }
-
-        // FIXME: pass options, floatlike needs to implement format
-        f.write_fmt(format_args!("{}", element))
     }
 
     #[inline(always)]

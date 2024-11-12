@@ -14,7 +14,7 @@ use crate::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial,
         univariate::UnivariatePolynomial, Exponent, Variable,
     },
-    printer::PrintOptions,
+    printer::{PrintOptions, PrintState},
 };
 
 use super::{
@@ -167,12 +167,11 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     pub fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
         if opts.explicit_rational_polynomial {
-            if in_sum {
+            if state.in_sum {
                 f.write_char('+')?;
             }
 
@@ -181,14 +180,14 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
                     f.write_char('0')?;
                 } else {
                     f.write_char('[')?;
-                    self.numerator.format(opts, false, false, f)?;
+                    self.numerator.format(opts, PrintState::new(), f)?;
                     f.write_char(']')?;
                 }
             } else {
                 f.write_char('[')?;
-                self.numerator.format(opts, false, false, f)?;
+                self.numerator.format(opts, PrintState::new(), f)?;
                 f.write_char(',')?;
-                self.denominator.format(opts, false, false, f)?;
+                self.denominator.format(opts, PrintState::new(), f)?;
                 f.write_char(']')?;
             }
 
@@ -196,22 +195,23 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
         }
 
         if self.denominator.is_one() {
-            self.numerator.format(opts, in_sum, in_product, f)
+            self.numerator.format(opts, state, f)
         } else {
             if opts.latex {
-                if in_sum {
+                if state.in_sum {
                     f.write_char('+')?;
                 }
                 f.write_str("\\frac{")?;
-                self.numerator.format(opts, false, false, f)?;
+                self.numerator.format(opts, PrintState::new(), f)?;
                 f.write_str("}{")?;
-                self.denominator.format(opts, false, false, f)?;
+                self.denominator.format(opts, PrintState::new(), f)?;
                 return f.write_str("}");
             }
 
-            self.numerator.format(opts, in_sum, true, f)?;
+            self.numerator
+                .format(opts, state.step(state.in_sum, true, false), f)?;
 
-            // TODO: introduce in_pow flag
+            // TODO: can be deprecated now that there is in_exp
             if self.denominator.nterms() == 1 {
                 let var_count = self
                     .denominator
@@ -228,13 +228,15 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
                         && var_count == 1
                 {
                     f.write_char('/')?;
-                    return self.denominator.format(opts, false, false, f);
+                    return self
+                        .denominator
+                        .format(opts, state.step(false, false, true), f);
                 }
             }
 
-            f.write_str("/(")?;
-            self.denominator.format(opts, false, false, f)?;
-            f.write_char(')')
+            f.write_char('/')?;
+            self.denominator
+                .format(opts, state.step(false, false, true), f)
         }
     }
 }
@@ -547,7 +549,7 @@ where
 
 impl<R: Ring, E: Exponent> Display for RationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.format(&PrintOptions::default(), false, false, f)
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
     }
 }
 
@@ -671,11 +673,10 @@ where
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), Error> {
-        element.format(opts, in_sum, in_product, f)
+        element.format(opts, state, f)
     }
 }
 

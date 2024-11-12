@@ -11,7 +11,7 @@ use crate::{
         rational::{Rational, RationalField, Q},
         EuclideanDomain, Field, InternalOrdering, Ring,
     },
-    printer::PrintOptions,
+    printer::{PrintOptions, PrintState},
 };
 
 use super::{
@@ -131,11 +131,10 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
         &self,
         element: &Self::Element,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: PrintState,
         f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        element.format(opts, in_sum, in_product, f)
+        element.format(opts, state, f)
     }
 }
 
@@ -189,7 +188,7 @@ impl<F: Ring + std::fmt::Debug> std::fmt::Debug for UnivariatePolynomial<F> {
 
 impl<F: Ring + std::fmt::Display> std::fmt::Display for UnivariatePolynomial<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.format(&PrintOptions::default(), f.sign_plus(), false, f)
+        self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
     }
 }
 
@@ -490,52 +489,60 @@ impl<F: Ring> UnivariatePolynomial<F> {
     fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        mut state: PrintState,
         f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        if self.is_zero() {
-            if in_sum {
-                return write!(f, "+0");
-            } else {
-                return write!(f, "0");
+        let non_zero = self.coefficients.iter().filter(|c| !F::is_zero(c)).count();
+
+        let add_paren = non_zero > 1 && state.in_product || state.in_exp;
+
+        if add_paren {
+            if state.in_sum {
+                f.write_str("+")?;
+                state.in_sum = false;
             }
-        }
 
-        if in_sum && in_product {
-            f.write_str("+")?;
-        }
-
-        if in_product {
+            state.in_product = false;
+            state.in_exp = false;
             f.write_str("(")?;
         }
 
-        let v = self.variable.to_string();
+        let v = self.variable.to_string(); // TODO: needs to_exp
 
         for (e, c) in self.coefficients.iter().enumerate() {
+            state.suppress_one = e > 0;
+
             if F::is_zero(c) {
                 continue;
             }
 
             if e == 0 {
                 self.field
-                    .format(c, opts, in_sum && !in_product, false, f)?;
+                    .format(c, opts, state.step(state.in_sum, true, false), f)?;
             } else if e == 1 {
                 if self.field.is_one(c) {
                     write!(f, "+{}", v)?;
                 } else {
-                    self.field.format(c, opts, true, true, f)?;
+                    self.field
+                        .format(c, opts, state.step(true, true, false), f)?;
                     write!(f, "*{}", v)?;
                 }
             } else if self.field.is_one(c) {
                 write!(f, "+{}^{}", v, e)?;
             } else {
-                self.field.format(c, opts, true, true, f)?;
+                self.field
+                    .format(c, opts, state.step(true, true, false), f)?;
+
+                // TODO: check for -1 to avoid printing -*
                 write!(f, "*{}^{}", v, e)?;
             }
         }
 
-        if in_product {
+        if self.is_zero() {
+            f.write_char('0')?;
+        }
+
+        if state.in_product {
             f.write_str(")")?;
         }
 

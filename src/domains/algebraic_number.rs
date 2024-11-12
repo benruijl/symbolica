@@ -491,11 +491,10 @@ impl<R: Ring> Ring for AlgebraicExtension<R> {
         &self,
         element: &Self::Element,
         opts: &crate::printer::PrintOptions,
-        in_sum: bool,
-        in_product: bool,
+        state: crate::printer::PrintState,
         f: &mut W,
     ) -> Result<(), std::fmt::Error> {
-        element.poly.format(opts, in_sum, in_product, f)
+        element.poly.format(opts, state, f)
     }
 }
 

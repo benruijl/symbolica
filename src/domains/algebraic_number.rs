@@ -17,7 +17,7 @@ use super::{
     },
     integer::Integer,
     rational::Rational,
-    EuclideanDomain, Field, InternalOrdering, Ring,
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
 /// An algebraic number ring, with a monic, irreducible defining polynomial.
@@ -493,7 +493,7 @@ impl<R: Ring> Ring for AlgebraicExtension<R> {
         opts: &crate::printer::PrintOptions,
         state: crate::printer::PrintState,
         f: &mut W,
-    ) -> Result<(), std::fmt::Error> {
+    ) -> Result<bool, std::fmt::Error> {
         element.poly.format(opts, state, f)
     }
 }

@@ -21,7 +21,7 @@ use super::{
     finite_field::{FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField},
     integer::{Integer, IntegerRing, Z},
     rational::RationalField,
-    Derivable, EuclideanDomain, Field, InternalOrdering, Ring,
+    Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -163,13 +163,23 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
             true,
         )
     }
+}
 
-    pub fn format<W: std::fmt::Write>(
+impl<R: Ring, E: Exponent> SelfRing for RationalPolynomial<R, E> {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.numerator.is_one() && self.denominator.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if opts.explicit_rational_polynomial {
             if state.in_sum {
                 f.write_char('+')?;
@@ -191,7 +201,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
                 f.write_char(']')?;
             }
 
-            return Ok(());
+            return Ok(false);
         }
 
         if self.denominator.is_one() {
@@ -205,7 +215,8 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
                 self.numerator.format(opts, PrintState::new(), f)?;
                 f.write_str("}{")?;
                 self.denominator.format(opts, PrintState::new(), f)?;
-                return f.write_str("}");
+                f.write_str("}")?;
+                return Ok(false);
             }
 
             self.numerator
@@ -550,6 +561,7 @@ where
 impl<R: Ring, E: Exponent> Display for RationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
+            .map(|_| ())
     }
 }
 
@@ -675,7 +687,7 @@ where
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         element.format(opts, state, f)
     }
 }

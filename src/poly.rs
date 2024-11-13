@@ -27,8 +27,9 @@ use crate::domains::factorized_rational_polynomial::{
 };
 use crate::domains::integer::Integer;
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
-use crate::domains::{EuclideanDomain, Ring};
+use crate::domains::{EuclideanDomain, Ring, RingPrinter};
 use crate::parser::{Operator, Token};
+use crate::printer::{PrintOptions, PrintState};
 use crate::state::{State, Workspace};
 use crate::utils;
 
@@ -390,6 +391,22 @@ impl Variable {
             Variable::Symbol(v) => State::get_name(*v).to_string(),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Function(_, a) | Variable::Other(a) => format!("{}", a),
+        }
+    }
+
+    pub fn to_string_with_state(&self, state: PrintState) -> String {
+        match self {
+            Variable::Symbol(v) => State::get_name(*v).to_string(),
+            Variable::Temporary(t) => format!("_TMP_{}", *t),
+            Variable::Function(_, a) | Variable::Other(a) => format!(
+                "{}",
+                RingPrinter {
+                    element: a.as_ref(),
+                    ring: &AtomField::new(),
+                    opts: PrintOptions::default(),
+                    state,
+                }
+            ),
         }
     }
 

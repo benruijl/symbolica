@@ -9,7 +9,7 @@ use crate::{
         float::{Complex, FloatField, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, RationalField, Q},
-        EuclideanDomain, Field, InternalOrdering, Ring,
+        EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
     },
     printer::{PrintOptions, PrintState},
 };
@@ -133,7 +133,7 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), std::fmt::Error> {
+    ) -> Result<bool, std::fmt::Error> {
         element.format(opts, state, f)
     }
 }
@@ -189,6 +189,7 @@ impl<F: Ring + std::fmt::Debug> std::fmt::Debug for UnivariatePolynomial<F> {
 impl<F: Ring + std::fmt::Display> std::fmt::Display for UnivariatePolynomial<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
+            .map(|_| ())
     }
 }
 
@@ -485,13 +486,23 @@ impl<F: Ring> UnivariatePolynomial<F> {
 
         poly
     }
+}
+
+impl<F: Ring> SelfRing for UnivariatePolynomial<F> {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.is_one()
+    }
 
     fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
         mut state: PrintState,
         f: &mut W,
-    ) -> Result<(), std::fmt::Error> {
+    ) -> Result<bool, std::fmt::Error> {
         let non_zero = self.coefficients.iter().filter(|c| !F::is_zero(c)).count();
 
         let add_paren = non_zero > 1 && state.in_product || state.in_exp;
@@ -507,7 +518,10 @@ impl<F: Ring> UnivariatePolynomial<F> {
             f.write_str("(")?;
         }
 
-        let v = self.variable.to_string(); // TODO: needs to_exp
+        let v = self.variable.to_string_with_state(PrintState {
+            in_exp: true,
+            ..state
+        });
 
         for (e, c) in self.coefficients.iter().enumerate() {
             state.suppress_one = e > 0;
@@ -516,37 +530,36 @@ impl<F: Ring> UnivariatePolynomial<F> {
                 continue;
             }
 
-            if e == 0 {
-                self.field
-                    .format(c, opts, state.step(state.in_sum, true, false), f)?;
-            } else if e == 1 {
-                if self.field.is_one(c) {
-                    write!(f, "+{}", v)?;
-                } else {
-                    self.field
-                        .format(c, opts, state.step(true, true, false), f)?;
-                    write!(f, "*{}", v)?;
-                }
-            } else if self.field.is_one(c) {
-                write!(f, "+{}^{}", v, e)?;
-            } else {
-                self.field
-                    .format(c, opts, state.step(true, true, false), f)?;
+            let first_factor = self.field.format(
+                c,
+                opts,
+                state.step(state.in_sum, state.in_product, false),
+                f,
+            )?;
 
-                // TODO: check for -1 to avoid printing -*
-                write!(f, "*{}^{}", v, e)?;
+            if first_factor && e > 0 {
+                f.write_str("*")?;
             }
+
+            if e == 1 {
+                write!(f, "{}", v)?;
+            } else if e > 1 {
+                write!(f, "{}^{}", v, e)?;
+            }
+
+            state.in_sum = true;
+            state.in_product = true;
         }
 
         if self.is_zero() {
             f.write_char('0')?;
         }
 
-        if state.in_product {
+        if add_paren {
             f.write_str(")")?;
         }
 
-        Ok(())
+        Ok(false)
     }
 }
 

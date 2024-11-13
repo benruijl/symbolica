@@ -24,7 +24,7 @@ use super::{
     },
     float::{FloatField, NumericalFloatLike, Real, RealNumberLike, SingleFloat},
     rational::Rational,
-    EuclideanDomain, InternalOrdering, Ring,
+    EuclideanDomain, InternalOrdering, Ring, SelfRing,
 };
 
 pub const SMALL_PRIMES: [i64; 100] = [
@@ -1178,32 +1178,54 @@ impl Ring for IntegerRing {
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
-        match element {
+    ) -> Result<bool, Error> {
+        element.format(opts, state, f)
+    }
+}
+
+impl SelfRing for Integer {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        match self {
             Integer::Natural(n) => {
                 if state.suppress_one {
                     if *n == 1 {
                         if state.in_sum {
-                            return write!(f, "+");
+                            write!(f, "+")?;
+                            return Ok(true);
                         } else {
-                            return write!(f, "");
+                            write!(f, "")?;
+                            return Ok(true);
                         }
                     } else if *n == -1 {
-                        return write!(f, "-");
+                        write!(f, "-")?;
+                        return Ok(true);
                     }
                 }
 
                 if state.in_sum {
-                    write!(f, "{:+}", n)
+                    write!(f, "{:+}", n)?
                 } else {
-                    write!(f, "{}", n)
+                    write!(f, "{}", n)?
                 }
             }
             Integer::Double(n) => {
                 if state.in_sum {
-                    write!(f, "{:+}", n)
+                    write!(f, "{:+}", n)?
                 } else {
-                    write!(f, "{}", n)
+                    write!(f, "{}", n)?
                 }
             }
             Integer::Large(r) => {
@@ -1211,19 +1233,21 @@ impl Ring for IntegerRing {
                     // write the GMP number in hexadecimal representation,
                     // since the conversion is much faster than for the decimal representation
                     if r.is_negative() {
-                        write!(f, "-#{:X}", r.as_abs())
+                        write!(f, "-#{:X}", r.as_abs())?
                     } else if state.in_sum {
-                        write!(f, "+#{:X}", r)
+                        write!(f, "+#{:X}", r)?
                     } else {
-                        write!(f, "#{:X}", r)
+                        write!(f, "#{:X}", r)?
                     }
                 } else if state.in_sum {
-                    write!(f, "{:+}", r)
+                    write!(f, "{:+}", r)?
                 } else {
-                    write!(f, "{}", r)
+                    write!(f, "{}", r)?
                 }
             }
         }
+
+        Ok(false)
     }
 }
 
@@ -2216,12 +2240,14 @@ impl Ring for MultiPrecisionIntegerRing {
         _opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if state.in_sum {
-            write!(f, "{:+}", element)
+            write!(f, "{:+}", element)?
         } else {
-            write!(f, "{}", element)
+            write!(f, "{}", element)?
         }
+
+        Ok(false)
     }
 }
 

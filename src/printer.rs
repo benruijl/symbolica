@@ -10,7 +10,7 @@ use crate::{
     coefficient::CoefficientView,
     domains::{
         factorized_rational_polynomial::FactorizedRationalPolynomial,
-        finite_field::FiniteFieldCore, Ring,
+        finite_field::FiniteFieldCore, Ring, SelfRing,
     },
     poly::Exponent,
     state::State,
@@ -616,6 +616,7 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                 f.write_char('[')?;
                 p.deserialize()
                     .format(opts, print_state.step(false, false, false), f)
+                    .map(|_| ())
             }
         }
     }
@@ -1085,7 +1086,7 @@ mod test {
 
     use crate::{
         atom::Atom,
-        domains::{finite_field::Zp, integer::Z},
+        domains::{finite_field::Zp, integer::Z, SelfRing},
         printer::{AtomPrinter, PrintOptions, PrintState},
         state::{FunctionAttribute, State},
     };

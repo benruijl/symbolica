@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    fmt::{Display, Error, Formatter, Write},
+    fmt::{Display, Error, Formatter},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
@@ -14,7 +14,7 @@ use super::{
         FiniteField, FiniteFieldCore, FiniteFieldWorkspace, ToFiniteField, Two, Zp, Z2,
     },
     integer::{Integer, IntegerRing, Z},
-    EuclideanDomain, Field, InternalOrdering, Ring,
+    EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
 /// The field of rational numbers.
@@ -336,7 +336,7 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
         opts: &PrintOptions,
         mut state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         let has_denom = !self.ring.is_one(&element.denominator);
 
         let write_par = has_denom && state.in_exp;
@@ -350,7 +350,7 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
             state.in_exp = false;
         }
 
-        self.ring.format(
+        if self.ring.format(
             &element.numerator,
             opts,
             PrintState {
@@ -360,7 +360,9 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
                 ..state
             },
             f,
-        )?;
+        )? {
+            return Ok(true);
+        };
 
         if has_denom {
             f.write_char('/')?;
@@ -372,7 +374,75 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
             f.write_char(')')?;
         }
 
-        Ok(())
+        Ok(false)
+    }
+}
+
+impl<R: Ring> SelfRing for Fraction<R>
+where
+    R::Element: SelfRing,
+{
+    fn is_zero(&self) -> bool {
+        self.numerator.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.numerator.is_one() && self.denominator.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        mut state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        let has_denom = !self.denominator.is_one();
+
+        let write_par = has_denom && state.in_exp;
+        if write_par {
+            if state.in_sum {
+                state.in_sum = false;
+                f.write_char('+')?;
+            }
+
+            f.write_char('(')?;
+            state.in_exp = false;
+        }
+
+        if self.numerator.format(
+            opts,
+            PrintState {
+                in_product: state.in_product || has_denom,
+                suppress_one: state.suppress_one && !has_denom,
+                level: state.level + 1,
+                ..state
+            },
+            f,
+        )? {
+            return Ok(true);
+        }
+
+        if has_denom {
+            f.write_char('/')?;
+            self.denominator
+                .format(opts, state.step(false, true, true), f)?;
+        }
+
+        if write_par {
+            f.write_char(')')?;
+        }
+
+        Ok(false)
+    }
+}
+
+impl<R: Ring> Display for Fraction<R>
+where
+    R::Element: SelfRing,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.format(&PrintOptions::default(), PrintState::new(), f)
+            .map(|_| ())
     }
 }
 
@@ -456,18 +526,6 @@ pub type Rational = Fraction<IntegerRing>;
 impl Default for Rational {
     fn default() -> Self {
         Rational::zero()
-    }
-}
-
-impl Display for Rational {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.numerator.fmt(f)?;
-        if self.denominator != 1 {
-            f.write_char('/')?;
-            write!(f, "{}", self.denominator)?;
-        }
-
-        Ok(())
     }
 }
 

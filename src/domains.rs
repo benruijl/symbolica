@@ -8,8 +8,10 @@ pub mod integer;
 pub mod rational;
 pub mod rational_polynomial;
 
+use std::borrow::Borrow;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::hash::Hash;
+use std::ops::{Add, Mul, Sub};
 
 use integer::Integer;
 
@@ -69,6 +71,20 @@ pub trait Derivable: Ring {
     fn derivative(&self, e: &<Self as Ring>::Element, x: &Variable) -> <Self as Ring>::Element;
 }
 
+/// Rings whose elements contain all the knowledge of the ring itself,
+/// for example integers. A counterexample would be finite field elements,
+/// as they do not store the prime.
+pub trait SelfRing: Clone + PartialEq + Eq + Hash + InternalOrdering + Debug + Display {
+    fn is_zero(&self) -> bool;
+    fn is_one(&self) -> bool;
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error>;
+}
+
 pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     type Element: Clone + PartialEq + Eq + Hash + InternalOrdering + Debug;
 
@@ -101,7 +117,7 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error>;
+    ) -> Result<bool, Error>;
 
     fn printer<'a>(&'a self, element: &'a Self::Element) -> RingPrinter<'a, Self> {
         RingPrinter::new(self, element)
@@ -140,11 +156,297 @@ impl<'a, R: Ring> RingPrinter<'a, R> {
 
 impl<'a, R: Ring> Display for RingPrinter<'a, R> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.ring.format(
-            self.element,
-            &self.opts.clone().update_with_fmt(f),
-            self.state.clone().update_with_fmt(f),
-            f,
+        self.ring
+            .format(
+                self.element,
+                &self.opts.clone().update_with_fmt(f),
+                self.state.clone().update_with_fmt(f),
+                f,
+            )
+            .map(|_| ())
+    }
+}
+
+/// A ring element wrapped together with its ring.
+#[derive(Clone)]
+pub struct WrappedRingElement<R: Ring, C: Clone + Borrow<R>> {
+    pub ring: C,
+    pub element: R::Element,
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> WrappedRingElement<R, C> {
+    pub fn new(ring: C, element: R::Element) -> Self {
+        WrappedRingElement { ring, element }
+    }
+
+    pub fn ring(&self) -> &R {
+        self.ring.borrow()
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> Ring for WrappedRingElement<R, C> {
+    type Element = WrappedRingElement<R, C>;
+
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().add(&a.element, &b.element),
+        }
+    }
+
+    fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().sub(&a.element, &b.element),
+        }
+    }
+
+    fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().mul(&a.element, &b.element),
+        }
+    }
+
+    fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        self.ring().add_assign(&mut a.element, &b.element);
+    }
+
+    fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        self.ring().sub_assign(&mut a.element, &b.element);
+    }
+
+    fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        self.ring().mul_assign(&mut a.element, &b.element);
+    }
+
+    fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.ring()
+            .add_mul_assign(&mut a.element, &b.element, &c.element);
+    }
+
+    fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
+        self.ring()
+            .sub_mul_assign(&mut a.element, &b.element, &c.element);
+    }
+
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().neg(&a.element),
+        }
+    }
+
+    fn zero(&self) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().zero(),
+        }
+    }
+
+    fn one(&self) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().one(),
+        }
+    }
+
+    fn nth(&self, n: u64) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().nth(n),
+        }
+    }
+
+    fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().pow(&b.element, e),
+        }
+    }
+
+    fn is_zero(a: &Self::Element) -> bool {
+        R::is_zero(&a.element)
+    }
+
+    fn is_one(&self, a: &Self::Element) -> bool {
+        self.ring().is_one(&a.element)
+    }
+
+    fn one_is_gcd_unit() -> bool {
+        R::one_is_gcd_unit()
+    }
+
+    fn characteristic(&self) -> Integer {
+        self.ring().characteristic()
+    }
+
+    fn size(&self) -> Integer {
+        self.ring().size()
+    }
+
+    fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().sample(rng, range),
+        }
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        element: &Self::Element,
+        opts: &PrintOptions,
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        self.ring().format(&element.element, opts, state, f)
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> Debug for WrappedRingElement<R, C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.ring()
+            .format(
+                &self.element,
+                &PrintOptions::default(),
+                PrintState::default(),
+                f,
+            )
+            .map(|_| ())
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> Display for WrappedRingElement<R, C> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.ring()
+            .format(
+                &self.element,
+                &PrintOptions::default(),
+                PrintState::default(),
+                f,
+            )
+            .map(|_| ())
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> PartialEq for WrappedRingElement<R, C> {
+    fn eq(&self, other: &Self) -> bool {
+        self.element == other.element
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> Eq for WrappedRingElement<R, C> {}
+
+impl<R: Ring, C: Clone + Borrow<R>> Hash for WrappedRingElement<R, C> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.element.hash(state)
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> InternalOrdering for WrappedRingElement<R, C> {
+    fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.element.internal_cmp(&other.element)
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> SelfRing for WrappedRingElement<R, C> {
+    fn is_zero(&self) -> bool {
+        R::is_zero(&self.element)
+    }
+
+    fn is_one(&self) -> bool {
+        self.ring().is_one(&self.element)
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        state: PrintState,
+        f: &mut W,
+    ) -> Result<bool, Error> {
+        self.ring().format(&self.element, opts, state, f)
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> Add for WrappedRingElement<R, C> {
+    type Output = WrappedRingElement<R, C>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        WrappedRingElement {
+            element: self.ring().add(&self.element, &rhs.element),
+            ring: self.ring,
+        }
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> Sub for WrappedRingElement<R, C> {
+    type Output = WrappedRingElement<R, C>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        WrappedRingElement {
+            element: self.ring().sub(&self.element, &rhs.element),
+            ring: self.ring,
+        }
+    }
+}
+
+impl<R: Ring, C: Clone + Borrow<R>> Mul for WrappedRingElement<R, C> {
+    type Output = WrappedRingElement<R, C>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        WrappedRingElement {
+            element: self.ring().mul(&self.element, &rhs.element),
+            ring: self.ring,
+        }
+    }
+}
+
+impl<R: EuclideanDomain, C: Clone + Borrow<R>> EuclideanDomain for WrappedRingElement<R, C> {
+    fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().rem(&a.element, &b.element),
+        }
+    }
+
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        let (quot, rem) = self.ring().quot_rem(&a.element, &b.element);
+        (
+            WrappedRingElement {
+                ring: self.ring.clone(),
+                element: quot,
+            },
+            WrappedRingElement {
+                ring: self.ring.clone(),
+                element: rem,
+            },
         )
+    }
+
+    fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().gcd(&a.element, &b.element),
+        }
+    }
+}
+
+impl<R: Field, C: Clone + Borrow<R>> Field for WrappedRingElement<R, C> {
+    fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().div(&a.element, &b.element),
+        }
+    }
+
+    fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
+        self.ring().div_assign(&mut a.element, &b.element);
+    }
+
+    fn inv(&self, a: &Self::Element) -> Self::Element {
+        WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().inv(&a.element),
+        }
     }
 }

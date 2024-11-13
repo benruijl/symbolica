@@ -8,6 +8,7 @@ use smartstring::{LazyCompact, SmartString};
 use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64};
 use crate::domains::integer::{IntegerRing, Z};
 use crate::domains::rational::Q;
+use crate::domains::SelfRing;
 use crate::parser::Token;
 use crate::poly::Variable;
 use crate::LicenseManager;

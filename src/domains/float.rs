@@ -156,20 +156,22 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
         opts: &crate::printer::PrintOptions,
         state: crate::printer::PrintState,
         f: &mut W,
-    ) -> Result<(), fmt::Error> {
+    ) -> Result<bool, fmt::Error> {
         if opts.precision.is_none() {
             if state.in_sum {
-                f.write_fmt(format_args!("{:+}", element))
+                f.write_fmt(format_args!("{:+}", element))?
             } else {
-                f.write_fmt(format_args!("{}", element))
+                f.write_fmt(format_args!("{}", element))?
             }
         } else {
             if state.in_sum {
-                f.write_fmt(format_args!("{:+.*}", opts.precision.unwrap(), element))
+                f.write_fmt(format_args!("{:+.*}", opts.precision.unwrap(), element))?
             } else {
-                f.write_fmt(format_args!("{:.*}", opts.precision.unwrap(), element))
+                f.write_fmt(format_args!("{:.*}", opts.precision.unwrap(), element))?
             }
         }
+
+        Ok(false)
     }
 
     #[inline(always)]

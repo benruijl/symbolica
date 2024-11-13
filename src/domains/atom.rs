@@ -3,7 +3,9 @@ use crate::{
     poly::Variable,
 };
 
-use super::{integer::Integer, Derivable, EuclideanDomain, Field, InternalOrdering, Ring};
+use super::{
+    integer::Integer, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
+};
 
 use rand::Rng;
 
@@ -130,8 +132,28 @@ impl Ring for AtomField {
         opts: &crate::printer::PrintOptions,
         state: crate::printer::PrintState,
         f: &mut W,
-    ) -> Result<(), std::fmt::Error> {
-        element.as_view().format(f, opts, state)
+    ) -> Result<bool, std::fmt::Error> {
+        // TODO: return true when result is + or -
+        element.as_view().format(f, opts, state).map(|_| false)
+    }
+}
+
+impl SelfRing for Atom {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
+        &self,
+        opts: &crate::printer::PrintOptions,
+        state: crate::printer::PrintState,
+        f: &mut W,
+    ) -> Result<bool, std::fmt::Error> {
+        self.as_view().format(f, opts, state).map(|_| false)
     }
 }
 

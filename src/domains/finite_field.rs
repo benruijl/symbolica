@@ -408,7 +408,7 @@ impl Ring for Zp {
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
             Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
@@ -707,7 +707,7 @@ impl Ring for Zp64 {
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
             Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
@@ -976,7 +976,7 @@ impl Ring for FiniteField<Two> {
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
             Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
@@ -1228,7 +1228,7 @@ impl Ring for FiniteField<Mersenne64> {
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
             Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {
@@ -1432,7 +1432,7 @@ impl Ring for FiniteField<Integer> {
         opts: &PrintOptions,
         state: PrintState,
         f: &mut W,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         if opts.symmetric_representation_for_finite_field {
             Z.format(&self.to_symmetric_integer(element), opts, state, f)
         } else {

@@ -726,7 +726,22 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
         mut state: PrintState,
         f: &mut W,
     ) -> Result<bool, std::fmt::Error> {
-        let add_paren = self.nterms() > 1 && state.in_product || state.in_exp;
+        if self.is_constant() {
+            if self.is_zero() {
+                if state.in_sum {
+                    f.write_str("+")?;
+                }
+                f.write_char('0')?;
+                return Ok(false);
+            } else {
+                return self.ring.format(&self.coefficients[0], opts, state, f);
+            }
+        }
+
+        let add_paren = self.nterms() > 1 && state.in_product
+            || (state.in_exp
+                && (self.nterms() > 1
+                    || self.exponents(0).iter().filter(|e| **e > E::zero()).count() > 1));
 
         if add_paren {
             if state.in_sum {
@@ -755,16 +770,16 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
         for monomial in self {
             let has_var = monomial.exponents.iter().any(|e| !e.is_zero());
             state.in_product = in_product || has_var;
-            state.suppress_one = in_product || has_var;
+            state.suppress_one = has_var; // any products before should not be considered
 
-            let mut is_first_factor = self.ring.format(monomial.coefficient, opts, state, f)?;
+            let mut suppressed_one = self.ring.format(monomial.coefficient, opts, state, f)?;
 
             for (var_id, e) in var_map.iter().zip(monomial.exponents) {
                 if e.is_zero() {
                     continue;
                 }
-                if is_first_factor {
-                    is_first_factor = false;
+                if suppressed_one {
+                    suppressed_one = false;
                 } else if !opts.latex {
                     write!(f, "*")?;
                 }
@@ -797,7 +812,6 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
             f.write_str(")")?;
         }
 
-        // FIXME: treat constant case
         Ok(false)
     }
 }

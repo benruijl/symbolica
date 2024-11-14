@@ -162,12 +162,15 @@ impl<R: Ring, E: Exponent> SelfRing for FactorizedRationalPolynomial<R, E> {
         mut state: PrintState,
         f: &mut W,
     ) -> Result<bool, Error> {
+        let has_numer_coeff = !self.numerator.ring.is_one(&self.numer_coeff);
+        let has_denom_coeff = !self.numerator.ring.is_one(&self.denom_coeff);
+
         if opts.explicit_rational_polynomial {
             if state.in_sum {
                 f.write_char('+')?;
             }
 
-            if !R::is_zero(&self.numer_coeff) && !self.numerator.ring.is_one(&self.numer_coeff) {
+            if !R::is_zero(&self.numer_coeff) && has_numer_coeff {
                 f.write_char('[')?;
                 self.numerator
                     .ring
@@ -175,7 +178,7 @@ impl<R: Ring, E: Exponent> SelfRing for FactorizedRationalPolynomial<R, E> {
                 f.write_str("]*")?;
             }
 
-            if self.denominators.is_empty() && self.numerator.ring.is_one(&self.denom_coeff) {
+            if self.denominators.is_empty() && !has_denom_coeff {
                 if self.numerator.is_zero() {
                     if state.in_sum {
                         f.write_str("+0")?;
@@ -191,7 +194,7 @@ impl<R: Ring, E: Exponent> SelfRing for FactorizedRationalPolynomial<R, E> {
                 f.write_char('[')?;
                 self.numerator.format(opts, PrintState::new(), f)?;
 
-                if !self.numerator.ring.is_one(&self.denom_coeff) {
+                if has_denom_coeff {
                     f.write_char(',')?;
                     self.numerator
                         .ring
@@ -221,140 +224,164 @@ impl<R: Ring, E: Exponent> SelfRing for FactorizedRationalPolynomial<R, E> {
             return Ok(false);
         }
 
-        if self.denominators.is_empty() && self.numerator.ring.is_one(&self.denom_coeff) {
-            if !self.numerator.ring.is_one(&self.numer_coeff) {
-                state.in_sum = false;
+        if self.denominators.is_empty() && !has_denom_coeff {
+            let write_par = has_numer_coeff && !self.numerator.is_one() && state.in_exp;
+            if write_par {
+                if state.in_sum {
+                    state.in_sum = false;
+                    f.write_char('+')?;
+                }
+
+                f.write_char('(')?;
+                state.in_exp = false;
+            }
+
+            if has_numer_coeff {
                 state.in_product |= !self.numerator.is_one();
                 self.numerator
                     .ring
                     .format(&self.numer_coeff, opts, state, f)?;
-            }
+                state.in_sum = false;
 
-            if (self.numerator.ring.is_one(&self.numer_coeff) && !state.in_product)
-                || self.numerator.nterms() < 2
-            {
-                if !self.numerator.ring.is_one(&self.numer_coeff) {
-                    if self.numerator.is_one() {
-                        return Ok(false);
-                    }
-
-                    f.write_char('*')?;
+                if self.numerator.is_one() {
+                    return Ok(false);
                 }
-
-                self.numerator.format(opts, state, f)
-            } else {
-                if !self.numerator.ring.is_one(&self.numer_coeff) {
-                    if self.numerator.is_one() {
-                        return Ok(false);
-                    }
-
-                    f.write_char('*')?;
-                }
-
-                self.numerator.format(opts, state, f)
-            }
-        } else {
-            if opts.latex {
-                if !self.numerator.ring.is_one(&self.numer_coeff) {
-                    state.in_product |= !self.numerator.is_one();
-                    self.numerator
-                        .ring
-                        .format(&self.numer_coeff, opts, state, f)?;
-                }
-
-                f.write_str("\\frac{")?;
-                self.numerator.format(opts, state, f)?;
-                f.write_str("}{")?;
-
-                if !self.numerator.ring.is_one(&self.denom_coeff) {
-                    self.numerator.ring.format(
-                        &self.denom_coeff,
-                        opts,
-                        state.step(false, true, false),
-                        f,
-                    )?;
-                }
-
-                for (d, p) in &self.denominators {
-                    d.format(opts, state.step(false, true, *p != 1), f)?;
-
-                    if *p != 1 {
-                        f.write_fmt(format_args!("^{}", p))?;
-                    }
-                }
-
-                f.write_str("}}")?;
-                return Ok(false);
-            }
-
-            if !self.numerator.ring.is_one(&self.numer_coeff) {
-                self.numerator.ring.format(
-                    &self.numer_coeff,
-                    opts,
-                    state.step(false, true, false),
-                    f,
-                )?;
                 f.write_char('*')?;
             }
 
-            self.numerator
-                .format(opts, state.step(false, true, false), f)?;
+            if write_par {
+                self.numerator.format(opts, state, f)?;
+                f.write_char(')')?;
+                return Ok(false);
+            } else {
+                return self.numerator.format(opts, state, f);
+            }
+        }
 
-            f.write_char('/')?;
+        state.suppress_one = false;
 
-            if self.denominators.is_empty() {
-                return self.numerator.ring.format(
-                    &self.denom_coeff,
-                    opts,
-                    state.step(false, true, false),
-                    f,
-                );
+        let write_par = state.in_exp;
+        if write_par {
+            if state.in_sum {
+                state.in_sum = false;
+                f.write_char('+')?;
             }
 
-            // TODO: simplify
-            if self.numerator.ring.is_one(&self.denom_coeff)
-                && self.denominators.len() == 1
-                && self.denominators[0].0.nterms() == 1
-                && self.denominators[0].1 == 1
-            {
-                let (d, _) = &self.denominators[0];
-                let var_count = d.exponents.iter().filter(|x| !x.is_zero()).count();
+            f.write_char('(')?;
+            state.in_exp = false;
+        }
 
-                if var_count == 0 || d.ring.is_one(&d.coefficients[0]) && var_count == 1 {
-                    return d.format(opts, state.step(false, true, false), f);
-                }
+        if opts.latex {
+            if has_numer_coeff {
+                state.suppress_one = true;
+                state.in_product = true;
+                self.numerator
+                    .ring
+                    .format(&self.numer_coeff, opts, state, f)?;
+                state.suppress_one = false;
             }
 
-            f.write_char('(')?; // TODO: add special cases for 1 argument
+            f.write_str("\\frac{")?;
+            self.numerator.format(opts, PrintState::new(), f)?;
+            f.write_str("}{")?;
 
-            if !self.numerator.ring.is_one(&self.denom_coeff) {
+            if has_denom_coeff {
                 self.numerator.ring.format(
                     &self.denom_coeff,
                     opts,
-                    state.step(false, true, false),
+                    state.step(false, !self.denominators.is_empty(), false),
                     f,
                 )?;
             }
 
             for (d, p) in &self.denominators {
-                d.format(opts, state.step(false, false, *p != 1), f)?;
+                d.format(opts, state.step(false, true, *p != 1), f)?;
 
                 if *p != 1 {
-                    f.write_fmt(format_args!(
-                        "{}{}",
-                        if opts.double_star_for_exponentiation {
-                            "**"
-                        } else {
-                            "^"
-                        },
-                        p
-                    ))?;
+                    f.write_fmt(format_args!("^{}", p))?;
                 }
             }
 
-            f.write_char(')')?;
-            Ok(false)
+            f.write_char('}')?;
+
+            if write_par {
+                f.write_char(')')?;
+            }
+
+            return Ok(false);
         }
+
+        state.in_product |= has_numer_coeff && !self.numerator.is_one();
+        if has_numer_coeff || self.numerator.is_one() {
+            self.numerator
+                .ring
+                .format(&self.numer_coeff, opts, state, f)?;
+            state.in_sum = false;
+
+            if !self.numerator.is_one() {
+                f.write_char('*')?;
+            }
+        }
+
+        if !self.numerator.is_one() {
+            self.numerator.format(opts, state, f)?;
+        }
+
+        f.write_char('/')?;
+
+        if self.denominators.is_empty() {
+            return self.numerator.ring.format(
+                &self.denom_coeff,
+                opts,
+                state.step(false, true, false),
+                f,
+            );
+        }
+
+        state.in_product = has_denom_coeff || self.denominators.len() > 1;
+
+        if state.in_product {
+            f.write_char('(')?;
+        }
+
+        if has_denom_coeff {
+            self.numerator.ring.format(
+                &self.denom_coeff,
+                opts,
+                state.step(false, true, false),
+                f,
+            )?;
+        }
+
+        for (i, (d, p)) in self.denominators.iter().enumerate() {
+            if has_denom_coeff || i > 0 {
+                f.write_char('*')?;
+            }
+
+            d.format(opts, state.step(false, true, *p != 1), f)?;
+
+            if *p != 1 {
+                f.write_fmt(format_args!(
+                    "{}{}",
+                    if opts.double_star_for_exponentiation {
+                        "**"
+                    } else {
+                        "^"
+                    },
+                    p
+                ))?;
+            }
+        }
+
+        if state.in_product {
+            f.write_char(')')?;
+        }
+
+        if write_par {
+            f.write_char(')')?;
+        }
+
+        Ok(false)
     }
 }
 

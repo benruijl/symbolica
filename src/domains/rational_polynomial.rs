@@ -177,7 +177,7 @@ impl<R: Ring, E: Exponent> SelfRing for RationalPolynomial<R, E> {
     fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
-        state: PrintState,
+        mut state: PrintState,
         f: &mut W,
     ) -> Result<bool, Error> {
         if opts.explicit_rational_polynomial {
@@ -207,6 +207,17 @@ impl<R: Ring, E: Exponent> SelfRing for RationalPolynomial<R, E> {
         if self.denominator.is_one() {
             self.numerator.format(opts, state, f)
         } else {
+            let write_par = state.in_exp;
+            if write_par {
+                if state.in_sum {
+                    state.in_sum = false;
+                    f.write_char('+')?;
+                }
+
+                f.write_char('(')?;
+                state.in_exp = false;
+            }
+
             if opts.latex {
                 if state.in_sum {
                     f.write_char('+')?;
@@ -216,38 +227,19 @@ impl<R: Ring, E: Exponent> SelfRing for RationalPolynomial<R, E> {
                 f.write_str("}{")?;
                 self.denominator.format(opts, PrintState::new(), f)?;
                 f.write_str("}")?;
-                return Ok(false);
+            } else {
+                state.suppress_one = false;
+                self.numerator
+                    .format(opts, state.step(state.in_sum, true, false), f)?;
+                f.write_char('/')?;
+                self.denominator
+                    .format(opts, state.step(false, false, true), f)?;
             }
 
-            self.numerator
-                .format(opts, state.step(state.in_sum, true, false), f)?;
-
-            // TODO: can be deprecated now that there is in_exp
-            if self.denominator.nterms() == 1 {
-                let var_count = self
-                    .denominator
-                    .exponents
-                    .iter()
-                    .filter(|x| !x.is_zero())
-                    .count();
-
-                if var_count == 0
-                    || self
-                        .denominator
-                        .ring
-                        .is_one(&self.denominator.coefficients[0])
-                        && var_count == 1
-                {
-                    f.write_char('/')?;
-                    return self
-                        .denominator
-                        .format(opts, state.step(false, false, true), f);
-                }
+            if write_par {
+                f.write_char(')')?;
             }
-
-            f.write_char('/')?;
-            self.denominator
-                .format(opts, state.step(false, false, true), f)
+            Ok(false)
         }
     }
 }

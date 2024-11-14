@@ -5,9 +5,9 @@ use std::{
 
 use smartstring::{LazyCompact, SmartString};
 use symbolica::{
-    domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial},
+    domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial, SelfRing},
     parser::Token,
-    printer::PrintOptions,
+    printer::{PrintOptions, PrintState},
     state::State,
 };
 
@@ -57,7 +57,8 @@ fn main() {
             .unwrap();
 
         buffer.clear();
-        r.format(&print_opt, false, false, &mut buffer).unwrap();
+        r.format(&print_opt, PrintState::new(), &mut buffer)
+            .unwrap();
         writeln!(stdout, "{}", buffer).unwrap();
 
         buffer.clear();

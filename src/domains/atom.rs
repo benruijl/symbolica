@@ -133,7 +133,6 @@ impl Ring for AtomField {
         state: crate::printer::PrintState,
         f: &mut W,
     ) -> Result<bool, std::fmt::Error> {
-        // TODO: return true when result is + or -
         element.as_view().format(f, opts, state).map(|_| false)
     }
 }

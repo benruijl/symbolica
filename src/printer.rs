@@ -1,4 +1,4 @@
-use std::fmt::{self, Display, Write};
+use std::fmt::{self, Error, Write};
 
 use colored::Colorize;
 
@@ -8,13 +8,8 @@ use crate::{
         VarView,
     },
     coefficient::CoefficientView,
-    domains::{
-        factorized_rational_polynomial::FactorizedRationalPolynomial,
-        finite_field::FiniteFieldCore, Ring, SelfRing,
-    },
-    poly::Exponent,
+    domains::{finite_field::FiniteFieldCore, SelfRing},
     state::State,
-    tensors::matrix::{Matrix, Vector},
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -200,7 +195,7 @@ macro_rules! define_formatters {
                 f: &mut W,
                 print_opts: &PrintOptions,
                 print_state: PrintState,
-            ) -> fmt::Result;
+            ) -> Result<bool, Error>;
         })+
     };
 }
@@ -244,7 +239,9 @@ impl<'a> fmt::Display for AtomPrinter<'a> {
             top_level_add_child: false,
             superscript: false,
         };
-        self.atom.format(f, &self.print_opts, print_state)
+        self.atom
+            .format(f, &self.print_opts, print_state)
+            .map(|_| ())
     }
 }
 
@@ -285,7 +282,7 @@ impl<'a> AtomView<'a> {
         fmt: &mut W,
         opts: &PrintOptions,
         print_state: PrintState,
-    ) -> fmt::Result {
+    ) -> Result<bool, Error> {
         match self {
             AtomView::Num(n) => n.fmt_output(fmt, opts, print_state),
             AtomView::Var(v) => v.fmt_output(fmt, opts, print_state),
@@ -448,7 +445,7 @@ impl<'a> FormattedPrintVar for VarView<'a> {
         f: &mut W,
         opts: &PrintOptions,
         print_state: PrintState,
-    ) -> fmt::Result {
+    ) -> Result<bool, Error> {
         if print_state.in_sum {
             if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
@@ -473,7 +470,9 @@ impl<'a> FormattedPrintVar for VarView<'a> {
             f.write_fmt(format_args!("{}", name.purple()))
         } else {
             f.write_str(name)
-        }
+        }?;
+
+        Ok(false)
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -490,8 +489,8 @@ impl<'a> FormattedPrintNum for NumView<'a> {
         &self,
         f: &mut W,
         opts: &PrintOptions,
-        print_state: PrintState,
-    ) -> fmt::Result {
+        mut print_state: PrintState,
+    ) -> Result<bool, Error> {
         /// Input must be digits only.
         fn format_num<W: std::fmt::Write>(
             mut s: String,
@@ -542,16 +541,24 @@ impl<'a> FormattedPrintNum for NumView<'a> {
             } else {
                 f.write_char('-')?;
             }
+
+            print_state.in_sum = false;
         } else if print_state.in_sum {
             if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
             } else {
                 f.write_char('+')?;
             }
+
+            print_state.in_sum = false;
         }
 
         match d {
             CoefficientView::Natural(num, den) => {
+                if den == 1 && print_state.suppress_one && (num == 1 || num == -1) {
+                    return Ok(true);
+                }
+
                 if !opts.latex
                     && (opts.number_thousands_separator.is_some() || print_state.superscript)
                 {
@@ -560,20 +567,21 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                         f.write_char('/')?;
                         format_num(den.to_string(), opts, &print_state, f)?;
                     }
-                    Ok(())
                 } else if den != 1 {
                     if opts.latex {
-                        f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", num.unsigned_abs(), den))
+                        f.write_fmt(format_args!("\\frac{{{}}}{{{}}}", num.unsigned_abs(), den))?;
                     } else {
-                        f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))
+                        f.write_fmt(format_args!("{}/{}", num.unsigned_abs(), den))?;
                     }
                 } else {
-                    f.write_fmt(format_args!("{}", num.unsigned_abs()))
+                    f.write_fmt(format_args!("{}", num.unsigned_abs()))?;
                 }
+
+                Ok(false)
             }
             CoefficientView::Float(fl) => {
-                let float = fl.to_float();
-                f.write_fmt(format_args!("{}", float))
+                fl.to_float().format(opts, print_state, f)?;
+                Ok(false)
             }
             CoefficientView::Large(r) => {
                 let rat = r.to_rat().abs();
@@ -585,24 +593,24 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                         f.write_char('/')?;
                         format_num(rat.denominator().to_string(), opts, &print_state, f)?;
                     }
-                    Ok(())
                 } else if !rat.is_integer() {
                     if opts.latex {
                         f.write_fmt(format_args!(
                             "\\frac{{{}}}{{{}}}",
                             rat.numerator(),
                             rat.denominator(),
-                        ))
+                        ))?;
                     } else {
                         f.write_fmt(format_args!(
                             "{}/{}",
                             rat.numerator_ref(),
                             rat.denominator_ref()
-                        ))
+                        ))?;
                     }
                 } else {
-                    f.write_fmt(format_args!("{}", rat.numerator_ref()))
+                    f.write_fmt(format_args!("{}", rat.numerator_ref()))?;
                 }
+                Ok(false)
             }
             CoefficientView::FiniteField(num, fi) => {
                 let ff = State::get_finite_field(fi);
@@ -610,13 +618,12 @@ impl<'a> FormattedPrintNum for NumView<'a> {
                     "[{}%{}]",
                     ff.from_element(&num),
                     ff.get_prime()
-                ))
+                ))?;
+                Ok(false)
             }
             CoefficientView::RationalPolynomial(p) => {
                 f.write_char('[')?;
-                p.deserialize()
-                    .format(opts, print_state.step(false, false, false), f)
-                    .map(|_| ())
+                p.deserialize().format(opts, print_state, f)
             }
         }
     }
@@ -632,7 +639,7 @@ impl<'a> FormattedPrintMul for MulView<'a> {
         f: &mut W,
         opts: &PrintOptions,
         mut print_state: PrintState,
-    ) -> fmt::Result {
+    ) -> Result<bool, Error> {
         let add_paren = print_state.in_exp;
         if add_paren {
             if print_state.in_sum {
@@ -706,10 +713,9 @@ impl<'a> FormattedPrintMul for MulView<'a> {
         }
 
         if add_paren {
-            f.write_char(')')
-        } else {
-            Ok(())
+            f.write_char(')')?;
         }
+        Ok(false)
     }
 }
 
@@ -719,7 +725,7 @@ impl<'a> FormattedPrintFn for FunView<'a> {
         f: &mut W,
         opts: &PrintOptions,
         mut print_state: PrintState,
-    ) -> fmt::Result {
+    ) -> Result<bool, Error> {
         if print_state.in_sum {
             if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
@@ -767,12 +773,14 @@ impl<'a> FormattedPrintFn for FunView<'a> {
         }
 
         if opts.latex {
-            f.write_str("\\right)")
+            f.write_str("\\right)")?;
         } else if opts.square_brackets_for_function {
-            f.write_char(']')
+            f.write_char(']')?;
         } else {
-            f.write_char(')')
+            f.write_char(')')?;
         }
+
+        Ok(false)
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -786,7 +794,7 @@ impl<'a> FormattedPrintPow for PowView<'a> {
         f: &mut W,
         opts: &PrintOptions,
         mut print_state: PrintState,
-    ) -> fmt::Result {
+    ) -> Result<bool, Error> {
         if print_state.in_sum {
             if print_state.top_level_add_child && opts.color_top_level_sum {
                 f.write_fmt(format_args!("{}", "+".yellow()))?;
@@ -809,7 +817,8 @@ impl<'a> FormattedPrintPow for PowView<'a> {
                     // TODO: construct the numerator
                     f.write_str("\\frac{1}{")?;
                     b.format(f, opts, print_state)?;
-                    return f.write_char('}');
+                    f.write_char('}')?;
+                    return Ok(false);
                 }
             }
         } else if opts.num_exp_as_superscript {
@@ -862,7 +871,7 @@ impl<'a> FormattedPrintPow for PowView<'a> {
         if opts.latex {
             f.write_char('{')?;
             e.format(f, opts, print_state)?;
-            f.write_char('}')
+            f.write_char('}')?;
         } else {
             let exp_needs_parentheses = matches!(e, AtomView::Add(_) | AtomView::Mul(_))
                 || if let AtomView::Num(n) = e {
@@ -874,12 +883,14 @@ impl<'a> FormattedPrintPow for PowView<'a> {
             if exp_needs_parentheses {
                 f.write_char('(')?;
                 e.format(f, opts, print_state)?;
-                f.write_char(')')
+                f.write_char(')')?;
             } else {
                 print_state.superscript = superscript_exponent;
-                e.format(f, opts, print_state)
+                e.format(f, opts, print_state)?;
             }
         }
+
+        Ok(false)
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -893,7 +904,7 @@ impl<'a> FormattedPrintAdd for AddView<'a> {
         f: &mut W,
         opts: &PrintOptions,
         mut print_state: PrintState,
-    ) -> fmt::Result {
+    ) -> Result<bool, Error> {
         let mut first = true;
         print_state.top_level_add_child = print_state.level == 0;
         print_state.level += 1;
@@ -919,164 +930,20 @@ impl<'a> FormattedPrintAdd for AddView<'a> {
                 f.write_char('\n')?;
                 f.write_char('\t')?;
             }
-            print_state.in_sum = !first;
             first = false;
 
             x.format(f, opts, print_state)?;
+            print_state.in_sum = true;
         }
 
         if add_paren {
-            f.write_char(')')
-        } else {
-            Ok(())
+            f.write_char(')')?;
         }
+        Ok(false)
     }
 
     fn fmt_debug(&self, f: &mut fmt::Formatter) -> fmt::Result {
         <Self as std::fmt::Debug>::fmt(self, f)
-    }
-}
-
-pub struct FactorizedRationalPolynomialPrinter<'a, R: Ring, E: Exponent> {
-    pub poly: &'a FactorizedRationalPolynomial<R, E>,
-    pub opts: PrintOptions,
-    pub add_parentheses: bool,
-}
-
-impl<'a, R: Ring, E: Exponent> FactorizedRationalPolynomialPrinter<'a, R, E> {
-    pub fn new(
-        poly: &'a FactorizedRationalPolynomial<R, E>,
-    ) -> FactorizedRationalPolynomialPrinter<'a, R, E> {
-        FactorizedRationalPolynomialPrinter {
-            poly,
-            opts: PrintOptions::default(),
-            add_parentheses: false,
-        }
-    }
-
-    pub fn new_with_options(
-        poly: &'a FactorizedRationalPolynomial<R, E>,
-        opts: PrintOptions,
-    ) -> FactorizedRationalPolynomialPrinter<'a, R, E> {
-        FactorizedRationalPolynomialPrinter {
-            poly,
-            opts,
-            add_parentheses: false,
-        }
-    }
-}
-
-pub struct MatrixPrinter<'a, F: Ring + Display> {
-    pub matrix: &'a Matrix<F>,
-    pub opts: PrintOptions,
-}
-
-impl<'a, F: Ring + Display> MatrixPrinter<'a, F> {
-    pub fn new(matrix: &'a Matrix<F>) -> MatrixPrinter<'a, F> {
-        MatrixPrinter {
-            matrix,
-
-            opts: PrintOptions::default(),
-        }
-    }
-
-    pub fn new_with_options(matrix: &'a Matrix<F>, opts: PrintOptions) -> MatrixPrinter<'a, F> {
-        MatrixPrinter { matrix, opts }
-    }
-}
-
-// FIXME: add format for Matrix
-impl<'a, F: Ring + Display> Display for MatrixPrinter<'a, F> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.opts.latex {
-            f.write_str("\\begin{pmatrix}")?;
-
-            for (ri, r) in self.matrix.row_iter().enumerate() {
-                for (ci, c) in r.iter().enumerate() {
-                    self.matrix
-                        .field
-                        .format(c, &self.opts, PrintState::new(), f)?;
-
-                    if ci + 1 < self.matrix.ncols as usize {
-                        f.write_str(" & ")?;
-                    }
-                }
-                if ri + 1 < self.matrix.nrows as usize {
-                    f.write_str(r" \\ ")?;
-                }
-            }
-
-            f.write_str("\\end{pmatrix}")
-        } else {
-            f.write_char('{')?;
-            for (ri, r) in self.matrix.row_iter().enumerate() {
-                f.write_char('{')?;
-                for (ci, c) in r.iter().enumerate() {
-                    self.matrix
-                        .field
-                        .format(c, &self.opts, PrintState::new(), f)?;
-
-                    if ci + 1 < self.matrix.ncols as usize {
-                        f.write_char(',')?;
-                    }
-                }
-                f.write_char('}')?;
-                if ri + 1 < self.matrix.nrows as usize {
-                    f.write_char(',')?;
-                }
-            }
-            f.write_char('}')
-        }
-    }
-}
-
-pub struct VectorPrinter<'a, F: Ring + Display> {
-    pub vector: &'a Vector<F>,
-    pub opts: PrintOptions,
-}
-
-impl<'a, F: Ring + Display> VectorPrinter<'a, F> {
-    pub fn new(vector: &'a Vector<F>) -> VectorPrinter<'a, F> {
-        VectorPrinter {
-            vector,
-            opts: PrintOptions::default(),
-        }
-    }
-
-    pub fn new_with_options(vector: &'a Vector<F>, opts: PrintOptions) -> VectorPrinter<'a, F> {
-        VectorPrinter { vector, opts }
-    }
-}
-
-impl<'a, F: Ring + Display> Display for VectorPrinter<'a, F> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.opts.latex {
-            f.write_str("\\begin{pvector}")?;
-
-            for (ri, r) in self.vector.data.iter().enumerate() {
-                self.vector
-                    .field
-                    .format(r, &self.opts, PrintState::new(), f)?;
-
-                if ri + 1 < self.vector.data.len() {
-                    f.write_str(" & ")?;
-                }
-            }
-
-            f.write_str("\\end{pvector}")
-        } else {
-            f.write_char('{')?;
-            for (ri, r) in self.vector.data.iter().enumerate() {
-                self.vector
-                    .field
-                    .format(r, &self.opts, PrintState::new(), f)?;
-
-                if ri + 1 < self.vector.data.len() {
-                    f.write_char(',')?;
-                }
-            }
-            f.write_char('}')
-        }
     }
 }
 
@@ -1175,16 +1042,27 @@ mod test {
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
-            format!("{}", a) == "15*x^2/((1+x)(2+x))" || format!("{}", a) == "15*x^2/((2+x)(1+x))"
+            format!("{}", a) == "15*x^2/((1+x)*(2+x))"
+                || format!("{}", a) == "15*x^2/((2+x)*(1+x))"
         );
 
         let a = Atom::parse("(15 x^2 + 6) / ((1+x)(x+2))")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
-            format!("{}", a) == "3*(2+5*x^2)/((1+x)(2+x))"
-                || format!("{}", a) == "3*(2+5*x^2)/((2+x)(1+x))"
+            format!("{}", a) == "3*(2+5*x^2)/((1+x)*(2+x))"
+                || format!("{}", a) == "3*(2+5*x^2)/((2+x)*(1+x))"
         );
+
+        let a = Atom::parse("1/(v1*v2)")
+            .unwrap()
+            .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        assert!(format!("{}", a) == "1/(v1*v2)" || format!("{}", a) == "1/(v2*v1)");
+
+        let a = Atom::parse("-1/(2+v1)")
+            .unwrap()
+            .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
+        assert!(format!("{}", a) == "-1/(2+v1)");
     }
 
     #[test]

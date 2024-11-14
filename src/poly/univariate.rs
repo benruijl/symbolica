@@ -503,9 +503,22 @@ impl<F: Ring> SelfRing for UnivariatePolynomial<F> {
         mut state: PrintState,
         f: &mut W,
     ) -> Result<bool, std::fmt::Error> {
+        if self.is_constant() {
+            if self.is_zero() {
+                if state.in_sum {
+                    f.write_str("+")?;
+                }
+                f.write_char('0')?;
+                return Ok(false);
+            } else {
+                return self.field.format(&self.coefficients[0], opts, state, f);
+            }
+        }
+
         let non_zero = self.coefficients.iter().filter(|c| !F::is_zero(c)).count();
 
-        let add_paren = non_zero > 1 && state.in_product || state.in_exp;
+        let add_paren = non_zero > 1 && state.in_product
+            || (state.in_exp && (non_zero > 1 || F::is_zero(&self.coefficients[0])));
 
         if add_paren {
             if state.in_sum {
@@ -530,14 +543,14 @@ impl<F: Ring> SelfRing for UnivariatePolynomial<F> {
                 continue;
             }
 
-            let first_factor = self.field.format(
+            let suppressed_one = self.field.format(
                 c,
                 opts,
                 state.step(state.in_sum, state.in_product, false),
                 f,
             )?;
 
-            if first_factor && e > 0 {
+            if !suppressed_one && e > 0 {
                 f.write_str("*")?;
             }
 

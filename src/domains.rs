@@ -83,6 +83,13 @@ pub trait SelfRing: Clone + PartialEq + Eq + Hash + InternalOrdering + Debug + D
         state: PrintState,
         f: &mut W,
     ) -> Result<bool, Error>;
+
+    fn format_string(&self, opts: &PrintOptions, state: PrintState) -> String {
+        let mut s = String::new();
+        self.format(opts, state, &mut s)
+            .expect("Could not write to string");
+        s
+    }
 }
 
 pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {

@@ -44,7 +44,7 @@ use crate::{
         rational_polynomial::{
             FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
         },
-        Ring,
+        Ring, SelfRing,
     },
     evaluate::{
         CompileOptions, CompiledEvaluator, EvaluationFn, ExpressionEvaluator, FunctionMap,
@@ -62,9 +62,7 @@ use crate::{
         factor::Factorize, groebner::GroebnerBasis, polynomial::MultivariatePolynomial,
         series::Series, GrevLexOrder, LexOrder, Variable, INLINED_EXPONENTS,
     },
-    printer::{
-        AtomPrinter, MatrixPrinter, PolynomialPrinter, PrintOptions, RationalPolynomialPrinter,
-    },
+    printer::{AtomPrinter, PrintOptions, PrintState},
     state::{FunctionAttribute, RecycledAtom, State, Workspace},
     streaming::{TermStreamer, TermStreamerConfig},
     tensors::matrix::Matrix,
@@ -1342,7 +1340,8 @@ impl PythonTransformer {
             double_star_for_exponentiation = false,
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
-            latex = false)
+            latex = false,
+            precision = None)
         )]
     pub fn print(
         &self,
@@ -1358,6 +1357,7 @@ impl PythonTransformer {
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
+        precision: Option<usize>,
     ) -> PyResult<PythonTransformer> {
         return append_transformer!(
             self,
@@ -1373,7 +1373,8 @@ impl PythonTransformer {
                 double_star_for_exponentiation,
                 square_brackets_for_function,
                 num_exp_as_superscript,
-                latex
+                latex,
+                precision,
             },)
         );
     }
@@ -2357,7 +2358,8 @@ impl PythonExpression {
             double_star_for_exponentiation = false,
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
-            latex = false)
+            latex = false,
+            precision = None)
         )]
     pub fn pretty_str(
         &self,
@@ -2373,6 +2375,7 @@ impl PythonExpression {
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
+        precision: Option<usize>,
     ) -> PyResult<String> {
         Ok(format!(
             "{}",
@@ -2390,7 +2393,8 @@ impl PythonExpression {
                     double_star_for_exponentiation,
                     square_brackets_for_function,
                     num_exp_as_superscript,
-                    latex
+                    latex,
+                    precision,
                 },
             )
         ))
@@ -5363,7 +5367,8 @@ impl PythonPolynomial {
             double_star_for_exponentiation = false,
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
-            latex = false)
+            latex = false,
+            precision = None)
         )]
     pub fn pretty_str(
         &self,
@@ -5379,56 +5384,48 @@ impl PythonPolynomial {
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
+        precision: Option<usize>,
     ) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter::new_with_options(
-                &self.poly,
-                PrintOptions {
-                    terms_on_new_line,
-                    color_top_level_sum,
-                    color_builtin_symbols,
-                    print_finite_field,
-                    symmetric_representation_for_finite_field,
-                    explicit_rational_polynomial,
-                    number_thousands_separator,
-                    multiplication_operator,
-                    double_star_for_exponentiation,
-                    square_brackets_for_function,
-                    num_exp_as_superscript,
-                    latex
-                },
-            )
+        Ok(self.poly.format_string(
+            &PrintOptions {
+                terms_on_new_line,
+                color_top_level_sum,
+                color_builtin_symbols,
+                print_finite_field,
+                symmetric_representation_for_finite_field,
+                explicit_rational_polynomial,
+                number_thousands_separator,
+                multiplication_operator,
+                double_star_for_exponentiation,
+                square_brackets_for_function,
+                num_exp_as_superscript,
+                latex,
+                precision,
+            },
+            PrintState::new(),
         ))
     }
 
     /// Convert the polynomial into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::file()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::file(), PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::default()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::default(), PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+            self.poly
+                .format_string(&PrintOptions::latex(), PrintState::new())
         ))
     }
 
@@ -6193,7 +6190,8 @@ impl PythonFiniteFieldPolynomial {
             double_star_for_exponentiation = false,
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
-            latex = false)
+            latex = false,
+            precision = None)
         )]
     pub fn pretty_str(
         &self,
@@ -6209,56 +6207,48 @@ impl PythonFiniteFieldPolynomial {
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
+        precision: Option<usize>,
     ) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter::new_with_options(
-                &self.poly,
-                PrintOptions {
-                    terms_on_new_line,
-                    color_top_level_sum,
-                    color_builtin_symbols,
-                    print_finite_field,
-                    symmetric_representation_for_finite_field,
-                    explicit_rational_polynomial,
-                    number_thousands_separator,
-                    multiplication_operator,
-                    double_star_for_exponentiation,
-                    square_brackets_for_function,
-                    num_exp_as_superscript,
-                    latex
-                },
-            )
+        Ok(self.poly.format_string(
+            &PrintOptions {
+                terms_on_new_line,
+                color_top_level_sum,
+                color_builtin_symbols,
+                print_finite_field,
+                symmetric_representation_for_finite_field,
+                explicit_rational_polynomial,
+                number_thousands_separator,
+                multiplication_operator,
+                double_star_for_exponentiation,
+                square_brackets_for_function,
+                num_exp_as_superscript,
+                latex,
+                precision,
+            },
+            PrintState::new(),
         ))
     }
 
     /// Convert the polynomial into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::file()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::file(), PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::default()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::default(), PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+            self.poly
+                .format_string(&PrintOptions::latex(), PrintState::new())
         ))
     }
 
@@ -6780,7 +6770,8 @@ impl PythonPrimeTwoPolynomial {
             double_star_for_exponentiation = false,
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
-            latex = false)
+            latex = false,
+            precision = None)
         )]
     pub fn pretty_str(
         &self,
@@ -6796,56 +6787,48 @@ impl PythonPrimeTwoPolynomial {
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
+        precision: Option<usize>,
     ) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter::new_with_options(
-                &self.poly,
-                PrintOptions {
-                    terms_on_new_line,
-                    color_top_level_sum,
-                    color_builtin_symbols,
-                    print_finite_field,
-                    symmetric_representation_for_finite_field,
-                    explicit_rational_polynomial,
-                    number_thousands_separator,
-                    multiplication_operator,
-                    double_star_for_exponentiation,
-                    square_brackets_for_function,
-                    num_exp_as_superscript,
-                    latex
-                },
-            )
+        Ok(self.poly.format_string(
+            &PrintOptions {
+                terms_on_new_line,
+                color_top_level_sum,
+                color_builtin_symbols,
+                print_finite_field,
+                symmetric_representation_for_finite_field,
+                explicit_rational_polynomial,
+                number_thousands_separator,
+                multiplication_operator,
+                double_star_for_exponentiation,
+                square_brackets_for_function,
+                num_exp_as_superscript,
+                latex,
+                precision,
+            },
+            PrintState::new(),
         ))
     }
 
     /// Convert the polynomial into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::file()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::file(), PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::default()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::default(), PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+            self.poly
+                .format_string(&PrintOptions::latex(), PrintState::new())
         ))
     }
 
@@ -7327,7 +7310,8 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         double_star_for_exponentiation = false,
         square_brackets_for_function = false,
         num_exp_as_superscript = true,
-        latex = false)
+        latex = false,
+            precision = None)
     )]
     pub fn pretty_str(
         &self,
@@ -7343,56 +7327,48 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
+        precision: Option<usize>,
     ) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter::new_with_options(
-                &self.poly,
-                PrintOptions {
-                    terms_on_new_line,
-                    color_top_level_sum,
-                    color_builtin_symbols,
-                    print_finite_field,
-                    symmetric_representation_for_finite_field,
-                    explicit_rational_polynomial,
-                    number_thousands_separator,
-                    multiplication_operator,
-                    double_star_for_exponentiation,
-                    square_brackets_for_function,
-                    num_exp_as_superscript,
-                    latex
-                },
-            )
+        Ok(self.poly.format_string(
+            &PrintOptions {
+                terms_on_new_line,
+                color_top_level_sum,
+                color_builtin_symbols,
+                print_finite_field,
+                symmetric_representation_for_finite_field,
+                explicit_rational_polynomial,
+                number_thousands_separator,
+                multiplication_operator,
+                double_star_for_exponentiation,
+                square_brackets_for_function,
+                num_exp_as_superscript,
+                latex,
+                precision,
+            },
+            PrintState::new(),
         ))
     }
 
     /// Convert the polynomial into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::file()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::file(), PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::default()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::default(), PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+            self.poly
+                .format_string(&PrintOptions::latex(), PrintState::new())
         ))
     }
 
@@ -7878,7 +7854,8 @@ impl PythonGaloisFieldPolynomial {
             double_star_for_exponentiation = false,
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
-            latex = false)
+            latex = false,
+            precision = None)
         )]
     pub fn pretty_str(
         &self,
@@ -7894,56 +7871,48 @@ impl PythonGaloisFieldPolynomial {
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
+        precision: Option<usize>,
     ) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter::new_with_options(
-                &self.poly,
-                PrintOptions {
-                    terms_on_new_line,
-                    color_top_level_sum,
-                    color_builtin_symbols,
-                    print_finite_field,
-                    symmetric_representation_for_finite_field,
-                    explicit_rational_polynomial,
-                    number_thousands_separator,
-                    multiplication_operator,
-                    double_star_for_exponentiation,
-                    square_brackets_for_function,
-                    num_exp_as_superscript,
-                    latex
-                },
-            )
+        Ok(self.poly.format_string(
+            &PrintOptions {
+                terms_on_new_line,
+                color_top_level_sum,
+                color_builtin_symbols,
+                print_finite_field,
+                symmetric_representation_for_finite_field,
+                explicit_rational_polynomial,
+                number_thousands_separator,
+                multiplication_operator,
+                double_star_for_exponentiation,
+                square_brackets_for_function,
+                num_exp_as_superscript,
+                latex,
+                precision,
+            },
+            PrintState::new(),
         ))
     }
 
     /// Convert the polynomial into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::file()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::file(), PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::default()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::default(), PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+            self.poly
+                .format_string(&PrintOptions::latex(), PrintState::new())
         ))
     }
 
@@ -8430,7 +8399,8 @@ impl PythonNumberFieldPolynomial {
         double_star_for_exponentiation = false,
         square_brackets_for_function = false,
         num_exp_as_superscript = true,
-        latex = false)
+        latex = false,
+            precision = None)
     )]
     pub fn pretty_str(
         &self,
@@ -8446,56 +8416,48 @@ impl PythonNumberFieldPolynomial {
         square_brackets_for_function: bool,
         num_exp_as_superscript: bool,
         latex: bool,
+        precision: Option<usize>,
     ) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter::new_with_options(
-                &self.poly,
-                PrintOptions {
-                    terms_on_new_line,
-                    color_top_level_sum,
-                    color_builtin_symbols,
-                    print_finite_field,
-                    symmetric_representation_for_finite_field,
-                    explicit_rational_polynomial,
-                    number_thousands_separator,
-                    multiplication_operator,
-                    double_star_for_exponentiation,
-                    square_brackets_for_function,
-                    num_exp_as_superscript,
-                    latex
-                },
-            )
+        Ok(self.poly.format_string(
+            &PrintOptions {
+                terms_on_new_line,
+                color_top_level_sum,
+                color_builtin_symbols,
+                print_finite_field,
+                symmetric_representation_for_finite_field,
+                explicit_rational_polynomial,
+                number_thousands_separator,
+                multiplication_operator,
+                double_star_for_exponentiation,
+                square_brackets_for_function,
+                num_exp_as_superscript,
+                latex,
+                precision,
+            },
+            PrintState::new(),
         ))
     }
 
     /// Convert the polynomial into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::file()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::file(), PrintState::new()))
     }
 
     /// Print the polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            PolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::default()
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::default(), PrintState::new()))
     }
 
     /// Convert the polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            PolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+            self.poly
+                .format_string(&PrintOptions::latex(), PrintState::new())
         ))
     }
 
@@ -9021,33 +8983,24 @@ impl PythonRationalPolynomial {
 
     /// Convert the rational polynomial into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            RationalPolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::file(),
-                add_parentheses: false,
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::file(), PrintState::new()))
     }
 
     /// Print the rational polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            RationalPolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::default(),
-                add_parentheses: false,
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::default(), PrintState::new()))
     }
 
     /// Convert the rational polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            RationalPolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+            self.poly
+                .format_string(&PrintOptions::latex(), PrintState::new())
         ))
     }
 
@@ -9347,33 +9300,24 @@ impl PythonFiniteFieldRationalPolynomial {
 
     /// Convert the rational polynomial into a portable string.
     pub fn __repr__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            RationalPolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::file(),
-                add_parentheses: false,
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::file(), PrintState::new()))
     }
 
     /// Print the rational polynomial in a human-readable format.
     pub fn __str__(&self) -> PyResult<String> {
-        Ok(format!(
-            "{}",
-            RationalPolynomialPrinter {
-                poly: &self.poly,
-                opts: PrintOptions::default(),
-                add_parentheses: false,
-            }
-        ))
+        Ok(self
+            .poly
+            .format_string(&PrintOptions::default(), PrintState::new()))
     }
 
     /// Convert the rational polynomial into a LaTeX string.
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            RationalPolynomialPrinter::new_with_options(&self.poly, PrintOptions::latex(),)
+            self.poly
+                .format_string(&PrintOptions::latex(), PrintState::new())
         ))
     }
 
@@ -10175,7 +10119,8 @@ impl PythonMatrix {
     pub fn to_latex(&self) -> PyResult<String> {
         Ok(format!(
             "$${}$$",
-            MatrixPrinter::new_with_options(&self.matrix, PrintOptions::latex(),)
+            self.matrix
+                .format_string(&PrintOptions::latex(), PrintState::new())
         ))
     }
 

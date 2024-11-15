@@ -556,12 +556,13 @@ impl<'a> AtomView<'a> {
 
         if let AtomView::Add(aa) = self {
             let out_wrap = Mutex::new(vec![]);
+            let args = aa.iter().collect::<Vec<_>>();
 
             p.install(
                 #[inline(always)]
                 || {
-                    aa.iter().par_bridge().for_each(|x| {
-                        let r = f(x);
+                    args.par_iter().for_each(|x| {
+                        let r = f(*x);
                         out_wrap.lock().unwrap().push(r);
                     });
                 },

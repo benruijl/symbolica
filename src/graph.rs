@@ -722,15 +722,76 @@ impl<
             );
         }
 
-        let consume_count = if source == cur_target {
+        if source == cur_target {
             if !settings.allow_self_loops {
                 return;
             }
 
-            2
-        } else {
-            1
-        };
+            for p1 in cur_edge_count_group_index..edge_count.len() {
+                if let Some(dir) = edge_count[p1].0 .0 {
+                    if edge_count[p1].1 == 0 {
+                        continue;
+                    }
+
+                    // find the edge signature going in the other direction
+                    for p2 in cur_edge_count_group_index + 1..edge_count.len() {
+                        if edge_count[p2].0 .0 == Some(!dir)
+                            && edge_count[p1].0 .1 == edge_count[p2].0 .1
+                        {
+                            if edge_count[p2].1 == 0 {
+                                break;
+                            }
+
+                            edge_count[p1].1 -= 1;
+                            edge_count[p2].1 -= 1;
+
+                            self.add_edge(source, source, true, edge_count[p1].0 .1.clone())
+                                .unwrap();
+
+                            self.distribute_edges(
+                                source,
+                                source,
+                                external_edges,
+                                edge_count,
+                                p1,
+                                settings,
+                                out,
+                            );
+
+                            self.delete_last_edge();
+
+                            edge_count[p1].1 += 1;
+                            edge_count[p2].1 += 1;
+                            break;
+                        }
+                    }
+                } else {
+                    let (e, count) = &mut edge_count[p1];
+                    if *count < 2 {
+                        continue;
+                    }
+
+                    *count -= 2;
+                    self.add_edge(source, source, false, e.1.clone()).unwrap();
+
+                    self.distribute_edges(
+                        source,
+                        source,
+                        external_edges,
+                        edge_count,
+                        p1,
+                        settings,
+                        out,
+                    );
+
+                    self.delete_last_edge();
+
+                    edge_count[p1].1 += 2;
+                }
+            }
+
+            return;
+        }
 
         // TODO: do more extensive compatibility checks
         let max_degree = if cur_target < external_edges.len() {
@@ -738,14 +799,15 @@ impl<
         } else {
             settings.max_degree
         };
-        if self.node(cur_target).edges.len() + consume_count > max_degree {
+
+        if self.node(cur_target).edges.len() + 1 > max_degree {
             return;
         }
 
         for p in cur_edge_count_group_index..edge_count.len() {
             let (e, count) = &mut edge_count[p];
 
-            if *count < consume_count {
+            if *count == 0 {
                 continue;
             }
 
@@ -753,7 +815,7 @@ impl<
                 continue;
             }
 
-            *count -= consume_count;
+            *count -= 1;
 
             if let Some(dir) = e.0 {
                 if dir {
@@ -780,7 +842,7 @@ impl<
 
             self.delete_last_edge(); // TODO: cache edge data
 
-            edge_count[p].1 += consume_count;
+            edge_count[p].1 += 1;
         }
 
         if grown {

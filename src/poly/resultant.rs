@@ -7,24 +7,24 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
     pub fn resultant_prs(&self, other: &Self) -> F::Element {
         if self.degree() < other.degree() {
             if self.degree() % 2 == 1 && other.degree() % 2 == 1 {
-                return self.field.neg(&other.resultant_prs(self));
+                return self.ring.neg(&other.resultant_prs(self));
             } else {
                 return other.resultant_prs(self);
             }
         }
 
         if other.is_constant() {
-            return self.field.pow(&other.get_constant(), self.degree() as u64);
+            return self.ring.pow(&other.get_constant(), self.degree() as u64);
         }
 
         let mut a = self.clone();
         let mut a_new = other.clone();
 
         let mut deg = a.degree() as u64 - a_new.degree() as u64;
-        let mut neg_lc = self.field.one(); //unused
+        let mut neg_lc = self.ring.one(); //unused
         let mut init = false;
-        let mut beta = self.field.pow(&self.field.neg(&self.field.one()), deg + 1);
-        let mut psi = self.field.neg(&self.field.one());
+        let mut beta = self.ring.pow(&self.ring.neg(&self.ring.one()), deg + 1);
+        let mut psi = self.ring.neg(&self.ring.one());
 
         let mut lcs = vec![(a.lcoeff(), a.degree() as u64)];
         while !a_new.is_constant() {
@@ -35,23 +35,23 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
                 } else if deg == 1 {
                     neg_lc.clone()
                 } else {
-                    let a = self.field.pow(&neg_lc, deg);
-                    let psi_old = self.field.pow(&psi, deg - 1);
-                    let (q, r) = self.field.quot_rem(&a, &psi_old);
+                    let a = self.ring.pow(&neg_lc, deg);
+                    let psi_old = self.ring.pow(&psi, deg - 1);
+                    let (q, r) = self.ring.quot_rem(&a, &psi_old);
                     debug_assert!(F::is_zero(&r));
                     q
                 };
 
                 deg = a.degree() as u64 - a_new.degree() as u64;
-                beta = self.field.mul(&neg_lc, &self.field.pow(&psi, deg));
+                beta = self.ring.mul(&neg_lc, &self.ring.pow(&psi, deg));
             } else {
                 init = true;
             }
 
-            neg_lc = self.field.neg(a_new.coefficients.last().unwrap());
+            neg_lc = self.ring.neg(a_new.coefficients.last().unwrap());
 
             let (_, mut r) = a
-                .mul_coeff(&self.field.pow(&neg_lc, deg + 1))
+                .mul_coeff(&self.ring.pow(&neg_lc, deg + 1))
                 .quot_rem(&a_new);
             if (deg + 1) % 2 == 1 {
                 r = -r;
@@ -65,12 +65,12 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         lcs.push((a_new.lcoeff(), 0));
 
         if a_new.is_zero() {
-            return self.field.zero();
+            return self.ring.zero();
         }
 
         // compute the resultant from the PRS, using the fundamental theorem
-        let mut rho = self.field.one();
-        let mut den = self.field.one();
+        let mut rho = self.ring.one();
+        let mut den = self.ring.one();
         for k in 1..lcs.len() {
             let mut deg = lcs[k as usize - 1].1 as i64 - lcs[k as usize].1 as i64;
             for l in k..lcs.len() - 1 {
@@ -78,22 +78,22 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
             }
 
             if deg > 0 {
-                self.field
-                    .mul_assign(&mut rho, &self.field.pow(&lcs[k].0, deg as u64));
+                self.ring
+                    .mul_assign(&mut rho, &self.ring.pow(&lcs[k].0, deg as u64));
             } else if deg < 0 {
-                self.field
-                    .mul_assign(&mut den, &self.field.pow(&lcs[k].0, (-deg) as u64));
+                self.ring
+                    .mul_assign(&mut den, &self.ring.pow(&lcs[k].0, (-deg) as u64));
             }
         }
 
-        self.field.quot_rem(&rho, &den).0
+        self.ring.quot_rem(&rho, &den).0
     }
 
     /// Compute the resultant using a primitive polynomial remainder sequence.
     pub fn resultant_primitive(&self, other: &Self) -> F::Element {
         if self.degree() < other.degree() {
             if self.degree() % 2 == 1 && other.degree() % 2 == 1 {
-                return self.field.neg(&other.resultant_primitive(self));
+                return self.ring.neg(&other.resultant_primitive(self));
             } else {
                 return other.resultant_primitive(self);
             }
@@ -104,11 +104,11 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
 
         let mut v = vec![a.degree()];
         let mut c = vec![a.lcoeff()];
-        let mut ab = vec![(self.field.one(), self.field.one())];
+        let mut ab = vec![(self.ring.one(), self.ring.one())];
 
         while !a_new.is_constant() {
             let n = a.degree() as u64 + 1 - a_new.degree() as u64;
-            let alpha = self.field.pow(&a_new.lcoeff(), n);
+            let alpha = self.ring.pow(&a_new.lcoeff(), n);
 
             let (_, mut r) = a.clone().mul_coeff(&alpha).quot_rem(&a_new);
 
@@ -132,27 +132,27 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
             sign += w[0] * w[1];
         }
 
-        let mut res = self.field.pow(&r, *v.last().unwrap() as u64);
+        let mut res = self.ring.pow(&r, *v.last().unwrap() as u64);
         if sign % 2 == 1 {
-            res = self.field.neg(&res);
+            res = self.ring.neg(&res);
         };
 
         v.push(0);
-        let mut num = self.field.one();
-        let mut den = self.field.one();
+        let mut num = self.ring.one();
+        let mut den = self.ring.one();
         for i in 1..c.len() {
-            self.field.mul_assign(
+            self.ring.mul_assign(
                 &mut res,
-                &self.field.pow(&c[i], v[i - 1] as u64 - v[i + 1] as u64),
+                &self.ring.pow(&c[i], v[i - 1] as u64 - v[i + 1] as u64),
             );
 
-            self.field
-                .mul_assign(&mut num, &self.field.pow(&ab[i].1, v[i] as u64));
-            self.field
-                .mul_assign(&mut den, &self.field.pow(&ab[i].0, v[i] as u64));
+            self.ring
+                .mul_assign(&mut num, &self.ring.pow(&ab[i].1, v[i] as u64));
+            self.ring
+                .mul_assign(&mut den, &self.ring.pow(&ab[i].0, v[i] as u64));
         }
 
-        let (q, r) = self.field.quot_rem(&self.field.mul(&num, &res), &den);
+        let (q, r) = self.ring.quot_rem(&self.ring.mul(&num, &res), &den);
         assert!(F::is_zero(&r));
         q
     }
@@ -185,16 +185,16 @@ impl<F: Field> UnivariatePolynomial<F> {
             sign += w[0] * w[1];
         }
 
-        let mut res = self.field.pow(&r, *v.last().unwrap() as u64);
+        let mut res = self.ring.pow(&r, *v.last().unwrap() as u64);
         if sign % 2 == 1 {
-            res = self.field.neg(&res);
+            res = self.ring.neg(&res);
         };
 
         v.push(0);
         for i in 1..c.len() {
-            self.field.mul_assign(
+            self.ring.mul_assign(
                 &mut res,
-                &self.field.pow(&c[i], v[i - 1] as u64 - v[i + 1] as u64),
+                &self.ring.pow(&c[i], v[i - 1] as u64 - v[i + 1] as u64),
             );
         }
 

@@ -513,8 +513,8 @@ where
     ) -> RationalPolynomial<R, E> {
         if f.is_zero() {
             return RationalPolynomial {
-                numerator: MultivariatePolynomial::new_zero(&f.field.ring),
-                denominator: MultivariatePolynomial::new_one(&f.field.ring),
+                numerator: MultivariatePolynomial::new_zero(&f.ring.ring),
+                denominator: MultivariatePolynomial::new_one(&f.ring.ring),
             };
         }
 
@@ -535,7 +535,7 @@ where
             });
 
         let mut res =
-            RationalPolynomial::new(&f.field.ring, f.coefficients[0].get_variables().clone());
+            RationalPolynomial::new(&f.ring.ring, f.coefficients[0].get_variables().clone());
 
         let mut exp = vec![E::zero(); f.coefficients[0].get_variables().len()];
         exp[pos] = E::one();
@@ -1103,7 +1103,7 @@ where
 
                 d_exp[i - 1] = d_exp[i - 1].clone()
                     + s_cor
-                    + t_cor.derivative().div_coeff(&(t_cor.field.nth(i as u64)));
+                    + t_cor.derivative().div_coeff(&(t_cor.ring.nth(i as u64)));
 
                 let t_full = Self::from_univariate(t_cor);
 
@@ -1186,7 +1186,7 @@ where
                     .to_multivariate_polynomial_list(&[var, new_var], true);
 
                 let mut bivar_poly = MultivariatePolynomial::new(
-                    &p.field,
+                    &p.ring,
                     Some(ll.len()),
                     p.coefficients[0].get_variables().clone(),
                 );
@@ -1197,7 +1197,7 @@ where
                 // convert defining polynomial to a univariate polynomial in t with rational polynomial coefficients
                 let def_uni = sqf
                     .to_univariate(new_var)
-                    .map_coeff(|c| c.clone().into(), p.field.clone());
+                    .map_coeff(|c| c.clone().into(), p.ring.clone());
 
                 // write the polynomial in x and t as a polynomial in x with rational polynomial coefficients in t and
                 // all other variables and solve a diophantine equation
@@ -1227,7 +1227,7 @@ where
                 let monic = bivar_poly_scaled.rem(&def_biv);
 
                 // convert the result to a multivariate rational polynomial
-                let mut res = p.field.zero();
+                let mut res = p.ring.zero();
                 for t in &monic {
                     let mut exp = vec![E::zero(); p.lcoeff().numerator.nvars()];
                     exp.copy_from_slice(t.exponents);
@@ -1250,7 +1250,7 @@ where
 
                         let eval = monic.replace(new_var, &sol);
 
-                        let mut res = p.field.zero();
+                        let mut res = p.ring.zero();
                         for t in &eval {
                             let mut exp = vec![E::zero(); p.lcoeff().numerator.nvars()];
                             exp.copy_from_slice(t.exponents);

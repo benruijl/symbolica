@@ -2345,7 +2345,7 @@ impl PythonExpression {
     /// Examples
     /// --------
     /// >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
-    /// >>> print(a.pretty_str(number_thousands_separator='_', multiplication_operator=' '))
+    /// >>> print(a.format(number_thousands_separator='_', multiplication_operator=' '))
     #[pyo3(signature =
         (terms_on_new_line = false,
             color_top_level_sum = true,
@@ -2361,7 +2361,7 @@ impl PythonExpression {
             latex = false,
             precision = None)
         )]
-    pub fn pretty_str(
+    pub fn format(
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
@@ -5354,7 +5354,7 @@ impl PythonPolynomial {
     /// Examples
     /// --------
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (terms_on_new_line = false,
             color_top_level_sum = true,
@@ -5370,7 +5370,7 @@ impl PythonPolynomial {
             latex = false,
             precision = None)
         )]
-    pub fn pretty_str(
+    pub fn format(
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
@@ -6177,7 +6177,7 @@ impl PythonFiniteFieldPolynomial {
     /// Examples
     /// --------
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (terms_on_new_line = false,
             color_top_level_sum = true,
@@ -6193,7 +6193,7 @@ impl PythonFiniteFieldPolynomial {
             latex = false,
             precision = None)
         )]
-    pub fn pretty_str(
+    pub fn format(
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
@@ -6757,7 +6757,7 @@ impl PythonPrimeTwoPolynomial {
     /// Examples
     /// --------
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (terms_on_new_line = false,
             color_top_level_sum = true,
@@ -6773,7 +6773,7 @@ impl PythonPrimeTwoPolynomial {
             latex = false,
             precision = None)
         )]
-    pub fn pretty_str(
+    pub fn format(
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
@@ -7297,7 +7297,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
     /// Examples
     /// --------
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
     (terms_on_new_line = false,
         color_top_level_sum = true,
@@ -7313,7 +7313,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         latex = false,
             precision = None)
     )]
-    pub fn pretty_str(
+    pub fn format(
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
@@ -7841,7 +7841,7 @@ impl PythonGaloisFieldPolynomial {
     /// Examples
     /// --------
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
         (terms_on_new_line = false,
             color_top_level_sum = true,
@@ -7857,7 +7857,7 @@ impl PythonGaloisFieldPolynomial {
             latex = false,
             precision = None)
         )]
-    pub fn pretty_str(
+    pub fn format(
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,
@@ -8386,7 +8386,7 @@ impl PythonNumberFieldPolynomial {
     /// Examples
     /// --------
     /// >>> p = FiniteFieldPolynomial.parse("3*x^2+2*x+7*x^3", ['x'], 11)
-    /// >>> print(p.pretty_str(symmetric_representation_for_finite_field=True))
+    /// >>> print(p.format(symmetric_representation_for_finite_field=True))
     #[pyo3(signature =
     (terms_on_new_line = false,
         color_top_level_sum = true,
@@ -8402,7 +8402,7 @@ impl PythonNumberFieldPolynomial {
         latex = false,
             precision = None)
     )]
-    pub fn pretty_str(
+    pub fn format(
         &self,
         terms_on_new_line: bool,
         color_top_level_sum: bool,

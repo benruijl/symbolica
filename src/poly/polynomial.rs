@@ -741,7 +741,8 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
         let add_paren = self.nterms() > 1 && state.in_product
             || (state.in_exp
                 && (self.nterms() > 1
-                    || self.exponents(0).iter().filter(|e| **e > E::zero()).count() > 1));
+                    || self.exponents(0).iter().filter(|e| **e > E::zero()).count() > 1
+                    || !self.ring.is_one(&self.coefficients[0])));
 
         if add_paren {
             if state.in_sum {
@@ -781,7 +782,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> SelfRing for MultivariatePolynomial
                 if suppressed_one {
                     suppressed_one = false;
                 } else if !opts.latex {
-                    write!(f, "*")?;
+                    f.write_char(opts.multiplication_operator)?;
                 }
 
                 f.write_str(var_id)?;
@@ -1789,7 +1790,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             return p;
         }
 
-        p.coefficients = vec![p.field.zero(); self.degree(var).to_u32() as usize + 1];
+        p.coefficients = vec![p.ring.zero(); self.degree(var).to_u32() as usize + 1];
         for (q, e) in self.coefficients.iter().zip(self.exponents_iter()) {
             p.coefficients[e[var].to_u32() as usize] = q.clone();
         }

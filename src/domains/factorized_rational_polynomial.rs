@@ -246,7 +246,7 @@ impl<R: Ring, E: Exponent> SelfRing for FactorizedRationalPolynomial<R, E> {
                 if self.numerator.is_one() {
                     return Ok(false);
                 }
-                f.write_char('*')?;
+                f.write_char(opts.multiplication_operator)?;
             }
 
             if write_par {
@@ -311,7 +311,7 @@ impl<R: Ring, E: Exponent> SelfRing for FactorizedRationalPolynomial<R, E> {
             return Ok(false);
         }
 
-        state.in_product |= has_numer_coeff && !self.numerator.is_one();
+        state.in_product = true;
         if has_numer_coeff || self.numerator.is_one() {
             self.numerator
                 .ring
@@ -319,7 +319,7 @@ impl<R: Ring, E: Exponent> SelfRing for FactorizedRationalPolynomial<R, E> {
             state.in_sum = false;
 
             if !self.numerator.is_one() {
-                f.write_char('*')?;
+                f.write_char(opts.multiplication_operator)?;
             }
         }
 
@@ -355,7 +355,7 @@ impl<R: Ring, E: Exponent> SelfRing for FactorizedRationalPolynomial<R, E> {
 
         for (i, (d, p)) in self.denominators.iter().enumerate() {
             if has_denom_coeff || i > 0 {
-                f.write_char('*')?;
+                f.write_char(opts.multiplication_operator)?;
             }
 
             d.format(opts, state.step(false, true, *p != 1), f)?;

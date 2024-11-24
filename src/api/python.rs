@@ -4941,6 +4941,75 @@ impl PythonSeries {
         Ok(format!("{}", self.series))
     }
 
+    /// Convert the series into a LaTeX string.
+    pub fn to_latex(&self) -> PyResult<String> {
+        Ok(format!(
+            "$${}$$",
+            self.series
+                .format_string(&PrintOptions::latex(), PrintState::new())
+        ))
+    }
+
+    /// Convert the expression into a human-readable string, with tunable settings.
+    ///
+    /// Examples
+    /// --------
+    /// >>> a = Expression.parse('128378127123 z^(2/3)*w^2/x/y + y^4 + z^34 + x^(x+2)+3/5+f(x,x^2)')
+    /// >>> print(a.format(number_thousands_separator='_', multiplication_operator=' '))
+    #[pyo3(signature =
+        (terms_on_new_line = false,
+            color_top_level_sum = true,
+            color_builtin_symbols = true,
+            print_finite_field = true,
+            symmetric_representation_for_finite_field = false,
+            explicit_rational_polynomial = false,
+            number_thousands_separator = None,
+            multiplication_operator = '*',
+            double_star_for_exponentiation = false,
+            square_brackets_for_function = false,
+            num_exp_as_superscript = true,
+            latex = false,
+            precision = None)
+        )]
+    pub fn format(
+        &self,
+        terms_on_new_line: bool,
+        color_top_level_sum: bool,
+        color_builtin_symbols: bool,
+        print_finite_field: bool,
+        symmetric_representation_for_finite_field: bool,
+        explicit_rational_polynomial: bool,
+        number_thousands_separator: Option<char>,
+        multiplication_operator: char,
+        double_star_for_exponentiation: bool,
+        square_brackets_for_function: bool,
+        num_exp_as_superscript: bool,
+        latex: bool,
+        precision: Option<usize>,
+    ) -> PyResult<String> {
+        Ok(format!(
+            "{}",
+            self.series.format_string(
+                &PrintOptions {
+                    terms_on_new_line,
+                    color_top_level_sum,
+                    color_builtin_symbols,
+                    print_finite_field,
+                    symmetric_representation_for_finite_field,
+                    explicit_rational_polynomial,
+                    number_thousands_separator,
+                    multiplication_operator,
+                    double_star_for_exponentiation,
+                    square_brackets_for_function,
+                    num_exp_as_superscript,
+                    latex,
+                    precision,
+                },
+                PrintState::new()
+            )
+        ))
+    }
+
     pub fn sin(&self) -> PyResult<Self> {
         Ok(Self {
             series: self

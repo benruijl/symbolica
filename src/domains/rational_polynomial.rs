@@ -12,7 +12,7 @@ use ahash::HashMap;
 use crate::{
     poly::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial,
-        univariate::UnivariatePolynomial, Exponent, Variable,
+        univariate::UnivariatePolynomial, PositiveExponent, Variable,
     },
     printer::{PrintOptions, PrintState},
 };
@@ -25,12 +25,12 @@ use super::{
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct RationalPolynomialField<R: Ring, E: Exponent> {
+pub struct RationalPolynomialField<R: Ring, E: PositiveExponent> {
     ring: R,
     _phantom_exp: PhantomData<E>,
 }
 
-impl<R: Ring, E: Exponent> RationalPolynomialField<R, E> {
+impl<R: Ring, E: PositiveExponent> RationalPolynomialField<R, E> {
     pub fn new(coeff_ring: R) -> RationalPolynomialField<R, E> {
         RationalPolynomialField {
             ring: coeff_ring,
@@ -46,7 +46,7 @@ impl<R: Ring, E: Exponent> RationalPolynomialField<R, E> {
     }
 }
 
-pub trait FromNumeratorAndDenominator<R: Ring, OR: Ring, E: Exponent> {
+pub trait FromNumeratorAndDenominator<R: Ring, OR: Ring, E: PositiveExponent> {
     fn from_num_den(
         num: MultivariatePolynomial<R, E>,
         den: MultivariatePolynomial<R, E>,
@@ -56,12 +56,12 @@ pub trait FromNumeratorAndDenominator<R: Ring, OR: Ring, E: Exponent> {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct RationalPolynomial<R: Ring, E: Exponent> {
+pub struct RationalPolynomial<R: Ring, E: PositiveExponent> {
     pub numerator: MultivariatePolynomial<R, E>,
     pub denominator: MultivariatePolynomial<R, E>,
 }
 
-impl<R: Ring, E: Exponent> InternalOrdering for RationalPolynomial<R, E> {
+impl<R: Ring, E: PositiveExponent> InternalOrdering for RationalPolynomial<R, E> {
     /// An ordering of rational polynomials that has no intuitive meaning.
     fn internal_cmp(&self, other: &Self) -> Ordering {
         self.numerator
@@ -81,7 +81,7 @@ impl<R: Ring, E: Exponent> InternalOrdering for RationalPolynomial<R, E> {
     }
 }
 
-impl<R: Ring, E: Exponent> From<MultivariatePolynomial<R, E>> for RationalPolynomial<R, E>
+impl<R: Ring, E: PositiveExponent> From<MultivariatePolynomial<R, E>> for RationalPolynomial<R, E>
 where
     Self: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -92,7 +92,7 @@ where
     }
 }
 
-impl<R: Ring, E: Exponent> RationalPolynomial<R, E>
+impl<R: Ring, E: PositiveExponent> RationalPolynomial<R, E>
 where
     Self: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -120,7 +120,7 @@ where
     }
 }
 
-impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
+impl<R: Ring, E: PositiveExponent> RationalPolynomial<R, E> {
     pub fn new(field: &R, var_map: Arc<Vec<Variable>>) -> RationalPolynomial<R, E> {
         let num = MultivariatePolynomial::new(field, None, var_map);
         let den = num.one();
@@ -165,7 +165,7 @@ impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
     }
 }
 
-impl<R: Ring, E: Exponent> SelfRing for RationalPolynomial<R, E> {
+impl<R: Ring, E: PositiveExponent> SelfRing for RationalPolynomial<R, E> {
     fn is_zero(&self) -> bool {
         self.is_zero()
     }
@@ -244,7 +244,7 @@ impl<R: Ring, E: Exponent> SelfRing for RationalPolynomial<R, E> {
     }
 }
 
-impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
+impl<E: PositiveExponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
     for RationalPolynomial<IntegerRing, E>
 {
     fn from_num_den(
@@ -293,7 +293,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<RationalField, IntegerRing, E>
     }
 }
 
-impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
+impl<E: PositiveExponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
     for RationalPolynomial<IntegerRing, E>
 {
     fn from_num_den(
@@ -333,7 +333,7 @@ impl<E: Exponent> FromNumeratorAndDenominator<IntegerRing, IntegerRing, E>
     }
 }
 
-impl<UField: FiniteFieldWorkspace, E: Exponent>
+impl<UField: FiniteFieldWorkspace, E: PositiveExponent>
     FromNumeratorAndDenominator<FiniteField<UField>, FiniteField<UField>, E>
     for RationalPolynomial<FiniteField<UField>, E>
 where
@@ -378,7 +378,7 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> RationalPolynomial<R, E>
 where
     Self: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -550,20 +550,21 @@ where
     }
 }
 
-impl<R: Ring, E: Exponent> Display for RationalPolynomial<R, E> {
+impl<R: Ring, E: PositiveExponent> Display for RationalPolynomial<R, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.format(&PrintOptions::from_fmt(f), PrintState::from_fmt(f), f)
             .map(|_| ())
     }
 }
 
-impl<R: Ring, E: Exponent> Display for RationalPolynomialField<R, E> {
+impl<R: Ring, E: PositiveExponent> Display for RationalPolynomialField<R, E> {
     fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Ring for RationalPolynomialField<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Ring
+    for RationalPolynomialField<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -684,7 +685,7 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> EuclideanDomain
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> EuclideanDomain
     for RationalPolynomialField<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
@@ -705,7 +706,8 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Field for RationalPolynomialField<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Field
+    for RationalPolynomialField<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -722,7 +724,7 @@ where
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: Exponent>
+impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E> + PolynomialGCD<E>, E: PositiveExponent>
     Add<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
@@ -774,7 +776,7 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub for RationalPolynomial<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Sub for RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -785,8 +787,8 @@ where
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Sub<&'a RationalPolynomial<R, E>>
-    for &'b RationalPolynomial<R, E>
+impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
+    Sub<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -797,7 +799,7 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg for RationalPolynomial<R, E> {
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Neg for RationalPolynomial<R, E> {
     type Output = Self;
     fn neg(self) -> Self::Output {
         RationalPolynomial {
@@ -807,8 +809,8 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Neg for RationalPolynom
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Mul<&'a RationalPolynomial<R, E>>
-    for &'b RationalPolynomial<R, E>
+impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
+    Mul<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -851,8 +853,8 @@ where
     }
 }
 
-impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Div<&'a RationalPolynomial<R, E>>
-    for &'b RationalPolynomial<R, E>
+impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
+    Div<&'a RationalPolynomial<R, E>> for &'b RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -864,7 +866,7 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -897,7 +899,8 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> Derivable for RationalPolynomialField<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Derivable
+    for RationalPolynomialField<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
 {
@@ -910,7 +913,7 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
     MultivariatePolynomial<R, E>: Factorize,
@@ -999,7 +1002,7 @@ where
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> RationalPolynomial<R, E>
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> RationalPolynomial<R, E>
 where
     RationalPolynomial<R, E>: FromNumeratorAndDenominator<R, R, E>,
     MultivariatePolynomial<R, E>: Factorize,

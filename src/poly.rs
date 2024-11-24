@@ -27,7 +27,7 @@ use crate::domains::factorized_rational_polynomial::{
 };
 use crate::domains::integer::Integer;
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
-use crate::domains::{EuclideanDomain, Ring, RingPrinter};
+use crate::domains::{EuclideanDomain, Ring, SelfRing};
 use crate::parser::{Operator, Token};
 use crate::printer::{PrintOptions, PrintState};
 use crate::state::{State, Workspace};
@@ -55,13 +55,14 @@ pub trait Exponent:
     + Copy
     + PartialEq
     + Eq
+    + TryFrom<i32>
 {
     fn zero() -> Self;
     fn one() -> Self;
-    /// Convert the exponent to `u32`. This is always possible, as `u32` is the largest supported exponent type.
-    fn to_u32(&self) -> u32;
-    /// Convert from `u32`. This function may panic if the exponent is too large.
-    fn from_u32(n: u32) -> Self;
+    /// Convert the exponent to `i32`. This is always possible, as `i32` is the largest supported exponent type.
+    fn to_i32(&self) -> i32;
+    /// Convert from `i32`. This function may panic if the exponent is too large.
+    fn from_i32(n: i32) -> Self;
     fn is_zero(&self) -> bool;
     fn checked_add(&self, other: &Self) -> Option<Self>;
     fn gcd(&self, other: &Self) -> Self;
@@ -93,13 +94,16 @@ impl Exponent for u32 {
     }
 
     #[inline]
-    fn to_u32(&self) -> u32 {
-        *self
+    fn to_i32(&self) -> i32 {
+        *self as i32
     }
 
     #[inline]
-    fn from_u32(n: u32) -> Self {
-        n
+    fn from_i32(n: i32) -> Self {
+        if n < 0 {
+            panic!("Exponent {} is negative", n);
+        }
+        n as u32
     }
 
     #[inline]
@@ -109,7 +113,7 @@ impl Exponent for u32 {
 
     #[inline]
     fn checked_add(&self, other: &Self) -> Option<Self> {
-        u32::checked_add(*self, *other)
+        i32::checked_add(*self as i32, *other as i32).map(|x| x as u32)
     }
 
     #[inline]
@@ -150,6 +154,77 @@ impl Exponent for u32 {
     }
 }
 
+impl Exponent for i32 {
+    #[inline]
+    fn zero() -> Self {
+        0
+    }
+
+    #[inline]
+    fn one() -> Self {
+        1
+    }
+
+    #[inline]
+    fn to_i32(&self) -> i32 {
+        *self
+    }
+
+    #[inline]
+    fn from_i32(n: i32) -> Self {
+        n
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        *self == 0
+    }
+
+    #[inline]
+    fn checked_add(&self, other: &Self) -> Option<Self> {
+        i32::checked_add(*self, *other)
+    }
+
+    #[inline]
+    fn gcd(&self, other: &Self) -> Self {
+        utils::gcd_signed(*self as i64, *other as i64) as Self
+    }
+
+    // Pack a list of positive exponents.
+    fn pack(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 8) + (*x as u8 as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = *ss as i32;
+        }
+    }
+
+    // Pack a list of positive exponents.
+    fn pack_u16(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 16) + ((*x as u16).to_be() as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack_u16(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = ss.swap_bytes() as i32;
+        }
+    }
+}
+
 impl Exponent for u16 {
     #[inline]
     fn zero() -> Self {
@@ -162,13 +237,13 @@ impl Exponent for u16 {
     }
 
     #[inline]
-    fn to_u32(&self) -> u32 {
-        *self as u32
+    fn to_i32(&self) -> i32 {
+        *self as i32
     }
 
     #[inline]
-    fn from_u32(n: u32) -> Self {
-        if n <= u16::MAX as u32 {
+    fn from_i32(n: i32) -> Self {
+        if n >= 0 && n <= u16::MAX as i32 {
             n as u16
         } else {
             panic!("Exponent {} too large for u16", n);
@@ -223,6 +298,81 @@ impl Exponent for u16 {
     }
 }
 
+impl Exponent for i16 {
+    #[inline]
+    fn zero() -> Self {
+        0
+    }
+
+    #[inline]
+    fn one() -> Self {
+        1
+    }
+
+    #[inline]
+    fn to_i32(&self) -> i32 {
+        *self as i32
+    }
+
+    #[inline]
+    fn from_i32(n: i32) -> Self {
+        if n >= i16::MIN as i32 && n <= i16::MAX as i32 {
+            n as i16
+        } else {
+            panic!("Exponent {} too large for i16", n);
+        }
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        *self == 0
+    }
+
+    #[inline]
+    fn checked_add(&self, other: &Self) -> Option<Self> {
+        i16::checked_add(*self, *other)
+    }
+
+    #[inline]
+    fn gcd(&self, other: &Self) -> Self {
+        utils::gcd_signed(*self as i64, *other as i64) as Self
+    }
+
+    // Pack a list of positive exponents.
+    fn pack(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 8) + (*x as u8 as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = *ss as i16;
+        }
+    }
+
+    // Pack a list of positive exponents.
+    fn pack_u16(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 16) + ((*x as u16).to_be() as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack_u16(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = ss.swap_bytes() as i16;
+        }
+    }
+}
+
 /// An exponent limited to 255 for efficiency
 impl Exponent for u8 {
     #[inline]
@@ -236,13 +386,13 @@ impl Exponent for u8 {
     }
 
     #[inline]
-    fn to_u32(&self) -> u32 {
-        *self as u32
+    fn to_i32(&self) -> i32 {
+        *self as i32
     }
 
     #[inline]
-    fn from_u32(n: u32) -> Self {
-        if n <= u8::MAX as u32 {
+    fn from_i32(n: i32) -> Self {
+        if n >= 0 && n <= u8::MAX as i32 {
             n as u8
         } else {
             panic!("Exponent {} too large for u8", n);
@@ -295,6 +445,150 @@ impl Exponent for u8 {
     }
 }
 
+impl Exponent for i8 {
+    #[inline]
+    fn zero() -> Self {
+        0
+    }
+
+    #[inline]
+    fn one() -> Self {
+        1
+    }
+
+    #[inline]
+    fn to_i32(&self) -> i32 {
+        *self as i32
+    }
+
+    #[inline]
+    fn from_i32(n: i32) -> Self {
+        if n >= i8::MIN as i32 && n <= i8::MAX as i32 {
+            n as i8
+        } else {
+            panic!("Exponent {} too large for i8", n);
+        }
+    }
+
+    #[inline]
+    fn is_zero(&self) -> bool {
+        *self == 0
+    }
+
+    #[inline]
+    fn checked_add(&self, other: &Self) -> Option<Self> {
+        i8::checked_add(*self, *other)
+    }
+
+    #[inline]
+    fn gcd(&self, other: &Self) -> Self {
+        utils::gcd_signed(*self as i64, *other as i64) as Self
+    }
+
+    // Pack a list of positive exponents.
+    fn pack(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 8) + (*x as u8 as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u8, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = *ss as i8;
+        }
+    }
+
+    // Pack a list of positive exponents.
+    fn pack_u16(list: &[Self]) -> u64 {
+        let mut num: u64 = 0;
+        for x in list.iter().rev() {
+            num = (num << 16) + ((*x as u16).to_be() as u64);
+        }
+        num.swap_bytes()
+    }
+
+    fn unpack_u16(mut n: u64, out: &mut [Self]) {
+        n = n.swap_bytes();
+        let s = unsafe { std::slice::from_raw_parts(&n as *const u64 as *const u16, out.len()) };
+        for (o, ss) in out.iter_mut().zip(s) {
+            *o = ss.swap_bytes() as i8;
+        }
+    }
+}
+
+pub trait PositiveExponent: Exponent {
+    fn from_u32(n: u32) -> Self {
+        if n > i32::MAX as u32 {
+            panic!("Exponent {} too large for i32", n);
+        }
+        Self::from_i32(n as i32)
+    }
+    fn to_u32(&self) -> u32;
+}
+
+impl PositiveExponent for u8 {
+    #[inline]
+    fn to_u32(&self) -> u32 {
+        *self as u32
+    }
+}
+impl PositiveExponent for u16 {
+    #[inline]
+    fn to_u32(&self) -> u32 {
+        *self as u32
+    }
+}
+impl PositiveExponent for u32 {
+    #[inline]
+    fn to_u32(&self) -> u32 {
+        *self
+    }
+}
+
+macro_rules! to_positive {
+    ($neg: ty, $pos: ty) => {
+        impl<R: Ring> MultivariatePolynomial<R, $neg> {
+            /// Convert a polynomial with positive exponents to its unsigned type equivalent
+            /// by a safe and almost zero-cost cast.
+            ///
+            /// Panics if the polynomial has negative exponents.
+            pub fn to_positive(self) -> MultivariatePolynomial<R, $pos> {
+                if !self.is_polynomial() {
+                    panic!("Polynomial has negative exponent");
+                }
+
+                unsafe { std::mem::transmute_copy(&std::mem::ManuallyDrop::new(self)) }
+            }
+        }
+
+        impl<R: Ring> MultivariatePolynomial<R, $pos> {
+            /// Convert a polynomial with positive exponents to its signed type equivalent
+            /// by a safe and almost zero-cost cast.
+            ///
+            /// Panics if the polynomial has exponents that are too large.
+            pub fn to_signed(self) -> MultivariatePolynomial<R, $neg> {
+                if self
+                    .exponents
+                    .iter()
+                    .any(|x| x.to_i32() > <$neg>::MAX as i32)
+                {
+                    panic!("Polynomial has exponents that are too large");
+                }
+
+                unsafe { std::mem::transmute_copy(&std::mem::ManuallyDrop::new(self)) }
+            }
+        }
+    };
+}
+
+to_positive!(i8, u8);
+to_positive!(i16, u16);
+to_positive!(i32, u32);
+
 /// A well-order of monomials.
 pub trait MonomialOrder: Clone {
     fn cmp<E: Exponent>(a: &[E], b: &[E]) -> Ordering;
@@ -344,7 +638,7 @@ impl MonomialOrder for LexOrder {
 /// A polynomial variable. It is either a (global) symbol
 /// a temporary variable (for internal use), an array entry,
 /// a function or any other non-polynomial part.
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Variable {
     Symbol(Symbol),
     Temporary(usize), // a temporary variable, for internal use
@@ -394,19 +688,11 @@ impl Variable {
         }
     }
 
-    pub fn to_string_with_state(&self, state: PrintState) -> String {
+    fn format_string(&self, opts: &PrintOptions, state: PrintState) -> String {
         match self {
             Variable::Symbol(v) => State::get_name(*v).to_string(),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
-            Variable::Function(_, a) | Variable::Other(a) => format!(
-                "{}",
-                RingPrinter {
-                    element: a.as_ref(),
-                    ring: &AtomField::new(),
-                    opts: PrintOptions::default(),
-                    state,
-                }
-            ),
+            Variable::Function(_, a) | Variable::Other(a) => a.format_string(opts, state),
         }
     }
 
@@ -462,6 +748,18 @@ impl Atom {
         self.as_view().to_polynomial(field, var_map)
     }
 
+    /// Convert the atom to a polynomial in specific variables.
+    /// All other parts will be collected into the coefficient, which
+    /// is a general expression.
+    ///
+    /// This routine does not perform expansions.
+    pub fn to_polynomial_in_vars<E: Exponent>(
+        &self,
+        var_map: &Arc<Vec<Variable>>,
+    ) -> MultivariatePolynomial<AtomField, E> {
+        self.as_view().to_polynomial_in_vars(var_map)
+    }
+
     /// Convert the atom to a rational polynomial, optionally in the variable ordering
     /// specified by `var_map`. If new variables are encountered, they are
     /// added to the variable map. Similarly, non-rational polynomial parts are automatically
@@ -469,7 +767,7 @@ impl Atom {
     pub fn to_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     >(
         &self,
         field: &R,
@@ -491,7 +789,7 @@ impl Atom {
     pub fn to_factorized_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     >(
         &self,
         field: &R,
@@ -660,11 +958,11 @@ impl<'a> AtomView<'a> {
                     match exp {
                         AtomView::Num(n) => match n.get_coeff_view() {
                             CoefficientView::Natural(r, _) => {
-                                exponents[var_index] += E::from_u32(r as u32)
+                                exponents[var_index] += E::from_i32(r as i32)
                             }
                             CoefficientView::Large(r) => {
                                 exponents[var_index] +=
-                                    E::from_u32(r.to_rat().numerator_ref().to_i64().unwrap() as u32)
+                                    E::from_i32(r.to_rat().numerator_ref().to_i64().unwrap() as i32)
                             }
                             _ => unreachable!(),
                         },
@@ -749,8 +1047,39 @@ impl<'a> AtomView<'a> {
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_coeff_view();
                     if let CoefficientView::Natural(nn, nd) = num_n {
-                        if nd == 1 && nn > 0 && nn < u32::MAX as i64 {
-                            return base.to_polynomial_impl(field, var_map).pow(nn as usize);
+                        if nd == 1 {
+                            if nn > 0 && nn < i32::MAX as i64 {
+                                return base.to_polynomial_impl(field, var_map).pow(nn as usize);
+                            } else if nn < 0 && nn > i32::MIN as i64 {
+                                // allow x^-2 as a term if supported by the exponent
+                                if let Ok(e) = (nn as i32).try_into() {
+                                    if let AtomView::Var(v) = base {
+                                        let s = Variable::Symbol(v.get_symbol());
+                                        if let Some(id) = var_map.iter().position(|v| v == &s) {
+                                            let mut exp = vec![E::zero(); var_map.len()];
+                                            exp[id] = e;
+                                            return MultivariatePolynomial::new(
+                                                field,
+                                                None,
+                                                var_map.clone(),
+                                            )
+                                            .monomial(field.one(), exp);
+                                        } else {
+                                            let mut var_map = var_map.as_ref().clone();
+                                            var_map.push(s);
+                                            let mut exp = vec![E::zero(); var_map.len()];
+                                            exp[var_map.len() - 1] = e;
+
+                                            return MultivariatePolynomial::new(
+                                                field,
+                                                None,
+                                                Arc::new(var_map),
+                                            )
+                                            .monomial(field.one(), exp);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -830,6 +1159,20 @@ impl<'a> AtomView<'a> {
         &self,
         var_map: &Arc<Vec<Variable>>,
     ) -> MultivariatePolynomial<AtomField, E> {
+        let poly = MultivariatePolynomial::<_, E>::new(&AtomField::new(), None, var_map.clone());
+        self.to_polynomial_in_vars_impl(var_map, &poly)
+    }
+
+    /// Convert the atom to a polynomial in specific variables.
+    /// All other parts will be collected into the coefficient, which
+    /// is a general expression.
+    ///
+    /// This routine does not perform expansions.
+    fn to_polynomial_in_vars_impl<E: Exponent>(
+        &self,
+        var_map: &Arc<Vec<Variable>>,
+        poly: &MultivariatePolynomial<AtomField, E>,
+    ) -> MultivariatePolynomial<AtomField, E> {
         let field = AtomField::new();
         // see if the current term can be cast into a polynomial using a fast routine
         if let Ok(num) = self.to_polynomial_expanded(&field, Some(var_map), false) {
@@ -837,9 +1180,7 @@ impl<'a> AtomView<'a> {
         }
 
         match self {
-            AtomView::Num(_) | AtomView::Var(_) => {
-                MultivariatePolynomial::new(&field, None, var_map.clone()).constant(self.to_owned())
-            }
+            AtomView::Num(_) | AtomView::Var(_) => poly.constant(self.to_owned()),
             AtomView::Pow(p) => {
                 let (base, exp) = p.get_base_exp();
 
@@ -847,7 +1188,8 @@ impl<'a> AtomView<'a> {
                     let num_n = n.get_coeff_view();
                     if let CoefficientView::Natural(nn, nd) = num_n {
                         if nd == 1 && nn > 0 && nn < u32::MAX as i64 {
-                            return base.to_polynomial_in_vars(var_map).pow(nn as usize);
+                            let b = base.to_polynomial_in_vars_impl(var_map, poly);
+                            return b.pow(nn as usize);
                         }
                     }
                 }
@@ -858,11 +1200,9 @@ impl<'a> AtomView<'a> {
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[id] = E::one();
-                    MultivariatePolynomial::new(&field, None, var_map.clone())
-                        .monomial(field.one(), exp)
+                    poly.monomial(field.one(), exp)
                 } else {
-                    MultivariatePolynomial::new(&field, None, var_map.clone())
-                        .constant(self.to_owned())
+                    poly.constant(self.to_owned())
                 }
             }
             AtomView::Fun(_) => {
@@ -872,28 +1212,23 @@ impl<'a> AtomView<'a> {
                 }) {
                     let mut exp = vec![E::zero(); var_map.len()];
                     exp[id] = E::one();
-                    MultivariatePolynomial::new(&field, None, var_map.clone())
-                        .monomial(field.one(), exp)
+                    poly.monomial(field.one(), exp)
                 } else {
-                    MultivariatePolynomial::new(&field, None, var_map.clone())
-                        .constant(self.to_owned())
+                    poly.constant(self.to_owned())
                 }
             }
             AtomView::Mul(m) => {
-                let mut r = MultivariatePolynomial::new(&field, None, var_map.clone())
-                    .constant(field.one());
+                let mut r = poly.one();
                 for arg in m {
-                    let mut arg_r = arg.to_polynomial_in_vars(&r.variables);
-                    r.unify_variables(&mut arg_r);
+                    let arg_r = arg.to_polynomial_in_vars_impl(&r.variables, poly);
                     r = &r * &arg_r;
                 }
                 r
             }
             AtomView::Add(a) => {
-                let mut r = MultivariatePolynomial::new(&field, None, var_map.clone());
+                let mut r = poly.zero();
                 for arg in a {
-                    let mut arg_r = arg.to_polynomial_in_vars(&r.variables);
-                    r.unify_variables(&mut arg_r);
+                    let arg_r = arg.to_polynomial_in_vars_impl(&r.variables, poly);
                     r = &r + &arg_r;
                 }
                 r
@@ -908,7 +1243,7 @@ impl<'a> AtomView<'a> {
     pub fn to_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     >(
         &self,
         field: &R,
@@ -929,7 +1264,7 @@ impl<'a> AtomView<'a> {
     fn to_rational_polynomial_impl<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     >(
         &self,
         field: &R,
@@ -1051,7 +1386,7 @@ impl<'a> AtomView<'a> {
     pub fn to_factorized_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     >(
         &self,
         field: &R,
@@ -1073,7 +1408,7 @@ impl<'a> AtomView<'a> {
     pub fn to_factorized_rational_polynomial_impl<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     >(
         &self,
         field: &R,
@@ -1210,33 +1545,27 @@ impl<E: Exponent, O: MonomialOrder> MultivariatePolynomial<AtomField, E, O> {
         let add = out.to_add();
 
         let mut mul_h = workspace.new_atom();
-        let mut var_h = workspace.new_atom();
         let mut num_h = workspace.new_atom();
         let mut pow_h = workspace.new_atom();
+
+        let vars: Vec<_> = self.variables.iter().map(|v| v.to_atom()).collect();
+
+        let mut sorted_vars = (0..vars.len()).collect::<Vec<_>>();
+        sorted_vars.sort_by_key(|&i| vars[i].clone());
 
         for monomial in self {
             let mul = mul_h.to_mul();
 
-            for (var_id, &pow) in self.variables.iter().zip(monomial.exponents) {
-                if pow > E::zero() {
-                    match var_id {
-                        Variable::Symbol(v) => {
-                            var_h.to_var(*v);
-                        }
-                        Variable::Temporary(_) => {
-                            unreachable!("Temporary variable in expression")
-                        }
-                        Variable::Function(_, a) | Variable::Other(a) => {
-                            var_h.set_from_view(&a.as_view());
-                        }
-                    }
-
-                    if pow > E::one() {
-                        num_h.to_num((pow.to_u32() as i64).into());
-                        pow_h.to_pow(var_h.as_view(), num_h.as_view());
+            for i in &sorted_vars {
+                let var = &vars[*i];
+                let pow = monomial.exponents[*i];
+                if pow != E::zero() {
+                    if pow != E::one() {
+                        num_h.to_num((pow.to_i32() as i64).into());
+                        pow_h.to_pow(var.as_view(), num_h.as_view());
                         mul.extend(pow_h.as_view());
                     } else {
-                        mul.extend(var_h.as_view());
+                        mul.extend(var.as_view());
                     }
                 }
             }
@@ -1284,34 +1613,38 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
         let add = out.to_add();
 
         let mut mul_h = workspace.new_atom();
-        let mut var_h = workspace.new_atom();
         let mut num_h = workspace.new_atom();
         let mut pow_h = workspace.new_atom();
+
+        let vars: Vec<_> = self
+            .variables
+            .iter()
+            .map(|v| {
+                if let Variable::Temporary(_) = v {
+                    let a = map.get(v).expect("Variable missing from map");
+                    a.to_owned()
+                } else {
+                    v.to_atom()
+                }
+            })
+            .collect();
+
+        let mut sorted_vars = (0..vars.len()).collect::<Vec<_>>();
+        sorted_vars.sort_by_key(|&i| vars[i].clone());
 
         for monomial in self {
             let mul = mul_h.to_mul();
 
-            for (var_id, &pow) in self.variables.iter().zip(monomial.exponents) {
-                if pow > E::zero() {
-                    match var_id {
-                        Variable::Symbol(v) => {
-                            var_h.to_var(*v);
-                        }
-                        Variable::Temporary(_) => {
-                            let a = map.get(var_id).expect("Variable missing from map");
-                            var_h.set_from_view(a);
-                        }
-                        Variable::Function(_, a) | Variable::Other(a) => {
-                            var_h.set_from_view(&a.as_view());
-                        }
-                    }
-
-                    if pow > E::one() {
-                        num_h.to_num((pow.to_u32() as i64).into());
-                        pow_h.to_pow(var_h.as_view(), num_h.as_view());
+            for i in &sorted_vars {
+                let var = &vars[*i];
+                let pow = monomial.exponents[*i];
+                if pow != E::zero() {
+                    if pow != E::one() {
+                        num_h.to_num((pow.to_i32() as i64).into());
+                        pow_h.to_pow(var.as_view(), num_h.as_view());
                         mul.extend(pow_h.as_view());
                     } else {
-                        mul.extend(var_h.as_view());
+                        mul.extend(var.as_view());
                     }
                 }
             }
@@ -1364,7 +1697,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
             let mul = mul_h.to_mul();
 
             for (var_id, &pow) in self.variables.iter().zip(monomial.exponents) {
-                if pow > E::zero() {
+                if pow != E::zero() {
                     match var_id {
                         Variable::Symbol(v) => {
                             var_h.to_var(*v);
@@ -1377,8 +1710,8 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
                         }
                     }
 
-                    if pow > E::one() {
-                        num_h.to_num((pow.to_u32() as i64).into());
+                    if pow != E::one() {
+                        num_h.to_num((pow.to_i32() as i64).into());
                         pow_h.to_pow(var_h.as_view(), num_h.as_view());
                         mul.extend(pow_h.as_view());
                     } else {
@@ -1398,7 +1731,7 @@ impl<R: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<R, E, O> {
     }
 }
 
-impl<R: Ring, E: Exponent> RationalPolynomial<R, E> {
+impl<R: Ring, E: PositiveExponent> RationalPolynomial<R, E> {
     pub fn to_expression(&self) -> Atom
     where
         R::Element: Into<Coefficient>,
@@ -1500,8 +1833,8 @@ impl Token {
 
                     match &args[1] {
                         Token::Number(n) => {
-                            if let Ok(x) = n.parse::<u32>() {
-                                exponents[var_index] += E::from_u32(x);
+                            if let Ok(x) = n.parse::<i32>() {
+                                exponents[var_index] += E::from_i32(x);
                             } else {
                                 Err("Invalid exponent")?
                             };
@@ -1596,7 +1929,7 @@ impl Token {
     pub fn to_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + ConvertToRing + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     >(
         &self,
         field: &R,
@@ -1704,7 +2037,7 @@ impl Token {
     pub fn to_factorized_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + ConvertToRing + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     >(
         &self,
         field: &R,

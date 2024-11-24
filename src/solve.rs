@@ -10,7 +10,7 @@ use crate::{
         InternalOrdering,
     },
     evaluate::FunctionMap,
-    poly::{Exponent, Variable},
+    poly::{PositiveExponent, Variable},
     tensors::matrix::Matrix,
 };
 
@@ -41,7 +41,7 @@ impl Atom {
 
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
-    pub fn solve_linear_system<E: Exponent>(
+    pub fn solve_linear_system<E: PositiveExponent>(
         system: &[AtomView],
         vars: &[Symbol],
     ) -> Result<Vec<Atom>, String> {
@@ -189,7 +189,7 @@ impl<'a> AtomView<'a> {
 
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
-    pub fn solve_linear_system<E: Exponent>(
+    pub fn solve_linear_system<E: PositiveExponent>(
         system: &[AtomView],
         vars: &[Symbol],
     ) -> Result<Vec<Atom>, String> {

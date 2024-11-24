@@ -23,7 +23,7 @@ use crate::{
     state::State,
 };
 
-use super::{polynomial::MultivariatePolynomial, Exponent};
+use super::{polynomial::MultivariatePolynomial, PositiveExponent};
 
 /// A borrowed version of a Horner node, suitable as a key in a
 /// hashmap. It uses precomputed hashes for the complete node
@@ -315,7 +315,7 @@ where
     }
 }
 
-impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
+impl<E: PositiveExponent> MultivariatePolynomial<RationalField, E> {
     /// Write the polynomial in a Horner scheme with the variable ordering
     /// defined in `order`.
     pub fn to_horner_scheme(&self, order: &[usize]) -> HornerScheme<RationalField> {
@@ -464,7 +464,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
         let mut h = AHasher::default();
         h.write_u8(0);
         var.hash(&mut h);
-        (min_pow.to_u32() as usize).hash(&mut h);
+        (min_pow.to_i32() as usize).hash(&mut h);
 
         let pow_hash = h.finish(); // hash var^pow
 
@@ -513,7 +513,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
 
         HornerScheme::Node(HornerNode {
             var,
-            pow: min_pow.to_u32() as usize,
+            pow: min_pow.to_i32() as usize,
             gcd,
             hash: (pow_hash, pow_content_hash, full_hash),
             content_rest: boxed_children,
@@ -545,7 +545,7 @@ impl<E: Exponent> MultivariatePolynomial<RationalField, E> {
 }
 
 impl HornerScheme<RationalField> {
-    pub fn optimize_multiple<E: Exponent>(
+    pub fn optimize_multiple<E: PositiveExponent>(
         polys: &[&MultivariatePolynomial<RationalField, E>],
         num_tries: usize,
     ) -> (Vec<HornerScheme<RationalField>>, usize, Vec<usize>) {

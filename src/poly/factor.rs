@@ -20,7 +20,7 @@ use crate::{
     utils,
 };
 
-use super::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent, LexOrder};
+use super::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, LexOrder, PositiveExponent};
 
 pub trait Factorize: Sized {
     /// Perform a square-free factorization.
@@ -32,7 +32,9 @@ pub trait Factorize: Sized {
     fn is_irreducible(&self) -> bool;
 }
 
-impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
+impl<F: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
+    MultivariatePolynomial<F, E, LexOrder>
+{
     /// Find factors that do not contain all variables.
     pub fn factor_separable(&self) -> Vec<Self> {
         let mut stripped = self.clone();
@@ -205,7 +207,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
     }
 }
 
-impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder> {
+impl<E: PositiveExponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder> {
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
         if self.is_zero() {
             return vec![];
@@ -343,7 +345,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<IntegerRing, E, LexOrder>
     }
 }
 
-impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrder> {
+impl<E: PositiveExponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrder> {
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
         let c = self.content();
 
@@ -411,7 +413,7 @@ impl<E: Exponent> Factorize for MultivariatePolynomial<RationalField, E, LexOrde
     }
 }
 
-impl<E: Exponent> Factorize
+impl<E: PositiveExponent> Factorize
     for MultivariatePolynomial<AlgebraicExtension<RationalField>, E, LexOrder>
 {
     fn square_free_factorization(&self) -> Vec<(Self, usize)> {
@@ -493,7 +495,7 @@ impl<E: Exponent> Factorize
 impl<
         UField: FiniteFieldWorkspace,
         F: GaloisField<Base = FiniteField<UField>> + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     > Factorize for MultivariatePolynomial<F, E, LexOrder>
 where
     FiniteField<UField>: Field + FiniteFieldCore<UField> + PolynomialGCD<u16>,
@@ -648,7 +650,7 @@ where
 impl<
         UField: FiniteFieldWorkspace,
         F: GaloisField<Base = FiniteField<UField>> + PolynomialGCD<E>,
-        E: Exponent,
+        E: PositiveExponent,
     > MultivariatePolynomial<F, E, LexOrder>
 where
     FiniteField<UField>: Field + FiniteFieldCore<UField> + PolynomialGCD<u16>,
@@ -1650,7 +1652,7 @@ where
     }
 }
 
-impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
+impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
     fn multivariate_diophantine(
         univariate_deltas: &[Self],
         univariate_factors: &mut [Self],
@@ -1987,7 +1989,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     }
 }
 
-impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
     /// Hensel lift a solution of `self = u * w mod p` to `self = u * w mod max_p`
     /// where `max_p` is a power of `p`.
     ///
@@ -2159,7 +2161,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         }
 
         let bound = self.coefficient_bound();
-        let p: Integer = (field.get_prime().to_u32() as i64).into();
+        let p: Integer = (field.get_prime() as i64).into();
         let mut max_p = p.clone();
         while max_p < bound {
             max_p = &max_p * &p;
@@ -3361,7 +3363,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
     }
 }
 
-impl<E: Exponent> MultivariatePolynomial<FiniteField<Integer>, E, LexOrder> {
+impl<E: PositiveExponent> MultivariatePolynomial<FiniteField<Integer>, E, LexOrder> {
     /// Compute a univariate diophantine equation in `Z_p^k` by Newton iteration.
     fn get_univariate_factors_and_deltas(
         factors: &[Self],

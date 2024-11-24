@@ -18,7 +18,7 @@ use crate::poly::INLINED_EXPONENTS;
 use crate::tensors::matrix::{Matrix, MatrixError};
 
 use super::polynomial::MultivariatePolynomial;
-use super::Exponent;
+use super::PositiveExponent;
 
 // 100 large u32 primes starting from the 203213901st prime number
 pub const LARGE_U32_PRIMES: [u32; 100] = [
@@ -122,7 +122,7 @@ enum GCDError {
     BadCurrentImage,
 }
 
-impl<R: Ring, E: Exponent> MultivariatePolynomial<R, E> {
+impl<R: Ring, E: PositiveExponent> MultivariatePolynomial<R, E> {
     /// Evaluation of the exponents by filling in the variables
     #[inline(always)]
     fn evaluate_exponents(
@@ -184,7 +184,7 @@ impl<R: Ring, E: Exponent> MultivariatePolynomial<R, E> {
     }
 }
 
-impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
+impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
     /// Compute the univariate GCD using Euclid's algorithm. The result is normalized to 1.
     pub fn univariate_gcd(&self, b: &Self) -> Self {
         if self.is_zero() {
@@ -1077,7 +1077,7 @@ impl<F: Field, E: Exponent> MultivariatePolynomial<F, E> {
     }
 }
 
-impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
+impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F, E> {
     /// Compute the gcd shape of two polynomials in a finite field by filling in random
     /// numbers.
     #[instrument(level = "debug", skip_all)]
@@ -1376,7 +1376,7 @@ impl<F: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<F, E> {
     }
 }
 
-impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<R, E> {
+impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<R, E> {
     /// Get the content of a multivariate polynomial viewed as a
     /// univariate polynomial in `x`.
     pub fn univariate_content(&self, x: usize) -> MultivariatePolynomial<R, E> {
@@ -1628,7 +1628,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<
 
         /// Undo simplifications made to the input polynomials and normalize the gcd.
         #[inline(always)]
-        fn rescale_gcd<R: EuclideanDomain + PolynomialGCD<E>, E: Exponent>(
+        fn rescale_gcd<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>(
             mut g: MultivariatePolynomial<R, E>,
             shared_degree: &[E],
             base_degree: &[Option<E>],
@@ -1852,11 +1852,11 @@ pub enum HeuristicGCDError {
     BadReconstruction,
 }
 
-impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
+impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
     /// Perform a heuristic GCD algorithm.
     #[instrument(level = "debug", skip_all)]
     pub fn heuristic_gcd(&self, b: &Self) -> Result<(Self, Self, Self), HeuristicGCDError> {
-        fn interpolate<E: Exponent>(
+        fn interpolate<E: PositiveExponent>(
             mut gamma: MultivariatePolynomial<IntegerRing, E>,
             var: usize,
             xi: &Integer,
@@ -2391,7 +2391,7 @@ impl<E: Exponent> MultivariatePolynomial<IntegerRing, E> {
 }
 
 /// Polynomial GCD functions for a certain coefficient type `Self`.
-pub trait PolynomialGCD<E: Exponent>: Ring {
+pub trait PolynomialGCD<E: PositiveExponent>: Ring {
     fn heuristic_gcd(
         a: &MultivariatePolynomial<Self, E>,
         b: &MultivariatePolynomial<Self, E>,
@@ -2417,7 +2417,7 @@ pub trait PolynomialGCD<E: Exponent>: Ring {
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E>;
 }
 
-impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
+impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
     fn heuristic_gcd(
         a: &MultivariatePolynomial<Self, E>,
         b: &MultivariatePolynomial<Self, E>,
@@ -2530,7 +2530,7 @@ impl<E: Exponent> PolynomialGCD<E> for IntegerRing {
     }
 }
 
-impl<E: Exponent> PolynomialGCD<E> for RationalField {
+impl<E: PositiveExponent> PolynomialGCD<E> for RationalField {
     fn heuristic_gcd(
         _a: &MultivariatePolynomial<Self, E>,
         _b: &MultivariatePolynomial<Self, E>,
@@ -2605,8 +2605,11 @@ impl<E: Exponent> PolynomialGCD<E> for RationalField {
     }
 }
 
-impl<UField: FiniteFieldWorkspace, F: GaloisField<Base = FiniteField<UField>>, E: Exponent>
-    PolynomialGCD<E> for F
+impl<
+        UField: FiniteFieldWorkspace,
+        F: GaloisField<Base = FiniteField<UField>>,
+        E: PositiveExponent,
+    > PolynomialGCD<E> for F
 where
     FiniteField<UField>: FiniteFieldCore<UField>,
     <FiniteField<UField> as Ring>::Element: Copy,
@@ -2669,7 +2672,7 @@ where
     }
 }
 
-impl<E: Exponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
+impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField> {
     fn heuristic_gcd(
         _a: &MultivariatePolynomial<Self, E>,
         _b: &MultivariatePolynomial<Self, E>,

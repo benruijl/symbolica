@@ -12,7 +12,7 @@ use crate::{
         atom::AtomField,
         integer::Integer,
         rational::{Rational, Q},
-        EuclideanDomain, InternalOrdering, Ring,
+        EuclideanDomain, InternalOrdering, Ring, SelfRing,
     },
     printer::{PrintOptions, PrintState},
     state::State,
@@ -465,20 +465,40 @@ impl<F: Ring> Series<F> {
 
         self
     }
+}
 
-    pub fn format<W: std::fmt::Write>(
+impl<F: Ring> SelfRing for Series<F> {
+    fn is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    fn is_one(&self) -> bool {
+        self.is_one()
+    }
+
+    fn format<W: std::fmt::Write>(
         &self,
         opts: &PrintOptions,
         mut state: PrintState,
         f: &mut W,
     ) -> Result<bool, std::fmt::Error> {
-        let v = self.variable.to_string_with_state(PrintState {
-            in_exp: true,
-            ..state
-        });
+        let v = self.variable.format_string(
+            opts,
+            PrintState {
+                in_exp: true,
+                ..state
+            },
+        );
 
         if self.coefficients.is_empty() {
-            write!(f, "𝒪({}^{})", v, self.absolute_order())?;
+            let o = self.absolute_order();
+            if opts.latex {
+                write!(f, "\\mathcal{{O}}\\left({}^{{{}}}\\right)", v, o)?;
+            } else {
+                write!(f, "𝒪({}^", v)?;
+                Q.format(&o, opts, state.step(false, false, true), f)?;
+                f.write_char(')')?;
+            }
             return Ok(false);
         }
 
@@ -493,6 +513,7 @@ impl<F: Ring> Series<F> {
             state.in_exp = false;
             f.write_str("(")?;
         }
+        let in_product = state.in_product;
 
         for (e, c) in self.coefficients.iter().enumerate() {
             if F::is_zero(c) {
@@ -501,6 +522,7 @@ impl<F: Ring> Series<F> {
 
             let e = self.get_exponent(e);
 
+            state.in_product = in_product || !e.is_zero();
             state.suppress_one = !e.is_zero();
             let suppressed_one = self.field.format(
                 c,
@@ -517,18 +539,30 @@ impl<F: Ring> Series<F> {
                 write!(f, "{}", v)?;
             } else if !e.is_zero() {
                 write!(f, "{}^", v)?;
+                state.suppress_one = false;
+
+                if opts.latex {
+                    f.write_char('{')?;
+                }
+
                 Q.format(&e, opts, state.step(false, false, true), f)?;
+
+                if opts.latex {
+                    f.write_char('}')?;
+                }
             }
 
             state.in_sum = true;
-            state.in_product = true;
         }
 
         let o = self.absolute_order();
-        if o.is_integer() {
-            write!(f, "+𝒪({}^{})", v, o)?;
+
+        if opts.latex {
+            write!(f, "+\\mathcal{{O}}\\left({}^{{{}}}\\right)", v, o)?;
         } else {
-            write!(f, "+𝒪({}^({}))", v, o)?;
+            write!(f, "+𝒪({}^", v)?;
+            Q.format(&o, opts, state.step(false, false, true), f)?;
+            f.write_char(')')?;
         }
 
         if add_paren {
@@ -536,6 +570,28 @@ impl<F: Ring> Series<F> {
         }
 
         Ok(false)
+    }
+}
+
+impl<F: Ring> InternalOrdering for Series<F> {
+    fn internal_cmp(&self, other: &Self) -> Ordering {
+        if self.variable != other.variable {
+            return self.variable.cmp(&other.variable);
+        }
+
+        if self.shift != other.shift {
+            return self.shift.cmp(&other.shift);
+        }
+
+        if self.ramification != other.ramification {
+            return self.ramification.cmp(&other.ramification);
+        }
+
+        if self.order != other.order {
+            return self.order.cmp(&other.order);
+        }
+
+        self.coefficients.internal_cmp(&other.coefficients)
     }
 }
 

@@ -10,7 +10,7 @@ use crate::{
     atom::Atom,
     coefficient::{Coefficient, ConvertToRing},
     domains::{float::Float, integer::Integer, Ring},
-    poly::{polynomial::MultivariatePolynomial, Exponent, Variable},
+    poly::{polynomial::MultivariatePolynomial, PositiveExponent, Variable},
     state::{State, Workspace},
     LicenseManager,
 };
@@ -1085,7 +1085,7 @@ impl Token {
 
     /// A special routine that can parse a polynomial written in expanded form,
     /// where the coefficient comes first.
-    pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: Exponent>(
+    pub fn parse_polynomial<'a, R: Ring + ConvertToRing, E: PositiveExponent>(
         mut input: &'a [u8],
         var_map: &Arc<Vec<Variable>>,
         var_name_map: &[SmartString<LazyCompact>],

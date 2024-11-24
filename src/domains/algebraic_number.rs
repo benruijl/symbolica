@@ -6,8 +6,8 @@ use crate::{
     coefficient::ConvertToRing,
     combinatorics::CombinationIterator,
     poly::{
-        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, Exponent,
-        Variable,
+        factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial,
+        PositiveExponent, Variable,
     },
 };
 
@@ -577,7 +577,9 @@ impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
     }
 }
 
-impl<R: Field + PolynomialGCD<E>, E: Exponent> MultivariatePolynomial<AlgebraicExtension<R>, E> {
+impl<R: Field + PolynomialGCD<E>, E: PositiveExponent>
+    MultivariatePolynomial<AlgebraicExtension<R>, E>
+{
     /// Get the norm of a non-constant square-free polynomial `f` in the algebraic number field.
     pub fn norm(&self) -> MultivariatePolynomial<R, E> {
         self.norm_impl().3

@@ -17,7 +17,7 @@ use crate::{
 use super::{
     factor::Factorize,
     polynomial::{MultivariatePolynomial, PolynomialRing},
-    Exponent, Variable,
+    PositiveExponent, Variable,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -457,7 +457,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
     }
 
     /// Convert from a univariate polynomial to a multivariate polynomial.
-    pub fn to_multivariate<E: Exponent>(self) -> MultivariatePolynomial<F, E> {
+    pub fn to_multivariate<E: PositiveExponent>(self) -> MultivariatePolynomial<F, E> {
         let mut res = MultivariatePolynomial::new(
             &self.ring,
             self.degree().into(),
@@ -538,10 +538,13 @@ impl<F: Ring> SelfRing for UnivariatePolynomial<F> {
             f.write_str("(")?;
         }
 
-        let v = self.variable.to_string_with_state(PrintState {
-            in_exp: true,
-            ..state
-        });
+        let v = self.variable.format_string(
+            opts,
+            PrintState {
+                in_exp: true,
+                ..state
+            },
+        );
 
         for (e, c) in self.coefficients.iter().enumerate() {
             state.suppress_one = e > 0;
@@ -1730,7 +1733,7 @@ impl<F: Field> UnivariatePolynomial<F> {
     }
 }
 
-impl<R: Ring, E: Exponent> UnivariatePolynomial<PolynomialRing<R, E>> {
+impl<R: Ring, E: PositiveExponent> UnivariatePolynomial<PolynomialRing<R, E>> {
     /// Convert a univariate polynomial of multivariate polynomials to a multivariate polynomial.
     pub fn flatten(self) -> MultivariatePolynomial<R, E> {
         if self.is_zero() {

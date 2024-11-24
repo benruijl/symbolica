@@ -2057,6 +2057,32 @@ class Series:
     >>> print(s)
     """
 
+    def __str__(self) -> str:
+        """Print the series in a human-readable format."""
+
+    def to_latex(self) -> str:
+        """Convert the series into a LaTeX string."""
+
+    def format(
+        self,
+        terms_on_new_line: bool = False,
+        color_top_level_sum: bool = True,
+        color_builtin_symbols: bool = True,
+        print_finite_field: bool = True,
+        symmetric_representation_for_finite_field: bool = False,
+        explicit_rational_polynomial: bool = False,
+        number_thousands_separator: Optional[str] = None,
+        multiplication_operator: str = "*",
+        double_star_for_exponentiation: bool = False,
+        square_brackets_for_function: bool = False,
+        num_exp_as_superscript: bool = True,
+        latex: bool = False,
+        precision: Optional[int] = None,
+    ) -> str:
+        """
+        Convert the series into a human-readable string.
+        """
+
     def __add__(self, other: Series | Expression) -> Series:
         """Add another series or expression to this series, returning the result."""
 

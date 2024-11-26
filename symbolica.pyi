@@ -812,19 +812,21 @@ class Expression:
                 A list of variables
         """
 
-    def expand(self, var: Optional[Expression] = None) -> Expression:
+    def expand(self, var: Optional[Expression] = None, via_poly: Optional[bool] = None) -> Expression:
         """
         Expand the expression. Optionally, expand in `var` only.
+
+        Using `via_poly=True` may give a significant speedup for large expressions.
         """
 
     def collect(
         self,
-        x: Expression,
+        *x: Expression,
         key_map: Optional[Callable[[Expression], Expression]] = None,
         coeff_map: Optional[Callable[[Expression], Expression]] = None,
     ) -> Expression:
         """
-        Collect terms involving the same power of `x`, where `x` is a variable or function name.
+        Collect terms involving the same power of the indeterminate(s) `x`.
         Return the list of key-coefficient pairs and the remainder that matched no key.
 
         Both the key (the quantity collected in) and its coefficient can be mapped using
@@ -851,8 +853,8 @@ class Expression:
 
         Parameters
         ----------
-        x: Expression
-            The variable to collect terms in
+        *x: Expression
+            The variable(s) or function(s) to collect terms in
         key_map
             A function to be applied to the quantity collected in
         coeff_map
@@ -860,10 +862,10 @@ class Expression:
         """
 
     def coefficient_list(
-        self, x: Expression
+        self, *x: Expression
     ) -> Sequence[Tuple[Expression, Expression]]:
-        """Collect terms involving the same power of `x`, where `x` is a variable or function name.
-        Return the list of key-coefficient pairs and the remainder that matched no key.
+        """Collect terms involving the same power of `x`, where `x` are variables or functions.
+        Return the list of key-coefficient pairs.
 
         Examples
         --------
@@ -1497,8 +1499,10 @@ class Transformer:
         >>> e = Transformer().expand()((1+x)**2)
         """
 
-    def expand(self, var: Optional[Expression] = None) -> Transformer:
-        """Create a transformer that expands products and powers.
+    def expand(self, var: Optional[Expression] = None, via_poly: Optional[bool] = None) -> Transformer:
+        """Create a transformer that expands products and powers. Optionally, expand in `var` only.
+
+        Using `via_poly=True` may give a significant speedup for large expressions.
 
         Examples
         --------
@@ -1786,13 +1790,12 @@ class Transformer:
 
     def collect(
         self,
-        x: Expression,
+        *x: Expression,
         key_map: Optional[Transformer] = None,
         coeff_map: Optional[Transformer] = None,
     ) -> Transformer:
         """
-        Create a transformer that collect terms involving the same power of `x`,
-        where `x` is a variable or function name.
+        Create a transformer that collects terms involving the same power of the indeterminate(s) `x`.
         Return the list of key-coefficient pairs and the remainder that matched no key.
 
         Both the key (the quantity collected in) and its coefficient can be mapped using
@@ -1818,8 +1821,8 @@ class Transformer:
 
         Parameters
         ----------
-        x: Expression
-            The variable to collect terms in
+        *x: Expression
+            The variable(s) or function(s) to collect terms in
         key_map: Transformer
             A transformer to be applied to the quantity collected in
         coeff_map: Transformer

@@ -257,6 +257,12 @@ impl Hash for AtomOrView<'_> {
     }
 }
 
+impl<'a> From<Symbol> for AtomOrView<'a> {
+    fn from(s: Symbol) -> AtomOrView<'a> {
+        AtomOrView::Atom(Atom::new_var(s))
+    }
+}
+
 impl<'a> From<Atom> for AtomOrView<'a> {
     fn from(a: Atom) -> AtomOrView<'a> {
         AtomOrView::Atom(a)

@@ -452,20 +452,26 @@ impl PythonTransformer {
     /// >>> f = Expression.symbol('f')
     /// >>> e = f((x+1)**2).replace_all(f(x_), x_.transform().expand())
     /// >>> print(e)
-    #[pyo3(signature = (var = None))]
-    pub fn expand(&self, var: Option<ConvertibleToExpression>) -> PyResult<PythonTransformer> {
+    #[pyo3(signature = (var = None, via_poly = None))]
+    pub fn expand(
+        &self,
+        var: Option<ConvertibleToExpression>,
+        via_poly: Option<bool>,
+    ) -> PyResult<PythonTransformer> {
         if let Some(var) = var {
-            let id = if let AtomView::Var(x) = var.to_expression().expr.as_view() {
-                x.get_symbol()
+            let e = var.to_expression();
+            if matches!(e.expr, Atom::Var(_) | Atom::Fun(_)) {
+                return append_transformer!(
+                    self,
+                    Transformer::Expand(Some(e.expr), via_poly.unwrap_or(false))
+                );
             } else {
                 return Err(exceptions::PyValueError::new_err(
-                    "Expansion must be done wrt a variable or function name",
+                    "Expansion must be done wrt an indeterminate",
                 ));
-            };
-
-            return append_transformer!(self, Transformer::Expand(Some(id)));
+            }
         } else {
-            return append_transformer!(self, Transformer::Expand(None));
+            return append_transformer!(self, Transformer::Expand(None, via_poly.unwrap_or(false)));
         }
     }
 
@@ -1001,7 +1007,7 @@ impl PythonTransformer {
     }
 
     /// Create a transformer that collects terms involving the same power of `x`,
-    /// where `x` is a variable or function name.
+    /// where `x` is an indeterminate.
     /// Return the list of key-coefficient pairs and the remainder that matched no key.
     ///
     /// Both the key (the quantity collected in) and its coefficient can be mapped using
@@ -1033,20 +1039,29 @@ impl PythonTransformer {
     ///     A transformer to be applied to the quantity collected in
     /// coeff_map: Transformer
     ///     A transformer to be applied to the coefficient
-    #[pyo3(signature = (x, key_map = None, coeff_map = None))]
+    #[pyo3(signature = (*x, key_map = None, coeff_map = None))]
     pub fn collect(
         &self,
-        x: ConvertibleToExpression,
+        x: Bound<'_, PyTuple>,
         key_map: Option<PythonTransformer>,
         coeff_map: Option<PythonTransformer>,
     ) -> PyResult<PythonTransformer> {
-        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_symbol()
-        } else {
-            return Err(exceptions::PyValueError::new_err(
-                "Collect must be done wrt a variable or function name",
-            ));
-        };
+        let mut xs = vec![];
+        for a in x {
+            if let Ok(r) = a.extract::<PythonExpression>() {
+                if matches!(r.expr, Atom::Var(_) | Atom::Fun(_)) {
+                    xs.push(r.expr.into());
+                } else {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Collect must be done wrt a variable or function",
+                    ));
+                }
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Collect must be done wrt a variable or function",
+                ));
+            }
+        }
 
         let key_map = if let Some(key_map) = key_map {
             let Pattern::Transformer(p) = key_map.expr else {
@@ -1084,7 +1099,7 @@ impl PythonTransformer {
             vec![]
         };
 
-        return append_transformer!(self, Transformer::Collect(id, key_map, coeff_map));
+        return append_transformer!(self, Transformer::Collect(xs, key_map, coeff_map));
     }
 
     /// Create a transformer that collects terms involving the literal occurrence of `x`.
@@ -3336,18 +3351,33 @@ impl PythonExpression {
     }
 
     /// Expand the expression. Optionally, expand in `var` only.
-    #[pyo3(signature = (var = None))]
-    pub fn expand(&self, var: Option<ConvertibleToExpression>) -> PyResult<PythonExpression> {
+    #[pyo3(signature = (var = None, via_poly = None))]
+    pub fn expand(
+        &self,
+        var: Option<ConvertibleToExpression>,
+        via_poly: Option<bool>,
+    ) -> PyResult<PythonExpression> {
         if let Some(var) = var {
-            let id = if let AtomView::Var(x) = var.to_expression().expr.as_view() {
-                x.get_symbol()
+            let e = var.to_expression();
+
+            if matches!(e.expr, Atom::Var(_) | Atom::Fun(_)) {
+                if via_poly.unwrap_or(false) {
+                    let b = self
+                        .expr
+                        .as_view()
+                        .expand_via_poly::<i16>(Some(e.expr.as_view()));
+                    Ok(b.into())
+                } else {
+                    let b = self.expr.as_view().expand_in(e.expr.as_view());
+                    Ok(b.into())
+                }
             } else {
                 return Err(exceptions::PyValueError::new_err(
-                    "Expansion must be done wrt a variable or function name",
+                    "Expansion must be done wrt an indeterminate",
                 ));
-            };
-
-            let b = self.expr.as_view().expand_in(id);
+            }
+        } else if via_poly.unwrap_or(false) {
+            let b = self.expr.as_view().expand_via_poly::<i16>(None);
             Ok(b.into())
         } else {
             let b = self.expr.as_view().expand();
@@ -3355,7 +3385,7 @@ impl PythonExpression {
         }
     }
 
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
+    /// Collect terms involving the same power of `x`, where `x` is an indeterminate.
     /// Return the list of key-coefficient pairs and the remainder that matched no key.
     ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
@@ -3380,23 +3410,32 @@ impl PythonExpression {
     /// >>> print(e.collect(x, key_map=lambda x: exp(x), coeff_map=lambda x: coeff(x)))
     ///
     /// yields `var(1)*coeff(5)+var(x)*coeff(y+5)+var(x^2)*coeff(1)`.
-    #[pyo3(signature = (x, key_map = None, coeff_map = None))]
+    #[pyo3(signature = (*x, key_map = None, coeff_map = None))]
     pub fn collect(
         &self,
-        x: ConvertibleToExpression,
+        x: &Bound<'_, PyTuple>,
         key_map: Option<PyObject>,
         coeff_map: Option<PyObject>,
     ) -> PyResult<PythonExpression> {
-        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_symbol()
-        } else {
-            return Err(exceptions::PyValueError::new_err(
-                "Collect must be done wrt a variable or function name",
-            ));
-        };
+        let mut xs = vec![];
+        for a in x {
+            if let Ok(r) = a.extract::<PythonExpression>() {
+                if matches!(r.expr, Atom::Var(_) | Atom::Fun(_)) {
+                    xs.push(r.expr.into());
+                } else {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Collect must be done wrt a variable or function",
+                    ));
+                }
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Collect must be done wrt a variable or function",
+                ));
+            }
+        }
 
-        let b = self.expr.as_view().collect(
-            id,
+        let b = self.expr.collect_multiple::<i16>(
+            &Arc::new(xs),
             if let Some(key_map) = key_map {
                 Some(Box::new(move |key, out| {
                     Python::with_gil(|py| {
@@ -3461,7 +3500,7 @@ impl PythonExpression {
         r.into()
     }
 
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
+    /// Collect terms involving the same power of `x`, where `x` is an indeterminate.
     /// Return the list of key-coefficient pairs and the remainder that matched no key.
     ///
     /// Examples
@@ -3484,30 +3523,31 @@ impl PythonExpression {
     /// ```
     pub fn coefficient_list(
         &self,
-        x: ConvertibleToExpression,
+        x: Bound<'_, PyTuple>,
     ) -> PyResult<Vec<(PythonExpression, PythonExpression)>> {
-        let id = if let AtomView::Var(x) = x.to_expression().expr.as_view() {
-            x.get_symbol()
-        } else {
-            return Err(exceptions::PyValueError::new_err(
-                "Coefficient list must be done wrt a variable or function name",
-            ));
-        };
-
-        let (list, rest) = self.expr.coefficient_list(id);
-
-        let mut py_list: Vec<_> = list
-            .into_iter()
-            .map(|e| (e.0.to_owned().into(), e.1.into()))
-            .collect();
-
-        if let Atom::Num(n) = &rest {
-            if n.to_num_view().is_zero() {
-                return Ok(py_list);
+        let mut xs = vec![];
+        for a in x {
+            if let Ok(r) = a.extract::<PythonExpression>() {
+                if matches!(r.expr, Atom::Var(_) | Atom::Fun(_)) {
+                    xs.push(r.expr.into());
+                } else {
+                    return Err(exceptions::PyValueError::new_err(
+                        "Collect must be done wrt a variable or function",
+                    ));
+                }
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Collect must be done wrt a variable or function",
+                ));
             }
         }
 
-        py_list.push((Atom::new_num(1).into(), rest.into()));
+        let list = self.expr.coefficient_list::<i16>(&xs);
+
+        let py_list: Vec<_> = list
+            .into_iter()
+            .map(|e| (e.0.to_owned().into(), e.1.into()))
+            .collect();
 
         Ok(py_list)
     }

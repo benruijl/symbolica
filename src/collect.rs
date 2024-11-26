@@ -1,15 +1,14 @@
-use ahash::HashMap;
-
 use crate::{
-    atom::{Add, AsAtomView, Atom, AtomView, Symbol},
+    atom::{Add, AsAtomView, Atom, AtomOrView, AtomView, Symbol},
     coefficient::CoefficientView,
     domains::{integer::Z, rational::Q},
-    poly::{factor::Factorize, polynomial::MultivariatePolynomial},
+    poly::{factor::Factorize, polynomial::MultivariatePolynomial, Exponent},
     state::Workspace,
 };
+use std::sync::Arc;
 
 impl Atom {
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name, e.g.
+    /// Collect terms involving the same power of `x`, where `x` is a variable or function, e.g.
     ///
     /// ```math
     /// collect(x + x * y + x^2, x) = x * (1+y) + x^2
@@ -17,16 +16,16 @@ impl Atom {
     ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
     /// `key_map` and `coeff_map` respectively.
-    pub fn collect(
+    pub fn collect<E: Exponent>(
         &self,
-        x: Symbol,
+        x: &AtomOrView,
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
-        self.as_view().collect(x, key_map, coeff_map)
+        self.as_view().collect::<E>(x, key_map, coeff_map)
     }
 
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name, e.g.
+    /// Collect terms involving the same power of `x`, where `x` is a variable or function, e.g.
     ///
     /// ```math
     /// collect(x + x * y + x^2, x) = x * (1+y) + x^2
@@ -34,20 +33,19 @@ impl Atom {
     ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
     /// `key_map` and `coeff_map` respectively.
-    pub fn collect_into(
+    pub fn collect_multiple<E: Exponent>(
         &self,
-        x: Symbol,
+        xs: &[AtomOrView],
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
-        out: &mut Atom,
-    ) {
-        self.as_view().collect_into(x, key_map, coeff_map, out)
+    ) -> Atom {
+        self.as_view().collect_multiple::<E>(xs, key_map, coeff_map)
     }
 
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
-    /// Return the list of key-coefficient pairs and the remainder that matched no key.
-    pub fn coefficient_list(&self, x: Symbol) -> (Vec<(Atom, Atom)>, Atom) {
-        Workspace::get_local().with(|ws| self.as_view().coefficient_list_with_ws(x, ws))
+    /// Collect terms involving the same power of `x` in `xs`, where `xs` is a list of indeterminates.
+    /// Return the list of key-coefficient pairs
+    pub fn coefficient_list<E: Exponent>(&self, xs: &[AtomOrView]) -> Vec<(Atom, Atom)> {
+        self.as_view().coefficient_list::<E>(xs)
     }
 
     /// Collect terms involving the literal occurrence of `x`.
@@ -78,7 +76,7 @@ impl Atom {
 }
 
 impl<'a> AtomView<'a> {
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name, e.g.
+    /// Collect terms involving the same power of `x`, where `x` is an indeterminate, e.g.
     ///
     /// ```math
     /// collect(x + x * y + x^2, x) = x * (1+y) + x^2
@@ -86,56 +84,38 @@ impl<'a> AtomView<'a> {
     ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
     /// `key_map` and `coeff_map` respectively.
-    pub fn collect(
+    pub fn collect<E: Exponent>(
         &self,
-        x: Symbol,
+        x: &AtomOrView,
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut out = ws.new_atom();
-            self.collect_with_ws_into(x, ws, key_map, coeff_map, &mut out);
-            out.into_inner()
-        })
+        self.collect_multiple::<E>(std::slice::from_ref(x), key_map, coeff_map)
     }
 
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name, e.g.
-    ///
-    /// ```math
-    /// collect(x + x * y + x^2, x) = x * (1+y) + x^2
-    /// ```
-    ///
-    /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
-    /// `key_map` and `coeff_map` respectively.
-    pub fn collect_into(
+    pub fn collect_multiple<E: Exponent>(
         &self,
-        x: Symbol,
+        xs: &[AtomOrView],
+        key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+        coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
+    ) -> Atom {
+        let mut out = Atom::new();
+        Workspace::get_local()
+            .with(|ws| self.collect_multiple_impl::<E>(xs, ws, key_map, coeff_map, &mut out));
+        out
+    }
+
+    pub fn collect_multiple_impl<E: Exponent>(
+        &self,
+        xs: &[AtomOrView],
+        ws: &Workspace,
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         out: &mut Atom,
     ) {
-        Workspace::get_local().with(|ws| self.collect_with_ws_into(x, ws, key_map, coeff_map, out))
-    }
+        let r = self.coefficient_list::<E>(xs);
 
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name, e.g.
-    ///
-    /// ```math
-    /// collect(x + x * y + x^2, x) = x * (1+y) + x^2
-    /// ```
-    ///
-    /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
-    /// `key_map` and `coeff_map` respectively.
-    pub fn collect_with_ws_into(
-        &self,
-        x: Symbol,
-        workspace: &Workspace,
-        key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
-        coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
-        out: &mut Atom,
-    ) {
-        let (h, rest) = self.coefficient_list_with_ws(x, workspace);
-
-        let mut add_h = workspace.new_atom();
+        let mut add_h = Atom::new();
         let add = add_h.to_add();
 
         fn map_key_coeff(
@@ -168,159 +148,37 @@ impl<'a> AtomView<'a> {
             add.extend(mul_h.as_view());
         }
 
-        for (key, coeff) in h {
-            map_key_coeff(key.as_view(), coeff, workspace, &key_map, &coeff_map, add);
+        for (key, coeff) in r {
+            map_key_coeff(key.as_view(), coeff, ws, &key_map, &coeff_map, add);
         }
 
-        if !rest.is_zero() {
-            if key_map.is_some() {
-                let key = workspace.new_num(1);
-                map_key_coeff(key.as_view(), rest, workspace, &key_map, &coeff_map, add);
-            } else if let Some(coeff_map) = coeff_map {
-                let mut handle = workspace.new_atom();
-                coeff_map(rest.as_view(), &mut handle);
-                add.extend(handle.as_view());
-            } else {
-                add.extend(rest.as_view());
-            }
-        }
-
-        add_h.as_view().normalize(workspace, out);
+        add_h.as_view().normalize(ws, out);
     }
 
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
-    /// Return the list of key-coefficient pairs and the remainder that matched no key.
-    pub fn coefficient_list(&self, x: Symbol) -> (Vec<(Atom, Atom)>, Atom) {
-        Workspace::get_local().with(|ws| self.coefficient_list_with_ws(x, ws))
-    }
+    /// Collect terms involving the same powers of `x` in `xs`, where `x` is an indeterminate.
+    /// Return the list of key-coefficient pairs.
+    pub fn coefficient_list<E: Exponent>(&self, xs: &[AtomOrView]) -> Vec<(Atom, Atom)> {
+        let vars = xs
+            .iter()
+            .map(|x| x.as_view().to_owned().into())
+            .collect::<Vec<_>>();
 
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function name.
-    /// Return the list of key-coefficient pairs and the remainder that matched no key.
-    pub fn coefficient_list_with_ws(
-        &self,
-        x: Symbol,
-        workspace: &Workspace,
-    ) -> (Vec<(Atom, Atom)>, Atom) {
-        let mut h = HashMap::default();
-        let mut rest = workspace.new_atom();
-        let rest_add = rest.to_add();
+        let p = self.to_polynomial_in_vars::<E>(&Arc::new(vars));
 
-        let mut expanded = workspace.new_atom();
-        self.expand_with_ws_into(workspace, Some(x), &mut expanded);
+        let mut coeffs = vec![];
+        for t in p.into_iter() {
+            let mut key = Atom::new_num(1);
 
-        match expanded.as_view() {
-            AtomView::Add(a) => {
-                for arg in a {
-                    arg.collect_factor_list(x, workspace, &mut h, rest_add)
-                }
+            for (p, v) in t.exponents.iter().zip(xs) {
+                let mut pow = Atom::new();
+                pow.to_pow(v.as_view(), Atom::new_num(p.to_i32() as i64).as_view());
+                key = key * pow;
             }
-            _ => expanded
-                .as_view()
-                .collect_factor_list(x, workspace, &mut h, rest_add),
+
+            coeffs.push((key, t.coefficient.clone()));
         }
 
-        let mut rest_norm = Atom::new();
-        rest.as_view().normalize(workspace, &mut rest_norm);
-
-        let mut r: Vec<_> = h
-            .into_iter()
-            .map(|(k, v)| {
-                (
-                    {
-                        let mut a = Atom::new();
-                        a.set_from_view(&k);
-                        a
-                    },
-                    {
-                        let mut a = Atom::new();
-                        v.as_view().normalize(workspace, &mut a);
-                        a
-                    },
-                )
-            })
-            .collect();
-        r.sort_unstable_by(|(a, _), (b, _)| a.as_view().cmp(&b.as_view()));
-
-        (r, rest_norm)
-    }
-
-    /// Check if a factor contains `x` at the ground level.
-    #[inline]
-    fn has_key(&self, x: Symbol) -> bool {
-        match self {
-            AtomView::Var(v) => v.get_symbol() == x,
-            AtomView::Fun(f) => f.get_symbol() == x,
-            AtomView::Pow(p) => {
-                let (base, _) = p.get_base_exp();
-                match base {
-                    AtomView::Var(v) => v.get_symbol() == x,
-                    AtomView::Fun(f) => f.get_symbol() == x,
-                    _ => false,
-                }
-            }
-            AtomView::Mul(_) => unreachable!("Mul is not a factor"),
-            _ => false,
-        }
-    }
-
-    fn collect_factor_list(
-        &self,
-        x: Symbol,
-        workspace: &Workspace,
-        h: &mut HashMap<AtomView<'a>, Add>,
-        rest: &mut Add,
-    ) {
-        match self {
-            AtomView::Add(_) => {}
-            AtomView::Mul(m) => {
-                if m.iter().any(|a| a.has_key(x)) {
-                    let mut collected = workspace.new_atom();
-                    let mul = collected.to_mul();
-
-                    // we could have a double match if x*x(..)
-                    // we then only collect on the first hit
-                    let mut bracket = None;
-
-                    for a in m {
-                        if bracket.is_none() && a.has_key(x) {
-                            bracket = Some(a);
-                        } else {
-                            mul.extend(a);
-                        }
-                    }
-
-                    h.entry(bracket.unwrap())
-                        .and_modify(|e| {
-                            e.extend(collected.as_view());
-                        })
-                        .or_insert({
-                            let mut a = Add::new();
-                            a.extend(collected.as_view());
-                            a
-                        });
-
-                    return;
-                }
-            }
-            _ => {
-                if self.has_key(x) {
-                    // add the coefficient 1
-                    let collected = workspace.new_num(1);
-                    h.entry(*self)
-                        .and_modify(|e| {
-                            e.extend(collected.as_view());
-                        })
-                        .or_insert({
-                            let mut a = Add::new();
-                            a.extend(collected.as_view());
-                            a
-                        });
-                    return;
-                }
-            }
-        }
-
-        rest.extend(*self);
+        coeffs
     }
 
     /// Collect terms involving the literal occurrence of `x`.
@@ -638,9 +496,13 @@ mod test {
         let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
         let x = State::get_symbol("v1");
 
-        let (r, rest) = input.coefficient_list(x);
+        let r = input.coefficient_list::<i8>(&[x.into()]);
 
         let res = vec![
+            (
+                Atom::parse("1").unwrap(),
+                Atom::parse("v2^2+f1(5,v1)+2").unwrap(),
+            ),
             (
                 Atom::parse("v1").unwrap(),
                 Atom::parse("v3+5*v2+1").unwrap(),
@@ -648,15 +510,8 @@ mod test {
             (Atom::parse("v1^2").unwrap(), Atom::parse("1").unwrap()),
             (Atom::parse("v1^3").unwrap(), Atom::parse("1").unwrap()),
         ];
-        let res_rest = Atom::parse("v2^2+f1(5,v1)+2").unwrap();
 
-        let res_ref = res
-            .iter()
-            .map(|(a, b)| (a.clone(), b.clone()))
-            .collect::<Vec<_>>();
-
-        assert_eq!(r, res_ref);
-        assert_eq!(rest, res_rest);
+        assert_eq!(r, res);
     }
 
     #[test]
@@ -664,7 +519,7 @@ mod test {
         let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
         let x = State::get_symbol("v1");
 
-        let out = input.collect(x, None, None);
+        let out = input.collect::<i8>(&x.into(), None, None);
 
         let ref_out = Atom::parse("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2").unwrap();
         assert_eq!(out, ref_out)
@@ -675,7 +530,7 @@ mod test {
         let input = Atom::parse("(1+v1)^2*v1+(1+v2)^100").unwrap();
         let x = State::get_symbol("v1");
 
-        let out = input.collect(x, None, None);
+        let out = input.collect::<i8>(&x.into(), None, None);
 
         let ref_out = Atom::parse("v1+2*v1^2+v1^3+(v2+1)^100").unwrap();
         assert_eq!(out, ref_out)
@@ -688,8 +543,8 @@ mod test {
         let key = State::get_symbol("f3");
         let coeff = State::get_symbol("f4");
         println!("> Collect in x with wrapping:");
-        let out = input.collect(
-            x,
+        let out = input.collect::<i8>(
+            &x.into(),
             Some(Box::new(move |a, out| {
                 out.set_from_view(&a);
                 *out = fun!(key, out);
@@ -754,5 +609,21 @@ mod test {
         let ref_out = Atom::parse("(v1+6)^-4").unwrap();
 
         assert_eq!(out, ref_out);
+    }
+
+    #[test]
+    fn coefficient_list_multiple() {
+        let input = Atom::parse(
+            "(v1+v2+v3)^2+v1+v1^2+ v2 + 5*v1*v2^2 + v3 + v2*(v4+1)^10 + v1*v5(1,2,3)^2 + v5(1,2)",
+        )
+        .unwrap();
+
+        let out = input.as_view().coefficient_list::<i16>(&[
+            State::get_symbol("v1").into(),
+            State::get_symbol("v2").into(),
+            Atom::parse("v5(1,2,3)").unwrap().into(),
+        ]);
+
+        assert_eq!(out.len(), 8);
     }
 }

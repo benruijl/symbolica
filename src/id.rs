@@ -1245,6 +1245,11 @@ impl Pattern {
         matched
     }
 
+    /// Replace all occurrences in `target`, where replacements are tested in the order that they are given.
+    pub fn replace_all_multiple(target: AtomView, replacements: &[Replacement<'_>]) -> Atom {
+        target.replace_all_multiple(replacements)
+    }
+
     pub fn pattern_match<'a: 'b, 'b>(
         &'b self,
         target: AtomView<'a>,

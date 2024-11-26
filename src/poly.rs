@@ -1187,9 +1187,29 @@ impl<'a> AtomView<'a> {
                 if let AtomView::Num(n) = exp {
                     let num_n = n.get_coeff_view();
                     if let CoefficientView::Natural(nn, nd) = num_n {
-                        if nd == 1 && nn > 0 && nn < u32::MAX as i64 {
-                            let b = base.to_polynomial_in_vars_impl(var_map, poly);
-                            return b.pow(nn as usize);
+                        if nd == 1 && nn > 0 && nn < i32::MAX as i64 {
+                            return base
+                                .to_polynomial_in_vars_impl(var_map, poly)
+                                .pow(nn as usize);
+                        } else if nd == 1 && nn < 0 && nn > i32::MIN as i64 {
+                            // allow x^-2 as a term if supported by the exponent
+                            if let Ok(e) = (nn as i32).try_into() {
+                                if let AtomView::Var(v) = base {
+                                    let s = Variable::Symbol(v.get_symbol());
+                                    if let Some(id) = var_map.iter().position(|v| v == &s) {
+                                        let mut exp = vec![E::zero(); var_map.len()];
+                                        exp[id] = e;
+                                        return poly.monomial(field.one(), exp);
+                                    } else {
+                                        let mut var_map = var_map.as_ref().clone();
+                                        var_map.push(s);
+                                        let mut exp = vec![E::zero(); var_map.len()];
+                                        exp[var_map.len() - 1] = e;
+
+                                        return poly.monomial(field.one(), exp);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1529,24 +1549,24 @@ impl<'a> AtomView<'a> {
 }
 
 impl<E: Exponent, O: MonomialOrder> MultivariatePolynomial<AtomField, E, O> {
-    /// Convert the polynomial to an expression.
-    pub fn to_nested_expression(&self) -> Atom {
+    /// Convert the polynomial to an expression, optionally distributing the polynomial variables over coefficient sums.
+    pub fn flatten(&self, distribute: bool) -> Atom {
         let mut out = Atom::default();
-        Workspace::get_local().with(|ws| self.to_nested_expression_into_impl(ws, &mut out));
+        Workspace::get_local().with(|ws| self.flatten_impl(distribute, ws, &mut out));
         out
     }
 
-    fn to_nested_expression_into_impl(&self, workspace: &Workspace, out: &mut Atom) {
+    fn flatten_impl(&self, expand: bool, ws: &Workspace, out: &mut Atom) {
         if self.is_zero() {
-            out.set_from_view(&workspace.new_num(0).as_view());
+            out.set_from_view(&ws.new_num(0).as_view());
             return;
         }
 
         let add = out.to_add();
 
-        let mut mul_h = workspace.new_atom();
-        let mut num_h = workspace.new_atom();
-        let mut pow_h = workspace.new_atom();
+        let mut mul_h = ws.new_atom();
+        let mut num_h = ws.new_atom();
+        let mut pow_h = ws.new_atom();
 
         let vars: Vec<_> = self.variables.iter().map(|v| v.to_atom()).collect();
 
@@ -1570,12 +1590,25 @@ impl<E: Exponent, O: MonomialOrder> MultivariatePolynomial<AtomField, E, O> {
                 }
             }
 
-            mul.extend(monomial.coefficient.as_view());
-            add.extend(mul_h.as_view());
+            if expand {
+                if let AtomView::Add(a) = monomial.coefficient.as_view() {
+                    let mut tmp = ws.new_atom();
+                    for term in a {
+                        term.mul_with_ws_into(ws, mul_h.as_view(), &mut tmp);
+                        add.extend(tmp.as_view());
+                    }
+                } else {
+                    mul.extend(monomial.coefficient.as_view());
+                    add.extend(mul_h.as_view());
+                }
+            } else {
+                mul.extend(monomial.coefficient.as_view());
+                add.extend(mul_h.as_view());
+            }
         }
 
-        let mut norm = workspace.new_atom();
-        out.as_view().normalize(workspace, &mut norm);
+        let mut norm = ws.new_atom();
+        out.as_view().normalize(ws, &mut norm);
         std::mem::swap(norm.deref_mut(), out);
     }
 }

@@ -672,6 +672,10 @@ impl Rational {
         Q.neg(self)
     }
 
+    pub fn gcd(&self, other: &Rational) -> Rational {
+        Q.gcd(self, other)
+    }
+
     pub fn to_f64(&self) -> f64 {
         rug::Rational::from((
             self.numerator.clone().to_multi_prec(),

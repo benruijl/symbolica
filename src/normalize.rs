@@ -3,7 +3,7 @@ use std::{cmp::Ordering, ops::DerefMut};
 use smallvec::SmallVec;
 
 use crate::{
-    atom::{Atom, AtomView, Fun, Symbol},
+    atom::{representation::InlineNum, Atom, AtomView, Fun, Symbol},
     coefficient::{Coefficient, CoefficientView},
     domains::{float::Real, integer::Z, rational::Q},
     poly::Variable,
@@ -390,6 +390,17 @@ impl Atom {
                 new_exp.extend(exp2);
                 let mut helper2 = workspace.new_atom();
                 helper.as_view().normalize(workspace, &mut helper2);
+
+                if let AtomView::Num(n) = helper2.as_view() {
+                    if n.is_zero() {
+                        self.to_num(1.into());
+                        return true;
+                    } else if n.is_one() {
+                        self.set_from_view(&base2);
+                        return true;
+                    }
+                }
+
                 p1.set_from_base_and_exp(base2, helper2.as_view());
                 p1.set_normalized(true);
                 return true;
@@ -1357,6 +1368,16 @@ impl<'a> AtomView<'a> {
 
     /// Add two atoms and normalize the result.
     pub(crate) fn add_normalized(&self, rhs: AtomView, ws: &Workspace, out: &mut Atom) {
+        // write (a+b)+(a+b) as 2*(a+b)
+        if *self == rhs {
+            let mut a = ws.new_atom();
+            let m = a.to_mul();
+            m.extend(*self);
+            m.extend(InlineNum::new(2, 1).as_view());
+            a.as_view().normalize(ws, out);
+            return;
+        }
+
         let a = out.to_add();
         a.grow_capacity(self.get_byte_size() + rhs.get_byte_size());
 

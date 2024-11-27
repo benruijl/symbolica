@@ -1,6 +1,6 @@
 use crate::{
     atom::{Add, AsAtomView, Atom, AtomOrView, AtomView, Symbol},
-    coefficient::CoefficientView,
+    coefficient::{Coefficient, CoefficientView},
     domains::{integer::Z, rational::Q},
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Exponent},
     state::Workspace,
@@ -72,6 +72,14 @@ impl Atom {
     /// Factor the expression over the rationals.
     pub fn factor(&self) -> Atom {
         self.as_view().factor()
+    }
+
+    /// Collect numerical factors by removing the numerical content from additions.
+    /// For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
+    ///
+    /// The first argument of the addition is normalized to a positive quantity.
+    pub fn collect_num(&self) -> Atom {
+        self.as_view().collect_num()
     }
 }
 
@@ -485,11 +493,151 @@ impl<'a> AtomView<'a> {
 
         pow
     }
+
+    /// Collect numerical factors by removing the numerical content from additions.
+    /// For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
+    ///
+    /// The first argument of the addition is normalized to a positive quantity.
+    pub fn collect_num(&self) -> Atom {
+        Workspace::get_local().with(|ws| {
+            let mut coeff = Atom::new();
+            self.collect_num_impl(ws, &mut coeff);
+            coeff
+        })
+    }
+
+    fn collect_num_impl(&self, ws: &Workspace, out: &mut Atom) -> bool {
+        fn get_num(a: AtomView) -> Option<Coefficient> {
+            match a {
+                AtomView::Num(n) => Some(n.get_coeff_view().to_owned()),
+                AtomView::Add(add) => {
+                    // perform GCD of all arguments
+                    // make sure the first argument is positive
+                    let mut is_negative = false;
+                    let mut gcd: Option<Coefficient> = None;
+                    for arg in add.iter() {
+                        if let Some(num) = get_num(arg) {
+                            if let Some(g) = gcd {
+                                gcd = Some(g.gcd(&num));
+                            } else {
+                                is_negative = num.is_negative();
+                                gcd = Some(num);
+                            }
+                        }
+                    }
+
+                    if let Some(g) = gcd {
+                        if is_negative && !g.is_negative() {
+                            Some(-g)
+                        } else {
+                            Some(g)
+                        }
+                    } else {
+                        None
+                    }
+                }
+                AtomView::Mul(mul) => {
+                    if mul.has_coefficient() {
+                        for aa in mul.iter() {
+                            if let AtomView::Num(n) = aa {
+                                return Some(n.get_coeff_view().to_owned());
+                            }
+                        }
+
+                        unreachable!()
+                    } else {
+                        None
+                    }
+                }
+                AtomView::Pow(_) | AtomView::Var(_) | AtomView::Fun(_) => None,
+            }
+        }
+
+        match self {
+            AtomView::Add(a) => {
+                let mut r = ws.new_atom();
+                let ra = r.to_add();
+                let mut na = ws.new_atom();
+                let mut changed = false;
+                for arg in a {
+                    changed |= arg.collect_num_impl(ws, &mut na);
+                    ra.extend(na.as_view());
+                }
+
+                if !changed {
+                    out.set_from_view(self);
+                } else {
+                    r.as_view().normalize(ws, out);
+                }
+
+                if let AtomView::Add(aa) = out.as_view() {
+                    if let Some(n) = get_num(out.as_view()) {
+                        let v = ws.new_num(n);
+                        // divide every term by n
+                        let ra = r.to_add();
+                        let mut div = ws.new_atom();
+                        for arg in aa.iter() {
+                            arg.div_with_ws_into(ws, v.as_view(), &mut div);
+                            ra.extend(div.as_view());
+                        }
+
+                        let m = div.to_mul();
+                        m.extend(r.as_view());
+                        m.extend(v.as_view());
+                        m.as_view().normalize(ws, out);
+                        changed = true;
+                    }
+                }
+
+                changed
+            }
+            AtomView::Mul(m) => {
+                let mut r = ws.new_atom();
+                let ra = r.to_mul();
+                let mut na = ws.new_atom();
+                let mut changed = false;
+                for arg in m {
+                    changed |= arg.collect_num_impl(ws, &mut na);
+                    ra.extend(na.as_view());
+                }
+
+                if !changed {
+                    out.set_from_view(self);
+                } else {
+                    r.as_view().normalize(ws, out);
+                }
+
+                changed
+            }
+            _ => {
+                out.set_from_view(self);
+                false
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{atom::Atom, fun, state::State};
+
+    #[test]
+    fn collect_num() {
+        let input = Atom::parse("2*v1+4*v1^2+6*v1^3").unwrap();
+        let out = input.collect_num();
+        let ref_out = Atom::parse("2*(v1+2v1^2+3v1^3)").unwrap();
+        assert_eq!(out, ref_out);
+
+        let input = Atom::parse("(-3*v1+3*v2)(2*v3+2*v4)").unwrap();
+        let out = input.collect_num();
+        let ref_out = Atom::parse("-6*(v4+v3)*(v1-v2)").unwrap();
+        assert_eq!(out, ref_out);
+
+        let input = Atom::parse("v1+v2+2*(v1+v2)").unwrap();
+        let out = input.expand_num().collect_num();
+        let ref_out = Atom::parse("3*(v1+v2)").unwrap();
+        assert_eq!(out, ref_out);
+    }
 
     #[test]
     fn coefficient_list() {

@@ -1620,6 +1620,10 @@ impl Float {
         self.0.is_finite()
     }
 
+    pub fn is_negative(&self) -> bool {
+        self.0.is_sign_negative()
+    }
+
     /// Parse a float from a string.
     /// Precision can be specified by a trailing backtick followed by the precision.
     /// For example: ```1.234`20``` for a precision of 20 decimal digits.

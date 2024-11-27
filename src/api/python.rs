@@ -475,6 +475,26 @@ impl PythonTransformer {
         }
     }
 
+    /// Create a transformer that distributes numbers in the expression, for example:
+    /// `2*(x+y)` -> `2*x+2*y`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> e = 3*(x+y)*(4*x+5*y)
+    /// >>> print(Transformer().expand_num()(e))
+    ///
+    /// yields
+    ///
+    /// ```
+    /// (3*x+3*y)*(4*x+5*y)
+    /// ```
+    pub fn expand_num(&self) -> PyResult<PythonTransformer> {
+        return append_transformer!(self, Transformer::ExpandNum);
+    }
+
     /// Create a transformer that computes the product of a list of arguments.
     ///
     /// Examples
@@ -1100,6 +1120,29 @@ impl PythonTransformer {
         };
 
         return append_transformer!(self, Transformer::Collect(xs, key_map, coeff_map));
+    }
+
+    /// Create a transformer that collects numerical factors by removing the numerical content from additions.
+    /// For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
+    ///
+    /// The first argument of the addition is normalized to a positive quantity.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import *
+    /// >>>
+    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> e = (-3*x+6*y)(2*x+2*y)
+    /// >>> print(Transformer().collect_num()(e))
+    ///
+    /// yields
+    ///
+    /// ```
+    /// -6*(x-2*y)*(x+y)
+    /// ```
+    pub fn collect_num(&self) -> PyResult<PythonTransformer> {
+        return append_transformer!(self, Transformer::CollectNum);
     }
 
     /// Create a transformer that collects terms involving the literal occurrence of `x`.
@@ -3385,6 +3428,26 @@ impl PythonExpression {
         }
     }
 
+    /// Distribute numbers in the expression, for example:
+    /// `2*(x+y)` -> `2*x+2*y`.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> e = 3*(x+y)*(4*x+5*y)
+    /// >>> print(e.expand_num())
+    ///
+    /// yields
+    ///
+    /// ```
+    /// (3*x+3*y)*(4*x+5*y)
+    /// ```
+    pub fn expand_num(&self) -> PythonExpression {
+        self.expr.expand_num().into()
+    }
+
     /// Collect terms involving the same power of `x`, where `x` is an indeterminate.
     /// Return the list of key-coefficient pairs and the remainder that matched no key.
     ///
@@ -3479,12 +3542,35 @@ impl PythonExpression {
         Ok(b.into())
     }
 
+    /// Collect numerical factors by removing the numerical content from additions.
+    /// For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
+    ///
+    /// The first argument of the addition is normalized to a positive quantity.
+    ///
+    /// Examples
+    /// --------
+    ///
+    /// >>> from symbolica import Expression
+    /// >>>
+    /// >>> x, y = Expression.symbol('x', 'y')
+    /// >>> e = (-3*x+6*y)(2*x+2*y)
+    /// >>> print(e.collect_num())
+    ///
+    /// yields
+    ///
+    /// ```log
+    /// -6*(x-2*y)*(x+y)
+    /// ```
+    pub fn collect_num(&self) -> PythonExpression {
+        self.expr.collect_num().into()
+    }
+
     /// Collect terms involving the literal occurrence of `x`.
     ///
     /// Examples
     /// --------
     ///
-    /// from symbolica import Expression
+    /// >>> from symbolica import Expression
     /// >>>
     /// >>> x, y = Expression.symbol('x', 'y')
     /// >>> e = 5*x + x * y + x**2 + y*x**2

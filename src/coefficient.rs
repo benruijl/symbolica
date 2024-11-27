@@ -1,7 +1,7 @@
 use std::{
     cmp::Ordering,
     f64::consts::LOG2_10,
-    ops::{Add, Div, Mul},
+    ops::{Add, Div, Mul, Neg},
     sync::Arc,
 };
 
@@ -17,10 +17,10 @@ use crate::{
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
         },
-        float::{Float, Real, SingleFloat},
+        float::{Float, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
         rational::{Rational, Q},
-        rational_polynomial::RationalPolynomial,
+        rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial},
         EuclideanDomain, Field, InternalOrdering, Ring,
     },
     poly::{polynomial::MultivariatePolynomial, Variable, INLINED_EXPONENTS},
@@ -41,15 +41,13 @@ pub trait ConvertToRing: Ring {
 /// A coefficient that can appear in a Symbolica expression.
 /// In most cases, this is a rational number but it can also be a finite field element or
 /// a rational polynomial.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Coefficient {
     Rational(Rational),
     Float(Float),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
     RationalPolynomial(RationalPolynomial<IntegerRing, u16>),
 }
-
-impl Eq for Coefficient {}
 
 impl From<i64> for Coefficient {
     fn from(value: i64) -> Self {
@@ -165,12 +163,109 @@ impl Coefficient {
         Coefficient::Rational(Rational::one())
     }
 
+    pub fn is_negative(&self) -> bool {
+        match self {
+            Coefficient::Rational(r) => r.is_negative(),
+            Coefficient::Float(f) => f.is_negative(),
+            Coefficient::FiniteField(_, _) => false,
+            Coefficient::RationalPolynomial(r) => r.numerator.lcoeff().is_negative(),
+        }
+    }
+
     pub fn is_zero(&self) -> bool {
         match self {
             Coefficient::Rational(r) => r.is_zero(),
             Coefficient::Float(f) => f.is_zero(),
             Coefficient::FiniteField(num, _field) => num.0 == 0,
             Coefficient::RationalPolynomial(r) => r.numerator.is_zero(),
+        }
+    }
+
+    pub fn is_one(&self) -> bool {
+        match self {
+            Coefficient::Rational(r) => r.is_one(),
+            Coefficient::Float(f) => f.is_one(),
+            Coefficient::FiniteField(num, field) => {
+                let f = State::get_finite_field(*field);
+                f.is_one(num)
+            }
+            Coefficient::RationalPolynomial(r) => r.numerator.is_one(),
+        }
+    }
+
+    pub fn gcd(&self, rhs: &Self) -> Self {
+        match (self, rhs) {
+            (Coefficient::Rational(r1), Coefficient::Rational(r2)) => {
+                Coefficient::Rational(r1.gcd(r2))
+            }
+            (Coefficient::FiniteField(_n1, i1), Coefficient::FiniteField(_n2, i2)) => {
+                if i1 != i2 {
+                    panic!(
+                        "Cannot multiply numbers from different finite fields: p1={}, p2={}",
+                        State::get_finite_field(*i1).get_prime(),
+                        State::get_finite_field(*i2).get_prime()
+                    );
+                }
+                let f = State::get_finite_field(*i1);
+                Coefficient::FiniteField(f.one(), *i1)
+            }
+            (Coefficient::FiniteField(_, _), _) | (_, Coefficient::FiniteField(_, _)) => {
+                panic!("Cannot multiply finite field to non-finite number. Convert other number first?");
+            }
+            (Coefficient::Rational(r), Coefficient::RationalPolynomial(rp))
+            | (Coefficient::RationalPolynomial(rp), Coefficient::Rational(r)) => {
+                let p = RationalPolynomial::from_num_den(
+                    rp.numerator.constant(r.numerator()),
+                    rp.numerator.constant(r.denominator()),
+                    &Z,
+                    false,
+                );
+
+                let g = p.gcd(rp);
+                if g.is_constant() {
+                    (g.numerator.lcoeff(), g.denominator.lcoeff()).into()
+                } else {
+                    unreachable!()
+                }
+            }
+            (Coefficient::RationalPolynomial(p1), Coefficient::RationalPolynomial(p2)) => {
+                let r = if p1.get_variables() != p2.get_variables() {
+                    let mut p1 = p1.clone();
+                    let mut p2 = p2.clone();
+                    p1.unify_variables(&mut p2);
+                    p1.gcd(&p2)
+                } else {
+                    p1.gcd(&p2)
+                };
+
+                if r.is_constant() {
+                    (r.numerator.lcoeff(), r.denominator.lcoeff()).into()
+                } else {
+                    Coefficient::RationalPolynomial(r)
+                }
+            }
+            (Coefficient::Rational(_), Coefficient::Float(f))
+            | (Coefficient::Float(f), Coefficient::Rational(_)) => Coefficient::Float(f.one()),
+            (Coefficient::Float(f1), Coefficient::Float(_f2)) => Coefficient::Float(f1.one()),
+            (Coefficient::Float(_), _) | (_, Coefficient::Float(_)) => {
+                panic!("Cannot add float to finite-field number or rational polynomial");
+            }
+        }
+    }
+}
+
+impl Neg for Coefficient {
+    type Output = Coefficient;
+
+    fn neg(self) -> Coefficient {
+        match self {
+            Coefficient::Rational(r) => Coefficient::Rational(-r),
+            Coefficient::Float(f) => Coefficient::Float(-f),
+            Coefficient::FiniteField(n, i) => {
+                let f = State::get_finite_field(i);
+                Coefficient::FiniteField(f.neg(&n), i)
+            }
+            Coefficient::RationalPolynomial(p) => Coefficient::RationalPolynomial(-p),
         }
     }
 }

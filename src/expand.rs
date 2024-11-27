@@ -39,6 +39,12 @@ impl Atom {
     pub fn expand_into(&self, out: &mut Atom) -> bool {
         self.as_view().expand_into(None, out)
     }
+
+    /// Distribute numbers in the expression, for example:
+    /// `2*(x+y)` -> `2*x+2*y`.
+    pub fn expand_num(&self) -> Atom {
+        self.as_view().expand_num()
+    }
 }
 
 impl<'a> AtomView<'a> {
@@ -422,11 +428,134 @@ impl<'a> AtomView<'a> {
             }
         }
     }
+
+    /// Distribute numbers in the expression, for example:
+    /// `2*(x+y)` -> `2*x+2*y`.
+    pub fn expand_num(&self) -> Atom {
+        let mut a = Atom::new();
+        Workspace::get_local().with(|ws| {
+            self.expand_num_impl(ws, &mut a);
+        });
+        a
+    }
+
+    pub fn expand_num_into(&self, out: &mut Atom) {
+        Workspace::get_local().with(|ws| {
+            self.expand_with_ws_into(ws, None, out);
+        })
+    }
+
+    pub fn expand_num_impl(&self, ws: &Workspace, out: &mut Atom) -> bool {
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) | AtomView::Fun(_) => {
+                out.set_from_view(self);
+                false
+            }
+            AtomView::Pow(pow_view) => {
+                let (base, exp) = pow_view.get_base_exp();
+                let mut new_base = ws.new_atom();
+                let mut changed = base.expand_num_impl(ws, &mut new_base);
+
+                let mut new_exp = ws.new_atom();
+                changed |= exp.expand_num_impl(ws, &mut new_exp);
+
+                let mut pow_h = ws.new_atom();
+                pow_h.to_pow(new_base.as_view(), new_exp.as_view());
+                pow_h.as_view().normalize(ws, out);
+
+                changed
+            }
+            AtomView::Mul(mul_view) => {
+                if !mul_view.has_coefficient()
+                    || !mul_view.iter().any(|a| matches!(a, AtomView::Add(_)))
+                {
+                    out.set_from_view(self);
+                    return false;
+                }
+
+                let mut args: Vec<_> = mul_view.iter().collect();
+                let mut sum = None;
+                let mut num = None;
+
+                args.retain(|a| {
+                    if let AtomView::Add(_) = a {
+                        if sum.is_none() {
+                            sum = Some(a.clone());
+                            false
+                        } else {
+                            true
+                        }
+                    } else if let AtomView::Num(_) = a {
+                        if num.is_none() {
+                            num = Some(a.clone());
+                            false
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                });
+
+                let mut add = ws.new_atom();
+                let add_view = add.to_add();
+                let n = num.unwrap();
+
+                let mut m = ws.new_atom();
+                if let AtomView::Add(sum) = sum.unwrap() {
+                    for a in sum.iter() {
+                        let mm = m.to_mul();
+                        mm.extend(a);
+                        mm.extend(n);
+                        add_view.extend(m.as_view());
+                    }
+                }
+
+                add_view.as_view().normalize(ws, &mut m);
+                let m2 = add.to_mul();
+                for a in args {
+                    m2.extend(a);
+                }
+                m2.extend(m.as_view());
+
+                m2.as_view().normalize(ws, out);
+
+                true
+            }
+            AtomView::Add(add_view) => {
+                let mut changed = false;
+
+                let mut new = ws.new_atom();
+                let add = new.to_add();
+
+                let mut new_arg = ws.new_atom();
+                for arg in add_view {
+                    changed |= arg.expand_num_impl(ws, &mut new_arg);
+                    add.extend(new_arg.as_view());
+                }
+
+                if !changed {
+                    out.set_from_view(self);
+                    return false;
+                }
+
+                new.as_view().normalize(ws, out);
+                true
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{atom::Atom, state::State};
+
+    #[test]
+    fn expand_num() {
+        let exp = Atom::parse("5+2*v3*(v1-v2)*(v4+v5)").unwrap().expand_num();
+        let res = Atom::parse("5+v3*(v4+v5)*(2*v1-2*v2)").unwrap();
+        assert_eq!(exp, res);
+    }
 
     #[test]
     fn exponent() {

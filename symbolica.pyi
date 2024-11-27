@@ -819,6 +819,24 @@ class Expression:
         Using `via_poly=True` may give a significant speedup for large expressions.
         """
 
+    def expand_num(self) -> Expression:
+        """ Distribute numbers in the expression, for example: `2*(x+y)` -> `2*x+2*y`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> x, y = Expression.symbol('x', 'y')
+        >>> e = 3*(x+y)*(4*x+5*y)
+        >>> print(e.expand_num())
+
+        yields
+
+        ```
+        (3*x+3*y)*(4*x+5*y)
+        ```
+        """
+
     def collect(
         self,
         *x: Expression,
@@ -859,6 +877,27 @@ class Expression:
             A function to be applied to the quantity collected in
         coeff_map
             A function to be applied to the coefficient
+        """
+
+    def collect_num(self) -> Expression:
+        """Collect numerical factors by removing the content from additions.
+        For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
+
+        The first argument of the addition is normalized to a positive quantity.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> x, y = Expression.symbol('x', 'y')
+        >>> e = (-3*x+6*y)*(2*x+2*y)
+        >>> print(e.collect_num())
+
+        yields
+
+        ```
+        -6*(x+y)*(x-2*y)
+        ```
         """
 
     def coefficient_list(
@@ -1513,6 +1552,24 @@ class Transformer:
         >>> print(e)
         """
 
+    def expand_num(self) -> Expression:
+        """Create a transformer that distributes numbers in the expression, for example: `2*(x+y)` -> `2*x+2*y`.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> x, y = Expression.symbol('x', 'y')
+        >>> e = 3*(x+y)*(4*x+5*y)
+        >>> print(Transformer().expand_num()(e))
+
+        yields
+
+        ```
+        (3*x+3*y)*(4*x+5*y)
+        ```
+        """
+
     def prod(self) -> Transformer:
         """Create a transformer that computes the product of a list of arguments.
 
@@ -1829,6 +1886,27 @@ class Transformer:
             A transformer to be applied to the coefficient
         """
 
+    def collect_num(self) -> Expression:
+        """Create a transformer that collects numerical factors by removing the content from additions.
+        For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
+
+        The first argument of the addition is normalized to a positive quantity.
+
+        Examples
+        --------
+
+        >>> from symbolica import *
+        >>> x, y = Expression.symbol('x', 'y')
+        >>> e = (-3*x+6*y)*(2*x+2*y)
+        >>> print(Transformer().collect_num()(e))
+
+        yields
+
+        ```
+        -6*(x+y)*(x-2*y)
+        ```
+        """
+
     def coefficient(self, x: Expression) -> Transformer:
         """Create a transformer that collects terms involving the literal occurrence of `x`.
         """
@@ -1973,7 +2051,7 @@ class Transformer:
         >>> e = e.transform().stats('replace', Transformer().replace_all(f(x_), 1)).execute()
 
         yields
-        ```log
+        ```
         Stats for replace:
             In  │ 1 │  10.00 B │
             Out │ 1 │   3.00 B │ ⧗ 40.15µs

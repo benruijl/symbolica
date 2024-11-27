@@ -108,12 +108,16 @@ pub enum TransformerError {
 pub enum Transformer {
     /// Expand the rhs.
     Expand(Option<Atom>, bool),
+    /// Distribute numbers.
+    ExpandNum,
     /// Derive the rhs w.r.t a variable.
     Derivative(Symbol),
     /// Perform a series expansion.
     Series(Symbol, Atom, Rational, bool),
     ///Collect all terms in powers of a variable.
     Collect(Vec<AtomOrView<'static>>, Vec<Transformer>, Vec<Transformer>),
+    /// Collect numbers.
+    CollectNum,
     /// Apply find-and-replace on the lhs.
     ReplaceAll(
         Pattern,
@@ -165,10 +169,12 @@ impl std::fmt::Debug for Transformer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Transformer::Expand(s, _) => f.debug_tuple("Expand").field(s).finish(),
+            Transformer::ExpandNum => f.debug_tuple("ExpandNum").finish(),
             Transformer::Derivative(x) => f.debug_tuple("Derivative").field(x).finish(),
             Transformer::Collect(x, a, b) => {
                 f.debug_tuple("Collect").field(x).field(a).field(b).finish()
             }
+            Transformer::CollectNum => f.debug_tuple("CollectNum").finish(),
             Transformer::ReplaceAll(pat, rhs, ..) => {
                 f.debug_tuple("ReplaceAll").field(pat).field(rhs).finish()
             }
@@ -482,6 +488,9 @@ impl Transformer {
                         );
                     }
                 }
+                Transformer::ExpandNum => {
+                    cur_input.expand_num_into(out);
+                }
                 Transformer::Derivative(x) => {
                     cur_input.derivative_with_ws_into(*x, workspace, out);
                 }
@@ -509,6 +518,9 @@ impl Transformer {
                         },
                         out,
                     ),
+                Transformer::CollectNum => {
+                    *out = cur_input.collect_num();
+                }
                 Transformer::Series(x, expansion_point, depth, depth_is_absolute) => {
                     if let Ok(s) = cur_input.series(
                         *x,

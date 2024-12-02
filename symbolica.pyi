@@ -517,7 +517,7 @@ class Expression:
         transformations can be applied.
         """
 
-    def contains(self, a: Expression | int | float | Decimal) -> bool:
+    def contains(self, a: Expression | int | float | Decimal) -> Condition:
         """Returns true iff `self` contains `a` literally.
 
         Examples
@@ -567,6 +567,16 @@ class Expression:
         >>> print(e)
 
         Yields `f(x)*f(1)`.
+        """
+
+    def is_type(self, atom_type: AtomType) -> Condition:
+        """
+        Test if the expression is of a certain type.
+        """
+
+    def req_contains(self, a: Expression) -> PatternRestriction:
+        """
+        Create a pattern restriction that filters for expressions that contain `a`.
         """
 
     def req_lit(self) -> PatternRestriction:
@@ -746,34 +756,34 @@ class Expression:
         >>> e = e.replace_all(f(x_,y_), 1, x_.req_cmp_ge(y_))
         """
 
-    def __eq__(self, other: Expression | int | float | Decimal) -> bool:
+    def __eq__(self, other: Expression | int | float | Decimal) -> Condition:
         """
         Compare two expressions.
         """
 
-    def __neq__(self, other: Expression | int | float | Decimal) -> bool:
+    def __neq__(self, other: Expression | int | float | Decimal) -> Condition:
         """
         Compare two expressions.
         """
 
-    def __lt__(self, other: Expression | int | float | Decimal) -> bool:
+    def __lt__(self, other: Expression | int | float | Decimal) -> Condition:
         """
-        Compare two expressions. Both expressions must be a number.
-        """
-
-    def __le__(self, other: Expression | int | float | Decimal) -> bool:
-        """
-        Compare two expressions. Both expressions must be a number.
+        Compare two expressions. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
-    def __gt__(self, other: Expression | int | float | Decimal) -> bool:
+    def __le__(self, other: Expression | int | float | Decimal) -> Condition:
         """
-        Compare two expressions. Both expressions must be a number.
+        Compare two expressions. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
-    def __ge__(self, other: Expression | int | float | Decimal) -> bool:
+    def __gt__(self, other: Expression | int | float | Decimal) -> Condition:
         """
-        Compare two expressions. Both expressions must be a number.
+        Compare two expressions. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __ge__(self, other: Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two expressions. If any of the two expressions is not a rational number, an interal ordering is used.
         """
 
     def __iter__(self) -> Iterator[Expression]:
@@ -1056,7 +1066,7 @@ class Expression:
     def match(
         self,
         lhs: Transformer | Expression | int | float | Decimal,
-        cond: Optional[PatternRestriction] = None,
+        cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
         allow_new_wildcards_on_rhs: Optional[bool] = False,
@@ -1083,7 +1093,7 @@ class Expression:
     def matches(
         self,
         lhs: Transformer | Expression | int | float | Decimal,
-        cond: Optional[PatternRestriction] = None,
+        cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
         allow_new_wildcards_on_rhs: Optional[bool] = False,
@@ -1104,7 +1114,7 @@ class Expression:
         self,
         lhs: Transformer | Expression | int | float | Decimal,
         rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
-        cond: Optional[PatternRestriction] = None,
+        cond: Optional[PatternRestriction | Condition] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
         allow_new_wildcards_on_rhs: Optional[bool] = False,
@@ -1150,7 +1160,7 @@ class Expression:
         self,
         pattern: Transformer | Expression | int | float | Decimal,
         rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
-        cond: Optional[PatternRestriction] = None,
+        cond: Optional[PatternRestriction | Condition] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1167,7 +1177,7 @@ class Expression:
         >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
         >>> f = Expression.symbol('f')
         >>> e = f(3,x)
-        >>> r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
+        >>> r = e.replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), w1_ >= 1)
         >>> print(r)
 
         Parameters
@@ -1464,7 +1474,7 @@ class Replacement:
             cls,
             pattern: Transformer | Expression | int | float | Decimal,
             rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
-            cond: Optional[PatternRestriction] = None,
+            cond: Optional[PatternRestriction | Condition] = None,
             non_greedy_wildcards: Optional[Sequence[Expression]] = None,
             level_range: Optional[Tuple[int, Optional[int]]] = None,
             level_is_tree_depth: Optional[bool] = False,
@@ -1516,6 +1526,34 @@ class PatternRestriction:
         >>> e = f(1, 2, 3).replace_all(f(x_, y_, z_), 1,
         >>>         PatternRestriction.req_matches(filter))
         """
+
+
+class Condition:
+    """Relations that evaluate to booleans"""
+
+    def eval(self) -> bool:
+        """Evaluate the condition."""
+
+    def __repr__(self) -> str:
+        """Return a string representation of the condition."""
+
+    def __str__(self) -> str:
+        """Return a string representation of the condition."""
+
+    def __bool__(self) -> bool:
+        """Return the boolean value of the condition."""
+
+    def __and__(self, other:  Condition) -> Condition:
+        """Create a condition that is the logical and operation between two conditions (i.e., both should hold)."""
+
+    def __or__(self, other:  Condition) -> Condition:
+        """Create a condition that is the logical 'or' operation between two conditions (i.e., at least one of the two should hold)."""
+
+    def __invert__(self) -> Condition:
+        """Create a condition that takes the logical 'not' of the current condition."""
+
+    def to_req(self) -> PatternRestriction:
+        """Convert the condition to a pattern restriction."""
 
 
 class CompareOp:
@@ -1955,7 +1993,7 @@ class Transformer:
         self,
         pat: Transformer | Expression | int | float | Decimal,
         rhs: Transformer | Expression | Callable[[dict[Expression, Expression]], Expression] | int | float | Decimal,
-        cond: Optional[PatternRestriction] = None,
+        cond: Optional[PatternRestriction | Condition] = None,
         non_greedy_wildcards: Optional[Sequence[Expression]] = None,
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
@@ -1970,7 +2008,7 @@ class Transformer:
         >>> x, w1_, w2_ = Expression.symbol('x','w1_','w2_')
         >>> f = Expression.symbol('f')
         >>> e = f(3,x)
-        >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), (w1_ >= 1) & w2_.is_var())
+        >>> r = e.transform().replace_all(f(w1_,w2_), f(w1_ - 1, w2_**2), w1_ >= 1)
         >>> print(r)
 
         Parameters

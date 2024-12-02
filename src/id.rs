@@ -1345,6 +1345,41 @@ pub enum Condition<T> {
     False,
 }
 
+impl<T: std::fmt::Display> std::fmt::Display for Condition<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Condition::And(a) => write!(f, "({}) & ({})", a.0, a.1),
+            Condition::Or(o) => write!(f, "{} | {}", o.0, o.1),
+            Condition::Not(n) => write!(f, "!({})", n),
+            Condition::True => write!(f, "True"),
+            Condition::False => write!(f, "False"),
+            Condition::Yield(t) => write!(f, "{}", t),
+        }
+    }
+}
+
+pub trait Evaluate {
+    type State<'a>;
+
+    /// Evaluate a condition.
+    fn evaluate<'a>(&self, state: &Self::State<'a>) -> ConditionResult;
+}
+
+impl<T: Evaluate> Evaluate for Condition<T> {
+    type State<'a> = T::State<'a>;
+
+    fn evaluate(&self, state: &T::State<'_>) -> ConditionResult {
+        match self {
+            Condition::And(a) => a.0.evaluate(state) & a.1.evaluate(state),
+            Condition::Or(o) => o.0.evaluate(state) | o.1.evaluate(state),
+            Condition::Not(n) => !n.evaluate(state),
+            Condition::True => ConditionResult::True,
+            Condition::False => ConditionResult::False,
+            Condition::Yield(t) => t.evaluate(state),
+        }
+    }
+}
+
 impl<T> From<T> for Condition<T> {
     fn from(value: T) -> Self {
         Condition::Yield(value)
@@ -1426,6 +1461,64 @@ impl From<bool> for ConditionResult {
             ConditionResult::True
         } else {
             ConditionResult::False
+        }
+    }
+}
+
+impl Evaluate for Condition<PatternRestriction> {
+    type State<'a> = MatchStack<'a, 'a>;
+
+    fn evaluate(&self, state: &MatchStack) -> ConditionResult {
+        match self {
+            Condition::And(a) => a.0.evaluate(state) & a.1.evaluate(state),
+            Condition::Or(o) => o.0.evaluate(state) | o.1.evaluate(state),
+            Condition::Not(n) => !n.evaluate(state),
+            Condition::True => ConditionResult::True,
+            Condition::False => ConditionResult::False,
+            Condition::Yield(t) => match t {
+                PatternRestriction::Wildcard((v, r)) => {
+                    if let Some((_, value)) = state.stack.iter().find(|(k, _)| k == v) {
+                        match r {
+                            WildcardRestriction::IsAtomType(t) => match value {
+                                Match::Single(AtomView::Num(_)) => *t == AtomType::Num,
+                                Match::Single(AtomView::Var(_)) => *t == AtomType::Var,
+                                Match::Single(AtomView::Add(_)) => *t == AtomType::Add,
+                                Match::Single(AtomView::Mul(_)) => *t == AtomType::Mul,
+                                Match::Single(AtomView::Pow(_)) => *t == AtomType::Pow,
+                                Match::Single(AtomView::Fun(_)) => *t == AtomType::Fun,
+                                _ => false,
+                            },
+                            WildcardRestriction::IsLiteralWildcard(wc) => match value {
+                                Match::Single(AtomView::Var(v)) => wc == &v.get_symbol(),
+                                _ => false,
+                            },
+                            WildcardRestriction::Length(min, max) => match value {
+                                Match::Single(_) | Match::FunctionName(_) => {
+                                    *min <= 1 && max.map(|m| m >= 1).unwrap_or(true)
+                                }
+                                Match::Multiple(_, slice) => {
+                                    *min <= slice.len()
+                                        && max.map(|m| m >= slice.len()).unwrap_or(true)
+                                }
+                            },
+                            WildcardRestriction::Filter(f) => f(value),
+                            WildcardRestriction::Cmp(v2, f) => {
+                                if let Some((_, value2)) = state.stack.iter().find(|(k, _)| k == v2)
+                                {
+                                    f(value, value2)
+                                } else {
+                                    return ConditionResult::Inconclusive;
+                                }
+                            }
+                            WildcardRestriction::NotGreedy => true,
+                        }
+                        .into()
+                    } else {
+                        ConditionResult::Inconclusive
+                    }
+                }
+                PatternRestriction::MatchStack(mf) => mf(state),
+            },
         }
     }
 }

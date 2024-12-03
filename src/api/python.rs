@@ -53,8 +53,8 @@ use crate::{
     graph::Graph,
     id::{
         Condition, ConditionResult, Evaluate, Match, MatchSettings, MatchStack, Pattern,
-        PatternAtomTreeIterator, PatternOrMap, PatternRestriction, ReplaceIterator, Replacement,
-        WildcardRestriction,
+        PatternAtomTreeIterator, PatternOrMap, PatternRestriction, Relation, ReplaceIterator,
+        Replacement, WildcardRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
     parser::Token,
@@ -441,6 +441,50 @@ impl PythonTransformer {
                 "Input is not a transformer",
             ))
         }
+    }
+
+    /// Compare two expressions. If one of the expressions is not a number, an
+    /// internal ordering will be used.
+    fn __richcmp__(&self, other: ConvertibleToPattern, op: CompareOp) -> PyResult<PythonCondition> {
+        Ok(match op {
+            CompareOp::Eq => PythonCondition {
+                condition: Relation::Eq(self.expr.clone(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Ne => PythonCondition {
+                condition: Relation::Ne(self.expr.clone(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Ge => PythonCondition {
+                condition: Relation::Ge(self.expr.clone(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Gt => PythonCondition {
+                condition: Relation::Gt(self.expr.clone(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Le => PythonCondition {
+                condition: Relation::Le(self.expr.clone(), other.to_pattern()?.expr).into(),
+            },
+            CompareOp::Lt => PythonCondition {
+                condition: Relation::Lt(self.expr.clone(), other.to_pattern()?.expr).into(),
+            },
+        })
+    }
+
+    /// Returns true iff `self` contains `a` literally.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> x, y, z = Expression.symbol('x', 'y', 'z')
+    /// >>> e = x * y * z
+    /// >>> e.contains(x) # True
+    /// >>> e.contains(x*y*z) # True
+    /// >>> e.contains(x*y) # False
+    pub fn contains(&self, s: ConvertibleToPattern) -> PyResult<PythonCondition> {
+        Ok(PythonCondition {
+            condition: Condition::Yield(Relation::Contains(
+                self.expr.clone(),
+                s.to_pattern()?.expr,
+            )),
+        })
     }
 
     /// Create a transformer that expands products and powers.
@@ -917,6 +961,119 @@ impl PythonTransformer {
         return append_transformer!(self, Transformer::Repeat(rep_chain));
     }
 
+    /// Evaluate the condition and apply the `if_block` if the condition is true, otherwise apply the `else_block`.
+    /// The expression that is the input of the transformer is the input for the condition, the `if_block` and the `else_block`.
+    ///
+    /// Examples
+    /// --------
+    /// >>> t = T.map_terms(T.if_then(T.contains(x), T.print()))
+    /// >>> t(x + y + 4)
+    ///
+    /// prints `x`.
+    #[pyo3(signature = (condition, if_block, else_block = None))]
+    pub fn if_then(
+        &self,
+        condition: PythonCondition,
+        if_block: PythonTransformer,
+        else_block: Option<PythonTransformer>,
+    ) -> PyResult<PythonTransformer> {
+        let Pattern::Transformer(t1) = if_block.expr else {
+            return Err(exceptions::PyValueError::new_err(
+                "Argument must be a transformer",
+            ));
+        };
+
+        let t2 = if let Some(e) = else_block {
+            if let Pattern::Transformer(t2) = e.expr {
+                t2
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Argument must be a transformer",
+                ));
+            }
+        } else {
+            Box::new((None, vec![]))
+        };
+
+        if t1.0.is_some() || t2.0.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Transformers in a repeat must be unbound. Use Transformer() to create it.",
+            ));
+        }
+
+        return append_transformer!(self, Transformer::IfElse(condition.condition, t1.1, t2.1));
+    }
+
+    /// Execute the `condition` transformer. If the result of the `condition` transformer is different from the input expression,
+    /// apply the `if_block`, otherwise apply the `else_block`. The input expression of the `if_block` is the output
+    /// of the `condition` transformer.
+    ///
+    /// Examples
+    /// --------
+    /// >>> t = T.map_terms(T.if_changed(T.replace_all(x, y), T.print()))
+    /// >>> print(t(x + y + 4))
+    ///
+    /// prints
+    /// ```log
+    /// y
+    /// 2*y+4
+    /// ```
+    #[pyo3(signature = (condition, if_block, else_block = None))]
+    pub fn if_changed(
+        &self,
+        condition: PythonTransformer,
+        if_block: PythonTransformer,
+        else_block: Option<PythonTransformer>,
+    ) -> PyResult<PythonTransformer> {
+        let Pattern::Transformer(t0) = condition.expr else {
+            return Err(exceptions::PyValueError::new_err(
+                "Argument must be a transformer",
+            ));
+        };
+
+        let Pattern::Transformer(t1) = if_block.expr else {
+            return Err(exceptions::PyValueError::new_err(
+                "Argument must be a transformer",
+            ));
+        };
+
+        let t2 = if let Some(e) = else_block {
+            if let Pattern::Transformer(t2) = e.expr {
+                t2
+            } else {
+                return Err(exceptions::PyValueError::new_err(
+                    "Argument must be a transformer",
+                ));
+            }
+        } else {
+            Box::new((None, vec![]))
+        };
+
+        if t0.0.is_some() || t1.0.is_some() || t2.0.is_some() {
+            return Err(exceptions::PyValueError::new_err(
+                "Transformers in a repeat must be unbound. Use Transformer() to create it.",
+            ));
+        }
+
+        return append_transformer!(self, Transformer::IfChanged(t0.1, t1.1, t2.1));
+    }
+
+    /// Break the current chain and all higher-level chains containing `if` transformers.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from symbolica import *
+    /// >>> t = T.map_terms(T.repeat(
+    /// >>>     T.replace_all(y, 4),
+    /// >>>     T.if_changed(T.replace_all(x, y),
+    /// >>>                 T.break_chain()),
+    /// >>>     T.print()  # print of y is never reached
+    /// >>> ))
+    /// >>> print(t(x))
+    pub fn break_chain(&self) -> PyResult<PythonTransformer> {
+        return append_transformer!(self, Transformer::BreakChain);
+    }
+
     /// Chain several transformers. `chain(A,B,C)` is the same as `A.B.C`,
     /// where `A`, `B`, `C` are transformers.
     ///
@@ -981,6 +1138,7 @@ impl PythonTransformer {
                         workspace,
                         &mut out,
                         &MatchStack::new(&Condition::default(), &MatchSettings::default()),
+                        None,
                     )
                 })
                 .map_err(|e| match e {
@@ -1138,7 +1296,7 @@ impl PythonTransformer {
     ///
     /// yields
     ///
-    /// ```
+    /// ```log
     /// -6*(x-2*y)*(x+y)
     /// ```
     pub fn collect_num(&self) -> PyResult<PythonTransformer> {
@@ -1711,58 +1869,6 @@ impl PythonPatternRestriction {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Relation {
-    Eq(Atom, Atom),
-    Ne(Atom, Atom),
-    Gt(Atom, Atom),
-    Ge(Atom, Atom),
-    Lt(Atom, Atom),
-    Le(Atom, Atom),
-    Contains(Atom, Atom),
-    IsType(Atom, AtomType),
-}
-
-impl std::fmt::Display for Relation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Relation::Eq(a, b) => write!(f, "{} == {}", a, b),
-            Relation::Ne(a, b) => write!(f, "{} != {}", a, b),
-            Relation::Gt(a, b) => write!(f, "{} > {}", a, b),
-            Relation::Ge(a, b) => write!(f, "{} >= {}", a, b),
-            Relation::Lt(a, b) => write!(f, "{} < {}", a, b),
-            Relation::Le(a, b) => write!(f, "{} <= {}", a, b),
-            Relation::Contains(a, b) => write!(f, "{} contains {}", a, b),
-            Relation::IsType(a, b) => write!(f, "{} is type {:?}", a, b),
-        }
-    }
-}
-
-impl Evaluate for Relation {
-    type State<'a> = ();
-
-    fn evaluate(&self, _state: &()) -> ConditionResult {
-        match self {
-            Relation::Eq(a, b) => (a == b).into(),
-            Relation::Ne(a, b) => (a != b).into(),
-            Relation::Gt(a, b) => (a > b).into(),
-            Relation::Ge(a, b) => (a >= b).into(),
-            Relation::Lt(a, b) => (a < b).into(),
-            Relation::Le(a, b) => (a <= b).into(),
-            Relation::Contains(a, b) => (a.contains(b)).into(),
-            Relation::IsType(a, b) => match a {
-                Atom::Var(_) => (*b == AtomType::Var).into(),
-                Atom::Fun(_) => (*b == AtomType::Fun).into(),
-                Atom::Num(_) => (*b == AtomType::Num).into(),
-                Atom::Add(_) => (*b == AtomType::Add).into(),
-                Atom::Mul(_) => (*b == AtomType::Mul).into(),
-                Atom::Pow(_) => (*b == AtomType::Pow).into(),
-                Atom::Zero => (*b == AtomType::Num).into(),
-            },
-        }
-    }
-}
-
 /// A restriction on wildcards.
 #[pyclass(name = "Condition", module = "symbolica")]
 #[derive(Clone)]
@@ -1786,11 +1892,15 @@ impl PythonCondition {
         format!("{}", self.condition)
     }
 
-    pub fn eval(&self) -> bool {
-        self.condition.evaluate(&()) == ConditionResult::True
+    pub fn eval(&self) -> PyResult<bool> {
+        Ok(self
+            .condition
+            .evaluate(&None)
+            .map_err(|e| exceptions::PyValueError::new_err(e))?
+            == ConditionResult::True)
     }
 
-    pub fn __bool__(&self) -> bool {
+    pub fn __bool__(&self) -> PyResult<bool> {
         self.eval()
     }
 
@@ -1821,37 +1931,45 @@ impl PythonCondition {
 
 macro_rules! req_cmp_rel {
     ($self:ident,$num:ident,$cmp_any_atom:ident,$c:ident) => {{
-        if !$cmp_any_atom && !matches!($num.as_view(), AtomView::Num(_)) {
-            return Err("Can only compare to number");
+        let num = if !$cmp_any_atom {
+            if let Pattern::Literal(a) = $num {
+                if let AtomView::Num(_) = a.as_view() {
+                    a
+                } else {
+                    return Err("Can only compare to number");
+                }
+            } else {
+                return Err("Can only compare to number");
+            }
+        } else if let Pattern::Literal(a) = $num {
+            a
+        } else {
+            return Err("Pattern must be literal");
         };
 
-        match $self.as_view() {
-            AtomView::Var(v) => {
-                let name = v.get_symbol();
-                if v.get_wildcard_level() == 0 {
-                    return Err("Only wildcards can be restricted.");
-                }
-
-                Ok(PatternRestriction::Wildcard((
-                    name,
-                    WildcardRestriction::Filter(Box::new(move |v: &Match| {
-                        let k = $num.as_view();
-
-                        if let Match::Single(m) = v {
-                            if !$cmp_any_atom {
-                                if let AtomView::Num(_) = m {
-                                    return m.cmp(&k).$c();
-                                }
-                            } else {
-                                return m.cmp(&k).$c();
-                            }
-                        }
-
-                        false
-                    })),
-                )))
+        if let Pattern::Wildcard(name) = $self {
+            if name.get_wildcard_level() == 0 {
+                return Err("Only wildcards can be restricted.");
             }
-            _ => Err("Only wildcards can be restricted."),
+
+            Ok(PatternRestriction::Wildcard((
+                name,
+                WildcardRestriction::Filter(Box::new(move |v: &Match| {
+                    if let Match::Single(m) = v {
+                        if !$cmp_any_atom {
+                            if let AtomView::Num(_) = m {
+                                return m.cmp(&num.as_view()).$c();
+                            }
+                        } else {
+                            return m.cmp(&num.as_view()).$c();
+                        }
+                    }
+
+                    false
+                })),
+            )))
+        } else {
+            Err("Only wildcards can be restricted.")
         }
     }};
 }
@@ -1880,18 +1998,28 @@ impl TryFrom<Relation> for PatternRestriction {
                 return req_cmp_rel!(atom, atom1, true, is_le);
             }
             Relation::Contains(atom, atom1) => {
-                if let Atom::Var(v) = atom {
-                    let name = v.get_symbol();
+                if let Pattern::Wildcard(name) = atom {
                     if name.get_wildcard_level() == 0 {
                         return Err("Only wildcards can be restricted.");
                     }
 
+                    if !matches!(&atom1, &Pattern::Literal(_)) {
+                        return Err("Pattern must be literal");
+                    }
+
                     Ok(PatternRestriction::Wildcard((
                         name,
-                        WildcardRestriction::Filter(Box::new(move |m| match m {
-                            Match::Single(v) => v.contains(atom1.as_view()),
-                            Match::Multiple(_, v) => v.iter().any(|x| x.contains(atom1.as_view())),
-                            Match::FunctionName(_) => false,
+                        WildcardRestriction::Filter(Box::new(move |m| {
+                            let val = if let Pattern::Literal(a) = &atom1 {
+                                a.as_view()
+                            } else {
+                                unreachable!()
+                            };
+                            match m {
+                                Match::Single(v) => v.contains(val),
+                                Match::Multiple(_, v) => v.iter().any(|x| x.contains(val)),
+                                Match::FunctionName(_) => false,
+                            }
                         })),
                     )))
                 } else {
@@ -1899,9 +2027,9 @@ impl TryFrom<Relation> for PatternRestriction {
                 }
             }
             Relation::IsType(atom, atom_type) => {
-                if let Atom::Var(v) = atom {
+                if let Pattern::Wildcard(name) = atom {
                     Ok(PatternRestriction::Wildcard((
-                        v.get_symbol(),
+                        name,
                         WildcardRestriction::IsAtomType(atom_type),
                     )))
                 } else {
@@ -3056,8 +3184,8 @@ impl PythonExpression {
     pub fn contains(&self, s: ConvertibleToExpression) -> PythonCondition {
         PythonCondition {
             condition: Condition::Yield(Relation::Contains(
-                self.expr.clone(),
-                s.to_expression().expr,
+                self.expr.into_pattern(),
+                s.to_expression().expr.into_pattern(),
             )),
         }
     }
@@ -3235,7 +3363,7 @@ impl PythonExpression {
     pub fn is_type(&self, atom_type: PythonAtomType) -> PythonCondition {
         PythonCondition {
             condition: Condition::Yield(Relation::IsType(
-                self.expr.clone(),
+                self.expr.into_pattern(),
                 match atom_type {
                     PythonAtomType::Num => AtomType::Num,
                     PythonAtomType::Var => AtomType::Var,
@@ -3245,32 +3373,32 @@ impl PythonExpression {
                     PythonAtomType::Fn => AtomType::Fun,
                 },
             )),
-                    }
-                }
+        }
+    }
 
     /// Compare two expressions. If one of the expressions is not a number, an
     /// internal ordering will be used.
-    fn __richcmp__(&self, other: ConvertibleToExpression, op: CompareOp) -> PythonCondition {
-                    match op {
+    fn __richcmp__(&self, other: ConvertibleToPattern, op: CompareOp) -> PyResult<PythonCondition> {
+        Ok(match op {
             CompareOp::Eq => PythonCondition {
-                condition: Relation::Eq(self.expr.clone(), other.to_expression().expr).into(),
+                condition: Relation::Eq(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Ne => PythonCondition {
-                condition: Relation::Ne(self.expr.clone(), other.to_expression().expr).into(),
+                condition: Relation::Ne(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Ge => PythonCondition {
-                condition: Relation::Ge(self.expr.clone(), other.to_expression().expr).into(),
+                condition: Relation::Ge(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Gt => PythonCondition {
-                condition: Relation::Gt(self.expr.clone(), other.to_expression().expr).into(),
+                condition: Relation::Gt(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Le => PythonCondition {
-                condition: Relation::Le(self.expr.clone(), other.to_expression().expr).into(),
+                condition: Relation::Le(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Lt => PythonCondition {
-                condition: Relation::Lt(self.expr.clone(), other.to_expression().expr).into(),
+                condition: Relation::Lt(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
             },
-        }
+        })
     }
 
     /// Create a pattern restriction that passes when the wildcard is smaller than a number `num`.
@@ -3719,7 +3847,7 @@ impl PythonExpression {
     ///
     /// yields
     ///
-    /// ```
+    /// ```log
     /// (3*x+3*y)*(4*x+5*y)
     /// ```
     pub fn expand_num(&self) -> PythonExpression {

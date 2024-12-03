@@ -1576,6 +1576,85 @@ class Transformer:
         >>> e = Transformer().expand()((1+x)**2)
         """
 
+    def __eq__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers.
+        """
+
+    def __neq__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers.
+        """
+
+    def __lt__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __le__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __gt__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def __ge__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def contains(self, element: Transformer | Expression | int | float | Decimal) -> Condition:
+        """
+        Create a transformer that checks if the expression contains the given `element`.
+        """
+
+    def if_then(self, condition: Condition, if_block: Transformer, else_block: Optional[Transformer] = None) -> Transformer:
+        """Evaluate the condition and apply the `if_block` if the condition is true, otherwise apply the `else_block`.
+        The expression that is the input of the transformer is the input for the condition, the `if_block` and the `else_block`.
+
+        Examples
+        --------
+        >>> t = T.map_terms(T.if_then(T.contains(x), T.print()))
+        >>> t(x + y + 4)
+
+        prints `x`.
+        """
+
+    def if_changed(self, condition: Transformer, if_block: Transformer, else_block: Optional[Transformer] = None) -> Transformer:
+        """Execute the `condition` transformer. If the result of the `condition` transformer is different from the input expression,
+        apply the `if_block`, otherwise apply the `else_block`. The input expression of the `if_block` is the output
+        of the `condition` transformer.
+
+        Examples
+        --------
+        >>> t = T.map_terms(T.if_changed(T.replace_all(x, y), T.print()))
+        >>> print(t(x + y + 4))
+
+        prints
+        ```
+        y
+        2*y+4
+        ```
+        """
+
+    def break_chain(self) -> Transformer:
+        """Break the current chain and all higher-level chains containing `if` transformers.
+
+        Examples
+        --------
+        >>> from symbolica import *
+        >>> t = T.map_terms(T.repeat(
+        >>>     T.replace_all(y, 4),
+        >>>     T.if_changed(T.replace_all(x, y),
+        >>>                 T.break_chain()),
+        >>>     T.print()  # print of y is never reached
+        >>> ))
+        >>> print(t(x))
+        """
+
     def expand(self, var: Optional[Expression] = None, via_poly: Optional[bool] = None) -> Transformer:
         """Create a transformer that expands products and powers. Optionally, expand in `var` only.
 

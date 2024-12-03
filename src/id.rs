@@ -23,6 +23,16 @@ pub enum Pattern {
     Transformer(Box<(Option<Pattern>, Vec<Transformer>)>),
 }
 
+impl std::fmt::Display for Pattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Ok(a) = self.to_atom() {
+            a.fmt(f)
+        } else {
+            std::fmt::Debug::fmt(self, f)
+        }
+    }
+}
+
 pub trait MatchMap: Fn(&MatchStack) -> Atom + DynClone + Send + Sync {}
 dyn_clone::clone_trait_object!(MatchMap);
 impl<T: Clone + Send + Sync + Fn(&MatchStack) -> Atom> MatchMap for T {}
@@ -417,8 +427,13 @@ impl<'a> AtomView<'a> {
 
                         match r.rhs {
                             PatternOrMap::Pattern(rhs) => {
-                                rhs.substitute_wildcards(workspace, &mut rhs_subs, &match_stack)
-                                    .unwrap(); // TODO: escalate?
+                                rhs.substitute_wildcards(
+                                    workspace,
+                                    &mut rhs_subs,
+                                    &match_stack,
+                                    None,
+                                )
+                                .unwrap(); // TODO: escalate?
                             }
                             PatternOrMap::Map(f) => {
                                 let mut rhs = f(&match_stack);
@@ -938,6 +953,7 @@ impl Pattern {
         workspace: &Workspace,
         out: &mut Atom,
         match_stack: &MatchStack,
+        transformer_input: Option<&Pattern>,
     ) -> Result<(), TransformerError> {
         match self {
             Pattern::Wildcard(name) => {
@@ -1017,7 +1033,12 @@ impl Pattern {
                     }
 
                     let mut handle = workspace.new_atom();
-                    arg.substitute_wildcards(workspace, &mut handle, match_stack)?;
+                    arg.substitute_wildcards(
+                        workspace,
+                        &mut handle,
+                        match_stack,
+                        transformer_input,
+                    )?;
                     func.add_arg(handle.as_view());
                 }
 
@@ -1055,7 +1076,12 @@ impl Pattern {
                     }
 
                     let mut handle = workspace.new_atom();
-                    arg.substitute_wildcards(workspace, &mut handle, match_stack)?;
+                    arg.substitute_wildcards(
+                        workspace,
+                        &mut handle,
+                        match_stack,
+                        transformer_input,
+                    )?;
                     out.set_from_view(&handle.as_view());
                 }
 
@@ -1099,7 +1125,12 @@ impl Pattern {
                     }
 
                     let mut handle = workspace.new_atom();
-                    arg.substitute_wildcards(workspace, &mut handle, match_stack)?;
+                    arg.substitute_wildcards(
+                        workspace,
+                        &mut handle,
+                        match_stack,
+                        transformer_input,
+                    )?;
                     mul.extend(handle.as_view());
                 }
                 mul_h.as_view().normalize(workspace, out);
@@ -1140,7 +1171,12 @@ impl Pattern {
                     }
 
                     let mut handle = workspace.new_atom();
-                    arg.substitute_wildcards(workspace, &mut handle, match_stack)?;
+                    arg.substitute_wildcards(
+                        workspace,
+                        &mut handle,
+                        match_stack,
+                        transformer_input,
+                    )?;
                     add.extend(handle.as_view());
                 }
                 add_h.as_view().normalize(workspace, out);
@@ -1150,14 +1186,19 @@ impl Pattern {
             }
             Pattern::Transformer(p) => {
                 let (pat, ts) = &**p;
-                let pat = pat.as_ref().ok_or_else(|| {
-                    TransformerError::ValueError(
+
+                let pat = if let Some(p) = pat.as_ref() {
+                    p
+                } else if let Some(input_p) = transformer_input {
+                    input_p
+                } else {
+                    Err(TransformerError::ValueError(
                         "Transformer is missing an expression to act on.".to_owned(),
-                    )
-                })?;
+                    ))?
+                };
 
                 let mut handle = workspace.new_atom();
-                pat.substitute_wildcards(workspace, &mut handle, match_stack)?;
+                pat.substitute_wildcards(workspace, &mut handle, match_stack, transformer_input)?;
 
                 Transformer::execute_chain(handle.as_view(), ts, workspace, out)?;
             }
@@ -1362,21 +1403,21 @@ pub trait Evaluate {
     type State<'a>;
 
     /// Evaluate a condition.
-    fn evaluate<'a>(&self, state: &Self::State<'a>) -> ConditionResult;
+    fn evaluate<'a>(&self, state: &Self::State<'a>) -> Result<ConditionResult, String>;
 }
 
 impl<T: Evaluate> Evaluate for Condition<T> {
     type State<'a> = T::State<'a>;
 
-    fn evaluate(&self, state: &T::State<'_>) -> ConditionResult {
-        match self {
-            Condition::And(a) => a.0.evaluate(state) & a.1.evaluate(state),
-            Condition::Or(o) => o.0.evaluate(state) | o.1.evaluate(state),
-            Condition::Not(n) => !n.evaluate(state),
+    fn evaluate(&self, state: &T::State<'_>) -> Result<ConditionResult, String> {
+        Ok(match self {
+            Condition::And(a) => a.0.evaluate(state)? & a.1.evaluate(state)?,
+            Condition::Or(o) => o.0.evaluate(state)? | o.1.evaluate(state)?,
+            Condition::Not(n) => !n.evaluate(state)?,
             Condition::True => ConditionResult::True,
             Condition::False => ConditionResult::False,
-            Condition::Yield(t) => t.evaluate(state),
-        }
+            Condition::Yield(t) => t.evaluate(state)?,
+        })
     }
 }
 
@@ -1465,14 +1506,120 @@ impl From<bool> for ConditionResult {
     }
 }
 
+impl ConditionResult {
+    pub fn is_true(&self) -> bool {
+        matches!(self, ConditionResult::True)
+    }
+
+    pub fn is_false(&self) -> bool {
+        matches!(self, ConditionResult::False)
+    }
+
+    pub fn is_inconclusive(&self) -> bool {
+        matches!(self, ConditionResult::Inconclusive)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Relation {
+    Eq(Pattern, Pattern),
+    Ne(Pattern, Pattern),
+    Gt(Pattern, Pattern),
+    Ge(Pattern, Pattern),
+    Lt(Pattern, Pattern),
+    Le(Pattern, Pattern),
+    Contains(Pattern, Pattern),
+    IsType(Pattern, AtomType),
+}
+
+impl std::fmt::Display for Relation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Relation::Eq(a, b) => write!(f, "{} == {}", a, b),
+            Relation::Ne(a, b) => write!(f, "{} != {}", a, b),
+            Relation::Gt(a, b) => write!(f, "{} > {}", a, b),
+            Relation::Ge(a, b) => write!(f, "{} >= {}", a, b),
+            Relation::Lt(a, b) => write!(f, "{} < {}", a, b),
+            Relation::Le(a, b) => write!(f, "{} <= {}", a, b),
+            Relation::Contains(a, b) => write!(f, "{} contains {}", a, b),
+            Relation::IsType(a, b) => write!(f, "{} is type {:?}", a, b),
+        }
+    }
+}
+
+impl Evaluate for Relation {
+    type State<'a> = Option<AtomView<'a>>;
+
+    fn evaluate(&self, state: &Option<AtomView>) -> Result<ConditionResult, String> {
+        Workspace::get_local().with(|ws| {
+            let mut out1 = ws.new_atom();
+            let mut out2 = ws.new_atom();
+            let c = Condition::default();
+            let s = MatchSettings::default();
+            let m = MatchStack::new(&c, &s);
+            let pat = state.map(|x| x.into_pattern());
+
+            Ok(match self {
+                Relation::Eq(a, b)
+                | Relation::Ne(a, b)
+                | Relation::Gt(a, b)
+                | Relation::Ge(a, b)
+                | Relation::Lt(a, b)
+                | Relation::Le(a, b)
+                | Relation::Contains(a, b) => {
+                    a.substitute_wildcards(ws, &mut out1, &m, pat.as_ref())
+                        .map_err(|e| match e {
+                            TransformerError::Interrupt => "Interrupted by user".into(),
+                            TransformerError::ValueError(v) => v,
+                        })?;
+                    b.substitute_wildcards(ws, &mut out2, &m, pat.as_ref())
+                        .map_err(|e| match e {
+                            TransformerError::Interrupt => "Interrupted by user".into(),
+                            TransformerError::ValueError(v) => v,
+                        })?;
+
+                    match self {
+                        Relation::Eq(_, _) => out1 == out2,
+                        Relation::Ne(_, _) => out1 != out2,
+                        Relation::Gt(_, _) => out1.as_view() > out2.as_view(),
+                        Relation::Ge(_, _) => out1.as_view() >= out2.as_view(),
+                        Relation::Lt(_, _) => out1.as_view() < out2.as_view(),
+                        Relation::Le(_, _) => out1.as_view() <= out2.as_view(),
+                        Relation::Contains(_, _) => out1.contains(out2.as_view()),
+                        _ => unreachable!(),
+                    }
+                }
+                Relation::IsType(a, b) => {
+                    a.substitute_wildcards(ws, &mut out1, &m, pat.as_ref())
+                        .map_err(|e| match e {
+                            TransformerError::Interrupt => "Interrupted by user".into(),
+                            TransformerError::ValueError(v) => v,
+                        })?;
+
+                    match out1.as_ref() {
+                        Atom::Var(_) => (*b == AtomType::Var).into(),
+                        Atom::Fun(_) => (*b == AtomType::Fun).into(),
+                        Atom::Num(_) => (*b == AtomType::Num).into(),
+                        Atom::Add(_) => (*b == AtomType::Add).into(),
+                        Atom::Mul(_) => (*b == AtomType::Mul).into(),
+                        Atom::Pow(_) => (*b == AtomType::Pow).into(),
+                        Atom::Zero => (*b == AtomType::Num).into(),
+                    }
+                }
+            }
+            .into())
+        })
+    }
+}
+
 impl Evaluate for Condition<PatternRestriction> {
     type State<'a> = MatchStack<'a, 'a>;
 
-    fn evaluate(&self, state: &MatchStack) -> ConditionResult {
-        match self {
-            Condition::And(a) => a.0.evaluate(state) & a.1.evaluate(state),
-            Condition::Or(o) => o.0.evaluate(state) | o.1.evaluate(state),
-            Condition::Not(n) => !n.evaluate(state),
+    fn evaluate(&self, state: &MatchStack) -> Result<ConditionResult, String> {
+        Ok(match self {
+            Condition::And(a) => a.0.evaluate(state)? & a.1.evaluate(state)?,
+            Condition::Or(o) => o.0.evaluate(state)? | o.1.evaluate(state)?,
+            Condition::Not(n) => !n.evaluate(state)?,
             Condition::True => ConditionResult::True,
             Condition::False => ConditionResult::False,
             Condition::Yield(t) => match t {
@@ -1507,7 +1654,7 @@ impl Evaluate for Condition<PatternRestriction> {
                                 {
                                     f(value, value2)
                                 } else {
-                                    return ConditionResult::Inconclusive;
+                                    return Ok(ConditionResult::Inconclusive);
                                 }
                             }
                             WildcardRestriction::NotGreedy => true,
@@ -1519,7 +1666,7 @@ impl Evaluate for Condition<PatternRestriction> {
                 }
                 PatternRestriction::MatchStack(mf) => mf(state),
             },
-        }
+        })
     }
 }
 
@@ -3125,7 +3272,7 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 
                 match self.rhs {
                     PatternOrMap::Pattern(p) => {
-                        p.substitute_wildcards(ws, &mut new_rhs, pattern_match.match_stack)
+                        p.substitute_wildcards(ws, &mut new_rhs, pattern_match.match_stack, None)
                             .unwrap(); // TODO: escalate?
                     }
                     PatternOrMap::Map(f) => {

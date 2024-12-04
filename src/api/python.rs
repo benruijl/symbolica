@@ -468,6 +468,23 @@ impl PythonTransformer {
         })
     }
 
+    /// Test if the expression is of a certain type.
+    pub fn is_type(&self, atom_type: PythonAtomType) -> PythonCondition {
+        PythonCondition {
+            condition: Condition::Yield(Relation::IsType(
+                self.expr.clone(),
+                match atom_type {
+                    PythonAtomType::Num => AtomType::Num,
+                    PythonAtomType::Var => AtomType::Var,
+                    PythonAtomType::Add => AtomType::Add,
+                    PythonAtomType::Mul => AtomType::Mul,
+                    PythonAtomType::Pow => AtomType::Pow,
+                    PythonAtomType::Fn => AtomType::Fun,
+                },
+            )),
+        }
+    }
+
     /// Returns true iff `self` contains `a` literally.
     ///
     /// Examples
@@ -3181,13 +3198,13 @@ impl PythonExpression {
     /// >>> e.contains(x) # True
     /// >>> e.contains(x*y*z) # True
     /// >>> e.contains(x*y) # False
-    pub fn contains(&self, s: ConvertibleToExpression) -> PythonCondition {
-        PythonCondition {
+    pub fn contains(&self, s: ConvertibleToPattern) -> PyResult<PythonCondition> {
+        Ok(PythonCondition {
             condition: Condition::Yield(Relation::Contains(
                 self.expr.into_pattern(),
-                s.to_expression().expr.into_pattern(),
+                s.to_pattern()?.expr,
             )),
-        }
+        })
     }
 
     /// Get all symbols in the current expression, optionally including function symbols.

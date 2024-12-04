@@ -499,6 +499,7 @@ impl<'a> AtomView<'a> {
     }
 }
 
+/// A mathematical expression.
 #[derive(Clone)]
 pub enum Atom {
     Num(Num),

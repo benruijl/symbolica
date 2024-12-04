@@ -517,7 +517,7 @@ class Expression:
         transformations can be applied.
         """
 
-    def contains(self, a: Expression | int | float | Decimal) -> Condition:
+    def contains(self, a: Transformer | Expression | int | float | Decimal) -> Condition:
         """Returns true iff `self` contains `a` literally.
 
         Examples
@@ -1604,6 +1604,11 @@ class Transformer:
     def __ge__(self, other: Transformer | Expression | int | float | Decimal) -> Condition:
         """
         Compare two transformers. If any of the two expressions is not a rational number, an interal ordering is used.
+        """
+
+    def is_type(self, atom_type: AtomType) -> Condition:
+        """
+        Test if the transformed expression is of a certain type.
         """
 
     def contains(self, element: Transformer | Expression | int | float | Decimal) -> Condition:

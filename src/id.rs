@@ -161,6 +161,24 @@ impl Atom {
     ) -> bool {
         self.as_view().replace_all_multiple_into(replacements, out)
     }
+
+    /// Replace part of an expression by calling the map `m` on each subexpression.
+    /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
+    /// A [Context] object is passed to the function, which contains information about the current position in the expression.
+    pub fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
+        self.as_view().replace_map(m)
+    }
+}
+
+/// The context of an atom.
+#[derive(Clone, Copy, Debug)]
+pub struct Context {
+    /// The level of the function in the expression tree.
+    pub function_level: usize,
+    /// The type of the parent atom.
+    pub parent_type: Option<AtomType>,
+    /// The index of the atom in the parent.
+    pub index: usize,
 }
 
 impl<'a> AtomView<'a> {
@@ -324,6 +342,134 @@ impl<'a> AtomView<'a> {
         }
 
         false
+    }
+
+    /// Replace part of an expression by calling the map `m` on each subexpression.
+    /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
+    /// A [Context] object is passed to the function, which contains information about the current position in the expression.
+    pub fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
+        let mut out = Atom::new();
+        self.replace_map_into(m, &mut out);
+        out
+    }
+
+    /// Replace part of an expression by calling the map `m` on each subexpression.
+    /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
+    /// A [Context] object is passed to the function, which contains information about the current position in the expression.
+    pub fn replace_map_into<F: Fn(AtomView, &Context, &mut Atom) -> bool>(
+        &self,
+        m: &F,
+        out: &mut Atom,
+    ) {
+        let context = Context {
+            function_level: 0,
+            parent_type: None,
+            index: 0,
+        };
+        Workspace::get_local().with(|ws| {
+            self.replace_map_impl(ws, m, context, out);
+        });
+    }
+
+    fn replace_map_impl<F: Fn(AtomView, &Context, &mut Atom) -> bool>(
+        &self,
+        ws: &Workspace,
+        m: &F,
+        mut context: Context,
+        out: &mut Atom,
+    ) -> bool {
+        if m(*self, &context, out) {
+            return true;
+        }
+
+        let mut changed = false;
+        match self {
+            AtomView::Num(_) | AtomView::Var(_) => {
+                out.set_from_view(self);
+            }
+            AtomView::Fun(f) => {
+                let mut fun = ws.new_atom();
+                let fun = fun.to_fun(f.get_symbol());
+
+                context.parent_type = Some(AtomType::Fun);
+                context.function_level += 1;
+
+                for (i, arg) in f.iter().enumerate() {
+                    context.index = i;
+
+                    let mut arg_h = ws.new_atom();
+                    changed |= arg.replace_map_impl(ws, m, context, &mut arg_h);
+                    fun.add_arg(arg_h.as_view());
+                }
+
+                if changed {
+                    fun.as_view().normalize(ws, out);
+                } else {
+                    out.set_from_view(self);
+                }
+            }
+            AtomView::Pow(p) => {
+                let (base, exp) = p.get_base_exp();
+
+                context.parent_type = Some(AtomType::Pow);
+                context.index = 0;
+
+                let mut base_h = ws.new_atom();
+                changed |= base.replace_map_impl(ws, m, context, &mut base_h);
+
+                context.index = 1;
+                let mut exp_h = ws.new_atom();
+                changed |= exp.replace_map_impl(ws, m, context, &mut exp_h);
+
+                if changed {
+                    let mut pow_h = ws.new_atom();
+                    pow_h.to_pow(base_h.as_view(), exp_h.as_view());
+                    pow_h.as_view().normalize(ws, out);
+                } else {
+                    out.set_from_view(self);
+                }
+            }
+            AtomView::Mul(mm) => {
+                let mut mul_h = ws.new_atom();
+                let mul = mul_h.to_mul();
+
+                context.parent_type = Some(AtomType::Mul);
+
+                for (i, child) in mm.iter().enumerate() {
+                    context.index = i;
+                    let mut child_h = ws.new_atom();
+                    changed |= child.replace_map_impl(ws, m, context, &mut child_h);
+                    mul.extend(child_h.as_view());
+                }
+
+                if changed {
+                    mul_h.as_view().normalize(ws, out);
+                } else {
+                    out.set_from_view(self);
+                }
+            }
+            AtomView::Add(a) => {
+                let mut add_h = ws.new_atom();
+                let add = add_h.to_add();
+
+                context.parent_type = Some(AtomType::Add);
+
+                for (i, child) in a.iter().enumerate() {
+                    context.index = i;
+                    let mut child_h = ws.new_atom();
+                    changed |= child.replace_map_impl(ws, m, context, &mut child_h);
+                    add.extend(child_h.as_view());
+                }
+
+                if changed {
+                    add_h.as_view().normalize(ws, out);
+                } else {
+                    out.set_from_view(self);
+                }
+            }
+        }
+
+        changed
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
@@ -3312,6 +3458,22 @@ mod test {
     };
 
     use super::Pattern;
+
+    #[test]
+    fn replace_map() {
+        let a = Atom::parse("v1 + f1(1,2, f1((1+v1)^2), (v1+v2)^2)").unwrap();
+
+        let r = a.replace_map(&|arg, context, out| {
+            if context.function_level > 0 {
+                arg.expand_into(None, out)
+            } else {
+                false
+            }
+        });
+
+        let res = Atom::parse("v1+f1(1,2,f1(2*v1+v1^2+1),v1^2+v2^2+2*v1*v2)").unwrap();
+        assert_eq!(r, res);
+    }
 
     #[test]
     fn overlap() {

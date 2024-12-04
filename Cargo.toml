@@ -25,7 +25,7 @@ crate-type = ["lib"]
 name = "symbolica"
 
 [features]
-default = []
+default = ["tracing_only_warnings"]
 # if using this, make sure jemalloc is compiled with --disable-initial-exec-tls
 # if symbolica is used as a dynamic library (as is the case for the Python API)
 faster_alloc = ["tikv-jemallocator"]
@@ -37,6 +37,7 @@ python_api = ["pyo3", "bincode"]
 python_no_module = ["python_api"]
 # build a module that is independent of the specific Python version
 python_abi3 = ["pyo3/abi3", "pyo3/abi3-py37"]
+tracing_only_warnings = ["tracing/release_max_level_warn"]
 
 [dependencies.pyo3]
 features = ["extension-module", "abi3", "py-clone"]
@@ -67,6 +68,6 @@ smallvec = "1.13"
 smartstring = "1.0"
 tikv-jemallocator = {version = "0.5.4", optional = true}
 tinyjson = "2.5"
-tracing = {version = "0.1", features = ["max_level_trace", "release_max_level_warn"]}
+tracing = "0.1"
 wide = "0.7"
 wolfram-library-link = {version = "0.2.9", optional = true}

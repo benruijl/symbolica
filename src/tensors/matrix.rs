@@ -6,7 +6,8 @@ use std::{
 
 use crate::{
     domains::{
-        integer::Z,
+        finite_field::FiniteFieldWorkspace,
+        integer::{Integer, Z},
         rational::{Rational, Q},
         Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
     },
@@ -712,6 +713,32 @@ impl<F: Ring> Matrix<F> {
             field: self.field,
         }
     }
+
+    pub fn permute_rows(&self, pv: &Vec<u32>) -> Self {
+        assert_eq!(
+            self.nrows as usize,
+            pv.len(),
+            "Permutation vector length must equal the number of rows."
+        );
+
+        let mut data = Vec::with_capacity(self.data.len());
+        for row_index in pv {
+            assert!(
+                row_index.lt(&Integer::from(self.nrows)),
+                "Row index out of bounds in permutation vector."
+            );
+            let start = row_index * self.ncols;
+            let end = &start + self.ncols;
+            data.extend_from_slice(&self.data[start.to_u64() as usize..end.to_u64() as usize]);
+        }
+
+        Matrix {
+            ncols: self.ncols,
+            nrows: self.nrows,
+            data: data,
+            field: self.field.clone(),
+        }
+    }
 }
 
 impl<F: Ring> SelfRing for Matrix<F> {
@@ -1206,23 +1233,77 @@ impl<F: Field> Matrix<F> {
         max_col: u32,
         early_return: bool,
     ) -> Result<u32, MatrixError<F>> {
-        let zero = self.field.zero();
+        let (rank, _) = self.gaussian_elimination_ex(max_col, early_return, false)?;
+        Ok(rank)
+    }
 
+    /// perform LU decomposition over the matrix
+    fn lu_decomposition(
+        &self,
+        early_return: bool,
+    ) -> Result<(Self, Self, Vec<u32>), MatrixError<F>> {
+        let mut u = self.clone();
+        let (l, p) = u.lu_decomposition_in_place(early_return)?;
+        Ok((l, u, p))
+    }
+
+    /// perform LU decomposition over the matrix
+    /// the current matrix will become U and L will be returned
+    fn lu_decomposition_in_place(
+        &mut self,
+        early_return: bool,
+    ) -> Result<(Self, Vec<u32>), MatrixError<F>> {
+        let one = self.field.one();
+
+        let (_, steps) = self.gaussian_elimination_ex(self.ncols as u32, early_return, true)?;
+        let steps = steps.expect("Internal Error: steps must be Some");
+
+        let mut pv: Vec<u32> = (0..self.nrows).collect();
+        for &(i, k, ref multiplier) in &steps {
+            if *multiplier == one {
+                pv.swap(i as usize, k as usize);
+            }
+        }
+
+        let mut l = Self::identity(self.nrows, self.field.clone());
+        for &(row_k, row_i, ref multiplier) in &steps {
+            if *multiplier != one {
+                l[(row_k, row_i)] = multiplier.clone();
+            }
+        }
+
+        Ok((l, pv))
+    }
+
+    /// Write the matrix in echelon form.
+    fn gaussian_elimination_ex(
+        &mut self,
+        max_col: u32,
+        early_return: bool,
+        return_steps: bool,
+    ) -> Result<(u32, Option<Vec<(u32, u32, F::Element)>>), MatrixError<F>> {
+        let zero = self.field.zero();
+        let one = self.field.one();
+
+        let mut steps = if return_steps { Some(Vec::new()) } else { None };
         let mut i = 0;
         for j in 0..max_col {
             if F::is_zero(&self[(i, j)]) {
-                // Select a non-zero pivot.
+                let mut pivot_found = false;
                 for k in i + 1..self.nrows {
                     if !F::is_zero(&self[(k, j)]) {
-                        // Swap i-th row and k-th row.
-                        for l in j..self.ncols {
+                        for l in 0..self.ncols {
                             self.data
                                 .swap((self.ncols * i + l) as usize, (self.ncols * k + l) as usize);
                         }
+                        if let Some(ref mut steps) = steps {
+                            steps.push((i, k, one.clone()));
+                        }
+                        pivot_found = true;
                         break;
                     }
                 }
-                if F::is_zero(&self[(i, j)]) {
+                if !pivot_found {
                     if early_return {
                         return Err(MatrixError::Underdetermined {
                             min_rank: i,
@@ -1234,16 +1315,19 @@ impl<F: Field> Matrix<F> {
                     }
                 }
             }
-            let x = self[(i, j)].clone();
-            let inv_x = self.field.inv(&x);
+
             for k in i + 1..self.nrows {
                 if !F::is_zero(&self[(k, j)]) {
-                    let s = self.field.mul(&self[(k, j)], &inv_x);
-                    self[(k, j)] = self.field.zero();
+                    let multiplier = self.field.div(&self[(k, j)], &self[(i, j)]);
+                    if let Some(ref mut steps) = steps {
+                        steps.push((k, i, multiplier.clone()));
+                    }
+                    self[(k, j)] = zero.clone();
                     for l in j + 1..self.ncols {
-                        let mut e = std::mem::replace(&mut self[(k, l)], zero.clone());
-                        self.field.sub_mul_assign(&mut e, &self[(i, l)], &s);
-                        self[(k, l)] = e;
+                        let temp = self
+                            .field
+                            .sub(&self[(k, l)], &self.field.mul(&multiplier, &self[(i, l)]));
+                        self[(k, l)] = temp;
                     }
                 }
             }
@@ -1254,7 +1338,7 @@ impl<F: Field> Matrix<F> {
             }
         }
 
-        Ok(i)
+        Ok((i, steps))
     }
 
     /// Create a row-reduced matrix from a matrix in echelon form.
@@ -1408,6 +1492,7 @@ mod test {
         symb,
         tensors::matrix::{Matrix, Vector},
     };
+    use std::ops::Mul;
 
     #[test]
     fn basics() {
@@ -1658,5 +1743,42 @@ mod test {
                 Atom::new_num(1)
             ]
         );
+    }
+
+    #[test]
+    fn lu_decomposition() {
+        let l = Matrix::from_nested_vec(
+            vec![
+                vec![1.into(), 0.into(), 0.into()],
+                vec![3.into(), 1.into(), 0.into()],
+                vec![(-5).into(), 7.into(), 1.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let u = Matrix::from_nested_vec(
+            vec![
+                vec![1.into(), (-10).into(), 8.into()],
+                vec![0.into(), 1.into(), 0.into()],
+                vec![0.into(), 0.into(), 1.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let m = l.mul(&u);
+        let (res_l, res_u, _) = m.lu_decomposition(false).unwrap();
+        assert_eq!(res_l, l);
+        assert_eq!(res_u, u);
+
+        let m2 = Matrix::from_nested_vec(
+            vec![
+                vec![0.into(), 2.into(), 3.into()],
+                vec![4.into(), 5.into(), 6.into()],
+                vec![7.into(), 8.into(), 9.into()],
+            ],
+            Q,
+        ).unwrap();
+        let (res_l, res_u, res_pv) = m2.lu_decomposition(false).unwrap();
+        assert_eq!(res_l.mul(&res_u), m2.permute_rows(&res_pv));
     }
 }

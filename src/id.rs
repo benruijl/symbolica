@@ -8,7 +8,7 @@ use crate::{
         representation::{InlineVar, ListSlice},
         AsAtomView, Atom, AtomType, AtomView, Num, SliceType, Symbol,
     },
-    state::{State, Workspace},
+    state::Workspace,
     transformer::{Transformer, TransformerError},
 };
 
@@ -2109,7 +2109,7 @@ impl<'a> Match<'a> {
                     // to update the coefficient flag
                 }
                 SliceType::Arg => {
-                    let fun = out.to_fun(State::ARG);
+                    let fun = out.to_fun(Atom::ARG);
                     for arg in wargs {
                         fun.add_arg(*arg);
                     }
@@ -2124,7 +2124,7 @@ impl<'a> Match<'a> {
                     out.set_from_view(&wargs[0]);
                 }
                 SliceType::Empty => {
-                    let f = out.to_fun(State::ARG);
+                    let f = out.to_fun(Atom::ARG);
                     f.set_normalized(true);
                 }
             },

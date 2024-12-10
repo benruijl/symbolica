@@ -459,9 +459,9 @@ impl<'a> FormattedPrintVar for VarView<'a> {
 
         if opts.latex {
             match id {
-                State::E => f.write_char('e'),
-                State::PI => f.write_str("\\pi"),
-                State::I => f.write_char('i'),
+                Atom::E => f.write_char('e'),
+                Atom::PI => f.write_str("\\pi"),
+                Atom::I => f.write_char('i'),
                 _ => f.write_str(name),
             }
         } else if opts.color_builtin_symbols && name.ends_with('_') {

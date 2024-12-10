@@ -1365,13 +1365,13 @@ impl<'a> AtomView<'a> {
                 let s = v.get_symbol();
 
                 match s {
-                    State::PI => {
+                    Atom::PI => {
                         out.to_num(Coefficient::Float(Float::with_val(
                             binary_prec,
                             rug::float::Constant::Pi,
                         )));
                     }
-                    State::E => {
+                    Atom::E => {
                         out.to_num(Coefficient::Float(Float::with_val(binary_prec, 1).exp()));
                     }
                     _ => {

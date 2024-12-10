@@ -718,11 +718,11 @@ impl<T: Real> ExpressionEvaluator<T> {
                     self.stack[*r] = self.stack[*b].powf(&self.stack[*e]);
                 }
                 Instr::BuiltinFun(r, s, arg) => match s.0 {
-                    State::EXP => self.stack[*r] = self.stack[*arg].exp(),
-                    State::LOG => self.stack[*r] = self.stack[*arg].log(),
-                    State::SIN => self.stack[*r] = self.stack[*arg].sin(),
-                    State::COS => self.stack[*r] = self.stack[*arg].cos(),
-                    State::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
+                    Atom::EXP => self.stack[*r] = self.stack[*arg].exp(),
+                    Atom::LOG => self.stack[*r] = self.stack[*arg].log(),
+                    Atom::SIN => self.stack[*r] = self.stack[*arg].sin(),
+                    Atom::COS => self.stack[*r] = self.stack[*arg].cos(),
+                    Atom::SQRT => self.stack[*r] = self.stack[*arg].sqrt(),
                     _ => unreachable!(),
                 },
             }
@@ -1359,23 +1359,23 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     *out += format!("\tZ{} = pow({}, {});\n", o, base, exp).as_str();
                 }
                 Instr::BuiltinFun(o, s, a) => match s.0 {
-                    State::EXP => {
+                    Atom::EXP => {
                         let arg = format!("Z{}", a);
                         *out += format!("\tZ{} = exp({});\n", o, arg).as_str();
                     }
-                    State::LOG => {
+                    Atom::LOG => {
                         let arg = format!("Z{}", a);
                         *out += format!("\tZ{} = log({});\n", o, arg).as_str();
                     }
-                    State::SIN => {
+                    Atom::SIN => {
                         let arg = format!("Z{}", a);
                         *out += format!("\tZ{} = sin({});\n", o, arg).as_str();
                     }
-                    State::COS => {
+                    Atom::COS => {
                         let arg = format!("Z{}", a);
                         *out += format!("\tZ{} = cos({});\n", o, arg).as_str();
                     }
-                    State::SQRT => {
+                    Atom::SQRT => {
                         let arg = format!("Z{}", a);
                         *out += format!("\tZ{} = sqrt({});\n", o, arg).as_str();
                     }
@@ -1931,19 +1931,19 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     let arg = get_input!(*a);
 
                     match s.0 {
-                        State::EXP => {
+                        Atom::EXP => {
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
-                        State::LOG => {
+                        Atom::LOG => {
                             *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
                         }
-                        State::SIN => {
+                        Atom::SIN => {
                             *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
                         }
-                        State::COS => {
+                        Atom::COS => {
                             *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
                         }
-                        State::SQRT => {
+                        Atom::SQRT => {
                             *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
                         }
                         _ => unreachable!(),
@@ -2122,19 +2122,19 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     let arg = get_input!(*a);
 
                     match s.0 {
-                        State::EXP => {
+                        Atom::EXP => {
                             *out += format!("\tZ[{}] = exp({});\n", o, arg).as_str();
                         }
-                        State::LOG => {
+                        Atom::LOG => {
                             *out += format!("\tZ[{}] = log({});\n", o, arg).as_str();
                         }
-                        State::SIN => {
+                        Atom::SIN => {
                             *out += format!("\tZ[{}] = sin({});\n", o, arg).as_str();
                         }
-                        State::COS => {
+                        Atom::COS => {
                             *out += format!("\tZ[{}] = cos({});\n", o, arg).as_str();
                         }
-                        State::SQRT => {
+                        Atom::SQRT => {
                             *out += format!("\tZ[{}] = sqrt({});\n", o, arg).as_str();
                         }
                         _ => unreachable!(),
@@ -3383,11 +3383,11 @@ impl<T: Real> EvalTree<T> {
             Expression::BuiltinFun(s, a) => {
                 let arg = self.evaluate_impl(a, subexpressions, params, args);
                 match s.0 {
-                    State::EXP => arg.exp(),
-                    State::LOG => arg.log(),
-                    State::SIN => arg.sin(),
-                    State::COS => arg.cos(),
-                    State::SQRT => arg.sqrt(),
+                    Atom::EXP => arg.exp(),
+                    Atom::LOG => arg.log(),
+                    Atom::SIN => arg.sin(),
+                    Atom::COS => arg.cos(),
+                    Atom::SQRT => arg.sqrt(),
                     _ => unreachable!(),
                 }
             }
@@ -3815,31 +3815,31 @@ impl<T: NumericalFloatLike> EvalTree<T> {
             }
             Expression::ReadArg(s) => args[*s].to_string(),
             Expression::BuiltinFun(s, a) => match s.0 {
-                State::EXP => {
+                Atom::EXP => {
                     let mut r = "exp(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
                     r
                 }
-                State::LOG => {
+                Atom::LOG => {
                     let mut r = "log(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
                     r
                 }
-                State::SIN => {
+                Atom::SIN => {
                     let mut r = "sin(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
                     r
                 }
-                State::COS => {
+                Atom::COS => {
                     let mut r = "cos(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
                     r
                 }
-                State::SQRT => {
+                Atom::SQRT => {
                     let mut r = "sqrt(".to_string();
                     r += &self.export_cpp_impl(a, args);
                     r.push(')');
@@ -3930,7 +3930,7 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Fun(f) => {
                 let name = f.get_symbol();
-                if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
+                if [Atom::EXP, Atom::LOG, Atom::SIN, Atom::COS, Atom::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
                     let arg_eval = arg.to_eval_tree_impl(fn_map, params, args, funcs)?;
@@ -4065,8 +4065,11 @@ impl<'a> AtomView<'a> {
                 ),
             },
             AtomView::Var(v) => match v.get_symbol() {
-                State::E => Ok(coeff_map(&1.into()).e()),
-                State::PI => Ok(coeff_map(&1.into()).pi()),
+                Atom::E => Ok(coeff_map(&1.into()).e()),
+                Atom::PI => Ok(coeff_map(&1.into()).pi()),
+                Atom::I => coeff_map(&1.into())
+                    .i()
+                    .ok_or_else(|| "Numerical type does not support imaginary unit".to_string()),
                 _ => Err(format!(
                     "Variable {} not in constant map",
                     State::get_name(v.get_symbol())
@@ -4074,17 +4077,17 @@ impl<'a> AtomView<'a> {
             },
             AtomView::Fun(f) => {
                 let name = f.get_symbol();
-                if [State::EXP, State::LOG, State::SIN, State::COS, State::SQRT].contains(&name) {
+                if [Atom::EXP, Atom::LOG, Atom::SIN, Atom::COS, Atom::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
                     let arg_eval = arg.evaluate(coeff_map, const_map, function_map, cache)?;
 
                     return Ok(match f.get_symbol() {
-                        State::EXP => arg_eval.exp(),
-                        State::LOG => arg_eval.log(),
-                        State::SIN => arg_eval.sin(),
-                        State::COS => arg_eval.cos(),
-                        State::SQRT => arg_eval.sqrt(),
+                        Atom::EXP => arg_eval.exp(),
+                        Atom::LOG => arg_eval.log(),
+                        Atom::SIN => arg_eval.sin(),
+                        Atom::COS => arg_eval.cos(),
+                        Atom::SQRT => arg_eval.sqrt(),
                         _ => unreachable!(),
                     });
                 }

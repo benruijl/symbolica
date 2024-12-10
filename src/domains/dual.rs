@@ -760,6 +760,13 @@ macro_rules! create_hyperdual_from_components {
             }
 
             #[inline(always)]
+            fn i(&self) -> Option<Self> {
+                let mut res = self.zero();
+                res.values[0] = self.values[0].i()?;
+                Some(res)
+            }
+
+            #[inline(always)]
             fn norm(&self) -> Self {
                 let n = self.values[0].norm();
                 if n == self.values[0] {

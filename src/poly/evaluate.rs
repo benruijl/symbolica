@@ -20,7 +20,6 @@ use crate::{
     atom::{Atom, AtomView},
     domains::{float::Real, Ring},
     evaluate::EvaluationFn,
-    state::State,
 };
 
 use super::{polynomial::MultivariatePolynomial, PositiveExponent};
@@ -1678,7 +1677,7 @@ impl<'a> std::fmt::Display for InstructionSetPrinter<'a> {
                             None
                         }
                     } else if let super::Variable::Symbol(i) = x {
-                        if [State::E, State::I, State::PI].contains(i) {
+                        if [Atom::E, Atom::I, Atom::PI].contains(i) {
                             None
                         } else {
                             Some(format!("T {}", x.to_string()))
@@ -1855,7 +1854,7 @@ impl ExpressionEvaluator {
                                 None
                             }
                         } else if let super::Variable::Symbol(i) = x {
-                            if [State::E, State::I, State::PI].contains(i) {
+                            if [Atom::E, Atom::I, Atom::PI].contains(i) {
                                 None
                             } else {
                                 Some(x.clone())

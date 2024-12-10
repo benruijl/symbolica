@@ -275,7 +275,7 @@ impl<'a> AtomView<'a> {
     /// Simplify logs in the argument of the exponential function.
     fn simplify_exp_log(&self, ws: &Workspace, out: &mut Atom) -> bool {
         if let AtomView::Fun(f) = self {
-            if f.get_symbol() == State::LOG && f.get_nargs() == 1 {
+            if f.get_symbol() == Atom::LOG && f.get_nargs() == 1 {
                 out.set_from_view(&f.iter().next().unwrap());
                 return true;
             }
@@ -333,7 +333,7 @@ impl<'a> AtomView<'a> {
             if changed {
                 let mut new_exp = ws.new_atom();
                 // TODO: change to e^()
-                new_exp.to_fun(State::EXP).add_arg(aa.as_view());
+                new_exp.to_fun(Atom::EXP).add_arg(aa.as_view());
 
                 m.extend(new_exp.as_view());
 
@@ -489,7 +489,7 @@ impl Atom {
         // x * x => x^2
         if self.as_view() == other.as_view() {
             if let AtomView::Var(v) = self.as_view() {
-                if v.get_symbol() == State::I {
+                if v.get_symbol() == Atom::I {
                     self.to_num((-1).into());
                     return true;
                 }
@@ -821,7 +821,7 @@ impl<'a> AtomView<'a> {
                 #[inline(always)]
                 fn add_arg(f: &mut Fun, a: AtomView) {
                     if let AtomView::Fun(fa) = a {
-                        if fa.get_symbol() == State::ARG {
+                        if fa.get_symbol() == Atom::ARG {
                             // flatten f(arg(...)) = f(...)
                             for aa in fa.iter() {
                                 f.add_arg(aa);
@@ -872,16 +872,16 @@ impl<'a> AtomView<'a> {
 
                 out_f.set_normalized(true);
 
-                if [State::COS, State::SIN, State::EXP, State::LOG].contains(&id)
+                if [Atom::COS, Atom::SIN, Atom::EXP, Atom::LOG].contains(&id)
                     && out_f.to_fun_view().get_nargs() == 1
                 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
                     if let AtomView::Num(n) = arg {
-                        if n.is_zero() && id != State::LOG || n.is_one() && id == State::LOG {
-                            if id == State::COS || id == State::EXP {
+                        if n.is_zero() && id != Atom::LOG || n.is_one() && id == Atom::LOG {
+                            if id == Atom::COS || id == Atom::EXP {
                                 out.to_num(Coefficient::one());
                                 return;
-                            } else if id == State::SIN || id == State::LOG {
+                            } else if id == Atom::SIN || id == Atom::LOG {
                                 out.to_num(Coefficient::zero());
                                 return;
                             }
@@ -889,22 +889,22 @@ impl<'a> AtomView<'a> {
 
                         if let CoefficientView::Float(f) = n.get_coeff_view() {
                             match id {
-                                State::COS => {
+                                Atom::COS => {
                                     let r = f.to_float().cos();
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
-                                State::SIN => {
+                                Atom::SIN => {
                                     let r = f.to_float().sin();
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
-                                State::EXP => {
+                                Atom::EXP => {
                                     let r = f.to_float().exp();
                                     out.to_num(Coefficient::Float(r));
                                     return;
                                 }
-                                State::LOG => {
+                                Atom::LOG => {
                                     let r = f.to_float().log();
                                     out.to_num(Coefficient::Float(r));
                                     return;
@@ -915,10 +915,10 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                if id == State::EXP && out_f.to_fun_view().get_nargs() == 1 {
+                if id == Atom::EXP && out_f.to_fun_view().get_nargs() == 1 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
                     // simplify logs inside exp
-                    if arg.contains_symbol(State::LOG) {
+                    if arg.contains_symbol(Atom::LOG) {
                         let mut buffer = workspace.new_atom();
                         if arg.simplify_exp_log(workspace, &mut buffer) {
                             out.set_from_view(&buffer.as_view());
@@ -928,7 +928,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 // try to turn the argument into a number
-                if id == State::COEFF && out_f.to_fun_view().get_nargs() == 1 {
+                if id == Atom::COEFF && out_f.to_fun_view().get_nargs() == 1 {
                     let arg = out_f.to_fun_view().iter().next().unwrap();
                     if let AtomView::Num(_) = arg {
                         let mut buffer = workspace.new_atom();
@@ -1197,7 +1197,7 @@ impl<'a> AtomView<'a> {
                             base_handle.to_num(new_base_num);
                             exp_handle.to_num(new_exp_num);
                         } else if let AtomView::Var(v) = base_handle.as_view() {
-                            if v.get_symbol() == State::I {
+                            if v.get_symbol() == Atom::I {
                                 if let CoefficientView::Natural(n, d) = exp_num {
                                     let mut new_base = workspace.new_atom();
 
@@ -1533,7 +1533,7 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{atom::Atom, state::State};
+    use crate::atom::Atom;
 
     #[test]
     fn pow_apart() {
@@ -1564,8 +1564,8 @@ mod test {
 
     #[test]
     fn mul_complex_i() {
-        let res = Atom::new_var(State::I) * &Atom::new_var(State::E) * &Atom::new_var(State::I);
-        let refr = -Atom::new_var(State::E);
+        let res = Atom::new_var(Atom::I) * &Atom::new_var(Atom::E) * &Atom::new_var(Atom::I);
+        let refr = -Atom::new_var(Atom::E);
         assert_eq!(res, refr);
     }
 

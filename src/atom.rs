@@ -7,7 +7,7 @@ use crate::{
     coefficient::Coefficient,
     parser::Token,
     printer::{AtomPrinter, PrintOptions},
-    state::{RecycledAtom, Workspace},
+    state::{RecycledAtom, State, Workspace},
     transformer::StatsOptions,
 };
 use std::{cmp::Ordering, hash::Hash, ops::DerefMut, str::FromStr};
@@ -509,6 +509,56 @@ pub enum Atom {
     Mul(Mul),
     Add(Add),
     Zero,
+}
+
+impl Atom {
+    /// The built-in function represents a list of function arguments.
+    pub const ARG: Symbol = State::ARG;
+    /// The built-in function that converts a rational polynomial to a coefficient.
+    pub const COEFF: Symbol = State::COEFF;
+    /// The exponent function.
+    pub const EXP: Symbol = State::EXP;
+    /// The logarithm function.
+    pub const LOG: Symbol = State::LOG;
+    /// The sine function.
+    pub const SIN: Symbol = State::SIN;
+    /// The cosine function.
+    pub const COS: Symbol = State::COS;
+    /// The square root function.
+    pub const SQRT: Symbol = State::SQRT;
+    /// The built-in function that represents an abstract derivative.
+    pub const DERIVATIVE: Symbol = State::DERIVATIVE;
+    /// The constant e, the base of the natural logarithm.
+    pub const E: Symbol = State::E;
+    /// The constant i, the imaginary unit.
+    pub const I: Symbol = State::I;
+    /// The mathematical constant `π`.
+    pub const PI: Symbol = State::PI;
+
+    /// Exponentiate the atom.
+    pub fn exp(&self) -> Atom {
+        FunctionBuilder::new(Atom::EXP).add_arg(self).finish()
+    }
+
+    /// Take the logarithm of the atom.
+    pub fn log(&self) -> Atom {
+        FunctionBuilder::new(Atom::LOG).add_arg(self).finish()
+    }
+
+    /// Take the sine the atom.
+    pub fn sin(&self) -> Atom {
+        FunctionBuilder::new(Atom::SIN).add_arg(self).finish()
+    }
+
+    ///  Take the cosine the atom.
+    pub fn cos(&self) -> Atom {
+        FunctionBuilder::new(Atom::COS).add_arg(self).finish()
+    }
+
+    ///  Take the square root of the atom.
+    pub fn sqrt(&self) -> Atom {
+        FunctionBuilder::new(Atom::SQRT).add_arg(self).finish()
+    }
 }
 
 impl Default for Atom {

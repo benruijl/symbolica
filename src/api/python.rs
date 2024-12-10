@@ -2656,14 +2656,14 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "E")]
     pub fn e() -> PythonExpression {
-        Atom::new_var(State::E).into()
+        Atom::new_var(Atom::E).into()
     }
 
     /// The mathematical constant `π`.
     #[classattr]
     #[pyo3(name = "PI")]
     pub fn pi() -> PythonExpression {
-        Atom::new_var(State::PI).into()
+        Atom::new_var(Atom::PI).into()
     }
 
     /// The mathematical constant `i`, where
@@ -2671,42 +2671,42 @@ impl PythonExpression {
     #[classattr]
     #[pyo3(name = "I")]
     pub fn i() -> PythonExpression {
-        Atom::new_var(State::I).into()
+        Atom::new_var(Atom::I).into()
     }
 
     /// The built-in function that converts a rational polynomial to a coefficient.
     #[classattr]
     #[pyo3(name = "COEFF")]
     pub fn coeff() -> PythonExpression {
-        Atom::new_var(State::COEFF).into()
+        Atom::new_var(Atom::COEFF).into()
     }
 
     /// The built-in cosine function.
     #[classattr]
     #[pyo3(name = "COS")]
     pub fn cos() -> PythonExpression {
-        Atom::new_var(State::COS).into()
+        Atom::new_var(Atom::COS).into()
     }
 
     /// The built-in sine function.
     #[classattr]
     #[pyo3(name = "SIN")]
     pub fn sin() -> PythonExpression {
-        Atom::new_var(State::SIN).into()
+        Atom::new_var(Atom::SIN).into()
     }
 
     /// The built-in exponential function.
     #[classattr]
     #[pyo3(name = "EXP")]
     pub fn exp() -> PythonExpression {
-        Atom::new_var(State::EXP).into()
+        Atom::new_var(Atom::EXP).into()
     }
 
     /// The built-in logarithm function.
     #[classattr]
     #[pyo3(name = "LOG")]
     pub fn log() -> PythonExpression {
-        Atom::new_var(State::LOG).into()
+        Atom::new_var(Atom::LOG).into()
     }
 
     /// Return all defined symbol names (function names and variables).

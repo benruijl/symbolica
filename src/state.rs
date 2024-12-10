@@ -88,17 +88,17 @@ impl Default for State {
 }
 
 impl State {
-    pub const ARG: Symbol = Symbol::init_fn(0, 0, false, false, false, false);
-    pub const COEFF: Symbol = Symbol::init_fn(1, 0, false, false, false, false);
-    pub const EXP: Symbol = Symbol::init_fn(2, 0, false, false, false, false);
-    pub const LOG: Symbol = Symbol::init_fn(3, 0, false, false, false, false);
-    pub const SIN: Symbol = Symbol::init_fn(4, 0, false, false, false, false);
-    pub const COS: Symbol = Symbol::init_fn(5, 0, false, false, false, false);
-    pub const SQRT: Symbol = Symbol::init_fn(6, 0, false, false, false, false);
-    pub const DERIVATIVE: Symbol = Symbol::init_fn(7, 0, false, false, false, false);
-    pub const E: Symbol = Symbol::init_var(8, 0);
-    pub const I: Symbol = Symbol::init_var(9, 0);
-    pub const PI: Symbol = Symbol::init_var(10, 0);
+    pub(crate) const ARG: Symbol = Symbol::init_fn(0, 0, false, false, false, false);
+    pub(crate) const COEFF: Symbol = Symbol::init_fn(1, 0, false, false, false, false);
+    pub(crate) const EXP: Symbol = Symbol::init_fn(2, 0, false, false, false, false);
+    pub(crate) const LOG: Symbol = Symbol::init_fn(3, 0, false, false, false, false);
+    pub(crate) const SIN: Symbol = Symbol::init_fn(4, 0, false, false, false, false);
+    pub(crate) const COS: Symbol = Symbol::init_fn(5, 0, false, false, false, false);
+    pub(crate) const SQRT: Symbol = Symbol::init_fn(6, 0, false, false, false, false);
+    pub(crate) const DERIVATIVE: Symbol = Symbol::init_fn(7, 0, false, false, false, false);
+    pub(crate) const E: Symbol = Symbol::init_var(8, 0);
+    pub(crate) const I: Symbol = Symbol::init_var(9, 0);
+    pub(crate) const PI: Symbol = Symbol::init_var(10, 0);
 
     pub const BUILTIN_VAR_LIST: [&'static str; 11] = [
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
@@ -888,7 +888,7 @@ mod tests {
                     if f.get_nargs() == 1 {
                         let arg = f.iter().next().unwrap();
                         if let AtomView::Fun(f2) = arg {
-                            if f2.get_symbol() == State::EXP {
+                            if f2.get_symbol() == Atom::EXP {
                                 if f2.get_nargs() == 1 {
                                     out.set_from_view(&f2.iter().next().unwrap());
                                     return true;

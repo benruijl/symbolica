@@ -1200,8 +1200,8 @@ impl<F: Field> Matrix<F> {
         Ok(det)
     }
 
-    /// Write the matrix in echelon form.
-    fn gaussian_elimination(
+    /// Write the first `max_col` columns of the matrix in echelon form.
+    pub fn gaussian_elimination(
         &mut self,
         max_col: u32,
         early_return: bool,
@@ -1258,7 +1258,7 @@ impl<F: Field> Matrix<F> {
     }
 
     /// Create a row-reduced matrix from a matrix in echelon form.
-    fn back_substitution(&mut self, max_col: u32) {
+    pub fn back_substitution(&mut self, max_col: u32) {
         let field = self.field.clone();
         for i in (0..self.nrows).rev() {
             if let Some(j) = (0..max_col).find(|&j| !F::is_zero(&self[(i, j)])) {
@@ -1284,7 +1284,29 @@ impl<F: Field> Matrix<F> {
         }
     }
 
-    /// Solves `A * x = 0` for the first `max_col` columns in x.
+    /// Augment the matrix with another matrix, e.g. create `[A B]` from matrix `A` and `B`.
+    ///
+    /// Returns an error when the matrices do not have the same number of rows.
+    pub fn augment(&self, matrix: &Matrix<F>) -> Result<Matrix<F>, MatrixError<F>> {
+        if self.nrows != matrix.nrows {
+            return Err(MatrixError::ShapeMismatch);
+        }
+
+        let mut m = Matrix::new(self.nrows, self.ncols + matrix.ncols, self.field.clone());
+
+        for (r, (r1, r2)) in self.row_iter().zip(matrix.row_iter()).enumerate() {
+            m.data[r as usize * m.ncols as usize
+                ..r as usize * m.ncols as usize + self.ncols as usize]
+                .clone_from_slice(r1);
+            m.data[r as usize * m.ncols as usize + self.ncols as usize
+                ..r as usize * m.ncols as usize + m.ncols as usize]
+                .clone_from_slice(r2);
+        }
+
+        Ok(m)
+    }
+
+    /// Solves `A * x = 0` for the first `max_col` columns in `x`.
     /// The other columns are augmented.
     pub fn solve_subsystem(&mut self, max_col: u32) -> Result<u32, MatrixError<F>> {
         if self.nrows < max_col {
@@ -1317,14 +1339,7 @@ impl<F: Field> Matrix<F> {
             });
         }
 
-        // create the augmented matrix
-        let mut m = Matrix::new(neqs, nvars + 1, self.field.clone());
-        for r in 0..neqs {
-            for c in 0..nvars {
-                m[(r, c)] = self[(r, c)].clone();
-            }
-            m[(r, nvars)] = b.data[r as usize].clone();
-        }
+        let mut m = self.augment(b)?;
 
         let mut i = match m.solve_subsystem(nvars) {
             Ok(i) => i,

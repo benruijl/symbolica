@@ -537,7 +537,7 @@ impl Transformer {
                     cur_input.derivative_with_ws_into(*x, workspace, out);
                 }
                 Transformer::Collect(x, key_map, coeff_map) => cur_input
-                    .collect_multiple_impl::<i16>(
+                    .collect_multiple_impl::<i16, _>(
                         x,
                         workspace,
                         if key_map.is_empty() {

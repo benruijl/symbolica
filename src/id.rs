@@ -118,7 +118,7 @@ impl Atom {
     }
 
     /// Returns true iff `self` contains `a` literally.
-    pub fn contains<'a, T: AsAtomView<'a>>(&self, s: T) -> bool {
+    pub fn contains<T: AsAtomView>(&self, s: T) -> bool {
         self.as_view().contains(s.as_atom_view())
     }
 

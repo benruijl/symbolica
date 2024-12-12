@@ -3907,7 +3907,7 @@ impl PythonExpression {
         for a in x {
             if let Ok(r) = a.extract::<PythonExpression>() {
                 if matches!(r.expr, Atom::Var(_) | Atom::Fun(_)) {
-                    xs.push(r.expr.into());
+                    xs.push(r.expr);
                 } else {
                     return Err(exceptions::PyValueError::new_err(
                         "Collect must be done wrt a variable or function",
@@ -3920,7 +3920,7 @@ impl PythonExpression {
             }
         }
 
-        let b = self.expr.collect_multiple::<i16>(
+        let b = self.expr.collect_multiple::<i16, _>(
             &Arc::new(xs),
             if let Some(key_map) = key_map {
                 Some(Box::new(move |key, out| {
@@ -4038,7 +4038,7 @@ impl PythonExpression {
         for a in x {
             if let Ok(r) = a.extract::<PythonExpression>() {
                 if matches!(r.expr, Atom::Var(_) | Atom::Fun(_)) {
-                    xs.push(r.expr.into());
+                    xs.push(r.expr);
                 } else {
                     return Err(exceptions::PyValueError::new_err(
                         "Collect must be done wrt a variable or function",
@@ -4051,7 +4051,7 @@ impl PythonExpression {
             }
         }
 
-        let list = self.expr.coefficient_list::<i16>(&xs);
+        let list = self.expr.coefficient_list::<i16, _>(&xs);
 
         let py_list: Vec<_> = list
             .into_iter()
@@ -4700,7 +4700,7 @@ impl PythonExpression {
             }
         }
 
-        let res = AtomView::solve_linear_system::<u16>(&system_b, &vars).map_err(|e| {
+        let res = AtomView::solve_linear_system::<u16, _, Atom>(&system_b, &vars).map_err(|e| {
             exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
         })?;
 

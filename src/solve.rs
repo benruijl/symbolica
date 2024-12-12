@@ -1,10 +1,10 @@
 use std::{ops::Neg, sync::Arc};
 
 use crate::{
-    atom::{Atom, AtomView, Symbol},
+    atom::{AsAtomView, Atom, AtomView, Symbol},
     domains::{
         float::{FloatField, Real, SingleFloat},
-        integer::{IntegerRing, Z},
+        integer::Z,
         rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
         InternalOrdering,
@@ -29,8 +29,9 @@ impl Atom {
     /// Solve a non-linear system numerically over the reals using Newton's method.
     pub fn nsolve_system<
         N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
+        T: AsAtomView,
     >(
-        system: &[AtomView],
+        system: &[T],
         vars: &[Symbol],
         init: &[N],
         prec: N,
@@ -41,11 +42,26 @@ impl Atom {
 
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
-    pub fn solve_linear_system<E: PositiveExponent>(
-        system: &[AtomView],
-        vars: &[Symbol],
+    pub fn solve_linear_system<E: PositiveExponent, T1: AsAtomView, T2: AsAtomView>(
+        system: &[T1],
+        vars: &[T2],
     ) -> Result<Vec<Atom>, String> {
-        AtomView::solve_linear_system::<E>(system, vars)
+        AtomView::solve_linear_system::<E, T1, T2>(system, vars)
+    }
+
+    /// Convert a system of linear equations to a matrix representation, returning the matrix
+    /// and the right-hand side.
+    pub fn system_to_matrix<E: PositiveExponent, T1: AsAtomView, T2: AsAtomView>(
+        system: &[T1],
+        vars: &[T2],
+    ) -> Result<
+        (
+            Matrix<RationalPolynomialField<Z, E>>,
+            Matrix<RationalPolynomialField<Z, E>>,
+        ),
+        String,
+    > {
+        AtomView::system_to_matrix::<E, T1, T2>(system, vars)
     }
 }
 
@@ -93,6 +109,20 @@ impl<'a> AtomView<'a> {
 
     /// Solve a non-linear system numerically over the reals using Newton's method.
     pub fn nsolve_system<
+        N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
+        T: AsAtomView,
+    >(
+        system: &[T],
+        vars: &[Symbol],
+        init: &[N],
+        prec: N,
+        max_iterations: usize,
+    ) -> Result<Vec<N>, String> {
+        let system = system.iter().map(|v| v.as_atom_view()).collect::<Vec<_>>();
+        AtomView::nsolve_system_impl(&system, vars, init, prec, max_iterations)
+    }
+
+    fn nsolve_system_impl<
         N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
     >(
         system: &[AtomView],
@@ -189,18 +219,58 @@ impl<'a> AtomView<'a> {
 
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
-    pub fn solve_linear_system<E: PositiveExponent>(
-        system: &[AtomView],
-        vars: &[Symbol],
+    pub fn solve_linear_system<E: PositiveExponent, T1: AsAtomView, T2: AsAtomView>(
+        system: &[T1],
+        vars: &[T2],
     ) -> Result<Vec<Atom>, String> {
-        let vars: Vec<_> = vars.iter().map(|v| Variable::Symbol(*v)).collect();
+        let system: Vec<_> = system.iter().map(|v| v.as_atom_view()).collect();
 
+        let vars: Vec<_> = vars
+            .iter()
+            .map(|v| v.as_atom_view().to_owned().into())
+            .collect();
+
+        AtomView::solve_linear_system_impl::<E>(&system, &vars)
+    }
+
+    /// Convert a system of linear equations to a matrix representation, returning the matrix
+    /// and the right-hand side.
+    pub fn system_to_matrix<E: PositiveExponent, T1: AsAtomView, T2: AsAtomView>(
+        system: &[T1],
+        vars: &[T2],
+    ) -> Result<
+        (
+            Matrix<RationalPolynomialField<Z, E>>,
+            Matrix<RationalPolynomialField<Z, E>>,
+        ),
+        String,
+    > {
+        let system: Vec<_> = system.iter().map(|v| v.as_atom_view()).collect();
+
+        let vars: Vec<_> = vars
+            .iter()
+            .map(|v| v.as_atom_view().to_owned().into())
+            .collect();
+
+        AtomView::system_to_matrix_impl::<E>(&system, &vars)
+    }
+
+    fn system_to_matrix_impl<E: PositiveExponent>(
+        system: &[AtomView],
+        vars: &[Variable],
+    ) -> Result<
+        (
+            Matrix<RationalPolynomialField<Z, E>>,
+            Matrix<RationalPolynomialField<Z, E>>,
+        ),
+        String,
+    > {
         let mut mat = Vec::with_capacity(system.len() * vars.len());
         let mut row = vec![RationalPolynomial::<_, E>::new(&Z, Arc::new(vec![])); vars.len()];
-        let mut rhs = vec![RationalPolynomial::<_, E>::new(&Z, Arc::new(vec![])); vars.len()];
+        let mut rhs = vec![RationalPolynomial::<_, E>::new(&Z, Arc::new(vec![])); system.len()];
 
         for (si, a) in system.iter().enumerate() {
-            let rat: RationalPolynomial<IntegerRing, E> = a.to_rational_polynomial(&Q, &Z, None);
+            let rat: RationalPolynomial<Z, E> = a.to_rational_polynomial(&Q, &Z, None);
 
             let poly = rat.to_polynomial(&vars, true).unwrap();
 
@@ -243,9 +313,18 @@ impl<'a> AtomView<'a> {
 
         let field = RationalPolynomialField::new(Z);
 
-        let nrows = (mat.len() / rhs.len()) as u32;
-        let m = Matrix::from_linear(mat, nrows, rhs.len() as u32, field.clone()).unwrap();
+        let m = Matrix::from_linear(mat, system.len() as u32, vars.len() as u32, field.clone())
+            .unwrap();
         let b = Matrix::new_vec(rhs, field);
+
+        Ok((m, b))
+    }
+
+    fn solve_linear_system_impl<E: PositiveExponent>(
+        system: &[AtomView],
+        vars: &[Variable],
+    ) -> Result<Vec<Atom>, String> {
+        let (m, b) = Self::system_to_matrix_impl::<E>(system, vars)?;
 
         let sol = match m.solve(&b) {
             Ok(sol) => sol,
@@ -268,7 +347,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{Atom, AtomView},
+        atom::{representation::InlineVar, Atom, AtomView},
         domains::{
             float::{Real, F64},
             integer::Z,
@@ -282,19 +361,18 @@ mod test {
 
     #[test]
     fn solve() {
-        let x = State::get_symbol("v1");
-        let y = State::get_symbol("v2");
-        let z = State::get_symbol("v3");
+        let x = State::get_symbol("v1").into();
+        let y = State::get_symbol("v2").into();
+        let z = State::get_symbol("v3").into();
         let eqs = [
             "v4*v1 + f1(v4)*v2 + v3 - 1",
             "v1 + v4*v2 + v3/v4 - 2",
             "(v4-1)v1 + v4*v3",
         ];
 
-        let atoms: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
-        let system: Vec<_> = atoms.iter().map(|x| x.as_view()).collect();
+        let system: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
 
-        let sol = AtomView::solve_linear_system::<u8>(&system, &[x, y, z]).unwrap();
+        let sol = AtomView::solve_linear_system::<u8, _, InlineVar>(&system, &[x, y, z]).unwrap();
 
         let res = [
             "(v4^3-2*v4^2*f1(v4))*(v4^2-v4^3+v4^4-f1(v4)+v4*f1(v4)-v4^2*f1(v4))^-1",

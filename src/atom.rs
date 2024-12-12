@@ -171,6 +171,13 @@ impl std::fmt::Display for AtomView<'_> {
     }
 }
 
+impl From<Symbol> for Atom {
+    /// Convert a symbol to an atom. This will allocate memory.
+    fn from(symbol: Symbol) -> Atom {
+        Atom::new_var(symbol)
+    }
+}
+
 impl<'a> From<NumView<'a>> for AtomView<'a> {
     fn from(n: NumView<'a>) -> AtomView<'a> {
         AtomView::Num(n)
@@ -308,31 +315,37 @@ impl<'a> AtomOrView<'a> {
 /// A trait for any type that can be converted into an `AtomView`.
 /// To be used for functions that accept any argument that can be
 /// converted to an `AtomView`.
-pub trait AsAtomView<'a>: Copy + Sized {
-    fn as_atom_view(self) -> AtomView<'a>;
+pub trait AsAtomView {
+    fn as_atom_view(&self) -> AtomView;
 }
 
-impl<'a> AsAtomView<'a> for AtomView<'a> {
-    fn as_atom_view(self) -> AtomView<'a> {
-        self
+impl<'a> AsAtomView for AtomView<'a> {
+    fn as_atom_view(&self) -> AtomView<'a> {
+        *self
     }
 }
 
-impl<'a> AsAtomView<'a> for &'a InlineVar {
-    fn as_atom_view(self) -> AtomView<'a> {
+impl AsAtomView for InlineVar {
+    fn as_atom_view(&self) -> AtomView {
         self.as_view()
     }
 }
 
-impl<'a> AsAtomView<'a> for &'a InlineNum {
-    fn as_atom_view(self) -> AtomView<'a> {
+impl AsAtomView for InlineNum {
+    fn as_atom_view(&self) -> AtomView {
         self.as_view()
     }
 }
 
-impl<'a, T: AsRef<Atom>> AsAtomView<'a> for &'a T {
-    fn as_atom_view(self) -> AtomView<'a> {
+impl<T: AsRef<Atom>> AsAtomView for T {
+    fn as_atom_view(&self) -> AtomView {
         self.as_ref().as_view()
+    }
+}
+
+impl<'a> AsAtomView for AtomOrView<'a> {
+    fn as_atom_view(&self) -> AtomView {
+        self.as_view()
     }
 }
 
@@ -872,7 +885,7 @@ impl FunctionBuilder {
     }
 
     /// Add an argument to the function.
-    pub fn add_arg<'b, T: AsAtomView<'b>>(mut self, arg: T) -> FunctionBuilder {
+    pub fn add_arg<T: AsAtomView>(mut self, arg: T) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
             f.add_arg(arg.as_atom_view());
         }
@@ -881,7 +894,7 @@ impl FunctionBuilder {
     }
 
     /// Add multiple arguments to the function.
-    pub fn add_args<'b, T: AsAtomView<'b>>(mut self, args: &[T]) -> FunctionBuilder {
+    pub fn add_args<T: AsAtomView>(mut self, args: &[T]) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
             for a in args {
                 f.add_arg(a.as_atom_view());
@@ -1010,7 +1023,7 @@ impl Atom {
     }
 
     /// Take the `self` to the power `exp`. Use [`Atom::npow()`] for a numerical power and [`Atom::rpow()`] for the reverse operation.
-    pub fn pow<'a, T: AsAtomView<'a>>(&self, exp: T) -> Atom {
+    pub fn pow<T: AsAtomView>(&self, exp: T) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
             self.as_view()
@@ -1022,7 +1035,7 @@ impl Atom {
     }
 
     /// Take `base` to the power `self`.
-    pub fn rpow<'a, T: AsAtomView<'a>>(&self, base: T) -> Atom {
+    pub fn rpow<T: AsAtomView>(&self, base: T) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
             base.as_atom_view()
@@ -1034,7 +1047,7 @@ impl Atom {
     }
 
     /// Add the atoms in `args`.
-    pub fn add_many<'a, T: AsAtomView<'a> + Copy>(args: &[T]) -> Atom {
+    pub fn add_many<'a, T: AsAtomView + Copy>(args: &[T]) -> Atom {
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
@@ -1049,7 +1062,7 @@ impl Atom {
     }
 
     /// Multiply the atoms in `args`.
-    pub fn mul_many<'a, T: AsAtomView<'a> + Copy>(args: &[T]) -> Atom {
+    pub fn mul_many<'a, T: AsAtomView + Copy>(args: &[T]) -> Atom {
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();

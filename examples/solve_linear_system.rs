@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::{Atom, AtomView},
+    atom::{representation::InlineVar, Atom, AtomView},
     domains::{
         integer::Z,
         rational::Q,
@@ -13,15 +13,14 @@ use symbolica::{
 };
 
 fn solve() {
-    let x = State::get_symbol("x");
-    let y = State::get_symbol("y");
-    let z = State::get_symbol("z");
+    let x = State::get_symbol("x").into();
+    let y = State::get_symbol("y").into();
+    let z = State::get_symbol("z").into();
     let eqs = ["c*x + f(c)*y + z - 1", "x + c*y + z/c - 2", "(c-1)x + c*z"];
 
-    let atoms: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
-    let system: Vec<_> = atoms.iter().map(|x| x.as_view()).collect();
+    let system: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
 
-    let sol = AtomView::solve_linear_system::<u8>(&system, &[x, y, z]).unwrap();
+    let sol = AtomView::solve_linear_system::<u8, _, InlineVar>(&system, &[x, y, z]).unwrap();
 
     for (v, s) in ["x", "y", "z"].iter().zip(&sol) {
         println!("{} = {}", v, s);

@@ -40,6 +40,7 @@ const ZERO_DATA: [u8; 3] = [NUM_ID, 1, 0];
 pub type RawAtom = Vec<u8>;
 
 /// An inline variable.
+#[derive(Copy, Clone)]
 pub struct InlineVar {
     data: [u8; 16],
     size: u8,
@@ -101,6 +102,7 @@ impl From<Symbol> for InlineVar {
 }
 
 /// An inline rational number that has 64-bit components.
+#[derive(Copy, Clone)]
 pub struct InlineNum {
     data: [u8; 24],
     size: u8,

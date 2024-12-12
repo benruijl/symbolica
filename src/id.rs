@@ -122,6 +122,21 @@ impl Atom {
         self.as_view().contains(s.as_atom_view())
     }
 
+    /// Check if the expression can be considered a polynomial in some variables, including
+    /// redefinitions. For example `f(x)+y` is considered a polynomial in `f(x)` and `y`, whereas
+    /// `f(x)+x` is not a polynomial.
+    ///
+    /// Rational powers or powers in variables are not rewritten, e.g. `x^(2y)` is not considered
+    /// polynomial in `x^y`.
+    pub fn is_polynomial(
+        &self,
+        allow_not_expanded: bool,
+        allow_negative_powers: bool,
+    ) -> Option<HashSet<AtomView<'_>>> {
+        self.as_view()
+            .is_polynomial(allow_not_expanded, allow_negative_powers)
+    }
+
     /// Replace all occurrences of the pattern.
     pub fn replace_all(
         &self,
@@ -342,6 +357,150 @@ impl<'a> AtomView<'a> {
         }
 
         false
+    }
+
+    /// Check if the expression can be considered a polynomial in some variables, including
+    /// redefinitions. For example `f(x)+y` is considered a polynomial in `f(x)` and `y`, whereas
+    /// `f(x)+x` is not a polynomial.
+    ///
+    /// Rational powers or powers in variables are not rewritten, e.g. `x^(2y)` is not considered
+    /// polynomial in `x^y`.
+    pub fn is_polynomial(
+        &self,
+        allow_not_expanded: bool,
+        allow_negative_powers: bool,
+    ) -> Option<HashSet<AtomView<'a>>> {
+        let mut vars = HashMap::default();
+        let mut symbol_cache = HashSet::default();
+        if self.is_polynomial_impl(
+            allow_not_expanded,
+            allow_negative_powers,
+            &mut vars,
+            &mut symbol_cache,
+        ) {
+            symbol_cache.clear();
+            for (k, v) in vars {
+                if v {
+                    symbol_cache.insert(k);
+                }
+            }
+
+            Some(symbol_cache)
+        } else {
+            None
+        }
+    }
+
+    fn is_polynomial_impl(
+        &self,
+        allow_not_expanded: bool,
+        allow_negative_powers: bool,
+        variables: &mut HashMap<AtomView<'a>, bool>,
+        symbol_cache: &mut HashSet<AtomView<'a>>,
+    ) -> bool {
+        if let Some(x) = variables.get(self) {
+            return *x;
+        }
+
+        macro_rules! block_check {
+            ($e: expr) => {
+                symbol_cache.clear();
+                $e.get_all_indeterminates_impl(true, symbol_cache);
+                for x in symbol_cache.drain() {
+                    if variables.contains_key(&x) {
+                        return false;
+                    } else {
+                        variables.insert(x, false); // disallow at any level
+                    }
+                }
+
+                variables.insert(*$e, true); // overwrites block above
+            };
+        }
+
+        match self {
+            AtomView::Num(_) => true,
+            AtomView::Var(_) => {
+                variables.insert(*self, true);
+                true
+            }
+            AtomView::Fun(_) => {
+                block_check!(self);
+                true
+            }
+            AtomView::Pow(pow_view) => {
+                // x^y is allowed if x and y do not appear elsewhere
+                let (base, exp) = pow_view.get_base_exp();
+
+                if let AtomView::Num(_) = exp {
+                    let (positive, integer) = if let Ok(k) = i64::try_from(exp) {
+                        (k >= 0, true)
+                    } else {
+                        (false, false)
+                    };
+
+                    if integer && (allow_negative_powers || positive) {
+                        if variables.get(&base) == Some(&true) {
+                            return true;
+                        }
+
+                        if allow_not_expanded && positive {
+                            // do not consider (x+y)^-2 a polynomial in x and y
+                            return base.is_polynomial_impl(
+                                allow_not_expanded,
+                                allow_negative_powers,
+                                variables,
+                                symbol_cache,
+                            );
+                        }
+
+                        // turn the base into a variable
+                        block_check!(&base);
+                        return true;
+                    }
+                }
+
+                block_check!(self);
+                true
+            }
+            AtomView::Mul(mul_view) => {
+                for child in mul_view {
+                    if !allow_not_expanded {
+                        if let AtomView::Add(_) = child {
+                            if variables.get(&child) == Some(&true) {
+                                continue;
+                            }
+
+                            block_check!(&child);
+                            continue;
+                        }
+                    }
+
+                    if !child.is_polynomial_impl(
+                        allow_not_expanded,
+                        allow_negative_powers,
+                        variables,
+                        symbol_cache,
+                    ) {
+                        return false;
+                    }
+                }
+                true
+            }
+            AtomView::Add(add_view) => {
+                for child in add_view {
+                    if !child.is_polynomial_impl(
+                        allow_not_expanded,
+                        allow_negative_powers,
+                        variables,
+                        symbol_cache,
+                    ) {
+                        return false;
+                    }
+                }
+                true
+            }
+        }
     }
 
     /// Replace part of an expression by calling the map `m` on each subexpression.
@@ -3649,5 +3808,16 @@ mod test {
         let p = Pattern::parse("fc1(f1(v1_),f1(2),f1(3))").unwrap();
         let expr = p.replace_all(expr.as_view(), &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
+    }
+
+    #[test]
+    fn is_polynomial() {
+        let e = Atom::parse("v1^2 + (1+v5)^3 / v1 + (1+v3)*(1+v4)^v7 + v1^2 + (v1+v2)^3").unwrap();
+        let vars = e.as_view().is_polynomial(true, true).unwrap();
+        assert_eq!(vars.len(), 5);
+
+        let e = Atom::parse("(1+v5)^(3/2) / v6 + (1+v3)*(1+v4)^v7 + (v1+v2)^3").unwrap();
+        let vars = e.as_view().is_polynomial(false, false).unwrap();
+        assert_eq!(vars.len(), 5);
     }
 }

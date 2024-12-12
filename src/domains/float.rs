@@ -1993,6 +1993,22 @@ pub struct ErrorPropagatingFloat<T: NumericalFloatLike> {
     abs_err: f64,
 }
 
+impl From<f64> for ErrorPropagatingFloat<f64> {
+    fn from(value: f64) -> Self {
+        if value == 0. {
+            ErrorPropagatingFloat {
+                value,
+                abs_err: f64::EPSILON,
+            }
+        } else {
+            ErrorPropagatingFloat {
+                value,
+                abs_err: f64::EPSILON * value.abs(),
+            }
+        }
+    }
+}
+
 impl<T: NumericalFloatLike> Neg for ErrorPropagatingFloat<T> {
     type Output = Self;
 

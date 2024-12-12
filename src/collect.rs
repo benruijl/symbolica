@@ -549,7 +549,23 @@ impl<'a> AtomView<'a> {
                         None
                     }
                 }
-                AtomView::Pow(_) | AtomView::Var(_) | AtomView::Fun(_) => None,
+                AtomView::Pow(p) => {
+                    let (b, e) = p.get_base_exp();
+                    if let Ok(e) = i64::try_from(e) {
+                        if let Some(n) = get_num(b) {
+                            if let Coefficient::Rational(r) = n {
+                                if e < 0 {
+                                    return Some(r.pow((-e) as u64).inv().into());
+                                } else {
+                                    return Some(r.pow(e as u64).into());
+                                }
+                            }
+                        }
+                    }
+
+                    None
+                }
+                AtomView::Var(_) | AtomView::Fun(_) => None,
             }
         }
 
@@ -605,6 +621,25 @@ impl<'a> AtomView<'a> {
                     out.set_from_view(self);
                 } else {
                     r.as_view().normalize(ws, out);
+                }
+
+                changed
+            }
+            AtomView::Pow(p) => {
+                let (b, e) = p.get_base_exp();
+
+                let mut changed = false;
+                let mut nb = ws.new_atom();
+                changed |= b.collect_num_impl(ws, &mut nb);
+                let mut ne = ws.new_atom();
+                changed |= e.collect_num_impl(ws, &mut ne);
+
+                if !changed {
+                    out.set_from_view(self);
+                } else {
+                    let mut np = ws.new_atom();
+                    np.to_pow(nb.as_view(), ne.as_view());
+                    np.as_view().normalize(ws, out);
                 }
 
                 changed

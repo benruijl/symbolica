@@ -17,10 +17,13 @@ use crate::{
     coefficient::CoefficientView,
     combinatorics::unique_permutations,
     domains::{
-        float::{Complex, NumericalFloatLike, Real},
+        float::{
+            Complex, ErrorPropagatingFloat, NumericalFloatLike, Real, RealNumberLike, SingleFloat,
+        },
         integer::Integer,
         rational::Rational,
     },
+    id::ConditionResult,
     state::State,
     LicenseManager,
 };
@@ -236,6 +239,12 @@ impl Atom {
             optimization_settings.hot_start.clone(),
             optimization_settings.verbose,
         ))
+    }
+
+    /// Check if the expression could be 0, using (potentially) numerical sampling with
+    /// a given tolerance and number of iterations.
+    pub fn zero_test(&self, iterations: usize, tolerance: f64) -> ConditionResult {
+        self.as_view().zero_test(iterations, tolerance)
     }
 }
 
@@ -4155,6 +4164,164 @@ impl<'a> AtomView<'a> {
             }
         }
     }
+
+    /// Check if the expression could be 0, using (potentially) numerical sampling with
+    /// a given tolerance and number of iterations.
+    pub fn zero_test(&self, iterations: usize, tolerance: f64) -> ConditionResult {
+        match self {
+            AtomView::Num(num_view) => {
+                if num_view.is_zero() {
+                    ConditionResult::True
+                } else {
+                    ConditionResult::False
+                }
+            }
+            AtomView::Var(_) => ConditionResult::False,
+            AtomView::Fun(_) => ConditionResult::False,
+            AtomView::Pow(p) => p.get_base().zero_test(iterations, tolerance),
+            AtomView::Mul(mul_view) => {
+                let mut is_zero = ConditionResult::False;
+                for arg in mul_view {
+                    match arg.zero_test(iterations, tolerance) {
+                        ConditionResult::True => return ConditionResult::True,
+                        ConditionResult::False => {}
+                        ConditionResult::Inconclusive => {
+                            is_zero = ConditionResult::Inconclusive;
+                        }
+                    }
+                }
+
+                is_zero
+            }
+            AtomView::Add(_) => {
+                // an expanded polynomial is only zero if it is a literal zero
+                if self.is_polynomial(false, true).is_some() {
+                    ConditionResult::False
+                } else {
+                    self.zero_test_impl(iterations, tolerance)
+                }
+            }
+        }
+    }
+
+    fn zero_test_impl(&self, iterations: usize, tolerance: f64) -> ConditionResult {
+        // collect all variables and functions and fill in random variables
+
+        let mut rng = rand::thread_rng();
+
+        if self.contains_symbol(State::I) {
+            let mut vars: HashMap<_, _> = self
+                .get_all_indeterminates(true)
+                .into_iter()
+                .filter_map(|x| {
+                    let s = x.get_symbol().unwrap();
+                    if !State::is_builtin(s) || s == Atom::DERIVATIVE {
+                        Some((x, Complex::new(0f64.into(), 0f64.into())))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let mut cache = HashMap::default();
+
+            for _ in 0..iterations {
+                cache.clear();
+
+                for x in vars.values_mut() {
+                    *x = x.sample_unit(&mut rng);
+                }
+
+                let r = self
+                    .evaluate(
+                        |x| {
+                            Complex::new(
+                                ErrorPropagatingFloat::new(
+                                    0f64.from_rational(x),
+                                    -0f64.get_epsilon().log10(),
+                                ),
+                                ErrorPropagatingFloat::new(
+                                    0f64.zero(),
+                                    -0f64.get_epsilon().log10(),
+                                ),
+                            )
+                        },
+                        &vars,
+                        &HashMap::default(),
+                        &mut cache,
+                    )
+                    .unwrap();
+
+                let res_re = r.re.get_num().to_f64();
+                let res_im = r.im.get_num().to_f64();
+                if res_re.is_finite()
+                    && (res_re - r.re.get_absolute_error() > 0.
+                        || res_re + r.re.get_absolute_error() < 0.)
+                    || res_im.is_finite()
+                        && (res_im - r.im.get_absolute_error() > 0.
+                            || res_im + r.im.get_absolute_error() < 0.)
+                {
+                    return ConditionResult::False;
+                }
+
+                if vars.len() == 0 && r.re.get_absolute_error() < tolerance {
+                    return ConditionResult::True;
+                }
+            }
+
+            ConditionResult::Inconclusive
+        } else {
+            let mut vars: HashMap<_, ErrorPropagatingFloat<f64>> = self
+                .get_all_indeterminates(true)
+                .into_iter()
+                .filter_map(|x| {
+                    let s = x.get_symbol().unwrap();
+                    if !State::is_builtin(s) || s == Atom::DERIVATIVE {
+                        Some((x, 0f64.into()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let mut cache = HashMap::default();
+
+            for _ in 0..iterations {
+                cache.clear();
+
+                for x in vars.values_mut() {
+                    *x = x.sample_unit(&mut rng);
+                }
+
+                let r = self
+                    .evaluate(
+                        |x| {
+                            ErrorPropagatingFloat::new(
+                                0f64.from_rational(x),
+                                -0f64.get_epsilon().log10(),
+                            )
+                        },
+                        &vars,
+                        &HashMap::default(),
+                        &mut cache,
+                    )
+                    .unwrap();
+
+                let res = r.get_num().to_f64();
+                if res.is_finite()
+                    && (res - r.get_absolute_error() > 0. || res + r.get_absolute_error() < 0.)
+                {
+                    return ConditionResult::False;
+                }
+
+                if vars.len() == 0 && r.get_absolute_error() < tolerance {
+                    return ConditionResult::True;
+                }
+            }
+
+            ConditionResult::Inconclusive
+        }
+    }
 }
 
 #[cfg(test)]
@@ -4165,6 +4332,7 @@ mod test {
         atom::Atom,
         domains::{float::Float, rational::Rational},
         evaluate::{EvaluationFn, FunctionMap, OptimizationSettings},
+        id::ConditionResult,
         state::State,
     };
 
@@ -4303,5 +4471,14 @@ mod test {
         let mut e_f64 = evaluator.map_coeff(&|x| x.into());
         let r = e_f64.evaluate_single(&[1.1]);
         assert!((r - 1622709.2254269677).abs() / 1622709.2254269677 < 1e-10);
+    }
+
+    #[test]
+    fn zero_test() {
+        let e = Atom::parse("(sin(v1)^2-sin(v1))(sin(v1)^2+sin(v1))^2 - (1/4 sin(2v1)^2-1/2 sin(2v1)cos(v1)-2 cos(v1)^2+1/2 sin(2v1)cos(v1)^3+3 cos(v1)^4-cos(v1)^6)").unwrap();
+        assert_eq!(e.zero_test(10, f64::EPSILON), ConditionResult::Inconclusive);
+
+        let e = Atom::parse("x + (1+x)^2 + (x+2)*5").unwrap();
+        assert_eq!(e.zero_test(10, f64::EPSILON), ConditionResult::False);
     }
 }

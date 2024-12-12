@@ -7,10 +7,33 @@ use super::{
     integer::Integer, Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
+use dyn_clone::DynClone;
 use rand::Rng;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AtomField {}
+pub trait Map: Fn(AtomView, &mut Atom) -> bool + DynClone + Send + Sync {}
+dyn_clone::clone_trait_object!(Map);
+impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> bool> Map for T {}
+
+/// The field of general expressions.
+#[derive(Clone)]
+pub struct AtomField {
+    /// Perform a cancellation check of numerators and denominators after a division.
+    pub cancel_check_on_division: bool,
+    /// A custom normalization function applied after every operation.
+    pub custom_normalization: Option<Box<dyn Map>>,
+}
+
+impl PartialEq for AtomField {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for AtomField {}
+
+impl std::hash::Hash for AtomField {
+    fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {}
+}
 
 impl Default for AtomField {
     fn default() -> Self {
@@ -20,7 +43,34 @@ impl Default for AtomField {
 
 impl AtomField {
     pub fn new() -> AtomField {
-        AtomField {}
+        AtomField {
+            custom_normalization: None,
+            cancel_check_on_division: false,
+        }
+    }
+
+    #[inline(always)]
+    fn normalize(&self, r: Atom) -> Atom {
+        if let Some(f) = &self.custom_normalization {
+            let mut res = Atom::new();
+            if f(r.as_view(), &mut res) {
+                res
+            } else {
+                r
+            }
+        } else {
+            r
+        }
+    }
+
+    #[inline(always)]
+    fn normalize_mut(&self, r: &mut Atom) {
+        if let Some(f) = &self.custom_normalization {
+            let mut res = Atom::new();
+            if f(r.as_view(), &mut res) {
+                std::mem::swap(r, &mut res);
+            }
+        }
     }
 }
 
@@ -46,39 +96,44 @@ impl Ring for AtomField {
     type Element = Atom;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        a + b
+        self.normalize(a + b)
     }
 
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        a - b
+        self.normalize(a - b)
     }
 
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        a * b
+        self.normalize(a * b)
     }
 
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = &*a + b;
+        self.normalize_mut(a);
     }
 
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = &*a - b;
+        self.normalize_mut(a);
     }
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, b);
+        self.normalize_mut(a);
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
         *a = &*a + self.mul(b, c);
+        self.normalize_mut(a);
     }
 
     fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
         *a = &*a - self.mul(b, c);
+        self.normalize_mut(a);
     }
 
     fn neg(&self, a: &Self::Element) -> Self::Element {
-        -a
+        self.normalize(-a)
     }
 
     fn zero(&self) -> Self::Element {
@@ -90,11 +145,12 @@ impl Ring for AtomField {
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
-        b.npow(Integer::from(e))
+        self.normalize(b.npow(Integer::from(e)))
     }
 
+    /// Check if the result could be 0 using a statistical method.
     fn is_zero(a: &Self::Element) -> bool {
-        a.is_zero()
+        !a.as_view().zero_test(10, f64::EPSILON).is_false()
     }
 
     fn is_one(&self, a: &Self::Element) -> bool {
@@ -162,7 +218,7 @@ impl EuclideanDomain for AtomField {
     }
 
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
-        (a / b, self.zero())
+        (self.div(a, b), self.zero())
     }
 
     fn gcd(&self, _a: &Self::Element, _b: &Self::Element) -> Self::Element {
@@ -173,16 +229,28 @@ impl EuclideanDomain for AtomField {
 
 impl Field for AtomField {
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        a / b
+        let r = a / b;
+
+        self.normalize(if self.cancel_check_on_division {
+            r.cancel()
+        } else {
+            r
+        })
     }
 
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.div(a, b);
+
+        if self.cancel_check_on_division {
+            *a = a.cancel();
+        }
+
+        self.normalize_mut(a);
     }
 
     fn inv(&self, a: &Self::Element) -> Self::Element {
         let one = Atom::new_num(1);
-        self.div(&one, a)
+        self.normalize(self.div(&one, a))
     }
 }
 

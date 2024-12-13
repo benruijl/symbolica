@@ -3975,7 +3975,7 @@ impl<'a> AtomView<'a> {
     /// a variable or a function with fixed arguments.
     ///
     /// All variables and all user functions in the expression must occur in the map.
-    pub fn evaluate<T: Real, F: Fn(&Rational) -> T + Copy>(
+    pub(crate) fn evaluate<T: Real, F: Fn(&Rational) -> T + Copy>(
         &self,
         coeff_map: F,
         const_map: &HashMap<AtomView<'_>, T>,

@@ -19,7 +19,7 @@ use crate::{
     evaluate::{EvalTree, EvaluationFn, ExpressionEvaluator, FunctionMap, OptimizationSettings},
     id::{
         BorrowPatternOrMap, BorrowReplacement, Condition, ConditionResult, Context, MatchSettings,
-        Pattern, PatternAtomTreeIterator, PatternOrMap, PatternRestriction, ReplaceIterator,
+        Pattern, PatternAtomTreeIterator, PatternRestriction, ReplaceIterator,
     },
     poly::{
         factor::Factorize, gcd::PolynomialGCD, polynomial::MultivariatePolynomial, series::Series,
@@ -154,6 +154,11 @@ pub trait AtomCore {
     /// `2*(x+y)` -> `2*x+2*y`.
     fn expand_num(&self) -> Atom {
         self.as_atom_view().expand_num()
+    }
+
+    /// Check if the expression is expanded, optionally in only the variable or function `var`.
+    fn is_expanded(&self, var: Option<AtomView>) -> bool {
+        self.as_atom_view().is_expanded(var)
     }
 
     /// Take a derivative of the expression with respect to `x`.
@@ -304,7 +309,7 @@ pub trait AtomCore {
         self.as_atom_view().set_coefficient_ring(vars)
     }
 
-    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// Convert all coefficients to floats with a given precision `decimal_prec`.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
     fn coefficients_to_float(&self, decimal_prec: u32) -> Atom {
         let mut a = Atom::new();
@@ -313,7 +318,7 @@ pub trait AtomCore {
         a
     }
 
-    /// Convert all coefficients to floats with a given precision `decimal_prec``.
+    /// Convert all coefficients to floats with a given precision `decimal_prec`.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
     fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
         self.as_atom_view()
@@ -576,22 +581,28 @@ pub trait AtomCore {
     }
 
     /// Return an iterator that replaces the pattern in the target once.
-    fn replace_iter<'a>(
+    fn replace_iter<'a, R: BorrowPatternOrMap>(
         &'a self,
         pattern: &'a Pattern,
-        rhs: &'a PatternOrMap,
-        conditions: &'a Condition<PatternRestriction>,
-        settings: &'a MatchSettings,
+        rhs: &'a R,
+        conditions: Option<&'a Condition<PatternRestriction>>,
+        settings: Option<&'a MatchSettings>,
     ) -> ReplaceIterator<'a, 'a> {
-        ReplaceIterator::new(pattern, self.as_atom_view(), rhs, conditions, settings)
+        ReplaceIterator::new(
+            pattern,
+            self.as_atom_view(),
+            rhs.borrow(),
+            conditions,
+            settings,
+        )
     }
 
     /// Return an iterator over matched expressions.
     fn pattern_match<'a>(
         &'a self,
         pattern: &'a Pattern,
-        conditions: &'a Condition<PatternRestriction>,
-        settings: &'a MatchSettings,
+        conditions: Option<&'a Condition<PatternRestriction>>,
+        settings: Option<&'a MatchSettings>,
     ) -> PatternAtomTreeIterator<'a, 'a> {
         PatternAtomTreeIterator::new(pattern, self.as_atom_view(), conditions, settings)
     }

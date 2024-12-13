@@ -1,7 +1,8 @@
 use symbolica::{
     atom::{Atom, AtomCore},
-    id::{Condition, Match, MatchSettings, PatternAtomTreeIterator},
+    id::Match,
     state::State,
+    symb,
 };
 
 fn main() {
@@ -9,13 +10,18 @@ fn main() {
     let pat_expr = Atom::parse("f(x_)").unwrap();
 
     let pattern = pat_expr.to_pattern();
-    let restrictions = Condition::default();
-    let settings = MatchSettings::default();
 
     println!("> Matching pattern {} to {}:", pat_expr, expr);
 
-    let mut it = PatternAtomTreeIterator::new(&pattern, expr.as_view(), &restrictions, &settings);
-    while let Some(m) = it.next() {
+    for x in expr.pattern_match(&pattern, None, None) {
+        println!("\t x_ = {}", x.get(&symb!("x_")).unwrap().to_atom());
+    }
+
+    println!("> Matching pattern {} to {}:", pat_expr, expr);
+
+    // use next_detailed for detailed information
+    let mut it = expr.pattern_match(&pattern, None, None);
+    while let Some(m) = it.next_detailed() {
         println!("\tMatch at location {:?} - {:?}:", m.position, m.used_flags);
         for (id, v) in m.match_stack {
             print!("\t\t{} = ", State::get_name(*id));

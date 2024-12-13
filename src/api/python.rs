@@ -4416,7 +4416,7 @@ impl PythonExpression {
                 settings,
             ),
             move |(lhs, target, res, settings)| {
-                PatternAtomTreeIterator::new(lhs, target.as_view(), res, settings)
+                PatternAtomTreeIterator::new(lhs, target.as_view(), Some(res), Some(settings))
             },
         ))
     }
@@ -4448,11 +4448,14 @@ impl PythonExpression {
             ..MatchSettings::default()
         };
 
-        Ok(
-            PatternAtomTreeIterator::new(&pat, self.expr.as_view(), &conditions, &settings)
-                .next()
-                .is_some(),
+        Ok(PatternAtomTreeIterator::new(
+            &pat,
+            self.expr.as_view(),
+            Some(&conditions),
+            Some(&settings),
         )
+        .next()
+        .is_some())
     }
 
     /// Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.
@@ -4505,7 +4508,13 @@ impl PythonExpression {
                 settings,
             ),
             move |(lhs, target, rhs, res, settings)| {
-                ReplaceIterator::new(lhs, target.as_view(), rhs, res, settings)
+                ReplaceIterator::new(
+                    lhs,
+                    target.as_view(),
+                    crate::id::BorrowPatternOrMap::borrow(rhs),
+                    Some(res),
+                    Some(settings),
+                )
             },
         ))
     }
@@ -5843,9 +5852,8 @@ impl PythonMatchIterator {
     fn __next__(&mut self) -> Option<HashMap<PythonExpression, PythonExpression>> {
         self.with_dependent_mut(|_, i| {
             i.next().map(|m| {
-                m.match_stack
-                    .into_iter()
-                    .map(|m| (Atom::new_var(m.0).into(), { m.1.to_atom().into() }))
+                m.into_iter()
+                    .map(|(k, v)| (Atom::new_var(k).into(), { v.to_atom().into() }))
                     .collect()
             })
         })
@@ -5880,15 +5888,7 @@ impl PythonReplaceIterator {
 
     /// Return the next replacement.
     fn __next__(&mut self) -> PyResult<Option<PythonExpression>> {
-        self.with_dependent_mut(|_, i| {
-            let mut out = Atom::default();
-
-            if i.next(&mut out).is_none() {
-                Ok(None)
-            } else {
-                Ok::<_, PyErr>(Some(out.into()))
-            }
-        })
+        self.with_dependent_mut(|_, i| Ok(i.next().map(|x| x.into())))
     }
 }
 

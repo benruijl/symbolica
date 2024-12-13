@@ -1,6 +1,6 @@
 use symbolica::{
     atom::{Atom, AtomCore},
-    id::{Condition, Match, MatchSettings},
+    id::Match,
     state::State,
 };
 
@@ -10,13 +10,11 @@ fn main() {
     let pat_expr = Atom::parse("z*x_*y___*g___(z___,x_,w___)").unwrap();
 
     let pattern = pat_expr.to_pattern();
-    let conditions = Condition::default();
-    let settings = MatchSettings::default();
 
     println!("> Matching pattern {} to {}:", pat_expr, expr.as_view());
 
-    let mut it = expr.pattern_match(&pattern, &conditions, &settings);
-    while let Some(m) = it.next() {
+    let mut it = expr.pattern_match(&pattern, None, None);
+    while let Some(m) = it.next_detailed() {
         println!(
             "\t Match at location {:?} - {:?}:",
             m.position, m.used_flags

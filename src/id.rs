@@ -1642,6 +1642,8 @@ impl From<WildcardAndRestriction> for Condition<PatternRestriction> {
     }
 }
 
+static DEFAULT_PATTERN_CONDITION: Condition<PatternRestriction> = Condition::True;
+
 /// A logical expression.
 #[derive(Clone, Debug, Default)]
 pub enum Condition<T> {
@@ -2275,7 +2277,19 @@ pub struct MatchSettings {
     pub rhs_cache_size: usize,
 }
 
+static DEFAULT_MATCH_SETTINGS: MatchSettings = MatchSettings::new();
+
 impl MatchSettings {
+    pub const fn new() -> Self {
+        Self {
+            non_greedy_wildcards: Vec::new(),
+            level_range: (0, None),
+            level_is_tree_depth: false,
+            allow_new_wildcards_on_rhs: false,
+            rhs_cache_size: 0,
+        }
+    }
+
     /// Create default match settings, but enable caching of the rhs.
     pub fn cached() -> Self {
         Self {
@@ -2291,13 +2305,7 @@ impl MatchSettings {
 impl Default for MatchSettings {
     /// Create default match settings. Use [`MatchSettings::cached`] to enable caching.
     fn default() -> Self {
-        Self {
-            non_greedy_wildcards: Vec::new(),
-            level_range: (0, None),
-            level_is_tree_depth: false,
-            allow_new_wildcards_on_rhs: false,
-            rhs_cache_size: 0,
-        }
+        MatchSettings::new()
     }
 }
 
@@ -3335,22 +3343,29 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
     pub fn new(
         pattern: &'b Pattern,
         target: AtomView<'a>,
-        conditions: &'b Condition<PatternRestriction>,
-        settings: &'b MatchSettings,
+        conditions: Option<&'b Condition<PatternRestriction>>,
+        settings: Option<&'b MatchSettings>,
     ) -> PatternAtomTreeIterator<'a, 'b> {
         PatternAtomTreeIterator {
             pattern,
-            atom_tree_iterator: AtomTreeIterator::new(target, settings.clone()),
+            atom_tree_iterator: AtomTreeIterator::new(
+                target,
+                settings.unwrap_or(&DEFAULT_MATCH_SETTINGS).clone(),
+            ),
             current_target: None,
             pattern_iter: None,
-            match_stack: MatchStack::new(conditions, settings),
+            match_stack: MatchStack::new(
+                conditions.unwrap_or(&DEFAULT_PATTERN_CONDITION),
+                settings.unwrap_or(&DEFAULT_MATCH_SETTINGS),
+            ),
             tree_pos: Vec::new(),
             first_match: false,
         }
     }
 
-    /// Generate the next match if it exists.
-    pub fn next(&mut self) -> Option<PatternMatch<'_, 'a, 'b>> {
+    /// Generate the next match if it exists, with detailed information about the
+    /// matched position. Use the iterator `Self::next` to a map of wildcard matches.
+    pub fn next_detailed(&mut self) -> Option<PatternMatch<'_, 'a, 'b>> {
         loop {
             if let Some(ct) = self.current_target {
                 if let Some(it) = self.pattern_iter.as_mut() {
@@ -3389,10 +3404,23 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
     }
 }
 
+impl<'a: 'b, 'b> Iterator for PatternAtomTreeIterator<'a, 'b> {
+    type Item = HashMap<Symbol, Match<'a>>;
+
+    /// Get the match map. Use `[PatternAtomTreeIterator::next_detailed]` to get more information.
+    fn next(&mut self) -> Option<HashMap<Symbol, Match<'a>>> {
+        if let Some(_) = self.next_detailed() {
+            Some(self.match_stack.get_matches().iter().cloned().collect())
+        } else {
+            None
+        }
+    }
+}
+
 /// Replace a pattern in the target once. Every  call to `next`,
 /// will return a new match and replacement until the options are exhausted.
 pub struct ReplaceIterator<'a, 'b> {
-    rhs: &'b PatternOrMap,
+    rhs: BorrowedPatternOrMap<'b>,
     pattern_tree_iterator: PatternAtomTreeIterator<'a, 'b>,
     target: AtomView<'a>,
 }
@@ -3401,9 +3429,9 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
     pub fn new(
         pattern: &'b Pattern,
         target: AtomView<'a>,
-        rhs: &'b PatternOrMap,
-        conditions: &'a Condition<PatternRestriction>,
-        settings: &'a MatchSettings,
+        rhs: BorrowedPatternOrMap<'b>,
+        conditions: Option<&'a Condition<PatternRestriction>>,
+        settings: Option<&'a MatchSettings>,
     ) -> ReplaceIterator<'a, 'b> {
         ReplaceIterator {
             pattern_tree_iterator: PatternAtomTreeIterator::new(
@@ -3533,17 +3561,17 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
     }
 
     /// Return the next replacement.
-    pub fn next(&mut self, out: &mut Atom) -> Option<()> {
-        if let Some(pattern_match) = self.pattern_tree_iterator.next() {
+    pub fn next_into(&mut self, out: &mut Atom) -> Option<()> {
+        if let Some(pattern_match) = self.pattern_tree_iterator.next_detailed() {
             Workspace::get_local().with(|ws| {
                 let mut new_rhs = ws.new_atom();
 
                 match self.rhs {
-                    PatternOrMap::Pattern(p) => {
+                    BorrowedPatternOrMap::Pattern(p) => {
                         p.substitute_wildcards(ws, &mut new_rhs, pattern_match.match_stack, None)
                             .unwrap(); // TODO: escalate?
                     }
-                    PatternOrMap::Map(f) => {
+                    BorrowedPatternOrMap::Map(f) => {
                         let mut new_atom = f(&pattern_match.match_stack);
                         std::mem::swap(&mut new_atom, &mut new_rhs);
                     }
@@ -3565,6 +3593,15 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
         } else {
             None
         }
+    }
+}
+
+impl<'a: 'b, 'b> Iterator for ReplaceIterator<'a, 'b> {
+    type Item = Atom;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut out = Atom::new();
+        self.next_into(&mut out).map(|_| out)
     }
 }
 

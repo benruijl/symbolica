@@ -58,8 +58,8 @@ fn main() {
         expr
     );
 
-    let mut it = expr.pattern_match(&pattern, &conditions, &settings);
-    while let Some(m) = it.next() {
+    let mut it = expr.pattern_match(&pattern, Some(&conditions), Some(&settings));
+    while let Some(m) = it.next_detailed() {
         println!("\tMatch at location {:?} - {:?}:", m.position, m.used_flags);
         for (id, v) in m.match_stack {
             print!("\t\t{} = ", State::get_name(*id));

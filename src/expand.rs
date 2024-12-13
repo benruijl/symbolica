@@ -36,7 +36,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Expand an expression, returning `true` iff the expression changed.
-    pub fn expand_with_ws_into(
+    pub(crate) fn expand_with_ws_into(
         &self,
         workspace: &Workspace,
         var: Option<AtomView>,
@@ -54,7 +54,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Check if the expression is expanded, optionally in only the variable or function `var`.
-    pub fn is_expanded(&self, var: Option<AtomView>) -> bool {
+    pub(crate) fn is_expanded(&self, var: Option<AtomView>) -> bool {
         match self {
             AtomView::Num(_) | AtomView::Var(_) | AtomView::Fun(_) => true,
             AtomView::Pow(pow_view) => {

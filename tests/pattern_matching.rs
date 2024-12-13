@@ -1,6 +1,6 @@
 use symbolica::{
     atom::{Atom, AtomCore, AtomView},
-    id::{Condition, Match, MatchSettings, Pattern, WildcardRestriction},
+    id::{Match, Pattern, WildcardRestriction},
     state::{RecycledAtom, State},
 };
 
@@ -49,19 +49,14 @@ fn replace_once() {
     let pat_expr = Atom::parse("f(x_)").unwrap();
 
     let rhs_expr = Atom::parse("g(x_)").unwrap();
-    let rhs = rhs_expr.as_view().to_pattern().into();
+    let rhs = rhs_expr.as_view().to_pattern();
 
     let pattern = pat_expr.as_view().to_pattern();
-    let restrictions = Condition::default();
-    let settings = MatchSettings::default();
 
-    let mut replaced = Atom::new();
-
-    let mut it = expr.replace_iter(&pattern, &rhs, &restrictions, &settings);
-    let mut r = vec![];
-    while let Some(()) = it.next(&mut replaced) {
-        r.push(replaced.clone());
-    }
+    let r: Vec<_> = expr
+        .replace_iter(&pattern, &rhs, None, None)
+        .into_iter()
+        .collect();
 
     let res = [
         "g(z)*f(y)*f(f(x))",

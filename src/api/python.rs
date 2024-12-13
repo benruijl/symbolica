@@ -19,8 +19,8 @@ use pyo3::{
         PyAnyMethods, PyBytes, PyComplex, PyComplexMethods, PyLong, PyModule, PyTuple,
         PyTupleMethods, PyType, PyTypeMethods,
     },
-    wrap_pyfunction, Bound, FromPyObject, IntoPy, Py, PyErr, PyObject, PyRef, PyResult, PyTypeInfo,
-    Python, ToPyObject,
+    wrap_pyfunction, Bound, FromPyObject, IntoPy, Py, PyErr, PyObject, PyRef, PyRefMut, PyResult,
+    PyTypeInfo, Python, ToPyObject,
 };
 use pyo3::{pyclass, types::PyModuleMethods};
 use rug::Complete;
@@ -10646,6 +10646,34 @@ impl PythonMatrix {
         PythonMatrix {
             matrix: self.matrix.primitive_part(),
         }
+    }
+
+    /// Perform LU decomposition over the matrix.
+    pub fn lu_decomposition(&self, early_return: bool) -> PyResult<(Self, Self, Vec<u32>)> {
+        let (l, u, pv) = self
+            .matrix
+            .lu_decomposition(early_return)
+            .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?;
+        Ok((Self { matrix: l }, Self { matrix: u }, pv))
+    }
+
+    /// Perform LU decomposition over the matrix;
+    /// the current matrix will become U and L will be returned.
+    pub fn lu_decomposition_in_place(&mut self, early_return: bool) -> PyResult<(Self, Vec<u32>)> {
+        let (l, pv) = self
+            .matrix
+            .lu_decomposition_in_place(early_return)
+            .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?;
+        Ok((Self { matrix: l }, pv))
+    }
+
+
+    pub fn permute_rows<'py>(
+        slf: PyRefMut<'_, Self>,
+        permutation_vector: Vec<u32>,
+    ) -> PyResult<PyRefMut<'_, Self>> {
+        slf.matrix.permute_rows(&permutation_vector);
+        Ok(slf)
     }
 
     /// Apply a function `f` to every entry of the matrix.

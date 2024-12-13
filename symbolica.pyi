@@ -3506,6 +3506,15 @@ class Matrix:
 
     def primitive_part(self) -> Matrix:
         """Construct the same matrix, but with the content removed."""
+    
+    def lu_decomposition(self, early_return: bool = True) -> Tuple[Matrix, Matrix, List[int]]:
+        """Perform LU decomposition over the matrix."""
+
+    def lu_decomposition_in_place(self, early_return: bool = True) -> Tuple[Matrix, List[int]]:
+        """Perform LU decomposition over the matrix; the current matrix will become U and L will be returned"""
+
+    def permute_rows(self, permutation_vector: List[int]):
+        """Permutes the rows of the matrix based on the provided permutation vector."""
 
     def map(self, f: Callable[[RationalPolynomial], RationalPolynomial]) -> Matrix:
         """Apply a function `f` to every entry of the matrix."""

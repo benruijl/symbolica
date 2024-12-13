@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    atom::{Atom, AtomView, FunctionBuilder, Symbol},
+    atom::{AsAtomView, Atom, AtomView, FunctionBuilder, Symbol},
     coefficient::{Coefficient, CoefficientView},
     combinatorics::CombinationWithReplacementIterator,
     domains::{atom::AtomField, integer::Integer, rational::Rational},
@@ -26,15 +26,15 @@ impl Atom {
     }
 
     /// Series expand in `x` around `expansion_point` to depth `depth`.
-    pub fn series(
+    pub fn series<T: AsAtomView>(
         &self,
         x: Symbol,
-        expansion_point: AtomView,
+        expansion_point: T,
         depth: Rational,
         depth_is_absolute: bool,
     ) -> Result<Series<AtomField>, &'static str> {
         self.as_view()
-            .series(x, expansion_point, depth, depth_is_absolute)
+            .series(x, expansion_point.as_atom_view(), depth, depth_is_absolute)
     }
 }
 

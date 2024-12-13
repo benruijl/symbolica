@@ -58,7 +58,7 @@ fn main() {
         expr
     );
 
-    let mut it = pattern.pattern_match(expr.as_view(), &conditions, &settings);
+    let mut it = expr.pattern_match(&pattern, &conditions, &settings);
     while let Some(m) = it.next() {
         println!("\tMatch at location {:?} - {:?}:", m.position, m.used_flags);
         for (id, v) in m.match_stack {

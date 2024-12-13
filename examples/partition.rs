@@ -5,8 +5,8 @@ fn main() {
     let f = State::get_symbol("f");
     let g = State::get_symbol("g");
 
-    let o = Pattern::parse("f(x__)").unwrap().replace_all(
-        input.as_view(),
+    let o = input.replace_all(
+        &Pattern::parse("f(x__)").unwrap(),
         &Pattern::Transformer(Box::new((
             Some(Pattern::parse("x__").unwrap()),
             vec![Transformer::Partition(
@@ -14,8 +14,7 @@ fn main() {
                 false,
                 false,
             )],
-        )))
-        .into(),
+        ))),
         None,
         None,
     );

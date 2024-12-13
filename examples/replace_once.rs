@@ -23,7 +23,7 @@ fn main() {
 
     let mut replaced = Atom::new();
 
-    let mut it = pattern.replace_iter(expr.as_view(), &rhs, &restrictions, &settings);
+    let mut it = expr.replace_iter(&pattern, &rhs, &restrictions, &settings);
     while let Some(()) = it.next(&mut replaced) {
         println!("\t{}", replaced);
     }

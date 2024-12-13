@@ -317,7 +317,7 @@ pub enum ConvertibleToPattern {
 impl ConvertibleToPattern {
     pub fn to_pattern(self) -> PyResult<PythonTransformer> {
         match self {
-            Self::Literal(l) => Ok(l.to_expression().expr.as_view().into_pattern().into()),
+            Self::Literal(l) => Ok(l.to_expression().expr.to_pattern().into()),
             Self::Pattern(e) => Ok(e),
         }
     }
@@ -1548,10 +1548,7 @@ impl PythonTransformer {
         return append_transformer!(
             self,
             Transformer::ReplaceAllMultiple(
-                replacements
-                    .into_iter()
-                    .map(|r| (r.pattern, r.rhs, r.cond, r.settings))
-                    .collect()
+                replacements.into_iter().map(|r| r.replacement).collect()
             )
         );
     }
@@ -3145,7 +3142,7 @@ impl PythonExpression {
                         transformer_args.push(t.to_pattern()?.expr);
                     }
                     ExpressionOrTransformer::Expression(a) => {
-                        transformer_args.push(a.expr.as_view().into_pattern());
+                        transformer_args.push(a.expr.to_pattern());
                     }
                 }
             }
@@ -3157,7 +3154,7 @@ impl PythonExpression {
 
     /// Convert the input to a transformer, on which subsequent transformations can be applied.
     pub fn transform(&self) -> PyResult<PythonTransformer> {
-        Ok(Pattern::Transformer(Box::new((Some(self.expr.into_pattern()), vec![]))).into())
+        Ok(Pattern::Transformer(Box::new((Some(self.expr.to_pattern()), vec![]))).into())
     }
 
     /// Get the `idx`th component of the expression.
@@ -3201,7 +3198,7 @@ impl PythonExpression {
     pub fn contains(&self, s: ConvertibleToPattern) -> PyResult<PythonCondition> {
         Ok(PythonCondition {
             condition: Condition::Yield(Relation::Contains(
-                self.expr.into_pattern(),
+                self.expr.to_pattern(),
                 s.to_pattern()?.expr,
             )),
         })
@@ -3380,7 +3377,7 @@ impl PythonExpression {
     pub fn is_type(&self, atom_type: PythonAtomType) -> PythonCondition {
         PythonCondition {
             condition: Condition::Yield(Relation::IsType(
-                self.expr.into_pattern(),
+                self.expr.to_pattern(),
                 match atom_type {
                     PythonAtomType::Num => AtomType::Num,
                     PythonAtomType::Var => AtomType::Var,
@@ -3398,22 +3395,22 @@ impl PythonExpression {
     fn __richcmp__(&self, other: ConvertibleToPattern, op: CompareOp) -> PyResult<PythonCondition> {
         Ok(match op {
             CompareOp::Eq => PythonCondition {
-                condition: Relation::Eq(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
+                condition: Relation::Eq(self.expr.to_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Ne => PythonCondition {
-                condition: Relation::Ne(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
+                condition: Relation::Ne(self.expr.to_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Ge => PythonCondition {
-                condition: Relation::Ge(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
+                condition: Relation::Ge(self.expr.to_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Gt => PythonCondition {
-                condition: Relation::Gt(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
+                condition: Relation::Gt(self.expr.to_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Le => PythonCondition {
-                condition: Relation::Le(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
+                condition: Relation::Le(self.expr.to_pattern(), other.to_pattern()?.expr).into(),
             },
             CompareOp::Lt => PythonCondition {
-                condition: Relation::Lt(self.expr.into_pattern(), other.to_pattern()?.expr).into(),
+                condition: Relation::Lt(self.expr.to_pattern(), other.to_pattern()?.expr).into(),
             },
         })
     }
@@ -4606,7 +4603,7 @@ impl PythonExpression {
 
         let mut out = RecycledAtom::new();
         let mut out2 = RecycledAtom::new();
-        while pattern.replace_all_into(expr_ref, rhs, cond.as_ref(), Some(&settings), &mut out) {
+        while expr_ref.replace_all_into(&pattern, rhs, cond.as_ref(), Some(&settings), &mut out) {
             if !repeat.unwrap_or(false) {
                 break;
             }
@@ -4645,11 +4642,7 @@ impl PythonExpression {
     ) -> PyResult<PythonExpression> {
         let reps = replacements
             .iter()
-            .map(|x| {
-                Replacement::new(&x.pattern, &x.rhs)
-                    .with_conditions(&x.cond)
-                    .with_settings(&x.settings)
-            })
+            .map(|x| x.replacement.borrow())
             .collect::<Vec<_>>();
 
         let mut expr_ref = self.expr.as_view();
@@ -5281,10 +5274,7 @@ impl PythonExpression {
 #[pyclass(name = "Replacement", module = "symbolica")]
 #[derive(Clone)]
 pub struct PythonReplacement {
-    pattern: Pattern,
-    rhs: PatternOrMap,
-    cond: Condition<PatternRestriction>,
-    settings: MatchSettings,
+    replacement: Replacement,
 }
 
 #[pymethods]
@@ -5338,13 +5328,10 @@ impl PythonReplacement {
             settings.rhs_cache_size = rhs_cache_size;
         }
 
-        let cond = cond.map(|r| r.0).unwrap_or(Condition::default());
-
         Ok(Self {
-            pattern,
-            rhs,
-            cond,
-            settings,
+            replacement: Replacement::new(pattern, rhs)
+                .with_conditions(cond.map(|r| r.0).unwrap_or_default())
+                .with_settings(settings),
         })
     }
 }

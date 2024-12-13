@@ -618,9 +618,9 @@ mod test {
         streamer = streamer.map(|f| f);
 
         let pattern = Pattern::parse("f1(x_)").unwrap();
-        let rhs = Pattern::parse("f1(v1) + v1").unwrap().into();
+        let rhs = Pattern::parse("f1(v1) + v1").unwrap();
 
-        streamer = streamer.map(|x| pattern.replace_all(x.as_view(), &rhs, None, None).expand());
+        streamer = streamer.map(|x| x.replace_all(&pattern, &rhs, None, None).expand());
 
         streamer.normalize();
 
@@ -643,12 +643,11 @@ mod test {
         streamer.push(input);
 
         let pattern = Pattern::parse("v1_").unwrap();
-        let rhs = Pattern::parse("v1").unwrap().into();
+        let rhs = Pattern::parse("v1").unwrap();
 
         streamer = streamer.map(|x| {
-            pattern
-                .replace_all(
-                    x.as_view(),
+            x.replace_all(
+                &pattern,
                     &rhs,
                     Some(
                         &(
@@ -674,13 +673,13 @@ mod test {
     fn memory_stream() {
         let input = Atom::parse("v1 + f1(v1) + 2*f1(v2) + 7*f1(v3)").unwrap();
         let pattern = Pattern::parse("f1(x_)").unwrap();
-        let rhs = Pattern::parse("f1(v1) + v1").unwrap().into();
+        let rhs = Pattern::parse("f1(v1) + v1").unwrap();
 
         let mut stream = TermStreamer::<BufWriter<File>>::new(TermStreamerConfig::default());
         stream.push(input);
 
         // map every term in the expression
-        stream = stream.map(|x| pattern.replace_all(x.as_view(), &rhs, None, None).expand());
+        stream = stream.map(|x| x.replace_all(&pattern, &rhs, None, None).expand());
 
         let r = stream.to_expression();
 

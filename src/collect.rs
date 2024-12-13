@@ -191,8 +191,8 @@ impl<'a> AtomView<'a> {
     }
 
     /// Collect terms involving the literal occurrence of `x`.
-    pub fn coefficient(&self, x: AtomView<'_>) -> Atom {
-        Workspace::get_local().with(|ws| self.coefficient_with_ws(x, ws))
+    pub fn coefficient<T: AsAtomView>(&self, x: T) -> Atom {
+        Workspace::get_local().with(|ws| self.coefficient_with_ws(x.as_atom_view(), ws))
     }
 
     /// Collect terms involving the literal occurrence of `x`.

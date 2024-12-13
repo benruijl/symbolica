@@ -1,13 +1,13 @@
 use std::{ops::ControlFlow, sync::Arc, time::Instant};
 
 use crate::{
-    atom::{representation::FunView, Atom, AtomOrView, AtomView, Fun, Symbol},
+    atom::{representation::FunView, Atom, AtomView, Fun, Symbol},
     coefficient::{Coefficient, CoefficientView},
     combinatorics::{partitions, unique_permutations},
     domains::rational::Rational,
     id::{
-        Condition, Evaluate, MatchSettings, Pattern, PatternOrMap, PatternRestriction, Relation,
-        Replacement,
+        BorrowPatternOrMap, Condition, Evaluate, MatchSettings, Pattern, PatternOrMap,
+        PatternRestriction, Relation, Replacement,
     },
     printer::{AtomPrinter, PrintOptions},
     state::{RecycledAtom, Workspace},
@@ -121,7 +121,7 @@ pub enum Transformer {
     /// Perform a series expansion.
     Series(Symbol, Atom, Rational, bool),
     ///Collect all terms in powers of a variable.
-    Collect(Vec<AtomOrView<'static>>, Vec<Transformer>, Vec<Transformer>),
+    Collect(Vec<Atom>, Vec<Transformer>, Vec<Transformer>),
     /// Collect numbers.
     CollectNum,
     /// Apply find-and-replace on the lhs.
@@ -132,14 +132,7 @@ pub enum Transformer {
         MatchSettings,
     ),
     /// Apply multiple find-and-replace on the lhs.
-    ReplaceAllMultiple(
-        Vec<(
-            Pattern,
-            PatternOrMap,
-            Condition<PatternRestriction>,
-            MatchSettings,
-        )>,
-    ),
+    ReplaceAllMultiple(Vec<Replacement>),
     /// Take the product of a list of arguments in the rhs.
     Product,
     /// Take the sum of a list of arguments in the rhs.
@@ -576,9 +569,9 @@ impl Transformer {
                     }
                 }
                 Transformer::ReplaceAll(pat, rhs, cond, settings) => {
-                    pat.replace_all_with_ws_into(
-                        cur_input,
-                        rhs,
+                    cur_input.replace_all_with_ws_into(
+                        pat,
+                        rhs.borrow(),
                         workspace,
                         cond.into(),
                         settings.into(),
@@ -586,15 +579,7 @@ impl Transformer {
                     );
                 }
                 Transformer::ReplaceAllMultiple(replacements) => {
-                    let reps = replacements
-                        .iter()
-                        .map(|(pat, rhs, cond, settings)| {
-                            Replacement::new(pat, rhs)
-                                .with_conditions(cond)
-                                .with_settings(settings)
-                        })
-                        .collect::<Vec<_>>();
-                    cur_input.replace_all_multiple_into(&reps, out);
+                    cur_input.replace_all_multiple_into(&replacements, out);
                 }
                 Transformer::Product => {
                     if let AtomView::Fun(f) = cur_input {

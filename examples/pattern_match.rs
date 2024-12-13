@@ -9,13 +9,13 @@ fn main() {
 
     let pat_expr = Atom::parse("z*x_*y___*g___(z___,x_,w___)").unwrap();
 
-    let pattern = pat_expr.as_view().into_pattern();
+    let pattern = pat_expr.to_pattern();
     let conditions = Condition::default();
     let settings = MatchSettings::default();
 
     println!("> Matching pattern {} to {}:", pat_expr, expr.as_view());
 
-    let mut it = pattern.pattern_match(expr.as_view(), &conditions, &settings);
+    let mut it = expr.pattern_match(&pattern, &conditions, &settings);
     while let Some(m) = it.next() {
         println!(
             "\t Match at location {:?} - {:?}:",

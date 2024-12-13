@@ -3,7 +3,7 @@ use std::{ops::DerefMut, sync::Arc};
 use smallvec::SmallVec;
 
 use crate::{
-    atom::{representation::InlineVar, Atom, AtomView, Symbol},
+    atom::{representation::InlineVar, AsAtomView, Atom, AtomView, Symbol},
     coefficient::CoefficientView,
     combinatorics::CombinationWithReplacementIterator,
     domains::{integer::Integer, rational::Q},
@@ -21,13 +21,14 @@ impl Atom {
     /// only in the indeterminate `var`. The parameter `E` should be a numerical type
     /// that fits the largest exponent in the expanded expression. Often,
     /// `u8` or `u16` is sufficient.
-    pub fn expand_via_poly<E: Exponent>(&self, var: Option<AtomView>) -> Atom {
-        self.as_view().expand_via_poly::<E>(var)
+    pub fn expand_via_poly<E: Exponent, T: AsAtomView>(&self, var: Option<T>) -> Atom {
+        self.as_view()
+            .expand_via_poly::<E>(var.as_ref().map(|x| x.as_atom_view()))
     }
 
     /// Expand an expression in the variable `var`. The function [expand_via_poly] may be faster.
-    pub fn expand_in(&self, var: AtomView) -> Atom {
-        self.as_view().expand_in(var)
+    pub fn expand_in<T: AsAtomView>(&self, var: T) -> Atom {
+        self.as_view().expand_in(var.as_atom_view())
     }
 
     /// Expand an expression in the variable `var`.

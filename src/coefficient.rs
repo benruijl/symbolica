@@ -1616,21 +1616,19 @@ mod test {
 
         let a = a.set_coefficient_ring(&Arc::new(vec![]));
 
-        let expr = Atom::new_var(v2)
-            .into_pattern()
+        let expr = expr
             .replace_all(
-                expr.as_view(),
-                &Atom::new_num(3).into_pattern().into(),
+                &Atom::new_var(v2).to_pattern(),
+                &Atom::new_num(3).to_pattern(),
                 None,
                 None,
             )
             .expand();
 
-        let a = Atom::new_var(v2)
-            .into_pattern()
+        let a = a
             .replace_all(
-                a.as_view(),
-                &Atom::new_num(3).into_pattern().into(),
+                &Atom::new_var(v2).to_pattern(),
+                &Atom::new_num(3).to_pattern(),
                 None,
                 None,
             )

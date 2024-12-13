@@ -5,14 +5,14 @@ use std::sync::{Arc, RwLock};
 
 use smartstring::{LazyCompact, SmartString};
 
-use crate::domains::finite_field::{FiniteFieldCore, Zp, Zp64};
+use crate::domains::finite_field::{Zp, Zp64};
 use crate::domains::integer::Z;
 use crate::domains::rational::Q;
+use crate::domains::SelfRing;
 use crate::parser::Token;
 use crate::poly::Variable;
 use crate::{
-    domains::rational_polynomial::RationalPolynomial,
-    printer::{PrintOptions, RationalPolynomialPrinter},
+    domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, printer::PrintState,
     state::State,
 };
 use once_cell::sync::Lazy;
@@ -76,16 +76,12 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                     )
                     .unwrap();
 
-                format!(
-                    "{}",
-                    RationalPolynomialPrinter {
-                        poly: &r,
-                        opts: PrintOptions {
-                            explicit_rational_polynomial,
-                            ..PrintOptions::mathematica()
-                        },
-                        add_parentheses: false
-                    }
+                r.format_string(
+                    &PrintOptions {
+                        explicit_rational_polynomial,
+                        ..PrintOptions::mathematica()
+                    },
+                    PrintState::default(),
                 )
             } else {
                 if prime >= 0 && prime <= u32::MAX as i64 {
@@ -100,16 +96,12 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                         .unwrap();
 
                     symbolica.buffer.clear();
-                    format!(
-                        "{}",
-                        RationalPolynomialPrinter {
-                            poly: &rf,
-                            opts: PrintOptions {
-                                explicit_rational_polynomial,
-                                ..PrintOptions::mathematica()
-                            },
-                            add_parentheses: false
-                        }
+                    rf.format_string(
+                        &PrintOptions {
+                            explicit_rational_polynomial,
+                            ..PrintOptions::mathematica()
+                        },
+                        PrintState::default(),
                     )
                 } else {
                     let field = Zp64::new(prime as u64);
@@ -123,16 +115,12 @@ fn simplify(input: String, prime: i64, explicit_rational_polynomial: bool) -> St
                         .unwrap();
 
                     symbolica.buffer.clear();
-                    format!(
-                        "{}",
-                        RationalPolynomialPrinter {
-                            poly: &rf,
-                            opts: PrintOptions {
-                                explicit_rational_polynomial,
-                                ..PrintOptions::mathematica()
-                            },
-                            add_parentheses: false
-                        }
+                    rf.format_string(
+                        &PrintOptions {
+                            explicit_rational_polynomial,
+                            ..PrintOptions::mathematica()
+                        },
+                        PrintState::default(),
                     )
                 }
             }

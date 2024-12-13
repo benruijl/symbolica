@@ -61,38 +61,141 @@ impl std::fmt::Debug for PatternOrMap {
     }
 }
 
-/// A replacement, specified by a pattern and the right-hand side,
-/// with optional conditions and settings.
-pub struct Replacement<'a> {
-    pat: &'a Pattern,
-    rhs: &'a PatternOrMap,
-    conditions: Option<&'a Condition<PatternRestriction>>,
-    settings: Option<&'a MatchSettings>,
+/// A pattern or a map from a list of matched wildcards to an atom.
+/// The latter can be used for complex replacements that cannot be
+/// expressed using atom transformations.
+#[derive(Clone, Copy)]
+pub enum BorrowedPatternOrMap<'a> {
+    Pattern(&'a Pattern),
+    Map(&'a Box<dyn MatchMap>),
 }
 
-impl<'a> Replacement<'a> {
-    pub fn new(pat: &'a Pattern, rhs: &'a PatternOrMap) -> Self {
+pub trait BorrowPatternOrMap {
+    fn borrow(&self) -> BorrowedPatternOrMap;
+}
+
+impl BorrowPatternOrMap for &Pattern {
+    fn borrow(&self) -> BorrowedPatternOrMap {
+        BorrowedPatternOrMap::Pattern(*self)
+    }
+}
+
+impl BorrowPatternOrMap for Pattern {
+    fn borrow(&self) -> BorrowedPatternOrMap {
+        BorrowedPatternOrMap::Pattern(self)
+    }
+}
+
+impl BorrowPatternOrMap for Box<dyn MatchMap> {
+    fn borrow(&self) -> BorrowedPatternOrMap {
+        BorrowedPatternOrMap::Map(self)
+    }
+}
+
+impl BorrowPatternOrMap for &Box<dyn MatchMap> {
+    fn borrow(&self) -> BorrowedPatternOrMap {
+        BorrowedPatternOrMap::Map(*self)
+    }
+}
+
+impl BorrowPatternOrMap for PatternOrMap {
+    fn borrow(&self) -> BorrowedPatternOrMap {
+        match self {
+            PatternOrMap::Pattern(p) => BorrowedPatternOrMap::Pattern(p),
+            PatternOrMap::Map(m) => BorrowedPatternOrMap::Map(m),
+        }
+    }
+}
+
+impl BorrowPatternOrMap for &PatternOrMap {
+    fn borrow(&self) -> BorrowedPatternOrMap {
+        match self {
+            PatternOrMap::Pattern(p) => BorrowedPatternOrMap::Pattern(p),
+            PatternOrMap::Map(m) => BorrowedPatternOrMap::Map(m),
+        }
+    }
+}
+
+impl<'a> BorrowPatternOrMap for BorrowedPatternOrMap<'a> {
+    fn borrow(&self) -> BorrowedPatternOrMap {
+        *self
+    }
+}
+
+/// A replacement, specified by a pattern and the right-hand side,
+/// with optional conditions and settings.
+#[derive(Debug, Clone)]
+pub struct Replacement {
+    pat: Pattern,
+    rhs: PatternOrMap,
+    conditions: Option<Condition<PatternRestriction>>,
+    settings: Option<MatchSettings>,
+}
+
+impl Replacement {
+    pub fn new<R: Into<PatternOrMap>>(pat: Pattern, rhs: R) -> Self {
         Replacement {
             pat,
-            rhs,
+            rhs: rhs.into(),
             conditions: None,
             settings: None,
         }
     }
 
-    pub fn with_conditions(mut self, conditions: &'a Condition<PatternRestriction>) -> Self {
+    pub fn with_conditions(mut self, conditions: Condition<PatternRestriction>) -> Self {
         self.conditions = Some(conditions);
         self
     }
 
-    pub fn with_settings(mut self, settings: &'a MatchSettings) -> Self {
+    pub fn with_settings(mut self, settings: MatchSettings) -> Self {
         self.settings = Some(settings);
         self
     }
 }
 
+/// A borrowed version of a [Replacement].
+#[derive(Clone, Copy)]
+pub struct BorrowedReplacement<'a> {
+    pub pattern: &'a Pattern,
+    pub rhs: BorrowedPatternOrMap<'a>,
+    pub conditions: Option<&'a Condition<PatternRestriction>>,
+    pub settings: Option<&'a MatchSettings>,
+}
+
+pub trait BorrowReplacement {
+    fn borrow(&self) -> BorrowedReplacement;
+}
+
+impl BorrowReplacement for Replacement {
+    fn borrow(&self) -> BorrowedReplacement {
+        BorrowedReplacement {
+            pattern: &self.pat,
+            rhs: self.rhs.borrow(),
+            conditions: self.conditions.as_ref(),
+            settings: self.settings.as_ref(),
+        }
+    }
+}
+
+impl BorrowReplacement for &Replacement {
+    fn borrow(&self) -> BorrowedReplacement {
+        BorrowedReplacement {
+            pattern: &self.pat,
+            rhs: self.rhs.borrow(),
+            conditions: self.conditions.as_ref(),
+            settings: self.settings.as_ref(),
+        }
+    }
+}
+
+impl<'a> BorrowReplacement for BorrowedReplacement<'a> {
+    fn borrow(&self) -> BorrowedReplacement {
+        *self
+    }
+}
+
 impl Atom {
-    pub fn into_pattern(&self) -> Pattern {
+    pub fn to_pattern(&self) -> Pattern {
         Pattern::from_view(self.as_view(), true)
     }
 
@@ -138,10 +241,10 @@ impl Atom {
     }
 
     /// Replace all occurrences of the pattern.
-    pub fn replace_all(
+    pub fn replace_all<R: BorrowPatternOrMap>(
         &self,
         pattern: &Pattern,
-        rhs: &PatternOrMap,
+        rhs: R,
         conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
     ) -> Atom {
@@ -150,10 +253,10 @@ impl Atom {
     }
 
     /// Replace all occurrences of the pattern.
-    pub fn replace_all_into(
+    pub fn replace_all_into<R: BorrowPatternOrMap>(
         &self,
         pattern: &Pattern,
-        rhs: &PatternOrMap,
+        rhs: R,
         conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
         out: &mut Atom,
@@ -163,15 +266,15 @@ impl Atom {
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    pub fn replace_all_multiple(&self, replacements: &[Replacement<'_>]) -> Atom {
+    pub fn replace_all_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
         self.as_view().replace_all_multiple(replacements)
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
     /// Returns `true` iff a match was found.
-    pub fn replace_all_multiple_into(
+    pub fn replace_all_multiple_into<T: BorrowReplacement>(
         &self,
-        replacements: &[Replacement<'_>],
+        replacements: &[T],
         out: &mut Atom,
     ) -> bool {
         self.as_view().replace_all_multiple_into(replacements, out)
@@ -182,6 +285,27 @@ impl Atom {
     /// A [Context] object is passed to the function, which contains information about the current position in the expression.
     pub fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
         self.as_view().replace_map(m)
+    }
+
+    /// Return an iterator that replaces the pattern in the target once.
+    pub fn replace_iter<'a>(
+        &'a self,
+        pattern: &'a Pattern,
+        rhs: &'a PatternOrMap,
+        conditions: &'a Condition<PatternRestriction>,
+        settings: &'a MatchSettings,
+    ) -> ReplaceIterator<'a, 'a> {
+        ReplaceIterator::new(pattern, self.as_view(), rhs, conditions, settings)
+    }
+
+    /// Return an iterator over matched expressions.
+    pub fn pattern_match<'a>(
+        &'a self,
+        pattern: &'a Pattern,
+        conditions: &'a Condition<PatternRestriction>,
+        settings: &'a MatchSettings,
+    ) -> PatternAtomTreeIterator<'a, 'a> {
+        PatternAtomTreeIterator::new(pattern, self.as_view(), conditions, settings)
     }
 }
 
@@ -281,12 +405,12 @@ impl<'a> AtomView<'a> {
     }
 
     /// Returns true iff `self` contains `a` literally.
-    pub fn contains(&self, a: AtomView) -> bool {
+    pub fn contains<T: AsAtomView>(&self, a: T) -> bool {
         let mut stack = Vec::with_capacity(20);
         stack.push(*self);
 
         while let Some(c) = stack.pop() {
-            if a == c {
+            if a.as_atom_view() == c {
                 return true;
             }
 
@@ -632,30 +756,34 @@ impl<'a> AtomView<'a> {
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    pub fn replace_all(
+    pub fn replace_all<R: BorrowPatternOrMap>(
         &self,
         pattern: &Pattern,
-        rhs: &PatternOrMap,
+        rhs: R,
         conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
     ) -> Atom {
-        pattern.replace_all(*self, rhs, conditions, settings)
+        let mut out = Atom::new();
+        self.replace_all_into(pattern, rhs, conditions, settings, &mut out);
+        out
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    pub fn replace_all_into(
+    pub fn replace_all_into<R: BorrowPatternOrMap>(
         &self,
         pattern: &Pattern,
-        rhs: &PatternOrMap,
+        rhs: R,
         conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
         out: &mut Atom,
     ) -> bool {
-        pattern.replace_all_into(*self, rhs, conditions, settings, out)
+        Workspace::get_local().with(|ws| {
+            self.replace_all_with_ws_into(pattern, rhs.borrow(), ws, conditions, settings, out)
+        })
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    pub fn replace_all_multiple(&self, replacements: &[Replacement<'_>]) -> Atom {
+    pub fn replace_all_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
         let mut out = Atom::new();
         self.replace_all_multiple_into(replacements, &mut out);
         out
@@ -663,9 +791,9 @@ impl<'a> AtomView<'a> {
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
     /// Returns `true` iff a match was found.
-    pub fn replace_all_multiple_into(
+    pub fn replace_all_multiple_into<T: BorrowReplacement>(
         &self,
-        replacements: &[Replacement<'_>],
+        replacements: &[T],
         out: &mut Atom,
     ) -> bool {
         Workspace::get_local().with(|ws| {
@@ -683,9 +811,9 @@ impl<'a> AtomView<'a> {
     }
 
     /// Replace all occurrences of the patterns in the target, without normalizing the output.
-    fn replace_all_no_norm(
+    fn replace_all_no_norm<T: BorrowReplacement>(
         &self,
-        replacements: &[Replacement<'_>],
+        replacements: &[T],
         workspace: &Workspace,
         tree_level: usize,
         fn_level: usize,
@@ -694,6 +822,8 @@ impl<'a> AtomView<'a> {
     ) -> bool {
         let mut beyond_max_level = true;
         for (rep_id, r) in replacements.iter().enumerate() {
+            let r = r.borrow();
+
             let def_c = Condition::default();
             let def_s = MatchSettings::default();
             let conditions = r.conditions.unwrap_or(&def_c);
@@ -715,10 +845,10 @@ impl<'a> AtomView<'a> {
                 continue;
             }
 
-            if r.pat.could_match(*self) {
+            if r.pattern.could_match(*self) {
                 let mut match_stack = MatchStack::new(conditions, settings);
 
-                let mut it = AtomMatchIterator::new(r.pat, *self);
+                let mut it = AtomMatchIterator::new(&r.pattern, *self);
                 if let Some((_, used_flags)) = it.next(&mut match_stack) {
                     let mut rhs_subs = workspace.new_atom();
 
@@ -730,8 +860,8 @@ impl<'a> AtomView<'a> {
                     } else {
                         match_stack.stack = key.1;
 
-                        match r.rhs {
-                            PatternOrMap::Pattern(rhs) => {
+                        match &r.rhs.borrow() {
+                            BorrowedPatternOrMap::Pattern(rhs) => {
                                 rhs.substitute_wildcards(
                                     workspace,
                                     &mut rhs_subs,
@@ -740,14 +870,14 @@ impl<'a> AtomView<'a> {
                                 )
                                 .unwrap(); // TODO: escalate?
                             }
-                            PatternOrMap::Map(f) => {
+                            BorrowedPatternOrMap::Map(f) => {
                                 let mut rhs = f(&match_stack);
                                 std::mem::swap(rhs_subs.deref_mut(), &mut rhs);
                             }
                         }
 
                         if rhs_cache.len() < settings.rhs_cache_size
-                            && !matches!(r.rhs, PatternOrMap::Pattern(Pattern::Literal(_)))
+                            && !matches!(r.rhs, BorrowedPatternOrMap::Pattern(Pattern::Literal(_)))
                         {
                             rhs_cache.insert(
                                 (rep_id, match_stack.stack.clone()),
@@ -900,6 +1030,63 @@ impl<'a> AtomView<'a> {
 
         submatch
     }
+
+    /// Return an iterator that replaces the pattern in the target once.
+    pub fn replace_iter(
+        &self,
+        pattern: &'a Pattern,
+        rhs: &'a PatternOrMap,
+        conditions: &'a Condition<PatternRestriction>,
+        settings: &'a MatchSettings,
+    ) -> ReplaceIterator<'a, 'a> {
+        ReplaceIterator::new(pattern, *self, rhs, conditions, settings)
+    }
+
+    pub fn pattern_match(
+        &self,
+        pattern: &'a Pattern,
+        conditions: &'a Condition<PatternRestriction>,
+        settings: &'a MatchSettings,
+    ) -> PatternAtomTreeIterator<'a, 'a> {
+        PatternAtomTreeIterator::new(pattern, *self, conditions, settings)
+    }
+
+    /// Replace all occurrences of the pattern in the target, returning `true` iff a match was found.
+    /// For every matched atom, the first canonical match is used and then the atom is skipped.
+    pub fn replace_all_with_ws_into(
+        &self,
+        pattern: &Pattern,
+        rhs: BorrowedPatternOrMap,
+        workspace: &Workspace,
+        conditions: Option<&Condition<PatternRestriction>>,
+        settings: Option<&MatchSettings>,
+        out: &mut Atom,
+    ) -> bool {
+        let rep = BorrowedReplacement {
+            pattern,
+            rhs,
+            conditions,
+            settings,
+        };
+
+        let mut rhs_cache = HashMap::default();
+        let matched = self.replace_all_no_norm(
+            std::slice::from_ref(&rep),
+            workspace,
+            0,
+            0,
+            &mut rhs_cache,
+            out,
+        );
+
+        if matched {
+            let mut norm = workspace.new_atom();
+            out.as_view().normalize(workspace, &mut norm);
+            std::mem::swap(out, &mut norm);
+        }
+
+        matched
+    }
 }
 
 impl FromStr for Pattern {
@@ -914,7 +1101,7 @@ impl FromStr for Pattern {
 impl Pattern {
     pub fn parse(input: &str) -> Result<Pattern, String> {
         // TODO: use workspace instead of owned atom
-        Ok(Atom::parse(input)?.into_pattern())
+        Ok(Atom::parse(input)?.to_pattern())
     }
 
     /// Convert the pattern to an atom, if there are not transformers present.
@@ -1510,99 +1697,6 @@ impl Pattern {
         }
 
         Ok(())
-    }
-
-    /// Return an iterator that replaces the pattern in the target once.
-    pub fn replace_iter<'a>(
-        &'a self,
-        target: AtomView<'a>,
-        rhs: &'a PatternOrMap,
-        conditions: &'a Condition<PatternRestriction>,
-        settings: &'a MatchSettings,
-    ) -> ReplaceIterator<'a, 'a> {
-        ReplaceIterator::new(self, target, rhs, conditions, settings)
-    }
-
-    /// Replace all occurrences of the pattern in the target
-    /// For every matched atom, the first canonical match is used and then the atom is skipped.
-    pub fn replace_all(
-        &self,
-        target: AtomView<'_>,
-        rhs: &PatternOrMap,
-        conditions: Option<&Condition<PatternRestriction>>,
-        settings: Option<&MatchSettings>,
-    ) -> Atom {
-        Workspace::get_local().with(|ws| {
-            let mut out = ws.new_atom();
-            self.replace_all_with_ws_into(target, rhs, ws, conditions, settings, &mut out);
-            out.into_inner()
-        })
-    }
-
-    /// Replace all occurrences of the pattern in the target, returning `true` iff a match was found.
-    /// For every matched atom, the first canonical match is used and then the atom is skipped.
-    pub fn replace_all_into(
-        &self,
-        target: AtomView<'_>,
-        rhs: &PatternOrMap,
-        conditions: Option<&Condition<PatternRestriction>>,
-        settings: Option<&MatchSettings>,
-        out: &mut Atom,
-    ) -> bool {
-        Workspace::get_local()
-            .with(|ws| self.replace_all_with_ws_into(target, rhs, ws, conditions, settings, out))
-    }
-
-    /// Replace all occurrences of the pattern in the target, returning `true` iff a match was found.
-    /// For every matched atom, the first canonical match is used and then the atom is skipped.
-    pub fn replace_all_with_ws_into(
-        &self,
-        target: AtomView<'_>,
-        rhs: &PatternOrMap,
-        workspace: &Workspace,
-        conditions: Option<&Condition<PatternRestriction>>,
-        settings: Option<&MatchSettings>,
-        out: &mut Atom,
-    ) -> bool {
-        let mut rep = Replacement::new(self, rhs);
-        if let Some(c) = conditions {
-            rep = rep.with_conditions(c);
-        }
-        if let Some(s) = settings {
-            rep = rep.with_settings(s);
-        }
-
-        let mut rhs_cache = HashMap::default();
-        let matched = target.replace_all_no_norm(
-            std::slice::from_ref(&rep),
-            workspace,
-            0,
-            0,
-            &mut rhs_cache,
-            out,
-        );
-
-        if matched {
-            let mut norm = workspace.new_atom();
-            out.as_view().normalize(workspace, &mut norm);
-            std::mem::swap(out, &mut norm);
-        }
-
-        matched
-    }
-
-    /// Replace all occurrences in `target`, where replacements are tested in the order that they are given.
-    pub fn replace_all_multiple(target: AtomView, replacements: &[Replacement<'_>]) -> Atom {
-        target.replace_all_multiple(replacements)
-    }
-
-    pub fn pattern_match<'a: 'b, 'b>(
-        &'b self,
-        target: AtomView<'a>,
-        conditions: &'b Condition<PatternRestriction>,
-        settings: &'b MatchSettings,
-    ) -> PatternAtomTreeIterator<'a, 'b> {
-        PatternAtomTreeIterator::new(self, target, conditions, settings)
     }
 }
 
@@ -3640,7 +3734,7 @@ mod test {
         let p = Pattern::parse("v2+v2^v1_").unwrap();
         let rhs = Pattern::parse("v2*(1+v2^(v1_-1))").unwrap();
 
-        let r = p.replace_all(a.as_view(), &rhs.into(), None, None);
+        let r = a.replace_all(&p, &rhs, None, None);
         let res = Atom::parse("v1*(v2+v2^2+1)+v2*(v2+1)").unwrap();
         assert_eq!(r, res);
     }
@@ -3651,9 +3745,9 @@ mod test {
         let p = Pattern::parse("v1").unwrap();
         let rhs = Pattern::parse("1").unwrap();
 
-        let r = p.replace_all(
-            a.as_view(),
-            &rhs.into(),
+        let r = a.replace_all(
+            &p,
+            &rhs,
             None,
             Some(&MatchSettings {
                 level_range: (1, Some(1)),
@@ -3667,15 +3761,10 @@ mod test {
     #[test]
     fn multiple() {
         let a = Atom::parse("f(v1,v2)").unwrap();
-        let p1 = Pattern::parse("v1").unwrap();
-        let rhs1 = Pattern::parse("v2").unwrap();
-
-        let p2 = Pattern::parse("v2").unwrap();
-        let rhs2 = Pattern::parse("v1").unwrap();
 
         let r = a.replace_all_multiple(&[
-            Replacement::new(&p1, &rhs1.into()),
-            Replacement::new(&p2, &rhs2.into()),
+            Replacement::new(Pattern::parse("v1").unwrap(), Pattern::parse("v2").unwrap()),
+            Replacement::new(Pattern::parse("v2").unwrap(), Pattern::parse("v1").unwrap()),
         ]);
 
         let res = Atom::parse("f(v2,v1)").unwrap();
@@ -3701,7 +3790,7 @@ mod test {
             .unwrap()
         }));
 
-        let r = p.replace_all(a.as_view(), &rhs, None, None);
+        let r = a.replace_all(&p, &rhs, None, None);
         let res = Atom::parse("v1(mu2)*v2(mu3)").unwrap();
         assert_eq!(r, res);
     }
@@ -3710,7 +3799,7 @@ mod test {
     fn repeat_replace() {
         let mut a = Atom::parse("f(10)").unwrap();
         let p1 = Pattern::parse("f(v1_)").unwrap();
-        let rhs1 = Pattern::parse("f(v1_ - 1)").unwrap().into();
+        let rhs1 = Pattern::parse("f(v1_ - 1)").unwrap();
 
         let rest = (
             State::get_symbol("v1_"),
@@ -3735,7 +3824,7 @@ mod test {
     fn match_stack_filter() {
         let a = Atom::parse("f(1,2,3,4)").unwrap();
         let p1 = Pattern::parse("f(v1_,v2_,v3_,v4_)").unwrap();
-        let rhs1 = Pattern::parse("f(v4_,v3_,v2_,v1_)").unwrap().into();
+        let rhs1 = Pattern::parse("f(v4_,v3_,v2_,v1_)").unwrap();
 
         let rest = PatternRestriction::MatchStack(Box::new(|m| {
             for x in m.get_matches().windows(2) {
@@ -3763,14 +3852,10 @@ mod test {
 
     #[test]
     fn match_cache() {
-        let mut expr = Atom::parse("f1(1)*f1(2)+f1(1)*f1(2)*f2").unwrap();
+        let expr = Atom::parse("f1(1)*f1(2)+f1(1)*f1(2)*f2").unwrap();
+        let pat = Pattern::parse("v1_(id1_)*v2_(id2_)").unwrap();
 
-        expr = Pattern::parse("v1_(id1_)*v2_(id2_)").unwrap().replace_all(
-            expr.as_view(),
-            &Pattern::parse("f1(id1_)").unwrap().into(),
-            None,
-            None,
-        );
+        let expr = expr.replace_all(&pat, &Pattern::parse("f1(id1_)").unwrap(), None, None);
 
         let res = Atom::parse("f1(1)+f2*f1(1)").unwrap();
         assert_eq!(expr, res);
@@ -3778,35 +3863,35 @@ mod test {
 
     #[test]
     fn match_cyclic() {
-        let rhs = Pattern::parse("1").unwrap().into();
+        let rhs = Pattern::parse("1").unwrap();
 
         // literal wrap
         let expr = Atom::parse("fc1(1,2,3)").unwrap();
         let p = Pattern::parse("fc1(v1__,v1_,1)").unwrap();
-        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
 
         // multiple wildcard wrap
         let expr = Atom::parse("fc1(1,2,3)").unwrap();
         let p = Pattern::parse("fc1(v1__,2)").unwrap();
-        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
 
         // wildcard wrap
         let expr = Atom::parse("fc1(1,2,3)").unwrap();
         let p = Pattern::parse("fc1(v1__,v1_,2)").unwrap();
-        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
 
         let expr = Atom::parse("fc1(v1,4,3,5,4)").unwrap();
         let p = Pattern::parse("fc1(v1__,v1_,v2_,v1_)").unwrap();
-        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
 
         // function shift
         let expr = Atom::parse("fc1(f1(1),f1(2),f1(3))").unwrap();
         let p = Pattern::parse("fc1(f1(v1_),f1(2),f1(3))").unwrap();
-        let expr = p.replace_all(expr.as_view(), &rhs, None, None);
+        let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
     }
 

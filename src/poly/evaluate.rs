@@ -7,7 +7,12 @@ use ahash::{AHasher, HashMap, HashSet, HashSetExt};
 use rand::{thread_rng, Rng};
 
 use crate::{
-    atom::Symbol,
+    atom::{Atom, AtomView},
+    domains::{float::Real, Ring},
+    evaluate::EvaluationFn,
+};
+use crate::{
+    atom::{AtomCore, Symbol},
     coefficient::CoefficientView,
     domains::{
         float::NumericalFloatLike,
@@ -15,11 +20,6 @@ use crate::{
         EuclideanDomain,
     },
     state::Workspace,
-};
-use crate::{
-    atom::{Atom, AtomView},
-    domains::{float::Real, Ring},
-    evaluate::EvaluationFn,
 };
 
 use super::{polynomial::MultivariatePolynomial, PositiveExponent};
@@ -1961,7 +1961,7 @@ auto 𝑖 = 1i;\n",
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::Atom,
+        atom::{Atom, AtomCore},
         domains::{float::Complex, rational::Q},
         poly::{
             evaluate::{BorrowedHornerScheme, InstructionSetPrinter},

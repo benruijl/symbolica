@@ -32,7 +32,7 @@ use smartstring::{LazyCompact, SmartString};
 use pyo3::pymodule;
 
 use crate::{
-    atom::{Atom, AtomType, AtomView, ListIterator, Symbol},
+    atom::{Atom, AtomCore, AtomType, AtomView, ListIterator, Symbol},
     coefficient::CoefficientView,
     domains::{
         algebraic_number::AlgebraicExtension,

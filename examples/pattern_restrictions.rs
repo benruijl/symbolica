@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::{Atom, AtomView},
+    atom::{Atom, AtomCore, AtomView},
     coefficient::CoefficientView,
     domains::finite_field,
     id::{Condition, Match, MatchSettings, WildcardRestriction},
@@ -9,7 +9,7 @@ fn main() {
     let expr = Atom::parse("f(1,2,3,4,5,6,7)").unwrap();
     let pat_expr = Atom::parse("f(x__,y__,z__,w__)").unwrap();
 
-    let pattern = pat_expr.as_view().into_pattern();
+    let pattern = pat_expr.as_view().to_pattern();
 
     let x = State::get_symbol("x__");
     let y = State::get_symbol("y__");

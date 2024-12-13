@@ -251,20 +251,6 @@ impl std::fmt::Display for Symbol {
     }
 }
 
-impl Atom {
-    /// Construct a printer for the atom with special options.
-    pub fn printer<'a>(&'a self, opts: PrintOptions) -> AtomPrinter<'a> {
-        AtomPrinter::new_with_options(self.as_view(), opts)
-    }
-
-    /// Print the atom in a form that is unique and independent of any implementation details.
-    ///     
-    /// Anti-symmetric functions are not supported.
-    pub fn to_canonical_string(&self) -> String {
-        self.as_view().to_canonical_string()
-    }
-}
-
 impl<'a> AtomView<'a> {
     fn fmt_debug(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -277,7 +263,7 @@ impl<'a> AtomView<'a> {
         }
     }
 
-    pub fn format<W: std::fmt::Write>(
+    pub(crate) fn format<W: std::fmt::Write>(
         &self,
         fmt: &mut W,
         opts: &PrintOptions,
@@ -294,14 +280,14 @@ impl<'a> AtomView<'a> {
     }
 
     /// Construct a printer for the atom with special options.
-    pub fn printer(&self, opts: PrintOptions) -> AtomPrinter {
+    pub(crate) fn printer(&self, opts: PrintOptions) -> AtomPrinter {
         AtomPrinter::new_with_options(*self, opts)
     }
 
     /// Print the atom in a form that is unique and independent of any implementation details.
     ///
     /// Anti-symmetric functions are not supported.
-    pub fn to_canonical_string(&self) -> String {
+    pub(crate) fn to_canonical_string(&self) -> String {
         let mut s = String::new();
         self.to_canonical_view_impl(&mut s);
         s
@@ -955,7 +941,7 @@ mod test {
     use colored::control::ShouldColorize;
 
     use crate::{
-        atom::Atom,
+        atom::{Atom, AtomCore},
         domains::{finite_field::Zp, integer::Z, SelfRing},
         printer::{AtomPrinter, PrintOptions, PrintState},
         state::{FunctionAttribute, State},

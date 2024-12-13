@@ -1,6 +1,6 @@
 use brotli::CompressorWriter;
 use symbolica::{
-    atom::Atom,
+    atom::{Atom, AtomCore},
     id::Pattern,
     streaming::{TermStreamer, TermStreamerConfig},
 };

@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::Atom,
+    atom::{Atom, AtomCore},
     domains::rational::Q,
     poly::evaluate::{BorrowedHornerScheme, InstructionSetPrinter},
 };

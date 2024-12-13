@@ -1,4 +1,9 @@
-use symbolica::{atom::Atom, id::Pattern, state::State, transformer::Transformer};
+use symbolica::{
+    atom::{Atom, AtomCore},
+    id::Pattern,
+    state::State,
+    transformer::Transformer,
+};
 
 fn main() {
     let input = Atom::parse("f(1,3,2,3,1)").unwrap();

@@ -1283,6 +1283,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
+        atom::AtomCore,
         domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial, Ring},
         state::State,
     };

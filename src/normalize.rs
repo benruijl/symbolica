@@ -512,7 +512,7 @@ impl Atom {
     /// Merge two terms if possible. If this function returns `true`, `self`
     /// will have been updated by the merge from `other` and `other` should be discarded.
     /// If the function return `false`, no merge was possible and no modifications were made.
-    pub fn merge_terms(&mut self, other: AtomView, helper: &mut Self) -> bool {
+    pub(crate) fn merge_terms(&mut self, other: AtomView, helper: &mut Self) -> bool {
         if let Atom::Num(n1) = self {
             if let AtomView::Num(n2) = other {
                 n1.add(&n2);

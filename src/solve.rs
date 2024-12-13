@@ -1,7 +1,7 @@
 use std::{ops::Neg, sync::Arc};
 
 use crate::{
-    atom::{AsAtomView, Atom, AtomView, Symbol},
+    atom::{Atom, AtomCore, AtomView, Symbol},
     domains::{
         float::{FloatField, Real, SingleFloat},
         integer::Z,
@@ -14,60 +14,9 @@ use crate::{
     tensors::matrix::Matrix,
 };
 
-impl Atom {
-    /// Find the root of a function in `x` numerically over the reals using Newton's method.
-    pub fn nsolve<N: SingleFloat + Real + PartialOrd>(
-        &self,
-        x: Symbol,
-        init: N,
-        prec: N,
-        max_iterations: usize,
-    ) -> Result<N, String> {
-        self.as_view().nsolve(x, init, prec, max_iterations)
-    }
-
-    /// Solve a non-linear system numerically over the reals using Newton's method.
-    pub fn nsolve_system<
-        N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
-        T: AsAtomView,
-    >(
-        system: &[T],
-        vars: &[Symbol],
-        init: &[N],
-        prec: N,
-        max_iterations: usize,
-    ) -> Result<Vec<N>, String> {
-        AtomView::nsolve_system(system, vars, init, prec, max_iterations)
-    }
-
-    /// Solve a system that is linear in `vars`, if possible.
-    /// Each expression in `system` is understood to yield 0.
-    pub fn solve_linear_system<E: PositiveExponent, T1: AsAtomView, T2: AsAtomView>(
-        system: &[T1],
-        vars: &[T2],
-    ) -> Result<Vec<Atom>, String> {
-        AtomView::solve_linear_system::<E, T1, T2>(system, vars)
-    }
-
-    /// Convert a system of linear equations to a matrix representation, returning the matrix
-    /// and the right-hand side.
-    pub fn system_to_matrix<E: PositiveExponent, T1: AsAtomView, T2: AsAtomView>(
-        system: &[T1],
-        vars: &[T2],
-    ) -> Result<
-        (
-            Matrix<RationalPolynomialField<Z, E>>,
-            Matrix<RationalPolynomialField<Z, E>>,
-        ),
-        String,
-    > {
-        AtomView::system_to_matrix::<E, T1, T2>(system, vars)
-    }
-}
-
 impl<'a> AtomView<'a> {
     /// Find the root of a function in `x` numerically over the reals using Newton's method.
-    pub fn nsolve<N: SingleFloat + Real + PartialOrd>(
+    pub(crate) fn nsolve<N: SingleFloat + Real + PartialOrd>(
         &self,
         x: Symbol,
         init: N,
@@ -108,9 +57,9 @@ impl<'a> AtomView<'a> {
     }
 
     /// Solve a non-linear system numerically over the reals using Newton's method.
-    pub fn nsolve_system<
+    pub(crate) fn nsolve_system<
         N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
-        T: AsAtomView,
+        T: AtomCore,
     >(
         system: &[T],
         vars: &[Symbol],
@@ -219,7 +168,7 @@ impl<'a> AtomView<'a> {
 
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
-    pub fn solve_linear_system<E: PositiveExponent, T1: AsAtomView, T2: AsAtomView>(
+    pub(crate) fn solve_linear_system<E: PositiveExponent, T1: AtomCore, T2: AtomCore>(
         system: &[T1],
         vars: &[T2],
     ) -> Result<Vec<Atom>, String> {
@@ -235,7 +184,7 @@ impl<'a> AtomView<'a> {
 
     /// Convert a system of linear equations to a matrix representation, returning the matrix
     /// and the right-hand side.
-    pub fn system_to_matrix<E: PositiveExponent, T1: AsAtomView, T2: AsAtomView>(
+    pub(crate) fn system_to_matrix<E: PositiveExponent, T1: AtomCore, T2: AtomCore>(
         system: &[T1],
         vars: &[T2],
     ) -> Result<
@@ -347,7 +296,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{representation::InlineVar, Atom, AtomView},
+        atom::{representation::InlineVar, Atom, AtomCore, AtomView},
         domains::{
             float::{Real, F64},
             integer::Z,

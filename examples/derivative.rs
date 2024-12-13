@@ -1,4 +1,7 @@
-use symbolica::{atom::Atom, state::State};
+use symbolica::{
+    atom::{Atom, AtomCore},
+    state::State,
+};
 
 fn main() {
     let x = State::get_symbol("x");

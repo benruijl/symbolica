@@ -3740,7 +3740,11 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
 
 #[cfg(test)]
 mod test {
-    use crate::{atom::Atom, domains::integer::Z, state::State};
+    use crate::{
+        atom::{Atom, AtomCore},
+        domains::integer::Z,
+        state::State,
+    };
 
     #[test]
     fn mul_packed() {

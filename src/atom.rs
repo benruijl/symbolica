@@ -1,7 +1,8 @@
 mod coefficient;
+mod core;
 pub mod representation;
 
-use representation::{InlineNum, InlineVar};
+use representation::InlineVar;
 
 use crate::{
     coefficient::Coefficient,
@@ -12,6 +13,7 @@ use crate::{
 };
 use std::{cmp::Ordering, hash::Hash, ops::DerefMut, str::FromStr};
 
+pub use self::core::AtomCore;
 pub use self::representation::{
     Add, AddView, Fun, ListIterator, ListSlice, Mul, MulView, Num, NumView, Pow, PowView, Var,
     VarView,
@@ -20,7 +22,7 @@ use self::representation::{FunView, RawAtom};
 
 /// A symbol, for example the name of a variable or the name of a function,
 /// together with its properties.
-/// Should be created using `get_symbol` of `State`.
+/// Should be created using [State::get_symbol].
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Symbol {
     id: u32,
@@ -309,49 +311,6 @@ impl<'a> AtomOrView<'a> {
                 }
             }
         }
-    }
-}
-
-/// A trait for any type that can be converted into an `AtomView`.
-/// To be used for functions that accept any argument that can be
-/// converted to an `AtomView`.
-pub trait AsAtomView {
-    fn as_atom_view(&self) -> AtomView;
-}
-
-impl<'a> AsAtomView for AtomView<'a> {
-    fn as_atom_view(&self) -> AtomView<'a> {
-        *self
-    }
-}
-
-impl AsAtomView for InlineVar {
-    fn as_atom_view(&self) -> AtomView {
-        self.as_view()
-    }
-}
-
-impl AsAtomView for InlineNum {
-    fn as_atom_view(&self) -> AtomView {
-        self.as_view()
-    }
-}
-
-impl<T: AsRef<Atom>> AsAtomView for T {
-    fn as_atom_view(&self) -> AtomView {
-        self.as_ref().as_view()
-    }
-}
-
-impl<'a> AsAtomView for AtomOrView<'a> {
-    fn as_atom_view(&self) -> AtomView {
-        self.as_view()
-    }
-}
-
-impl AsRef<Atom> for Atom {
-    fn as_ref(&self) -> &Atom {
-        self
     }
 }
 
@@ -852,12 +811,12 @@ impl Atom {
     }
 }
 
-/// A constructor of a function. Consider using the [`fun!`] macro instead.
+/// A constructor of a function. Consider using the [crate::fun!] macro instead.
 ///
 /// For example:
 /// ```
 /// # use symbolica::{
-/// #     atom::{Atom, AsAtomView, FunctionBuilder},
+/// #     atom::{Atom, AtomCore, FunctionBuilder},
 /// #     state::{FunctionAttribute, State},
 /// # };
 /// # fn main() {
@@ -885,7 +844,7 @@ impl FunctionBuilder {
     }
 
     /// Add an argument to the function.
-    pub fn add_arg<T: AsAtomView>(mut self, arg: T) -> FunctionBuilder {
+    pub fn add_arg<T: AtomCore>(mut self, arg: T) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
             f.add_arg(arg.as_atom_view());
         }
@@ -894,7 +853,7 @@ impl FunctionBuilder {
     }
 
     /// Add multiple arguments to the function.
-    pub fn add_args<T: AsAtomView>(mut self, args: &[T]) -> FunctionBuilder {
+    pub fn add_args<T: AtomCore>(mut self, args: &[T]) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
             for a in args {
                 f.add_arg(a.as_atom_view());
@@ -1023,7 +982,7 @@ impl Atom {
     }
 
     /// Take the `self` to the power `exp`. Use [`Atom::npow()`] for a numerical power and [`Atom::rpow()`] for the reverse operation.
-    pub fn pow<T: AsAtomView>(&self, exp: T) -> Atom {
+    pub fn pow<T: AtomCore>(&self, exp: T) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
             self.as_view()
@@ -1035,7 +994,7 @@ impl Atom {
     }
 
     /// Take `base` to the power `self`.
-    pub fn rpow<T: AsAtomView>(&self, base: T) -> Atom {
+    pub fn rpow<T: AtomCore>(&self, base: T) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
             base.as_atom_view()
@@ -1047,7 +1006,7 @@ impl Atom {
     }
 
     /// Add the atoms in `args`.
-    pub fn add_many<'a, T: AsAtomView + Copy>(args: &[T]) -> Atom {
+    pub fn add_many<'a, T: AtomCore + Copy>(args: &[T]) -> Atom {
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
@@ -1062,7 +1021,7 @@ impl Atom {
     }
 
     /// Multiply the atoms in `args`.
-    pub fn mul_many<'a, T: AsAtomView + Copy>(args: &[T]) -> Atom {
+    pub fn mul_many<'a, T: AtomCore + Copy>(args: &[T]) -> Atom {
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
@@ -1571,9 +1530,19 @@ impl<T: Into<Coefficient>> std::ops::Div<T> for Atom {
     }
 }
 
+impl AsRef<Atom> for Atom {
+    fn as_ref(&self) -> &Atom {
+        self
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::{atom::Atom, fun, state::State};
+    use crate::{
+        atom::{Atom, AtomCore},
+        fun,
+        state::State,
+    };
 
     #[test]
     fn debug() {

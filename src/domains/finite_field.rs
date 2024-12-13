@@ -172,7 +172,7 @@ pub trait FiniteFieldCore<UField: FiniteFieldWorkspace>: Field {
 /// `m` will be a prime, and the domain will be a field.
 ///
 /// [Zp] ([`FiniteField<u32>`]) and [Zp64] ([`FiniteField<u64>`]) use Montgomery modular arithmetic
-/// to increase the performance of the multiplication operator. For the prime `2`, use [Z2] instead.
+/// to increase the performance of the multiplication operator. For the prime `2`, use [type@Z2] instead.
 ///
 /// For `m` larger than `2^64`, use [`FiniteField<Integer>`].
 ///

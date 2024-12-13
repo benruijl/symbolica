@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    atom::{AsAtomView, Atom, AtomView, FunctionBuilder, Symbol},
+    atom::{Atom, AtomView, FunctionBuilder, Symbol},
     coefficient::{Coefficient, CoefficientView},
     combinatorics::CombinationWithReplacementIterator,
     domains::{atom::AtomField, integer::Integer, rational::Rational},
@@ -12,35 +12,9 @@ use crate::{
     state::Workspace,
 };
 
-impl Atom {
-    /// Take a derivative of the expression with respect to `x`.
-    pub fn derivative(&self, x: Symbol) -> Atom {
-        self.as_view().derivative(x)
-    }
-
-    /// Take a derivative of the expression with respect to `x` and
-    /// write the result in `out`.
-    /// Returns `true` if the derivative is non-zero.
-    pub fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
-        self.as_view().derivative_into(x, out)
-    }
-
-    /// Series expand in `x` around `expansion_point` to depth `depth`.
-    pub fn series<T: AsAtomView>(
-        &self,
-        x: Symbol,
-        expansion_point: T,
-        depth: Rational,
-        depth_is_absolute: bool,
-    ) -> Result<Series<AtomField>, &'static str> {
-        self.as_view()
-            .series(x, expansion_point.as_atom_view(), depth, depth_is_absolute)
-    }
-}
-
 impl<'a> AtomView<'a> {
     /// Take a derivative of the expression with respect to `x`.
-    pub fn derivative(&self, x: Symbol) -> Atom {
+    pub(crate) fn derivative(&self, x: Symbol) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut out = ws.new_atom();
             self.derivative_with_ws_into(x, ws, &mut out);
@@ -51,14 +25,14 @@ impl<'a> AtomView<'a> {
     /// Take a derivative of the expression with respect to `x` and
     /// write the result in `out`.
     /// Returns `true` if the derivative is non-zero.
-    pub fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
+    pub(crate) fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
         Workspace::get_local().with(|ws| self.derivative_with_ws_into(x, ws, out))
     }
 
     /// Take a derivative of the expression with respect to `x` and
     /// write the result in `out`.
     /// Returns `true` if the derivative is non-zero.
-    pub fn derivative_with_ws_into(
+    pub(crate) fn derivative_with_ws_into(
         &self,
         x: Symbol,
         workspace: &Workspace,
@@ -762,7 +736,10 @@ impl Sub<&Atom> for &Series<AtomField> {
 
 #[cfg(test)]
 mod test {
-    use crate::{atom::Atom, state::State};
+    use crate::{
+        atom::{Atom, AtomCore},
+        state::State,
+    };
 
     #[test]
     fn derivative() {

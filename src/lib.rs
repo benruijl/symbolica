@@ -7,7 +7,7 @@
 //! For example:
 //!
 //! ```
-//! use symbolica::{atom::Atom, state::State};
+//! use symbolica::{atom::Atom, atom::AtomCore, state::State};
 //!
 //! fn main() {
 //!     let input = Atom::parse("x^2*log(2*x + y) + exp(3*x)").unwrap();

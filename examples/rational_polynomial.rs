@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::Atom,
+    atom::{Atom, AtomCore},
     domains::{integer::Z, rational_polynomial::RationalPolynomial},
 };
 

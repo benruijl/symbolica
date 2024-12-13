@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::{Atom, AtomView},
+    atom::{Atom, AtomCore, AtomView},
     id::{Condition, Match, MatchSettings, Pattern, WildcardRestriction},
     state::{RecycledAtom, State},
 };
@@ -31,7 +31,7 @@ fn fibonacci() {
         target.replace_all_into(&pattern, &rhs, Some(&restrictions), None, &mut out);
 
         let mut out2 = RecycledAtom::new();
-        out.expand_into(&mut out2);
+        out.expand_into(None, &mut out2);
 
         out2.replace_all_into(&lhs_zero_pat, &rhs_one, None, None, &mut out);
 
@@ -49,9 +49,9 @@ fn replace_once() {
     let pat_expr = Atom::parse("f(x_)").unwrap();
 
     let rhs_expr = Atom::parse("g(x_)").unwrap();
-    let rhs = rhs_expr.as_view().into_pattern().into();
+    let rhs = rhs_expr.as_view().to_pattern().into();
 
-    let pattern = pat_expr.as_view().into_pattern();
+    let pattern = pat_expr.as_view().to_pattern();
     let restrictions = Condition::default();
     let settings = MatchSettings::default();
 

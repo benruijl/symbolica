@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::{representation::InlineVar, Atom, AtomView},
+    atom::{representation::InlineVar, Atom, AtomCore, AtomView},
     domains::{
         integer::Z,
         rational::Q,

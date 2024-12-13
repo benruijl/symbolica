@@ -644,7 +644,7 @@ impl<R: Field + PolynomialGCD<E>, E: PositiveExponent>
 
 #[cfg(test)]
 mod tests {
-    use crate::atom::Atom;
+    use crate::atom::{Atom, AtomCore};
     use crate::domains::algebraic_number::AlgebraicExtension;
     use crate::domains::finite_field::{PrimeIteratorU64, Zp, Z2};
     use crate::domains::rational::Q;

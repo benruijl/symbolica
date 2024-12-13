@@ -1093,51 +1093,9 @@ impl<'a> TryFrom<AtomView<'a>> for Float {
     }
 }
 
-impl Atom {
-    /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
-    pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
-        self.as_view().set_coefficient_ring(vars)
-    }
-
-    /// Convert all coefficients to floats with a given precision `decimal_prec``.
-    /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
-    pub fn coefficients_to_float(&self, decimal_prec: u32) -> Atom {
-        let mut a = Atom::new();
-        self.as_view()
-            .coefficients_to_float_into(decimal_prec, &mut a);
-        a
-    }
-
-    /// Convert all coefficients to floats with a given precision `decimal_prec``.
-    /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
-    pub fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
-        self.as_view().coefficients_to_float_into(decimal_prec, out);
-    }
-
-    /// Map all coefficients using a given function.
-    pub fn map_coefficient<F: Fn(CoefficientView) -> Coefficient + Copy>(&self, f: F) -> Atom {
-        self.as_view().map_coefficient(f)
-    }
-
-    /// Map all coefficients using a given function.
-    pub fn map_coefficient_into<F: Fn(CoefficientView) -> Coefficient + Copy>(
-        &self,
-        f: F,
-        out: &mut Atom,
-    ) {
-        self.as_view().map_coefficient_into(f, out);
-    }
-
-    /// Map all floating point and rational coefficients to the best rational approximation
-    /// in the interval `[self*(1-relative_error),self*(1+relative_error)]`.
-    pub fn rationalize_coefficients(&self, relative_error: &Rational) -> Atom {
-        self.as_view().rationalize_coefficients(relative_error)
-    }
-}
-
 impl<'a> AtomView<'a> {
     /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
-    pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
+    pub(crate) fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut out = ws.new_atom();
             self.set_coefficient_ring_with_ws_into(vars, ws, &mut out);
@@ -1146,7 +1104,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
-    pub fn set_coefficient_ring_with_ws_into(
+    pub(crate) fn set_coefficient_ring_with_ws_into(
         &self,
         vars: &Arc<Vec<Variable>>,
         workspace: &Workspace,
@@ -1312,14 +1270,7 @@ impl<'a> AtomView<'a> {
 
     /// Convert all coefficients to floats with a given precision `decimal_prec``.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
-    pub fn coefficients_to_float(&self, decimal_prec: u32) -> Atom {
-        let mut a = Atom::new();
-        self.coefficients_to_float_into(decimal_prec, &mut a);
-        a
-    }
-    /// Convert all coefficients to floats with a given precision `decimal_prec``.
-    /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
-    pub fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
+    pub(crate) fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
         let binary_prec = (decimal_prec as f64 * LOG2_10).ceil() as u32;
 
         Workspace::get_local().with(|ws| self.to_float_impl(binary_prec, true, false, ws, out))
@@ -1442,7 +1393,7 @@ impl<'a> AtomView<'a> {
 
     /// Map all floating point and rational coefficients to the best rational approximation
     /// in the interval `[self*(1-relative_error),self*(1+relative_error)]`.
-    pub fn rationalize_coefficients(&self, relative_error: &Rational) -> Atom {
+    pub(crate) fn rationalize_coefficients(&self, relative_error: &Rational) -> Atom {
         let mut a = Atom::new();
         Workspace::get_local().with(|ws| {
             self.map_coefficient_impl(
@@ -1467,14 +1418,17 @@ impl<'a> AtomView<'a> {
     }
 
     /// Map all coefficients using a given function.
-    pub fn map_coefficient<F: Fn(CoefficientView) -> Coefficient + Copy>(&self, f: F) -> Atom {
+    pub(crate) fn map_coefficient<F: Fn(CoefficientView) -> Coefficient + Copy>(
+        &self,
+        f: F,
+    ) -> Atom {
         let mut a = Atom::new();
         self.map_coefficient_into(f, &mut a);
         a
     }
 
     /// Map all coefficients using a given function.
-    pub fn map_coefficient_into<F: Fn(CoefficientView) -> Coefficient + Copy>(
+    pub(crate) fn map_coefficient_into<F: Fn(CoefficientView) -> Coefficient + Copy>(
         &self,
         f: F,
         out: &mut Atom,
@@ -1574,7 +1528,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::Atom,
+        atom::{Atom, AtomCore},
         domains::float::Float,
         printer::{AtomPrinter, PrintOptions},
         state::State,

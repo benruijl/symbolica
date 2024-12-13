@@ -1,4 +1,7 @@
-use symbolica::{atom::Atom, id::Pattern};
+use symbolica::{
+    atom::{Atom, AtomCore},
+    id::Pattern,
+};
 
 fn main() {
     let expr = Atom::parse(" f(1,2,x) + f(1,2,3)").unwrap();

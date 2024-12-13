@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::Atom,
+    atom::{Atom, AtomCore},
     domains::{finite_field::Zp, integer::Z},
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Variable},
     state::State,

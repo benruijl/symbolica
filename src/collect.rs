@@ -1,88 +1,11 @@
 use crate::{
-    atom::{Add, AsAtomView, Atom, AtomView, Symbol},
+    atom::{Add, Atom, AtomCore, AtomView, Symbol},
     coefficient::{Coefficient, CoefficientView},
     domains::{integer::Z, rational::Q},
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Exponent},
     state::Workspace,
 };
 use std::sync::Arc;
-
-impl Atom {
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function, e.g.
-    ///
-    /// ```math
-    /// collect(x + x * y + x^2, x) = x * (1+y) + x^2
-    /// ```
-    ///
-    /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
-    /// `key_map` and `coeff_map` respectively.
-    pub fn collect<E: Exponent, T: AsAtomView>(
-        &self,
-        x: T,
-        key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
-        coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
-    ) -> Atom {
-        self.as_view().collect::<E, T>(x, key_map, coeff_map)
-    }
-
-    /// Collect terms involving the same power of `x`, where `x` is a variable or function, e.g.
-    ///
-    /// ```math
-    /// collect(x + x * y + x^2, x) = x * (1+y) + x^2
-    /// ```
-    ///
-    /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
-    /// `key_map` and `coeff_map` respectively.
-    pub fn collect_multiple<E: Exponent, T: AsAtomView>(
-        &self,
-        xs: &[T],
-        key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
-        coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
-    ) -> Atom {
-        self.as_view()
-            .collect_multiple::<E, T>(xs, key_map, coeff_map)
-    }
-
-    /// Collect terms involving the same power of `x` in `xs`, where `xs` is a list of indeterminates.
-    /// Return the list of key-coefficient pairs
-    pub fn coefficient_list<E: Exponent, T: AsAtomView>(&self, xs: &[T]) -> Vec<(Atom, Atom)> {
-        self.as_view().coefficient_list::<E, T>(xs)
-    }
-
-    /// Collect terms involving the literal occurrence of `x`.
-    pub fn coefficient<T: AsAtomView>(&self, x: T) -> Atom {
-        Workspace::get_local().with(|ws| self.as_view().coefficient_with_ws(x.as_atom_view(), ws))
-    }
-
-    /// Write the expression over a common denominator.
-    pub fn together(&self) -> Atom {
-        self.as_view().together()
-    }
-
-    /// Write the expression as a sum of terms with minimal denominators.
-    pub fn apart(&self, x: Symbol) -> Atom {
-        self.as_view().apart(x)
-    }
-
-    /// Cancel all common factors between numerators and denominators.
-    /// Any non-canceling parts of the expression will not be rewritten.
-    pub fn cancel(&self) -> Atom {
-        self.as_view().cancel()
-    }
-
-    /// Factor the expression over the rationals.
-    pub fn factor(&self) -> Atom {
-        self.as_view().factor()
-    }
-
-    /// Collect numerical factors by removing the numerical content from additions.
-    /// For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
-    ///
-    /// The first argument of the addition is normalized to a positive quantity.
-    pub fn collect_num(&self) -> Atom {
-        self.as_view().collect_num()
-    }
-}
 
 impl<'a> AtomView<'a> {
     /// Collect terms involving the same power of `x`, where `x` is an indeterminate, e.g.
@@ -93,7 +16,7 @@ impl<'a> AtomView<'a> {
     ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
     /// `key_map` and `coeff_map` respectively.
-    pub fn collect<E: Exponent, T: AsAtomView>(
+    pub(crate) fn collect<E: Exponent, T: AtomCore>(
         &self,
         x: T,
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
@@ -102,7 +25,7 @@ impl<'a> AtomView<'a> {
         self.collect_multiple::<E, T>(std::slice::from_ref(&x), key_map, coeff_map)
     }
 
-    pub fn collect_multiple<E: Exponent, T: AsAtomView>(
+    pub(crate) fn collect_multiple<E: Exponent, T: AtomCore>(
         &self,
         xs: &[T],
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
@@ -114,7 +37,7 @@ impl<'a> AtomView<'a> {
         out
     }
 
-    pub fn collect_multiple_impl<E: Exponent, T: AsAtomView>(
+    pub(crate) fn collect_multiple_impl<E: Exponent, T: AtomCore>(
         &self,
         xs: &[T],
         ws: &Workspace,
@@ -166,7 +89,7 @@ impl<'a> AtomView<'a> {
 
     /// Collect terms involving the same powers of `x` in `xs`, where `x` is an indeterminate.
     /// Return the list of key-coefficient pairs.
-    pub fn coefficient_list<E: Exponent, T: AsAtomView>(&self, xs: &[T]) -> Vec<(Atom, Atom)> {
+    pub(crate) fn coefficient_list<E: Exponent, T: AtomCore>(&self, xs: &[T]) -> Vec<(Atom, Atom)> {
         let vars = xs
             .iter()
             .map(|x| x.as_atom_view().to_owned().into())
@@ -188,11 +111,6 @@ impl<'a> AtomView<'a> {
         }
 
         coeffs
-    }
-
-    /// Collect terms involving the literal occurrence of `x`.
-    pub fn coefficient<T: AsAtomView>(&self, x: T) -> Atom {
-        Workspace::get_local().with(|ws| self.coefficient_with_ws(x.as_atom_view(), ws))
     }
 
     /// Collect terms involving the literal occurrence of `x`.
@@ -312,7 +230,7 @@ impl<'a> AtomView<'a> {
 
     /// Cancel all common factors between numerators and denominators.
     /// Any non-canceling parts of the expression will not be rewritten.
-    pub fn cancel(&self) -> Atom {
+    pub(crate) fn cancel(&self) -> Atom {
         let mut out = Atom::new();
         self.cancel_into(&mut out);
         out
@@ -320,7 +238,7 @@ impl<'a> AtomView<'a> {
 
     /// Cancel all common factors between numerators and denominators.
     /// Any non-canceling parts of the expression will not be rewritten.
-    pub fn cancel_into(&self, out: &mut Atom) {
+    pub(crate) fn cancel_into(&self, out: &mut Atom) {
         Workspace::get_local().with(|ws| {
             self.cancel_with_ws_into(ws, out);
         });
@@ -656,7 +574,7 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{representation::InlineVar, Atom},
+        atom::{representation::InlineVar, Atom, AtomCore},
         fun,
         state::State,
     };

@@ -6,7 +6,7 @@ use dyn_clone::DynClone;
 use crate::{
     atom::{
         representation::{InlineVar, ListSlice},
-        AsAtomView, Atom, AtomType, AtomView, Num, SliceType, Symbol,
+        Atom, AtomCore, AtomType, AtomView, Num, SliceType, Symbol,
     },
     state::Workspace,
     transformer::{Transformer, TransformerError},
@@ -194,121 +194,6 @@ impl<'a> BorrowReplacement for BorrowedReplacement<'a> {
     }
 }
 
-impl Atom {
-    pub fn to_pattern(&self) -> Pattern {
-        Pattern::from_view(self.as_view(), true)
-    }
-
-    /// Get all symbols in the expression, optionally including function symbols.
-    pub fn get_all_symbols(&self, include_function_symbols: bool) -> HashSet<Symbol> {
-        let mut out = HashSet::default();
-        self.as_view()
-            .get_all_symbols_impl(include_function_symbols, &mut out);
-        out
-    }
-
-    /// Get all variables and functions in the expression.
-    pub fn get_all_indeterminates<'a>(&'a self, enter_functions: bool) -> HashSet<AtomView<'a>> {
-        let mut out = HashSet::default();
-        self.as_view()
-            .get_all_indeterminates_impl(enter_functions, &mut out);
-        out
-    }
-
-    /// Returns true iff `self` contains the symbol `s`.
-    pub fn contains_symbol(&self, s: Symbol) -> bool {
-        self.as_view().contains_symbol(s)
-    }
-
-    /// Returns true iff `self` contains `a` literally.
-    pub fn contains<T: AsAtomView>(&self, s: T) -> bool {
-        self.as_view().contains(s.as_atom_view())
-    }
-
-    /// Check if the expression can be considered a polynomial in some variables, including
-    /// redefinitions. For example `f(x)+y` is considered a polynomial in `f(x)` and `y`, whereas
-    /// `f(x)+x` is not a polynomial.
-    ///
-    /// Rational powers or powers in variables are not rewritten, e.g. `x^(2y)` is not considered
-    /// polynomial in `x^y`.
-    pub fn is_polynomial(
-        &self,
-        allow_not_expanded: bool,
-        allow_negative_powers: bool,
-    ) -> Option<HashSet<AtomView<'_>>> {
-        self.as_view()
-            .is_polynomial(allow_not_expanded, allow_negative_powers)
-    }
-
-    /// Replace all occurrences of the pattern.
-    pub fn replace_all<R: BorrowPatternOrMap>(
-        &self,
-        pattern: &Pattern,
-        rhs: R,
-        conditions: Option<&Condition<PatternRestriction>>,
-        settings: Option<&MatchSettings>,
-    ) -> Atom {
-        self.as_view()
-            .replace_all(pattern, rhs, conditions, settings)
-    }
-
-    /// Replace all occurrences of the pattern.
-    pub fn replace_all_into<R: BorrowPatternOrMap>(
-        &self,
-        pattern: &Pattern,
-        rhs: R,
-        conditions: Option<&Condition<PatternRestriction>>,
-        settings: Option<&MatchSettings>,
-        out: &mut Atom,
-    ) -> bool {
-        self.as_view()
-            .replace_all_into(pattern, rhs, conditions, settings, out)
-    }
-
-    /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    pub fn replace_all_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
-        self.as_view().replace_all_multiple(replacements)
-    }
-
-    /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    /// Returns `true` iff a match was found.
-    pub fn replace_all_multiple_into<T: BorrowReplacement>(
-        &self,
-        replacements: &[T],
-        out: &mut Atom,
-    ) -> bool {
-        self.as_view().replace_all_multiple_into(replacements, out)
-    }
-
-    /// Replace part of an expression by calling the map `m` on each subexpression.
-    /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
-    /// A [Context] object is passed to the function, which contains information about the current position in the expression.
-    pub fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
-        self.as_view().replace_map(m)
-    }
-
-    /// Return an iterator that replaces the pattern in the target once.
-    pub fn replace_iter<'a>(
-        &'a self,
-        pattern: &'a Pattern,
-        rhs: &'a PatternOrMap,
-        conditions: &'a Condition<PatternRestriction>,
-        settings: &'a MatchSettings,
-    ) -> ReplaceIterator<'a, 'a> {
-        ReplaceIterator::new(pattern, self.as_view(), rhs, conditions, settings)
-    }
-
-    /// Return an iterator over matched expressions.
-    pub fn pattern_match<'a>(
-        &'a self,
-        pattern: &'a Pattern,
-        conditions: &'a Condition<PatternRestriction>,
-        settings: &'a MatchSettings,
-    ) -> PatternAtomTreeIterator<'a, 'a> {
-        PatternAtomTreeIterator::new(pattern, self.as_view(), conditions, settings)
-    }
-}
-
 /// The context of an atom.
 #[derive(Clone, Copy, Debug)]
 pub struct Context {
@@ -321,18 +206,22 @@ pub struct Context {
 }
 
 impl<'a> AtomView<'a> {
-    pub fn into_pattern(self) -> Pattern {
+    pub(crate) fn to_pattern(self) -> Pattern {
         Pattern::from_view(self, true)
     }
 
     /// Get all symbols in the expression, optionally including function symbols.
-    pub fn get_all_symbols(&self, include_function_symbols: bool) -> HashSet<Symbol> {
+    pub(crate) fn get_all_symbols(&self, include_function_symbols: bool) -> HashSet<Symbol> {
         let mut out = HashSet::default();
         self.get_all_symbols_impl(include_function_symbols, &mut out);
         out
     }
 
-    fn get_all_symbols_impl(&self, include_function_symbols: bool, out: &mut HashSet<Symbol>) {
+    pub(crate) fn get_all_symbols_impl(
+        &self,
+        include_function_symbols: bool,
+        out: &mut HashSet<Symbol>,
+    ) {
         match self {
             AtomView::Num(_) => {}
             AtomView::Var(v) => {
@@ -365,7 +254,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Get all variables and functions in the expression.
-    pub fn get_all_indeterminates(&self, enter_functions: bool) -> HashSet<AtomView<'a>> {
+    pub(crate) fn get_all_indeterminates(&self, enter_functions: bool) -> HashSet<AtomView<'a>> {
         let mut out = HashSet::default();
         self.get_all_indeterminates_impl(enter_functions, &mut out);
         out
@@ -405,7 +294,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Returns true iff `self` contains `a` literally.
-    pub fn contains<T: AsAtomView>(&self, a: T) -> bool {
+    pub(crate) fn contains<T: AtomCore>(&self, a: T) -> bool {
         let mut stack = Vec::with_capacity(20);
         stack.push(*self);
 
@@ -443,7 +332,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Returns true iff `self` contains the symbol `s`.
-    pub fn contains_symbol(&self, s: Symbol) -> bool {
+    pub(crate) fn contains_symbol(&self, s: Symbol) -> bool {
         let mut stack = Vec::with_capacity(20);
         stack.push(*self);
         while let Some(c) = stack.pop() {
@@ -489,7 +378,7 @@ impl<'a> AtomView<'a> {
     ///
     /// Rational powers or powers in variables are not rewritten, e.g. `x^(2y)` is not considered
     /// polynomial in `x^y`.
-    pub fn is_polynomial(
+    pub(crate) fn is_polynomial(
         &self,
         allow_not_expanded: bool,
         allow_negative_powers: bool,
@@ -630,7 +519,7 @@ impl<'a> AtomView<'a> {
     /// Replace part of an expression by calling the map `m` on each subexpression.
     /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
     /// A [Context] object is passed to the function, which contains information about the current position in the expression.
-    pub fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
+    pub(crate) fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
         let mut out = Atom::new();
         self.replace_map_into(m, &mut out);
         out
@@ -639,7 +528,7 @@ impl<'a> AtomView<'a> {
     /// Replace part of an expression by calling the map `m` on each subexpression.
     /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
     /// A [Context] object is passed to the function, which contains information about the current position in the expression.
-    pub fn replace_map_into<F: Fn(AtomView, &Context, &mut Atom) -> bool>(
+    pub(crate) fn replace_map_into<F: Fn(AtomView, &Context, &mut Atom) -> bool>(
         &self,
         m: &F,
         out: &mut Atom,
@@ -756,7 +645,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    pub fn replace_all<R: BorrowPatternOrMap>(
+    pub(crate) fn replace_all<R: BorrowPatternOrMap>(
         &self,
         pattern: &Pattern,
         rhs: R,
@@ -769,7 +658,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    pub fn replace_all_into<R: BorrowPatternOrMap>(
+    pub(crate) fn replace_all_into<R: BorrowPatternOrMap>(
         &self,
         pattern: &Pattern,
         rhs: R,
@@ -783,7 +672,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    pub fn replace_all_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
+    pub(crate) fn replace_all_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
         let mut out = Atom::new();
         self.replace_all_multiple_into(replacements, &mut out);
         out
@@ -791,7 +680,7 @@ impl<'a> AtomView<'a> {
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
     /// Returns `true` iff a match was found.
-    pub fn replace_all_multiple_into<T: BorrowReplacement>(
+    pub(crate) fn replace_all_multiple_into<T: BorrowReplacement>(
         &self,
         replacements: &[T],
         out: &mut Atom,
@@ -1031,29 +920,9 @@ impl<'a> AtomView<'a> {
         submatch
     }
 
-    /// Return an iterator that replaces the pattern in the target once.
-    pub fn replace_iter(
-        &self,
-        pattern: &'a Pattern,
-        rhs: &'a PatternOrMap,
-        conditions: &'a Condition<PatternRestriction>,
-        settings: &'a MatchSettings,
-    ) -> ReplaceIterator<'a, 'a> {
-        ReplaceIterator::new(pattern, *self, rhs, conditions, settings)
-    }
-
-    pub fn pattern_match(
-        &self,
-        pattern: &'a Pattern,
-        conditions: &'a Condition<PatternRestriction>,
-        settings: &'a MatchSettings,
-    ) -> PatternAtomTreeIterator<'a, 'a> {
-        PatternAtomTreeIterator::new(pattern, *self, conditions, settings)
-    }
-
     /// Replace all occurrences of the pattern in the target, returning `true` iff a match was found.
     /// For every matched atom, the first canonical match is used and then the atom is skipped.
-    pub fn replace_all_with_ws_into(
+    pub(crate) fn replace_all_with_ws_into(
         &self,
         pattern: &Pattern,
         rhs: BorrowedPatternOrMap,
@@ -1388,7 +1257,7 @@ impl Pattern {
     }
 
     /// Create a pattern from an atom view.
-    fn from_view(atom: AtomView<'_>, is_top_layer: bool) -> Pattern {
+    pub(crate) fn from_view(atom: AtomView<'_>, is_top_layer: bool) -> Pattern {
         // split up Add and Mul for literal patterns as well so that x+y can match to x+y+z
         if Self::has_wildcard(atom)
             || is_top_layer && matches!(atom, AtomView::Mul(_) | AtomView::Add(_))
@@ -1956,7 +1825,7 @@ impl Evaluate for Relation {
             let c = Condition::default();
             let s = MatchSettings::default();
             let m = MatchStack::new(&c, &s);
-            let pat = state.map(|x| x.into_pattern());
+            let pat = state.map(|x| x.to_pattern());
 
             Ok(match self {
                 Relation::Eq(a, b)
@@ -3702,7 +3571,7 @@ impl<'a: 'b, 'b> ReplaceIterator<'a, 'b> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::Atom,
+        atom::{Atom, AtomCore},
         id::{
             ConditionResult, MatchSettings, PatternOrMap, PatternRestriction, Replacement,
             WildcardRestriction,

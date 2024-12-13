@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::{Atom, AtomView},
+    atom::{Atom, AtomCore, AtomView},
     id::{Match, Pattern, WildcardRestriction},
     state::{RecycledAtom, State},
 };
@@ -35,7 +35,7 @@ fn main() {
         target.replace_all_into(&pattern, &rhs, Some(&restrictions), None, &mut out);
 
         let mut out2 = RecycledAtom::new();
-        out.expand_into(&mut out2);
+        out.expand_into(None, &mut out2);
 
         out2.replace_all_into(&lhs_zero_pat, &rhs_one, None, None, &mut out);
 

@@ -3,7 +3,7 @@ use std::{ops::DerefMut, sync::Arc};
 use smallvec::SmallVec;
 
 use crate::{
-    atom::{representation::InlineVar, AsAtomView, Atom, AtomView, Symbol},
+    atom::{Atom, AtomView},
     coefficient::CoefficientView,
     combinatorics::CombinationWithReplacementIterator,
     domains::{integer::Integer, rational::Q},
@@ -11,46 +11,9 @@ use crate::{
     state::{RecycledAtom, Workspace},
 };
 
-impl Atom {
-    /// Expand an expression. The function [expand_via_poly] may be faster.
-    pub fn expand(&self) -> Atom {
-        self.as_view().expand()
-    }
-
-    /// Expand the expression by converting it to a polynomial, optionally
-    /// only in the indeterminate `var`. The parameter `E` should be a numerical type
-    /// that fits the largest exponent in the expanded expression. Often,
-    /// `u8` or `u16` is sufficient.
-    pub fn expand_via_poly<E: Exponent, T: AsAtomView>(&self, var: Option<T>) -> Atom {
-        self.as_view()
-            .expand_via_poly::<E>(var.as_ref().map(|x| x.as_atom_view()))
-    }
-
-    /// Expand an expression in the variable `var`. The function [expand_via_poly] may be faster.
-    pub fn expand_in<T: AsAtomView>(&self, var: T) -> Atom {
-        self.as_view().expand_in(var.as_atom_view())
-    }
-
-    /// Expand an expression in the variable `var`.
-    pub fn expand_in_symbol(&self, var: Symbol) -> Atom {
-        self.as_view().expand_in(InlineVar::from(var).as_view())
-    }
-
-    /// Expand an expression, returning `true` iff the expression changed.
-    pub fn expand_into(&self, out: &mut Atom) -> bool {
-        self.as_view().expand_into(None, out)
-    }
-
-    /// Distribute numbers in the expression, for example:
-    /// `2*(x+y)` -> `2*x+2*y`.
-    pub fn expand_num(&self) -> Atom {
-        self.as_view().expand_num()
-    }
-}
-
 impl<'a> AtomView<'a> {
     /// Expand an expression. The function [expand_via_poly] may be faster.
-    pub fn expand(&self) -> Atom {
+    pub(crate) fn expand(&self) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut a = ws.new_atom();
             self.expand_with_ws_into(ws, None, &mut a);
@@ -59,7 +22,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Expand an expression. The function [expand_via_poly] may be faster.
-    pub fn expand_in(&self, var: AtomView) -> Atom {
+    pub(crate) fn expand_in(&self, var: AtomView) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut a = ws.new_atom();
             self.expand_with_ws_into(ws, Some(var), &mut a);
@@ -68,7 +31,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Expand an expression, returning `true` iff the expression changed.
-    pub fn expand_into(&self, var: Option<AtomView>, out: &mut Atom) -> bool {
+    pub(crate) fn expand_into(&self, var: Option<AtomView>, out: &mut Atom) -> bool {
         Workspace::get_local().with(|ws| self.expand_with_ws_into(ws, var, out))
     }
 
@@ -141,7 +104,7 @@ impl<'a> AtomView<'a> {
     /// only in the indeterminate `var`. The parameter `E` should be a numerical type
     /// that fits the largest exponent in the expanded expression. Often,
     /// `u8` or `u16` is sufficient.
-    pub fn expand_via_poly<E: Exponent>(&self, var: Option<AtomView>) -> Atom {
+    pub(crate) fn expand_via_poly<E: Exponent>(&self, var: Option<AtomView>) -> Atom {
         let var_map = var.map(|v| Arc::new(vec![v.to_owned().into()]));
 
         let mut out = Atom::new();
@@ -432,7 +395,7 @@ impl<'a> AtomView<'a> {
 
     /// Distribute numbers in the expression, for example:
     /// `2*(x+y)` -> `2*x+2*y`.
-    pub fn expand_num(&self) -> Atom {
+    pub(crate) fn expand_num(&self) -> Atom {
         let mut a = Atom::new();
         Workspace::get_local().with(|ws| {
             self.expand_num_impl(ws, &mut a);
@@ -440,13 +403,13 @@ impl<'a> AtomView<'a> {
         a
     }
 
-    pub fn expand_num_into(&self, out: &mut Atom) {
+    pub(crate) fn expand_num_into(&self, out: &mut Atom) {
         Workspace::get_local().with(|ws| {
             self.expand_with_ws_into(ws, None, out);
         })
     }
 
-    pub fn expand_num_impl(&self, ws: &Workspace, out: &mut Atom) -> bool {
+    pub(crate) fn expand_num_impl(&self, ws: &Workspace, out: &mut Atom) -> bool {
         match self {
             AtomView::Num(_) | AtomView::Var(_) | AtomView::Fun(_) => {
                 out.set_from_view(self);
@@ -549,7 +512,10 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{atom::Atom, state::State};
+    use crate::{
+        atom::{Atom, AtomCore},
+        state::State,
+    };
 
     #[test]
     fn expand_num() {

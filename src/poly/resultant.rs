@@ -206,7 +206,7 @@ impl<F: Field> UnivariatePolynomial<F> {
 mod test {
     use std::sync::Arc;
 
-    use crate::atom::Atom;
+    use crate::atom::{Atom, AtomCore};
     use crate::domains::integer::Z;
     use crate::domains::rational::Q;
     use crate::domains::rational_polynomial::{

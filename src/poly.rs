@@ -19,7 +19,7 @@ use ahash::HashMap;
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
-use crate::atom::{Atom, AtomView, Symbol};
+use crate::atom::{Atom, AtomCore, AtomView, Symbol};
 use crate::coefficient::{Coefficient, CoefficientView, ConvertToRing};
 use crate::domains::atom::AtomField;
 use crate::domains::factorized_rational_polynomial::{
@@ -735,77 +735,6 @@ impl Variable {
     }
 }
 
-impl Atom {
-    /// Convert the atom to a polynomial, optionally in the variable ordering
-    /// specified by `var_map`. If new variables are encountered, they are
-    /// added to the variable map. Similarly, non-polynomial parts are automatically
-    /// defined as a new independent variable in the polynomial.
-    pub fn to_polynomial<R: EuclideanDomain + ConvertToRing, E: Exponent>(
-        &self,
-        field: &R,
-        var_map: Option<Arc<Vec<Variable>>>,
-    ) -> MultivariatePolynomial<R, E> {
-        self.as_view().to_polynomial(field, var_map)
-    }
-
-    /// Convert the atom to a polynomial in specific variables.
-    /// All other parts will be collected into the coefficient, which
-    /// is a general expression.
-    ///
-    /// This routine does not perform expansions.
-    pub fn to_polynomial_in_vars<E: Exponent>(
-        &self,
-        var_map: &Arc<Vec<Variable>>,
-    ) -> MultivariatePolynomial<AtomField, E> {
-        self.as_view().to_polynomial_in_vars(var_map)
-    }
-
-    /// Convert the atom to a rational polynomial, optionally in the variable ordering
-    /// specified by `var_map`. If new variables are encountered, they are
-    /// added to the variable map. Similarly, non-rational polynomial parts are automatically
-    /// defined as a new independent variable in the rational polynomial.
-    pub fn to_rational_polynomial<
-        R: EuclideanDomain + ConvertToRing,
-        RO: EuclideanDomain + PolynomialGCD<E>,
-        E: PositiveExponent,
-    >(
-        &self,
-        field: &R,
-        out_field: &RO,
-        var_map: Option<Arc<Vec<Variable>>>,
-    ) -> RationalPolynomial<RO, E>
-    where
-        RationalPolynomial<RO, E>:
-            FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
-    {
-        self.as_view()
-            .to_rational_polynomial(field, out_field, var_map)
-    }
-
-    /// Convert the atom to a rational polynomial with factorized denominators, optionally in the variable ordering
-    /// specified by `var_map`. If new variables are encountered, they are
-    /// added to the variable map. Similarly, non-rational polynomial parts are automatically
-    /// defined as a new independent variable in the rational polynomial.
-    pub fn to_factorized_rational_polynomial<
-        R: EuclideanDomain + ConvertToRing,
-        RO: EuclideanDomain + PolynomialGCD<E>,
-        E: PositiveExponent,
-    >(
-        &self,
-        field: &R,
-        out_field: &RO,
-        var_map: Option<Arc<Vec<Variable>>>,
-    ) -> FactorizedRationalPolynomial<RO, E>
-    where
-        FactorizedRationalPolynomial<RO, E>: FromNumeratorAndFactorizedDenominator<R, RO, E>
-            + FromNumeratorAndFactorizedDenominator<RO, RO, E>,
-        MultivariatePolynomial<RO, E>: Factorize,
-    {
-        self.as_view()
-            .to_factorized_rational_polynomial(field, out_field, var_map)
-    }
-}
-
 impl<'a> AtomView<'a> {
     /// Convert an expanded expression to a polynomial.
     fn to_polynomial_expanded<R: Ring + ConvertToRing, E: Exponent>(
@@ -1013,7 +942,7 @@ impl<'a> AtomView<'a> {
     /// specified by `var_map`. If new variables are encountered, they are
     /// added to the variable map. Similarly, non-polynomial parts are automatically
     /// defined as a new independent variable in the polynomial.
-    pub fn to_polynomial<R: EuclideanDomain + ConvertToRing, E: Exponent>(
+    pub(crate) fn to_polynomial<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
         var_map: Option<Arc<Vec<Variable>>>,
@@ -1021,7 +950,7 @@ impl<'a> AtomView<'a> {
         self.to_polynomial_impl(field, var_map.as_ref().unwrap_or(&Arc::new(Vec::new())))
     }
 
-    pub fn to_polynomial_impl<R: EuclideanDomain + ConvertToRing, E: Exponent>(
+    pub(crate) fn to_polynomial_impl<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
         var_map: &Arc<Vec<Variable>>,
@@ -1155,7 +1084,7 @@ impl<'a> AtomView<'a> {
     /// is a general expression.
     ///
     /// This routine does not perform expansions.
-    pub fn to_polynomial_in_vars<E: Exponent>(
+    pub(crate) fn to_polynomial_in_vars<E: Exponent>(
         &self,
         var_map: &Arc<Vec<Variable>>,
     ) -> MultivariatePolynomial<AtomField, E> {
@@ -1260,7 +1189,7 @@ impl<'a> AtomView<'a> {
     /// specified by `var_map`. If new variables are encountered, they are
     /// added to the variable map. Similarly, non-rational polynomial parts are automatically
     /// defined as a new independent variable in the rational polynomial.
-    pub fn to_rational_polynomial<
+    pub(crate) fn to_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
         E: PositiveExponent,
@@ -1403,7 +1332,7 @@ impl<'a> AtomView<'a> {
     /// specified by `var_map`. If new variables are encountered, they are
     /// added to the variable map. Similarly, non-rational polynomial parts are automatically
     /// defined as a new independent variable in the rational polynomial.
-    pub fn to_factorized_rational_polynomial<
+    pub(crate) fn to_factorized_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
         E: PositiveExponent,

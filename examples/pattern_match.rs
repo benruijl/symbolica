@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::Atom,
+    atom::{Atom, AtomCore},
     id::{Condition, Match, MatchSettings},
     state::State,
 };

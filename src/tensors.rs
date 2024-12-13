@@ -6,45 +6,6 @@ use crate::{
 
 pub mod matrix;
 
-impl Atom {
-    /// Canonize (products of) tensors in the expression by relabeling repeated indices.
-    /// The tensors must be written as functions, with its indices are the arguments.
-    /// The repeated indices should be provided in `contracted_indices`.
-    ///
-    /// If the contracted indices are distinguishable (for example in their dimension),
-    /// you can provide an optional group marker for each index using `index_group`.
-    /// This makes sure that an index will not be renamed to an index from a different group.
-    ///
-    /// Example
-    /// -------
-    /// ```
-    /// # use symbolica::{atom::Atom, state::{FunctionAttribute, State}};
-    /// #
-    /// # fn main() {
-    /// let _ = State::get_symbol_with_attributes("fs", &[FunctionAttribute::Symmetric]).unwrap();
-    /// let _ = State::get_symbol_with_attributes("fc", &[FunctionAttribute::Cyclesymmetric]).unwrap();
-    /// let a = Atom::parse("fs(mu2,mu3)*fc(mu4,mu2,k1,mu4,k1,mu3)").unwrap();
-    ///
-    /// let mu1 = Atom::parse("mu1").unwrap();
-    /// let mu2 = Atom::parse("mu2").unwrap();
-    /// let mu3 = Atom::parse("mu3").unwrap();
-    /// let mu4 = Atom::parse("mu4").unwrap();
-    ///
-    /// let r = a.canonize_tensors(&[mu1.as_view(), mu2.as_view(), mu3.as_view(), mu4.as_view()], None).unwrap();
-    /// println!("{}", r);
-    /// # }
-    /// ```
-    /// yields `fs(mu1,mu2)*fc(mu1,k1,mu3,k1,mu2,mu3)`.
-    pub fn canonize_tensors(
-        &self,
-        contracted_indices: &[AtomView],
-        index_group: Option<&[AtomView]>,
-    ) -> Result<Atom, String> {
-        self.as_view()
-            .canonize_tensors(contracted_indices, index_group)
-    }
-}
-
 impl<'a> AtomView<'a> {
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
     /// The tensors must be written as functions, with its indices are the arguments.
@@ -53,7 +14,7 @@ impl<'a> AtomView<'a> {
     /// If the contracted indices are distinguishable (for example in their dimension),
     /// you can provide an optional group marker for each index using `index_group`.
     /// This makes sure that an index will not be renamed to an index from a different group.
-    pub fn canonize_tensors(
+    pub(crate) fn canonize_tensors(
         &self,
         contracted_indices: &[AtomView],
         index_group: Option<&[AtomView]>,
@@ -461,7 +422,7 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{representation::InlineVar, Atom},
+        atom::{representation::InlineVar, Atom, AtomCore},
         state::State,
     };
 

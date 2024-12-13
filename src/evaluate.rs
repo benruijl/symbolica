@@ -176,78 +176,6 @@ impl Default for OptimizationSettings {
     }
 }
 
-impl Atom {
-    /// Evaluate a (nested) expression a single time.
-    /// For repeated evaluations, use [Self::evaluator()] and convert
-    /// to an optimized version or generate a compiled version of your expression.
-    ///
-    /// All variables and all user functions in the expression must occur in the map.
-    pub fn evaluate<'b, T: Real, F: Fn(&Rational) -> T + Copy>(
-        &'b self,
-        coeff_map: F,
-        const_map: &HashMap<AtomView<'_>, T>,
-        function_map: &HashMap<Symbol, EvaluationFn<T>>,
-        cache: &mut HashMap<AtomView<'b>, T>,
-    ) -> Result<T, String> {
-        self.as_view()
-            .evaluate(coeff_map, const_map, function_map, cache)
-    }
-
-    /// Convert nested expressions to a tree suitable for repeated evaluations with
-    /// different values for `params`.
-    /// All variables and all user functions in the expression must occur in the map.
-    pub fn to_evaluation_tree<'a>(
-        &'a self,
-        fn_map: &FunctionMap<'a, Rational>,
-        params: &[Atom],
-    ) -> Result<EvalTree<Rational>, String> {
-        self.as_view().to_evaluation_tree(fn_map, params)
-    }
-
-    /// Create an efficient evaluator for a (nested) expression.
-    /// All free parameters must appear in `params` and all other variables
-    /// and user functions in the expression must occur in the function map.
-    /// The function map may have nested expressions.
-    pub fn evaluator<'a>(
-        &'a self,
-        fn_map: &FunctionMap<'a, Rational>,
-        params: &[Atom],
-        optimization_settings: OptimizationSettings,
-    ) -> Result<ExpressionEvaluator<Rational>, String> {
-        let mut tree = self.to_evaluation_tree(fn_map, params)?;
-        Ok(tree.optimize(
-            optimization_settings.horner_iterations,
-            optimization_settings.n_cores,
-            optimization_settings.hot_start.clone(),
-            optimization_settings.verbose,
-        ))
-    }
-
-    /// Convert nested expressions to a tree suitable for repeated evaluations with
-    /// different values for `params`.
-    /// All variables and all user functions in the expression must occur in the map.
-    pub fn evaluator_multiple<'a>(
-        exprs: &[AtomView<'a>],
-        fn_map: &FunctionMap<'a, Rational>,
-        params: &[Atom],
-        optimization_settings: OptimizationSettings,
-    ) -> Result<ExpressionEvaluator<Rational>, String> {
-        let mut tree = AtomView::to_eval_tree_multiple(exprs, fn_map, params)?;
-        Ok(tree.optimize(
-            optimization_settings.horner_iterations,
-            optimization_settings.n_cores,
-            optimization_settings.hot_start.clone(),
-            optimization_settings.verbose,
-        ))
-    }
-
-    /// Check if the expression could be 0, using (potentially) numerical sampling with
-    /// a given tolerance and number of iterations.
-    pub fn zero_test(&self, iterations: usize, tolerance: f64) -> ConditionResult {
-        self.as_view().zero_test(iterations, tolerance)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct SplitExpression<T> {
     pub tree: Vec<Expression<T>>,
@@ -4329,7 +4257,7 @@ mod test {
     use ahash::HashMap;
 
     use crate::{
-        atom::Atom,
+        atom::{Atom, AtomCore},
         domains::{float::Float, rational::Rational},
         evaluate::{EvaluationFn, FunctionMap, OptimizationSettings},
         id::ConditionResult,

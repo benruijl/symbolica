@@ -495,21 +495,9 @@ impl<W: WriteableNamedStream> TermStreamer<W> {
     }
 }
 
-impl Atom {
-    /// Map the function `f` over all terms.
-    pub fn map_terms_single_core(&self, f: impl Fn(AtomView) -> Atom) -> Atom {
-        self.as_view().map_terms_single_core(f)
-    }
-
-    /// Map the function `f` over all terms, using parallel execution with `n_cores` cores.
-    pub fn map_terms(&self, f: impl Fn(AtomView) -> Atom + Send + Sync, n_cores: usize) -> Atom {
-        self.as_view().map_terms(f, n_cores)
-    }
-}
-
 impl<'a> AtomView<'a> {
     /// Map the function `f` over all terms.
-    pub fn map_terms_single_core(&self, f: impl Fn(AtomView) -> Atom) -> Atom {
+    pub(crate) fn map_terms_single_core(&self, f: impl Fn(AtomView) -> Atom) -> Atom {
         if let AtomView::Add(aa) = self {
             return Workspace::get_local().with(|ws| {
                 let mut r = ws.new_atom();
@@ -527,7 +515,11 @@ impl<'a> AtomView<'a> {
     }
 
     /// Map the function `f` over all terms, using parallel execution with `n_cores` cores.
-    pub fn map_terms(&self, f: impl Fn(AtomView) -> Atom + Send + Sync, n_cores: usize) -> Atom {
+    pub(crate) fn map_terms(
+        &self,
+        f: impl Fn(AtomView) -> Atom + Send + Sync,
+        n_cores: usize,
+    ) -> Atom {
         if n_cores < 2 || !LicenseManager::is_licensed() {
             return self.map_terms_single_core(f);
         }
@@ -545,7 +537,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Map the function `f` over all terms, using parallel execution with `n_cores` cores.
-    pub fn map_terms_with_pool(
+    pub(crate) fn map_terms_with_pool(
         &self,
         f: impl Fn(AtomView) -> Atom + Send + Sync,
         p: &ThreadPool,
@@ -593,7 +585,7 @@ mod test {
     use brotli::CompressorWriter;
 
     use crate::{
-        atom::{Atom, AtomType},
+        atom::{Atom, AtomCore, AtomType},
         id::{Pattern, WildcardRestriction},
         state::State,
         streaming::{TermStreamer, TermStreamerConfig},
@@ -648,17 +640,17 @@ mod test {
         streamer = streamer.map(|x| {
             x.replace_all(
                 &pattern,
-                    &rhs,
-                    Some(
-                        &(
-                            State::get_symbol("v1_"),
-                            WildcardRestriction::IsAtomType(AtomType::Var),
-                        )
-                            .into(),
-                    ),
-                    None,
-                )
-                .expand()
+                &rhs,
+                Some(
+                    &(
+                        State::get_symbol("v1_"),
+                        WildcardRestriction::IsAtomType(AtomType::Var),
+                    )
+                        .into(),
+                ),
+                None,
+            )
+            .expand()
         });
 
         streamer.normalize();

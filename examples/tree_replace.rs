@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::Atom,
+    atom::{Atom, AtomCore},
     id::{Condition, Match, MatchSettings, PatternAtomTreeIterator},
     state::State,
 };
@@ -8,7 +8,7 @@ fn main() {
     let expr = Atom::parse("f(z)*f(f(x))*f(y)").unwrap();
     let pat_expr = Atom::parse("f(x_)").unwrap();
 
-    let pattern = pat_expr.as_view().into_pattern();
+    let pattern = pat_expr.to_pattern();
     let restrictions = Condition::default();
     let settings = MatchSettings::default();
 

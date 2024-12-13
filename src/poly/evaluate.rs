@@ -7,7 +7,7 @@ use ahash::{AHasher, HashMap, HashSet, HashSetExt};
 use rand::{thread_rng, Rng};
 
 use crate::{
-    atom::{Atom, AtomView},
+    atom::{Atom, AtomView, KeyLookup},
     domains::{float::Real, Ring},
     evaluate::EvaluationFn,
 };
@@ -1467,25 +1467,23 @@ impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
     /// a variable or a function with fixed arguments.
     ///
     /// All variables and all user functions in the expression must occur in the map.
-    pub fn evaluate<F: Fn(&Rational) -> N + Copy>(
+    pub fn evaluate<A: AtomCore + KeyLookup, F: Fn(&Rational) -> N + Copy>(
         &mut self,
         coeff_map: F,
-        const_map: &HashMap<AtomView<'_>, N>,
-        function_map: &HashMap<Symbol, EvaluationFn<N>>,
+        const_map: &HashMap<A, N>,
+        function_map: &HashMap<Symbol, EvaluationFn<A, N>>,
     ) -> &[N] {
         Workspace::get_local().with(|ws| {
             for (input, expr) in self.eval.iter_mut().zip(&self.input_map) {
                 match expr {
                     super::Variable::Symbol(s) => {
                         *input = const_map
-                            .get(&ws.new_var(*s).as_view())
+                            .get(ws.new_var(*s).as_view().get_data())
                             .expect("Variable not found")
                             .clone();
                     }
                     super::Variable::Function(_, o) | super::Variable::Other(o) => {
-                        *input = o
-                            .evaluate(coeff_map, const_map, function_map, &mut HashMap::default())
-                            .unwrap();
+                        *input = o.evaluate(coeff_map, const_map, function_map).unwrap();
                     }
                     super::Variable::Temporary(_) => panic!("Temporary variable in input"),
                 }

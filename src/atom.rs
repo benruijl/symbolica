@@ -15,8 +15,8 @@ use std::{cmp::Ordering, hash::Hash, ops::DerefMut, str::FromStr};
 
 pub use self::core::AtomCore;
 pub use self::representation::{
-    Add, AddView, Fun, ListIterator, ListSlice, Mul, MulView, Num, NumView, Pow, PowView, Var,
-    VarView,
+    Add, AddView, Fun, KeyLookup, ListIterator, ListSlice, Mul, MulView, Num, NumView, Pow,
+    PowView, Var, VarView,
 };
 use self::representation::{FunView, RawAtom};
 

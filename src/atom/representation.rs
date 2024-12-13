@@ -2,7 +2,9 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::{Buf, BufMut};
 use smartstring::alias::String;
 use std::{
+    borrow::Borrow,
     cmp::Ordering,
+    hash::Hash,
     io::{Read, Write},
 };
 
@@ -37,7 +39,26 @@ const MUL_HAS_COEFF_FLAG: u8 = 0b01000000;
 
 const ZERO_DATA: [u8; 3] = [NUM_ID, 1, 0];
 
+pub type BorrowedRawAtom = [u8];
 pub type RawAtom = Vec<u8>;
+
+impl Borrow<BorrowedRawAtom> for Atom {
+    fn borrow(&self) -> &BorrowedRawAtom {
+        &self.as_view().get_data()
+    }
+}
+
+impl<'a> Borrow<BorrowedRawAtom> for AtomView<'a> {
+    fn borrow(&self) -> &BorrowedRawAtom {
+        &self.get_data()
+    }
+}
+
+/// Allows the atom to be used as a key and looked up through a mapping to `&[u8]`.
+pub trait KeyLookup: Borrow<BorrowedRawAtom> + Eq + Hash {}
+
+impl KeyLookup for Atom {}
+impl<'a> KeyLookup for AtomView<'a> {}
 
 /// An inline variable.
 #[derive(Copy, Clone)]

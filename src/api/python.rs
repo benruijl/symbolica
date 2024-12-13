@@ -4848,8 +4848,6 @@ impl PythonExpression {
         constants: HashMap<PythonExpression, f64>,
         functions: HashMap<Variable, PyObject>,
     ) -> PyResult<f64> {
-        let mut cache = HashMap::default();
-
         let constants = constants
             .iter()
             .map(|(k, v)| (k.expr.as_view(), *v))
@@ -4882,7 +4880,7 @@ impl PythonExpression {
             .collect::<PyResult<_>>()?;
 
         self.expr
-            .evaluate(|x| x.into(), &constants, &functions, &mut cache)
+            .evaluate(|x| x.into(), &constants, &functions)
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
             })
@@ -4910,8 +4908,6 @@ impl PythonExpression {
         py: Python,
     ) -> PyResult<PyObject> {
         let prec = (decimal_digit_precision as f64 * std::f64::consts::LOG2_10).ceil() as u32;
-
-        let mut cache = HashMap::default();
 
         let constants: HashMap<AtomView, Float> = constants
             .iter()
@@ -4963,12 +4959,7 @@ impl PythonExpression {
 
         let a: PythonMultiPrecisionFloat = self
             .expr
-            .evaluate(
-                |x| x.to_multi_prec_float(prec),
-                &constants,
-                &functions,
-                &mut cache,
-            )
+            .evaluate(|x| x.to_multi_prec_float(prec), &constants, &functions)
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
             })?
@@ -4992,8 +4983,6 @@ impl PythonExpression {
         constants: HashMap<PythonExpression, Complex<f64>>,
         functions: HashMap<Variable, PyObject>,
     ) -> PyResult<Bound<'py, PyComplex>> {
-        let mut cache = HashMap::default();
-
         let constants = constants
             .iter()
             .map(|(k, v)| (k.expr.as_view(), *v))
@@ -5034,7 +5023,7 @@ impl PythonExpression {
 
         let r = self
             .expr
-            .evaluate(|x| x.into(), &constants, &functions, &mut cache)
+            .evaluate(|x| x.into(), &constants, &functions)
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
             })?;
@@ -5080,9 +5069,9 @@ impl PythonExpression {
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
 
-        for (k, v) in &constants {
+        for (k, v) in constants {
             if let Ok(r) = v.expr.clone().try_into() {
-                fn_map.add_constant(k.expr.as_view(), r);
+                fn_map.add_constant(k.expr, r);
             } else {
                 Err(exceptions::PyValueError::new_err(format!(
                         "Constants must be rationals. If this is not possible, pass the value as a parameter",
@@ -5090,7 +5079,7 @@ impl PythonExpression {
             }
         }
 
-        for ((symbol, rename, args), body) in &functions {
+        for ((symbol, rename, args), body) in functions {
             let symbol = symbol
                 .to_id()
                 .ok_or(exceptions::PyValueError::new_err(format!(
@@ -5108,7 +5097,7 @@ impl PythonExpression {
                 .collect::<Result<_, _>>()?;
 
             fn_map
-                .add_function(symbol, rename.clone(), args, body.expr.as_view())
+                .add_function(symbol, rename.clone(), args, body.expr)
                 .map_err(|e| {
                     exceptions::PyValueError::new_err(format!("Could not add function: {}", e))
                 })?;
@@ -5169,9 +5158,9 @@ impl PythonExpression {
     ) -> PyResult<PythonExpressionEvaluator> {
         let mut fn_map = FunctionMap::new();
 
-        for (k, v) in &constants {
+        for (k, v) in constants {
             if let Ok(r) = v.expr.clone().try_into() {
-                fn_map.add_constant(k.expr.as_view(), r);
+                fn_map.add_constant(k.expr, r);
             } else {
                 Err(exceptions::PyValueError::new_err(format!(
                     "Constants must be rationals. If this is not possible, pass the value as a parameter",
@@ -5179,7 +5168,7 @@ impl PythonExpression {
             }
         }
 
-        for ((symbol, rename, args), body) in &functions {
+        for ((symbol, rename, args), body) in functions {
             let symbol = symbol
                 .to_id()
                 .ok_or(exceptions::PyValueError::new_err(format!(
@@ -5197,7 +5186,7 @@ impl PythonExpression {
                 .collect::<Result<_, _>>()?;
 
             fn_map
-                .add_function(symbol, rename.clone(), args, body.expr.as_view())
+                .add_function(symbol, rename.clone(), args, body.expr)
                 .map_err(|e| {
                     exceptions::PyValueError::new_err(format!("Could not add function: {}", e))
                 })?;

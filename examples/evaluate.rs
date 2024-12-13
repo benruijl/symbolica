@@ -11,13 +11,11 @@ fn main() {
     let a = Atom::parse("x*cos(x) + f(x, 1)^2 + g(g(x)) + p(0)").unwrap();
 
     let mut const_map = HashMap::default();
-    let mut fn_map: HashMap<_, EvaluationFn<_>> = HashMap::default();
-    let mut cache = HashMap::default();
+    let mut fn_map: HashMap<_, _> = HashMap::default();
 
     // x = 6 and p(0) = 7
-    let v = Atom::new_var(x);
-    const_map.insert(v.as_view(), 6.);
-    const_map.insert(p0.as_view(), 7.);
+    const_map.insert(Atom::new_var(x), 6.);
+    const_map.insert(p0, 7.);
 
     // f(x, y) = x^2 + y
     fn_map.insert(
@@ -37,7 +35,6 @@ fn main() {
 
     println!(
         "Result for x = 6.: {}",
-        a.evaluate::<f64, _>(|x| x.into(), &const_map, &fn_map, &mut cache)
-            .unwrap()
+        a.evaluate(|x| x.into(), &const_map, &fn_map).unwrap()
     );
 }

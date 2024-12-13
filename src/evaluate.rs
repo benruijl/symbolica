@@ -13,7 +13,7 @@ use self_cell::self_cell;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    atom::{Atom, AtomOrView, AtomView, Symbol},
+    atom::{Atom, AtomCore, AtomView, KeyLookup, Symbol},
     coefficient::CoefficientView,
     combinatorics::unique_permutations,
     domains::{
@@ -28,52 +28,46 @@ use crate::{
     LicenseManager,
 };
 
-type EvalFnType<T> = Box<
+type EvalFnType<A, T> = Box<
     dyn Fn(
         &[T],
-        &HashMap<AtomView<'_>, T>,
-        &HashMap<Symbol, EvaluationFn<T>>,
+        &HashMap<A, T>,
+        &HashMap<Symbol, EvaluationFn<A, T>>,
         &mut HashMap<AtomView<'_>, T>,
     ) -> T,
 >;
 
-pub struct EvaluationFn<T>(EvalFnType<T>);
+pub struct EvaluationFn<A, T>(EvalFnType<A, T>);
 
-impl<T> EvaluationFn<T> {
-    pub fn new(f: EvalFnType<T>) -> EvaluationFn<T> {
+impl<A, T> EvaluationFn<A, T> {
+    pub fn new(f: EvalFnType<A, T>) -> EvaluationFn<A, T> {
         EvaluationFn(f)
     }
 
     /// Get a reference to the function that can be called to evaluate it.
-    pub fn get(&self) -> &EvalFnType<T> {
+    pub fn get(&self) -> &EvalFnType<A, T> {
         &self.0
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
-enum AtomOrTaggedFunction<'a> {
-    Atom(AtomOrView<'a>),
-    TaggedFunction(Symbol, Vec<AtomOrView<'a>>),
-}
-
-pub struct FunctionMap<'a, T = Rational> {
-    map: HashMap<AtomOrTaggedFunction<'a>, ConstOrExpr<'a, T>>,
+#[derive(Clone)]
+pub struct FunctionMap<T = Rational> {
+    map: HashMap<Atom, ConstOrExpr<T>>,
+    tagged_fn_map: HashMap<(Symbol, Vec<Atom>), ConstOrExpr<T>>,
     tag: HashMap<Symbol, usize>,
 }
 
-impl<'a, T> FunctionMap<'a, T> {
+impl<T> FunctionMap<T> {
     pub fn new() -> Self {
         FunctionMap {
             map: HashMap::default(),
+            tagged_fn_map: HashMap::default(),
             tag: HashMap::default(),
         }
     }
 
-    pub fn add_constant<A: Into<AtomOrView<'a>>>(&mut self, key: A, value: T) {
-        self.map.insert(
-            AtomOrTaggedFunction::Atom(key.into()),
-            ConstOrExpr::Const(value),
-        );
+    pub fn add_constant(&mut self, key: Atom, value: T) {
+        self.map.insert(key, ConstOrExpr::Const(value));
     }
 
     pub fn add_function(
@@ -81,7 +75,7 @@ impl<'a, T> FunctionMap<'a, T> {
         name: Symbol,
         rename: String,
         args: Vec<Symbol>,
-        body: AtomView<'a>,
+        body: Atom,
     ) -> Result<(), &str> {
         if let Some(t) = self.tag.insert(name, 0) {
             if t != 0 {
@@ -89,10 +83,8 @@ impl<'a, T> FunctionMap<'a, T> {
             }
         }
 
-        self.map.insert(
-            AtomOrTaggedFunction::TaggedFunction(name, vec![]),
-            ConstOrExpr::Expr(rename, 0, args, body),
-        );
+        self.tagged_fn_map
+            .insert((name, vec![]), ConstOrExpr::Expr(rename, 0, args, body));
 
         Ok(())
     }
@@ -100,10 +92,10 @@ impl<'a, T> FunctionMap<'a, T> {
     pub fn add_tagged_function(
         &mut self,
         name: Symbol,
-        tags: Vec<AtomOrView<'a>>,
+        tags: Vec<Atom>,
         rename: String,
         args: Vec<Symbol>,
-        body: AtomView<'a>,
+        body: Atom,
     ) -> Result<(), &str> {
         if let Some(t) = self.tag.insert(name, tags.len()) {
             if t != tags.len() {
@@ -112,10 +104,8 @@ impl<'a, T> FunctionMap<'a, T> {
         }
 
         let tag_len = tags.len();
-        self.map.insert(
-            AtomOrTaggedFunction::TaggedFunction(name, tags),
-            ConstOrExpr::Expr(rename, tag_len, args, body),
-        );
+        self.tagged_fn_map
+            .insert((name, tags), ConstOrExpr::Expr(rename, tag_len, args, body));
 
         Ok(())
     }
@@ -124,15 +114,15 @@ impl<'a, T> FunctionMap<'a, T> {
         self.tag.get(symbol).cloned().unwrap_or(0)
     }
 
-    fn get_constant(&self, a: AtomView<'a>) -> Option<&T> {
-        match self.map.get(&AtomOrTaggedFunction::Atom(a.into())) {
+    fn get_constant(&self, a: AtomView) -> Option<&T> {
+        match self.map.get(a.get_data()) {
             Some(ConstOrExpr::Const(c)) => Some(c),
             _ => None,
         }
     }
 
-    fn get(&self, a: AtomView<'a>) -> Option<&ConstOrExpr<'a, T>> {
-        if let Some(c) = self.map.get(&AtomOrTaggedFunction::Atom(a.into())) {
+    fn get(&self, a: AtomView) -> Option<&ConstOrExpr<T>> {
+        if let Some(c) = self.map.get(a.get_data()) {
             return Some(c);
         }
 
@@ -141,8 +131,8 @@ impl<'a, T> FunctionMap<'a, T> {
             let tag_len = self.get_tag_len(&s);
 
             if aa.get_nargs() >= tag_len {
-                let tag = aa.iter().take(tag_len).map(|x| x.into()).collect();
-                return self.map.get(&AtomOrTaggedFunction::TaggedFunction(s, tag));
+                let tag = aa.iter().take(tag_len).map(|x| x.to_owned()).collect();
+                return self.tagged_fn_map.get(&(s, tag));
             }
         }
 
@@ -150,9 +140,10 @@ impl<'a, T> FunctionMap<'a, T> {
     }
 }
 
-enum ConstOrExpr<'a, T> {
+#[derive(Clone)]
+enum ConstOrExpr<T> {
     Const(T),
-    Expr(String, usize, Vec<Symbol>, AtomView<'a>),
+    Expr(String, usize, Vec<Symbol>, Atom),
 }
 
 #[derive(Debug, Clone)]
@@ -3795,22 +3786,25 @@ impl<'a> AtomView<'a> {
     /// Convert nested expressions to a tree.
     pub fn to_evaluation_tree(
         &self,
-        fn_map: &FunctionMap<'a, Rational>,
+        fn_map: &FunctionMap<Rational>,
         params: &[Atom],
     ) -> Result<EvalTree<Rational>, String> {
         Self::to_eval_tree_multiple(std::slice::from_ref(self), fn_map, params)
     }
 
     /// Convert nested expressions to a tree.
-    pub fn to_eval_tree_multiple(
-        exprs: &[Self],
-        fn_map: &FunctionMap<'a, Rational>,
+    pub fn to_eval_tree_multiple<A: AtomCore>(
+        exprs: &[A],
+        fn_map: &FunctionMap<Rational>,
         params: &[Atom],
     ) -> Result<EvalTree<Rational>, String> {
         let mut funcs = vec![];
         let tree = exprs
             .iter()
-            .map(|t| t.to_eval_tree_impl(fn_map, params, &[], &mut funcs))
+            .map(|t| {
+                t.as_atom_view()
+                    .to_eval_tree_impl(fn_map, params, &[], &mut funcs)
+            })
             .collect::<Result<_, _>>()?;
 
         Ok(EvalTree {
@@ -3825,7 +3819,7 @@ impl<'a> AtomView<'a> {
 
     fn to_eval_tree_impl(
         &self,
-        fn_map: &FunctionMap<'a, Rational>,
+        fn_map: &FunctionMap<Rational>,
         params: &[Atom],
         args: &[Symbol],
         funcs: &mut Vec<(String, Vec<Symbol>, SplitExpression<Rational>)>,
@@ -3903,7 +3897,9 @@ impl<'a> AtomView<'a> {
                         if let Some(pos) = funcs.iter().position(|f| f.0 == *name) {
                             Ok(Expression::Eval(pos, eval_args))
                         } else {
-                            let r = e.to_eval_tree_impl(fn_map, params, arg_spec, funcs)?;
+                            let r = e
+                                .as_view()
+                                .to_eval_tree_impl(fn_map, params, arg_spec, funcs)?;
                             funcs.push((
                                 name.clone(),
                                 arg_spec.clone(),
@@ -3975,14 +3971,24 @@ impl<'a> AtomView<'a> {
     /// a variable or a function with fixed arguments.
     ///
     /// All variables and all user functions in the expression must occur in the map.
-    pub(crate) fn evaluate<T: Real, F: Fn(&Rational) -> T + Copy>(
+    pub(crate) fn evaluate<A: AtomCore + KeyLookup, T: Real, F: Fn(&Rational) -> T + Copy>(
         &self,
         coeff_map: F,
-        const_map: &HashMap<AtomView<'_>, T>,
-        function_map: &HashMap<Symbol, EvaluationFn<T>>,
+        const_map: &HashMap<A, T>,
+        function_map: &HashMap<Symbol, EvaluationFn<A, T>>,
+    ) -> Result<T, String> {
+        let mut cache = HashMap::default();
+        self.evaluate_impl(coeff_map, const_map, function_map, &mut cache)
+    }
+
+    fn evaluate_impl<A: AtomCore + KeyLookup, T: Real, F: Fn(&Rational) -> T + Copy>(
+        &self,
+        coeff_map: F,
+        const_map: &HashMap<A, T>,
+        function_map: &HashMap<Symbol, EvaluationFn<A, T>>,
         cache: &mut HashMap<AtomView<'a>, T>,
     ) -> Result<T, String> {
-        if let Some(c) = const_map.get(self) {
+        if let Some(c) = const_map.get(self.get_data()) {
             return Ok(c.clone());
         }
 
@@ -4017,7 +4023,7 @@ impl<'a> AtomView<'a> {
                 if [Atom::EXP, Atom::LOG, Atom::SIN, Atom::COS, Atom::SQRT].contains(&name) {
                     assert!(f.get_nargs() == 1);
                     let arg = f.iter().next().unwrap();
-                    let arg_eval = arg.evaluate(coeff_map, const_map, function_map, cache)?;
+                    let arg_eval = arg.evaluate_impl(coeff_map, const_map, function_map, cache)?;
 
                     return Ok(match f.get_symbol() {
                         Atom::EXP => arg_eval.exp(),
@@ -4035,7 +4041,7 @@ impl<'a> AtomView<'a> {
 
                 let mut args = Vec::with_capacity(f.get_nargs());
                 for arg in f {
-                    args.push(arg.evaluate(coeff_map, const_map, function_map, cache)?);
+                    args.push(arg.evaluate_impl(coeff_map, const_map, function_map, cache)?);
                 }
 
                 let Some(fun) = function_map.get(&f.get_symbol()) else {
@@ -4051,7 +4057,7 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
-                let b_eval = b.evaluate(coeff_map, const_map, function_map, cache)?;
+                let b_eval = b.evaluate_impl(coeff_map, const_map, function_map, cache)?;
 
                 if let AtomView::Num(n) = e {
                     if let CoefficientView::Natural(num, den) = n.get_coeff_view() {
@@ -4065,7 +4071,7 @@ impl<'a> AtomView<'a> {
                     }
                 }
 
-                let e_eval = e.evaluate(coeff_map, const_map, function_map, cache)?;
+                let e_eval = e.evaluate_impl(coeff_map, const_map, function_map, cache)?;
                 Ok(b_eval.powf(&e_eval))
             }
             AtomView::Mul(m) => {
@@ -4073,9 +4079,9 @@ impl<'a> AtomView<'a> {
                 let mut r =
                     it.next()
                         .unwrap()
-                        .evaluate(coeff_map, const_map, function_map, cache)?;
+                        .evaluate_impl(coeff_map, const_map, function_map, cache)?;
                 for arg in it {
-                    r *= arg.evaluate(coeff_map, const_map, function_map, cache)?;
+                    r *= arg.evaluate_impl(coeff_map, const_map, function_map, cache)?;
                 }
                 Ok(r)
             }
@@ -4084,9 +4090,9 @@ impl<'a> AtomView<'a> {
                 let mut r =
                     it.next()
                         .unwrap()
-                        .evaluate(coeff_map, const_map, function_map, cache)?;
+                        .evaluate_impl(coeff_map, const_map, function_map, cache)?;
                 for arg in it {
-                    r += arg.evaluate(coeff_map, const_map, function_map, cache)?;
+                    r += arg.evaluate_impl(coeff_map, const_map, function_map, cache)?;
                 }
                 Ok(r)
             }
@@ -4151,11 +4157,7 @@ impl<'a> AtomView<'a> {
                 })
                 .collect();
 
-            let mut cache = HashMap::default();
-
             for _ in 0..iterations {
-                cache.clear();
-
                 for x in vars.values_mut() {
                     *x = x.sample_unit(&mut rng);
                 }
@@ -4176,7 +4178,6 @@ impl<'a> AtomView<'a> {
                         },
                         &vars,
                         &HashMap::default(),
-                        &mut cache,
                     )
                     .unwrap();
 
@@ -4212,11 +4213,7 @@ impl<'a> AtomView<'a> {
                 })
                 .collect();
 
-            let mut cache = HashMap::default();
-
             for _ in 0..iterations {
-                cache.clear();
-
                 for x in vars.values_mut() {
                     *x = x.sample_unit(&mut rng);
                 }
@@ -4231,7 +4228,6 @@ impl<'a> AtomView<'a> {
                         },
                         &vars,
                         &HashMap::default(),
-                        &mut cache,
                     )
                     .unwrap();
 
@@ -4272,13 +4268,14 @@ mod test {
         let p0 = Atom::parse("v2(0)").unwrap();
         let a = Atom::parse("v1*cos(v1) + f1(v1, 1)^2 + f2(f2(v1)) + v2(0)").unwrap();
 
+        let v = Atom::new_var(x);
+
         let mut const_map = HashMap::default();
-        let mut fn_map: HashMap<_, EvaluationFn<_>> = HashMap::default();
-        let mut cache = HashMap::default();
+        let mut fn_map: HashMap<_, EvaluationFn<_, _>> = HashMap::default();
 
         // x = 6 and p(0) = 7
-        let v = Atom::new_var(x);
-        const_map.insert(v.as_view(), 6.);
+
+        const_map.insert(v.as_view(), 6.); // .as_view()
         const_map.insert(p0.as_view(), 7.);
 
         // f(x, y) = x^2 + y
@@ -4297,9 +4294,7 @@ mod test {
             })),
         );
 
-        let r = a
-            .evaluate(|x| x.into(), &const_map, &fn_map, &mut cache)
-            .unwrap();
+        let r = a.evaluate(|x| x.into(), &const_map, &fn_map).unwrap();
         assert_eq!(r, 2905.761021719902);
     }
 
@@ -4318,7 +4313,6 @@ mod test {
                 |r| r.to_multi_prec_float(200),
                 &const_map,
                 &HashMap::default(),
-                &mut HashMap::default(),
             )
             .unwrap();
 
@@ -4350,7 +4344,7 @@ mod test {
                 vec![Atom::new_num(1).into()],
                 "p1".to_string(),
                 vec![State::get_symbol("z")],
-                p1.as_view(),
+                p1,
             )
             .unwrap();
         fn_map
@@ -4358,7 +4352,7 @@ mod test {
                 State::get_symbol("f"),
                 "f".to_string(),
                 vec![State::get_symbol("y"), State::get_symbol("z")],
-                f.as_view(),
+                f,
             )
             .unwrap();
         fn_map
@@ -4366,7 +4360,7 @@ mod test {
                 State::get_symbol("g"),
                 "g".to_string(),
                 vec![State::get_symbol("y")],
-                g.as_view(),
+                g,
             )
             .unwrap();
         fn_map
@@ -4374,7 +4368,7 @@ mod test {
                 State::get_symbol("h"),
                 "h".to_string(),
                 vec![State::get_symbol("y")],
-                h.as_view(),
+                h,
             )
             .unwrap();
         fn_map
@@ -4382,19 +4376,15 @@ mod test {
                 State::get_symbol("i"),
                 "i".to_string(),
                 vec![State::get_symbol("y")],
-                i.as_view(),
+                i,
             )
             .unwrap();
 
         let params = vec![Atom::parse("x").unwrap()];
 
-        let evaluator = Atom::evaluator_multiple(
-            &[e1.as_view(), e2.as_view()],
-            &fn_map,
-            &params,
-            OptimizationSettings::default(),
-        )
-        .unwrap();
+        let evaluator =
+            Atom::evaluator_multiple(&[e1, e2], &fn_map, &params, OptimizationSettings::default())
+                .unwrap();
 
         let mut e_f64 = evaluator.map_coeff(&|x| x.into());
         let r = e_f64.evaluate_single(&[1.1]);

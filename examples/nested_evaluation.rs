@@ -26,7 +26,7 @@ fn main() {
             vec![Atom::new_num(1).into()],
             "p1".to_string(),
             vec![State::get_symbol("z")],
-            p1.as_view(),
+            p1,
         )
         .unwrap();
     fn_map
@@ -34,7 +34,7 @@ fn main() {
             State::get_symbol("f"),
             "f".to_string(),
             vec![State::get_symbol("y"), State::get_symbol("z")],
-            f.as_view(),
+            f,
         )
         .unwrap();
     fn_map
@@ -42,7 +42,7 @@ fn main() {
             State::get_symbol("g"),
             "g".to_string(),
             vec![State::get_symbol("y")],
-            g.as_view(),
+            g,
         )
         .unwrap();
     fn_map
@@ -50,7 +50,7 @@ fn main() {
             State::get_symbol("h"),
             "h".to_string(),
             vec![State::get_symbol("y")],
-            h.as_view(),
+            h,
         )
         .unwrap();
     fn_map
@@ -58,7 +58,7 @@ fn main() {
             State::get_symbol("i"),
             "i".to_string(),
             vec![State::get_symbol("y")],
-            i.as_view(),
+            i,
         )
         .unwrap();
 

@@ -33,7 +33,7 @@ use std::sync::Arc;
 
 use super::{
     representation::{InlineNum, InlineVar},
-    Atom, AtomOrView, AtomView, Symbol,
+    Atom, AtomOrView, AtomView, KeyLookup, Symbol,
 };
 
 /// All core features of expressions, such as expansion and
@@ -239,23 +239,22 @@ pub trait AtomCore {
     /// to an optimized version or generate a compiled version of your expression.
     ///
     /// All variables and all user functions in the expression must occur in the map.
-    fn evaluate<'b, T: Real, F: Fn(&Rational) -> T + Copy>(
-        &'b self,
+    fn evaluate<A: AtomCore + KeyLookup, T: Real, F: Fn(&Rational) -> T + Copy>(
+        &self,
         coeff_map: F,
-        const_map: &HashMap<AtomView<'_>, T>,
-        function_map: &HashMap<Symbol, EvaluationFn<T>>,
-        cache: &mut HashMap<AtomView<'b>, T>,
+        const_map: &HashMap<A, T>,
+        function_map: &HashMap<Symbol, EvaluationFn<A, T>>,
     ) -> Result<T, String> {
         self.as_atom_view()
-            .evaluate(coeff_map, const_map, function_map, cache)
+            .evaluate(coeff_map, const_map, function_map)
     }
 
     /// Convert nested expressions to a tree suitable for repeated evaluations with
     /// different values for `params`.
     /// All variables and all user functions in the expression must occur in the map.
-    fn to_evaluation_tree<'a>(
-        &'a self,
-        fn_map: &FunctionMap<'a, Rational>,
+    fn to_evaluation_tree(
+        &self,
+        fn_map: &FunctionMap<Rational>,
         params: &[Atom],
     ) -> Result<EvalTree<Rational>, String> {
         self.as_atom_view().to_evaluation_tree(fn_map, params)
@@ -265,9 +264,9 @@ pub trait AtomCore {
     /// All free parameters must appear in `params` and all other variables
     /// and user functions in the expression must occur in the function map.
     /// The function map may have nested expressions.
-    fn evaluator<'a>(
-        &'a self,
-        fn_map: &FunctionMap<'a, Rational>,
+    fn evaluator(
+        &self,
+        fn_map: &FunctionMap<Rational>,
         params: &[Atom],
         optimization_settings: OptimizationSettings,
     ) -> Result<ExpressionEvaluator<Rational>, String> {
@@ -283,9 +282,9 @@ pub trait AtomCore {
     /// Convert nested expressions to a tree suitable for repeated evaluations with
     /// different values for `params`.
     /// All variables and all user functions in the expression must occur in the map.
-    fn evaluator_multiple<'a>(
-        exprs: &[AtomView<'a>],
-        fn_map: &FunctionMap<'a, Rational>,
+    fn evaluator_multiple<A: AtomCore>(
+        exprs: &[A],
+        fn_map: &FunctionMap<Rational>,
         params: &[Atom],
         optimization_settings: OptimizationSettings,
     ) -> Result<ExpressionEvaluator<Rational>, String> {
@@ -425,7 +424,7 @@ pub trait AtomCore {
     }
 
     /// Construct a printer for the atom with special options.
-    fn printer<'a>(&'a self, opts: PrintOptions) -> AtomPrinter<'a> {
+    fn printer(&self, opts: PrintOptions) -> AtomPrinter {
         AtomPrinter::new_with_options(self.as_atom_view(), opts)
     }
 
@@ -503,7 +502,7 @@ pub trait AtomCore {
     }
 
     /// Get all variables and functions in the expression.
-    fn get_all_indeterminates<'a>(&'a self, enter_functions: bool) -> HashSet<AtomView<'a>> {
+    fn get_all_indeterminates(&self, enter_functions: bool) -> HashSet<AtomView> {
         self.as_atom_view().get_all_indeterminates(enter_functions)
     }
 

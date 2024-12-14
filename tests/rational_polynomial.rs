@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::Atom,
     domains::integer::Z,
     parser::Token,
     poly::Variable,

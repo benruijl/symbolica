@@ -7,12 +7,7 @@ use ahash::{AHasher, HashMap, HashSet, HashSetExt};
 use rand::{thread_rng, Rng};
 
 use crate::{
-    atom::{Atom, AtomView, KeyLookup},
-    domains::{float::Real, Ring},
-    evaluate::EvaluationFn,
-};
-use crate::{
-    atom::{AtomCore, Symbol},
+    atom::{representation::BorrowedAtom, Symbol},
     coefficient::CoefficientView,
     domains::{
         float::NumericalFloatLike,
@@ -20,6 +15,11 @@ use crate::{
         EuclideanDomain,
     },
     state::Workspace,
+};
+use crate::{
+    atom::{Atom, AtomView, KeyLookup},
+    domains::{float::Real, Ring},
+    evaluate::EvaluationFn,
 };
 
 use super::{polynomial::MultivariatePolynomial, PositiveExponent};
@@ -1467,7 +1467,7 @@ impl<N: Real + for<'b> From<&'b Rational>> InstructionEvaluator<N> {
     /// a variable or a function with fixed arguments.
     ///
     /// All variables and all user functions in the expression must occur in the map.
-    pub fn evaluate<A: AtomCore + KeyLookup, F: Fn(&Rational) -> N + Copy>(
+    pub fn evaluate<A: AsRef<BorrowedAtom> + KeyLookup, F: Fn(&Rational) -> N + Copy>(
         &mut self,
         coeff_map: F,
         const_map: &HashMap<A, N>,
@@ -1959,7 +1959,7 @@ auto 𝑖 = 1i;\n",
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::Atom,
         domains::{float::Complex, rational::Q},
         poly::{
             evaluate::{BorrowedHornerScheme, InstructionSetPrinter},

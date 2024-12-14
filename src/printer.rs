@@ -941,7 +941,7 @@ mod test {
     use colored::control::ShouldColorize;
 
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::Atom,
         domains::{finite_field::Zp, integer::Z, SelfRing},
         printer::{AtomPrinter, PrintOptions, PrintState},
         state::{FunctionAttribute, State},

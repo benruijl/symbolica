@@ -3398,7 +3398,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::Atom,
         domains::{
             algebraic_number::AlgebraicExtension,
             finite_field::{Zp, Z2},

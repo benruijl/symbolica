@@ -1147,7 +1147,7 @@ impl<'a> std::iter::Sum<&'a Self> for Rational {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::Atom,
         domains::{
             integer::Z,
             rational::{FractionField, Rational, Q},

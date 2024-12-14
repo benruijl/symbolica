@@ -2,8 +2,6 @@ mod coefficient;
 mod core;
 pub mod representation;
 
-use representation::InlineVar;
-
 use crate::{
     coefficient::Coefficient,
     parser::Token,
@@ -13,12 +11,11 @@ use crate::{
 };
 use std::{cmp::Ordering, hash::Hash, ops::DerefMut, str::FromStr};
 
-pub use self::core::AtomCore;
+use self::representation::RawAtom;
 pub use self::representation::{
-    Add, AddView, Fun, KeyLookup, ListIterator, ListSlice, Mul, MulView, Num, NumView, Pow,
-    PowView, Var, VarView,
+    Add, AddView, BorrowedAtom, Fun, FunView, InlineNum, InlineVar, KeyLookup, ListIterator,
+    ListSlice, Mul, MulView, Num, NumView, Pow, PowView, Var, VarView,
 };
-use self::representation::{FunView, RawAtom};
 
 /// A symbol, for example the name of a variable or the name of a function,
 /// together with its properties.
@@ -816,7 +813,7 @@ impl Atom {
 /// For example:
 /// ```
 /// # use symbolica::{
-/// #     atom::{Atom, AtomCore, FunctionBuilder},
+/// #     atom::{Atom,, FunctionBuilder},
 /// #     state::{FunctionAttribute, State},
 /// # };
 /// # fn main() {
@@ -844,19 +841,19 @@ impl FunctionBuilder {
     }
 
     /// Add an argument to the function.
-    pub fn add_arg<T: AtomCore>(mut self, arg: T) -> FunctionBuilder {
+    pub fn add_arg<T: AsRef<BorrowedAtom>>(mut self, arg: T) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
-            f.add_arg(arg.as_atom_view());
+            f.add_arg(arg.as_ref().to_view());
         }
 
         self
     }
 
     /// Add multiple arguments to the function.
-    pub fn add_args<T: AtomCore>(mut self, args: &[T]) -> FunctionBuilder {
+    pub fn add_args<T: AsRef<BorrowedAtom>>(mut self, args: &[T]) -> FunctionBuilder {
         if let Atom::Fun(f) = self.handle.deref_mut() {
             for a in args {
-                f.add_arg(a.as_atom_view());
+                f.add_arg(a.as_ref().to_view());
             }
         }
 
@@ -982,11 +979,11 @@ impl Atom {
     }
 
     /// Take the `self` to the power `exp`. Use [`Atom::npow()`] for a numerical power and [`Atom::rpow()`] for the reverse operation.
-    pub fn pow<T: AtomCore>(&self, exp: T) -> Atom {
+    pub fn pow<T: AsRef<BorrowedAtom>>(&self, exp: T) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
             self.as_view()
-                .pow_no_norm(ws, exp.as_atom_view())
+                .pow_no_norm(ws, exp.as_ref().to_view())
                 .as_view()
                 .normalize(ws, &mut t);
             t.into_inner()
@@ -994,10 +991,11 @@ impl Atom {
     }
 
     /// Take `base` to the power `self`.
-    pub fn rpow<T: AtomCore>(&self, base: T) -> Atom {
+    pub fn rpow<T: AsRef<BorrowedAtom>>(&self, base: T) -> Atom {
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
-            base.as_atom_view()
+            base.as_ref()
+                .to_view()
                 .pow_no_norm(ws, self.as_view())
                 .as_view()
                 .normalize(ws, &mut t);
@@ -1006,13 +1004,13 @@ impl Atom {
     }
 
     /// Add the atoms in `args`.
-    pub fn add_many<'a, T: AtomCore + Copy>(args: &[T]) -> Atom {
+    pub fn add_many<'a, T: AsRef<BorrowedAtom> + Copy>(args: &[T]) -> Atom {
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
             let add = t.to_add();
             for a in args {
-                add.extend(a.as_atom_view());
+                add.extend(a.as_ref().to_view());
             }
 
             t.as_view().normalize(ws, &mut out);
@@ -1021,13 +1019,13 @@ impl Atom {
     }
 
     /// Multiply the atoms in `args`.
-    pub fn mul_many<'a, T: AtomCore + Copy>(args: &[T]) -> Atom {
+    pub fn mul_many<'a, T: AsRef<BorrowedAtom> + Copy>(args: &[T]) -> Atom {
         let mut out = Atom::new();
         Workspace::get_local().with(|ws| {
             let mut t = ws.new_atom();
             let add = t.to_mul();
             for a in args {
-                add.extend(a.as_atom_view());
+                add.extend(a.as_ref().to_view());
             }
 
             t.as_view().normalize(ws, &mut out);
@@ -1538,11 +1536,7 @@ impl AsRef<Atom> for Atom {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        atom::{Atom, AtomCore},
-        fun,
-        state::State,
-    };
+    use crate::{atom::Atom, fun, state::State};
 
     #[test]
     fn debug() {

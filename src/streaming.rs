@@ -585,7 +585,7 @@ mod test {
     use brotli::CompressorWriter;
 
     use crate::{
-        atom::{Atom, AtomCore, AtomType},
+        atom::{Atom, AtomType},
         id::{Pattern, WildcardRestriction},
         state::State,
         streaming::{TermStreamer, TermStreamerConfig},

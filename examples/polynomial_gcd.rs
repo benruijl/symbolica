@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::Atom,
     domains::{integer::Z, rational::Q},
 };
 use tracing_subscriber::{fmt, prelude::*, util::SubscriberInitExt, EnvFilter};

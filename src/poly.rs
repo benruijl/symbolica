@@ -19,7 +19,7 @@ use ahash::HashMap;
 use smallvec::{smallvec, SmallVec};
 use smartstring::{LazyCompact, SmartString};
 
-use crate::atom::{Atom, AtomCore, AtomView, Symbol};
+use crate::atom::{Atom, AtomView, Symbol};
 use crate::coefficient::{Coefficient, CoefficientView, ConvertToRing};
 use crate::domains::atom::AtomField;
 use crate::domains::factorized_rational_polynomial::{

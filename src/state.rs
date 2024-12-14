@@ -1,4 +1,5 @@
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use std::borrow::Borrow;
 use std::hash::Hash;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -16,6 +17,7 @@ use byteorder::LittleEndian;
 use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
+use crate::atom::representation::BorrowedAtom;
 use crate::atom::AtomView;
 use crate::domains::finite_field::Zp64;
 use crate::poly::Variable;
@@ -833,6 +835,18 @@ impl DerefMut for RecycledAtom {
 
 impl AsRef<Atom> for RecycledAtom {
     fn as_ref(&self) -> &Atom {
+        self.deref()
+    }
+}
+
+impl AsRef<BorrowedAtom> for RecycledAtom {
+    fn as_ref(&self) -> &BorrowedAtom {
+        self.deref()
+    }
+}
+
+impl Borrow<Atom> for RecycledAtom {
+    fn borrow(&self) -> &Atom {
         self.deref()
     }
 }

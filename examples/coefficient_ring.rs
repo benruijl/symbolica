@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use symbolica::{
-    atom::{Atom, AtomCore},
-    state::State,
-};
+use symbolica::{atom::Atom, state::State};
 
 fn main() {
     let expr = Atom::parse("x*z+x*(y+2)^-1*(y+z+1)").unwrap();

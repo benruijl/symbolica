@@ -1,7 +1,7 @@
 use std::{ops::Neg, sync::Arc};
 
 use crate::{
-    atom::{Atom, AtomCore, AtomView, Symbol},
+    atom::{representation::BorrowedAtom, Atom, AtomView, Symbol},
     domains::{
         float::{FloatField, Real, SingleFloat},
         integer::Z,
@@ -59,7 +59,7 @@ impl<'a> AtomView<'a> {
     /// Solve a non-linear system numerically over the reals using Newton's method.
     pub(crate) fn nsolve_system<
         N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
-        T: AtomCore,
+        T: AsRef<BorrowedAtom>,
     >(
         system: &[T],
         vars: &[Symbol],
@@ -67,7 +67,10 @@ impl<'a> AtomView<'a> {
         prec: N,
         max_iterations: usize,
     ) -> Result<Vec<N>, String> {
-        let system = system.iter().map(|v| v.as_atom_view()).collect::<Vec<_>>();
+        let system = system
+            .iter()
+            .map(|v| v.as_ref().to_view())
+            .collect::<Vec<_>>();
         AtomView::nsolve_system_impl(&system, vars, init, prec, max_iterations)
     }
 
@@ -168,15 +171,19 @@ impl<'a> AtomView<'a> {
 
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
-    pub(crate) fn solve_linear_system<E: PositiveExponent, T1: AtomCore, T2: AtomCore>(
+    pub(crate) fn solve_linear_system<
+        E: PositiveExponent,
+        T1: AsRef<BorrowedAtom>,
+        T2: AsRef<BorrowedAtom>,
+    >(
         system: &[T1],
         vars: &[T2],
     ) -> Result<Vec<Atom>, String> {
-        let system: Vec<_> = system.iter().map(|v| v.as_atom_view()).collect();
+        let system: Vec<_> = system.iter().map(|v| v.as_ref().to_view()).collect();
 
         let vars: Vec<_> = vars
             .iter()
-            .map(|v| v.as_atom_view().to_owned().into())
+            .map(|v| v.as_ref().to_view().to_owned().into())
             .collect();
 
         AtomView::solve_linear_system_impl::<E>(&system, &vars)
@@ -184,7 +191,11 @@ impl<'a> AtomView<'a> {
 
     /// Convert a system of linear equations to a matrix representation, returning the matrix
     /// and the right-hand side.
-    pub(crate) fn system_to_matrix<E: PositiveExponent, T1: AtomCore, T2: AtomCore>(
+    pub(crate) fn system_to_matrix<
+        E: PositiveExponent,
+        T1: AsRef<BorrowedAtom>,
+        T2: AsRef<BorrowedAtom>,
+    >(
         system: &[T1],
         vars: &[T2],
     ) -> Result<
@@ -194,11 +205,11 @@ impl<'a> AtomView<'a> {
         ),
         String,
     > {
-        let system: Vec<_> = system.iter().map(|v| v.as_atom_view()).collect();
+        let system: Vec<_> = system.iter().map(|v| v.as_ref().to_view()).collect();
 
         let vars: Vec<_> = vars
             .iter()
-            .map(|v| v.as_atom_view().to_owned().into())
+            .map(|v| v.as_ref().to_view().to_owned().into())
             .collect();
 
         AtomView::system_to_matrix_impl::<E>(&system, &vars)
@@ -296,7 +307,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{representation::InlineVar, Atom, AtomCore, AtomView},
+        atom::{representation::InlineVar, Atom, AtomView},
         domains::{
             float::{Real, F64},
             integer::Z,

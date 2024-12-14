@@ -3741,7 +3741,7 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::Atom,
         domains::integer::Z,
         state::State,
     };

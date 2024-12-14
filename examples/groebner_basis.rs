@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::Atom,
     domains::finite_field::Zp,
     poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
     state::State,

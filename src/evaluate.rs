@@ -13,7 +13,7 @@ use self_cell::self_cell;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    atom::{Atom, AtomCore, AtomView, KeyLookup, Symbol},
+    atom::{representation::BorrowedAtom, Atom, AtomView, KeyLookup, Symbol},
     coefficient::CoefficientView,
     combinatorics::unique_permutations,
     domains::{
@@ -3793,7 +3793,7 @@ impl<'a> AtomView<'a> {
     }
 
     /// Convert nested expressions to a tree.
-    pub fn to_eval_tree_multiple<A: AtomCore>(
+    pub fn to_eval_tree_multiple<A: AsRef<BorrowedAtom>>(
         exprs: &[A],
         fn_map: &FunctionMap<Rational>,
         params: &[Atom],
@@ -3802,7 +3802,8 @@ impl<'a> AtomView<'a> {
         let tree = exprs
             .iter()
             .map(|t| {
-                t.as_atom_view()
+                t.as_ref()
+                    .to_view()
                     .to_eval_tree_impl(fn_map, params, &[], &mut funcs)
             })
             .collect::<Result<_, _>>()?;
@@ -3971,7 +3972,11 @@ impl<'a> AtomView<'a> {
     /// a variable or a function with fixed arguments.
     ///
     /// All variables and all user functions in the expression must occur in the map.
-    pub(crate) fn evaluate<A: AtomCore + KeyLookup, T: Real, F: Fn(&Rational) -> T + Copy>(
+    pub(crate) fn evaluate<
+        A: AsRef<BorrowedAtom> + KeyLookup,
+        T: Real,
+        F: Fn(&Rational) -> T + Copy,
+    >(
         &self,
         coeff_map: F,
         const_map: &HashMap<A, T>,
@@ -3981,7 +3986,7 @@ impl<'a> AtomView<'a> {
         self.evaluate_impl(coeff_map, const_map, function_map, &mut cache)
     }
 
-    fn evaluate_impl<A: AtomCore + KeyLookup, T: Real, F: Fn(&Rational) -> T + Copy>(
+    fn evaluate_impl<A: AsRef<BorrowedAtom> + KeyLookup, T: Real, F: Fn(&Rational) -> T + Copy>(
         &self,
         coeff_map: F,
         const_map: &HashMap<A, T>,
@@ -4253,7 +4258,7 @@ mod test {
     use ahash::HashMap;
 
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::{representation::BorrowedAtom, Atom},
         domains::{float::Float, rational::Rational},
         evaluate::{EvaluationFn, FunctionMap, OptimizationSettings},
         id::ConditionResult,
@@ -4382,9 +4387,14 @@ mod test {
 
         let params = vec![Atom::parse("x").unwrap()];
 
-        let evaluator =
-            Atom::evaluator_multiple(&[e1, e2], &fn_map, &params, OptimizationSettings::default())
-                .unwrap();
+        // FIXME: this is not nice!
+        let evaluator = BorrowedAtom::evaluator_multiple(
+            &[e1, e2],
+            &fn_map,
+            &params,
+            OptimizationSettings::default(),
+        )
+        .unwrap();
 
         let mut e_f64 = evaluator.map_coeff(&|x| x.into());
         let r = e_f64.evaluate_single(&[1.1]);

@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    atom::{Atom, AtomCore, AtomView, FunctionBuilder},
+    atom::{Atom, AtomView, FunctionBuilder},
     coefficient::CoefficientView,
     domains::{
         atom::AtomField,

@@ -1298,7 +1298,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::Atom,
         domains::integer::Z,
         parser::Token,
         printer::{AtomPrinter, PrintOptions},

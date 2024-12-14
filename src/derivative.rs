@@ -736,10 +736,7 @@ impl Sub<&Atom> for &Series<AtomField> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        atom::{Atom, AtomCore},
-        state::State,
-    };
+    use crate::{atom::Atom, state::State};
 
     #[test]
     fn derivative() {

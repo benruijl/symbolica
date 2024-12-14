@@ -32,15 +32,16 @@ use crate::{
 use std::sync::Arc;
 
 use super::{
-    representation::{InlineNum, InlineVar},
-    Atom, AtomOrView, AtomView, KeyLookup, Symbol,
+    representation::{BorrowedAtom, InlineVar},
+    Atom, AtomView, KeyLookup, Symbol,
 };
 
 /// All core features of expressions, such as expansion and
 /// pattern matching that leave the expression unchanged.
-pub trait AtomCore {
-    /// Take a view of the atom.
-    fn as_atom_view(&self) -> AtomView;
+impl BorrowedAtom {
+    pub fn to_view(&self) -> AtomView {
+        AtomView::from(self)
+    }
 
     /// Collect terms involving the same power of `x`, where `x` is a variable or function, e.g.
     ///
@@ -50,13 +51,13 @@ pub trait AtomCore {
     ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
     /// `key_map` and `coeff_map` respectively.
-    fn collect<E: Exponent, T: AtomCore>(
+    pub fn collect<E: Exponent, T: AsRef<BorrowedAtom>>(
         &self,
         x: T,
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
-        self.as_atom_view().collect::<E, T>(x, key_map, coeff_map)
+        self.to_view().collect::<E, T>(x, key_map, coeff_map)
     }
 
     /// Collect terms involving the same power of `x`, where `x` is a variable or function, e.g.
@@ -67,139 +68,145 @@ pub trait AtomCore {
     ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
     /// `key_map` and `coeff_map` respectively.
-    fn collect_multiple<E: Exponent, T: AtomCore>(
+    pub fn collect_multiple<E: Exponent, T: AsRef<BorrowedAtom>>(
         &self,
         xs: &[T],
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
         coeff_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
     ) -> Atom {
-        self.as_atom_view()
+        self.to_view()
             .collect_multiple::<E, T>(xs, key_map, coeff_map)
     }
 
     /// Collect terms involving the same power of `x` in `xs`, where `xs` is a list of indeterminates.
     /// Return the list of key-coefficient pairs
-    fn coefficient_list<E: Exponent, T: AtomCore>(&self, xs: &[T]) -> Vec<(Atom, Atom)> {
-        self.as_atom_view().coefficient_list::<E, T>(xs)
+    pub fn coefficient_list<E: Exponent, T: AsRef<BorrowedAtom>>(
+        &self,
+        xs: &[T],
+    ) -> Vec<(Atom, Atom)> {
+        self.to_view().coefficient_list::<E, T>(xs)
     }
 
     /// Collect terms involving the literal occurrence of `x`.
-    fn coefficient<T: AtomCore>(&self, x: T) -> Atom {
-        Workspace::get_local().with(|ws| {
-            self.as_atom_view()
-                .coefficient_with_ws(x.as_atom_view(), ws)
-        })
+    pub fn coefficient<T: AsRef<BorrowedAtom>>(&self, x: T) -> Atom {
+        Workspace::get_local()
+            .with(|ws| self.to_view().coefficient_with_ws(x.as_ref().to_view(), ws))
     }
 
     /// Write the expression over a common denominator.
-    fn together(&self) -> Atom {
-        self.as_atom_view().together()
+    pub fn together(&self) -> Atom {
+        self.to_view().together()
     }
 
     /// Write the expression as a sum of terms with minimal denominators.
-    fn apart(&self, x: Symbol) -> Atom {
-        self.as_atom_view().apart(x)
+    pub fn apart(&self, x: Symbol) -> Atom {
+        self.to_view().apart(x)
     }
 
     /// Cancel all common factors between numerators and denominators.
     /// Any non-canceling parts of the expression will not be rewritten.
-    fn cancel(&self) -> Atom {
-        self.as_atom_view().cancel()
+    pub fn cancel(&self) -> Atom {
+        self.to_view().cancel()
     }
 
     /// Factor the expression over the rationals.
-    fn factor(&self) -> Atom {
-        self.as_atom_view().factor()
+    pub fn factor(&self) -> Atom {
+        self.to_view().factor()
     }
 
     /// Collect numerical factors by removing the numerical content from additions.
     /// For example, `-2*x + 4*x^2 + 6*x^3` will be transformed into `-2*(x - 2*x^2 - 3*x^3)`.
     ///
     /// The first argument of the addition is normalized to a positive quantity.
-    fn collect_num(&self) -> Atom {
-        self.as_atom_view().collect_num()
+    pub fn collect_num(&self) -> Atom {
+        self.to_view().collect_num()
     }
 
-    /// Expand an expression. The function [AtomCore::expand_via_poly] may be faster.
-    fn expand(&self) -> Atom {
-        self.as_atom_view().expand()
+    /// Expand an expression. The function [Self::expand_via_poly] may be faster.
+    pub fn expand(&self) -> Atom {
+        self.to_view().expand()
     }
 
     /// Expand the expression by converting it to a polynomial, optionally
     /// only in the indeterminate `var`. The parameter `E` should be a numerical type
     /// that fits the largest exponent in the expanded expression. Often,
     /// `u8` or `u16` is sufficient.
-    fn expand_via_poly<E: Exponent, T: AtomCore>(&self, var: Option<T>) -> Atom {
-        self.as_atom_view()
-            .expand_via_poly::<E>(var.as_ref().map(|x| x.as_atom_view()))
+    pub fn expand_via_poly<E: Exponent, T: AsRef<BorrowedAtom>>(&self, var: Option<T>) -> Atom {
+        self.to_view()
+            .expand_via_poly::<E>(var.as_ref().map(|x| x.as_ref().to_view()))
     }
 
-    /// Expand an expression in the variable `var`. The function [AtomCore::expand_via_poly] may be faster.
-    fn expand_in<T: AtomCore>(&self, var: T) -> Atom {
-        self.as_atom_view().expand_in(var.as_atom_view())
+    /// Expand an expression in the variable `var`. The function [Self::expand_via_poly] may be faster.
+    pub fn expand_in<T: AsRef<BorrowedAtom>>(&self, var: T) -> Atom {
+        self.to_view().expand_in(var.as_ref().to_view())
     }
 
     /// Expand an expression in the variable `var`.
-    fn expand_in_symbol(&self, var: Symbol) -> Atom {
-        self.as_atom_view()
-            .expand_in(InlineVar::from(var).as_view())
+    pub fn expand_in_symbol(&self, var: Symbol) -> Atom {
+        self.to_view().expand_in(InlineVar::from(var).as_view())
     }
 
     /// Expand an expression, returning `true` iff the expression changed.
-    fn expand_into(&self, var: Option<AtomView>, out: &mut Atom) -> bool {
-        self.as_atom_view().expand_into(var, out)
+    pub fn expand_into<T: AsRef<BorrowedAtom>>(&self, var: Option<T>, out: &mut Atom) -> bool {
+        self.to_view()
+            .expand_into(var.as_ref().map(|x| x.as_ref().to_view()), out)
     }
 
     /// Distribute numbers in the expression, for example:
     /// `2*(x+y)` -> `2*x+2*y`.
-    fn expand_num(&self) -> Atom {
-        self.as_atom_view().expand_num()
+    pub fn expand_num(&self) -> Atom {
+        self.to_view().expand_num()
     }
 
     /// Check if the expression is expanded, optionally in only the variable or function `var`.
-    fn is_expanded(&self, var: Option<AtomView>) -> bool {
-        self.as_atom_view().is_expanded(var)
+    pub fn is_expanded<T: AsRef<BorrowedAtom>>(&self, var: Option<T>) -> bool {
+        self.to_view()
+            .is_expanded(var.as_ref().map(|x| x.as_ref().to_view()))
     }
 
     /// Take a derivative of the expression with respect to `x`.
-    fn derivative(&self, x: Symbol) -> Atom {
-        self.as_atom_view().derivative(x)
+    pub fn derivative(&self, x: Symbol) -> Atom {
+        self.to_view().derivative(x)
     }
 
     /// Take a derivative of the expression with respect to `x` and
     /// write the result in `out`.
     /// Returns `true` if the derivative is non-zero.
-    fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
-        self.as_atom_view().derivative_into(x, out)
+    pub fn derivative_into(&self, x: Symbol, out: &mut Atom) -> bool {
+        self.to_view().derivative_into(x, out)
     }
 
     /// Series expand in `x` around `expansion_point` to depth `depth`.
-    fn series<T: AtomCore>(
+    pub fn series<T: AsRef<BorrowedAtom>>(
         &self,
         x: Symbol,
         expansion_point: T,
         depth: Rational,
         depth_is_absolute: bool,
     ) -> Result<Series<AtomField>, &'static str> {
-        self.as_atom_view()
-            .series(x, expansion_point.as_atom_view(), depth, depth_is_absolute)
+        self.to_view().series(
+            x,
+            expansion_point.as_ref().to_view(),
+            depth,
+            depth_is_absolute,
+        )
     }
 
     /// Find the root of a function in `x` numerically over the reals using Newton's method.
-    fn nsolve<N: SingleFloat + Real + PartialOrd>(
+    pub fn nsolve<N: SingleFloat + Real + PartialOrd>(
         &self,
         x: Symbol,
         init: N,
         prec: N,
         max_iterations: usize,
     ) -> Result<N, String> {
-        self.as_atom_view().nsolve(x, init, prec, max_iterations)
+        self.to_view().nsolve(x, init, prec, max_iterations)
     }
 
     /// Solve a non-linear system numerically over the reals using Newton's method.
-    fn nsolve_system<
+    pub fn nsolve_system<
         N: SingleFloat + Real + PartialOrd + InternalOrdering + Eq + std::hash::Hash,
-        T: AtomCore,
+        T: AsRef<BorrowedAtom>,
     >(
         system: &[T],
         vars: &[Symbol],
@@ -212,7 +219,11 @@ pub trait AtomCore {
 
     /// Solve a system that is linear in `vars`, if possible.
     /// Each expression in `system` is understood to yield 0.
-    fn solve_linear_system<E: PositiveExponent, T1: AtomCore, T2: AtomCore>(
+    pub fn solve_linear_system<
+        E: PositiveExponent,
+        T1: AsRef<BorrowedAtom>,
+        T2: AsRef<BorrowedAtom>,
+    >(
         system: &[T1],
         vars: &[T2],
     ) -> Result<Vec<Atom>, String> {
@@ -221,7 +232,11 @@ pub trait AtomCore {
 
     /// Convert a system of linear equations to a matrix representation, returning the matrix
     /// and the right-hand side.
-    fn system_to_matrix<E: PositiveExponent, T1: AtomCore, T2: AtomCore>(
+    pub fn system_to_matrix<
+        E: PositiveExponent,
+        T1: AsRef<BorrowedAtom>,
+        T2: AsRef<BorrowedAtom>,
+    >(
         system: &[T1],
         vars: &[T2],
     ) -> Result<
@@ -239,32 +254,31 @@ pub trait AtomCore {
     /// to an optimized version or generate a compiled version of your expression.
     ///
     /// All variables and all user functions in the expression must occur in the map.
-    fn evaluate<A: AtomCore + KeyLookup, T: Real, F: Fn(&Rational) -> T + Copy>(
+    pub fn evaluate<A: AsRef<BorrowedAtom> + KeyLookup, T: Real, F: Fn(&Rational) -> T + Copy>(
         &self,
         coeff_map: F,
         const_map: &HashMap<A, T>,
         function_map: &HashMap<Symbol, EvaluationFn<A, T>>,
     ) -> Result<T, String> {
-        self.as_atom_view()
-            .evaluate(coeff_map, const_map, function_map)
+        self.to_view().evaluate(coeff_map, const_map, function_map)
     }
 
     /// Convert nested expressions to a tree suitable for repeated evaluations with
     /// different values for `params`.
     /// All variables and all user functions in the expression must occur in the map.
-    fn to_evaluation_tree(
+    pub fn to_evaluation_tree(
         &self,
         fn_map: &FunctionMap<Rational>,
         params: &[Atom],
     ) -> Result<EvalTree<Rational>, String> {
-        self.as_atom_view().to_evaluation_tree(fn_map, params)
+        self.to_view().to_evaluation_tree(fn_map, params)
     }
 
     /// Create an efficient evaluator for a (nested) expression.
     /// All free parameters must appear in `params` and all other variables
     /// and user functions in the expression must occur in the function map.
     /// The function map may have nested expressions.
-    fn evaluator(
+    pub fn evaluator(
         &self,
         fn_map: &FunctionMap<Rational>,
         params: &[Atom],
@@ -282,7 +296,7 @@ pub trait AtomCore {
     /// Convert nested expressions to a tree suitable for repeated evaluations with
     /// different values for `params`.
     /// All variables and all user functions in the expression must occur in the map.
-    fn evaluator_multiple<A: AtomCore>(
+    pub fn evaluator_multiple<A: AsRef<BorrowedAtom>>(
         exprs: &[A],
         fn_map: &FunctionMap<Rational>,
         params: &[Atom],
@@ -299,61 +313,60 @@ pub trait AtomCore {
 
     /// Check if the expression could be 0, using (potentially) numerical sampling with
     /// a given tolerance and number of iterations.
-    fn zero_test(&self, iterations: usize, tolerance: f64) -> ConditionResult {
-        self.as_atom_view().zero_test(iterations, tolerance)
+    pub fn zero_test(&self, iterations: usize, tolerance: f64) -> ConditionResult {
+        self.to_view().zero_test(iterations, tolerance)
     }
 
     /// Set the coefficient ring to the multivariate rational polynomial with `vars` variables.
-    fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
-        self.as_atom_view().set_coefficient_ring(vars)
+    pub fn set_coefficient_ring(&self, vars: &Arc<Vec<Variable>>) -> Atom {
+        self.to_view().set_coefficient_ring(vars)
     }
 
     /// Convert all coefficients to floats with a given precision `decimal_prec`.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
-    fn coefficients_to_float(&self, decimal_prec: u32) -> Atom {
+    pub fn coefficients_to_float(&self, decimal_prec: u32) -> Atom {
         let mut a = Atom::new();
-        self.as_atom_view()
+        self.to_view()
             .coefficients_to_float_into(decimal_prec, &mut a);
         a
     }
 
     /// Convert all coefficients to floats with a given precision `decimal_prec`.
     /// The precision of floating point coefficients in the input will be truncated to `decimal_prec`.
-    fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
-        self.as_atom_view()
-            .coefficients_to_float_into(decimal_prec, out);
+    pub fn coefficients_to_float_into(&self, decimal_prec: u32, out: &mut Atom) {
+        self.to_view().coefficients_to_float_into(decimal_prec, out);
     }
 
     /// Map all coefficients using a given function.
-    fn map_coefficient<F: Fn(CoefficientView) -> Coefficient + Copy>(&self, f: F) -> Atom {
-        self.as_atom_view().map_coefficient(f)
+    pub fn map_coefficient<F: Fn(CoefficientView) -> Coefficient + Copy>(&self, f: F) -> Atom {
+        self.to_view().map_coefficient(f)
     }
 
     /// Map all coefficients using a given function.
-    fn map_coefficient_into<F: Fn(CoefficientView) -> Coefficient + Copy>(
+    pub fn map_coefficient_into<F: Fn(CoefficientView) -> Coefficient + Copy>(
         &self,
         f: F,
         out: &mut Atom,
     ) {
-        self.as_atom_view().map_coefficient_into(f, out);
+        self.to_view().map_coefficient_into(f, out);
     }
 
     /// Map all floating point and rational coefficients to the best rational approximation
     /// in the interval `[self*(1-relative_error),self*(1+relative_error)]`.
-    fn rationalize_coefficients(&self, relative_error: &Rational) -> Atom {
-        self.as_atom_view().rationalize_coefficients(relative_error)
+    pub fn rationalize_coefficients(&self, relative_error: &Rational) -> Atom {
+        self.to_view().rationalize_coefficients(relative_error)
     }
 
     /// Convert the atom to a polynomial, optionally in the variable ordering
     /// specified by `var_map`. If new variables are encountered, they are
     /// added to the variable map. Similarly, non-polynomial parts are automatically
     /// defined as a new independent variable in the polynomial.
-    fn to_polynomial<R: EuclideanDomain + ConvertToRing, E: Exponent>(
+    pub fn to_polynomial<R: EuclideanDomain + ConvertToRing, E: Exponent>(
         &self,
         field: &R,
         var_map: Option<Arc<Vec<Variable>>>,
     ) -> MultivariatePolynomial<R, E> {
-        self.as_atom_view().to_polynomial(field, var_map)
+        self.to_view().to_polynomial(field, var_map)
     }
 
     /// Convert the atom to a polynomial in specific variables.
@@ -361,18 +374,18 @@ pub trait AtomCore {
     /// is a general expression.
     ///
     /// This routine does not perform expansions.
-    fn to_polynomial_in_vars<E: Exponent>(
+    pub fn to_polynomial_in_vars<E: Exponent>(
         &self,
         var_map: &Arc<Vec<Variable>>,
     ) -> MultivariatePolynomial<AtomField, E> {
-        self.as_atom_view().to_polynomial_in_vars(var_map)
+        self.to_view().to_polynomial_in_vars(var_map)
     }
 
     /// Convert the atom to a rational polynomial, optionally in the variable ordering
     /// specified by `var_map`. If new variables are encountered, they are
     /// added to the variable map. Similarly, non-rational polynomial parts are automatically
     /// defined as a new independent variable in the rational polynomial.
-    fn to_rational_polynomial<
+    pub fn to_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
         E: PositiveExponent,
@@ -386,7 +399,7 @@ pub trait AtomCore {
         RationalPolynomial<RO, E>:
             FromNumeratorAndDenominator<R, RO, E> + FromNumeratorAndDenominator<RO, RO, E>,
     {
-        self.as_atom_view()
+        self.to_view()
             .to_rational_polynomial(field, out_field, var_map)
     }
 
@@ -394,7 +407,7 @@ pub trait AtomCore {
     /// specified by `var_map`. If new variables are encountered, they are
     /// added to the variable map. Similarly, non-rational polynomial parts are automatically
     /// defined as a new independent variable in the rational polynomial.
-    fn to_factorized_rational_polynomial<
+    pub fn to_factorized_rational_polynomial<
         R: EuclideanDomain + ConvertToRing,
         RO: EuclideanDomain + PolynomialGCD<E>,
         E: PositiveExponent,
@@ -409,49 +422,49 @@ pub trait AtomCore {
             + FromNumeratorAndFactorizedDenominator<RO, RO, E>,
         MultivariatePolynomial<RO, E>: Factorize,
     {
-        self.as_atom_view()
+        self.to_view()
             .to_factorized_rational_polynomial(field, out_field, var_map)
     }
 
     // Format the atom.
-    fn format<W: std::fmt::Write>(
+    pub fn format<W: std::fmt::Write>(
         &self,
         fmt: &mut W,
         opts: &PrintOptions,
         print_state: PrintState,
     ) -> Result<bool, std::fmt::Error> {
-        self.as_atom_view().format(fmt, opts, print_state)
+        self.to_view().format(fmt, opts, print_state)
     }
 
     /// Construct a printer for the atom with special options.
-    fn printer(&self, opts: PrintOptions) -> AtomPrinter {
-        AtomPrinter::new_with_options(self.as_atom_view(), opts)
+    pub fn printer(&self, opts: PrintOptions) -> AtomPrinter {
+        AtomPrinter::new_with_options(self.to_view(), opts)
     }
 
     /// Print the atom in a form that is unique and independent of any implementation details.
     ///     
     /// Anti-symmetric functions are not supported.
-    fn to_canonical_string(&self) -> String {
-        self.as_atom_view().to_canonical_string()
+    pub fn to_canonical_string(&self) -> String {
+        self.to_view().to_canonical_string()
     }
 
     /// Map the function `f` over all terms.
-    fn map_terms_single_core(&self, f: impl Fn(AtomView) -> Atom) -> Atom {
-        self.as_atom_view().map_terms_single_core(f)
+    pub fn map_terms_single_core(&self, f: impl Fn(AtomView) -> Atom) -> Atom {
+        self.to_view().map_terms_single_core(f)
     }
 
     /// Map the function `f` over all terms, using parallel execution with `n_cores` cores.
-    fn map_terms(&self, f: impl Fn(AtomView) -> Atom + Send + Sync, n_cores: usize) -> Atom {
-        self.as_atom_view().map_terms(f, n_cores)
+    pub fn map_terms(&self, f: impl Fn(AtomView) -> Atom + Send + Sync, n_cores: usize) -> Atom {
+        self.to_view().map_terms(f, n_cores)
     }
 
     /// Map the function `f` over all terms, using parallel execution with `n_cores` cores.
-    fn map_terms_with_pool(
+    pub fn map_terms_with_pool(
         &self,
         f: impl Fn(AtomView) -> Atom + Send + Sync,
         p: &ThreadPool,
     ) -> Atom {
-        self.as_atom_view().map_terms_with_pool(f, p)
+        self.to_view().map_terms_with_pool(f, p)
     }
 
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
@@ -465,9 +478,9 @@ pub trait AtomCore {
     /// Example
     /// -------
     /// ```
-    /// # use symbolica::{atom::{Atom, AtomCore}, state::{FunctionAttribute, State}};
+    /// # use symbolica::{atom::Atom, state::{FunctionAttribute, State}};
     /// #
-    /// # fn main() {
+    /// # pub fn main() {
     /// let _ = State::get_symbol_with_attributes("fs", &[FunctionAttribute::Symmetric]).unwrap();
     /// let _ = State::get_symbol_with_attributes("fc", &[FunctionAttribute::Cyclesymmetric]).unwrap();
     /// let a = Atom::parse("fs(mu2,mu3)*fc(mu4,mu2,k1,mu4,k1,mu3)").unwrap();
@@ -482,38 +495,37 @@ pub trait AtomCore {
     /// # }
     /// ```
     /// yields `fs(mu1,mu2)*fc(mu1,k1,mu3,k1,mu2,mu3)`.
-    fn canonize_tensors(
+    pub fn canonize_tensors<T: AsRef<BorrowedAtom>>(
         &self,
-        contracted_indices: &[AtomView],
-        index_group: Option<&[AtomView]>,
+        contracted_indices: &[T],
+        index_group: Option<&[T]>,
     ) -> Result<Atom, String> {
-        self.as_atom_view()
+        self.to_view()
             .canonize_tensors(contracted_indices, index_group)
     }
 
-    fn to_pattern(&self) -> Pattern {
-        Pattern::from_view(self.as_atom_view(), true)
+    pub fn to_pattern(&self) -> Pattern {
+        Pattern::from_view(self.to_view(), true)
     }
 
     /// Get all symbols in the expression, optionally including function symbols.
-    fn get_all_symbols(&self, include_function_symbols: bool) -> HashSet<Symbol> {
-        self.as_atom_view()
-            .get_all_symbols(include_function_symbols)
+    pub fn get_all_symbols(&self, include_function_symbols: bool) -> HashSet<Symbol> {
+        self.to_view().get_all_symbols(include_function_symbols)
     }
 
     /// Get all variables and functions in the expression.
-    fn get_all_indeterminates(&self, enter_functions: bool) -> HashSet<AtomView> {
-        self.as_atom_view().get_all_indeterminates(enter_functions)
+    pub fn get_all_indeterminates(&self, enter_functions: bool) -> HashSet<AtomView> {
+        self.to_view().get_all_indeterminates(enter_functions)
     }
 
     /// Returns true iff `self` contains the symbol `s`.
-    fn contains_symbol(&self, s: Symbol) -> bool {
-        self.as_atom_view().contains_symbol(s)
+    pub fn contains_symbol(&self, s: Symbol) -> bool {
+        self.to_view().contains_symbol(s)
     }
 
     /// Returns true iff `self` contains `a` literally.
-    fn contains<T: AtomCore>(&self, s: T) -> bool {
-        self.as_atom_view().contains(s.as_atom_view())
+    pub fn contains<T: AsRef<BorrowedAtom>>(&self, s: T) -> bool {
+        self.to_view().contains(s)
     }
 
     /// Check if the expression can be considered a polynomial in some variables, including
@@ -522,29 +534,29 @@ pub trait AtomCore {
     ///
     /// Rational powers or powers in variables are not rewritten, e.g. `x^(2y)` is not considered
     /// polynomial in `x^y`.
-    fn is_polynomial(
+    pub fn is_polynomial(
         &self,
         allow_not_expanded: bool,
         allow_negative_powers: bool,
     ) -> Option<HashSet<AtomView<'_>>> {
-        self.as_atom_view()
+        self.to_view()
             .is_polynomial(allow_not_expanded, allow_negative_powers)
     }
 
     /// Replace all occurrences of the pattern.
-    fn replace_all<R: BorrowPatternOrMap>(
+    pub fn replace_all<R: BorrowPatternOrMap>(
         &self,
         pattern: &Pattern,
         rhs: R,
         conditions: Option<&Condition<PatternRestriction>>,
         settings: Option<&MatchSettings>,
     ) -> Atom {
-        self.as_atom_view()
+        self.to_view()
             .replace_all(pattern, rhs, conditions, settings)
     }
 
     /// Replace all occurrences of the pattern.
-    fn replace_all_into<R: BorrowPatternOrMap>(
+    pub fn replace_all_into<R: BorrowPatternOrMap>(
         &self,
         pattern: &Pattern,
         rhs: R,
@@ -552,35 +564,34 @@ pub trait AtomCore {
         settings: Option<&MatchSettings>,
         out: &mut Atom,
     ) -> bool {
-        self.as_atom_view()
+        self.to_view()
             .replace_all_into(pattern, rhs, conditions, settings, out)
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
-    fn replace_all_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
-        self.as_atom_view().replace_all_multiple(replacements)
+    pub fn replace_all_multiple<T: BorrowReplacement>(&self, replacements: &[T]) -> Atom {
+        self.to_view().replace_all_multiple(replacements)
     }
 
     /// Replace all occurrences of the patterns, where replacements are tested in the order that they are given.
     /// Returns `true` iff a match was found.
-    fn replace_all_multiple_into<T: BorrowReplacement>(
+    pub fn replace_all_multiple_into<T: BorrowReplacement>(
         &self,
         replacements: &[T],
         out: &mut Atom,
     ) -> bool {
-        self.as_atom_view()
-            .replace_all_multiple_into(replacements, out)
+        self.to_view().replace_all_multiple_into(replacements, out)
     }
 
     /// Replace part of an expression by calling the map `m` on each subexpression.
     /// The function `m`  must return `true` if the expression was replaced and must write the new expression to `out`.
     /// A [Context] object is passed to the function, which contains information about the current position in the expression.
-    fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
-        self.as_atom_view().replace_map(m)
+    pub fn replace_map<F: Fn(AtomView, &Context, &mut Atom) -> bool>(&self, m: &F) -> Atom {
+        self.to_view().replace_map(m)
     }
 
     /// Return an iterator that replaces the pattern in the target once.
-    fn replace_iter<'a, R: BorrowPatternOrMap>(
+    pub fn replace_iter<'a, R: BorrowPatternOrMap>(
         &'a self,
         pattern: &'a Pattern,
         rhs: &'a R,
@@ -589,50 +600,20 @@ pub trait AtomCore {
     ) -> ReplaceIterator<'a, 'a> {
         ReplaceIterator::new(
             pattern,
-            self.as_atom_view(),
-            rhs.borrow(),
+            self.to_view(),
+            rhs.borrow_pat_map(),
             conditions,
             settings,
         )
     }
 
     /// Return an iterator over matched expressions.
-    fn pattern_match<'a>(
+    pub fn pattern_match<'a>(
         &'a self,
         pattern: &'a Pattern,
         conditions: Option<&'a Condition<PatternRestriction>>,
         settings: Option<&'a MatchSettings>,
     ) -> PatternAtomTreeIterator<'a, 'a> {
-        PatternAtomTreeIterator::new(pattern, self.as_atom_view(), conditions, settings)
-    }
-}
-
-impl<'a> AtomCore for AtomView<'a> {
-    fn as_atom_view(&self) -> AtomView<'a> {
-        *self
-    }
-}
-
-impl AtomCore for InlineVar {
-    fn as_atom_view(&self) -> AtomView {
-        self.as_view()
-    }
-}
-
-impl AtomCore for InlineNum {
-    fn as_atom_view(&self) -> AtomView {
-        self.as_view()
-    }
-}
-
-impl<T: AsRef<Atom>> AtomCore for T {
-    fn as_atom_view(&self) -> AtomView {
-        self.as_ref().as_view()
-    }
-}
-
-impl<'a> AtomCore for AtomOrView<'a> {
-    fn as_atom_view(&self) -> AtomView {
-        self.as_view()
+        PatternAtomTreeIterator::new(pattern, self.to_view(), conditions, settings)
     }
 }

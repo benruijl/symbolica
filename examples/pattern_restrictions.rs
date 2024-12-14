@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::{Atom, AtomCore, AtomView},
+    atom::{Atom, AtomView},
     coefficient::CoefficientView,
     domains::finite_field,
     id::{Condition, Match, MatchSettings, WildcardRestriction},

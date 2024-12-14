@@ -6,6 +6,7 @@ use std::{
     cmp::Ordering,
     hash::Hash,
     io::{Read, Write},
+    ops::Deref,
 };
 
 use crate::{
@@ -51,6 +52,92 @@ impl Borrow<BorrowedRawAtom> for Atom {
 impl<'a> Borrow<BorrowedRawAtom> for AtomView<'a> {
     fn borrow(&self) -> &BorrowedRawAtom {
         &self.get_data()
+    }
+}
+
+impl Deref for Atom {
+    type Target = BorrowedAtom;
+
+    fn deref(&self) -> &BorrowedAtom {
+        wrap_ref(self.as_view().get_data())
+    }
+}
+
+impl<'a> Deref for AtomView<'a> {
+    type Target = BorrowedAtom;
+
+    fn deref(&self) -> &BorrowedAtom {
+        wrap_ref(self.get_data())
+    }
+}
+
+impl<'a> Deref for InlineVar {
+    type Target = BorrowedAtom;
+
+    fn deref(&self) -> &BorrowedAtom {
+        wrap_ref(self.get_data())
+    }
+}
+
+impl<'a> Deref for InlineNum {
+    type Target = BorrowedAtom;
+
+    fn deref(&self) -> &BorrowedAtom {
+        wrap_ref(self.get_data())
+    }
+}
+
+impl<'a> AsRef<BorrowedAtom> for AtomView<'a> {
+    fn as_ref(&self) -> &BorrowedAtom {
+        self.deref()
+    }
+}
+
+impl AsRef<BorrowedAtom> for Atom {
+    fn as_ref(&self) -> &BorrowedAtom {
+        self.deref()
+    }
+}
+
+impl AsRef<BorrowedAtom> for InlineVar {
+    fn as_ref(&self) -> &BorrowedAtom {
+        self.deref()
+    }
+}
+
+impl AsRef<BorrowedAtom> for InlineNum {
+    fn as_ref(&self) -> &BorrowedAtom {
+        self.deref()
+    }
+}
+
+impl<'a> From<&'a BorrowedAtom> for AtomView<'a> {
+    #[inline(always)]
+    fn from(value: &'a BorrowedAtom) -> Self {
+        match unsafe { *value.0.get_unchecked(0) } & TYPE_MASK {
+            NUM_ID => AtomView::Num(NumView { data: &value.0 }),
+            VAR_ID => AtomView::Var(VarView { data: &value.0 }),
+            FUN_ID => AtomView::Fun(FunView { data: &value.0 }),
+            MUL_ID => AtomView::Mul(MulView { data: &value.0 }),
+            ADD_ID => AtomView::Add(AddView { data: &value.0 }),
+            POW_ID => AtomView::Pow(PowView { data: &value.0 }),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[repr(transparent)]
+pub struct BorrowedAtom([u8]);
+
+/// Convert a reference to the inner type into a reference to the wrapper
+/// type.
+#[inline(always)]
+fn wrap_ref<T: ?Sized, U: ?Sized>(s: &T) -> &U {
+    unsafe {
+        let inner_ptr = s as *const T;
+        let wrapper_ptr: *const U =
+            std::mem::transmute_copy(&std::mem::ManuallyDrop::new(inner_ptr));
+        &*wrapper_ptr
     }
 }
 
@@ -1517,7 +1604,7 @@ impl<'a> AddView<'a> {
 impl<'a> AtomView<'a> {
     pub const ZERO: Self = Self::Num(NumView { data: &ZERO_DATA });
 
-    pub fn from(source: &'a [u8]) -> AtomView<'a> {
+    pub fn from_raw(source: &'a [u8]) -> AtomView<'a> {
         match source[0] & TYPE_MASK {
             VAR_ID => AtomView::Var(VarView { data: source }),
             FUN_ID => AtomView::Fun(FunView { data: source }),

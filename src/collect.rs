@@ -1,5 +1,5 @@
 use crate::{
-    atom::{Add, Atom, AtomCore, AtomView, Symbol},
+    atom::{representation::BorrowedAtom, Add, Atom, AtomView, Symbol},
     coefficient::{Coefficient, CoefficientView},
     domains::{integer::Z, rational::Q},
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Exponent},
@@ -16,7 +16,7 @@ impl<'a> AtomView<'a> {
     ///
     /// Both the *key* (the quantity collected in) and its coefficient can be mapped using
     /// `key_map` and `coeff_map` respectively.
-    pub(crate) fn collect<E: Exponent, T: AtomCore>(
+    pub(crate) fn collect<E: Exponent, T: AsRef<BorrowedAtom>>(
         &self,
         x: T,
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
@@ -25,7 +25,7 @@ impl<'a> AtomView<'a> {
         self.collect_multiple::<E, T>(std::slice::from_ref(&x), key_map, coeff_map)
     }
 
-    pub(crate) fn collect_multiple<E: Exponent, T: AtomCore>(
+    pub(crate) fn collect_multiple<E: Exponent, T: AsRef<BorrowedAtom>>(
         &self,
         xs: &[T],
         key_map: Option<Box<dyn Fn(AtomView, &mut Atom)>>,
@@ -37,7 +37,7 @@ impl<'a> AtomView<'a> {
         out
     }
 
-    pub(crate) fn collect_multiple_impl<E: Exponent, T: AtomCore>(
+    pub(crate) fn collect_multiple_impl<E: Exponent, T: AsRef<BorrowedAtom>>(
         &self,
         xs: &[T],
         ws: &Workspace,
@@ -89,10 +89,13 @@ impl<'a> AtomView<'a> {
 
     /// Collect terms involving the same powers of `x` in `xs`, where `x` is an indeterminate.
     /// Return the list of key-coefficient pairs.
-    pub(crate) fn coefficient_list<E: Exponent, T: AtomCore>(&self, xs: &[T]) -> Vec<(Atom, Atom)> {
+    pub(crate) fn coefficient_list<E: Exponent, T: AsRef<BorrowedAtom>>(
+        &self,
+        xs: &[T],
+    ) -> Vec<(Atom, Atom)> {
         let vars = xs
             .iter()
-            .map(|x| x.as_atom_view().to_owned().into())
+            .map(|x| x.as_ref().to_view().to_owned().into())
             .collect::<Vec<_>>();
 
         let p = self.to_polynomial_in_vars::<E>(&Arc::new(vars));
@@ -103,7 +106,10 @@ impl<'a> AtomView<'a> {
 
             for (p, v) in t.exponents.iter().zip(xs) {
                 let mut pow = Atom::new();
-                pow.to_pow(v.as_atom_view(), Atom::new_num(p.to_i32() as i64).as_view());
+                pow.to_pow(
+                    v.as_ref().to_view(),
+                    Atom::new_num(p.to_i32() as i64).as_view(),
+                );
                 key = key * pow;
             }
 
@@ -574,7 +580,7 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{representation::InlineVar, Atom, AtomCore},
+        atom::{representation::InlineVar, Atom},
         fun,
         state::State,
     };

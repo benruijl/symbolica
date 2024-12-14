@@ -32,7 +32,7 @@ use smartstring::{LazyCompact, SmartString};
 use pyo3::pymodule;
 
 use crate::{
-    atom::{Atom, AtomCore, AtomType, AtomView, ListIterator, Symbol},
+    atom::{Atom, AtomType, AtomView, BorrowedAtom, ListIterator, Symbol},
     coefficient::CoefficientView,
     domains::{
         algebraic_number::AlgebraicExtension,
@@ -2978,7 +2978,7 @@ impl PythonExpression {
     /// Add this expression to `other`, returning the result.
     pub fn __add__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
-        Ok((self.expr.as_ref() + rhs.expr.as_ref()).into())
+        Ok((self.expr.as_ref() + rhs.expr).into())
     }
 
     /// Add this expression to `other`, returning the result.
@@ -3000,7 +3000,7 @@ impl PythonExpression {
     /// Add this expression to `other`, returning the result.
     pub fn __mul__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
-        Ok((self.expr.as_ref() * rhs.expr.as_ref()).into())
+        Ok((&self.expr * rhs.expr).into())
     }
 
     /// Add this expression to `other`, returning the result.
@@ -3011,7 +3011,7 @@ impl PythonExpression {
     /// Divide this expression by `other`, returning the result.
     pub fn __truediv__(&self, rhs: ConvertibleToExpression) -> PyResult<PythonExpression> {
         let rhs = rhs.to_expression();
-        Ok((self.expr.as_ref() / rhs.expr.as_ref()).into())
+        Ok((&self.expr / rhs.expr).into())
     }
 
     /// Divide `other` by this expression, returning the result.
@@ -3062,7 +3062,7 @@ impl PythonExpression {
 
     /// Negate the current expression, returning the result.
     pub fn __neg__(&self) -> PyResult<PythonExpression> {
-        Ok((-self.expr.as_ref()).into())
+        Ok((-self.expr.clone()).into())
     }
 
     /// Return the length of the atom.
@@ -4511,7 +4511,7 @@ impl PythonExpression {
                 ReplaceIterator::new(
                     lhs,
                     target.as_view(),
-                    crate::id::BorrowPatternOrMap::borrow(rhs),
+                    crate::id::BorrowPatternOrMap::borrow_pat_map(rhs),
                     Some(res),
                     Some(settings),
                 )
@@ -5203,9 +5203,10 @@ impl PythonExpression {
 
         let exprs = exprs.iter().map(|x| x.expr.as_view()).collect::<Vec<_>>();
 
-        let eval = Atom::evaluator_multiple(&exprs, &fn_map, &params, settings).map_err(|e| {
-            exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
-        })?;
+        let eval =
+            BorrowedAtom::evaluator_multiple(&exprs, &fn_map, &params, settings).map_err(|e| {
+                exceptions::PyValueError::new_err(format!("Could not create evaluator: {}", e))
+            })?;
 
         let eval_f64 = eval.map_coeff(&|x| x.to_f64());
 

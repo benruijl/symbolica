@@ -1,5 +1,5 @@
 use crate::{
-    atom::{Atom, AtomCore, AtomView},
+    atom::{Atom, AtomView},
     poly::Variable,
 };
 

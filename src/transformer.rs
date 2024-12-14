@@ -571,7 +571,7 @@ impl Transformer {
                 Transformer::ReplaceAll(pat, rhs, cond, settings) => {
                     cur_input.replace_all_with_ws_into(
                         pat,
-                        rhs.borrow(),
+                        rhs.borrow_pat_map(),
                         workspace,
                         cond.into(),
                         settings.into(),

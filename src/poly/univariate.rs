@@ -1769,7 +1769,7 @@ impl<R: Ring, E: PositiveExponent> UnivariatePolynomial<PolynomialRing<R, E>> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::Atom,
         domains::{float::F64, rational::Q},
     };
 

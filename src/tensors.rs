@@ -1,5 +1,8 @@
 use crate::{
-    atom::{representation::InlineNum, Atom, AtomOrView, AtomView, Mul},
+    atom::{
+        representation::{BorrowedAtom, InlineNum},
+        Atom, AtomOrView, AtomView, Mul,
+    },
     graph::{Graph, HiddenData},
     state::{RecycledAtom, Workspace},
 };
@@ -14,10 +17,10 @@ impl<'a> AtomView<'a> {
     /// If the contracted indices are distinguishable (for example in their dimension),
     /// you can provide an optional group marker for each index using `index_group`.
     /// This makes sure that an index will not be renamed to an index from a different group.
-    pub(crate) fn canonize_tensors(
+    pub(crate) fn canonize_tensors<T: AsRef<BorrowedAtom>>(
         &self,
-        contracted_indices: &[AtomView],
-        index_group: Option<&[AtomView]>,
+        contracted_indices: &[T],
+        index_group: Option<&[T]>,
     ) -> Result<Atom, String> {
         if self.is_zero() {
             return Ok(self.to_owned());
@@ -32,22 +35,40 @@ impl<'a> AtomView<'a> {
         }
 
         // sort all contracted indices, this is required to canonize antisymmetric tensors
-        if !contracted_indices.windows(2).all(|w| w[0] < w[1]) {
+        if !contracted_indices
+            .windows(2)
+            .all(|w| w[0].as_ref().to_view() < w[1].as_ref().to_view())
+        {
             if let Some(groups) = index_group {
                 let mut index = (0..contracted_indices.len()).collect::<Vec<_>>();
-                index.sort_by_key(|&i| contracted_indices[i]);
+                index.sort_by_key(|&i| contracted_indices[i].as_ref().to_view());
                 let c = index
                     .iter()
-                    .map(|&i| contracted_indices[i])
+                    .map(|&i| contracted_indices[i].as_ref().to_view())
                     .collect::<Vec<_>>();
-                let g = index.iter().map(|&i| groups[i]).collect::<Vec<_>>();
+                let g = index
+                    .iter()
+                    .map(|&i| groups[i].as_ref().to_view())
+                    .collect::<Vec<_>>();
                 return self.canonize_tensors(&c, Some(&g));
             } else {
-                let mut c = contracted_indices.to_vec();
+                let mut c: Vec<_> = contracted_indices
+                    .iter()
+                    .map(|x| x.as_ref().to_view())
+                    .collect();
                 c.sort();
                 return self.canonize_tensors(&c, None);
             }
         }
+
+        // FIXME
+        let contracted_indices: Vec<_> = contracted_indices
+            .iter()
+            .map(|x| x.as_ref().to_view())
+            .collect();
+        let index_group: Option<Vec<_>> =
+            index_group.map(|x| x.iter().map(|y| y.as_ref().to_view()).collect());
+        let index_group = index_group.as_deref();
 
         Workspace::get_local().with(|ws| {
             if let AtomView::Add(a) = self {
@@ -56,7 +77,7 @@ impl<'a> AtomView<'a> {
 
                 for a in a.iter() {
                     add.extend(
-                        a.canonize_tensor_product(contracted_indices, index_group, ws)?
+                        a.canonize_tensor_product(&contracted_indices, index_group, ws)?
                             .as_view(),
                     );
                 }
@@ -66,7 +87,7 @@ impl<'a> AtomView<'a> {
                 Ok(out)
             } else {
                 Ok(self
-                    .canonize_tensor_product(contracted_indices, index_group, ws)?
+                    .canonize_tensor_product(&contracted_indices, index_group, ws)?
                     .into_inner())
             }
         })
@@ -422,7 +443,7 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{representation::InlineVar, Atom, AtomCore},
+        atom::{representation::InlineVar, Atom},
         state::State,
     };
 
@@ -502,7 +523,7 @@ mod test {
     #[test]
     fn canonize_constant() {
         let a1 = Atom::parse("x+5").unwrap();
-        let r1 = a1.canonize_tensors(&[], None).unwrap();
+        let r1 = a1.canonize_tensors::<Atom>(&[], None).unwrap();
         assert_eq!(a1, r1);
     }
 }

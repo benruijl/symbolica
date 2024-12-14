@@ -1,4 +1,4 @@
-use symbolica::atom::{Atom, AtomCore};
+use symbolica::atom::Atom;
 
 fn main() {
     let expr = Atom::parse("f(z)*f(f(x))*f(y)").unwrap();

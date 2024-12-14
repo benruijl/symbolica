@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::{representation::InlineVar, Atom, AtomCore, AtomView},
+    atom::{
+        representation::{BorrowedAtom, InlineVar},
+        Atom,
+    },
     domains::{
         integer::Z,
         rational::Q,
@@ -20,7 +23,7 @@ fn solve() {
 
     let system: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
 
-    let sol = AtomView::solve_linear_system::<u8, _, InlineVar>(&system, &[x, y, z]).unwrap();
+    let sol = BorrowedAtom::solve_linear_system::<u8, _, InlineVar>(&system, &[x, y, z]).unwrap();
 
     for (v, s) in ["x", "y", "z"].iter().zip(&sol) {
         println!("{} = {}", v, s);

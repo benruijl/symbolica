@@ -1,5 +1,4 @@
 use ahash::HashMap;
-use symbolica::atom::AtomCore;
 use symbolica::evaluate::EvaluationFn;
 use symbolica::{atom::Atom, state::State};
 

@@ -1,4 +1,4 @@
-use symbolica::atom::{Atom, AtomCore};
+use symbolica::atom::Atom;
 
 fn main() {
     let input = Atom::parse("(1+x)^3").unwrap();

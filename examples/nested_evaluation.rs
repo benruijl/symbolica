@@ -1,5 +1,5 @@
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::{representation::BorrowedAtom, Atom},
     domains::rational::Rational,
     evaluate::{CompileOptions, FunctionMap, InlineASM, OptimizationSettings},
     state::State,
@@ -64,7 +64,7 @@ fn main() {
 
     let params = vec![Atom::parse("x").unwrap()];
 
-    let evaluator = Atom::evaluator_multiple(
+    let evaluator = BorrowedAtom::evaluator_multiple(
         &[e1.as_view(), e2.as_view()],
         &fn_map,
         &params,

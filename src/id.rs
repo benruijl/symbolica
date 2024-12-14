@@ -1,12 +1,12 @@
-use std::{ops::DerefMut, str::FromStr};
+use std::{borrow::Borrow, ops::DerefMut, str::FromStr};
 
 use ahash::{HashMap, HashSet};
 use dyn_clone::DynClone;
 
 use crate::{
     atom::{
-        representation::{InlineVar, ListSlice},
-        Atom, AtomCore, AtomType, AtomView, Num, SliceType, Symbol,
+        representation::{BorrowedAtom, InlineVar, ListSlice},
+        Atom, AtomType, AtomView, Num, SliceType, Symbol,
     },
     state::Workspace,
     transformer::{Transformer, TransformerError},
@@ -71,35 +71,35 @@ pub enum BorrowedPatternOrMap<'a> {
 }
 
 pub trait BorrowPatternOrMap {
-    fn borrow(&self) -> BorrowedPatternOrMap;
+    fn borrow_pat_map(&self) -> BorrowedPatternOrMap;
 }
 
 impl BorrowPatternOrMap for &Pattern {
-    fn borrow(&self) -> BorrowedPatternOrMap {
+    fn borrow_pat_map(&self) -> BorrowedPatternOrMap {
         BorrowedPatternOrMap::Pattern(*self)
     }
 }
 
 impl BorrowPatternOrMap for Pattern {
-    fn borrow(&self) -> BorrowedPatternOrMap {
+    fn borrow_pat_map(&self) -> BorrowedPatternOrMap {
         BorrowedPatternOrMap::Pattern(self)
     }
 }
 
 impl BorrowPatternOrMap for Box<dyn MatchMap> {
-    fn borrow(&self) -> BorrowedPatternOrMap {
+    fn borrow_pat_map(&self) -> BorrowedPatternOrMap {
         BorrowedPatternOrMap::Map(self)
     }
 }
 
 impl BorrowPatternOrMap for &Box<dyn MatchMap> {
-    fn borrow(&self) -> BorrowedPatternOrMap {
+    fn borrow_pat_map(&self) -> BorrowedPatternOrMap {
         BorrowedPatternOrMap::Map(*self)
     }
 }
 
 impl BorrowPatternOrMap for PatternOrMap {
-    fn borrow(&self) -> BorrowedPatternOrMap {
+    fn borrow_pat_map(&self) -> BorrowedPatternOrMap {
         match self {
             PatternOrMap::Pattern(p) => BorrowedPatternOrMap::Pattern(p),
             PatternOrMap::Map(m) => BorrowedPatternOrMap::Map(m),
@@ -108,7 +108,7 @@ impl BorrowPatternOrMap for PatternOrMap {
 }
 
 impl BorrowPatternOrMap for &PatternOrMap {
-    fn borrow(&self) -> BorrowedPatternOrMap {
+    fn borrow_pat_map(&self) -> BorrowedPatternOrMap {
         match self {
             PatternOrMap::Pattern(p) => BorrowedPatternOrMap::Pattern(p),
             PatternOrMap::Map(m) => BorrowedPatternOrMap::Map(m),
@@ -117,7 +117,7 @@ impl BorrowPatternOrMap for &PatternOrMap {
 }
 
 impl<'a> BorrowPatternOrMap for BorrowedPatternOrMap<'a> {
-    fn borrow(&self) -> BorrowedPatternOrMap {
+    fn borrow_pat_map(&self) -> BorrowedPatternOrMap {
         *self
     }
 }
@@ -163,14 +163,14 @@ pub struct BorrowedReplacement<'a> {
 }
 
 pub trait BorrowReplacement {
-    fn borrow(&self) -> BorrowedReplacement;
+    fn borrow_replacement(&self) -> BorrowedReplacement;
 }
 
 impl BorrowReplacement for Replacement {
-    fn borrow(&self) -> BorrowedReplacement {
+    fn borrow_replacement(&self) -> BorrowedReplacement {
         BorrowedReplacement {
             pattern: &self.pat,
-            rhs: self.rhs.borrow(),
+            rhs: self.rhs.borrow_pat_map(),
             conditions: self.conditions.as_ref(),
             settings: self.settings.as_ref(),
         }
@@ -178,10 +178,10 @@ impl BorrowReplacement for Replacement {
 }
 
 impl BorrowReplacement for &Replacement {
-    fn borrow(&self) -> BorrowedReplacement {
+    fn borrow_replacement(&self) -> BorrowedReplacement {
         BorrowedReplacement {
             pattern: &self.pat,
-            rhs: self.rhs.borrow(),
+            rhs: self.rhs.borrow_pat_map(),
             conditions: self.conditions.as_ref(),
             settings: self.settings.as_ref(),
         }
@@ -189,7 +189,7 @@ impl BorrowReplacement for &Replacement {
 }
 
 impl<'a> BorrowReplacement for BorrowedReplacement<'a> {
-    fn borrow(&self) -> BorrowedReplacement {
+    fn borrow_replacement(&self) -> BorrowedReplacement {
         *self
     }
 }
@@ -294,12 +294,13 @@ impl<'a> AtomView<'a> {
     }
 
     /// Returns true iff `self` contains `a` literally.
-    pub(crate) fn contains<T: AtomCore>(&self, a: T) -> bool {
+    pub(crate) fn contains<T: AsRef<BorrowedAtom>>(&self, a: T) -> bool {
         let mut stack = Vec::with_capacity(20);
         stack.push(*self);
+        let a: AtomView = a.as_ref().to_view();
 
         while let Some(c) = stack.pop() {
-            if a.as_atom_view() == c {
+            if a == c {
                 return true;
             }
 
@@ -667,7 +668,14 @@ impl<'a> AtomView<'a> {
         out: &mut Atom,
     ) -> bool {
         Workspace::get_local().with(|ws| {
-            self.replace_all_with_ws_into(pattern, rhs.borrow(), ws, conditions, settings, out)
+            self.replace_all_with_ws_into(
+                pattern,
+                rhs.borrow_pat_map(),
+                ws,
+                conditions,
+                settings,
+                out,
+            )
         })
     }
 
@@ -711,7 +719,7 @@ impl<'a> AtomView<'a> {
     ) -> bool {
         let mut beyond_max_level = true;
         for (rep_id, r) in replacements.iter().enumerate() {
-            let r = r.borrow();
+            let r = r.borrow_replacement();
 
             let def_c = Condition::default();
             let def_s = MatchSettings::default();
@@ -3608,7 +3616,7 @@ impl<'a: 'b, 'b> Iterator for ReplaceIterator<'a, 'b> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::Atom,
         id::{
             ConditionResult, MatchSettings, PatternOrMap, PatternRestriction, Replacement,
             WildcardRestriction,

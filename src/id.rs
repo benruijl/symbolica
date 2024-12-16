@@ -1800,6 +1800,12 @@ pub enum Relation {
     Le(Pattern, Pattern),
     Contains(Pattern, Pattern),
     IsType(Pattern, AtomType),
+    Matches(
+        Pattern,
+        Pattern,
+        Condition<PatternRestriction>,
+        MatchSettings,
+    ),
 }
 
 impl std::fmt::Display for Relation {
@@ -1813,6 +1819,7 @@ impl std::fmt::Display for Relation {
             Relation::Le(a, b) => write!(f, "{} <= {}", a, b),
             Relation::Contains(a, b) => write!(f, "{} contains {}", a, b),
             Relation::IsType(a, b) => write!(f, "{} is type {:?}", a, b),
+            Relation::Matches(a, b, _, _) => write!(f, "{} matches {}", a, b),
         }
     }
 }
@@ -1858,6 +1865,17 @@ impl Evaluate for Relation {
                         Relation::Contains(_, _) => out1.contains(out2.as_view()),
                         _ => unreachable!(),
                     }
+                }
+                Relation::Matches(a, pattern, cond, settings) => {
+                    a.substitute_wildcards(ws, &mut out1, &m, pat.as_ref())
+                        .map_err(|e| match e {
+                            TransformerError::Interrupt => "Interrupted by user".into(),
+                            TransformerError::ValueError(v) => v,
+                        })?;
+
+                    out1.pattern_match(pattern, Some(cond), Some(settings))
+                        .next()
+                        .is_some()
                 }
                 Relation::IsType(a, b) => {
                     a.substitute_wildcards(ws, &mut out1, &m, pat.as_ref())

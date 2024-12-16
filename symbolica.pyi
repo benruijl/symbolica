@@ -1097,7 +1097,7 @@ class Expression:
         level_range: Optional[Tuple[int, Optional[int]]] = None,
         level_is_tree_depth: Optional[bool] = False,
         allow_new_wildcards_on_rhs: Optional[bool] = False,
-    ) -> bool:
+    ) -> Condition:
         """
         Test whether the pattern is found in the expression.
         Restrictions on the pattern can be supplied through `cond`.
@@ -1614,6 +1614,19 @@ class Transformer:
     def contains(self, element: Transformer | Expression | int | float | Decimal) -> Condition:
         """
         Create a transformer that checks if the expression contains the given `element`.
+        """
+
+    def matches(
+        self,
+        lhs: Transformer | Expression | int | float | Decimal,
+        cond: Optional[PatternRestriction | Condition] = None,
+        level_range: Optional[Tuple[int, Optional[int]]] = None,
+        level_is_tree_depth: Optional[bool] = False,
+        allow_new_wildcards_on_rhs: Optional[bool] = False,
+    ) -> Condition:
+        """
+        Create a transformer that tests whether the pattern is found in the expression.
+        Restrictions on the pattern can be supplied through `cond`.
         """
 
     def if_then(self, condition: Condition, if_block: Transformer, else_block: Optional[Transformer] = None) -> Transformer:

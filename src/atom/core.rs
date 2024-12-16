@@ -42,6 +42,16 @@ pub trait AtomCore {
     /// Take a view of the atom.
     fn as_atom_view(&self) -> AtomView;
 
+    /// Get the symbol of a variable or function.
+    #[inline(always)]
+    fn get_symbol(&self) -> Option<Symbol> {
+        match self.as_atom_view() {
+            AtomView::Var(v) => Some(v.get_symbol()),
+            AtomView::Fun(f) => Some(f.get_symbol()),
+            _ => None,
+        }
+    }
+
     /// Collect terms involving the same power of `x`, where `x` is a variable or function, e.g.
     ///
     /// ```math
@@ -146,8 +156,9 @@ pub trait AtomCore {
     }
 
     /// Expand an expression, returning `true` iff the expression changed.
-    fn expand_into(&self, var: Option<AtomView>, out: &mut Atom) -> bool {
-        self.as_atom_view().expand_into(var, out)
+    fn expand_into<T: AtomCore>(&self, var: Option<T>, out: &mut Atom) -> bool {
+        self.as_atom_view()
+            .expand_into(var.as_ref().map(|x| x.as_atom_view()), out)
     }
 
     /// Distribute numbers in the expression, for example:
@@ -157,8 +168,9 @@ pub trait AtomCore {
     }
 
     /// Check if the expression is expanded, optionally in only the variable or function `var`.
-    fn is_expanded(&self, var: Option<AtomView>) -> bool {
-        self.as_atom_view().is_expanded(var)
+    fn is_expanded<T: AtomCore>(&self, var: Option<T>) -> bool {
+        self.as_atom_view()
+            .is_expanded(var.as_ref().map(|x| x.as_atom_view()))
     }
 
     /// Take a derivative of the expression with respect to `x`.

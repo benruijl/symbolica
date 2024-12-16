@@ -481,20 +481,40 @@ impl PythonTransformer {
     }
 
     /// Returns true iff `self` contains `a` literally.
-    ///
-    /// Examples
-    /// --------
-    /// >>> from symbolica import *
-    /// >>> x, y, z = Expression.symbol('x', 'y', 'z')
-    /// >>> e = x * y * z
-    /// >>> e.contains(x) # True
-    /// >>> e.contains(x*y*z) # True
-    /// >>> e.contains(x*y) # False
     pub fn contains(&self, s: ConvertibleToPattern) -> PyResult<PythonCondition> {
         Ok(PythonCondition {
             condition: Condition::Yield(Relation::Contains(
                 self.expr.clone(),
                 s.to_pattern()?.expr,
+            )),
+        })
+    }
+
+    /// Create a transformer that tests whether the pattern is found in the expression.
+    /// Restrictions on the pattern can be supplied through `cond`.
+    #[pyo3(signature = (lhs, cond = None, level_range = None, level_is_tree_depth = None, allow_new_wildcards_on_rhs = None))]
+    pub fn matches(
+        &self,
+        lhs: ConvertibleToPattern,
+        cond: Option<ConvertibleToPatternRestriction>,
+        level_range: Option<(usize, Option<usize>)>,
+        level_is_tree_depth: Option<bool>,
+        allow_new_wildcards_on_rhs: Option<bool>,
+    ) -> PyResult<PythonCondition> {
+        let conditions = cond.map(|r| r.0).unwrap_or(Condition::default());
+        let settings = MatchSettings {
+            level_range: level_range.unwrap_or((0, None)),
+            level_is_tree_depth: level_is_tree_depth.unwrap_or(false),
+            allow_new_wildcards_on_rhs: allow_new_wildcards_on_rhs.unwrap_or(false),
+            ..MatchSettings::default()
+        };
+
+        Ok(PythonCondition {
+            condition: Condition::Yield(Relation::Matches(
+                self.expr.clone(),
+                lhs.to_pattern()?.expr,
+                conditions,
+                settings,
             )),
         })
     }
@@ -2029,6 +2049,25 @@ impl TryFrom<Relation> for PatternRestriction {
                                 Match::Multiple(_, v) => v.iter().any(|x| x.contains(val)),
                                 Match::FunctionName(_) => false,
                             }
+                        })),
+                    )))
+                } else {
+                    Err("LHS must be wildcard")
+                }
+            }
+            Relation::Matches(atom, pattern, cond, settings) => {
+                if let Pattern::Wildcard(name) = atom {
+                    if name.get_wildcard_level() == 0 {
+                        return Err("Only wildcards can be restricted.");
+                    }
+
+                    Ok(PatternRestriction::Wildcard((
+                        name,
+                        WildcardRestriction::Filter(Box::new(move |m| {
+                            m.to_atom()
+                                .pattern_match(&pattern, Some(&cond), Some(&settings))
+                                .next()
+                                .is_some()
                         })),
                     )))
                 } else {
@@ -4442,8 +4481,7 @@ impl PythonExpression {
         level_range: Option<(usize, Option<usize>)>,
         level_is_tree_depth: Option<bool>,
         allow_new_wildcards_on_rhs: Option<bool>,
-    ) -> PyResult<bool> {
-        let pat = lhs.to_pattern()?.expr;
+    ) -> PyResult<PythonCondition> {
         let conditions = cond.map(|r| r.0).unwrap_or(Condition::default());
         let settings = MatchSettings {
             level_range: level_range.unwrap_or((0, None)),
@@ -4452,14 +4490,14 @@ impl PythonExpression {
             ..MatchSettings::default()
         };
 
-        Ok(PatternAtomTreeIterator::new(
-            &pat,
-            self.expr.as_view(),
-            Some(&conditions),
-            Some(&settings),
-        )
-        .next()
-        .is_some())
+        Ok(PythonCondition {
+            condition: Condition::Yield(Relation::Matches(
+                self.expr.to_pattern(),
+                lhs.to_pattern()?.expr,
+                conditions,
+                settings,
+            )),
+        })
     }
 
     /// Return an iterator over the replacement of the pattern `self` on `lhs` by `rhs`.

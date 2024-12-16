@@ -1,7 +1,6 @@
 use symbolica::{
     atom::{Atom, AtomCore, AtomView, Symbol},
     id::{Match, Pattern, WildcardRestriction},
-    state::RecycledAtom,
 };
 
 #[test]
@@ -23,24 +22,17 @@ fn fibonacci() {
     )
         .into();
 
-    let input = Atom::parse("f(10)").unwrap();
-    let mut target: RecycledAtom = input.clone().into();
+    let mut target = Atom::parse("f(10)").unwrap();
 
     for _ in 0..9 {
-        let mut out = RecycledAtom::new();
-        target.replace_all_into(&pattern, &rhs, Some(&restrictions), None, &mut out);
-
-        let mut out2 = RecycledAtom::new();
-        out.expand_into(None, &mut out2);
-
-        out2.replace_all_into(&lhs_zero_pat, &rhs_one, None, None, &mut out);
-
-        out.replace_all_into(&lhs_one_pat, &rhs_one, None, None, &mut out2);
-
-        target = out2;
+        target = target
+            .replace_all(&pattern, &rhs, Some(&restrictions), None)
+            .expand()
+            .replace_all(&lhs_zero_pat, &rhs_one, None, None)
+            .replace_all(&lhs_one_pat, &rhs_one, None, None);
     }
 
-    assert_eq!(target.into_inner(), Atom::new_num(89));
+    assert_eq!(target, Atom::new_num(89));
 }
 
 #[test]

@@ -180,6 +180,7 @@ pub enum SliceType {
     Empty,
 }
 
+/// A (immutable) view of an [Atom].
 pub enum AtomView<'a> {
     Num(NumView<'a>),
     Var(VarView<'a>),
@@ -507,16 +508,6 @@ impl<'a> AtomView<'a> {
             .normalize(workspace, out);
     }
 
-    /// Get the symbol of a variable or function.
-    #[inline(always)]
-    pub fn get_symbol(&self) -> Option<Symbol> {
-        match self {
-            AtomView::Var(v) => Some(v.get_symbol()),
-            AtomView::Fun(f) => Some(f.get_symbol()),
-            _ => None,
-        }
-    }
-
     pub fn get_byte_size(&self) -> usize {
         match self {
             AtomView::Num(n) => n.get_byte_size(),
@@ -842,16 +833,6 @@ impl Atom {
             Atom::Mul(m) => AtomView::Mul(m.to_mul_view()),
             Atom::Add(a) => AtomView::Add(a.to_add_view()),
             Atom::Zero => AtomView::ZERO,
-        }
-    }
-
-    /// Get the symbol of a variable or function.
-    #[inline(always)]
-    pub fn get_symbol(&self) -> Option<Symbol> {
-        match self {
-            Atom::Var(v) => Some(v.get_symbol()),
-            Atom::Fun(f) => Some(f.get_symbol()),
-            _ => None,
         }
     }
 

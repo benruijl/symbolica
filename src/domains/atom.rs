@@ -195,7 +195,7 @@ impl Ring for AtomField {
 
 impl SelfRing for Atom {
     fn is_zero(&self) -> bool {
-        self.is_zero()
+        !self.as_view().zero_test(10, f64::EPSILON).is_false()
     }
 
     fn is_one(&self) -> bool {

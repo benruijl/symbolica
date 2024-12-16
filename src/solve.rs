@@ -296,7 +296,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{representation::InlineVar, Atom, AtomCore, AtomView},
+        atom::{representation::InlineVar, Atom, AtomCore, AtomView, Symbol},
         domains::{
             float::{Real, F64},
             integer::Z,
@@ -304,15 +304,14 @@ mod test {
             rational_polynomial::{RationalPolynomial, RationalPolynomialField},
         },
         poly::Variable,
-        state::State,
         tensors::matrix::Matrix,
     };
 
     #[test]
     fn solve() {
-        let x = State::get_symbol("v1").into();
-        let y = State::get_symbol("v2").into();
-        let z = State::get_symbol("v3").into();
+        let x = Symbol::new("v1").into();
+        let y = Symbol::new("v2").into();
+        let z = Symbol::new("v3").into();
         let eqs = [
             "v4*v1 + f1(v4)*v2 + v3 - 1",
             "v1 + v4*v2 + v3/v4 - 2",
@@ -345,7 +344,7 @@ mod test {
         ];
         let rhs = ["1", "2", "-1"];
 
-        let var_map = Arc::new(vec![Variable::Symbol(State::get_symbol("v4"))]);
+        let var_map = Arc::new(vec![Variable::Symbol(Symbol::new("v4"))]);
 
         let system_rat: Vec<RationalPolynomial<_, u8>> = system
             .iter()
@@ -400,7 +399,7 @@ mod test {
 
     #[test]
     fn find_root() {
-        let x = State::get_symbol("x");
+        let x = Symbol::new("x");
         let a = Atom::parse("x^2 - 2").unwrap();
         let a = a.as_view();
 
@@ -415,7 +414,7 @@ mod test {
 
         let r = AtomView::nsolve_system(
             &[a.as_view(), b.as_view()],
-            &[State::get_symbol("x"), State::get_symbol("y")],
+            &[Symbol::new("x"), Symbol::new("y")],
             &[F64::from(1.), F64::from(1.)],
             F64::from(1e-10),
             100,

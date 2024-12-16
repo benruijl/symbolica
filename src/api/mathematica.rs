@@ -48,7 +48,7 @@ fn set_vars(vars: String) {
 
     let mut var_map = vec![];
     for var in vars.split(',') {
-        let v = State::get_symbol(var);
+        let v = Symbol::new(var);
         var_map.push(v.into());
         symbolica.var_name_map.push(var.into());
     }

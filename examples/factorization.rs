@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::{Atom, AtomCore, Symbol},
     domains::{finite_field::Zp, integer::Z},
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Variable},
-    state::State,
 };
 
 fn factor_ff_univariate() {
@@ -23,8 +22,8 @@ fn factor_ff_univariate() {
 
 fn factor_ff_bivariate() {
     let order = Arc::new(vec![
-        Variable::Symbol(State::get_symbol("x")),
-        Variable::Symbol(State::get_symbol("y")),
+        Variable::Symbol(Symbol::new("x")),
+        Variable::Symbol(Symbol::new("y")),
     ]);
 
     let input = "((y+1)*x^2+x*y+1)*((y^2+2)*x^2+y+1)";
@@ -101,8 +100,8 @@ fn factor_univariate_2() {
 
 fn factor_bivariate() {
     let order = Arc::new(vec![
-        Variable::Symbol(State::get_symbol("x")),
-        Variable::Symbol(State::get_symbol("y")),
+        Variable::Symbol(Symbol::new("x")),
+        Variable::Symbol(Symbol::new("y")),
     ]);
 
     let input = "(x^2+y+x+1)(3*x+y^2+4)*(6*x*(y+1)+y+5)*(7*x*y+4)";
@@ -119,10 +118,10 @@ fn factor_bivariate() {
 
 fn factor_multivariate() {
     let order = Arc::new(vec![
-        Variable::Symbol(State::get_symbol("x")),
-        Variable::Symbol(State::get_symbol("y")),
-        Variable::Symbol(State::get_symbol("z")),
-        Variable::Symbol(State::get_symbol("w")),
+        Variable::Symbol(Symbol::new("x")),
+        Variable::Symbol(Symbol::new("y")),
+        Variable::Symbol(Symbol::new("z")),
+        Variable::Symbol(Symbol::new("w")),
     ]);
 
     let input = "(x*(2+2*y+2*z)+1)*(x*(4+z^2)+y+3)*(x*(w+w^2+4+y)+w+5)";

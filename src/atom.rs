@@ -3,6 +3,7 @@ mod core;
 pub mod representation;
 
 use representation::InlineVar;
+use smartstring::{LazyCompact, SmartString};
 
 use crate::{
     coefficient::Coefficient,
@@ -11,6 +12,7 @@ use crate::{
     state::{RecycledAtom, State, Workspace},
     transformer::StatsOptions,
 };
+
 use std::{cmp::Ordering, hash::Hash, ops::DerefMut, str::FromStr};
 
 pub use self::core::AtomCore;
@@ -20,9 +22,21 @@ pub use self::representation::{
 };
 use self::representation::{FunView, RawAtom};
 
+/// A function that is called after normalization of the arguments.
+/// If the input, the first argument, is normalized, the function should return `false`.
+/// Otherwise, the function must return `true` and set the second argument to the normalized value.
+pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Atom) -> bool + Send + Sync>;
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum FunctionAttribute {
+    Symmetric,
+    Antisymmetric,
+    Cyclesymmetric,
+    Linear,
+}
+
 /// A symbol, for example the name of a variable or the name of a function,
 /// together with its properties.
-/// Should be created using [State::get_symbol].
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Symbol {
     id: u32,
@@ -40,6 +54,12 @@ impl std::fmt::Debug for Symbol {
             f.write_str("_")?;
         }
         Ok(())
+    }
+}
+
+impl std::fmt::Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.get_name().fmt(f)
     }
 }
 
@@ -75,6 +95,44 @@ impl Symbol {
             is_cyclesymmetric,
             is_linear,
         }
+    }
+
+    /// Get the symbol for a certain name if the name is already registered,
+    /// else register it and return a new symbol without attributes.
+    ///
+    /// To register a symbol with attributes, use [`new_with_attributes`].
+    pub fn new<S: AsRef<str>>(name: S) -> Symbol {
+        State::get_symbol(name)
+    }
+
+    /// Get the symbol for a certain name if the name is already registered,
+    /// else register it and return a new symbol with the given attributes.
+    ///
+    /// This function will return an error when an existing symbol is redefined
+    /// with different attributes.
+    pub fn new_with_attributes<S: AsRef<str>>(
+        name: S,
+        attributes: &[FunctionAttribute],
+    ) -> Result<Symbol, SmartString<LazyCompact>> {
+        State::get_symbol_with_attributes(name, attributes)
+    }
+
+    /// Register a new symbol with the given attributes and a specific function
+    /// that is called after normalization of the arguments. This function cannot
+    /// be exported, and therefore before importing a state, symbols with special
+    /// normalization functions must be registered explicitly.
+    ///
+    /// If the symbol already exists, an error is returned.
+    pub fn new_with_attributes_and_function<S: AsRef<str>>(
+        name: S,
+        attributes: &[FunctionAttribute],
+        f: NormalizationFunction,
+    ) -> Result<Symbol, SmartString<LazyCompact>> {
+        State::get_symbol_with_attributes_and_function(name, attributes, f)
+    }
+
+    pub fn get_name(&self) -> &str {
+        State::get_name(*self)
     }
 
     pub fn get_id(&self) -> u32 {
@@ -815,12 +873,9 @@ impl Atom {
 ///
 /// For example:
 /// ```
-/// # use symbolica::{
-/// #     atom::{Atom, AtomCore, FunctionBuilder},
-/// #     state::{FunctionAttribute, State},
-/// # };
+/// # use symbolica::atom::{Atom, AtomCore, FunctionAttribute, FunctionBuilder, Symbol};
 /// # fn main() {
-/// let f_id = State::get_symbol_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+/// let f_id = Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
 /// let fb = FunctionBuilder::new(f_id);
 /// let a = fb
 ///     .add_arg(&Atom::new_num(3))
@@ -926,8 +981,8 @@ impl<'a, T: Into<Coefficient> + Clone> FunctionArgument for T {
 ///
 /// For example:
 /// ```
-/// use symbolica::{atom::Atom, fun, state::State};
-/// let f_id = State::get_symbol("f");
+/// use symbolica::{atom::Atom, atom::Symbol, fun};
+/// let f_id = Symbol::new("f");
 /// let f = fun!(f_id, Atom::new_num(3), &Atom::parse("x").unwrap());
 /// ```
 #[macro_export]
@@ -943,7 +998,7 @@ macro_rules! fun {
     };
 }
 
-/// Create new symbols without special attributes. Use [`get_symbol_with_attributes()`](crate::state::State::get_symbol_with_attributes)
+/// Create new symbols without special attributes. Use [`get_symbol_with_attributes()`](crate::state::Symbol::new_with_attributes)
 /// to define symbols with attributes.
 ///
 /// For example:
@@ -954,13 +1009,13 @@ macro_rules! fun {
 #[macro_export]
 macro_rules! symb {
     ($id: expr) => {
-            $crate::state::State::get_symbol($id)
+            $crate::atom::Symbol::new($id)
     };
     ($($id: expr),*) => {
         {
             (
                 $(
-                    $crate::state::State::get_symbol(&$id),
+                    $crate::atom::Symbol::new(&$id),
                 )+
             )
         }
@@ -1539,9 +1594,8 @@ impl AsRef<Atom> for Atom {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::{Atom, AtomCore, Symbol},
         fun,
-        state::State,
     };
 
     #[test]
@@ -1553,13 +1607,9 @@ mod test {
         );
         assert_eq!(
             x.get_all_symbols(true),
-            [
-                State::get_symbol("v1"),
-                State::get_symbol("v2"),
-                State::get_symbol("f1")
-            ]
-            .into_iter()
-            .collect(),
+            [Symbol::new("v1"), Symbol::new("v2"), Symbol::new("f1")]
+                .into_iter()
+                .collect(),
         );
         assert_eq!(x.as_view().get_byte_size(), 17);
     }
@@ -1568,7 +1618,7 @@ mod test {
     fn composition() {
         let v1 = Atom::parse("v1").unwrap();
         let v2 = Atom::parse("v2").unwrap();
-        let f1_id = State::get_symbol("f1");
+        let f1_id = Symbol::new("f1");
 
         let f1 = fun!(f1_id, v1, v2, Atom::new_num(2));
 

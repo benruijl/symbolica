@@ -5,10 +5,10 @@ use std::{
 
 use smartstring::{LazyCompact, SmartString};
 use symbolica::{
+    atom::Symbol,
     domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial, SelfRing},
     parser::Token,
     printer::{PrintOptions, PrintState},
-    state::State,
 };
 
 fn main() {
@@ -36,12 +36,7 @@ fn main() {
         );
     }
 
-    let vars: Arc<Vec<_>> = Arc::new(
-        var_names
-            .iter()
-            .map(|v| State::get_symbol(v).into())
-            .collect(),
-    );
+    let vars: Arc<Vec<_>> = Arc::new(var_names.iter().map(|v| Symbol::new(v).into()).collect());
 
     let print_opt = PrintOptions::file();
 

@@ -1528,10 +1528,9 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::{Atom, AtomCore, Symbol},
         domains::float::Float,
         printer::{AtomPrinter, PrintOptions},
-        state::State,
     };
 
     use super::Coefficient;
@@ -1560,9 +1559,9 @@ mod test {
     fn coefficient_ring() {
         let expr = Atom::parse("v1*v3+v1*(v2+2)^-1*(v2+v3+1)").unwrap();
 
-        let v2 = State::get_symbol("v2");
+        let v2 = Symbol::new("v2");
         let expr_yz =
-            expr.set_coefficient_ring(&Arc::new(vec![v2.into(), State::get_symbol("v3").into()]));
+            expr.set_coefficient_ring(&Arc::new(vec![v2.into(), Symbol::new("v3").into()]));
 
         let a = ((&expr_yz + &Atom::new_num((1, 2))) * &Atom::new_num((3, 4))).expand();
 

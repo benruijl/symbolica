@@ -1775,7 +1775,7 @@ impl<'a> ListSlice<'a> {
         }
     }
 
-    fn get_entry(start: &'a [u8]) -> (AtomView<'a>, &[u8]) {
+    fn get_entry(start: &[u8]) -> (AtomView, &[u8]) {
         let start_id = start[0] & TYPE_MASK;
         let end = Self::skip(start, 1);
         let len = unsafe { end.as_ptr().offset_from(start.as_ptr()) } as usize;

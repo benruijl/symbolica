@@ -465,11 +465,11 @@ pub trait AtomCore {
     /// Example
     /// -------
     /// ```
-    /// # use symbolica::{atom::{Atom, AtomCore}, state::{FunctionAttribute, State}};
+    /// # use symbolica::atom::{Atom, AtomCore, FunctionAttribute, Symbol};
     /// #
     /// # fn main() {
-    /// let _ = State::get_symbol_with_attributes("fs", &[FunctionAttribute::Symmetric]).unwrap();
-    /// let _ = State::get_symbol_with_attributes("fc", &[FunctionAttribute::Cyclesymmetric]).unwrap();
+    /// let _ = Symbol::new_with_attributes("fs", &[FunctionAttribute::Symmetric]).unwrap();
+    /// let _ = Symbol::new_with_attributes("fc", &[FunctionAttribute::Cyclesymmetric]).unwrap();
     /// let a = Atom::parse("fs(mu2,mu3)*fc(mu4,mu2,k1,mu4,k1,mu3)").unwrap();
     ///
     /// let mu1 = Atom::parse("mu1").unwrap();

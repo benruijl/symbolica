@@ -574,9 +574,8 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{representation::InlineVar, Atom, AtomCore},
+        atom::{representation::InlineVar, Atom, AtomCore, Symbol},
         fun,
-        state::State,
     };
 
     #[test]
@@ -600,7 +599,7 @@ mod test {
     #[test]
     fn coefficient_list() {
         let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
-        let x = State::get_symbol("v1");
+        let x = Symbol::new("v1");
 
         let r = input.coefficient_list::<i8, InlineVar>(&[x.into()]);
 
@@ -623,7 +622,7 @@ mod test {
     #[test]
     fn collect() {
         let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
-        let x = State::get_symbol("v1");
+        let x = Symbol::new("v1");
 
         let out = input.collect::<i8, InlineVar>(x.into(), None, None);
 
@@ -634,7 +633,7 @@ mod test {
     #[test]
     fn collect_nested() {
         let input = Atom::parse("(1+v1)^2*v1+(1+v2)^100").unwrap();
-        let x = State::get_symbol("v1");
+        let x = Symbol::new("v1");
 
         let out = input.collect::<i8, InlineVar>(x.into(), None, None);
 
@@ -645,9 +644,9 @@ mod test {
     #[test]
     fn collect_wrap() {
         let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
-        let x = State::get_symbol("v1");
-        let key = State::get_symbol("f3");
-        let coeff = State::get_symbol("f4");
+        let x = Symbol::new("v1");
+        let key = Symbol::new("f3");
+        let coeff = Symbol::new("f4");
         println!("> Collect in x with wrapping:");
         let out = input.collect::<i8, InlineVar>(
             x.into(),
@@ -686,7 +685,7 @@ mod test {
         let input =
             Atom::parse("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)")
                 .unwrap();
-        let out = input.apart(State::get_symbol("v4"));
+        let out = input.apart(Symbol::new("v4"));
 
         let ref_out = Atom::parse("1/2*v1^2+v3*(v4+1)^-1+v1^3*v2*v4^-1").unwrap();
 
@@ -725,8 +724,8 @@ mod test {
         .unwrap();
 
         let out = input.as_view().coefficient_list::<i16, _>(&[
-            Atom::new_var(State::get_symbol("v1")),
-            Atom::new_var(State::get_symbol("v2")),
+            Atom::new_var(Symbol::new("v1")),
+            Atom::new_var(Symbol::new("v2")),
             Atom::parse("v5(1,2,3)").unwrap(),
         ]);
 

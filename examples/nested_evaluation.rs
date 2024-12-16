@@ -1,8 +1,7 @@
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::{Atom, AtomCore, Symbol},
     domains::rational::Rational,
     evaluate::{CompileOptions, FunctionMap, InlineASM, OptimizationSettings},
-    state::State,
 };
 
 fn main() {
@@ -17,49 +16,34 @@ fn main() {
     let mut fn_map = FunctionMap::new();
 
     fn_map.add_constant(
-        Atom::new_var(State::get_symbol("pi")),
+        Atom::new_var(Symbol::new("pi")),
         Rational::from((22, 7)).into(),
     );
     fn_map
         .add_tagged_function(
-            State::get_symbol("p"),
+            Symbol::new("p"),
             vec![Atom::new_num(1).into()],
             "p1".to_string(),
-            vec![State::get_symbol("z")],
+            vec![Symbol::new("z")],
             p1,
         )
         .unwrap();
     fn_map
         .add_function(
-            State::get_symbol("f"),
+            Symbol::new("f"),
             "f".to_string(),
-            vec![State::get_symbol("y"), State::get_symbol("z")],
+            vec![Symbol::new("y"), Symbol::new("z")],
             f,
         )
         .unwrap();
     fn_map
-        .add_function(
-            State::get_symbol("g"),
-            "g".to_string(),
-            vec![State::get_symbol("y")],
-            g,
-        )
+        .add_function(Symbol::new("g"), "g".to_string(), vec![Symbol::new("y")], g)
         .unwrap();
     fn_map
-        .add_function(
-            State::get_symbol("h"),
-            "h".to_string(),
-            vec![State::get_symbol("y")],
-            h,
-        )
+        .add_function(Symbol::new("h"), "h".to_string(), vec![Symbol::new("y")], h)
         .unwrap();
     fn_map
-        .add_function(
-            State::get_symbol("i"),
-            "i".to_string(),
-            vec![State::get_symbol("y")],
-            i,
-        )
+        .add_function(Symbol::new("i"), "i".to_string(), vec![Symbol::new("y")], i)
         .unwrap();
 
     let params = vec![Atom::parse("x").unwrap()];

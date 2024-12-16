@@ -3608,12 +3608,11 @@ impl<'a: 'b, 'b> Iterator for ReplaceIterator<'a, 'b> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::{Atom, AtomCore, Symbol},
         id::{
             ConditionResult, MatchSettings, PatternOrMap, PatternRestriction, Replacement,
             WildcardRestriction,
         },
-        state::State,
     };
 
     use super::Pattern;
@@ -3679,10 +3678,10 @@ mod test {
 
     #[test]
     fn map_rhs() {
-        let v1 = State::get_symbol("v1_");
-        let v2 = State::get_symbol("v2_");
-        let v4 = State::get_symbol("v4_");
-        let v5 = State::get_symbol("v5_");
+        let v1 = Symbol::new("v1_");
+        let v2 = Symbol::new("v2_");
+        let v4 = Symbol::new("v4_");
+        let v5 = Symbol::new("v5_");
         let a = Atom::parse("v1(2,1)*v2(3,1)").unwrap();
         let p = Pattern::parse("v1_(v2_,v3_)*v4_(v5_,v3_)").unwrap();
         let rhs = PatternOrMap::Map(Box::new(move |m| {
@@ -3708,7 +3707,7 @@ mod test {
         let rhs1 = Pattern::parse("f(v1_ - 1)").unwrap();
 
         let rest = (
-            State::get_symbol("v1_"),
+            Symbol::new("v1_"),
             WildcardRestriction::Filter(Box::new(|x| {
                 let n: Result<i64, _> = x.to_atom().try_into();
                 if let Ok(y) = n {

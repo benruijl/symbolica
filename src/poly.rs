@@ -30,7 +30,7 @@ use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalP
 use crate::domains::{EuclideanDomain, Ring, SelfRing};
 use crate::parser::{Operator, Token};
 use crate::printer::{PrintOptions, PrintState};
-use crate::state::{State, Workspace};
+use crate::state::Workspace;
 use crate::utils;
 
 use self::factor::Factorize;
@@ -649,7 +649,7 @@ pub enum Variable {
 impl std::fmt::Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Variable::Symbol(v) => f.write_str(State::get_name(*v)),
+            Variable::Symbol(v) => f.write_str(v.get_name()),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
             Variable::Function(_, a) | Variable::Other(a) => std::fmt::Display::fmt(a, f),
         }
@@ -682,7 +682,7 @@ impl Variable {
 
     pub fn to_string(&self) -> String {
         match self {
-            Variable::Symbol(v) => State::get_name(*v).to_string(),
+            Variable::Symbol(v) => v.get_name().to_string(),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Function(_, a) | Variable::Other(a) => format!("{}", a),
         }
@@ -690,7 +690,7 @@ impl Variable {
 
     fn format_string(&self, opts: &PrintOptions, state: PrintState) -> String {
         match self {
-            Variable::Symbol(v) => State::get_name(*v).to_string(),
+            Variable::Symbol(v) => v.get_name().to_string(),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Function(_, a) | Variable::Other(a) => a.format_string(opts, state),
         }

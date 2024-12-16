@@ -7,11 +7,11 @@
 //! For example:
 //!
 //! ```
-//! use symbolica::{atom::Atom, atom::AtomCore, state::State};
+//! use symbolica::atom::{Atom, AtomCore, Symbol};
 //!
 //! fn main() {
 //!     let input = Atom::parse("x^2*log(2*x + y) + exp(3*x)").unwrap();
-//!     let a = input.derivative(State::get_symbol("x"));
+//!     let a = input.derivative(Symbol::new("x"));
 //!     println!("d({})/dx = {}:", input, a);
 //! }
 //! ```

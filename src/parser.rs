@@ -1298,11 +1298,10 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::{Atom, AtomCore, Symbol},
         domains::integer::Z,
         parser::Token,
         printer::{AtomPrinter, PrintOptions},
-        state::State,
     };
 
     #[test]
@@ -1355,10 +1354,7 @@ mod test {
     #[test]
     fn poly() {
         let var_names = ["v1".into(), "v2".into()];
-        let var_map = Arc::new(vec![
-            State::get_symbol("v1").into(),
-            State::get_symbol("v2").into(),
-        ]);
+        let var_map = Arc::new(vec![Symbol::new("v1").into(), Symbol::new("v2").into()]);
         let (rest, input) =
             Token::parse_polynomial::<_, u8>("#ABC*v1^2*v2+5".as_bytes(), &var_map, &var_names, &Z);
 

@@ -2,14 +2,14 @@ use std::io::Cursor;
 
 use smartstring::SmartString;
 use symbolica::{
-    atom::Atom,
-    state::{FunctionAttribute, State},
+    atom::{Atom, FunctionAttribute, Symbol},
+    state::State,
 };
 
 fn conflict() {
-    State::get_symbol("x");
-    State::get_symbol("y");
-    State::get_symbol_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+    Symbol::new("x");
+    Symbol::new("y");
+    Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
 
     let a = Atom::parse("f(x, y)*x^2").unwrap();
 
@@ -22,9 +22,9 @@ fn conflict() {
     // reset the state and create a conflict
     unsafe { State::reset() };
 
-    State::get_symbol("y");
-    State::get_symbol("x");
-    State::get_symbol("f");
+    Symbol::new("y");
+    Symbol::new("x");
+    Symbol::new("f");
 
     let state_map = State::import(
         &mut Cursor::new(&state_export),
@@ -40,7 +40,7 @@ fn conflict() {
 
 #[test]
 fn rational_rename() {
-    State::get_symbol("x");
+    Symbol::new("x");
 
     let a = Atom::parse("x^2*coeff(x)").unwrap();
 
@@ -53,7 +53,7 @@ fn rational_rename() {
     // reset the state and create a conflict
     unsafe { State::reset() };
 
-    State::get_symbol("y");
+    Symbol::new("y");
 
     let state_map = State::import(&mut Cursor::new(&state_export), None).unwrap();
 

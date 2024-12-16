@@ -644,11 +644,10 @@ impl<R: Field + PolynomialGCD<E>, E: PositiveExponent>
 
 #[cfg(test)]
 mod tests {
-    use crate::atom::{Atom, AtomCore};
+    use crate::atom::{Atom, AtomCore, Symbol};
     use crate::domains::algebraic_number::AlgebraicExtension;
     use crate::domains::finite_field::{PrimeIteratorU64, Zp, Z2};
     use crate::domains::rational::Q;
-    use crate::state::State;
 
     #[test]
     fn gcd_number_field() -> Result<(), String> {
@@ -674,7 +673,7 @@ mod tests {
     #[test]
     fn galois() {
         for j in 1..10 {
-            let _ = AlgebraicExtension::galois_field(Z2, j, State::get_symbol("v1").into());
+            let _ = AlgebraicExtension::galois_field(Z2, j, Symbol::new("v1").into());
         }
 
         for i in PrimeIteratorU64::new(2).take(20) {
@@ -682,7 +681,7 @@ mod tests {
                 let _ = AlgebraicExtension::galois_field(
                     Zp::new(i as u32),
                     j,
-                    State::get_symbol("v1").into(),
+                    Symbol::new("v1").into(),
                 );
             }
         }

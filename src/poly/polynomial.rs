@@ -3741,9 +3741,8 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::{Atom, AtomCore, Symbol},
         domains::integer::Z,
-        state::State,
     };
 
     #[test]
@@ -3831,10 +3830,10 @@ mod test {
         assert_eq!(
             r.get_vars_ref(),
             &[
-                State::get_symbol("v1").into(),
-                State::get_symbol("v2").into(),
-                State::get_symbol("v4").into(),
-                State::get_symbol("v3").into()
+                Symbol::new("v1").into(),
+                Symbol::new("v2").into(),
+                Symbol::new("v4").into(),
+                Symbol::new("v3").into()
             ]
         );
     }

@@ -1,9 +1,8 @@
 use symbolica::{
-    atom::{Atom, AtomCore, AtomView},
+    atom::{Atom, AtomCore, AtomView, Symbol},
     coefficient::CoefficientView,
     domains::finite_field,
     id::{Condition, Match, MatchSettings, WildcardRestriction},
-    state::State,
 };
 fn main() {
     let expr = Atom::parse("f(1,2,3,4,5,6,7)").unwrap();
@@ -11,10 +10,10 @@ fn main() {
 
     let pattern = pat_expr.as_view().to_pattern();
 
-    let x = State::get_symbol("x__");
-    let y = State::get_symbol("y__");
-    let z = State::get_symbol("z__");
-    let w = State::get_symbol("w__");
+    let x = Symbol::new("x__");
+    let y = Symbol::new("y__");
+    let z = Symbol::new("z__");
+    let w = Symbol::new("w__");
 
     let conditions = Condition::from((x, WildcardRestriction::Length(0, Some(2))))
         & (y, WildcardRestriction::Length(0, Some(4)))
@@ -62,7 +61,7 @@ fn main() {
     while let Some(m) = it.next_detailed() {
         println!("\tMatch at location {:?} - {:?}:", m.position, m.used_flags);
         for (id, v) in m.match_stack {
-            print!("\t\t{} = ", State::get_name(*id));
+            print!("\t\t{} = ", id);
             match v {
                 Match::Single(s) => {
                     print!("{}", s)
@@ -75,7 +74,7 @@ fn main() {
                     }
                 }
                 Match::FunctionName(f) => {
-                    print!("Fn {}", State::get_name(*f))
+                    print!("Fn {}", f)
                 }
             }
             println!();

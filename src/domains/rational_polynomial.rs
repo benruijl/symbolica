@@ -1283,9 +1283,8 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::AtomCore,
+        atom::{AtomCore, Symbol},
         domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial, Ring},
-        state::State,
     };
 
     use super::RationalPolynomialField;
@@ -1325,8 +1324,8 @@ mod test {
                 &Q,
                 &Z,
                 Some(Arc::new(vec![
-                    State::get_symbol("v1").into(),
-                    State::get_symbol("v2").into(),
+                    Symbol::new("v1").into(),
+                    Symbol::new("v2").into(),
                 ])),
             );
 
@@ -1355,8 +1354,8 @@ mod test {
                 &Q,
                 &Z,
                 Some(Arc::new(vec![
-                    State::get_symbol("v1").into(),
-                    State::get_symbol("v2").into(),
+                    Symbol::new("v1").into(),
+                    Symbol::new("v2").into(),
                 ])),
             );
 
@@ -1437,7 +1436,7 @@ mod test {
         .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
         let (r, mut l) = p.integrate(0);
-        let new_var = State::get_symbol("v2");
+        let new_var = Symbol::new("v2");
 
         // root sum in the answer, rename the temporary variable
         // TODO: add rename function

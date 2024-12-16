@@ -866,10 +866,10 @@ impl Transformer {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, FunctionBuilder},
+        atom::{Atom, FunctionBuilder, Symbol},
         id::{Condition, Match, MatchSettings, Pattern, WildcardRestriction},
         printer::PrintOptions,
-        state::{State, Workspace},
+        state::Workspace,
         transformer::StatsOptions,
     };
 
@@ -884,8 +884,8 @@ mod test {
             Transformer::execute_chain(
                 p.as_view(),
                 &[
-                    Transformer::Expand(Some(Atom::new_var(State::get_symbol("v1"))), false),
-                    Transformer::Derivative(State::get_symbol("v1")),
+                    Transformer::Expand(Some(Atom::new_var(Symbol::new("v1"))), false),
+                    Transformer::Derivative(Symbol::new("v1")),
                 ],
                 ws,
                 &mut out,
@@ -926,7 +926,7 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::Product,
-                    Transformer::Series(State::get_symbol("v1"), Atom::new_num(1), 3.into(), true),
+                    Transformer::Series(Symbol::new("v1"), Atom::new_num(1), 3.into(), true),
                 ],
                 ws,
                 &mut out,
@@ -956,7 +956,7 @@ mod test {
                     Transformer::Sort,
                     Transformer::Deduplicate,
                     Transformer::Map(Box::new(|x, out| {
-                        let mut f = FunctionBuilder::new(State::get_symbol("f1"));
+                        let mut f = FunctionBuilder::new(Symbol::new("f1"));
                         f = f.add_arg(x);
                         *out = f.finish();
                         Ok(())
@@ -992,7 +992,7 @@ mod test {
                             Pattern::parse("x_").unwrap(),
                             Pattern::parse("x_-1").unwrap().into(),
                             (
-                                State::get_symbol("x_"),
+                                Symbol::new("x_"),
                                 WildcardRestriction::Filter(Box::new(|x| {
                                     x != &Match::Single(Atom::new_num(0).as_view())
                                 })),
@@ -1016,7 +1016,7 @@ mod test {
     fn linearize() {
         let p = Atom::parse("f1(v1+v2,4*v3*v4+3*v4/v3)").unwrap();
 
-        let out = Transformer::Linearize(Some(vec![State::get_symbol("v3")]))
+        let out = Transformer::Linearize(Some(vec![Symbol::new("v3")]))
             .execute(p.as_view())
             .unwrap();
 

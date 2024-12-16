@@ -512,10 +512,7 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        atom::{Atom, AtomCore},
-        state::State,
-    };
+    use crate::atom::{Atom, AtomCore, Symbol};
 
     #[test]
     fn expand_num() {
@@ -556,7 +553,7 @@ mod test {
     fn expand_in_var() {
         let exp = Atom::parse("(1+v1)^2+(1+v2)^100")
             .unwrap()
-            .expand_in_symbol(State::get_symbol("v1"));
+            .expand_in_symbol(Symbol::new("v1"));
         let res = Atom::parse("1+2*v1+v1^2+(v2+1)^100").unwrap();
         assert_eq!(exp, res);
     }
@@ -565,7 +562,7 @@ mod test {
     fn expand_with_poly() {
         let exp = Atom::parse("(1+v1)^2+(1+v2)^100")
             .unwrap()
-            .expand_in_symbol(State::get_symbol("v1"));
+            .expand_in_symbol(Symbol::new("v1"));
         let res = Atom::parse("1+2*v1+v1^2+(v2+1)^100").unwrap();
         assert_eq!(exp, res);
     }

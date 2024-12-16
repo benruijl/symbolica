@@ -1,5 +1,6 @@
 use std::{
     hash::{Hash, Hasher},
+    os::raw::c_ulong,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
@@ -1205,18 +1206,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         let mut res = String::new();
         if include_header {
             res += &"#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
-            res += &"extern \"C\" void drop_buffer_complex(std::complex<double> *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
-            res += &"extern \"C\" void drop_buffer_double(double *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
         };
 
         res += &format!(
-            "extern \"C\" std::complex<double> *{}_create_buffer_complex()\n{{\n\treturn new std::complex<double>[{}];\n}}\n\n",
-            function_name,
-            self.stack.len()
-        );
-
-        res += &format!(
-            "extern \"C\" double *{}_create_buffer_double()\n{{\n\treturn new double[{}];\n}}\n\n",
+            "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
             function_name,
             self.stack.len()
         );
@@ -1317,12 +1310,10 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         let mut res = String::new();
         if include_header {
             res += &"#include <iostream>\n#include <complex>\n#include <cmath>\n\n";
-            res += &"extern \"C\" void drop_buffer_complex(std::complex<double> *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
-            res += &"extern \"C\" void drop_buffer_double(double *buffer)\n{\n\tdelete[] buffer;\n}\n\n";
         };
 
         res += &format!(
-            "extern \"C\" std::complex<double> *{}_create_buffer_complex()\n{{\n\treturn new std::complex<double>[{}];\n}}\n\n",
+            "extern \"C\" unsigned long {}_get_buffer_len()\n{{\n\treturn {};\n}}\n\n",
             function_name,
             self.stack.len()
         );
@@ -1345,12 +1336,6 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
         self.export_asm_complex_impl(&self.instructions, function_name, &mut res);
 
         res += "\treturn;\n}\n\n";
-
-        res += &format!(
-            "extern \"C\" double *{}_create_buffer_double()\n{{\n\treturn new double[{}];\n}}\n\n",
-            function_name,
-            self.stack.len()
-        );
 
         res += &format!(
             "static const double {}_CONSTANTS_double[{}] = {{{}}};\n\n",
@@ -3358,17 +3343,14 @@ struct EvaluatorFunctions<'a> {
             out: *mut Complex<f64>,
         ),
     >,
-    create_buffer_double: libloading::Symbol<'a, unsafe extern "C" fn() -> *mut f64>,
-    create_buffer_complex: libloading::Symbol<'a, unsafe extern "C" fn() -> *mut Complex<f64>>,
-    drop_buffer_double: libloading::Symbol<'a, unsafe extern "C" fn(buffer: *mut f64)>,
-    drop_buffer_complex: libloading::Symbol<'a, unsafe extern "C" fn(buffer: *mut Complex<f64>)>,
+    get_buffer_len: libloading::Symbol<'a, unsafe extern "C" fn() -> c_ulong>,
 }
 
 pub struct CompiledEvaluator {
     fn_name: String,
     library: Library,
-    buffer_double: *mut f64,
-    buffer_complex: *mut Complex<f64>,
+    buffer_double: Vec<f64>,
+    buffer_complex: Vec<Complex<f64>>,
 }
 
 self_cell!(
@@ -3413,15 +3395,6 @@ impl CompiledEvaluatorFloat for Complex<f64> {
     }
 }
 
-impl Drop for CompiledEvaluator {
-    fn drop(&mut self) {
-        unsafe {
-            (self.library.borrow_dependent().drop_buffer_double)(self.buffer_double);
-            (self.library.borrow_dependent().drop_buffer_complex)(self.buffer_complex);
-        }
-    }
-}
-
 impl CompiledEvaluator {
     /// Load a new function from the same library.
     pub fn load_new_function(&self, function_name: &str) -> Result<CompiledEvaluator, String> {
@@ -3434,26 +3407,19 @@ impl CompiledEvaluator {
                     eval_complex: lib
                         .get(format!("{}_complex", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
-                    create_buffer_double: lib
-                        .get(format!("{}_create_buffer_double", function_name).as_bytes())
-                        .map_err(|e| e.to_string())?,
-                    create_buffer_complex: lib
-                        .get(format!("{}_create_buffer_complex", function_name).as_bytes())
-                        .map_err(|e| e.to_string())?,
-                    drop_buffer_double: lib
-                        .get("drop_buffer_double".as_bytes())
-                        .map_err(|e| e.to_string())?,
-                    drop_buffer_complex: lib
-                        .get("drop_buffer_complex".as_bytes())
+                    get_buffer_len: lib
+                        .get(format!("{}_get_buffer_len", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
                 })
             })
         }?;
 
+        let len = unsafe { (library.borrow_dependent().get_buffer_len)() } as usize;
+
         Ok(CompiledEvaluator {
             fn_name: function_name.to_string(),
-            buffer_double: unsafe { (library.borrow_dependent().create_buffer_double)() },
-            buffer_complex: unsafe { (library.borrow_dependent().create_buffer_complex)() },
+            buffer_double: vec![0.; len],
+            buffer_complex: vec![Complex::new(0., 0.); len],
             library,
         })
     }
@@ -3476,25 +3442,18 @@ impl CompiledEvaluator {
                     eval_complex: lib
                         .get(format!("{}_complex", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
-                    create_buffer_double: lib
-                        .get(format!("{}_create_buffer_double", function_name).as_bytes())
-                        .map_err(|e| e.to_string())?,
-                    create_buffer_complex: lib
-                        .get(format!("{}_create_buffer_complex", function_name).as_bytes())
-                        .map_err(|e| e.to_string())?,
-                    drop_buffer_double: lib
-                        .get("drop_buffer_double".as_bytes())
-                        .map_err(|e| e.to_string())?,
-                    drop_buffer_complex: lib
-                        .get("drop_buffer_complex".as_bytes())
+                    get_buffer_len: lib
+                        .get(format!("{}_get_buffer_len", function_name).as_bytes())
                         .map_err(|e| e.to_string())?,
                 })
             })?;
 
+            let len = (library.borrow_dependent().get_buffer_len)() as usize;
+
             Ok(CompiledEvaluator {
                 fn_name: function_name.to_string(),
-                buffer_double: (library.borrow_dependent().create_buffer_double)(),
-                buffer_complex: (library.borrow_dependent().create_buffer_complex)(),
+                buffer_double: vec![0.; len],
+                buffer_complex: vec![Complex::new(0., 0.); len],
                 library,
             })
         }
@@ -3512,7 +3471,7 @@ impl CompiledEvaluator {
         unsafe {
             (self.library.borrow_dependent().eval_double)(
                 args.as_ptr(),
-                self.buffer_double,
+                self.buffer_double.as_mut_ptr(),
                 out.as_mut_ptr(),
             )
         }
@@ -3524,7 +3483,7 @@ impl CompiledEvaluator {
         unsafe {
             (self.library.borrow_dependent().eval_complex)(
                 args.as_ptr(),
-                self.buffer_complex,
+                self.buffer_complex.as_mut_ptr(),
                 out.as_mut_ptr(),
             )
         }
@@ -3854,10 +3813,7 @@ impl<'a> AtomView<'a> {
                     return Ok(Expression::ReadArg(p));
                 }
 
-                Err(format!(
-                    "Variable {} not in constant map",
-                    State::get_name(v.get_symbol())
-                ))
+                Err(format!("Variable {} not in constant map", name))
             }
             AtomView::Fun(f) => {
                 let name = f.get_symbol();
@@ -4013,10 +3969,7 @@ impl<'a> AtomView<'a> {
                 Atom::I => coeff_map(&1.into())
                     .i()
                     .ok_or_else(|| "Numerical type does not support imaginary unit".to_string()),
-                _ => Err(format!(
-                    "Variable {} not in constant map",
-                    State::get_name(v.get_symbol())
-                )),
+                _ => Err(format!("Variable {} not in constant map", v.get_symbol())),
             },
             AtomView::Fun(f) => {
                 let name = f.get_symbol();
@@ -4045,10 +3998,7 @@ impl<'a> AtomView<'a> {
                 }
 
                 let Some(fun) = function_map.get(&f.get_symbol()) else {
-                    Err(format!(
-                        "Missing function {}",
-                        State::get_name(f.get_symbol())
-                    ))?
+                    Err(format!("Missing function {}", f.get_symbol()))?
                 };
                 let eval = fun.get()(&args, const_map, function_map, cache);
 
@@ -4253,18 +4203,17 @@ mod test {
     use ahash::HashMap;
 
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::{Atom, AtomCore, Symbol},
         domains::{float::Float, rational::Rational},
         evaluate::{EvaluationFn, FunctionMap, OptimizationSettings},
         id::ConditionResult,
-        state::State,
     };
 
     #[test]
     fn evaluate() {
-        let x = State::get_symbol("v1");
-        let f = State::get_symbol("f1");
-        let g = State::get_symbol("f2");
+        let x = Symbol::new("v1");
+        let f = Symbol::new("f1");
+        let g = Symbol::new("f2");
         let p0 = Atom::parse("v2(0)").unwrap();
         let a = Atom::parse("v1*cos(v1) + f1(v1, 1)^2 + f2(f2(v1)) + v2(0)").unwrap();
 
@@ -4300,7 +4249,7 @@ mod test {
 
     #[test]
     fn arb_prec() {
-        let x = State::get_symbol("v1");
+        let x = Symbol::new("v1");
         let a = Atom::parse("128731/12893721893721 + v1").unwrap();
 
         let mut const_map = HashMap::default();
@@ -4335,49 +4284,34 @@ mod test {
         let mut fn_map = FunctionMap::new();
 
         fn_map.add_constant(
-            Atom::new_var(State::get_symbol("pi")),
+            Atom::new_var(Symbol::new("pi")),
             Rational::from((22, 7)).into(),
         );
         fn_map
             .add_tagged_function(
-                State::get_symbol("p"),
+                Symbol::new("p"),
                 vec![Atom::new_num(1).into()],
                 "p1".to_string(),
-                vec![State::get_symbol("z")],
+                vec![Symbol::new("z")],
                 p1,
             )
             .unwrap();
         fn_map
             .add_function(
-                State::get_symbol("f"),
+                Symbol::new("f"),
                 "f".to_string(),
-                vec![State::get_symbol("y"), State::get_symbol("z")],
+                vec![Symbol::new("y"), Symbol::new("z")],
                 f,
             )
             .unwrap();
         fn_map
-            .add_function(
-                State::get_symbol("g"),
-                "g".to_string(),
-                vec![State::get_symbol("y")],
-                g,
-            )
+            .add_function(Symbol::new("g"), "g".to_string(), vec![Symbol::new("y")], g)
             .unwrap();
         fn_map
-            .add_function(
-                State::get_symbol("h"),
-                "h".to_string(),
-                vec![State::get_symbol("y")],
-                h,
-            )
+            .add_function(Symbol::new("h"), "h".to_string(), vec![Symbol::new("y")], h)
             .unwrap();
         fn_map
-            .add_function(
-                State::get_symbol("i"),
-                "i".to_string(),
-                vec![State::get_symbol("y")],
-                i,
-            )
+            .add_function(Symbol::new("i"), "i".to_string(), vec![Symbol::new("y")], i)
             .unwrap();
 
         let params = vec![Atom::parse("x").unwrap()];

@@ -421,15 +421,12 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        atom::{representation::InlineVar, Atom, AtomCore},
-        state::State,
-    };
+    use crate::atom::{representation::InlineVar, Atom, AtomCore, Symbol};
 
     #[test]
     fn index_group() {
         let mus: Vec<_> = (0..4)
-            .map(|i| InlineVar::new(State::get_symbol(format!("mu{}", i + 1))))
+            .map(|i| InlineVar::new(Symbol::new(format!("mu{}", i + 1))))
             .collect();
         let mu_ref = mus.iter().map(|x| x.as_view()).collect::<Vec<_>>();
 
@@ -459,7 +456,7 @@ mod test {
     #[test]
     fn canonize_tensors() {
         let mus: Vec<_> = (0..10)
-            .map(|i| InlineVar::new(State::get_symbol(format!("mu{}", i + 1))))
+            .map(|i| InlineVar::new(Symbol::new(format!("mu{}", i + 1))))
             .collect();
         let mu_ref = mus.iter().map(|x| x.as_view()).collect::<Vec<_>>();
 
@@ -484,7 +481,7 @@ mod test {
     #[test]
     fn canonize_antisymmetric() {
         let mus: Vec<_> = (0..4)
-            .map(|i| InlineVar::new(State::get_symbol(format!("mu{}", i + 1))))
+            .map(|i| InlineVar::new(Symbol::new(format!("mu{}", i + 1))))
             .collect();
         let mu_ref = mus.iter().map(|x| x.as_view()).collect::<Vec<_>>();
 

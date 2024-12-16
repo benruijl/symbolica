@@ -1,10 +1,7 @@
-use symbolica::{
-    atom::{Atom, AtomCore},
-    state::State,
-};
+use symbolica::atom::{Atom, AtomCore, Symbol};
 
 fn main() {
-    let x = State::get_symbol("x");
+    let x = Symbol::new("x");
     let inputs = [
         "(1+2*x)^(5+x)",
         "log(2*x) + exp(3*x) + sin(4*x) + cos(y*x)",

@@ -1,7 +1,6 @@
 use symbolica::{
     atom::{Atom, AtomCore},
     id::Match,
-    state::State,
 };
 
 fn main() {
@@ -20,7 +19,7 @@ fn main() {
             m.position, m.used_flags
         );
         for (id, v) in m.match_stack {
-            print!("\t\t{} = ", State::get_name(*id));
+            print!("\t\t{} = ", id);
             match v {
                 Match::Single(s) => {
                     print!("{}", s)
@@ -33,7 +32,7 @@ fn main() {
                     }
                 }
                 Match::FunctionName(f) => {
-                    print!("Fn {}", State::get_name(*f))
+                    print!("Fn {}", f)
                 }
             }
             println!();

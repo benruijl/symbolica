@@ -42,7 +42,7 @@ tracing_only_warnings = ["tracing/release_max_level_warn"]
 [dependencies.pyo3]
 features = ["extension-module", "abi3", "py-clone"]
 optional = true
-version = "0.22"
+version = "0.23"
 
 [dev-dependencies]
 tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}

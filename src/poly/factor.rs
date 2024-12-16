@@ -3398,7 +3398,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::{Atom, AtomCore, Symbol},
         domains::{
             algebraic_number::AlgebraicExtension,
             finite_field::{Zp, Z2},
@@ -3407,7 +3407,6 @@ mod test {
             InternalOrdering,
         },
         poly::factor::Factorize,
-        state::State,
     };
 
     #[test]
@@ -3640,9 +3639,9 @@ mod test {
             .to_polynomial::<_, u8>(
                 &Z,
                 Some(Arc::new(vec![
-                    State::get_symbol("v1").into(),
-                    State::get_symbol("v2").into(),
-                    State::get_symbol("v3").into(),
+                    Symbol::new("v1").into(),
+                    Symbol::new("v2").into(),
+                    Symbol::new("v3").into(),
                 ])),
             );
 
@@ -3674,9 +3673,9 @@ mod test {
             .to_polynomial::<_, u8>(
                 &Z,
                 Some(Arc::new(vec![
-                    State::get_symbol("v1").into(),
-                    State::get_symbol("v2").into(),
-                    State::get_symbol("v3").into(),
+                    Symbol::new("v1").into(),
+                    Symbol::new("v2").into(),
+                    Symbol::new("v3").into(),
                 ])),
             );
 

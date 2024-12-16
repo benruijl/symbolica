@@ -3,10 +3,7 @@ use std::fmt::{self, Error, Write};
 use colored::Colorize;
 
 use crate::{
-    atom::{
-        representation::FunView, AddView, Atom, AtomView, MulView, NumView, PowView, Symbol,
-        VarView,
-    },
+    atom::{representation::FunView, AddView, Atom, AtomView, MulView, NumView, PowView, VarView},
     coefficient::CoefficientView,
     domains::{finite_field::FiniteFieldCore, SelfRing},
     state::State,
@@ -245,12 +242,6 @@ impl<'a> fmt::Display for AtomPrinter<'a> {
     }
 }
 
-impl std::fmt::Display for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(State::get_name(*self))
-    }
-}
-
 impl<'a> AtomView<'a> {
     fn fmt_debug(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -441,7 +432,7 @@ impl<'a> FormattedPrintVar for VarView<'a> {
         }
 
         let id = self.get_symbol();
-        let name = State::get_name(id);
+        let name = id.get_name();
 
         if opts.latex {
             match id {
@@ -721,7 +712,7 @@ impl<'a> FormattedPrintFn for FunView<'a> {
         }
 
         let id = self.get_symbol();
-        let name = State::get_name(id);
+        let name = id.get_name();
 
         if opts.latex {
             if name == "cos" || name == "sin" || name == "exp" || name == "log" {
@@ -941,10 +932,9 @@ mod test {
     use colored::control::ShouldColorize;
 
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::{Atom, AtomCore, FunctionAttribute, Symbol},
         domains::{finite_field::Zp, integer::Z, SelfRing},
         printer::{AtomPrinter, PrintOptions, PrintState},
-        state::{FunctionAttribute, State},
     };
 
     #[test]
@@ -1068,10 +1058,9 @@ mod test {
 
     #[test]
     fn canon() {
-        let _ =
-            State::get_symbol_with_attributes("canon_f", &[FunctionAttribute::Symmetric]).unwrap();
-        let _ = State::get_symbol("canon_y");
-        let _ = State::get_symbol("canon_x");
+        let _ = Symbol::new_with_attributes("canon_f", &[FunctionAttribute::Symmetric]).unwrap();
+        let _ = Symbol::new("canon_y");
+        let _ = Symbol::new("canon_x");
 
         let a = Atom::parse("canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)").unwrap();
         assert_eq!(

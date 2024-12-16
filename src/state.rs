@@ -16,7 +16,7 @@ use byteorder::LittleEndian;
 use once_cell::sync::Lazy;
 use smartstring::alias::String;
 
-use crate::atom::AtomView;
+use crate::atom::{FunctionAttribute, NormalizationFunction};
 use crate::domains::finite_field::Zp64;
 use crate::poly::Variable;
 use crate::{
@@ -35,14 +35,6 @@ pub struct FiniteFieldIndex(pub(crate) usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VariableListIndex(pub(crate) usize);
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum FunctionAttribute {
-    Symmetric,
-    Antisymmetric,
-    Cyclesymmetric,
-    Linear,
-}
-
 pub struct StateMap {
     pub(crate) symbols: HashMap<u32, Symbol>,
     pub(crate) finite_fields: HashMap<FiniteFieldIndex, FiniteFieldIndex>,
@@ -54,11 +46,6 @@ impl StateMap {
         self.symbols.is_empty() && self.finite_fields.is_empty() && self.variables_lists.is_empty()
     }
 }
-
-/// A function that is called after normalization of the arguments.
-/// If the input, the first argument, is normalized, the function should return `false`.
-/// Otherwise, the function must return `true` and set the second argument to the normalized value.
-pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Atom) -> bool + Send + Sync>;
 
 struct SymbolData {
     name: String,
@@ -134,6 +121,8 @@ impl State {
     /// that can be used in concurrently run unit tests without interference.
     #[cfg(test)]
     fn initialize_test(&mut self) {
+        use crate::atom::FunctionAttribute;
+
         for i in 0..30 {
             let _ = self.get_symbol_impl(&format!("v{}", i));
         }
@@ -175,10 +164,11 @@ impl State {
     ///
     /// Example:
     /// ```
-    /// # use symbolica::state::{State, FunctionAttribute};
-    /// State::get_symbol_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+    /// # use symbolica::atom::{Symbol, FunctionAttribute};
+    /// # use symbolica::state::State;
+    /// Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
     /// unsafe { State::reset(); }
-    /// State::get_symbol_with_attributes("f", &[FunctionAttribute::Antisymmetric]).unwrap();
+    /// Symbol::new_with_attributes("f", &[FunctionAttribute::Antisymmetric]).unwrap();
     /// ```
     pub unsafe fn reset() {
         let mut state = STATE.write().unwrap();
@@ -225,8 +215,8 @@ impl State {
     /// Get the symbol for a certain name if the name is already registered,
     /// else register it and return a new symbol without attributes.
     ///
-    /// To register a symbol with attributes, use [`State::get_symbol_with_attributes`].
-    pub fn get_symbol<S: AsRef<str>>(name: S) -> Symbol {
+    /// To register a symbol with attributes, use [`Symbol::new_with_attributes`].
+    pub(crate) fn get_symbol<S: AsRef<str>>(name: S) -> Symbol {
         STATE.write().unwrap().get_symbol_impl(name.as_ref())
     }
 
@@ -271,7 +261,7 @@ impl State {
     ///
     /// This function will return an error when an existing symbol is redefined
     /// with different attributes.
-    pub fn get_symbol_with_attributes<S: AsRef<str>>(
+    pub(crate) fn get_symbol_with_attributes<S: AsRef<str>>(
         name: S,
         attributes: &[FunctionAttribute],
     ) -> Result<Symbol, String> {
@@ -354,7 +344,7 @@ impl State {
     /// normalization functions must be registered explicitly.
     ///
     /// If the symbol already exists, an error is returned.
-    pub fn get_symbol_with_attributes_and_function<S: AsRef<str>>(
+    pub(crate) fn get_symbol_with_attributes_and_function<S: AsRef<str>>(
         name: S,
         attributes: &[FunctionAttribute],
         f: NormalizationFunction,
@@ -417,7 +407,7 @@ impl State {
 
     /// Get the name for a given symbol.
     #[inline]
-    pub fn get_name(id: Symbol) -> &'static str {
+    pub(crate) fn get_name(id: Symbol) -> &'static str {
         if ID_TO_STR.len() == 0 {
             let _ = *STATE; // initialize the state
         }
@@ -484,6 +474,10 @@ impl State {
     /// Write the state to a binary stream.
     #[inline(always)]
     pub fn export<W: Write>(dest: &mut W) -> Result<(), std::io::Error> {
+        if ID_TO_STR.len() == 0 {
+            let _ = *STATE; // initialize the state
+        }
+
         dest.write_u32::<LittleEndian>(SYMBOLICA_MAGIC)?;
         dest.write_u16::<LittleEndian>(EXPORT_FORMAT_VERSION)?;
 
@@ -597,7 +591,7 @@ impl State {
             }
 
             loop {
-                match State::get_symbol_with_attributes(&str, &attributes) {
+                match Symbol::new_with_attributes(&str, &attributes) {
                     Ok(id) => {
                         if x as u32 != id.get_id() {
                             state_map.symbols.insert(x as u32, id);
@@ -865,7 +859,7 @@ impl Drop for RecycledAtom {
 mod tests {
     use std::io::Cursor;
 
-    use crate::atom::{Atom, AtomView};
+    use crate::atom::{Atom, AtomView, Symbol};
 
     use super::State;
 
@@ -880,7 +874,7 @@ mod tests {
 
     #[test]
     fn custom_normalization() {
-        let _real_log = State::get_symbol_with_attributes_and_function(
+        let _real_log = Symbol::new_with_attributes_and_function(
             "custom_normalization_real_log",
             &[],
             Box::new(|input, out| {

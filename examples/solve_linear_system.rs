@@ -1,21 +1,20 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::{representation::InlineVar, Atom, AtomCore, AtomView},
+    atom::{representation::InlineVar, Atom, AtomCore, AtomView, Symbol},
     domains::{
         integer::Z,
         rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
     poly::Variable,
-    state::State,
     tensors::matrix::Matrix,
 };
 
 fn solve() {
-    let x = State::get_symbol("x").into();
-    let y = State::get_symbol("y").into();
-    let z = State::get_symbol("z").into();
+    let x = Symbol::new("x").into();
+    let y = Symbol::new("y").into();
+    let z = Symbol::new("z").into();
     let eqs = ["c*x + f(c)*y + z - 1", "x + c*y + z/c - 2", "(c-1)x + c*z"];
 
     let system: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
@@ -36,7 +35,7 @@ fn solve_from_matrix() {
         println!("\t ({}).x\u{20D7} = {}", r.join(","), v);
     }
 
-    let var_map = Arc::new(vec![Variable::Symbol(State::get_symbol("c"))]);
+    let var_map = Arc::new(vec![Variable::Symbol(Symbol::new("c"))]);
 
     let system_rat: Vec<RationalPolynomial<_, u8>> = system
         .iter()

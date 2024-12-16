@@ -1,13 +1,12 @@
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::{Atom, AtomCore, Symbol},
     domains::finite_field::Zp,
     poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
-    state::State,
 };
 
 fn main() {
     for x in 'a'..='z' {
-        State::get_symbol(x.to_string());
+        Symbol::new(x.to_string());
     }
 
     // cyclic-4

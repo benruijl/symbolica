@@ -1,14 +1,13 @@
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::{Atom, AtomCore, Symbol},
     id::Pattern,
-    state::State,
     transformer::Transformer,
 };
 
 fn main() {
     let input = Atom::parse("f(1,3,2,3,1)").unwrap();
-    let f = State::get_symbol("f");
-    let g = State::get_symbol("g");
+    let f = Symbol::new("f");
+    let g = Symbol::new("g");
 
     let o = input.replace_all(
         &Pattern::parse("f(x__)").unwrap(),

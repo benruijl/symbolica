@@ -585,9 +585,8 @@ mod test {
     use brotli::CompressorWriter;
 
     use crate::{
-        atom::{Atom, AtomCore, AtomType},
+        atom::{Atom, AtomCore, AtomType, Symbol},
         id::{Pattern, WildcardRestriction},
-        state::State,
         streaming::{TermStreamer, TermStreamerConfig},
     };
 
@@ -643,7 +642,7 @@ mod test {
                 &rhs,
                 Some(
                     &(
-                        State::get_symbol("v1_"),
+                        Symbol::new("v1_"),
                         WildcardRestriction::IsAtomType(AtomType::Var),
                     )
                         .into(),

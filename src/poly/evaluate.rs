@@ -1796,12 +1796,11 @@ impl ExpressionEvaluator {
     /// ```
     /// can be represented by:
     /// ```
-    /// # use symbolica::atom::Atom;
-    /// # use symbolica::state::State;
+    /// # use symbolica::atom::{Atom, Symbol};
     /// vec![
-    ///       vec![(State::get_symbol("x0"), vec![Atom::parse("p1"), Atom::parse("p2")])],
-    ///       vec![(State::get_symbol("x1"), vec![Atom::parse("x0(0) * x0(1) + 2")])],
-    ///       vec![(State::get_symbol("x2"), vec![Atom::parse("x1(0) * 2 * x0(1)")])]
+    ///       vec![(Symbol::new("x0"), vec![Atom::parse("p1"), Atom::parse("p2")])],
+    ///       vec![(Symbol::new("x1"), vec![Atom::parse("x0(0) * x0(1) + 2")])],
+    ///       vec![(Symbol::new("x2"), vec![Atom::parse("x1(0) * 2 * x0(1)")])]
     /// ];
     /// ```
     ///

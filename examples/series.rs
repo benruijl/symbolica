@@ -1,10 +1,7 @@
-use symbolica::{
-    atom::{Atom, AtomCore},
-    state::State,
-};
+use symbolica::atom::{Atom, AtomCore, Symbol};
 
 fn main() {
-    let x = State::get_symbol("x");
+    let x = Symbol::new("x");
     let a = Atom::parse("(1-cos(x))/sin(x)+log(x+x^2+2)").unwrap();
 
     let out = a

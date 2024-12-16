@@ -1,12 +1,12 @@
 use ahash::HashMap;
-use symbolica::atom::AtomCore;
+use symbolica::atom::Atom;
+use symbolica::atom::{AtomCore, Symbol};
 use symbolica::evaluate::EvaluationFn;
-use symbolica::{atom::Atom, state::State};
 
 fn main() {
-    let x = State::get_symbol("x");
-    let f = State::get_symbol("f");
-    let g = State::get_symbol("g");
+    let x = Symbol::new("x");
+    let f = Symbol::new("f");
+    let g = Symbol::new("g");
     let p0 = Atom::parse("p(0)").unwrap();
     let a = Atom::parse("x*cos(x) + f(x, 1)^2 + g(g(x)) + p(0)").unwrap();
 

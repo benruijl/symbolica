@@ -16,11 +16,11 @@ use pyo3::{
     pyfunction, pymethods,
     sync::GILOnceCell,
     types::{
-        PyAnyMethods, PyBytes, PyComplex, PyComplexMethods, PyLong, PyModule, PyTuple,
+        PyAnyMethods, PyBytes, PyComplex, PyComplexMethods, PyInt, PyModule, PyTuple,
         PyTupleMethods, PyType, PyTypeMethods,
     },
-    wrap_pyfunction, Bound, FromPyObject, IntoPy, Py, PyErr, PyObject, PyRef, PyResult, PyTypeInfo,
-    Python, ToPyObject,
+    wrap_pyfunction, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr,
+    PyObject, PyRef, PyResult, PyTypeInfo, Python,
 };
 use pyo3::{pyclass, types::PyModuleMethods};
 use rug::Complete;
@@ -32,7 +32,7 @@ use smartstring::{LazyCompact, SmartString};
 use pyo3::pymodule;
 
 use crate::{
-    atom::{Atom, AtomCore, AtomType, AtomView, ListIterator, Symbol},
+    atom::{Atom, AtomCore, AtomType, AtomView, FunctionAttribute, ListIterator, Symbol},
     coefficient::CoefficientView,
     domains::{
         algebraic_number::AlgebraicExtension,
@@ -63,7 +63,7 @@ use crate::{
         series::Series, GrevLexOrder, LexOrder, Variable, INLINED_EXPONENTS,
     },
     printer::{AtomPrinter, PrintOptions, PrintState},
-    state::{FunctionAttribute, RecycledAtom, State, Workspace},
+    state::{RecycledAtom, State, Workspace},
     streaming::{TermStreamer, TermStreamerConfig},
     tensors::matrix::Matrix,
     transformer::{StatsOptions, Transformer, TransformerError},
@@ -190,7 +190,7 @@ fn symbol_shorthand(
     py: Python<'_>,
 ) -> PyResult<PyObject> {
     PythonExpression::symbol(
-        &PythonExpression::type_object_bound(py),
+        &PythonExpression::type_object(py),
         py,
         names,
         is_symmetric,
@@ -208,18 +208,13 @@ fn number_shorthand(
     relative_error: Option<f64>,
     py: Python<'_>,
 ) -> PyResult<PythonExpression> {
-    PythonExpression::num(
-        &PythonExpression::type_object_bound(py),
-        py,
-        num,
-        relative_error,
-    )
+    PythonExpression::num(&PythonExpression::type_object(py), py, num, relative_error)
 }
 
 /// Shorthand notation for :func:`Expression.parse`.
 #[pyfunction(name = "E")]
 fn expression_shorthand(expr: &str, py: Python) -> PyResult<PythonExpression> {
-    PythonExpression::parse(&PythonExpression::type_object_bound(py), expr)
+    PythonExpression::parse(&PythonExpression::type_object(py), expr)
 }
 
 /// Specifies the type of the atom.
@@ -273,12 +268,12 @@ impl<'a> From<AtomView<'a>> for PyResult<PythonAtomTree> {
             },
             AtomView::Var(v) => PythonAtomTree {
                 atom_type: PythonAtomType::Var,
-                head: Some(State::get_name(v.get_symbol()).to_string()),
+                head: Some(v.get_symbol().get_name().to_string()),
                 tail: vec![],
             },
             AtomView::Fun(f) => PythonAtomTree {
                 atom_type: PythonAtomType::Fn,
-                head: Some(State::get_name(f.get_symbol()).to_string()),
+                head: Some(f.get_symbol().get_name().to_string()),
                 tail: f.iter().map(|x| x.into()).collect::<Result<Vec<_>, _>>()?,
             },
             AtomView::Add(a) => PythonAtomTree {
@@ -341,7 +336,7 @@ impl ConvertibleToPatternOrMap {
                     .collect();
 
                 Python::with_gil(|py| {
-                    m.call_bound(py, (match_stack,), None)
+                    m.call(py, (match_stack,), None)
                         .expect("Bad callback function")
                         .extract::<PythonExpression>(py)
                         .expect("Match map does not return an expression")
@@ -549,7 +544,7 @@ impl PythonTransformer {
     ///
     /// yields
     ///
-    /// ```
+    /// ```log
     /// (3*x+3*y)*(4*x+5*y)
     /// ```
     pub fn expand_num(&self) -> PyResult<PythonTransformer> {
@@ -810,7 +805,7 @@ impl PythonTransformer {
             };
 
             let res = Python::with_gil(|py| {
-                f.call_bound(py, (expr,), None)
+                f.call(py, (expr,), None)
                     .map_err(|e| {
                         TransformerError::ValueError(format!("Bad callback function: {}", e))
                     })?
@@ -1864,7 +1859,7 @@ impl PythonPatternRestriction {
 
                 let r = Python::with_gil(|py| {
                     match_fn
-                        .call_bound(py, (matches,), None)
+                        .call(py, (matches,), None)
                         .expect("Bad callback function")
                         .extract::<isize>(py)
                         .expect("Pattern comparison does not return an integer")
@@ -2095,7 +2090,7 @@ impl<'a> FromPyObject<'a> for ConvertibleToExpression {
             Ok(ConvertibleToExpression(a))
         } else if let Ok(num) = ob.extract::<i64>() {
             Ok(ConvertibleToExpression(Atom::new_num(num).into()))
-        } else if let Ok(num) = ob.downcast::<PyLong>() {
+        } else if let Ok(num) = ob.downcast::<PyInt>() {
             let a = format!("{}", num);
             let i = Integer::from(rug::Integer::parse(&a).unwrap().complete());
             Ok(ConvertibleToExpression(Atom::new_num(i).into()))
@@ -2140,7 +2135,7 @@ impl<'a> FromPyObject<'a> for Integer {
     fn extract_bound(ob: &Bound<'a, pyo3::PyAny>) -> PyResult<Self> {
         if let Ok(num) = ob.extract::<i64>() {
             Ok(num.into())
-        } else if let Ok(num) = ob.downcast::<PyLong>() {
+        } else if let Ok(num) = ob.downcast::<PyInt>() {
             let a = format!("{}", num);
             Ok(Integer::from(rug::Integer::parse(&a).unwrap().complete()))
         } else {
@@ -2149,13 +2144,17 @@ impl<'a> FromPyObject<'a> for Integer {
     }
 }
 
-impl ToPyObject for Integer {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for Integer {
+    type Target = PyInt;
+    type Output = Bound<'py, Self::Target>;
+    type Error = std::convert::Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self {
-            Integer::Natural(n) => n.to_object(py),
-            Integer::Double(d) => d.to_object(py),
+            Integer::Natural(n) => n.into_pyobject(py),
+            Integer::Double(d) => d.into_pyobject(py),
             Integer::Large(l) => unsafe {
-                Bound::from_owned_ptr(
+                Ok(Bound::from_owned_ptr(
                     py,
                     pyo3::ffi::PyLong_FromString(
                         l.to_string().as_str().as_ptr() as *const i8,
@@ -2163,7 +2162,8 @@ impl ToPyObject for Integer {
                         10,
                     ),
                 )
-                .to_object(py)
+                .downcast_into::<PyInt>()
+                .unwrap())
             },
         }
     }
@@ -2189,7 +2189,7 @@ static PYDECIMAL: GILOnceCell<Py<PyType>> = GILOnceCell::new();
 
 fn get_decimal(py: Python) -> &Py<PyType> {
     PYDECIMAL.get_or_init(py, || {
-        py.import_bound("decimal")
+        py.import("decimal")
             .unwrap()
             .getattr("Decimal")
             .unwrap()
@@ -2198,12 +2198,16 @@ fn get_decimal(py: Python) -> &Py<PyType> {
     })
 }
 
-impl ToPyObject for PythonMultiPrecisionFloat {
-    fn to_object(&self, py: Python) -> PyObject {
+impl<'py> IntoPyObject<'py> for PythonMultiPrecisionFloat {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = std::convert::Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         get_decimal(py)
             .call1(py, (self.0.to_string(),))
             .expect("failed to call decimal.Decimal(value)")
-            .to_object(py)
+            .into_pyobject(py)
     }
 }
 
@@ -2484,19 +2488,19 @@ impl PythonExpression {
             if names.len() == 1 {
                 let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
 
-                let id = State::get_symbol(name_check(&*name)?);
+                let id = Symbol::new(name_check(&*name)?);
                 let r = PythonExpression::from(Atom::new_var(id));
-                return Ok(r.into_py(py));
+                return r.into_py_any(py);
             } else {
                 let mut result = vec![];
                 for a in names {
                     let name = a.extract::<PyBackedStr>()?;
-                    let id = State::get_symbol(name_check(&*name)?);
+                    let id = Symbol::new(name_check(&*name)?);
                     let r = PythonExpression::from(Atom::new_var(id));
                     result.push(r);
                 }
 
-                return Ok(result.into_py(py));
+                return result.into_py_any(py);
             }
         }
 
@@ -2540,7 +2544,7 @@ impl PythonExpression {
                         ))?;
                     }
 
-                    State::get_symbol_with_attributes_and_function(
+                    Symbol::new_with_attributes_and_function(
                         name,
                         &opts,
                         Box::new(move |input, out| {
@@ -2556,12 +2560,12 @@ impl PythonExpression {
                     return Err(exceptions::PyValueError::new_err("Transformer expected"));
                 }
             } else {
-                State::get_symbol_with_attributes(name, &opts)
+                Symbol::new_with_attributes(name, &opts)
             }
             .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
             let r = PythonExpression::from(Atom::new_var(id));
-            Ok(r.into_py(py))
+            r.into_py_any(py)
         } else {
             let mut result = vec![];
             for a in names {
@@ -2577,7 +2581,7 @@ impl PythonExpression {
                         }
 
                         let t = t.1.clone();
-                        State::get_symbol_with_attributes_and_function(
+                        Symbol::new_with_attributes_and_function(
                             name,
                             &opts,
                             Box::new(move |input, out| {
@@ -2594,14 +2598,14 @@ impl PythonExpression {
                         return Err(exceptions::PyValueError::new_err("Transformer expected"));
                     }
                 } else {
-                    State::get_symbol_with_attributes(name, &opts)
+                    Symbol::new_with_attributes(name, &opts)
                 }
                 .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
                 let r = PythonExpression::from(Atom::new_var(id));
                 result.push(r);
             }
 
-            Ok(result.into_py(py))
+            result.into_py_any(py)
         }
     }
 
@@ -2633,7 +2637,7 @@ impl PythonExpression {
     ) -> PyResult<PythonExpression> {
         if let Ok(num) = num.extract::<i64>(py) {
             Ok(Atom::new_num(num).into())
-        } else if let Ok(num) = num.downcast_bound::<PyLong>(py) {
+        } else if let Ok(num) = num.downcast_bound::<PyInt>(py) {
             let a = format!("{}", num);
             PythonExpression::parse(_cls, &a)
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
@@ -2757,7 +2761,7 @@ impl PythonExpression {
 
     /// Get the default positional arguments for `__new__`.
     pub fn __getnewargs__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
-        Ok(PyTuple::empty_bound(py))
+        Ok(PyTuple::empty(py))
     }
 
     /// Copy the expression.
@@ -2969,8 +2973,8 @@ impl PythonExpression {
     /// is a variable or function.
     pub fn get_name(&self) -> PyResult<Option<String>> {
         match self.expr.as_ref() {
-            Atom::Var(v) => Ok(Some(State::get_name(v.get_symbol()).to_string())),
-            Atom::Fun(f) => Ok(Some(State::get_name(f.get_symbol()).to_string())),
+            Atom::Var(v) => Ok(Some(v.get_symbol().get_name().to_string())),
+            Atom::Fun(f) => Ok(Some(f.get_symbol().get_name().to_string())),
             _ => Ok(None),
         }
     }
@@ -3131,7 +3135,7 @@ impl PythonExpression {
                 let mut out = Atom::default();
                 fun_b.as_view().normalize(workspace, &mut out);
 
-                Ok(PythonExpression::from(out).into_py(py))
+                PythonExpression::from(out).into_py_any(py)
             })
         } else {
             // convert all wildcards back from literals
@@ -3148,7 +3152,7 @@ impl PythonExpression {
             }
 
             let p = Pattern::Fn(id, transformer_args);
-            Ok(PythonTransformer::from(p).into_py(py))
+            PythonTransformer::from(p).into_py_any(py)
         }
     }
 
@@ -3543,7 +3547,7 @@ impl PythonExpression {
 
                     Python::with_gil(|py| {
                         filter_fn
-                            .call_bound(py, (data,), None)
+                            .call(py, (data,), None)
                             .expect("Bad callback function")
                             .extract::<bool>(py)
                             .expect("Pattern filter does not return a boolean")
@@ -3706,7 +3710,7 @@ impl PythonExpression {
 
                         Python::with_gil(|py| {
                             cmp_fn
-                                .call_bound(py, (data1, data2), None)
+                                .call(py, (data1, data2), None)
                                 .expect("Bad callback function")
                                 .extract::<bool>(py)
                                 .expect("Pattern comparison does not return a boolean")
@@ -3926,7 +3930,7 @@ impl PythonExpression {
 
                         out.set_from_view(
                             &key_map
-                                .call_bound(py, (key,), None)
+                                .call(py, (key,), None)
                                 .expect("Bad callback function")
                                 .extract::<PythonExpression>(py)
                                 .expect("Key map should return an expression")
@@ -3945,7 +3949,7 @@ impl PythonExpression {
 
                         out.set_from_view(
                             &coeff_map
-                                .call_bound(py, (coeff,), None)
+                                .call(py, (coeff,), None)
                                 .expect("Bad callback function")
                                 .extract::<PythonExpression>(py)
                                 .expect("Coeff map should return an expression")
@@ -4274,10 +4278,10 @@ impl PythonExpression {
                         }
 
                         let g = AlgebraicExtension::new(p);
-                        Ok(PythonGaloisFieldPrimeTwoPolynomial {
+                        PythonGaloisFieldPrimeTwoPolynomial {
                             poly: self.expr.to_polynomial(&g, var_map),
                         }
-                        .into_py(py))
+                        .into_py_any(py)
                     } else {
                         let f = Zp::new(m);
                         let p = p.map_coeff(|c| c.to_finite_field(&f), f.clone());
@@ -4288,34 +4292,34 @@ impl PythonExpression {
                         }
 
                         let g = AlgebraicExtension::new(p);
-                        Ok(PythonGaloisFieldPolynomial {
+                        PythonGaloisFieldPolynomial {
                             poly: self.expr.to_polynomial(&g, var_map),
                         }
-                        .into_py(py))
+                        .into_py_any(py)
                     }
                 } else if m == 2 {
                     let g = AlgebraicExtension::galois_field(Z2, e as usize, name.into());
-                    Ok(PythonGaloisFieldPrimeTwoPolynomial {
+                    PythonGaloisFieldPrimeTwoPolynomial {
                         poly: self.expr.to_polynomial(&g, var_map),
                     }
-                    .into_py(py))
+                    .into_py_any(py)
                 } else {
                     let g = AlgebraicExtension::galois_field(Zp::new(m), e as usize, name.into());
-                    Ok(PythonGaloisFieldPolynomial {
+                    PythonGaloisFieldPolynomial {
                         poly: self.expr.to_polynomial(&g, var_map),
                     }
-                    .into_py(py))
+                    .into_py_any(py)
                 }
             } else if m == 2 {
-                Ok(PythonPrimeTwoPolynomial {
+                PythonPrimeTwoPolynomial {
                     poly: self.expr.to_polynomial(&Z2, var_map),
                 }
-                .into_py(py))
+                .into_py_any(py)
             } else {
-                Ok(PythonFiniteFieldPolynomial {
+                PythonFiniteFieldPolynomial {
                     poly: self.expr.to_polynomial(&Zp::new(m), var_map),
                 }
-                .into_py(py))
+                .into_py_any(py)
             }
         } else {
             if let Some(p) = poly {
@@ -4326,15 +4330,15 @@ impl PythonExpression {
                 }
 
                 let f = AlgebraicExtension::new(p);
-                Ok(PythonNumberFieldPolynomial {
+                PythonNumberFieldPolynomial {
                     poly: self.expr.to_polynomial(&Q, var_map).to_number_field(&f),
                 }
-                .into_py(py))
+                .into_py_any(py)
             } else {
-                Ok(PythonPolynomial {
+                PythonPolynomial {
                     poly: self.expr.to_polynomial(&Q, var_map),
                 }
-                .into_py(py))
+                .into_py_any(py)
             }
         }
     }
@@ -4748,16 +4752,16 @@ impl PythonExpression {
                 .map_err(|e| {
                     exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
                 })?;
-            Ok(r.into_inner().into_py(py))
+            r.into_inner().into_py_any(py)
         } else {
-            Ok(PythonMultiPrecisionFloat(
+            PythonMultiPrecisionFloat(
                 self.expr
                     .nsolve(id, init.0, prec.into(), max_iterations)
                     .map_err(|e| {
                         exceptions::PyValueError::new_err(format!("Could not solve system: {}", e))
                     })?,
             )
-            .to_object(py))
+            .into_py_any(py)
         }
     }
 
@@ -4815,8 +4819,8 @@ impl PythonExpression {
 
             Ok(res
                 .into_iter()
-                .map(|x| x.into_inner().into_py(py))
-                .collect())
+                .map(|x| x.into_inner().into_py_any(py))
+                .collect::<Result<_, _>>()?)
         } else {
             let init: Vec<_> = init.into_iter().map(|x| x.0).collect();
 
@@ -4828,8 +4832,8 @@ impl PythonExpression {
 
             Ok(res
                 .into_iter()
-                .map(|x| PythonMultiPrecisionFloat(x).to_object(py))
-                .collect())
+                .map(|x| PythonMultiPrecisionFloat(x).into_py_any(py))
+                .collect::<Result<_, _>>()?)
         }
     }
 
@@ -4869,7 +4873,7 @@ impl PythonExpression {
                     id,
                     EvaluationFn::new(Box::new(move |args, _, _, _| {
                         Python::with_gil(|py| {
-                            v.call_bound(py, (args.to_vec(),), None)
+                            v.call(py, (args.to_vec(),), None)
                                 .expect("Bad callback function")
                                 .extract::<f64>(py)
                                 .expect("Function does not return a float")
@@ -4937,11 +4941,15 @@ impl PythonExpression {
                     EvaluationFn::new(Box::new(move |args: &[Float], _, _, _| {
                         Python::with_gil(|py| {
                             let mut vv = v
-                                .call_bound(
+                                .call(
                                     py,
                                     (args
                                         .iter()
-                                        .map(|x| PythonMultiPrecisionFloat(x.clone()).to_object(py))
+                                        .map(|x| {
+                                            PythonMultiPrecisionFloat(x.clone())
+                                                .into_pyobject(py)
+                                                .expect("Could not convert to Python object")
+                                        })
                                         .collect::<Vec<_>>(),),
                                     None,
                                 )
@@ -4965,7 +4973,7 @@ impl PythonExpression {
             })?
             .into();
 
-        Ok(a.to_object(py))
+        a.into_py_any(py)
     }
 
     /// Evaluate the expression, using a map of all the variables and
@@ -5004,11 +5012,11 @@ impl PythonExpression {
                     id,
                     EvaluationFn::new(Box::new(move |args: &[Complex<f64>], _, _, _| {
                         Python::with_gil(|py| {
-                            v.call_bound(
+                            v.call(
                                 py,
                                 (args
                                     .iter()
-                                    .map(|x| PyComplex::from_doubles_bound(py, x.re, x.im))
+                                    .map(|x| PyComplex::from_doubles(py, x.re, x.im))
                                     .collect::<Vec<_>>(),),
                                 None,
                             )
@@ -5027,7 +5035,7 @@ impl PythonExpression {
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not evaluate expression: {}", e))
             })?;
-        Ok(PyComplex::from_doubles_bound(py, r.re, r.im))
+        Ok(PyComplex::from_doubles(py, r.re, r.im))
     }
 
     /// Create an evaluator that can evaluate (nested) expressions in an optimized fashion.
@@ -6372,7 +6380,7 @@ impl PythonPolynomial {
             SmallVec::new();
 
         for v in vars {
-            let id = State::get_symbol(&*v);
+            let id = Symbol::new(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -6448,12 +6456,7 @@ impl PythonPolynomial {
             .approximate_roots::<F64>(max_iterations, &tolerance.into())
             .unwrap_or_else(|e| e)
             .into_iter()
-            .map(|(r, p)| {
-                (
-                    PyComplex::from_doubles_bound(py, r.re.to_f64(), r.im.to_f64()),
-                    p,
-                )
-            })
+            .map(|(r, p)| (PyComplex::from_doubles(py, r.re.to_f64(), r.im.to_f64()), p))
             .collect())
     }
 
@@ -6689,7 +6692,7 @@ impl PythonIntegerPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_symbol(&*v);
+            let id = Symbol::new(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -7272,7 +7275,7 @@ impl PythonFiniteFieldPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_symbol(&*v);
+            let id = Symbol::new(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -9792,7 +9795,7 @@ impl PythonRationalPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_symbol(&*v);
+            let id = Symbol::new(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -10085,7 +10088,7 @@ impl PythonFiniteFieldRationalPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = State::get_symbol(&*v);
+            let id = Symbol::new(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -10179,7 +10182,7 @@ impl PythonCompiledExpressionEvaluator {
         inputs: Vec<Complex<f64>>,
     ) -> Vec<Bound<'py, PyComplex>> {
         let n_inputs = inputs.len() / self.input_len;
-        let mut res = vec![PyComplex::from_doubles_bound(py, 0., 0.); self.output_len * n_inputs];
+        let mut res = vec![PyComplex::from_doubles(py, 0., 0.); self.output_len * n_inputs];
         let mut tmp = vec![Complex::new_zero(); self.output_len];
         for (r, s) in res
             .chunks_mut(self.output_len)
@@ -10187,7 +10190,7 @@ impl PythonCompiledExpressionEvaluator {
         {
             self.eval.evaluate(s, &mut tmp);
             for (rr, t) in r.iter_mut().zip(&tmp) {
-                *rr = PyComplex::from_doubles_bound(py, t.re, t.im);
+                *rr = PyComplex::from_doubles(py, t.re, t.im);
             }
         }
 
@@ -10218,7 +10221,7 @@ impl PythonCompiledExpressionEvaluator {
             .map(|s| {
                 self.eval.evaluate(s, &mut v);
                 v.iter()
-                    .map(|x| PyComplex::from_doubles_bound(python, x.re, x.im))
+                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
                     .collect()
             })
             .collect()
@@ -10252,7 +10255,7 @@ impl PythonExpressionEvaluator {
         let mut eval = self.eval.clone().map_coeff(&|x| Complex::new(*x, 0.));
         let n_inputs = inputs.len() / self.eval.get_input_len();
         let mut res =
-            vec![PyComplex::from_doubles_bound(py, 0., 0.); self.eval.get_output_len() * n_inputs];
+            vec![PyComplex::from_doubles(py, 0., 0.); self.eval.get_output_len() * n_inputs];
         let mut tmp = vec![Complex::new_zero(); self.eval.get_output_len()];
         for (r, s) in res
             .chunks_mut(self.eval.get_output_len())
@@ -10260,7 +10263,7 @@ impl PythonExpressionEvaluator {
         {
             eval.evaluate(s, &mut tmp);
             for (rr, t) in r.iter_mut().zip(&tmp) {
-                *rr = PyComplex::from_doubles_bound(py, t.re, t.im);
+                *rr = PyComplex::from_doubles(py, t.re, t.im);
             }
         }
 
@@ -10293,7 +10296,7 @@ impl PythonExpressionEvaluator {
             .map(|s| {
                 eval.evaluate(s, &mut v);
                 v.iter()
-                    .map(|x| PyComplex::from_doubles_bound(python, x.re, x.im))
+                    .map(|x| PyComplex::from_doubles(python, x.re, x.im))
                     .collect()
             })
             .collect()
@@ -11041,7 +11044,7 @@ impl PythonNumericalIntegrator {
     /// Use `import_grid` to load the grid.
     fn export_grid<'p>(&self, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
         bincode::serialize(&self.grid)
-            .map(|a| PyBytes::new_bound(py, &a))
+            .map(|a| PyBytes::new(py, &a))
             .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
 
@@ -11164,7 +11167,7 @@ impl PythonNumericalIntegrator {
             let p_samples: Vec<_> = samples.iter().map(PythonSample::from_sample).collect();
 
             let res = integrand
-                .call_bound(py, (p_samples,), None)?
+                .call(py, (p_samples,), None)?
                 .extract::<Vec<f64>>(py)?;
 
             if res.len() != n_samples_per_iter {
@@ -11529,15 +11532,15 @@ impl PythonInteger {
     /// yields `[1,5,6]`.
     #[pyo3(signature = (x, tolerance, max_iter = 1000, max_coeff = None, gamma = None))]
     #[classmethod]
-    fn solve_integer_relation(
+    fn solve_integer_relation<'py>(
         _cls: &Bound<'_, PyType>,
         x: Vec<PythonMultiPrecisionFloat>,
         tolerance: PythonMultiPrecisionFloat,
         max_iter: usize,
         max_coeff: Option<Integer>,
         gamma: Option<PythonMultiPrecisionFloat>,
-        py: Python,
-    ) -> PyResult<Vec<PyObject>> {
+        py: Python<'py>,
+    ) -> PyResult<Vec<Bound<'py, PyInt>>> {
         let x: Vec<_> = x.into_iter().map(|x| x.0).collect();
 
         let res = Integer::solve_integer_relation(
@@ -11559,7 +11562,10 @@ impl PythonInteger {
             }
         })?;
 
-        Ok(res.into_iter().map(|x| x.to_object(py)).collect())
+        Ok(res
+            .into_iter()
+            .map(|x| x.into_pyobject(py).unwrap())
+            .collect())
     }
 }
 

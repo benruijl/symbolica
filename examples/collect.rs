@@ -1,14 +1,13 @@
 use symbolica::{
-    atom::{Atom, AtomCore},
+    atom::{Atom, AtomCore, Symbol},
     fun,
-    state::State,
 };
 
 fn main() {
     let input = Atom::parse("x*(1+a)+x*5*y+f(5,x)+2+y^2+x^2 + x^3").unwrap();
-    let x = Atom::new_var(State::get_symbol("x"));
-    let key = State::get_symbol("key");
-    let coeff = State::get_symbol("val");
+    let x = Atom::new_var(Symbol::new("x"));
+    let key = Symbol::new("key");
+    let coeff = Symbol::new("val");
 
     let r = input.coefficient_list::<i8, _>(std::slice::from_ref(&x));
 

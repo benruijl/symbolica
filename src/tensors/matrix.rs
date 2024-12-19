@@ -4,6 +4,8 @@ use std::{
     slice::Chunks,
 };
 
+use colored::{Color, Colorize};
+
 use crate::{
     domains::{
         integer::Z,
@@ -632,6 +634,11 @@ impl<F: Ring> Matrix<F> {
         m
     }
 
+    /// Return the underlying vector of scalars.
+    pub fn into_vec(self) -> Vec<F::Element> {
+        self.data
+    }
+
     /// Transpose the matrix in-place.
     pub fn into_transposed(mut self) -> Matrix<F> {
         if self.nrows == self.ncols {
@@ -755,6 +762,28 @@ impl<F: Ring> SelfRing for Matrix<F> {
             }
 
             f.write_str("\\end{pmatrix}")?;
+            Ok(false)
+        } else if opts.pretty_matrix {
+            f.write_char('[')?;
+            for (ri, r) in self.row_iter().enumerate() {
+                if ri > 0 {
+                    f.write_char(' ')?;
+                }
+                f.write_char('[')?;
+                for (ci, c) in r.iter().enumerate() {
+                    self.field.format(c, opts, state, f)?;
+
+                    if ci + 1 < self.ncols as usize {
+                        write!(f, "{}", ", ".bold().color(Color::BrightMagenta))?;
+                    }
+                }
+                f.write_char(']')?;
+
+                if ri + 1 < self.nrows as usize {
+                    f.write_str(",\n")?;
+                }
+            }
+            f.write_char(']')?;
             Ok(false)
         } else {
             f.write_char('{')?;
@@ -942,13 +971,22 @@ impl<F: Ring> Neg for Matrix<F> {
     }
 }
 
+impl<'a, F: Ring> IntoIterator for &'a Matrix<F> {
+    type Item = &'a F::Element;
+    type IntoIter = std::slice::Iter<'a, F::Element>;
+
+    /// Create a row-major iterator over the matrix.
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.iter()
+    }
+}
+
 /// Errors that can occur when performing matrix operations.
 #[derive(Debug)]
 pub enum MatrixError<F: Ring> {
     Underdetermined {
-        min_rank: u32,
-        max_rank: u32,
-        row_reduced_matrix: Option<Matrix<F>>,
+        rank: u32,
+        row_reduced_augmented_matrix: Matrix<F>,
     },
     Inconsistent,
     NotSquare,
@@ -961,19 +999,15 @@ impl<F: Ring> std::fmt::Display for MatrixError<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MatrixError::Underdetermined {
-                min_rank,
-                max_rank,
-                row_reduced_matrix,
+                rank,
+                row_reduced_augmented_matrix,
             } => {
-                write!(
+                writeln!(f, "The system is underdetermined with rank {}", rank)?;
+                writeln!(
                     f,
-                    "The system is underdetermined. The rank of the matrix is between {} and {}",
-                    min_rank, max_rank
-                )?;
-                if let Some(m) = row_reduced_matrix {
-                    write!(f, "\nRow reduced matrix:\n{}", m)?;
-                }
-                Ok(())
+                    "\nRow reduced augmented matrix:\n{}",
+                    row_reduced_augmented_matrix
+                )
             }
             MatrixError::Inconsistent => write!(f, "The system is inconsistent"),
             MatrixError::NotSquare => write!(f, "The matrix is not square"),
@@ -1118,7 +1152,7 @@ impl<F: Field> Matrix<F> {
             m[(r, self.nrows + r)] = self.field.one();
         }
 
-        let rank = m.row_reduce();
+        let rank = m.row_reduce(m.ncols);
 
         if rank < self.nrows as usize {
             return Err(MatrixError::Singular);
@@ -1189,7 +1223,9 @@ impl<F: Field> Matrix<F> {
             Err(MatrixError::NotSquare)?;
         }
 
-        self.solve_subsystem(self.nrows)?;
+        if self.nrows != self.partial_row_reduce(self.nrows) {
+            return Ok(self.field.zero());
+        }
 
         let mut det = self.field.one();
         for x in 0..self.nrows {
@@ -1200,12 +1236,9 @@ impl<F: Field> Matrix<F> {
         Ok(det)
     }
 
-    /// Write the first `max_col` columns of the matrix in echelon form.
-    pub fn gaussian_elimination(
-        &mut self,
-        max_col: u32,
-        early_return: bool,
-    ) -> Result<u32, MatrixError<F>> {
+    /// Write the first `max_col` columns of the matrix in (non-reduced) echelon form.
+    /// Returns the matrix rank.
+    pub fn partial_row_reduce(&mut self, max_col: u32) -> u32 {
         let zero = self.field.zero();
 
         let mut i = 0;
@@ -1222,16 +1255,10 @@ impl<F: Field> Matrix<F> {
                         break;
                     }
                 }
+
+                // zero column found
                 if F::is_zero(&self[(i, j)]) {
-                    if early_return {
-                        return Err(MatrixError::Underdetermined {
-                            min_rank: i,
-                            max_rank: max_col - 1,
-                            row_reduced_matrix: None,
-                        });
-                    } else {
-                        continue;
-                    }
+                    continue;
                 }
             }
             let x = self[(i, j)].clone();
@@ -1254,7 +1281,7 @@ impl<F: Field> Matrix<F> {
             }
         }
 
-        Ok(i)
+        i
     }
 
     /// Create a row-reduced matrix from a matrix in echelon form.
@@ -1306,18 +1333,26 @@ impl<F: Field> Matrix<F> {
         Ok(m)
     }
 
-    /// Solves `A * x = 0` for the first `max_col` columns in `x`.
-    /// The other columns are augmented.
-    pub fn solve_subsystem(&mut self, max_col: u32) -> Result<u32, MatrixError<F>> {
-        if self.nrows < max_col {
-            return Err(MatrixError::Underdetermined {
-                min_rank: 0,
-                max_rank: self.nrows,
-                row_reduced_matrix: None,
-            });
+    /// Split the matrix into two matrices at the `index`-th column.
+    pub fn split_col(&self, index: u32) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>> {
+        if index == 0 || index >= self.ncols - 1 {
+            return Err(MatrixError::ShapeMismatch);
         }
 
-        self.gaussian_elimination(max_col, true)
+        let mut m1 = Matrix::new(self.nrows, index, self.field.clone());
+        let mut m2 = Matrix::new(self.nrows, self.ncols - index, self.field.clone());
+
+        // chunks could be 0!
+        for (r, (r1, r2)) in self.row_iter().zip(
+            m1.data
+                .chunks_mut(index as usize)
+                .zip(m2.data.chunks_mut(self.ncols as usize - index as usize)),
+        ) {
+            r1.clone_from_slice(&r[..index as usize]);
+            r2.clone_from_slice(&r[index as usize..]);
+        }
+
+        Ok((m1, m2))
     }
 
     /// Solve `A * x = b` for `x`, where `A` is `self`.
@@ -1331,29 +1366,9 @@ impl<F: Field> Matrix<F> {
 
         let (neqs, nvars) = (self.nrows, self.ncols);
 
-        if neqs < nvars {
-            return Err(MatrixError::Underdetermined {
-                min_rank: 0,
-                max_rank: neqs,
-                row_reduced_matrix: None,
-            });
-        }
-
         let mut m = self.augment(b)?;
 
-        let mut i = match m.solve_subsystem(nvars) {
-            Ok(i) => i,
-            Err(mut x) => {
-                if let MatrixError::Underdetermined {
-                    row_reduced_matrix, ..
-                } = &mut x
-                {
-                    *row_reduced_matrix = Some(m);
-                }
-                return Err(x);
-            }
-        };
-        let rank = i;
+        let rank = m.partial_row_reduce(nvars);
 
         for k in rank..neqs {
             if !F::is_zero(&m[(k, nvars)]) {
@@ -1361,33 +1376,13 @@ impl<F: Field> Matrix<F> {
             }
         }
 
+        m.back_substitution(nvars);
+
         if rank < nvars {
             return Err(MatrixError::Underdetermined {
-                min_rank: rank,
-                max_rank: rank,
-                row_reduced_matrix: Some(m),
+                rank,
+                row_reduced_augmented_matrix: m,
             });
-        }
-        assert_eq!(rank, nvars);
-
-        // back substitution
-        i -= 1;
-        for j in (0..nvars).rev() {
-            if !m.field.is_one(&m[(i, j)]) {
-                let inv_x = m.field.inv(&m[(i, j)]);
-                b.field.mul_assign(&mut m[(i, nvars)], &inv_x);
-            }
-            for k in 0..i {
-                if !F::is_zero(&m[(k, j)]) {
-                    let mut e = std::mem::replace(&mut m[(k, nvars)], self.field.zero());
-                    b.field.sub_mul_assign(&mut e, &m[(i, nvars)], &m[(k, j)]);
-                    m[(k, nvars)] = e;
-                }
-            }
-            if i == 0 {
-                break;
-            }
-            i -= 1;
         }
 
         let result = Matrix {
@@ -1400,18 +1395,43 @@ impl<F: Field> Matrix<F> {
         Ok(result)
     }
 
-    /// Row-reduce the matrix in-place using Gaussian elimination and return the rank.
-    pub fn row_reduce(&mut self) -> usize {
-        let rank = self.gaussian_elimination(self.ncols, false).unwrap() as usize;
-        self.back_substitution(self.ncols);
+    /// Solve `A * x = b` for `x`, where `A` is `self` and return any solution if the
+    /// system is underdetermined.
+    pub fn solve_any(&self, b: &Matrix<F>) -> Result<Matrix<F>, MatrixError<F>> {
+        match self.solve(b) {
+            Ok(x) => Ok(x),
+            Err(MatrixError::Underdetermined {
+                row_reduced_augmented_matrix,
+                ..
+            }) => {
+                let mut x = Matrix::new(self.ncols, 1, self.field.clone());
+                for r in row_reduced_augmented_matrix.row_iter() {
+                    for (i, e) in r.iter().enumerate().take(self.ncols as usize) {
+                        if !F::is_zero(e) {
+                            x.data[i] = r.last().unwrap().clone();
+                            break;
+                        }
+                    }
+                }
+
+                debug_assert_eq!(&(self * &x), b);
+
+                Ok(x)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Row-reduce the first `max_col` columns of the matrix in-place using Gaussian elimination and return the rank.
+    pub fn row_reduce(&mut self, max_col: u32) -> usize {
+        let rank = self.partial_row_reduce(max_col) as usize;
+        self.back_substitution(max_col);
         rank
     }
 
     /// Get the rank of the matrix.
     pub fn rank(&self) -> usize {
-        self.clone()
-            .gaussian_elimination(self.ncols, false)
-            .unwrap() as usize
+        self.clone().partial_row_reduce(self.ncols) as usize
     }
 }
 
@@ -1427,14 +1447,7 @@ mod test {
     #[test]
     fn basics() {
         let a = Matrix::from_linear(
-            vec![
-                1u64.into(),
-                2u64.into(),
-                3u64.into(),
-                4u64.into(),
-                5u64.into(),
-                6u64.into(),
-            ],
+            vec![1.into(), 2.into(), 3.into(), 4.into(), 5.into(), 6.into()],
             2,
             3,
             Z,
@@ -1451,9 +1464,9 @@ mod test {
 
         let b = Matrix::from_nested_vec(
             vec![
-                vec![7u64.into(), 8u64.into()],
-                vec![9u64.into(), 10u64.into()],
-                vec![11u64.into(), 12u64.into()],
+                vec![7.into(), 8.into()],
+                vec![9.into(), 10.into()],
+                vec![11.into(), 12.into()],
             ],
             Z,
         )
@@ -1478,15 +1491,15 @@ mod test {
     fn solve() {
         let a = Matrix::from_linear(
             vec![
-                1u64.into(),
-                2u64.into(),
-                3u64.into(),
-                4u64.into(),
-                5u64.into(),
-                16u64.into(),
-                7u64.into(),
-                8u64.into(),
-                9u64.into(),
+                1.into(),
+                2.into(),
+                3.into(),
+                4.into(),
+                5.into(),
+                16.into(),
+                7.into(),
+                8.into(),
+                9.into(),
             ],
             3,
             3,
@@ -1510,25 +1523,38 @@ mod test {
         );
         assert_eq!(a.det().unwrap(), 60.into());
 
-        let b = Matrix::from_linear(vec![1u64.into(), 2u64.into(), 3u64.into()], 3, 1, Q).unwrap();
+        let b = Matrix::from_linear(vec![1.into(), 2.into(), 3.into()], 3, 1, Q).unwrap();
 
         let r = a.solve(&b).unwrap();
         assert_eq!(r.data, vec![(-1, 3).into(), (2, 3).into(), 0.into()]);
     }
 
     #[test]
+    fn solve_any() {
+        let m = vec![
+            vec![1.into(), 1.into(), 1.into()],
+            vec![1.into(), 1.into(), 2.into()],
+        ];
+        let rhs = Matrix::new_vec(vec![3.into(), 2.into()], Q);
+
+        let mat = Matrix::from_nested_vec(m, Q).unwrap();
+        let r = mat.solve_any(&rhs).unwrap();
+        assert_eq!(r.data, vec![4.into(), 0.into(), (-1).into()]);
+    }
+
+    #[test]
     fn row_reduce() {
         let mut a = Matrix::from_linear(
             vec![
-                1u64.into(),
-                2u64.into(),
-                3u64.into(),
-                4u64.into(),
-                5u64.into(),
-                6u64.into(),
-                7u64.into(),
-                8u64.into(),
-                9u64.into(),
+                1.into(),
+                2.into(),
+                3.into(),
+                4.into(),
+                5.into(),
+                6.into(),
+                7.into(),
+                8.into(),
+                9.into(),
             ],
             3,
             3,
@@ -1536,7 +1562,7 @@ mod test {
         )
         .unwrap();
 
-        assert_eq!(a.row_reduce(), 2);
+        assert_eq!(a.row_reduce(a.ncols() as u32), 2);
 
         assert_eq!(
             a.data,
@@ -1557,9 +1583,9 @@ mod test {
     #[test]
     fn orthogonalize() {
         let a = vec![
-            Vector::new(vec![1u64.into(), 2u64.into(), 3u64.into()], Q),
-            Vector::new(vec![4u64.into(), 5u64.into(), 6u64.into()], Q),
-            Vector::new(vec![7u64.into(), 8u64.into(), 9u64.into()], Q),
+            Vector::new(vec![1.into(), 2.into(), 3.into()], Q),
+            Vector::new(vec![4.into(), 5.into(), 6.into()], Q),
+            Vector::new(vec![7.into(), 8.into(), 9.into()], Q),
         ];
 
         let res = Vector::orthogonalize(&a);
@@ -1574,28 +1600,23 @@ mod test {
 
     #[test]
     fn inverse() {
-        let a = Matrix::from_linear(
-            vec![3u64.into(), 2u64.into(), 15u64.into(), 4u64.into()],
-            2,
-            2,
-            Q,
-        )
-        .unwrap();
+        let a =
+            Matrix::from_linear(vec![3.into(), 2.into(), 15.into(), 4.into()], 2, 2, Q).unwrap();
 
         let inv = a.inv().unwrap();
         assert_eq!(&a * &inv, Matrix::identity(2, Q));
 
         let a = Matrix::from_linear(
             vec![
-                3u64.into(),
-                2u64.into(),
-                15u64.into(),
-                4u64.into(),
-                9u64.into(),
-                6u64.into(),
-                7u64.into(),
-                8u64.into(),
-                17u64.into(),
+                3.into(),
+                2.into(),
+                15.into(),
+                4.into(),
+                9.into(),
+                6.into(),
+                7.into(),
+                8.into(),
+                17.into(),
             ],
             3,
             3,
@@ -1608,22 +1629,22 @@ mod test {
 
         let a = Matrix::from_linear(
             vec![
-                3u64.into(),
-                2u64.into(),
-                15u64.into(),
-                4u64.into(),
-                9u64.into(),
-                6u64.into(),
-                7u64.into(),
-                8u64.into(),
-                17u64.into(),
-                45u64.into(),
-                23u64.into(),
-                12u64.into(),
-                13u64.into(),
-                14u64.into(),
-                15u64.into(),
-                16u64.into(),
+                3.into(),
+                2.into(),
+                15.into(),
+                4.into(),
+                9.into(),
+                6.into(),
+                7.into(),
+                8.into(),
+                17.into(),
+                45.into(),
+                23.into(),
+                12.into(),
+                13.into(),
+                14.into(),
+                15.into(),
+                16.into(),
             ],
             4,
             4,
@@ -1673,5 +1694,25 @@ mod test {
                 Atom::new_num(1)
             ]
         );
+    }
+
+    #[test]
+    fn split_augment() {
+        let a = Matrix::from_linear(
+            vec![1.into(), 1.into(), 1.into(), 1.into(), 1.into(), 2.into()],
+            2,
+            3,
+            Q,
+        )
+        .unwrap();
+
+        let b = Matrix::from_linear(vec![5.into(), 6.into(), 7.into(), 8.into()], 2, 2, Q).unwrap();
+
+        let c = a.augment(&b).unwrap();
+
+        let (d, e) = c.split_col(3).unwrap();
+
+        assert_eq!(a, d);
+        assert_eq!(b, e);
     }
 }

@@ -978,17 +978,20 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                             solved_coeff = Some(r);
                         }
                         Err(MatrixError::Underdetermined {
-                            row_reduced_matrix, ..
+                            row_reduced_augmented_matrix,
+                            ..
                         }) => {
                             // extract relations between the variables in the scaling term from the row reduced augmented matrix
-                            let mat = row_reduced_matrix.expect("Row reduced matrix missing");
 
                             debug!(
                                 "Underdetermined system {} and {} term; row reduction={}, rhs={}",
-                                shape[shape_map[0]].0, shape[shape_map[second_index]].0, mat, rhs
+                                shape[shape_map[0]].0,
+                                shape[shape_map[second_index]].0,
+                                row_reduced_augmented_matrix,
+                                rhs
                             );
 
-                            for x in mat.row_iter() {
+                            for x in row_reduced_augmented_matrix.row_iter() {
                                 if x[..vars_second].iter().all(F::is_zero)
                                     && x.iter().any(|y| !F::is_zero(y))
                                 {
@@ -1007,7 +1010,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                             bounds,
                             vars,
                             main_var,
-                            mat,
+                            row_reduced_augmented_matrix,
                             rhs);
                                 for s in shape {
                                     debug!("\t({}, {})", s.0, s.1);

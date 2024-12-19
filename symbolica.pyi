@@ -3514,6 +3514,23 @@ class Matrix:
     def solve(self, b: Matrix) -> Matrix:
         """Solve `A * x = b` for `x`, where `A` is the current matrix."""
 
+    def solve_any(self, b: Matrix) -> Matrix:
+        """Solve `A * x = b` for `x`, where `A` is the current matrix and return any solution if the
+        system is underdetermined.
+        """
+
+    def row_reduce(self, max_col: int) -> int:
+        """Row-reduce the first `max_col` columns of the matrix in-place using Gaussian elimination and return the rank."""
+
+    def augment(self, b: Matrix) -> Matrix:
+        """Augment the matrix with another matrix, e.g. create `[A B]` from matrix `A` and `B`.
+
+        Returns an error when the matrices do not have the same number of rows.
+        """
+
+    def split_col(self, col: int) -> Tuple[Matrix, Matrix]:
+        """Split the matrix into two matrices at column `col`."""
+
     def content(self) -> RationalPolynomial:
         """Get the content, i.e., the GCD of the coefficients."""
 
@@ -3522,6 +3539,21 @@ class Matrix:
 
     def map(self, f: Callable[[RationalPolynomial], RationalPolynomial]) -> Matrix:
         """Apply a function `f` to every entry of the matrix."""
+
+    def format(
+        self,
+        pretty_matrix=True,
+        number_thousands_separator: Optional[str] = None,
+        multiplication_operator: str = "*",
+        double_star_for_exponentiation: bool = False,
+        square_brackets_for_function: bool = False,
+        num_exp_as_superscript: bool = True,
+        latex: bool = False,
+        precision: Optional[int] = None,
+    ) -> str:
+        """
+        Convert the matrix into a human-readable string, with tunable settings.
+        """
 
     def to_latex(self) -> str:
         """Convert the matrix into a LaTeX string."""

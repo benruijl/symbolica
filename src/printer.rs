@@ -24,6 +24,7 @@ pub struct PrintOptions {
     pub num_exp_as_superscript: bool,
     pub latex: bool,
     pub precision: Option<usize>,
+    pub pretty_matrix: bool,
 }
 
 impl PrintOptions {
@@ -43,6 +44,7 @@ impl PrintOptions {
             num_exp_as_superscript: false,
             latex: false,
             precision: None,
+            pretty_matrix: false,
         }
     }
 
@@ -62,6 +64,7 @@ impl PrintOptions {
             num_exp_as_superscript: false,
             latex: true,
             precision: None,
+            pretty_matrix: false,
         }
     }
 
@@ -81,6 +84,7 @@ impl PrintOptions {
             num_exp_as_superscript: false,
             latex: false,
             precision: None,
+            pretty_matrix: false,
         }
     }
 
@@ -121,6 +125,7 @@ impl Default for PrintOptions {
             num_exp_as_superscript: false,
             latex: false,
             precision: None,
+            pretty_matrix: false,
         }
     }
 }

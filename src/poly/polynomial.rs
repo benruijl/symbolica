@@ -1353,6 +1353,42 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
 }
 
 impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
+/// Remove all non-occurring variables from the polynomial.
+    pub fn condense(&mut self) {
+        if self.nvars() == 0 {
+            return;
+        }
+
+        let degrees: Vec<_> = (0..self.nvars())
+            .filter(|i| self.degree(*i) > E::zero())
+            .collect();
+
+        let mut new_exponents = vec![E::zero(); self.nterms() * degrees.len()];
+
+        if degrees.is_empty() {
+            self.exponents = new_exponents;
+            self.variables = Arc::new(vec![]);
+            return;
+        }
+
+        for (d, e) in new_exponents
+            .chunks_mut(degrees.len())
+            .zip(self.exponents_iter())
+        {
+            for (dr, s) in d.iter_mut().zip(&degrees) {
+                *dr = e[*s];
+            }
+        }
+
+        self.exponents = new_exponents;
+        self.variables = Arc::new(
+            degrees
+                .into_iter()
+                .map(|x| self.variables[x].clone())
+                .collect(),
+        );
+    }
+
     /// Take the derivative of the polynomial w.r.t the variable `var`.
     pub fn derivative(&self, var: usize) -> Self {
         debug_assert!(var < self.nvars());
@@ -2679,7 +2715,7 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
             let mut c1 = self.clone();
             let mut c2 = div.clone();
             c1.unify_variables(&mut c2);
-            return self.divides(&c2);
+            return c1.divides(&c2);
         }
 
         if self.is_zero() {

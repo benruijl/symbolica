@@ -1,11 +1,14 @@
-use ahash::HashMap;
+use ahash::{HashMap, HashSet};
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
     hash::Hash,
 };
 
-use crate::domains::integer::Integer;
+use crate::{
+    combinatorics::{unique_permutations, CombinationIterator},
+    domains::integer::Integer,
+};
 
 /// A node in a graph, with arbitrary data.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -478,6 +481,7 @@ impl<N, E: Eq + Ord + Hash> Graph<N, E> {
 
 struct GenerationSettings<'a, E> {
     vertex_signatures: &'a [Vec<(Option<bool>, E)>],
+    allowed_structures: &'a HashSet<Vec<(Option<bool>, E)>>,
     max_vertices: Option<usize>,
     max_loops: Option<usize>,
     max_bridges: Option<usize>,
@@ -516,17 +520,37 @@ impl<
             })
             .collect();
 
+        let mut edge_signatures = vec![];
         let mut g = Self::new();
         for (n, _) in external_edges {
+            edge_signatures.push(vec![]);
             g.add_node(n.clone());
         }
 
         if external_edges.len() == 0 {
+            edge_signatures.push(vec![]);
             g.add_node(N::default());
+        }
+
+        let mut allowed_structures = HashSet::default();
+        for e in &vertex_sorted {
+            for k in 0..=e.len() {
+                let mut it = CombinationIterator::new(e.len(), k);
+                while let Some(c) = it.next() {
+                    for p in unique_permutations(c).1 {
+                        allowed_structures.insert(
+                            p.iter()
+                                .map(|&x| (e[x].0, e[x].1.clone()))
+                                .collect::<Vec<_>>(),
+                        );
+                    }
+                }
+            }
         }
 
         let settings = GenerationSettings {
             vertex_signatures: &vertex_sorted,
+            allowed_structures: &allowed_structures,
             max_vertices,
             max_loops,
             max_bridges,
@@ -536,7 +560,7 @@ impl<
         };
 
         let mut out = HashMap::default();
-        g.generate_impl(external_edges, 0, &settings, &mut out);
+        g.generate_impl(external_edges, 0, &settings, &mut edge_signatures, &mut out);
         out
     }
 
@@ -545,6 +569,7 @@ impl<
         external_edges: &[(N, (Option<bool>, E))],
         cur_vertex: usize,
         settings: &GenerationSettings<E>,
+        edge_signatures: &mut Vec<Vec<(Option<bool>, E)>>,
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) {
         if let Some(max_vertices) = settings.max_vertices {
@@ -610,6 +635,7 @@ impl<
                 self.distribute_edges(
                     cur_vertex,
                     external_edges.len(), // do not allow connections to other external edges
+                    edge_signatures,
                     external_edges,
                     &mut edges_left,
                     0,
@@ -617,7 +643,13 @@ impl<
                     out,
                 );
             } else if n == 1 {
-                self.generate_impl(external_edges, cur_vertex + 1, settings, out);
+                self.generate_impl(
+                    external_edges,
+                    cur_vertex + 1,
+                    settings,
+                    edge_signatures,
+                    out,
+                );
             }
 
             return;
@@ -648,7 +680,13 @@ impl<
             }
 
             if *d == cur_edges {
-                self.generate_impl(external_edges, cur_vertex + 1, settings, out);
+                self.generate_impl(
+                    external_edges,
+                    cur_vertex + 1,
+                    settings,
+                    edge_signatures,
+                    out,
+                );
                 continue;
             }
 
@@ -683,6 +721,7 @@ impl<
             self.distribute_edges(
                 cur_vertex,
                 cur_vertex,
+                edge_signatures,
                 external_edges,
                 &mut edges_left,
                 0,
@@ -692,28 +731,31 @@ impl<
         }
     }
 
-    fn distribute_edges(
+    fn distribute_edges<'a>(
         &mut self,
         source: usize,
         cur_target: usize,
+        edge_signatures: &mut Vec<Vec<(Option<bool>, E)>>,
         external_edges: &[(N, (Option<bool>, E))],
         edge_count: &mut [((Option<bool>, E), usize)],
         cur_edge_count_group_index: usize,
-        settings: &GenerationSettings<E>,
+        settings: &'a GenerationSettings<E>,
         out: &mut HashMap<Graph<N, E>, Integer>,
     ) {
         if edge_count.iter().all(|x| x.1 == 0) {
-            return self.generate_impl(external_edges, source + 1, settings, out);
+            return self.generate_impl(external_edges, source + 1, settings, edge_signatures, out);
         }
 
         let mut grown = false;
         if cur_target == self.nodes.len() {
             grown = true;
+            edge_signatures.push(vec![]);
             self.add_node(N::default());
         } else {
             self.distribute_edges(
                 source,
                 cur_target + 1,
+                edge_signatures,
                 external_edges,
                 edge_count,
                 0,
@@ -751,6 +793,7 @@ impl<
                             self.distribute_edges(
                                 source,
                                 source,
+                                edge_signatures,
                                 external_edges,
                                 edge_count,
                                 p1,
@@ -777,6 +820,7 @@ impl<
                     self.distribute_edges(
                         source,
                         source,
+                        edge_signatures,
                         external_edges,
                         edge_count,
                         p1,
@@ -793,7 +837,6 @@ impl<
             return;
         }
 
-        // TODO: do more extensive compatibility checks
         let max_degree = if cur_target < external_edges.len() {
             1
         } else {
@@ -815,6 +858,21 @@ impl<
                 continue;
             }
 
+            // check if the target edge signature is allowed
+            if let Some(dir) = e.0 {
+                edge_signatures[cur_target].push((Some(!dir), e.1.clone()));
+            } else {
+                edge_signatures[cur_target].push((None, e.1.clone()));
+            }
+
+            if !settings
+                .allowed_structures
+                .contains(&edge_signatures[cur_target])
+            {
+                edge_signatures[cur_target].pop();
+                continue;
+            }
+
             *count -= 1;
 
             if let Some(dir) = e.0 {
@@ -833,6 +891,7 @@ impl<
             self.distribute_edges(
                 source,
                 cur_target,
+                edge_signatures,
                 external_edges,
                 edge_count,
                 p,
@@ -840,12 +899,14 @@ impl<
                 out,
             );
 
+            edge_signatures[cur_target].pop();
             self.delete_last_edge(); // TODO: cache edge data
 
             edge_count[p].1 += 1;
         }
 
         if grown {
+            edge_signatures.pop();
             self.delete_last_empty_node().unwrap();
         }
     }

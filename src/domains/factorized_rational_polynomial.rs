@@ -1,3 +1,5 @@
+//! Rational polynomial field with factorized denominator.
+
 use std::{
     borrow::Cow,
     cmp::Ordering,
@@ -22,6 +24,7 @@ use super::{
     EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
+/// A rational polynomial field with a factorized denominator.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FactorizedRationalPolynomialField<R: Ring, E: PositiveExponent> {
     ring: R,
@@ -63,6 +66,7 @@ pub trait FromNumeratorAndFactorizedDenominator<R: Ring, OR: Ring, E: PositiveEx
     ) -> FactorizedRationalPolynomial<OR, E>;
 }
 
+/// A rational polynomial with a factorized denominator.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct FactorizedRationalPolynomial<R: Ring, E: PositiveExponent> {
     pub numerator: MultivariatePolynomial<R, E>,

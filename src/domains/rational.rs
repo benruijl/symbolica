@@ -1,3 +1,5 @@
+//! Fraction fields and rational numbers.
+
 use std::{
     borrow::Cow,
     fmt::{Display, Error, Formatter},
@@ -119,7 +121,7 @@ pub struct Fraction<R: Ring> {
 }
 
 impl<R: Ring> Fraction<R> {
-        pub fn numerator(&self) -> R::Element {
+    pub fn numerator(&self) -> R::Element {
         self.numerator.clone()
     }
 

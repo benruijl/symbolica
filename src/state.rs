@@ -1,3 +1,5 @@
+//! Manage global state and thread-local workspaces.
+
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::hash::Hash;
 use std::io::{Read, Write};
@@ -26,15 +28,18 @@ use crate::{
     LicenseManager,
 };
 
-pub const SYMBOLICA_MAGIC: u32 = 0x37871367;
-pub const EXPORT_FORMAT_VERSION: u16 = 1;
+pub(crate) const SYMBOLICA_MAGIC: u32 = 0x37871367;
+pub(crate) const EXPORT_FORMAT_VERSION: u16 = 1;
 
+/// An id for a given finite field in a registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FiniteFieldIndex(pub(crate) usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VariableListIndex(pub(crate) usize);
+pub(crate) struct VariableListIndex(pub(crate) usize);
 
+/// A mapping from one state to the other. Used during importing
+/// for merging a state on file with the current state.
 pub struct StateMap {
     pub(crate) symbols: HashMap<u32, Symbol>,
     pub(crate) finite_fields: HashMap<FiniteFieldIndex, FiniteFieldIndex>,
@@ -75,19 +80,20 @@ impl Default for State {
 }
 
 impl State {
-    pub(crate) const ARG: Symbol = Symbol::init_fn(0, 0, false, false, false, false);
-    pub(crate) const COEFF: Symbol = Symbol::init_fn(1, 0, false, false, false, false);
-    pub(crate) const EXP: Symbol = Symbol::init_fn(2, 0, false, false, false, false);
-    pub(crate) const LOG: Symbol = Symbol::init_fn(3, 0, false, false, false, false);
-    pub(crate) const SIN: Symbol = Symbol::init_fn(4, 0, false, false, false, false);
-    pub(crate) const COS: Symbol = Symbol::init_fn(5, 0, false, false, false, false);
-    pub(crate) const SQRT: Symbol = Symbol::init_fn(6, 0, false, false, false, false);
-    pub(crate) const DERIVATIVE: Symbol = Symbol::init_fn(7, 0, false, false, false, false);
-    pub(crate) const E: Symbol = Symbol::init_var(8, 0);
-    pub(crate) const I: Symbol = Symbol::init_var(9, 0);
-    pub(crate) const PI: Symbol = Symbol::init_var(10, 0);
+    pub(crate) const ARG: Symbol = Symbol::raw_fn(0, 0, false, false, false, false);
+    pub(crate) const COEFF: Symbol = Symbol::raw_fn(1, 0, false, false, false, false);
+    pub(crate) const EXP: Symbol = Symbol::raw_fn(2, 0, false, false, false, false);
+    pub(crate) const LOG: Symbol = Symbol::raw_fn(3, 0, false, false, false, false);
+    pub(crate) const SIN: Symbol = Symbol::raw_fn(4, 0, false, false, false, false);
+    pub(crate) const COS: Symbol = Symbol::raw_fn(5, 0, false, false, false, false);
+    pub(crate) const SQRT: Symbol = Symbol::raw_fn(6, 0, false, false, false, false);
+    pub(crate) const DERIVATIVE: Symbol = Symbol::raw_fn(7, 0, false, false, false, false);
+    pub(crate) const E: Symbol = Symbol::raw_var(8, 0);
+    pub(crate) const I: Symbol = Symbol::raw_var(9, 0);
+    pub(crate) const PI: Symbol = Symbol::raw_var(10, 0);
 
-    pub const BUILTIN_VAR_LIST: [&'static str; 11] = [
+    /// The list of built-in symbols.
+    pub const BUILTIN_SYMBOL_NAMES: [&'static str; 11] = [
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
 
@@ -98,7 +104,7 @@ impl State {
             str_to_id: HashMap::new(),
         };
 
-        for x in Self::BUILTIN_VAR_LIST {
+        for x in Self::BUILTIN_SYMBOL_NAMES {
             state.get_symbol_impl(x);
         }
 
@@ -176,7 +182,7 @@ impl State {
         state.str_to_id.clear();
         SYMBOL_OFFSET.store(ID_TO_STR.len(), Ordering::Relaxed);
 
-        for x in Self::BUILTIN_VAR_LIST {
+        for x in Self::BUILTIN_SYMBOL_NAMES {
             state.get_symbol_impl(x);
         }
 
@@ -208,8 +214,8 @@ impl State {
     }
 
     /// Returns `true` iff this identifier is defined by Symbolica.
-    pub fn is_builtin(id: Symbol) -> bool {
-        id.get_id() < Self::BUILTIN_VAR_LIST.len() as u32
+    pub(crate) fn is_builtin(id: Symbol) -> bool {
+        id.get_id() < Self::BUILTIN_SYMBOL_NAMES.len() as u32
     }
 
     /// Get the symbol for a certain name if the name is already registered,
@@ -240,7 +246,7 @@ impl State {
                 // there is no synchronization issue since only one thread can insert at a time
                 // as the state itself is behind a mutex
                 let id = ID_TO_STR.len() - offset;
-                let new_symbol = Symbol::init_var(id as u32, wildcard_level);
+                let new_symbol = Symbol::raw_var(id as u32, wildcard_level);
                 let id_ret = ID_TO_STR.push((
                     new_symbol,
                     SymbolData {
@@ -280,7 +286,7 @@ impl State {
             Entry::Occupied(o) => {
                 let r = *o.get();
 
-                let new_id = Symbol::init_fn(
+                let new_id = Symbol::raw_fn(
                     r.get_id(),
                     r.get_wildcard_level(),
                     attributes.contains(&FunctionAttribute::Symmetric),
@@ -313,7 +319,7 @@ impl State {
                     wildcard_level += 1;
                 }
 
-                let new_symbol = Symbol::init_fn(
+                let new_symbol = Symbol::raw_fn(
                     id as u32,
                     wildcard_level,
                     attributes.contains(&FunctionAttribute::Symmetric),
@@ -381,7 +387,7 @@ impl State {
                 wildcard_level += 1;
             }
 
-            let new_symbol = Symbol::init_fn(
+            let new_symbol = Symbol::raw_fn(
                 id as u32,
                 wildcard_level,
                 attributes.contains(&FunctionAttribute::Symmetric),
@@ -419,7 +425,7 @@ impl State {
 
     /// Get the user-specified normalization function for the symbol.
     #[inline]
-    pub fn get_normalization_function(id: Symbol) -> Option<&'static NormalizationFunction> {
+    pub(crate) fn get_normalization_function(id: Symbol) -> Option<&'static NormalizationFunction> {
         if ID_TO_STR.len() == 0 {
             let _ = *STATE; // initialize the state
         }
@@ -430,11 +436,11 @@ impl State {
             .as_ref()
     }
 
-    pub fn get_finite_field(fi: FiniteFieldIndex) -> &'static Zp64 {
+    pub(crate) fn get_finite_field(fi: FiniteFieldIndex) -> &'static Zp64 {
         &FINITE_FIELDS[fi.0]
     }
 
-    pub fn get_or_insert_finite_field(f: Zp64) -> FiniteFieldIndex {
+    pub(crate) fn get_or_insert_finite_field(f: Zp64) -> FiniteFieldIndex {
         STATE.write().unwrap().get_or_insert_finite_field_impl(f)
     }
 
@@ -449,11 +455,11 @@ impl State {
         FiniteFieldIndex(index)
     }
 
-    pub fn get_variable_list(fi: VariableListIndex) -> Arc<Vec<Variable>> {
+    pub(crate) fn get_variable_list(fi: VariableListIndex) -> Arc<Vec<Variable>> {
         VARIABLE_LISTS[fi.0].clone()
     }
 
-    pub fn get_or_insert_variable_list(f: Arc<Vec<Variable>>) -> VariableListIndex {
+    pub(crate) fn get_or_insert_variable_list(f: Arc<Vec<Variable>>) -> VariableListIndex {
         STATE.write().unwrap().get_or_insert_variable_list_impl(f)
     }
 
@@ -757,6 +763,8 @@ impl Workspace {
     }
 }
 
+/// A wrapper around [Atom] that stores the underlying buffer
+/// in a thread-local storage cache when dropped.
 #[derive(PartialEq, Eq, Debug, Hash, Clone)]
 pub struct RecycledAtom(Atom);
 

@@ -1,3 +1,6 @@
+//! Factorization methods for multivariate polynomials
+//! that implement [Factorize].
+
 use std::cmp::Reverse;
 
 use ahash::HashMap;
@@ -12,16 +15,16 @@ use crate::{
             FiniteField, FiniteFieldCore, FiniteFieldWorkspace, GaloisField, PrimeIteratorU64,
             ToFiniteField, Zp, Zp64,
         },
-        integer::{Integer, IntegerRing, Z},
+        integer::{gcd_unsigned, Integer, IntegerRing, Z},
         rational::{RationalField, Q},
         EuclideanDomain, Field, InternalOrdering, Ring,
     },
     poly::gcd::LARGE_U32_PRIMES,
-    utils,
 };
 
 use super::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, LexOrder, PositiveExponent};
 
+/// A polynomial that can be factorized.
 pub trait Factorize: Sized {
     /// Perform a square-free factorization.
     /// The output is `a_1^e1*...*a_n^e_n`
@@ -177,7 +180,7 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
             2 => {
                 let x_deg = hull[0].0.abs_diff(hull[1].0);
                 let y_deg = hull[0].1.abs_diff(hull[1].1);
-                utils::gcd_unsigned(x_deg as u64, y_deg as u64) == 1
+                gcd_unsigned(x_deg as u64, y_deg as u64) == 1
             }
             3 => {
                 // the hull has the form (n, 0), (0, m), (u, v)
@@ -197,8 +200,8 @@ impl<F: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
                     && m != -1
                     && u != -1
                     && v != -1
-                    && utils::gcd_unsigned(
-                        utils::gcd_unsigned(utils::gcd_unsigned(n as u64, m as u64), u as u64),
+                    && gcd_unsigned(
+                        gcd_unsigned(gcd_unsigned(n as u64, m as u64), u as u64),
                         v as u64,
                     ) == 1
             }

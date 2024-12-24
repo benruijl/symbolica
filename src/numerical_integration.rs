@@ -1,3 +1,44 @@
+//! Methods for numerical integration of black-box functions.
+//!
+//! A standard approach is to construct a [Grid] that will approximate the function
+//! and then sample the grid to evaluate the function at different points. The grid
+//! will adapt to the function based on the samples added.
+//!
+//! To use multichanneling methods, a [DiscreteGrid] can be used, which contains multiple
+//! [Grid]s that approximate different channels.
+//!
+//! # Examples
+//!
+//! ```
+//! use symbolica::numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample};
+//!
+//! let f = |x: &[f64]| (x[0] * std::f64::consts::PI).sin() + x[1];
+//!
+//! let mut grid = Grid::Continuous(ContinuousGrid::new(2, 128, 100, None, false));
+//!
+//! let mut rng = MonteCarloRng::new(0, 0);
+//!
+//! let mut sample = Sample::new();
+//! for iteration in 1..20 {
+//!      // sample 10_000 times per iteration
+//!      for _ in 0..10_000 {
+//!          grid.sample(&mut rng, &mut sample);
+//!     
+//!          if let Sample::Continuous(_cont_weight, xs) = &sample {
+//!              grid.add_training_sample(&sample, f(xs)).unwrap();
+//!          }
+//!      }
+//!     
+//!      grid.update(1.5, 1.5);
+//!     
+//!      println!(
+//!          "Integral at iteration {}: {}",
+//!          iteration,
+//!          grid.get_statistics().format_uncertainty()
+//!      );
+//! }
+//! ```
+
 use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use serde::{Deserialize, Serialize};
@@ -395,6 +436,38 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Sample<T
 /// An adapting grid that captures the enhancements of an integrand.
 /// It supports discrete and continuous dimensions. The discrete dimensions
 /// can have a nested grid.
+///
+/// # Examples
+///
+///  ```
+/// use symbolica::numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample};
+///
+/// let f = |x: &[f64]| (x[0] * std::f64::consts::PI).sin() + x[1];
+///
+/// let mut grid = Grid::Continuous(ContinuousGrid::new(2, 128, 100, None, false));
+///
+/// let mut rng = MonteCarloRng::new(0, 0);
+///
+/// let mut sample = Sample::new();
+/// for iteration in 1..20 {
+///      // sample 10_000 times per iteration
+///      for _ in 0..10_000 {
+///          grid.sample(&mut rng, &mut sample);
+///     
+///          if let Sample::Continuous(_cont_weight, xs) = &sample {
+///              grid.add_training_sample(&sample, f(xs)).unwrap();
+///          }
+///      }
+///     
+///      grid.update(1.5, 1.5);
+///     
+///      println!(
+///          "Integral at iteration {}: {}",
+///          iteration,
+///          grid.get_statistics().format_uncertainty()
+///      );
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Grid<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
     Continuous(ContinuousGrid<T>),
@@ -851,6 +924,7 @@ impl<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> Continuo
     }
 }
 
+/// A dimension in a continuous grid that contains a partitioning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContinuousDimension<T: Real + ConstructibleFloat + Copy + RealNumberLike + PartialOrd> {
     pub partitioning: Vec<T>,

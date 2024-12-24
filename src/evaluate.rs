@@ -1,3 +1,7 @@
+//! Evaluation of expressions.
+//!
+//! The main entry point is through [AtomCore::evaluator].
+
 use std::{
     hash::{Hash, Hasher},
     os::raw::c_ulong,
@@ -4182,7 +4186,11 @@ impl<'a> AtomView<'a> {
                     .unwrap();
 
                 let res = r.get_num().to_f64();
-                if res.is_finite()
+
+                // trust the error when the relative error is less than 20%
+                if res != 0.
+                    && res.is_finite()
+                    && r.get_absolute_error() / res.abs() < 0.2
                     && (res - r.get_absolute_error() > 0. || res + r.get_absolute_error() < 0.)
                 {
                     return ConditionResult::False;

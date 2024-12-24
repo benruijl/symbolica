@@ -1,3 +1,6 @@
+//! Efficient evaluation of polynomials.
+//!
+//! Prefer using [AtomCore::evaluator].
 use std::{
     cmp::Reverse,
     hash::{Hash, Hasher},

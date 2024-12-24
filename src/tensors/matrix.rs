@@ -1,3 +1,23 @@
+//! Linear algebra methods using matrices and vectors.
+//!
+//! # Examples
+//!
+//! Solve an underdetermined linear system:
+//!
+//! ```
+//! use symbolica::domains::rational::Q;
+//! use symbolica::tensors::matrix::Matrix;
+//! let m = vec![
+//!     vec![1.into(), 1.into(), 1.into()],
+//!     vec![1.into(), 1.into(), 2.into()],
+//! ];
+//! let rhs = Matrix::new_vec(vec![3.into(), 2.into()], Q);
+//!
+//! let mat = Matrix::from_nested_vec(m, Q).unwrap();
+//! let r = mat.solve_any(&rhs).unwrap();
+//! assert_eq!(r.into_vec(), [4.into(), 0.into(), (-1).into()]);
+//! ```
+
 use std::{
     fmt::Display,
     ops::{Add, AddAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
@@ -17,6 +37,19 @@ use crate::{
 };
 
 /// An n-dimensional vector.
+///
+/// # Examples
+///
+/// ```
+/// use symbolica::domains::rational::Q;
+/// use symbolica::tensors::matrix::Vector;
+/// let v1 = Vector::new(vec![(3,1).into(), (1,1).into()], Q);
+/// let v2 = Vector::new(vec![(2,1).into(), (2,1).into()], Q);
+/// let b = Vector::orthogonalize(&[v1, v2]);
+///
+/// let r = Vector::new(vec![(-2,5).into(), (6,5).into()], Q);
+/// assert_eq!(b[1], r);
+/// ```
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Vector<F: Ring> {
     pub(crate) data: Vec<F::Element>,
@@ -253,6 +286,7 @@ impl<F: Derivable> Vector<F> {
 }
 
 impl<F: Derivable> Matrix<F> {
+    /// Compute the derivative in the variable `x`.
     pub fn derivative(&self, x: &Variable) -> Matrix<F> {
         self.map(|e| self.field.derivative(e, x), self.field.clone())
     }
@@ -486,6 +520,16 @@ impl<F: Ring> Neg for Vector<F> {
 
 /// A matrix with entries that are elements of a ring `F`.
 /// A vector can be represented as a matrix with one row or one column.
+///
+/// # Examples
+///
+/// ```    
+/// use symbolica::domains::rational::Q;
+/// use symbolica::tensors::matrix::Matrix;    
+/// let a = Matrix::from_linear(vec![3.into(), 2.into(), 15.into(), 4.into()], 2, 2, Q).unwrap();
+/// let inv = a.inv().unwrap();
+/// assert_eq!(&a * &inv, Matrix::identity(2, Q));
+/// ```
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Matrix<F: Ring> {
     pub(crate) data: Vec<F::Element>,

@@ -1,3 +1,7 @@
+//! Defines transformations uses to manipulate expressions.
+//!
+//! Used primarily in the Python API.
+
 use std::{ops::ControlFlow, sync::Arc, time::Instant};
 
 use crate::{
@@ -17,6 +21,7 @@ use colored::Colorize;
 use dyn_clone::DynClone;
 use rayon::ThreadPool;
 
+/// A function that maps an atom(view) to another atom.
 pub trait Map:
     Fn(AtomView, &mut Atom) -> Result<(), TransformerError> + DynClone + Send + Sync
 {
@@ -27,6 +32,8 @@ impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> Result<(), Transfor
 {
 }
 
+/// Options for printing statistics of operations used in
+/// [Transformer::Stats].
 #[derive(Clone, Debug)]
 pub struct StatsOptions {
     pub tag: String,
@@ -100,13 +107,14 @@ impl StatsOptions {
     }
 }
 
+/// Errors that can occur during transformations.
 #[derive(Clone, Debug)]
 pub enum TransformerError {
     ValueError(String),
     Interrupt,
 }
 
-/// Operations that take a pattern as the input and produce an expression
+/// Operations that take an expression as the input and produce a new expression.
 #[derive(Clone)]
 pub enum Transformer {
     IfElse(Condition<Relation>, Vec<Transformer>, Vec<Transformer>),

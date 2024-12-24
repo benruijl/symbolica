@@ -1,3 +1,5 @@
+//! Univariate polynomials and their ring.
+
 use std::{
     cmp::Ordering,
     ops::{Add, Div, Mul, Neg, Sub},
@@ -20,6 +22,7 @@ use super::{
     PositiveExponent, Variable,
 };
 
+/// A univariate polynomial ring.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct UnivariatePolynomialRing<R: Ring> {
     ring: R,
@@ -313,6 +316,8 @@ impl<F: Ring> UnivariatePolynomial<F> {
             .clone()
     }
 
+    /// Get the degree of the polynomial.
+    /// A zero polynomial has degree 0.
     pub fn degree(&self) -> usize {
         if self.is_zero() {
             return 0; // TODO: return None?
@@ -342,6 +347,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
         x * &y
     }
 
+    /// Multiply by a variable to the power of `exp`.
     pub fn mul_exp(&self, exp: usize) -> Self {
         if exp == 0 {
             return self.clone();
@@ -357,6 +363,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
         a
     }
 
+    /// Divide by a variable to the power of `exp`.
     pub fn div_exp(&self, exp: usize) -> Self {
         if exp == 0 {
             return self.clone();
@@ -381,6 +388,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
         a
     }
 
+    /// Multiply by a coefficient `coeff`.
     pub fn mul_coeff(mut self, coeff: &F::Element) -> Self {
         for c in &mut self.coefficients {
             if !F::is_zero(c) {

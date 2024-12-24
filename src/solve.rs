@@ -158,7 +158,7 @@ impl<'a> AtomView<'a> {
 
             cur = ci.data;
 
-            if f.data.iter().all(|x| x < &prec) {
+            if f.data.iter().all(|x| x.norm() < prec) {
                 return Ok(cur);
             }
         }

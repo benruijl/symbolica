@@ -1,3 +1,5 @@
+//! Algebraic number fields, e.g. fields supporting sqrt(2).
+
 use std::sync::Arc;
 
 use rand::Rng;
@@ -22,6 +24,36 @@ use super::{
 };
 
 /// An algebraic number ring, with a monic, irreducible defining polynomial.
+///
+/// # Examples
+///
+/// ```
+/// use symbolica::{
+///     atom::{Atom, AtomCore},
+///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring},
+/// };
+///
+/// let extension = AlgebraicExtension::new(Atom::parse("x^2-2").unwrap().to_polynomial(&Q, None));
+/// let sqrt_2 = extension.to_element(Atom::parse("x").unwrap().to_polynomial::<_, u16>(&Q, None));
+///
+/// let square = extension.mul(&sqrt_2, &sqrt_2);
+/// assert_eq!(
+///      square,
+///      extension.to_element(Atom::parse("2").unwrap().to_polynomial(&Q, None))
+/// );
+///```
+///
+/// Galois field:
+///
+/// ```
+/// use symbolica::{
+///     atom::{Atom, AtomCore, Symbol},
+///     domains::{algebraic_number::AlgebraicExtension, finite_field::Zp, rational::Q, Ring},
+/// };
+///
+/// let field = AlgebraicExtension::galois_field(Zp::new(17), 4, Symbol::new("x0").into());
+/// ```
+///
 // TODO: make special case for degree two and three and hardcode the multiplication table
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct AlgebraicExtension<R: Ring> {
@@ -304,7 +336,12 @@ impl<R: Ring> AlgebraicExtension<R> {
         }
     }
 
-    pub fn to_element(&self, poly: MultivariatePolynomial<R, u16>) -> <Self as Ring>::Element {
+    pub fn to_element(&self, mut poly: MultivariatePolynomial<R, u16>) -> <Self as Ring>::Element {
+        if poly.nvars() == 0 {
+            poly.variables = self.poly.variables.clone();
+            poly.exponents = vec![0; poly.coefficients.len()];
+        }
+
         assert!(poly.nvars() == 1);
 
         if poly.degree(0) >= self.poly.degree(0) {
@@ -329,6 +366,25 @@ impl<R: Ring> std::fmt::Display for AlgebraicExtension<R> {
     }
 }
 
+/// A number in an algebraic number field.
+///
+/// # Examples
+///
+/// ```
+/// use symbolica::{
+///     atom::{Atom, AtomCore},
+///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring},
+/// };
+///
+/// let extension = AlgebraicExtension::new(Atom::parse("x^2-2").unwrap().to_polynomial(&Q, None));
+/// let sqrt_2 = extension.to_element(Atom::parse("x").unwrap().to_polynomial::<_, u16>(&Q, None));
+///
+/// let square = extension.mul(&sqrt_2, &sqrt_2);
+/// assert_eq!(
+///      square,
+///      extension.to_element(Atom::parse("2").unwrap().to_polynomial(&Q, None))
+/// );
+///```
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct AlgebraicNumber<R: Ring> {
     pub(crate) poly: MultivariatePolynomial<R, u16>,

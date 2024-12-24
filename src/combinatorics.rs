@@ -1,10 +1,71 @@
+//! Provides combinatorial utilities for generating combinations, permutations, and partitions of sets.
+//!
+//! # Examples
+//!
+//! Combinations without replacements:
+//!
+//! ```rust
+//! use symbolica::combinatorics::CombinationIterator;
+//!
+//! let mut c = CombinationIterator::new(4, 3);
+//! let mut combinations = vec![];
+//! while let Some(a) = c.next() {
+//!     combinations.push(a.to_vec());
+//! }
+//!
+//! let ans = vec![[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]];
+//!
+//! assert_eq!(combinations, ans);
+//! ```
+//!
+//! Partitions:
+//!
+//! ```rust
+//! use symbolica::combinatorics::partitions;
+//!
+//! let p = partitions(
+//!     &[1, 1, 1, 2, 2],
+//!     &[('f', 2), ('g', 2), ('f', 1)],
+//!     false,
+//!     false,
+//! );
+//!
+//! let res = vec![
+//!     (3.into(), vec![('f', vec![1]), ('f', vec![1, 1]), ('g', vec![2, 2])]),
+//!     (12.into(), vec![('f', vec![1]), ('f', vec![1, 2]), ('g', vec![1, 2])]),
+//!     (3.into(), vec![('f', vec![1]), ('f', vec![2, 2]), ('g', vec![1, 1])]),
+//!     (6.into(), vec![('f', vec![2]), ('f', vec![1, 1]), ('g', vec![1, 2])]),
+//!     (6.into(), vec![('f', vec![2]), ('f', vec![1, 2]), ('g', vec![1, 1])]),
+//! ];
+//!
+//! assert_eq!(p, res);
+//! ```
 use ahash::HashMap;
 use smallvec::SmallVec;
 use std::{cmp::Ordering, hash::Hash};
 
 use crate::domains::integer::Integer;
 
-/// An iterator for combinations without replacement.
+/// An iterator type for generating combinations of indices without replacement.
+///
+/// # Examples
+///
+/// Create an iterator to generate combinations of 3 elements from a total of 4:
+/// ```rust
+/// use symbolica::combinatorics::CombinationIterator;
+/// let mut combos = CombinationIterator::new(4, 3);
+///
+/// while let Some(c) = combos.next() {
+///     println!("{:?}", c);
+/// }
+///
+/// // The combinations output is:
+/// // [0, 1, 2]
+/// // [0, 1, 3]
+/// // [0, 2, 3]
+/// // [1, 2, 3]
+/// ```
+
 pub struct CombinationIterator {
     n: usize,
     indices: Vec<usize>,
@@ -12,6 +73,7 @@ pub struct CombinationIterator {
 }
 
 impl CombinationIterator {
+    /// Creates a new `CombinationIterator` for generating combinations of `k` elements from a set of `n` elements.
     pub fn new(n: usize, k: usize) -> CombinationIterator {
         CombinationIterator {
             indices: (0..k).collect(),
@@ -20,6 +82,7 @@ impl CombinationIterator {
         }
     }
 
+    /// Advances the iterator and returns the next combination.
     pub fn next(&mut self) -> Option<&[usize]> {
         if self.indices.is_empty() || self.indices.len() > self.n {
             return None;
@@ -56,7 +119,24 @@ impl CombinationIterator {
     }
 }
 
-/// An iterator for combinations with replacement.
+/// An iterator that generates combinations of size `k` from a sequence of items, allowing repeat selections.
+///
+/// The iterator will produce each combination in ascending order
+/// so that only unique combinations are generated, even though
+/// each pick is allowed to repeat items.
+///
+/// # Example
+///
+/// ```rust
+///
+/// use symbolica::combinatorics::CombinationWithReplacementIterator;
+///
+/// let mut comb_iter = CombinationWithReplacementIterator::new(3, 2);
+/// while let Some(combination) = comb_iter.next() {
+///      println!("{:?}", combination);
+/// }
+/// ```
+/// This would print out combinations like `[0, 0], [0, 1], [0, 2], [1, 1], [1, 2]`, etc.
 pub struct CombinationWithReplacementIterator {
     indices: SmallVec<[u32; 10]>,
     k: u32,
@@ -64,6 +144,7 @@ pub struct CombinationWithReplacementIterator {
 }
 
 impl CombinationWithReplacementIterator {
+    /// Creates a new `CombinationWithReplacementIterator` for generating combinations of `k` elements from a set of `n` elements with replacement.
     pub fn new(n: usize, k: u32) -> CombinationWithReplacementIterator {
         CombinationWithReplacementIterator {
             indices: (0..n).map(|_| 0).collect(),
@@ -72,6 +153,7 @@ impl CombinationWithReplacementIterator {
         }
     }
 
+    /// Advances the iterator and returns the next combination with replacement.
     pub fn next(&mut self) -> Option<&[u32]> {
         if self.indices.is_empty() {
             return None;
@@ -173,10 +255,25 @@ fn unique_permutations_impl<T: Clone>(
 /// Partition the unordered list `elements` into named bins of unordered lists with a given length,
 /// returning all partitions and their multiplicity.
 ///
-/// For example:
+/// # Arguments
+///
+/// * `elements` - A slice of elements to partition.
+/// * `bins` - A slice of tuples where each tuple contains a bin identifier and the number of elements in that bin.
+/// * `fill_last` - A boolean flag indicating whether to add all remaining elements to the last bin if the elements are larger than the bins.
+/// * `repeat` - A boolean flag indicating whether to repeat the bins to exactly fit all elements, if possible.
+///
+/// # Returns
+///
+/// A `Vec` of tuples where each tuple contains:
+/// * An `Integer` representing the multiplicity of the partition.
+/// * A `Vec` of tuples where each tuple contains a bin identifier and a `Vec` of elements in that bin.
+///
+/// # Example
+///
 /// ```
 /// # use symbolica::combinatorics::partitions;
-/// partitions(&[1, 1, 1, 2, 2],
+/// let result = partitions(
+///     &[1, 1, 1, 2, 2],
 ///     &[('f', 2), ('g', 2), ('f', 1)],
 ///     false,
 ///     false
@@ -189,11 +286,7 @@ fn unique_permutations_impl<T: Clone>(
 /// ('f', [1, 2])]), (6, [('g', [2]), ('f', [1, 1]), ('f', [1, 2])])]
 /// ```
 ///
-/// If the unordered list `elements` is larger than the bins, setting the flag `fill_last`
-/// will add all remaining elements to the last set.
-///
-/// Setting the flag `repeat` means that the bins will be repeated to exactly fit all elements,
-/// if possible.
+/// This generates all possible ways to partition the elements into the specified bins.
 pub fn partitions<T: Ord + Hash + Copy, B: Ord + Hash + Copy>(
     elements: &[T],
     bins: &[(B, usize)],

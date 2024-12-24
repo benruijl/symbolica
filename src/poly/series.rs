@@ -1,3 +1,18 @@
+//! Methods related to series expansion.
+//!
+//! # Examples
+//! ```
+//! use symbolica::atom::{Atom, AtomCore, Symbol};
+//!
+//! let x = Symbol::new("x");
+//! let a = Atom::parse("(1-cos(x))/sin(x)").unwrap();
+//!
+//! let out = a
+//!     .series(x, Atom::new_num(0), 4.into(), true)
+//!     .unwrap();
+//! println!("{}", out);
+//! assert_eq!(out.to_atom(), Atom::parse("1/2*x+1/24*x^3").unwrap());
+//! ```
 use core::panic;
 use std::{
     cmp::Ordering,
@@ -22,6 +37,22 @@ use super::Variable;
 /// A Puiseux series. The truncation order is
 /// relative to the lowest degree: i.e., a series in `x` with depth `d` is viewed as
 /// `a*x^n*(1+bx+.. + O(x^(d+1)))`.
+///
+/// # Examples
+///
+/// A series can be constructed from an [Atom]:
+/// ```
+/// use symbolica::atom::{Atom, AtomCore, Symbol};
+///
+/// let x = Symbol::new("x");
+/// let a = Atom::parse("(1-cos(x))/sin(x)").unwrap();
+///
+/// let out = a
+///     .series(x, Atom::new_num(0), 4.into(), true)
+///     .unwrap();
+/// println!("{}", out);
+/// assert_eq!(out.to_atom(), Atom::parse("1/2*x+1/24*x^3").unwrap());
+/// ```
 #[derive(Clone)]
 pub struct Series<F: Ring> {
     coefficients: Vec<F::Element>,

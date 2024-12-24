@@ -1,9 +1,11 @@
+//! Defines polynomials and series.
+
 pub mod evaluate;
 pub mod factor;
 pub mod gcd;
 pub mod groebner;
 pub mod polynomial;
-pub mod resultant;
+mod resultant;
 pub mod series;
 pub mod univariate;
 
@@ -25,20 +27,24 @@ use crate::domains::atom::AtomField;
 use crate::domains::factorized_rational_polynomial::{
     FactorizedRationalPolynomial, FromNumeratorAndFactorizedDenominator,
 };
-use crate::domains::integer::Integer;
+use crate::domains::integer::{gcd_signed, gcd_unsigned, Integer};
 use crate::domains::rational_polynomial::{FromNumeratorAndDenominator, RationalPolynomial};
 use crate::domains::{EuclideanDomain, Ring, SelfRing};
 use crate::parser::{Operator, Token};
 use crate::printer::{PrintOptions, PrintState};
 use crate::state::Workspace;
-use crate::utils;
 
 use self::factor::Factorize;
 use self::gcd::PolynomialGCD;
 use self::polynomial::MultivariatePolynomial;
 
-pub const INLINED_EXPONENTS: usize = 6;
+pub(crate) const INLINED_EXPONENTS: usize = 6;
 
+/// Describes an exponent of a variable in a polynomial.
+///
+/// The recommended type is `u16` for polynomials
+/// and `i16` for negative exponents. For size optimizations
+/// `u8` can be used.
 pub trait Exponent:
     Hash
     + Debug
@@ -118,7 +124,7 @@ impl Exponent for u32 {
 
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_unsigned(*self as u64, *other as u64) as Self
+        gcd_unsigned(*self as u64, *other as u64) as Self
     }
 
     fn pack(list: &[Self]) -> u64 {
@@ -187,7 +193,7 @@ impl Exponent for i32 {
 
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_signed(*self as i64, *other as i64) as Self
+        gcd_signed(*self as i64, *other as i64) as Self
     }
 
     // Pack a list of positive exponents.
@@ -262,7 +268,7 @@ impl Exponent for u16 {
 
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_unsigned(*self as u64, *other as u64) as Self
+        gcd_unsigned(*self as u64, *other as u64) as Self
     }
 
     fn pack(list: &[Self]) -> u64 {
@@ -335,7 +341,7 @@ impl Exponent for i16 {
 
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_signed(*self as i64, *other as i64) as Self
+        gcd_signed(*self as i64, *other as i64) as Self
     }
 
     // Pack a list of positive exponents.
@@ -411,7 +417,7 @@ impl Exponent for u8 {
 
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_unsigned(*self as u64, *other as u64) as Self
+        gcd_unsigned(*self as u64, *other as u64) as Self
     }
 
     fn pack(list: &[Self]) -> u64 {
@@ -482,7 +488,7 @@ impl Exponent for i8 {
 
     #[inline]
     fn gcd(&self, other: &Self) -> Self {
-        utils::gcd_signed(*self as i64, *other as i64) as Self
+        gcd_signed(*self as i64, *other as i64) as Self
     }
 
     // Pack a list of positive exponents.
@@ -520,6 +526,7 @@ impl Exponent for i8 {
     }
 }
 
+/// An exponent that must be zero or higher.
 pub trait PositiveExponent: Exponent {
     fn from_u32(n: u32) -> Self {
         if n > i32::MAX as u32 {
@@ -638,6 +645,10 @@ impl MonomialOrder for LexOrder {
 /// A polynomial variable. It is either a (global) symbol
 /// a temporary variable (for internal use), an array entry,
 /// a function or any other non-polynomial part.
+///
+/// Variables should be constructed using `From` or `Into` on
+/// symbols and atoms. Variables can be
+/// converted into an atom using `to_atom`.
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Variable {
     Symbol(Symbol),

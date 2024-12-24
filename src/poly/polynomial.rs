@@ -1,3 +1,5 @@
+//! Multivariate polynomial structures and methods.
+
 use ahash::{HashMap, HashMapExt};
 use std::cell::{Cell, UnsafeCell};
 use std::cmp::{Ordering, Reverse};
@@ -22,6 +24,7 @@ use smallvec::{smallvec, SmallVec};
 const MAX_DENSE_MUL_BUFFER_SIZE: usize = 1 << 24;
 thread_local! { static DENSE_MUL_BUFFER: Cell<Vec<u32>> = const { Cell::new(Vec::new()) }; }
 
+/// A ring for multivariate polynomials.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PolynomialRing<R: Ring, E: Exponent> {
     pub(crate) ring: R,
@@ -1353,7 +1356,7 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
 }
 
 impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
-/// Remove all non-occurring variables from the polynomial.
+    /// Remove all non-occurring variables from the polynomial.
     pub fn condense(&mut self) {
         if self.nvars() == 0 {
             return;

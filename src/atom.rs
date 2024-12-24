@@ -1,3 +1,44 @@
+//! Defines the core structures and functions for handling general mathematical expressions.
+//!
+//! This module provides the core functionality for representing and manipulating mathematical symbols and expressions.
+//! It includes definitions for various types of atoms (numbers, variables, functions, etc.), as well as utilities for
+//! parsing, printing, and transforming these expressions.
+//!
+//! # Examples
+//!
+//! Parse a new expression and expand it:
+//!
+//! ```
+//! use symbolica::atom::{Atom, AtomCore};
+//!
+//! let a = Atom::parse("(x+1)^2").unwrap();
+//! let b = a.expand();
+//! let r = Atom::parse("x^2+2x+1").unwrap();
+//! assert_eq!(b, r);
+//! ```
+//!
+//! Create a new symbol and use it in an expression:
+//!
+//! ```
+//! use symbolica::atom::{Symbol, Atom};
+//!
+//! let x = Symbol::new("x");
+//! let expr = Atom::new_var(x) + 1;
+//! let p = Atom::parse("x + 1").unwrap();
+//! assert_eq!(expr, p);
+//! ```
+//!
+//! Define a function with attributes and use it in an expression:
+//!
+//! ```
+//! use symbolica::fun;
+//! use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
+//!
+//! let f = Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+//! let expr = fun!(f, 3, 2) + (1, 4);
+//! let p = Atom::parse("f(2,3) + 1/4").unwrap();
+//! assert_eq!(expr, p);
+//! ```
 mod coefficient;
 mod core;
 pub mod representation;
@@ -25,18 +66,54 @@ use self::representation::{FunView, RawAtom};
 /// A function that is called after normalization of the arguments.
 /// If the input, the first argument, is normalized, the function should return `false`.
 /// Otherwise, the function must return `true` and set the second argument to the normalized value.
+///
+/// # Examples
+///
+/// ```
+/// use symbolica::atom::{Atom, AtomView, NormalizationFunction};
+///
+/// let normalize_fn: NormalizationFunction = Box::new(|view, atom| {
+///     // Example normalization logic
+///     if view.is_zero() {
+///         *atom = Atom::new_num(0);
+///         true
+///     } else {
+///         false
+///     }
+/// });
+/// ```
 pub type NormalizationFunction = Box<dyn Fn(AtomView, &mut Atom) -> bool + Send + Sync>;
 
+/// Attributes that can be assigned to functions.
 #[derive(Clone, Copy, PartialEq)]
 pub enum FunctionAttribute {
+    /// The function is symmetric.
     Symmetric,
+    /// The function is antisymmetric.
     Antisymmetric,
+    /// The function is cyclesymmetric.
     Cyclesymmetric,
+    /// The function is linear.
     Linear,
 }
 
 /// A symbol, for example the name of a variable or the name of a function,
 /// together with its properties.
+///
+/// # Examples
+///
+/// ```
+/// use symbolica::atom::{Symbol, FunctionAttribute};
+///
+/// let x = Symbol::new("x");
+/// let f = Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+/// ```
+///
+/// Definition through the [crate::symb!] macro:
+/// ```
+/// use symbolica::symb;
+/// let (x, y, z) = symb!("x", "y", "z");
+/// ```
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Symbol {
     id: u32,
@@ -64,9 +141,191 @@ impl std::fmt::Display for Symbol {
 }
 
 impl Symbol {
-    /// Create a new variable symbol. This constructor should be used with care as there are no checks
+    /// Get the symbol associated with `name` if it was already defined,
+    /// otherwise define it without special attributes.
+    ///
+    /// To register a symbol with attributes, use [Symbol::new_with_attributes].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::Symbol;
+    ///
+    /// let x = Symbol::new("x");
+    /// ```
+    pub fn new<S: AsRef<str>>(name: S) -> Symbol {
+        State::get_symbol(name)
+    }
+
+    /// Get the symbol associated with `name` if it is already registered,
+    /// otherwise define it with the given attributes.
+    ///
+    /// This function will return an error when an existing symbol is redefined
+    /// with different attributes.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::{Symbol, FunctionAttribute};
+    ///
+    /// let f = Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+    /// ```
+    pub fn new_with_attributes<S: AsRef<str>>(
+        name: S,
+        attributes: &[FunctionAttribute],
+    ) -> Result<Symbol, SmartString<LazyCompact>> {
+        State::get_symbol_with_attributes(name, attributes)
+    }
+
+    /// Register a new symbol with the given attributes and a specific function
+    /// that is called after normalization of the arguments. This function cannot
+    /// be exported, and therefore before importing a state, symbols with special
+    /// normalization functions must be registered explicitly.
+    ///
+    /// If the symbol already exists, an error is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::{AtomView, Symbol, FunctionAttribute, NormalizationFunction};
+    ///
+    /// let normalize_fn: NormalizationFunction = Box::new(|view, out| {
+    ///     // Example normalization logic that sets odd-length function to 0
+    ///     if let AtomView::Fun(f) = view {
+    ///         if f.get_nargs() % 2 == 1 {
+    ///             out.to_num(0.into());
+    ///             true // changed
+    ///         } else {
+    ///             false
+    ///         }
+    ///     } else {
+    ///         unreachable!()
+    ///     }
+    /// });
+    ///
+    /// let f = Symbol::new_with_attributes_and_function("f", &[], normalize_fn).unwrap();
+    /// ```
+    pub fn new_with_attributes_and_function<S: AsRef<str>>(
+        name: S,
+        attributes: &[FunctionAttribute],
+        f: NormalizationFunction,
+    ) -> Result<Symbol, SmartString<LazyCompact>> {
+        State::get_symbol_with_attributes_and_function(name, attributes, f)
+    }
+
+    /// Get the name of the symbol.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::Symbol;
+    ///
+    /// let x = Symbol::new("x");
+    /// assert_eq!(x.get_name(), "x");
+    /// ```
+    pub fn get_name(&self) -> &str {
+        State::get_name(*self)
+    }
+
+    /// Get the internal id of the symbol.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::Symbol;
+    ///
+    /// let x = Symbol::new("x");
+    /// println!("id = {}", x.get_id());
+    /// ```
+    pub fn get_id(&self) -> u32 {
+        self.id
+    }
+
+    /// Get the wildcard level of the symbol. This property
+    /// is used for pattern matching.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::Symbol;
+    ///
+    /// let x = Symbol::new("x");
+    /// let x_ = Symbol::new("x_");
+    /// let x__ = Symbol::new("x__");
+    /// let x___ = Symbol::new("x___");
+    /// assert_eq!(x.get_wildcard_level(), 0);
+    /// assert_eq!(x_.get_wildcard_level(), 1);
+    /// assert_eq!(x__.get_wildcard_level(), 2);
+    /// assert_eq!(x___.get_wildcard_level(), 3);
+    /// ```
+    pub fn get_wildcard_level(&self) -> u8 {
+        self.wildcard_level
+    }
+
+    /// Check if the symbol is symmetric.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::{Symbol, FunctionAttribute};
+    ///
+    /// let f = Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+    /// assert!(f.is_symmetric());
+    /// ```
+    pub fn is_symmetric(&self) -> bool {
+        self.is_symmetric
+    }
+
+    /// Check if the symbol is antisymmetric.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::{Symbol, FunctionAttribute};
+    ///
+    /// let f = Symbol::new_with_attributes("f", &[FunctionAttribute::Antisymmetric]).unwrap();
+    /// assert!(f.is_antisymmetric());
+    /// ```
+    pub fn is_antisymmetric(&self) -> bool {
+        self.is_antisymmetric
+    }
+
+    /// Check if the symbol is cyclesymmetric.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::{Symbol, FunctionAttribute};
+    ///
+    /// let f = Symbol::new_with_attributes("f", &[FunctionAttribute::Cyclesymmetric]).unwrap();
+    /// assert!(f.is_cyclesymmetric());
+    /// ```
+    pub fn is_cyclesymmetric(&self) -> bool {
+        self.is_cyclesymmetric
+    }
+
+    /// Check if the symbol is linear.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::atom::{Symbol, FunctionAttribute};
+    ///
+    /// let f = Symbol::new_with_attributes("f", &[FunctionAttribute::Linear]).unwrap();
+    /// assert!(f.is_linear());
+    /// ```
+    pub fn is_linear(&self) -> bool {
+        self.is_linear
+    }
+
+    /// Returns `true` iff this identifier is defined by Symbolica.
+    pub fn is_builtin(id: Symbol) -> bool {
+        State::is_builtin(id)
+    }
+
+    /// Expert use: create a new variable symbol. This constructor should be used with care as there are no checks
     /// about the validity of the identifier.
-    pub const fn init_var(id: u32, wildcard_level: u8) -> Self {
+    pub const fn raw_var(id: u32, wildcard_level: u8) -> Self {
         Symbol {
             id,
             wildcard_level,
@@ -77,9 +336,9 @@ impl Symbol {
         }
     }
 
-    /// Create a new function symbol. This constructor should be used with care as there are no checks
+    /// Expert use: create a new function symbol. This constructor should be used with care as there are no checks
     /// about the validity of the identifier.
-    pub const fn init_fn(
+    pub const fn raw_fn(
         id: u32,
         wildcard_level: u8,
         is_symmetric: bool,
@@ -96,70 +355,9 @@ impl Symbol {
             is_linear,
         }
     }
-
-    /// Get the symbol for a certain name if the name is already registered,
-    /// else register it and return a new symbol without attributes.
-    ///
-    /// To register a symbol with attributes, use [`new_with_attributes`].
-    pub fn new<S: AsRef<str>>(name: S) -> Symbol {
-        State::get_symbol(name)
-    }
-
-    /// Get the symbol for a certain name if the name is already registered,
-    /// else register it and return a new symbol with the given attributes.
-    ///
-    /// This function will return an error when an existing symbol is redefined
-    /// with different attributes.
-    pub fn new_with_attributes<S: AsRef<str>>(
-        name: S,
-        attributes: &[FunctionAttribute],
-    ) -> Result<Symbol, SmartString<LazyCompact>> {
-        State::get_symbol_with_attributes(name, attributes)
-    }
-
-    /// Register a new symbol with the given attributes and a specific function
-    /// that is called after normalization of the arguments. This function cannot
-    /// be exported, and therefore before importing a state, symbols with special
-    /// normalization functions must be registered explicitly.
-    ///
-    /// If the symbol already exists, an error is returned.
-    pub fn new_with_attributes_and_function<S: AsRef<str>>(
-        name: S,
-        attributes: &[FunctionAttribute],
-        f: NormalizationFunction,
-    ) -> Result<Symbol, SmartString<LazyCompact>> {
-        State::get_symbol_with_attributes_and_function(name, attributes, f)
-    }
-
-    pub fn get_name(&self) -> &str {
-        State::get_name(*self)
-    }
-
-    pub fn get_id(&self) -> u32 {
-        self.id
-    }
-
-    pub fn get_wildcard_level(&self) -> u8 {
-        self.wildcard_level
-    }
-
-    pub fn is_symmetric(&self) -> bool {
-        self.is_symmetric
-    }
-
-    pub fn is_antisymmetric(&self) -> bool {
-        self.is_antisymmetric
-    }
-
-    pub fn is_cyclesymmetric(&self) -> bool {
-        self.is_cyclesymmetric
-    }
-
-    pub fn is_linear(&self) -> bool {
-        self.is_linear
-    }
 }
 
+/// The type (variant) of an atom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AtomType {
     Num,
@@ -170,6 +368,7 @@ pub enum AtomType {
     Fun,
 }
 
+/// The type (variant) of a slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SliceType {
     Add,
@@ -960,7 +1159,8 @@ impl<'a, T: Into<Coefficient> + Clone> FunctionArgument for T {
 /// Create a new function by providing its name as the first argument,
 /// followed by the list of arguments. This macro uses [`FunctionBuilder`].
 ///
-/// For example:
+/// # Examples
+///
 /// ```
 /// use symbolica::{atom::Atom, atom::Symbol, fun};
 /// let f_id = Symbol::new("f");
@@ -979,7 +1179,7 @@ macro_rules! fun {
     };
 }
 
-/// Create new symbols without special attributes. Use [`get_symbol_with_attributes()`](crate::state::Symbol::new_with_attributes)
+/// Create new symbols without special attributes. Use [Symbol::new_with_attributes]
 /// to define symbols with attributes.
 ///
 /// For example:

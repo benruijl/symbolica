@@ -1,3 +1,21 @@
+//! Methods related to pattern matching and replacements.
+//!
+//! The standard use is through [AtomCore] methods such as [replace_all](AtomCore::replace_all)
+//! and [pattern_match](AtomCore::pattern_match).
+//!
+//! # Examples
+//!
+//! ```
+//! use symbolica::{atom::{Atom, AtomCore}, id::Pattern};
+//!
+//! let expr = Atom::parse("f(1,2,x) + f(1,2,3)").unwrap();
+//! let pat = Pattern::parse("f(1,2,y_)").unwrap();
+//! let rhs = Pattern::parse("f(1,2,y_+1)").unwrap();
+//!
+//! let out = expr.replace_all(&pat, &rhs, None, None);
+//! assert_eq!(out, Atom::parse("f(1,2,x+1)+f(1,2,4)").unwrap());
+//! ```
+
 use std::{ops::DerefMut, str::FromStr};
 
 use ahash::{HashMap, HashSet};
@@ -12,6 +30,21 @@ use crate::{
     transformer::{Transformer, TransformerError},
 };
 
+/// A general expression that can contain pattern-matching wildcards
+/// and transformers.
+///
+/// # Examples
+/// Patterns can be created from atoms:
+/// ```
+/// # use symbolica::atom::{Atom, AtomCore};
+/// Atom::parse("x_+1").unwrap().to_pattern();
+/// ```
+///
+/// or by directly parsing them:
+/// ```
+/// # use symbolica::id::Pattern;
+/// Pattern::parse("x_+1").unwrap();
+/// ```
 #[derive(Clone)]
 pub enum Pattern {
     Literal(Atom),
@@ -1611,6 +1644,7 @@ pub enum WildcardRestriction {
 
 pub type WildcardAndRestriction = (Symbol, WildcardRestriction);
 
+/// A restriction on a wildcard or wildcards.
 pub enum PatternRestriction {
     /// A restriction for a wildcard.
     Wildcard(WildcardAndRestriction),
@@ -1721,6 +1755,8 @@ impl<T> std::ops::Not for Condition<T> {
     }
 }
 
+/// The result of the evaluation of a condition, which can be
+/// true, false, or inconclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConditionResult {
     True,
@@ -1790,6 +1826,8 @@ impl ConditionResult {
     }
 }
 
+/// A test on one or more patterns that should yield
+/// a [ConditionResult] when evaluated.
 #[derive(Clone, Debug)]
 pub enum Relation {
     Eq(Pattern, Pattern),

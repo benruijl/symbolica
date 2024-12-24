@@ -1,3 +1,18 @@
+//! Defines core algebraic traits and data structures.
+//!
+//! The core trait is [Ring], which has two binary operations, addition and multiplication.
+//! Each ring has an associated element type, that should not be confused with the ring type itself.
+//! For example:
+//! - The ring of integers [Z](type@integer::Z) has elements of type [Integer].
+//! - The ring of rational numbers [Q](type@rational::Q) has elements of type [Rational](rational::Rational).
+//! - The ring of finite fields [FiniteField](finite_field::FiniteField) has elements of type [FiniteField](finite_field::FiniteFieldElement).
+//! - The ring of polynomials [PolynomialRing](super::poly::polynomial::PolynomialRing) has elements of type [MultivariatePolynomial](super::poly::polynomial::MultivariatePolynomial).
+//!
+//! In general, the ring elements do not implement operations such as addition or multiplication,
+//! but rather the ring itself does. Most Symbolica structures are generic over the ring type.
+//!
+//! An extension of the ring trait is the [`EuclideanDomain`] trait, which adds the ability to compute remainders, quotients, and gcds.
+//! Another extension is the [`Field`] trait, which adds the ability to divide and invert elements.
 pub mod algebraic_number;
 pub mod atom;
 pub mod dual;
@@ -18,6 +33,9 @@ use integer::Integer;
 use crate::poly::Variable;
 use crate::printer::{PrintOptions, PrintState};
 
+/// The internal ordering trait is used to compare elements of a ring.
+/// This ordering is defined even for rings that do not have a total ordering, such
+/// as complex numbers.
 pub trait InternalOrdering {
     /// Compare two elements using an internal ordering.
     fn internal_cmp(&self, other: &Self) -> std::cmp::Ordering;
@@ -92,7 +110,23 @@ pub trait SelfRing: Clone + PartialEq + Eq + Hash + InternalOrdering + Debug + D
     }
 }
 
+/// A ring is a set with two binary operations, addition and multiplication.
+/// Examples of rings include the integers, rational numbers, and polynomials.
+///
+/// Each ring has an element type, that should not be confused with the ring type itself.
+/// For example:
+/// - The ring of integers [Z](type@integer::Z) has elements of type [Integer].
+/// - The ring of rational numbers [Q](type@rational::Q) has elements of type [Rational](rational::Rational).
+/// - The ring of finite fields [FiniteField](finite_field::FiniteField) has elements of type [FiniteField](finite_field::FiniteFieldElement).
+/// - The ring of polynomials [PolynomialRing](super::poly::polynomial::PolynomialRing) has elements of type [MultivariatePolynomial](super::poly::polynomial::MultivariatePolynomial).
+///
+/// In general, the ring elements do not implement operations such as addition or multiplication,
+/// but rather the ring itself does. Most Symbolica structures are generic over the ring type.
+///
+/// An extension of the ring trait is the [`EuclideanDomain`] trait, which adds the ability to compute remainders, quotients, and gcds.
+/// Another extension is the [`Field`] trait, which adds the ability to divide and invert elements.
 pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
+    /// The element of a ring. For example, the elements of the ring of integers [Z](type@integer::Z), `Z::Element`, are [Integer].
     type Element: Clone + PartialEq + Eq + Hash + InternalOrdering + Debug;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
@@ -118,6 +152,7 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     fn size(&self) -> Integer;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
+    /// Format a ring element with custom [PrintOptions] and [PrintState].
     fn format<W: std::fmt::Write>(
         &self,
         element: &Self::Element,
@@ -126,23 +161,29 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
         f: &mut W,
     ) -> Result<bool, Error>;
 
+    /// Create a new printer for the given ring element that
+    /// can be used in a [format!] macro.
     fn printer<'a>(&'a self, element: &'a Self::Element) -> RingPrinter<'a, Self> {
         RingPrinter::new(self, element)
     }
 }
 
+/// A Euclidean domain is a ring that supports division with remainder, quotients, and gcds.
 pub trait EuclideanDomain: Ring {
     fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element);
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
 }
 
+/// A field is a ring that supports division and inversion.
 pub trait Field: EuclideanDomain {
     fn div(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     fn div_assign(&self, a: &mut Self::Element, b: &Self::Element);
     fn inv(&self, a: &Self::Element) -> Self::Element;
 }
 
+/// Provides an interface for printing elements of a ring with optional customization,
+/// suitable as an argument to [format!]. Internally, it will call [Ring::format].
 pub struct RingPrinter<'a, R: Ring> {
     pub ring: &'a R,
     pub element: &'a R::Element,

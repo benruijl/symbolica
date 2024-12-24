@@ -1,3 +1,5 @@
+//! The field of general expressions.
+
 use crate::{
     atom::{Atom, AtomCore, AtomView},
     poly::Variable,
@@ -15,6 +17,26 @@ dyn_clone::clone_trait_object!(Map);
 impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> bool> Map for T {}
 
 /// The field of general expressions.
+///
+/// # Examples
+///
+/// ```
+/// use symbolica::{
+/// atom::Atom,
+/// domains::{atom::AtomField, Field},
+/// };
+///
+/// let field = AtomField {
+///     cancel_check_on_division: true,
+///     custom_normalization: None,
+/// };
+///
+/// let r = field.div(
+///     &Atom::parse("x^2+2x+1").unwrap(),
+///     &Atom::parse("x+1").unwrap(),
+/// );
+/// assert_eq!(r, Atom::parse("x+1").unwrap());
+/// ```
 #[derive(Clone)]
 pub struct AtomField {
     /// Perform a cancellation check of numerators and denominators after a division.

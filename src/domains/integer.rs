@@ -1,3 +1,5 @@
+//! Arbitrary precision integers.
+
 use std::{
     cmp::Ordering,
     fmt::{Display, Error, Formatter},
@@ -14,7 +16,6 @@ use rug::{
 use crate::{
     printer::{PrintOptions, PrintState},
     tensors::matrix::Matrix,
-    utils,
 };
 
 use super::{
@@ -27,6 +28,7 @@ use super::{
     EuclideanDomain, InternalOrdering, Ring, SelfRing,
 };
 
+/// The first 100 primes.
 pub const SMALL_PRIMES: [i64; 100] = [
     2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
     101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193,
@@ -56,6 +58,8 @@ impl IntegerRing {
     }
 }
 
+/// An arbitrary-precision integer that automatically upgrades and downgrades to the most efficient
+/// representation.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Integer {
     Natural(i64),
@@ -69,6 +73,7 @@ impl InternalOrdering for Integer {
     }
 }
 
+/// An error that can occur when performing integer-reconstruction operations.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IntegerRelationError {
     PrecisionLimit,
@@ -659,7 +664,7 @@ impl Integer {
     pub fn gcd(&self, b: &Integer) -> Integer {
         match (self, b) {
             (Integer::Natural(n1), Integer::Natural(n2)) => {
-                let gcd = utils::gcd_signed(*n1, *n2);
+                let gcd = gcd_signed(*n1, *n2);
                 if gcd == i64::MAX as u64 + 1 {
                     // n1 == n2 == u64::MIN
                     Integer::Double(gcd as i128)
@@ -675,10 +680,10 @@ impl Integer {
             (Integer::Large(r1), Integer::Large(r2)) => Integer::from(r1.clone().gcd(r2)),
             (Integer::Natural(r1), Integer::Double(r2))
             | (Integer::Double(r2), Integer::Natural(r1)) => {
-                Integer::from_double(utils::gcd_signed_i128(*r1 as i128, *r2) as i128)
+                Integer::from_double(gcd_signed_i128(*r1 as i128, *r2) as i128)
             }
             (Integer::Double(r1), Integer::Double(r2)) => {
-                let gcd = utils::gcd_signed_i128(*r1, *r2);
+                let gcd = gcd_signed_i128(*r1, *r2);
                 if gcd == i128::MAX as u128 + 1 {
                     Integer::Large(MultiPrecisionInteger::from(gcd))
                 } else {
@@ -2109,6 +2114,7 @@ impl<'a> Rem for &'a Integer {
     }
 }
 
+/// A ring for multi-precision integers.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct MultiPrecisionIntegerRing;
 
@@ -2263,6 +2269,41 @@ impl EuclideanDomain for MultiPrecisionIntegerRing {
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a.clone().gcd(b)
     }
+}
+
+/// Compute the GCD of two `u64` numbers.
+pub fn gcd_unsigned(mut a: u64, mut b: u64) -> u64 {
+    let mut c;
+    while a != 0 {
+        c = a;
+        a = b % a;
+        b = c;
+    }
+    b
+}
+
+/// Compute the signed GCD of two `i64` numbers.
+pub fn gcd_signed(mut a: i64, mut b: i64) -> u64 {
+    let mut c;
+    while a != 0 {
+        c = a;
+        // only wraps when i64::MIN % -1 and that still yields 0
+        a = b.wrapping_rem(a);
+        b = c;
+    }
+    b.unsigned_abs()
+}
+
+/// Compute the signed GCD of two `i128` numbers.
+pub fn gcd_signed_i128(mut a: i128, mut b: i128) -> u128 {
+    let mut c;
+    while a != 0 {
+        c = a;
+        // only wraps when i128::MIN % -1 and that still yields 0
+        a = b.wrapping_rem(a);
+        b = c;
+    }
+    b.unsigned_abs()
 }
 
 #[cfg(test)]

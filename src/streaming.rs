@@ -1,3 +1,5 @@
+//! Methods for streaming large expressions to disk.
+
 use std::{
     fs::File,
     io::{BufReader, BufWriter, Read, Write},
@@ -15,6 +17,7 @@ use crate::{
     LicenseManager,
 };
 
+/// A stream that can be read from by using `name`.
 pub trait ReadableNamedStream: Read + Send {
     fn open(name: &str) -> Self;
 }
@@ -31,6 +34,7 @@ impl ReadableNamedStream for Decompressor<BufReader<File>> {
     }
 }
 
+/// A stream that can be written to by using `name`.
 pub trait WriteableNamedStream: Write + Send {
     type Reader: ReadableNamedStream;
 
@@ -53,10 +57,14 @@ impl WriteableNamedStream for CompressorWriter<BufWriter<File>> {
     }
 }
 
+/// Setting for term streaming.
 #[derive(Clone)]
 pub struct TermStreamerConfig {
+    /// The number of cores to use.
     pub n_cores: usize,
+    /// The path where expressions are written.
     pub path: String,
+    /// The maximum size of the memory buffer.
     pub max_mem_bytes: usize,
 }
 
@@ -104,6 +112,30 @@ impl<'a, R: ReadableNamedStream> Iterator for TermInputStream<'a, R> {
 }
 
 /// A term streamer that has terms partly in memory and partly on another storage device.
+///
+/// It allows for operations on the terms in the expression only, via [map](TermStreamer::map).
+/// Consider using a writer that compresses files, such as [CompressorWriter].
+///
+/// # Examples
+///
+/// ```
+/// # use std::io::BufWriter;
+/// # use std::fs::File;
+/// use symbolica::atom::{Atom, AtomCore};
+/// use symbolica::streaming::TermStreamer;
+/// let input = Atom::parse("(x+1)*y + (y+1)^2*z").unwrap();
+///
+/// let mut stream = TermStreamer::<BufWriter<File>>::new(Default::default());
+/// stream.push(input);
+///
+/// // map every term in the expression
+/// stream = stream.map(|x| x.expand());
+///
+/// let r = stream.to_expression();
+///
+/// let res = Atom::parse("y+z+x*y+2*y*z+y^2*z").unwrap();
+/// assert_eq!(r, res);
+/// ```
 pub struct TermStreamer<W: WriteableNamedStream> {
     mem_buf: Vec<Atom>,
     mem_size: usize,

@@ -1,3 +1,5 @@
+//! Finite fields and modular rings.
+
 use rand::Rng;
 use std::fmt::{Display, Error, Formatter};
 use std::hash::Hash;
@@ -786,6 +788,7 @@ pub type Z2 = FiniteField<Two>;
 /// The finite field with 0 and 1 as elements.
 pub const Z2: FiniteField<Two> = Z2::new();
 
+/// A finite field element of the prime 2.
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Two(pub(crate) u8);
 

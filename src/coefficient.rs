@@ -1,3 +1,14 @@
+//! Defines and handles coefficients of Symbolica expressions.
+//!
+//! It includes implementations for different types of coefficients such as rational numbers,
+//! floating-point numbers, finite field elements, rational polynomials and the conversions
+//! between them in [Coefficient] and [CoefficientView].
+//! These connect with Symbolica's standalone data types such as [Integer],
+//! which should be used instead of [Coefficient] if possible.
+//!
+//! Additionally, the module contains functions for normalizing coefficients, converting
+//! coefficients to floats with a specified precision, and setting the coefficient ring
+//! for multivariate rational polynomials.
 use std::{
     cmp::Ordering,
     f64::consts::LOG2_10,
@@ -40,7 +51,10 @@ pub trait ConvertToRing: Ring {
 
 /// A coefficient that can appear in a Symbolica expression.
 /// In most cases, this is a rational number but it can also be a finite field element or
-/// a rational polynomial.
+/// a rational polynomial. If no additions of mixed-types such as rational numbers
+/// or floats is expected, use the standalone structs such as [Rational] and [Float] instead.
+///
+/// The borrowed version of this is [CoefficientView].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Coefficient {
     Rational(Rational),
@@ -419,7 +433,8 @@ impl<'a> SerializedFloat<'a> {
     }
 }
 
-/// A view of a coefficient that keeps GMP rationals serialized.
+/// A view of a coefficient that keeps its complicated variants
+/// serialized for efficiency.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CoefficientView<'a> {
     Natural(i64, i64),
@@ -1231,6 +1246,7 @@ impl<'a> AtomView<'a> {
                 mul.set_normalized(!changed);
 
                 if !changed {
+                    mul.set_has_coefficient(m.has_coefficient());
                     std::mem::swap(out, &mut o);
                     false
                 } else {

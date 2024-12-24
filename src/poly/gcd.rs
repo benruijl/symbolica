@@ -1,3 +1,5 @@
+//! Compute the greatest common divisor (GCD) of multivariate polynomials with coefficients that implement [PolynomialGCD].
+
 use ahash::{HashMap, HashSet, HashSetExt};
 use rand;
 use smallvec::{smallvec, SmallVec};
@@ -20,7 +22,7 @@ use crate::tensors::matrix::{Matrix, MatrixError};
 use super::polynomial::MultivariatePolynomial;
 use super::PositiveExponent;
 
-// 100 large u32 primes starting from the 203213901st prime number
+/// 100 large `u32` primes starting from the 203213901st prime number
 pub const LARGE_U32_PRIMES: [u32; 100] = [
     4293490987, 4293491603, 4293492277, 4293492857, 4293491017, 4293491621, 4293492283, 4293492881,
     4293491023, 4293491639, 4293492293, 4293492893, 4293491051, 4293491659, 4293492331, 4293492941,
@@ -37,6 +39,7 @@ pub const LARGE_U32_PRIMES: [u32; 100] = [
     4293491591, 4293492169, 4293492821, 4293493487,
 ];
 
+/// 50 large 64-bit primes, starting from `18446744073709551557`.
 pub const LARGE_U64_PRIMES: [u64; 50] = [
     18446744073709551557,
     18446744073709551533,
@@ -90,6 +93,7 @@ pub const LARGE_U64_PRIMES: [u64; 50] = [
     18446744073709549519,
 ];
 
+/// Large primes of [Self].
 pub trait LargePrimes: Sized {
     /// Get a list of large primes that fit in this type.
     fn get_primes() -> &'static [Self];
@@ -110,11 +114,11 @@ impl LargePrimes for u64 {
 }
 
 /// The maximum power of a variable that is cached
-pub const POW_CACHE_SIZE: usize = 1000;
-pub const INITIAL_POW_MAP_SIZE: usize = 1000;
+pub(crate) const POW_CACHE_SIZE: usize = 1000;
+pub(crate) const INITIAL_POW_MAP_SIZE: usize = 1000;
 
 /// The upper bound of the range to be sampled during the computation of multiple gcds
-pub const MAX_RNG_PREFACTOR: u32 = 50000;
+pub(crate) const MAX_RNG_PREFACTOR: u32 = 50000;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum GCDError {
@@ -1849,6 +1853,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
     }
 }
 
+/// An error that can occur during the heuristic GCD algorithm.
 #[derive(Debug)]
 pub enum HeuristicGCDError {
     MaxSizeExceeded,

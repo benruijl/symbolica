@@ -1,3 +1,24 @@
+//! Graphs and related algorithms.
+//!
+//! # Examples
+//!
+//! ```
+//! use symbolica::graph::Graph;
+//! let mut g = Graph::new();
+//! let n0 = g.add_node(0);
+//! let n1 = g.add_node(1);
+//! let n2 = g.add_node(2);
+//!
+//! g.add_edge(n2, n1, true, 0).unwrap();
+//! g.add_edge(n0, n0, false, 0).unwrap();
+//! g.add_edge(n0, n1, true, 0).unwrap();
+//! g.add_edge(n1, n0, false, 2).unwrap();
+//!
+//! g.canonize_edges();
+//!
+//! assert_eq!(g.node(0).edges, [0, 1, 2]);
+//! ```
+
 use ahash::{HashMap, HashSet};
 use std::{
     cmp::Ordering,
@@ -89,6 +110,25 @@ impl<T: Ord, U> Ord for HiddenData<T, U> {
 /// A multigraph with support for arbitrary node and edge data.
 ///
 /// Use [HiddenData] to hide parts of the data from all equality and hashing.
+///
+/// # Example
+///
+/// ```
+/// use symbolica::graph::Graph;
+/// let mut g = Graph::new();
+/// let n0 = g.add_node(0);
+/// let n1 = g.add_node(1);
+/// let n2 = g.add_node(2);
+///
+/// g.add_edge(n2, n1, true, 0).unwrap();
+/// g.add_edge(n0, n0, false, 0).unwrap();
+/// g.add_edge(n0, n1, true, 0).unwrap();
+/// g.add_edge(n1, n0, false, 2).unwrap();
+///
+/// g.canonize_edges();
+///
+/// assert_eq!(g.node(0).edges, [0, 1, 2]);
+/// ```
 #[derive(Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct Graph<NodeData = Empty, EdgeData = Empty> {
     nodes: Vec<Node<NodeData>>,
@@ -165,6 +205,7 @@ impl<N: Display, E: Display> Graph<N, E> {
     }
 }
 
+/// Information about a node in a spanning tree.
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub position: Option<usize>,
@@ -912,10 +953,13 @@ impl<
     }
 }
 
+/// Information about the graph and its canonical form.
 pub struct CanonicalForm<N, E> {
     /// Mapping of the vertices from the input graph to the canonical graph.
     pub vertex_map: Vec<usize>,
+    /// Generators of the automorphism group of the graph.
     pub orbit_generators: Vec<Vec<Vec<usize>>>,
+    /// An orbit of the graph.
     pub orbit: Vec<usize>,
     /// The size of the automorphism group of the graph, including
     /// the permutations stemming from identical edges.

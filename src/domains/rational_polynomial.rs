@@ -1,3 +1,5 @@
+//! Rational polynomial field.
+
 use std::{
     borrow::Cow,
     cmp::Ordering,
@@ -24,6 +26,7 @@ use super::{
     Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
 };
 
+/// A rational polynomial field.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RationalPolynomialField<R: Ring, E: PositiveExponent> {
     ring: R,

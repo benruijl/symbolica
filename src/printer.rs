@@ -1,3 +1,5 @@
+//! Methods for printing atoms and polynomials.
+
 use std::fmt::{self, Error, Write};
 
 use colored::Colorize;
@@ -9,6 +11,7 @@ use crate::{
     state::State,
 };
 
+/// Various options for printing expressions.
 #[derive(Debug, Copy, Clone)]
 pub struct PrintOptions {
     pub terms_on_new_line: bool,
@@ -130,6 +133,10 @@ impl Default for PrintOptions {
     }
 }
 
+/// The current state useful for printing. These
+/// settings will control, for example, if parentheses are needed
+/// (e.g., a sum in a product),
+/// and if 1 should be suppressed (e.g. in a product).
 #[derive(Debug, Copy, Clone)]
 pub struct PrintState {
     pub in_sum: bool,
@@ -211,6 +218,16 @@ define_formatters!(
     FormattedPrintAdd
 );
 
+/// A printer for atoms, useful in a [format!].
+///
+/// # Examples
+///
+/// ```
+/// use symbolica::atom::{Atom, AtomCore};
+/// use symbolica::printer::PrintOptions;
+/// let a = Atom::parse("x + y").unwrap();
+/// println!("{}", a.printer(PrintOptions::latex()));
+/// ```
 pub struct AtomPrinter<'a> {
     pub atom: AtomView<'a>,
     pub print_opts: PrintOptions,
@@ -605,7 +622,8 @@ impl<'a> FormattedPrintNum for NumView<'a> {
             }
             CoefficientView::RationalPolynomial(p) => {
                 f.write_char('[')?;
-                p.deserialize().format(opts, print_state, f)
+                p.deserialize().format(opts, print_state, f)?;
+                f.write_char(']').map(|_| false)
             }
         }
     }

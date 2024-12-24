@@ -1,3 +1,5 @@
+//! Methods for tensor manipulation and linear algebra.
+
 use crate::{
     atom::{representation::InlineNum, Atom, AtomOrView, AtomView, Mul},
     graph::{Graph, HiddenData},

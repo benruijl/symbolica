@@ -1,3 +1,5 @@
+//! Floating-point numbers and traits.
+
 use std::{
     f64::consts::{LOG10_2, LOG2_10},
     fmt::{self, Debug, Display, Formatter, LowerExp, Write},

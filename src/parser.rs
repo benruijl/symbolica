@@ -1,3 +1,11 @@
+//! Parsing of general expressions.
+//!
+//! Most users will want to use [Atom::parse] to parse an atom.
+//!
+//! Use [Token::parse] to tokenize an expression, and
+//! [Token::to_polynomial], [Token::to_rational_polynomial] or [Token::to_factorized_rational_polynomial] for accelerated parsing of polynomials written
+//! in Symbolica's fast format.
+
 use std::{fmt::Write, string::String, sync::Arc};
 
 use bytes::Buf;
@@ -65,6 +73,7 @@ const HEX_TO_DIGIT: [u8; 24] = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0, 10, 11, 12, 13, 14, 15, 0,
 ];
 
+/// The current parsing state.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ParseState {
     Identifier,
@@ -73,6 +82,7 @@ enum ParseState {
     Any,
 }
 
+/// An operator in the expression.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Operator {
     Mul,
@@ -142,11 +152,16 @@ impl Operator {
     }
 }
 
+/// The position in a string, used for error messages.
 pub struct Position {
     pub line_number: usize,
     pub char_pos: usize,
 }
 
+/// A token in a string.
+///
+/// From tokens, fast methods are available to parse
+/// an expression or a polynomial.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Token {
     Number(SmartString<LazyCompact>),

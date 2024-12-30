@@ -10,7 +10,7 @@ name = "symbolica"
 readme = "Readme.md"
 repository = "https://github.com/benruijl/symbolica"
 rust-version = "1.73"
-version = "0.13.0"
+version = "0.14.0"
 
 [profile.release]
 codegen-units = 1

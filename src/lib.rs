@@ -12,7 +12,7 @@
 //! fn main() {
 //!     let input = Atom::parse("x^2*log(2*x + y) + exp(3*x)").unwrap();
 //!     let a = input.derivative(Symbol::new("x"));
-//!     println!("d({})/dx = {}:", input, a);
+//!     println!("d/dx {} = {}:", input, a);
 //! }
 //! ```
 //!

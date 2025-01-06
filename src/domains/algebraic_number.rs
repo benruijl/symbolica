@@ -212,7 +212,7 @@ where
         {
             poly.clear();
             for (i, c) in coeffs.iter().enumerate() {
-                poly.append_monomial(poly.ring.nth(*c), &[i as u16]);
+                poly.append_monomial(poly.ring.nth((*c).into()), &[i as u16]);
             }
 
             poly.is_irreducible()
@@ -290,7 +290,7 @@ where
     }
 }
 
-impl<R: Ring> AlgebraicExtension<R> {
+impl<R: EuclideanDomain> AlgebraicExtension<R> {
     /// Create a new algebraic extension from a univariate polynomial.
     /// The polynomial should be monic and irreducible.
     pub fn new(poly: MultivariatePolynomial<R, u16>) -> AlgebraicExtension<R> {
@@ -435,7 +435,7 @@ impl<R: Ring> AlgebraicNumber<R> {
     }
 }
 
-impl<R: Ring> Ring for AlgebraicExtension<R> {
+impl<R: EuclideanDomain> Ring for AlgebraicExtension<R> {
     type Element = AlgebraicNumber<R>;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -494,7 +494,7 @@ impl<R: Ring> Ring for AlgebraicExtension<R> {
         }
     }
 
-    fn nth(&self, n: u64) -> Self::Element {
+    fn nth(&self, n: Integer) -> Self::Element {
         AlgebraicNumber {
             poly: self.poly.constant(self.poly.ring.nth(n)),
         }
@@ -526,6 +526,42 @@ impl<R: Ring> Ring for AlgebraicExtension<R> {
 
     fn size(&self) -> Integer {
         self.poly.ring.size().pow(self.poly.degree(0) as u64)
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        // solve the linear system (c_0 + c_1*x + c_(d-1)*x^(d-1)) * b % self = a
+        // TODO: use the inverse if R is a field (requires specialization)
+        let d = self.poly.degree(0) as usize;
+        let mut m = vec![self.poly.ring.zero(); d * d];
+
+        let mut f = self.one();
+
+        for e in 0..d {
+            let c = self.mul(b, &f);
+            for monomial in &c.poly {
+                m[monomial.exponents[0] as usize * d + e] = monomial.coefficient.clone();
+            }
+            f.poly.exponents[0] += 1;
+        }
+
+        let mut rhs = vec![self.poly.ring.zero(); d];
+        for monomial in &a.poly {
+            rhs[monomial.exponents[0] as usize] = monomial.coefficient.clone();
+        }
+
+        let m = Matrix::from_linear(m, d as u32, d as u32, self.poly.ring.clone()).unwrap();
+        let rhs = Matrix::new_vec(rhs, self.poly.ring.clone());
+
+        if let Ok(s) = m.solve_fraction_free(&rhs) {
+            let mut new_poly = self.poly.zero();
+            for (p, c) in s.into_vec().into_iter().enumerate() {
+                new_poly = &new_poly + &new_poly.monomial(c, vec![p as u16]);
+            }
+
+            Some(AlgebraicNumber { poly: new_poly })
+        } else {
+            None
+        }
     }
 
     /// Sample a polynomial.
@@ -685,7 +721,7 @@ impl<R: Field + PolynomialGCD<u16>> AlgebraicExtension<R> {
 
         let a = f.neg(&f.div(&g2.get_constant(), &g2.lcoeff()));
         let y = f.to_element(g2.ring.poly.one().mul_exp(&[1]));
-        let b = f.sub(&y, &f.mul(&a, &f.nth(s as u64)));
+        let b = f.sub(&y, &f.mul(&a, &f.nth(s.into())));
 
         (f, a, b)
     }
@@ -739,7 +775,7 @@ impl<R: Field + PolynomialGCD<E>, E: PositiveExponent>
                 // construct f(x-s*a)
                 let alpha_poly = f.variable(&self.get_vars_ref()[v]).unwrap()
                     - f.variable(&self.ring.poly.variables[0]).unwrap()
-                        * &f.constant(f.ring.nth(s as u64));
+                        * &f.constant(f.ring.nth(s.into()));
                 let g_multi = f.clone().replace_with_poly(v, &alpha_poly);
                 let g_uni = g_multi.to_univariate(alpha);
 
@@ -761,7 +797,9 @@ mod tests {
     use crate::atom::{Atom, AtomCore, Symbol};
     use crate::domains::algebraic_number::AlgebraicExtension;
     use crate::domains::finite_field::{PrimeIteratorU64, Zp, Z2};
+    use crate::domains::integer::Z;
     use crate::domains::rational::Q;
+    use crate::domains::Ring;
 
     #[test]
     fn gcd_number_field() -> Result<(), String> {
@@ -865,5 +903,19 @@ mod tests {
         let r = poly.simplify(&a);
         let res = Atom::parse("1+v1+v1^2").unwrap().to_polynomial(&Q, None);
         assert_eq!(*r.poly, res);
+    }
+
+    #[test]
+    fn try_div() {
+        let extension =
+            AlgebraicExtension::new(Atom::parse("v1^3-2v1+3").unwrap().to_polynomial(&Z, None));
+
+        let f1 = extension.to_element(Atom::parse("v1^2-2").unwrap().to_polynomial(&Z, None));
+        let f2 = extension.to_element(Atom::parse("v1-5").unwrap().to_polynomial(&Z, None));
+        let prod = extension.mul(&f1, &f2);
+
+        assert_eq!(extension.try_div(&prod, &f2).unwrap(), f1);
+        assert_eq!(extension.try_div(&prod, &f1).unwrap(), f2);
+        assert!(extension.try_div(&f2, &f1).is_none());
     }
 }

@@ -627,7 +627,7 @@ where
         }
     }
 
-    fn nth(&self, n: u64) -> Self::Element {
+    fn nth(&self, n: Integer) -> Self::Element {
         let mut r = self.one();
         r.numerator = r.numerator.mul_coeff(self.ring.nth(n));
         r
@@ -671,6 +671,14 @@ where
 
     fn size(&self) -> Integer {
         Integer::zero()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if b.is_zero() {
+            None
+        } else {
+            Some(self.div(a, b))
+        }
     }
 
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
@@ -1109,11 +1117,11 @@ where
 
                 d_exp[i - 1] = d_exp[i - 1].clone()
                     + s_cor
-                    + t_cor.derivative().div_coeff(&(t_cor.ring.nth(i as u64)));
+                    + t_cor.derivative().div_coeff(&(t_cor.ring.nth(i.into())));
 
                 let t_full = Self::from_univariate(t_cor);
 
-                let r = -(&t_full / &(&rat_field.nth(i as u64) * &p_full.pow(i as u64)));
+                let r = -(&t_full / &(&rat_field.nth(i.into()) * &p_full.pow(i as u64)));
                 if !r.is_zero() {
                     v.push(r);
                 }

@@ -311,6 +311,167 @@ impl<F: Ring> Mul<F::Element> for &Vector<F> {
     }
 }
 
+impl<F: EuclideanDomain> Matrix<F> {
+    /// Write the first `max_col` columns of the matrix in (non-reduced) echelon form.
+    /// Returns the matrix rank.
+    pub fn partial_row_reduce_fraction_free(&mut self, max_col: u32) -> u32 {
+        let mut i = 0;
+        for j in 0..max_col.min(self.ncols) {
+            if F::is_zero(&self[(i, j)]) {
+                // Select a non-zero pivot.
+                for k in i + 1..self.nrows {
+                    if !F::is_zero(&self[(k, j)]) {
+                        // Swap i-th row and k-th row.
+                        for l in j..self.ncols {
+                            self.data
+                                .swap((self.ncols * i + l) as usize, (self.ncols * k + l) as usize);
+                        }
+                        break;
+                    }
+                }
+
+                // zero column found
+                if F::is_zero(&self[(i, j)]) {
+                    continue;
+                }
+            }
+
+            // strip content from pivot row to prevent number growth
+            let mut g = self[(i, j)].clone();
+            for l in j + 1..self.ncols {
+                if F::one_is_gcd_unit() && self.field.is_one(&g) {
+                    break;
+                }
+                g = self.field.gcd(&g, &self[(i, l)]);
+            }
+            if !self.field.is_one(&g) {
+                for l in j..self.ncols {
+                    self[(i, l)] = self.field.try_div(&self[(i, l)], &g).unwrap();
+                }
+            }
+
+            let x = self[(i, j)].clone();
+            for k in i + 1..self.nrows {
+                if !F::is_zero(&self[(k, j)]) {
+                    let g = self.field.gcd(&x, &self[(k, j)]);
+                    let scale_pivot = self.field.try_div(&self[(k, j)], &g).unwrap();
+                    let scale_row = self.field.try_div(&x, &g).unwrap();
+
+                    self[(k, j)] = self.field.zero();
+                    for l in j + 1..self.ncols {
+                        self[(k, l)] = self.field.sub(
+                            &self.field.mul(&self[(k, l)], &scale_row),
+                            &self.field.mul(&self[(i, l)], &scale_pivot),
+                        );
+                    }
+                }
+            }
+
+            i += 1;
+            if i >= self.nrows {
+                break;
+            }
+        }
+
+        i
+    }
+
+    /// Create a row-reduced (but not necessarily normalized) matrix from a matrix in echelon form.
+    pub fn back_substitution_fraction_free(&mut self, mut max_col: u32) {
+        max_col = max_col.min(self.ncols);
+        for i in (0..self.nrows).rev() {
+            if let Some(j) = (0..max_col).find(|&j| !F::is_zero(&self[(i, j)])) {
+                // strip content from pivot row to prevent number growth
+                let mut g = self[(i, j)].clone();
+                for l in j + 1..self.ncols {
+                    if F::one_is_gcd_unit() && self.field.is_one(&g) {
+                        break;
+                    }
+                    g = self.field.gcd(&g, &self[(i, l)]);
+                }
+                if !self.field.is_one(&g) {
+                    for l in j..self.ncols {
+                        self[(i, l)] = self.field.try_div(&self[(i, l)], &g).unwrap();
+                    }
+                }
+
+                for k in 0..i {
+                    if !F::is_zero(&self[(k, j)]) {
+                        let g = self.field.gcd(&self[(i, j)], &self[(k, j)]);
+
+                        let scale_pivot = self.field.try_div(&self[(k, j)], &g).unwrap();
+                        let scale_row = self.field.try_div(&self[(i, j)], &g).unwrap();
+
+                        if !self.field.is_one(&scale_row) {
+                            for l in 0..self.ncols {
+                                if !F::is_zero(&self[(k, l)]) {
+                                    self[(k, l)] = self.field.mul(&self[(k, l)], &scale_row);
+                                }
+                            }
+                        }
+
+                        self[(k, j)] = self.field.zero();
+                        for l in j + 1..self.ncols {
+                            self[(k, l)] = self
+                                .field
+                                .sub(&self[(k, l)], &self.field.mul(&self[(i, l)], &scale_pivot));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Solve `A * x = b` for `x`, where `A` is `self` if `x` exists in the domain `F`.
+    pub fn solve_fraction_free(&self, b: &Matrix<F>) -> Result<Matrix<F>, MatrixError<F>> {
+        if self.nrows != b.nrows {
+            return Err(MatrixError::ShapeMismatch);
+        }
+        if b.ncols != 1 {
+            return Err(MatrixError::RightHandSideIsNotVector);
+        }
+
+        let (neqs, nvars) = (self.nrows, self.ncols);
+
+        let mut m = self.augment(b)?;
+
+        let rank = m.partial_row_reduce_fraction_free(nvars);
+
+        for k in rank..neqs {
+            if !F::is_zero(&m[(k, nvars)]) {
+                return Err(MatrixError::Inconsistent);
+            }
+        }
+
+        m.back_substitution_fraction_free(nvars);
+
+        if rank < nvars {
+            return Err(MatrixError::Underdetermined {
+                rank,
+                row_reduced_augmented_matrix: m,
+            });
+        }
+
+        // now divide by the pivot, if it fails the result is not in the domain
+        for x in 0..self.nrows {
+            if let Some(q) = self.field.try_div(&m[(x, nvars)], &m[(x, x)]) {
+                m[(x, nvars)] = q;
+            } else {
+                return Err(MatrixError::ResultNotInDomain);
+            }
+        }
+
+        let result = Matrix {
+            nrows: nvars,
+            ncols: 1,
+            data: (0..nvars).map(|i| m[(i, nvars)].clone()).collect(),
+            field: m.field,
+        };
+
+        Ok(result)
+    }
+}
+
 impl<F: Field> Vector<F> {
     /// Project the vector onto the `target` vector.
     pub fn project(&self, target: &Self) -> Self {
@@ -763,6 +924,50 @@ impl<F: Ring> Matrix<F> {
             field: self.field,
         }
     }
+
+    /// Augment the matrix with another matrix, e.g. create `[A B]` from matrix `A` and `B`.
+    ///
+    /// Returns an error when the matrices do not have the same number of rows.
+    pub fn augment(&self, matrix: &Matrix<F>) -> Result<Matrix<F>, MatrixError<F>> {
+        if self.nrows != matrix.nrows {
+            return Err(MatrixError::ShapeMismatch);
+        }
+
+        let mut m = Matrix::new(self.nrows, self.ncols + matrix.ncols, self.field.clone());
+
+        for (r, (r1, r2)) in self.row_iter().zip(matrix.row_iter()).enumerate() {
+            m.data[r as usize * m.ncols as usize
+                ..r as usize * m.ncols as usize + self.ncols as usize]
+                .clone_from_slice(r1);
+            m.data[r as usize * m.ncols as usize + self.ncols as usize
+                ..r as usize * m.ncols as usize + m.ncols as usize]
+                .clone_from_slice(r2);
+        }
+
+        Ok(m)
+    }
+
+    /// Split the matrix into two matrices at the `index`-th column.
+    pub fn split_col(&self, index: u32) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>> {
+        if index == 0 || index >= self.ncols - 1 {
+            return Err(MatrixError::ShapeMismatch);
+        }
+
+        let mut m1 = Matrix::new(self.nrows, index, self.field.clone());
+        let mut m2 = Matrix::new(self.nrows, self.ncols - index, self.field.clone());
+
+        // chunks could be 0!
+        for (r, (r1, r2)) in self.row_iter().zip(
+            m1.data
+                .chunks_mut(index as usize)
+                .zip(m2.data.chunks_mut(self.ncols as usize - index as usize)),
+        ) {
+            r1.clone_from_slice(&r[..index as usize]);
+            r2.clone_from_slice(&r[index as usize..]);
+        }
+
+        Ok((m1, m2))
+    }
 }
 
 impl<F: Ring> SelfRing for Matrix<F> {
@@ -1037,6 +1242,7 @@ pub enum MatrixError<F: Ring> {
     Singular,
     ShapeMismatch,
     RightHandSideIsNotVector,
+    ResultNotInDomain,
 }
 
 impl<F: Ring> std::fmt::Display for MatrixError<F> {
@@ -1060,6 +1266,10 @@ impl<F: Ring> std::fmt::Display for MatrixError<F> {
             MatrixError::RightHandSideIsNotVector => {
                 write!(f, "The right-hand side is not a vector")
             }
+            MatrixError::ResultNotInDomain => write!(
+                f,
+                "The result does not belong to the same domain as the matrix."
+            ),
         }
     }
 }
@@ -1286,7 +1496,7 @@ impl<F: Field> Matrix<F> {
         let zero = self.field.zero();
 
         let mut i = 0;
-        for j in 0..max_col {
+        for j in 0..max_col.min(self.ncols) {
             if F::is_zero(&self[(i, j)]) {
                 // Select a non-zero pivot.
                 for k in i + 1..self.nrows {
@@ -1329,7 +1539,8 @@ impl<F: Field> Matrix<F> {
     }
 
     /// Create a row-reduced matrix from a matrix in echelon form.
-    pub fn back_substitution(&mut self, max_col: u32) {
+    pub fn back_substitution(&mut self, mut max_col: u32) {
+        max_col = max_col.min(self.ncols);
         let field = self.field.clone();
         for i in (0..self.nrows).rev() {
             if let Some(j) = (0..max_col).find(|&j| !F::is_zero(&self[(i, j)])) {
@@ -1353,50 +1564,6 @@ impl<F: Field> Matrix<F> {
                 }
             }
         }
-    }
-
-    /// Augment the matrix with another matrix, e.g. create `[A B]` from matrix `A` and `B`.
-    ///
-    /// Returns an error when the matrices do not have the same number of rows.
-    pub fn augment(&self, matrix: &Matrix<F>) -> Result<Matrix<F>, MatrixError<F>> {
-        if self.nrows != matrix.nrows {
-            return Err(MatrixError::ShapeMismatch);
-        }
-
-        let mut m = Matrix::new(self.nrows, self.ncols + matrix.ncols, self.field.clone());
-
-        for (r, (r1, r2)) in self.row_iter().zip(matrix.row_iter()).enumerate() {
-            m.data[r as usize * m.ncols as usize
-                ..r as usize * m.ncols as usize + self.ncols as usize]
-                .clone_from_slice(r1);
-            m.data[r as usize * m.ncols as usize + self.ncols as usize
-                ..r as usize * m.ncols as usize + m.ncols as usize]
-                .clone_from_slice(r2);
-        }
-
-        Ok(m)
-    }
-
-    /// Split the matrix into two matrices at the `index`-th column.
-    pub fn split_col(&self, index: u32) -> Result<(Matrix<F>, Matrix<F>), MatrixError<F>> {
-        if index == 0 || index >= self.ncols - 1 {
-            return Err(MatrixError::ShapeMismatch);
-        }
-
-        let mut m1 = Matrix::new(self.nrows, index, self.field.clone());
-        let mut m2 = Matrix::new(self.nrows, self.ncols - index, self.field.clone());
-
-        // chunks could be 0!
-        for (r, (r1, r2)) in self.row_iter().zip(
-            m1.data
-                .chunks_mut(index as usize)
-                .zip(m2.data.chunks_mut(self.ncols as usize - index as usize)),
-        ) {
-            r1.clone_from_slice(&r[..index as usize]);
-            r2.clone_from_slice(&r[index as usize..]);
-        }
-
-        Ok((m1, m2))
     }
 
     /// Solve `A * x = b` for `x`, where `A` is `self`.
@@ -1758,5 +1925,31 @@ mod test {
 
         assert_eq!(a, d);
         assert_eq!(b, e);
+    }
+
+    #[test]
+    fn solve_fraction_free() {
+        let a = Matrix::from_linear(
+            vec![
+                1.into(),
+                (-2).into(),
+                (3).into(),
+                2.into(),
+                (1).into(),
+                1.into(),
+                (-3).into(),
+                2.into(),
+                (-2).into(),
+            ],
+            3,
+            3,
+            Z,
+        )
+        .unwrap();
+
+        let rhs = Matrix::from_linear(vec![7.into(), 4.into(), (-10).into()], 3, 1, Z).unwrap();
+
+        let r = a.solve_fraction_free(&rhs).unwrap();
+        assert_eq!(r.data, [2, -1, 1]);
     }
 }

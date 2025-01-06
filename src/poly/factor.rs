@@ -835,7 +835,7 @@ where
 
             if d == 1 && (characteristic.is_zero() || try_counter < characteristic) {
                 exp[var] = E::zero();
-                random_poly.append_monomial(self.ring.nth(try_counter), &exp);
+                random_poly.append_monomial(self.ring.nth(try_counter.into()), &exp);
                 exp[var] = E::one();
                 random_poly.append_monomial(self.ring.one(), &exp);
                 try_counter += 1;
@@ -1314,7 +1314,7 @@ where
                 let mut contrib = self.one();
                 for (full, b) in lifted.iter().zip(&basis) {
                     // check if a GCD-free basis element is a factor of the leading coefficient of this bivariate factor
-                    if let Some((_, m)) = fac.iter().find(|(f, _)| f == b || f.divides(b).is_some())
+                    if let Some((_, m)) = fac.iter().find(|(f, _)| f == b || f.try_div(b).is_some())
                     {
                         for _ in 0..*m {
                             contrib = &contrib * full;
@@ -1516,7 +1516,9 @@ where
             }
 
             for s in &mut sample_points {
-                s.1 = self.ring.nth(rng.gen_range(0..=coefficient_upper_bound));
+                s.1 = self
+                    .ring
+                    .nth(rng.gen_range(0..=coefficient_upper_bound).into());
             }
 
             biv_f = self.clone();
@@ -2817,7 +2819,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 let mut contrib = self.one();
                 for (full, b) in lifted.iter().zip(&basis) {
                     // check if a GCD-free basis element is a factor of the leading coefficient of this bivariate factor
-                    if let Some((_, m)) = fac.iter().find(|(f, _)| f == b || f.divides(b).is_some())
+                    if let Some((_, m)) = fac.iter().find(|(f, _)| f == b || f.try_div(b).is_some())
                     {
                         for _ in 0..*m {
                             contrib = &contrib * full;

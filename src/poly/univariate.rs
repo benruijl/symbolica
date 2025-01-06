@@ -98,7 +98,7 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
         self.zero().one()
     }
 
-    fn nth(&self, n: u64) -> Self::Element {
+    fn nth(&self, n: Integer) -> Self::Element {
         self.zero().constant(self.ring.nth(n))
     }
 
@@ -124,6 +124,10 @@ impl<R: Ring> Ring for UnivariatePolynomialRing<R> {
 
     fn size(&self) -> Integer {
         0.into()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        a.try_div(b)
     }
 
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
@@ -457,7 +461,7 @@ impl<F: Ring> UnivariatePolynomial<F> {
             .enumerate()
         {
             if !F::is_zero(oc) {
-                *nc = self.ring.mul(oc, &self.ring.nth(p as u64 + 1));
+                *nc = self.ring.mul(oc, &self.ring.nth(Integer::from(p) + 1));
             }
         }
 
@@ -493,6 +497,117 @@ impl<F: Ring> UnivariatePolynomial<F> {
         }
 
         poly
+    }
+
+    pub fn try_div(&self, div: &UnivariatePolynomial<F>) -> Option<UnivariatePolynomial<F>> {
+        if div.is_zero() {
+            return None;
+        }
+
+        if self.is_zero() {
+            return Some(self.clone());
+        }
+
+        if self.variable != div.variable {
+            return None;
+        }
+
+        // check if the leading coefficients divide
+        if self.ring.try_div(&self.lcoeff(), &div.lcoeff()).is_none() {
+            return None;
+        }
+
+        if self.degree() < div.degree() {
+            return None;
+        }
+
+        if self.ring.characteristic().is_zero() {
+            // test division of constant term (evaluation at x_i = 0)
+            let c = div.get_constant();
+            if !F::is_zero(&c)
+                && !self.ring.is_one(&c)
+                && !self.ring.try_div(&self.get_constant(), &c).is_none()
+            {
+                return None;
+            }
+
+            // test division at x_i = 1
+            let mut num = self.ring.zero();
+            for c in &self.coefficients {
+                if !F::is_zero(c) {
+                    self.ring.add_assign(&mut num, c);
+                }
+            }
+            let mut den = self.ring.zero();
+            for c in &div.coefficients {
+                if !F::is_zero(c) {
+                    self.ring.add_assign(&mut den, c);
+                }
+            }
+
+            if !F::is_zero(&den)
+                && !self.ring.is_one(&den)
+                && self.ring.try_div(&num, &den).is_none()
+            {
+                return None;
+            }
+        }
+
+        let (a, b) = self.quot_rem_impl(div, true);
+        if b.is_zero() {
+            Some(a)
+        } else {
+            None
+        }
+    }
+
+    fn quot_rem_impl(&self, div: &Self, early_return: bool) -> (Self, Self) {
+        if div.is_zero() {
+            panic!("Cannot divide by 0");
+        }
+
+        if self.is_zero() {
+            return (self.clone(), self.clone());
+        }
+
+        if self.variable != div.variable {
+            panic!("Cannot divide with different variables");
+        }
+
+        let mut n = self.degree();
+        let m = div.degree();
+
+        if n < m {
+            return (self.zero(), self.clone());
+        }
+
+        let mut q = self.zero();
+        q.coefficients = vec![self.ring.zero(); n + 1 - m];
+
+        let mut r = self.clone();
+
+        while n >= m {
+            if let Some(qq) = self.ring.try_div(&r.coefficients[n], &div.coefficients[m]) {
+                r = r - div.mul_exp(n - m).mul_coeff(&qq);
+                q.coefficients[n - m] = qq;
+            } else {
+                if early_return {
+                    return (self.zero(), r);
+                } else {
+                    break;
+                }
+            }
+
+            if r.is_zero() {
+                break;
+            }
+
+            n = r.degree();
+        }
+
+        q.truncate();
+
+        (q, r)
     }
 }
 
@@ -1364,8 +1479,8 @@ impl<'a, 'b, F: EuclideanDomain> Div<&'a UnivariatePolynomial<F>> for &'b Univar
     type Output = UnivariatePolynomial<F>;
 
     fn div(self, other: &'a UnivariatePolynomial<F>) -> Self::Output {
-        self.divides(other)
-            .unwrap_or_else(|| panic!("No clean division of {} by {}", self, other))
+        self.try_div(other)
+            .unwrap_or_else(|| panic!("No exact division of {} by {}", self, other))
     }
 }
 
@@ -1411,117 +1526,13 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
         self.div_coeff(&c)
     }
 
-    pub fn divides(&self, div: &UnivariatePolynomial<F>) -> Option<UnivariatePolynomial<F>> {
-        if div.is_zero() {
-            panic!("Cannot divide by 0 polynomial");
-        }
-
-        if self.is_zero() {
-            return Some(self.clone());
-        }
-
-        if self.variable != div.variable {
-            panic!("Cannot divide with different variables");
-        }
-
-        // check if the leading coefficients divide
-        if !F::is_zero(&self.ring.rem(&self.lcoeff(), &div.lcoeff())) {
-            return None;
-        }
-
-        if self.degree() < div.degree() {
-            return None;
-        }
-
-        if self.ring.characteristic().is_zero() {
-            // test division of constant term (evaluation at x_i = 0)
-            let c = div.get_constant();
-            if !F::is_zero(&c)
-                && !self.ring.is_one(&c)
-                && !F::is_zero(&self.ring.rem(&self.get_constant(), &c))
-            {
-                return None;
-            }
-
-            // test division at x_i = 1
-            let mut num = self.ring.zero();
-            for c in &self.coefficients {
-                if !F::is_zero(c) {
-                    self.ring.add_assign(&mut num, c);
-                }
-            }
-            let mut den = self.ring.zero();
-            for c in &div.coefficients {
-                if !F::is_zero(c) {
-                    self.ring.add_assign(&mut den, c);
-                }
-            }
-
-            if !F::is_zero(&den)
-                && !self.ring.is_one(&den)
-                && !F::is_zero(&self.ring.rem(&num, &den))
-            {
-                return None;
-            }
-        }
-
-        let (a, b) = self.quot_rem(div);
-        if b.is_zero() {
-            Some(a)
-        } else {
-            None
-        }
-    }
-
     /// Compute the remainder `self % div`.
     pub fn rem(&self, div: &UnivariatePolynomial<F>) -> Self {
         self.quot_rem(div).1
     }
 
     pub fn quot_rem(&self, div: &Self) -> (Self, Self) {
-        if div.is_zero() {
-            panic!("Cannot divide by 0");
-        }
-
-        if self.is_zero() {
-            return (self.clone(), self.clone());
-        }
-
-        if self.variable != div.variable {
-            panic!("Cannot divide with different variables");
-        }
-
-        let mut n = self.degree();
-        let m = div.degree();
-
-        if n < m {
-            return (self.zero(), self.clone());
-        }
-
-        let mut q = self.zero();
-        q.coefficients = vec![self.ring.zero(); n + 1 - m];
-
-        let mut r = self.clone();
-
-        while n >= m {
-            let (qq, rr) = self.ring.quot_rem(&r.coefficients[n], &div.coefficients[m]);
-            if !F::is_zero(&rr) {
-                return (self.zero(), r);
-            }
-
-            r = r - div.mul_exp(n - m).mul_coeff(&qq);
-            q.coefficients[n - m] = qq;
-
-            if r.is_zero() {
-                break;
-            }
-
-            n = r.degree();
-        }
-
-        q.truncate();
-
-        (q, r)
+        self.quot_rem_impl(div, false)
     }
 
     /// Compute the p-adic expansion of the polynomial.
@@ -1560,7 +1571,7 @@ impl<F: EuclideanDomain> UnivariatePolynomial<F> {
             .enumerate()
         {
             if !F::is_zero(oc) {
-                let (q, r) = self.ring.quot_rem(oc, &self.ring.nth(p as u64 + 1));
+                let (q, r) = self.ring.quot_rem(oc, &self.ring.nth(Integer::from(p) + 1));
                 if !F::is_zero(&r) {
                     panic!("Could not compute integral since there is a remainder in the division of the exponent number.");
                 }

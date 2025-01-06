@@ -141,7 +141,7 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     fn zero(&self) -> Self::Element;
     fn one(&self) -> Self::Element;
     /// Return the nth element by computing `n * 1`.
-    fn nth(&self, n: u64) -> Self::Element;
+    fn nth(&self, n: Integer) -> Self::Element;
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element;
     fn is_zero(a: &Self::Element) -> bool;
     fn is_one(&self, a: &Self::Element) -> bool;
@@ -150,6 +150,10 @@ pub trait Ring: Clone + PartialEq + Eq + Hash + Debug + Display {
     fn characteristic(&self) -> Integer;
     /// The number of elements in the ring. 0 is used for infinite rings.
     fn size(&self) -> Integer;
+
+    /// Return the result of dividing `a` by `b`, if possible and if the result is unique.
+    /// For example, in [Z](type@integer::Z), `4/2` is possible but `3/2` is not.
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element>;
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element;
     /// Format a ring element with custom [PrintOptions] and [PrintState].
@@ -299,7 +303,7 @@ impl<R: Ring, C: Clone + Borrow<R>> Ring for WrappedRingElement<R, C> {
         }
     }
 
-    fn nth(&self, n: u64) -> Self::Element {
+    fn nth(&self, n: Integer) -> Self::Element {
         WrappedRingElement {
             ring: self.ring.clone(),
             element: self.ring().nth(n),
@@ -348,6 +352,13 @@ impl<R: Ring, C: Clone + Borrow<R>> Ring for WrappedRingElement<R, C> {
         f: &mut W,
     ) -> Result<bool, Error> {
         self.ring().format(&element.element, opts, state, f)
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        Some(WrappedRingElement {
+            ring: self.ring.clone(),
+            element: self.ring().try_div(&a.element, &b.element)?,
+        })
     }
 }
 

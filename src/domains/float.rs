@@ -112,8 +112,8 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
     }
 
     #[inline(always)]
-    fn nth(&self, n: u64) -> Self::Element {
-        self.rep.from_usize(n as usize)
+    fn nth(&self, n: Integer) -> Self::Element {
+        self.rep.from_rational(&n.into())
     }
 
     #[inline(always)]
@@ -144,6 +144,10 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Ring fo
     #[inline(always)]
     fn size(&self) -> Integer {
         0.into()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        Some(a.clone() / b)
     }
 
     #[inline(always)]

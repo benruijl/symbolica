@@ -146,7 +146,7 @@ impl<R: Ring> InternalOrdering for Fraction<R> {
     }
 }
 
-impl<R: EuclideanDomain> Ring for FractionField<R> {
+impl<R: EuclideanDomain + FractionNormalization> Ring for FractionField<R> {
     type Element = Fraction<R>;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -284,7 +284,7 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
     }
 
     #[inline]
-    fn nth(&self, n: u64) -> Self::Element {
+    fn nth(&self, n: Integer) -> Self::Element {
         Fraction {
             numerator: self.ring.nth(n),
             denominator: self.ring.one(),
@@ -317,6 +317,14 @@ impl<R: EuclideanDomain> Ring for FractionField<R> {
     fn size(&self) -> Integer {
         // TODO: this is an overestimate
         self.ring.size() * self.ring.size()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if Self::is_zero(b) {
+            None
+        } else {
+            Some(self.div(a, b))
+        }
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -1186,8 +1194,8 @@ mod test {
     #[test]
     fn fraction_int() {
         let f = FractionField::new(Z);
-        let b = f.neg(&f.nth(3));
-        let d = f.div(&f.add(&f.nth(100), &b), &b);
+        let b = f.neg(&f.nth(3.into()));
+        let d = f.div(&f.add(&f.nth(100.into()), &b), &b);
         assert_eq!(d, f.to_element((-97).into(), 3.into(), false));
     }
 
@@ -1207,7 +1215,7 @@ mod test {
         let rat = p.to_rational_polynomial(&poly2);
         let f = FractionField::new(PolynomialRing::from_poly(&rat.numerator));
 
-        let b = f.neg(&f.nth(3));
+        let b = f.neg(&f.nth(3.into()));
         let c = f.add(&rat, &b);
         let d = f.div(&c, &rat);
 

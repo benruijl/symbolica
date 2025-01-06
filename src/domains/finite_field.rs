@@ -344,12 +344,8 @@ impl Ring for Zp {
     }
 
     #[inline]
-    fn nth(&self, n: u64) -> Self::Element {
-        if n > u32::MAX as u64 {
-            self.to_element((n % self.p as u64) as u32)
-        } else {
-            self.to_element(n as u32 % self.p)
-        }
+    fn nth(&self, n: Integer) -> Self::Element {
+        n.to_finite_field(self)
     }
 
     /// Compute b^e % n.
@@ -397,6 +393,14 @@ impl Ring for Zp {
 
     fn size(&self) -> Integer {
         self.get_prime().into()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if Self::is_zero(b) {
+            None
+        } else {
+            Some(self.div(a, b))
+        }
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -647,8 +651,8 @@ impl Ring for Zp64 {
     }
 
     #[inline]
-    fn nth(&self, n: u64) -> Self::Element {
-        self.to_element(n)
+    fn nth(&self, n: Integer) -> Self::Element {
+        n.to_finite_field(self)
     }
 
     /// Compute b^e % n.
@@ -696,6 +700,14 @@ impl Ring for Zp64 {
 
     fn size(&self) -> Integer {
         self.get_prime().into()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if Self::is_zero(b) {
+            None
+        } else {
+            Some(self.div(a, b))
+        }
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -933,8 +945,8 @@ impl Ring for FiniteField<Two> {
     }
 
     #[inline]
-    fn nth(&self, n: u64) -> Self::Element {
-        (n % 2) as u8
+    fn nth(&self, n: Integer) -> Self::Element {
+        (n % 2i32).to_i64().unwrap() as u8
     }
 
     /// Compute b^e % n.
@@ -967,6 +979,14 @@ impl Ring for FiniteField<Two> {
 
     fn size(&self) -> Integer {
         2.into()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if *b == 0 {
+            None
+        } else {
+            Some(*a)
+        }
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
@@ -1168,8 +1188,8 @@ impl Ring for FiniteField<Mersenne64> {
     }
 
     #[inline]
-    fn nth(&self, n: u64) -> Self::Element {
-        self.to_element(Mersenne64(n))
+    fn nth(&self, n: Integer) -> Self::Element {
+        self.to_element(Mersenne64(n.to_finite_field(self)))
     }
 
     /// Compute b^e % n.
@@ -1217,6 +1237,14 @@ impl Ring for FiniteField<Mersenne64> {
 
     fn size(&self) -> Integer {
         Mersenne64::PRIME.into()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if Self::is_zero(b) {
+            None
+        } else {
+            Some(self.div(a, b))
+        }
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
@@ -1396,8 +1424,8 @@ impl Ring for FiniteField<Integer> {
     }
 
     #[inline]
-    fn nth(&self, n: u64) -> Self::Element {
-        Integer::from(n).symmetric_mod(&self.p)
+    fn nth(&self, n: Integer) -> Self::Element {
+        n.symmetric_mod(&self.p)
     }
 
     fn pow(&self, b: &Self::Element, e: u64) -> Self::Element {
@@ -1423,6 +1451,14 @@ impl Ring for FiniteField<Integer> {
 
     fn size(&self) -> Integer {
         self.get_prime()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if b.is_zero() {
+            None
+        } else {
+            Some(self.div(a, b))
+        }
     }
 
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {

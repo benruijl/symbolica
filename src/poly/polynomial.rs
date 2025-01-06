@@ -117,7 +117,7 @@ impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
     }
 
     #[inline]
-    fn nth(&self, n: u64) -> Self::Element {
+    fn nth(&self, n: Integer) -> Self::Element {
         self.zero().constant(self.ring.nth(n))
     }
 
@@ -146,6 +146,10 @@ impl<R: Ring, E: Exponent> Ring for PolynomialRing<R, E> {
 
     fn size(&self) -> Integer {
         0.into()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        a.try_div(b)
     }
 
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
@@ -1174,7 +1178,7 @@ impl<'a, 'b, F: EuclideanDomain, E: PositiveExponent>
     type Output = MultivariatePolynomial<F, E, LexOrder>;
 
     fn div(self, other: &'a MultivariatePolynomial<F, E, LexOrder>) -> Self::Output {
-        self.divides(other)
+        self.try_div(other)
             .unwrap_or_else(|| panic!("No clean division of {} by {}", self, other))
     }
 }
@@ -1219,6 +1223,10 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
 
     /// Multiply every coefficient with `other`.
     pub fn mul_coeff(mut self, other: F::Element) -> Self {
+        if self.ring.is_one(&other) {
+            return self;
+        }
+
         for c in &mut self.coefficients {
             self.ring.mul_assign(c, &other);
         }
@@ -1319,6 +1327,26 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
         max
     }
 
+    /// Get the lowest and highest exponent of the variable `x`.
+    /// This operation is O(n).
+    pub fn degree_bounds(&self, x: usize) -> (E, E) {
+        if self.nvars() == 0 {
+            return (E::zero(), E::zero());
+        }
+
+        let mut min = E::zero();
+        let mut max = E::zero();
+        for e in self.exponents.iter().skip(x).step_by(self.nvars()) {
+            if max < *e {
+                max = *e;
+            }
+            if min > *e {
+                min = *e;
+            }
+        }
+        (min, max)
+    }
+
     // Get the highest degree of a variable in the leading monomial.
     pub fn ldegree(&self, v: usize) -> E {
         if self.is_zero() {
@@ -1352,6 +1380,28 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             }
         }
         m
+    }
+
+    /// Take the derivative of the polynomial w.r.t the variable `var`.
+    pub fn derivative(&self, var: usize) -> Self {
+        debug_assert!(var < self.nvars());
+
+        let mut res = self.zero_with_capacity(self.nterms());
+
+        let mut exp = vec![E::zero(); self.nvars()];
+        for x in self {
+            if x.exponents[var] > E::zero() {
+                exp.copy_from_slice(x.exponents);
+                let pow = exp[var].to_i32() as u64;
+                exp[var] = exp[var] - E::one();
+                res.append_monomial(
+                    self.ring.mul(x.coefficient, &self.ring.nth(pow.into())),
+                    &exp,
+                );
+            }
+        }
+
+        res
     }
 }
 
@@ -1390,25 +1440,6 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
                 .map(|x| self.variables[x].clone())
                 .collect(),
         );
-    }
-
-    /// Take the derivative of the polynomial w.r.t the variable `var`.
-    pub fn derivative(&self, var: usize) -> Self {
-        debug_assert!(var < self.nvars());
-
-        let mut res = self.zero_with_capacity(self.nterms());
-
-        let mut exp = vec![E::zero(); self.nvars()];
-        for x in self {
-            if x.exponents[var] > E::zero() {
-                exp.copy_from_slice(x.exponents);
-                let pow = exp[var].to_i32() as u64;
-                exp[var] = exp[var] - E::one();
-                res.append_monomial(self.ring.mul(x.coefficient, &self.ring.nth(pow)), &exp);
-            }
-        }
-
-        res
     }
 
     /// Replace a variable `n` in the polynomial by an element from
@@ -1604,113 +1635,6 @@ impl<F: Ring, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         }
 
         poly
-    }
-
-    /// Synthetic division for univariate polynomials, where `div` is monic.
-    // TODO: create UnivariatePolynomial?
-    pub fn quot_rem_univariate_monic(
-        &self,
-        div: &MultivariatePolynomial<F, E, LexOrder>,
-    ) -> (
-        MultivariatePolynomial<F, E, LexOrder>,
-        MultivariatePolynomial<F, E, LexOrder>,
-    ) {
-        debug_assert_eq!(div.lcoeff(), self.ring.one());
-        if self.is_zero() {
-            return (self.clone(), self.clone());
-        }
-
-        let mut dividendpos = self.nterms() - 1; // work from the back
-
-        let mut q = self.zero_with_capacity(self.nterms());
-        let mut r = self.zero();
-
-        // determine the variable
-        let mut var = 0;
-        for (i, x) in self.last_exponents().iter().enumerate() {
-            if !x.is_zero() {
-                var = i;
-                break;
-            }
-        }
-
-        let m = div.ldegree_max();
-        let mut pow = self.ldegree_max();
-
-        loop {
-            // find the power in the dividend if it exists
-            let mut coeff = loop {
-                if self.exponents(dividendpos)[var] == pow {
-                    break self.coefficients[dividendpos].clone();
-                }
-                if dividendpos == 0 || self.exponents(dividendpos)[var] < pow {
-                    break self.ring.zero();
-                }
-                dividendpos -= 1;
-            };
-
-            let mut qindex = 0; // starting from highest
-            let mut bindex = 0; // starting from lowest
-            while bindex < div.nterms() && qindex < q.nterms() {
-                while bindex + 1 < div.nterms()
-                    && div.exponents(bindex)[var] + q.exponents(qindex)[var] < pow
-                {
-                    bindex += 1;
-                }
-
-                if div.exponents(bindex)[var] + q.exponents(qindex)[var] == pow {
-                    self.ring.sub_mul_assign(
-                        &mut coeff,
-                        &div.coefficients[bindex],
-                        &q.coefficients[qindex],
-                    );
-                }
-
-                qindex += 1;
-            }
-
-            if !F::is_zero(&coeff) {
-                // can the division be performed? if not, add to rest
-                // TODO: refactor
-                let (quot, div) = if pow >= m {
-                    (coeff, true)
-                } else {
-                    (coeff, false)
-                };
-
-                if div {
-                    let nterms = q.nterms();
-                    let nvars = q.nvars();
-                    q.coefficients.push(quot);
-                    q.exponents.resize((nterms + 1) * nvars, E::zero());
-                    q.exponents[nterms * nvars + var] = pow - m;
-                } else {
-                    let nterms = r.nterms();
-                    let nvars = r.nvars();
-                    r.coefficients.push(quot);
-                    r.exponents.resize((nterms + 1) * nvars, E::zero());
-                    r.exponents[nterms * nvars + var] = pow;
-                }
-            }
-
-            if pow.is_zero() {
-                break;
-            }
-
-            pow = pow - E::one();
-        }
-
-        q.reverse();
-        r.reverse();
-
-        #[cfg(debug_assertions)]
-        {
-            if !(&q * div + r.clone() - self.clone()).is_zero() {
-                panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
-            }
-        }
-
-        (q, r)
     }
 }
 
@@ -1947,28 +1871,47 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
     }
 
     /// Compute `self^pow`.
-    pub fn pow(&self, mut pow: usize) -> Self {
+    pub fn pow(&self, pow: usize) -> Self {
         if pow == 0 {
             return self.one();
+        }
+        if pow == 1 {
+            return self.clone();
         }
 
         if self.is_constant() {
             return self.constant(self.ring.pow(&self.lcoeff(), pow as u64));
         }
 
-        let mut x = self.clone();
-        let mut y = self.one();
-        while pow != 1 {
-            if pow % 2 == 1 {
-                y = &y * &x;
-                pow -= 1;
-            }
-
-            x = &x * &x;
-            pow /= 2;
+        if self.coefficients.len() == 1 {
+            return self.monomial(
+                self.ring.pow(&self.coefficients[0], pow as u64),
+                self.exponents
+                    .iter()
+                    .map(|x| *x * E::from_i32(pow as i32))
+                    .collect(),
+            );
         }
 
-        x * &y
+        // heuristic for when to use heap_pow
+        if pow > 10 || (0..self.nvars()).all(|x| self.degree(x) <= E::from_i32(2)) {
+            // if the characteristic is non-zero, a division by the exponent in the heap_pow algorithm
+            // may cause a division by 0
+            if self.ring.characteristic() == 0
+                || self.nvars() == 1
+                    && self.degree(0).to_i32() as usize + 1 < self.ring.characteristic()
+            {
+                return self.heap_pow(pow);
+            }
+        }
+
+        // perform repeated multiplication instead of binary exponentiation, as
+        // the latter is often much slower for sparse polynomials
+        let mut res = self * self;
+        for _ in 2..pow {
+            res = &res * self;
+        }
+        res
     }
 
     pub fn to_univariate(&self, var: usize) -> UnivariatePolynomial<PolynomialRing<F, E>> {
@@ -2117,44 +2060,7 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         tm
     }
 
-    /// Convert the polynomial to one in a number field, where the variable
-    /// of the number field is moved into the coefficient.
-    pub fn to_number_field(
-        &self,
-        field: &AlgebraicExtension<F>,
-    ) -> MultivariatePolynomial<AlgebraicExtension<F>, E> {
-        let var = &field.poly().get_vars_ref()[0];
-        let Some(var_index) = self.get_vars_ref().iter().position(|x| x == var) else {
-            return self.map_coeff(
-                |c| field.to_element(field.poly().constant(c.clone())),
-                field.clone(),
-            );
-        };
-
-        let polys = self.to_multivariate_polynomial_list(&[var_index], false);
-
-        // TODO: remove the variable from the variable map?
-        let mut poly =
-            MultivariatePolynomial::new(field, self.nterms().into(), self.variables.clone());
-        for (e, c) in polys {
-            let mut c2 = MultivariatePolynomial::new(
-                &self.ring,
-                c.nterms().into(),
-                Arc::new(vec![self.variables.as_ref()[var_index].clone()]),
-            );
-
-            c2.exponents = c
-                .exponents_iter()
-                .map(|x| x[var_index].to_i32() as u16)
-                .collect();
-            c2.coefficients = c.coefficients;
-
-            poly.append_monomial(field.to_element(c2), &e);
-        }
-        poly
-    }
-
-    pub fn mul_univariate_dense(&self, rhs: &Self, max_pow: Option<usize>) -> Self {
+    pub(crate) fn mul_univariate_dense(&self, rhs: &Self, max_pow: Option<usize>) -> Self {
         if self.is_constant() {
             if let Some(m) = max_pow {
                 if let Some(var) = rhs.last_exponents().iter().position(|e| *e != E::zero()) {
@@ -2217,6 +2123,112 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
             }
         }
         res
+    }
+
+    /// Synthetic division for univariate polynomials, where `div` is monic.
+    pub(crate) fn quot_rem_univariate_monic(
+        &self,
+        div: &MultivariatePolynomial<F, E, LexOrder>,
+    ) -> (
+        MultivariatePolynomial<F, E, LexOrder>,
+        MultivariatePolynomial<F, E, LexOrder>,
+    ) {
+        debug_assert_eq!(div.lcoeff(), self.ring.one());
+        if self.is_zero() {
+            return (self.clone(), self.clone());
+        }
+
+        let mut dividendpos = self.nterms() - 1; // work from the back
+
+        let mut q = self.zero_with_capacity(self.nterms());
+        let mut r = self.zero();
+
+        // determine the variable
+        let mut var = 0;
+        for (i, x) in self.last_exponents().iter().enumerate() {
+            if !x.is_zero() {
+                var = i;
+                break;
+            }
+        }
+
+        let m = div.ldegree_max();
+        let mut pow = self.ldegree_max();
+
+        loop {
+            // find the power in the dividend if it exists
+            let mut coeff = loop {
+                if self.exponents(dividendpos)[var] == pow {
+                    break self.coefficients[dividendpos].clone();
+                }
+                if dividendpos == 0 || self.exponents(dividendpos)[var] < pow {
+                    break self.ring.zero();
+                }
+                dividendpos -= 1;
+            };
+
+            let mut qindex = 0; // starting from highest
+            let mut bindex = 0; // starting from lowest
+            while bindex < div.nterms() && qindex < q.nterms() {
+                while bindex + 1 < div.nterms()
+                    && div.exponents(bindex)[var] + q.exponents(qindex)[var] < pow
+                {
+                    bindex += 1;
+                }
+
+                if div.exponents(bindex)[var] + q.exponents(qindex)[var] == pow {
+                    self.ring.sub_mul_assign(
+                        &mut coeff,
+                        &div.coefficients[bindex],
+                        &q.coefficients[qindex],
+                    );
+                }
+
+                qindex += 1;
+            }
+
+            if !F::is_zero(&coeff) {
+                // can the division be performed? if not, add to rest
+                // TODO: refactor
+                let (quot, div) = if pow >= m {
+                    (coeff, true)
+                } else {
+                    (coeff, false)
+                };
+
+                if div {
+                    let nterms = q.nterms();
+                    let nvars = q.nvars();
+                    q.coefficients.push(quot);
+                    q.exponents.resize((nterms + 1) * nvars, E::zero());
+                    q.exponents[nterms * nvars + var] = pow - m;
+                } else {
+                    let nterms = r.nterms();
+                    let nvars = r.nvars();
+                    r.coefficients.push(quot);
+                    r.exponents.resize((nterms + 1) * nvars, E::zero());
+                    r.exponents[nterms * nvars + var] = pow;
+                }
+            }
+
+            if pow.is_zero() {
+                break;
+            }
+
+            pow = pow - E::one();
+        }
+
+        q.reverse();
+        r.reverse();
+
+        #[cfg(debug_assertions)]
+        {
+            if !(&q * div + r.clone() - self.clone()).is_zero() {
+                panic!("Division failed: ({})/({}): q={}, r={}", self, div, q, r);
+            }
+        }
+
+        (q, r)
     }
 
     fn mul_dense(
@@ -2668,9 +2680,241 @@ impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
         }
         res
     }
+
+    /// Compute `self^pow` using a heap-based algorithm of "Sparse Polynomial Powering Using Heaps"
+    /// by Michael Monagan and Roman Pearce.
+    ///
+    /// The caller must assure that the ring's cardinality is large enough to contain the exponents
+    /// after Kronecker mapping.
+    pub fn heap_pow(&self, pow: usize) -> Self {
+        if self.is_constant() {
+            return self.constant(self.ring.pow(&self.lcoeff(), pow as u64));
+        }
+
+        if self.coefficients.len() == 1 {
+            return self.monomial(
+                self.ring.pow(&self.coefficients[0], pow as u64),
+                self.exponents
+                    .iter()
+                    .map(|x| *x * E::from_i32(pow as i32))
+                    .collect(),
+            );
+        }
+
+        #[inline(always)]
+        fn to_uni_var<E: Exponent>(s: &[E], max_degs_rev: &[usize]) -> Integer {
+            let mut shift = 1;
+            let mut res = Integer::from(s.last().unwrap().to_i32());
+            for (ee, &x) in s.iter().rev().skip(1).zip(max_degs_rev) {
+                shift = shift * x as u32;
+                res += ee.to_i32() as u32 * shift;
+            }
+            res
+        }
+
+        #[inline(always)]
+        fn from_uni_var<E: Exponent>(mut p: Integer, max_degs_rev: &[usize], exp: &mut [E]) {
+            for (ee, &x) in exp.iter_mut().rev().zip(max_degs_rev) {
+                *ee = E::from_i32(((&p % x as u64).to_i64().unwrap() as u32) as i32);
+                p /= x as u32;
+            }
+        }
+
+        let degree_bounds = (0..self.nvars())
+            .map(|v| self.degree_bounds(v))
+            .collect::<Vec<_>>();
+
+        let max_degs_rev = degree_bounds
+            .iter()
+            .rev()
+            .map(|v| (v.1 - v.0).to_i32() as usize * pow + 1)
+            .collect::<Vec<_>>();
+
+        let mut exp = vec![E::zero(); self.nvars()];
+        let mut f_exp: Vec<_> = self
+            .exponents_iter()
+            .map(|c| {
+                for ((ee, x), d) in exp.iter_mut().zip(c.iter()).zip(&degree_bounds) {
+                    *ee = *x - d.0;
+                }
+
+                to_uni_var(&exp, &max_degs_rev)
+            })
+            .collect();
+        f_exp.reverse(); // descending order
+
+        let mut g_coeff = vec![self.ring.pow(self.coefficients.last().unwrap(), pow as u64)];
+        let mut g_exp = vec![f_exp[0].clone() * pow as u64];
+
+        let mut cache: BTreeMap<Integer, Vec<(usize, usize)>> = BTreeMap::new();
+        let mut q_cache: Vec<Vec<(usize, usize)>> = vec![];
+
+        // create a min-heap since our polynomials are sorted smallest to largest
+        let mut h: BinaryHeap<Integer> = BinaryHeap::with_capacity(self.nterms());
+
+        let monom = f_exp[1].clone() + &g_exp[0];
+        cache.insert(monom.clone(), vec![(1, 0)]);
+        h.push(monom);
+
+        // i=merged_index[j] signifies that self[i]*g[j] has been merged
+        let mut merged_index = vec![0; self.nterms()];
+        // in_heap[j] signifies that g[j] is in the heap
+        let mut in_heap = vec![false; self.nterms()];
+        in_heap[0] = true;
+
+        while let Some(cur_mon) = h.pop() {
+            let mut coefficient = self.ring.zero();
+
+            let mut q = cache.remove(&cur_mon).unwrap();
+
+            for (i, j) in q.drain(..) {
+                self.ring.add_mul_assign(
+                    &mut coefficient,
+                    &g_coeff[j],
+                    &self.ring.mul(
+                        &self.coefficient_back(i),
+                        &self
+                            .ring
+                            .nth(g_exp[j].clone() - f_exp[i].clone() * pow as u64),
+                    ),
+                );
+
+                if j + 1 >= merged_index.len() {
+                    merged_index.resize(j + 2, 0);
+                    in_heap.resize(j + 2, false);
+                }
+
+                merged_index[j] = i + 1;
+
+                if i + 1 < self.nterms() && (j == 0 || merged_index[j - 1] > i + 1) {
+                    let m = f_exp[i + 1].clone() + &g_exp[j];
+                    if let Some(e) = cache.get_mut(&m) {
+                        e.push((i + 1, j));
+                    } else {
+                        h.push(m.clone()); // only add when new
+                        if let Some(mut qq) = q_cache.pop() {
+                            qq.push((i + 1, j));
+                            cache.insert(m, qq);
+                        } else {
+                            cache.insert(m, vec![(i + 1, j)]);
+                        }
+                    }
+                } else {
+                    in_heap[j] = false;
+                }
+
+                if j + 1 < g_exp.len() && !in_heap[j + 1] {
+                    let m = f_exp[i].clone() + &g_exp[j + 1];
+                    if let Some(e) = cache.get_mut(&m) {
+                        e.push((i, j + 1));
+                    } else {
+                        h.push(m.clone()); // only add when new
+
+                        if let Some(mut qq) = q_cache.pop() {
+                            qq.push((i, j + 1));
+                            cache.insert(m, qq);
+                        } else {
+                            cache.insert(m, vec![(i, j + 1)]);
+                        }
+                    }
+
+                    in_heap[j + 1] = true;
+                }
+            }
+
+            q_cache.push(q);
+
+            if !F::is_zero(&coefficient) {
+                g_exp.push(&cur_mon - &f_exp[0]);
+
+                let q = self
+                    .ring
+                    .try_div(
+                        &coefficient,
+                        &self.ring.mul(
+                            self.coefficient_back(0),
+                            &self.ring.nth(g_exp[0].clone() + &f_exp[0] - cur_mon),
+                        ),
+                    )
+                    .unwrap();
+                g_coeff.push(q);
+
+                if g_exp.len() >= in_heap.len() {
+                    merged_index.resize(g_exp.len(), 0);
+                    in_heap.resize(g_exp.len(), false);
+                }
+
+                if !in_heap[g_exp.len() - 1] {
+                    let m = f_exp[1].clone() + &g_exp[g_exp.len() - 1];
+                    if let Some(e) = cache.get_mut(&m) {
+                        e.push((1, g_exp.len() - 1));
+                    } else {
+                        h.push(m.clone());
+                        if let Some(mut qq) = q_cache.pop() {
+                            qq.push((1, g_exp.len() - 1));
+                            cache.insert(m, qq);
+                        } else {
+                            cache.insert(m, vec![(1, g_exp.len() - 1)]);
+                        }
+                    }
+
+                    in_heap[g_exp.len() - 1] = true;
+                }
+            }
+        }
+
+        let mut res = self.zero();
+        for (c, e) in g_coeff.into_iter().zip(g_exp).rev() {
+            from_uni_var(e, &max_degs_rev, &mut exp);
+
+            for (ee, d) in exp.iter_mut().zip(&degree_bounds) {
+                *ee += d.0 * E::from_i32(pow as i32);
+            }
+
+            res.append_monomial(c, &exp);
+        }
+        res
+    }
 }
 
 impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
+    /// Convert the polynomial to one in a number field, where the variable
+    /// of the number field is moved into the coefficient.
+    pub fn to_number_field(
+        &self,
+        field: &AlgebraicExtension<F>,
+    ) -> MultivariatePolynomial<AlgebraicExtension<F>, E> {
+        let var = &field.poly().get_vars_ref()[0];
+        let Some(var_index) = self.get_vars_ref().iter().position(|x| x == var) else {
+            return self.map_coeff(
+                |c| field.to_element(field.poly().constant(c.clone())),
+                field.clone(),
+            );
+        };
+
+        let polys = self.to_multivariate_polynomial_list(&[var_index], false);
+
+        // TODO: remove the variable from the variable map?
+        let mut poly =
+            MultivariatePolynomial::new(field, self.nterms().into(), self.variables.clone());
+        for (e, c) in polys {
+            let mut c2 = MultivariatePolynomial::new(
+                &self.ring,
+                c.nterms().into(),
+                Arc::new(vec![self.variables.as_ref()[var_index].clone()]),
+            );
+
+            c2.exponents = c
+                .exponents_iter()
+                .map(|x| x[var_index].to_i32() as u16)
+                .collect();
+            c2.coefficients = c.coefficients;
+
+            poly.append_monomial(field.to_element(c2), &e);
+        }
+        poly
+    }
+
     /// Get the content from the coefficients.
     pub fn content(&self) -> F::Element {
         if self.coefficients.is_empty() {
@@ -2706,7 +2950,47 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
 }
 
 impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
-    pub fn divides(
+    /// Compute the remainder `self % div`.
+    pub fn rem(&self, div: &MultivariatePolynomial<F, E, LexOrder>) -> Self {
+        self.quot_rem(div, false).1
+    }
+
+    /// Divide two multivariate polynomials and return the quotient and remainder.
+    pub fn quot_rem(
+        &self,
+        div: &MultivariatePolynomial<F, E, LexOrder>,
+        abort_on_remainder: bool,
+    ) -> (
+        MultivariatePolynomial<F, E, LexOrder>,
+        MultivariatePolynomial<F, E, LexOrder>,
+    ) {
+        self.quot_rem_impl(div, abort_on_remainder)
+    }
+
+    /// Compute the p-adic expansion of the polynomial.
+    /// It returns `[a0, a1, a2, ...]` such that `a0 + a1 * p^1 + a2 * p^2 + ... = self`.
+    pub fn p_adic_expansion(&self, p: &Self) -> Vec<Self> {
+        if self.variables != p.variables {
+            let mut c1 = self.clone();
+            let mut c2 = p.clone();
+            c1.unify_variables(&mut c2);
+            return c1.p_adic_expansion(&c2);
+        }
+
+        let mut res = vec![];
+        let mut r = self.clone();
+        while !r.is_zero() {
+            let (q, rem) = r.quot_rem(p, false);
+            res.push(rem);
+            r = q;
+        }
+        res
+    }
+}
+
+impl<F: Ring, E: Exponent> MultivariatePolynomial<F, E, LexOrder> {
+    /// Divide `self` by `div` if there is no remainder, else return `None`.
+    pub fn try_div(
         &self,
         div: &MultivariatePolynomial<F, E, LexOrder>,
     ) -> Option<MultivariatePolynomial<F, E, LexOrder>> {
@@ -2718,7 +3002,7 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
             let mut c1 = self.clone();
             let mut c2 = div.clone();
             c1.unify_variables(&mut c2);
-            return c1.divides(&c2);
+            return c1.try_div(&c2);
         }
 
         if self.is_zero() {
@@ -2726,7 +3010,37 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
         }
 
         // check if the leading coefficients divide
-        if !F::is_zero(&self.ring.rem(&self.lcoeff(), &div.lcoeff())) {
+        if self.ring.try_div(&self.lcoeff(), &div.lcoeff()).is_none() {
+            return None;
+        }
+
+        if !self.is_polynomial() || !div.is_polynomial() {
+            // remove all negative exponents
+            let mut c1 = self.clone();
+            let mut c2 = div.clone();
+            let degrees = (0..self.nvars())
+                .map(|v| E::zero() - div.degree_bounds(v).0.min(E::zero()))
+                .collect::<Vec<_>>();
+
+            c1 = c1.mul_exp(&degrees);
+            c2 = c2.mul_exp(&degrees);
+
+            let mut degrees = (0..self.nvars())
+                .map(|v| E::zero() - self.degree_bounds(v).0.min(E::zero()))
+                .collect::<Vec<_>>();
+
+            c1 = c1.mul_exp(&degrees);
+
+            let r = c1.try_div(&c2)?;
+
+            for d in &mut degrees {
+                *d = E::zero() - *d;
+            }
+
+            return Some(r.mul_exp(&degrees));
+        }
+
+        if !self.is_polynomial() {
             return None;
         }
 
@@ -2739,7 +3053,7 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
             let c = div.get_constant();
             if !F::is_zero(&c)
                 && !self.ring.is_one(&c)
-                && !F::is_zero(&self.ring.rem(&self.get_constant(), &c))
+                && self.ring.try_div(&self.get_constant(), &c).is_none()
             {
                 return None;
             }
@@ -2756,13 +3070,13 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
 
             if !F::is_zero(&den)
                 && !self.ring.is_one(&den)
-                && !F::is_zero(&self.ring.rem(&num, &den))
+                && self.ring.try_div(&num, &den).is_none()
             {
                 return None;
             }
         }
 
-        let (a, b) = self.quot_rem(div, true);
+        let (a, b) = self.quot_rem_impl(div, true);
         if b.nterms() == 0 {
             Some(a)
         } else {
@@ -2770,13 +3084,10 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
         }
     }
 
-    /// Compute the remainder `self % div`.
-    pub fn rem(&self, div: &MultivariatePolynomial<F, E, LexOrder>) -> Self {
-        self.quot_rem(div, false).1
-    }
-
     /// Divide two multivariate polynomials and return the quotient and remainder.
-    pub fn quot_rem(
+    ///
+    /// The input must not have negative exponents.
+    fn quot_rem_impl(
         &self,
         div: &MultivariatePolynomial<F, E, LexOrder>,
         abort_on_remainder: bool,
@@ -2800,7 +3111,7 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
             let mut c1 = self.clone();
             let mut c2 = div.clone();
             c1.unify_variables(&mut c2);
-            return self.quot_rem(&c2, abort_on_remainder);
+            return c1.quot_rem_impl(&c2, abort_on_remainder);
         }
 
         if self.nterms() == div.nterms() {
@@ -2809,19 +3120,18 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
             }
 
             // check if one is a multiple of the other
-            let (q, r) = self.ring.quot_rem(&self.lcoeff(), &div.lcoeff());
-
-            if F::is_zero(&r)
-                && self
+            if let Some(q) = self.ring.try_div(&self.lcoeff(), &div.lcoeff()) {
+                if self
                     .into_iter()
                     .zip(div)
                     .all(|(t1, t2)| t1.exponents == t2.exponents)
-                && self
-                    .into_iter()
-                    .zip(div)
-                    .all(|(t1, t2)| &self.ring.mul(t2.coefficient, &q) == t1.coefficient)
-            {
-                return (self.constant(q), self.zero());
+                    && self
+                        .into_iter()
+                        .zip(div)
+                        .all(|(t1, t2)| &self.ring.mul(t2.coefficient, &q) == t1.coefficient)
+                {
+                    return (self.constant(q), self.zero());
+                }
             }
         }
 
@@ -2843,10 +3153,9 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
             }
 
             for c in &mut q.coefficients {
-                let (quot, rem) = q.ring.quot_rem(c, dive.coefficient);
-                *c = quot;
-                if !F::is_zero(&rem) {
-                    // TODO: support upgrade to a RationalField
+                if let Some(quot) = self.ring.try_div(c, &dive.coefficient) {
+                    *c = quot;
+                } else {
                     return (self.zero(), self.clone());
                 }
             }
@@ -2856,7 +3165,7 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
 
         // check if the division is univariate with the same variable
         let degree_sum: Vec<_> = (0..self.nvars())
-            .map(|i| self.degree(i).to_u32() as usize + div.degree(i).to_u32() as usize)
+            .map(|i| self.degree(i).to_i32() as usize + div.degree(i).to_i32() as usize)
             .collect();
 
         if div.ring.is_one(&div.lcoeff()) && degree_sum.iter().filter(|x| **x > 0).count() == 1 {
@@ -2866,7 +3175,7 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
         let mut pack_u8 = true;
         if self.nvars() <= 8
             && (0..self.nvars()).all(|i| {
-                let deg = self.degree(i).to_u32();
+                let deg = self.degree(i).to_i32() as u32;
                 if deg > 127 {
                     pack_u8 = false;
                 }
@@ -2883,6 +3192,8 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
     /// Heap division for multivariate polynomials, using a cache so that only unique
     /// monomial exponents appear in the heap.
     /// Reference: "Sparse polynomial division using a heap" by Monagan, Pearce (2011)
+    ///
+    /// The input must not have negative exponents.
     fn heap_division(
         &self,
         div: &MultivariatePolynomial<F, E, LexOrder>,
@@ -3022,8 +3333,9 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
             }
 
             if div.last_exponents().iter().zip(&m).all(|(ge, me)| me >= ge) {
-                let (quot, rem) = self.ring.quot_rem(&c, &div.lcoeff());
-                if !F::is_zero(&rem) {
+                if let Some(quot) = self.ring.try_div(&c, &div.lcoeff()) {
+                    q.coefficients.push(quot);
+                } else {
                     if abort_on_remainder {
                         r = self.one();
                         return (q, r);
@@ -3032,7 +3344,6 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
                     }
                 }
 
-                q.coefficients.push(quot);
                 q.exponents.extend(
                     div.last_exponents()
                         .iter()
@@ -3130,6 +3441,8 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
     /// Each exponent is limited to 32767 if there are 5 or fewer variables,
     /// or 127 if there are 8 or fewer variables, such that the last bit per byte can
     /// be used to check for subtraction overflow, serving as a division test.
+    ///
+    /// The input must not have negative exponents.
     fn heap_division_packed_exp(
         &self,
         div: &MultivariatePolynomial<F, E, LexOrder>,
@@ -3278,8 +3591,9 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
 
             let q_e = divides(m, pack_div[pack_div.len() - 1], pack_u8);
             if let Some(q_e) = q_e {
-                let (quot, rem) = self.ring.quot_rem(&c, &div.lcoeff());
-                if !F::is_zero(&rem) {
+                if let Some(quot) = self.ring.try_div(&c, &div.lcoeff()) {
+                    q.coefficients.push(quot);
+                } else {
                     if abort_on_remainder {
                         r = self.one();
                         return (q, r);
@@ -3288,7 +3602,6 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
                     }
                 }
 
-                q.coefficients.push(quot);
                 let len = q.exponents.len();
                 q.exponents.resize(len + self.nvars(), E::zero());
 
@@ -3385,26 +3698,6 @@ impl<F: EuclideanDomain, E: PositiveExponent> MultivariatePolynomial<F, E, LexOr
 
         (q, r)
     }
-
-    /// Compute the p-adic expansion of the polynomial.
-    /// It returns `[a0, a1, a2, ...]` such that `a0 + a1 * p^1 + a2 * p^2 + ... = self`.
-    pub fn p_adic_expansion(&self, p: &Self) -> Vec<Self> {
-        if self.variables != p.variables {
-            let mut c1 = self.clone();
-            let mut c2 = p.clone();
-            c1.unify_variables(&mut c2);
-            return c1.p_adic_expansion(&c2);
-        }
-
-        let mut res = vec![];
-        let mut r = self.clone();
-        while !r.is_zero() {
-            let (q, rem) = r.quot_rem(p, true);
-            res.push(rem);
-            r = q;
-        }
-        res
-    }
 }
 
 impl<F: Field, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
@@ -3436,7 +3729,11 @@ impl<F: Field, E: PositiveExponent, O: MonomialOrder> MultivariatePolynomial<F, 
             exp.copy_from_slice(x.exponents);
             let pow = exp[var].to_u32() as u64;
             exp[var] += E::one();
-            res.append_monomial(self.ring.div(x.coefficient, &self.ring.nth(pow + 1)), &exp);
+            res.append_monomial(
+                self.ring
+                    .div(x.coefficient, &self.ring.nth(Integer::from(pow) + 1)),
+                &exp,
+            );
         }
 
         res
@@ -3668,7 +3965,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
     }
 }
 
-impl<R: Ring, E: PositiveExponent> Derivable for PolynomialRing<R, E> {
+impl<R: Ring, E: Exponent> Derivable for PolynomialRing<R, E> {
     fn derivative(
         &self,
         p: &MultivariatePolynomial<R, E>,
@@ -3682,7 +3979,7 @@ impl<R: Ring, E: PositiveExponent> Derivable for PolynomialRing<R, E> {
     }
 }
 
-impl<R: Ring, E: Exponent> MultivariatePolynomial<AlgebraicExtension<R>, E> {
+impl<R: EuclideanDomain, E: Exponent> MultivariatePolynomial<AlgebraicExtension<R>, E> {
     /// Convert the polynomial to a multivariate polynomial that contains the
     /// variable in the number field.
     pub fn from_number_field(&self) -> MultivariatePolynomial<R, E> {

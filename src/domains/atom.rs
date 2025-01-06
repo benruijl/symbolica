@@ -187,13 +187,21 @@ impl Ring for AtomField {
         true
     }
 
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if SelfRing::is_zero(b) {
+            None
+        } else {
+            Some(self.div(a, b))
+        }
+    }
+
     fn sample(&self, rng: &mut impl rand::RngCore, range: (i64, i64)) -> Self::Element {
         let r = rng.gen_range(range.0..range.1);
         Atom::new_num(r)
     }
 
-    fn nth(&self, n: u64) -> Self::Element {
-        Atom::new_num(Integer::from(n))
+    fn nth(&self, n: Integer) -> Self::Element {
+        Atom::new_num(n)
     }
 
     fn characteristic(&self) -> Integer {

@@ -748,6 +748,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> Ring
     for FactorizedRationalPolynomialField<R, E>
 where
     FactorizedRationalPolynomial<R, E>: FromNumeratorAndFactorizedDenominator<R, R, E>,
+    MultivariatePolynomial<R, E>: Factorize,
 {
     type Element = FactorizedRationalPolynomial<R, E>;
 
@@ -807,7 +808,7 @@ where
         }
     }
 
-    fn nth(&self, n: u64) -> Self::Element {
+    fn nth(&self, n: Integer) -> Self::Element {
         let mut r = self.one();
         r.numer_coeff = self.ring.nth(n);
         r
@@ -851,6 +852,19 @@ where
 
     fn size(&self) -> Integer {
         0.into()
+    }
+
+    fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        if b.is_zero() {
+            None
+        } else {
+            let (q, r) = self.quot_rem(a, b);
+            if r.is_zero() {
+                Some(q)
+            } else {
+                None
+            }
+        }
     }
 
     fn sample(&self, _rng: &mut impl rand::RngCore, _range: (i64, i64)) -> Self::Element {
@@ -988,7 +1002,7 @@ where
         // TODO: are there some factors we can skip the division check for?
         for (d, p) in &mut den {
             while *p > 0 {
-                if let Some(q) = num.divides(d) {
+                if let Some(q) = num.try_div(d) {
                     num = q;
                     *p -= 1;
                 } else {
@@ -1090,7 +1104,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
 
             let mut p = *p;
             while p > 0 {
-                if let Some(q) = reduced_numerator_1.divides(d) {
+                if let Some(q) = reduced_numerator_1.try_div(d) {
                     reduced_numerator_1 = Cow::Owned(q);
                     p -= 1;
                 } else {
@@ -1110,7 +1124,7 @@ impl<'a, 'b, R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent>
 
             let mut p = *p;
             while p > 0 {
-                if let Some(q) = reduced_numerator_2.divides(d) {
+                if let Some(q) = reduced_numerator_2.try_div(d) {
                     reduced_numerator_2 = Cow::Owned(q);
                     p -= 1;
                 } else {
@@ -1212,7 +1226,7 @@ where
             }
 
             while p > 0 {
-                if let Some(q) = reduced_numerator_1.divides(&d) {
+                if let Some(q) = reduced_numerator_1.try_div(&d) {
                     reduced_numerator_1 = Cow::Owned(q);
                     p -= 1;
                 } else {

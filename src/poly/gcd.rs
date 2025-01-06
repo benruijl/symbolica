@@ -1031,7 +1031,8 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                             MatrixError::NotSquare
                             | MatrixError::ShapeMismatch
                             | MatrixError::RightHandSideIsNotVector
-                            | MatrixError::Singular,
+                            | MatrixError::Singular
+                            | MatrixError::ResultNotInDomain,
                         ) => {
                             unreachable!()
                         }
@@ -1338,7 +1339,7 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
             let cont = gc.multivariate_content(lastvar);
             if !cont.is_one() {
                 debug!("Removing content in x{}: {}", lastvar, cont);
-                gc = gc.divides(&cont).unwrap();
+                gc = gc.try_div(&cont).unwrap();
             }
 
             // do a probabilistic division test
@@ -1371,7 +1372,7 @@ impl<F: Field + PolynomialGCD<E>, E: PositiveExponent> MultivariatePolynomial<F,
                 }
             };
 
-            if g1.is_one() || (a1.divides(&g1).is_some() && b1.divides(&g1).is_some()) {
+            if g1.is_one() || (a1.try_div(&g1).is_some() && b1.try_div(&g1).is_some()) {
                 return Some(gc);
             }
 
@@ -1721,10 +1722,10 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
         }
 
         // try if b divides a or vice versa, doing a heuristical length check first
-        if a.nterms() >= b.nterms() && a.divides(&b).is_some() {
+        if a.nterms() >= b.nterms() && a.try_div(&b).is_some() {
             return rescale_gcd(b.into_owned(), &shared_degree, &base_degree, &a.one());
         }
-        if a.nterms() <= b.nterms() && b.divides(&a).is_some() {
+        if a.nterms() <= b.nterms() && b.try_div(&a).is_some() {
             return rescale_gcd(a.into_owned(), &shared_degree, &base_degree, &b.one());
         }
 
@@ -1740,7 +1741,7 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
                     cont = cont.gcd(&cont_p2);
                 }
 
-                if p2.divides(&p1_prim).is_some() {
+                if p2.try_div(&p1_prim).is_some() {
                     return rescale_gcd(p1_prim, &shared_degree, &base_degree, &cont);
                 } else {
                     return rescale_gcd(
@@ -1986,8 +1987,8 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
 
                 let gc = g.div_coeff(&g_cont);
 
-                if let Some(q) = a.divides(&gc) {
-                    if let Some(q1) = b.divides(&gc) {
+                if let Some(q) = a.try_div(&gc) {
+                    if let Some(q1) = b.try_div(&gc) {
                         debug!("match {} {}", q, q1);
                         return Ok((gc.mul_coeff(content_gcd), q, q1));
                     }
@@ -1998,8 +1999,8 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                 if !co_fac_p.is_zero() {
                     let a_co_fac = interpolate(co_fac_p, var, &xi);
 
-                    if let Some(q) = a.divides(&a_co_fac) {
-                        if let Some(q1) = b.divides(&q) {
+                    if let Some(q) = a.try_div(&a_co_fac) {
+                        if let Some(q1) = b.try_div(&q) {
                             return Ok((q.mul_coeff(content_gcd), a_co_fac, q1));
                         }
                     }
@@ -2009,8 +2010,8 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     let b_co_fac = interpolate(co_fac_q, var, &xi);
                     debug!("cofac b {}", b_co_fac);
 
-                    if let Some(q) = b.divides(&b_co_fac) {
-                        if let Some(q1) = a.divides(&q) {
+                    if let Some(q) = b.try_div(&b_co_fac) {
+                        if let Some(q1) = a.try_div(&q) {
                             return Ok((q.mul_coeff(content_gcd), q1, b_co_fac));
                         }
                     }
@@ -2101,7 +2102,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
             let old_length = f.len();
 
             f.retain(|x| {
-                if x.divides(&gcd).is_some() {
+                if x.try_div(&gcd).is_some() {
                     content_gcd = gcd.ring.gcd(&content_gcd, &x.content());
                     false
                 } else {
@@ -2264,7 +2265,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E> {
                     let gc = gm.clone().div_coeff(&gmc);
 
                     debug!("Final suggested gcd: {}", gc);
-                    if gc.is_one() || (self.divides(&gc).is_some() && b.divides(&gc).is_some()) {
+                    if gc.is_one() || (self.try_div(&gc).is_some() && b.try_div(&gc).is_some()) {
                         return gc;
                     }
 
@@ -3018,7 +3019,7 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
                 gc.exponents.clone_from(&gm.exponents);
 
                 debug!("Final suggested gcd: {}", gc);
-                if gc.is_one() || (a.divides(&gc).is_some() && b.divides(&gc).is_some()) {
+                if gc.is_one() || (a.try_div(&gc).is_some() && b.try_div(&gc).is_some()) {
                     return gc;
                 }
 

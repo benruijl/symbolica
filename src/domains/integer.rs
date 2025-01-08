@@ -771,11 +771,11 @@ impl Integer {
 
     /// Perform the symmetric mod `p` on `self`.
     #[inline]
-    pub fn symmetric_mod(&self, p: &Integer) -> Integer {
+    pub fn symmetric_mod(self, p: &Integer) -> Integer {
         let c = self % p;
 
-        if &c * &2u64.into() > *p {
-            &c - p
+        if &c + &c > *p {
+            c - p
         } else {
             c
         }
@@ -2028,7 +2028,7 @@ impl Rem<Integer> for Integer {
     type Output = Integer;
 
     fn rem(self, rhs: Self) -> Self::Output {
-        &self % &rhs
+        self % &rhs
     }
 }
 
@@ -2036,7 +2036,20 @@ impl<'a> Rem<&'a Integer> for Integer {
     type Output = Integer;
 
     fn rem(self, rhs: &'a Self) -> Self::Output {
-        &self % rhs
+        if rhs.is_zero() {
+            panic!("Cannot divide by zero");
+        }
+
+        if !self.is_negative() && self < *rhs {
+            return self;
+        }
+
+        match (self, rhs) {
+            (Integer::Large(a), Integer::Natural(b)) => Integer::from(a.rem_euc(b)),
+            (Integer::Large(a), Integer::Double(b)) => Integer::from(a.rem_euc(b)),
+            (Integer::Large(a), Integer::Large(b)) => Integer::from(a.rem_euc(b)),
+            (x, _) => (&x).rem(rhs),
+        }
     }
 }
 
@@ -2054,6 +2067,10 @@ impl<'a> Rem for &'a Integer {
     fn rem(self, rhs: Self) -> Self::Output {
         if rhs.is_zero() {
             panic!("Cannot divide by zero");
+        }
+
+        if !self.is_negative() && self < rhs {
+            return self.clone();
         }
 
         match (self, rhs) {
@@ -2112,12 +2129,8 @@ impl<'a> Rem for &'a Integer {
                     Integer::zero()
                 }
             }
-            (Integer::Large(a), Integer::Natural(b)) => {
-                Integer::from(a.rem_euc(MultiPrecisionInteger::from(*b)))
-            }
-            (Integer::Large(a), Integer::Double(b)) => {
-                Integer::from(a.rem_euc(MultiPrecisionInteger::from(*b)))
-            }
+            (Integer::Large(a), Integer::Natural(b)) => Integer::from(a.rem_euc(b).complete()),
+            (Integer::Large(a), Integer::Double(b)) => Integer::from(a.rem_euc(b).complete()),
             (Integer::Large(a), Integer::Large(b)) => Integer::from(a.rem_euc(b).complete()),
         }
     }

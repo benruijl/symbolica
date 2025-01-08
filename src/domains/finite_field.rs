@@ -1375,15 +1375,72 @@ impl FiniteFieldCore<Integer> for FiniteField<Integer> {
     }
 }
 
+impl FiniteField<Integer> {
+    #[inline(always)]
+    fn normalize(&self, mut c: Integer) -> Integer {
+        self.normalize_mut(&mut c);
+        c
+    }
+
+    #[inline(always)]
+    fn normalize_mut(&self, c: &mut Integer) {
+        let two_c = &*c + &*c;
+
+        if two_c.is_negative() {
+            if -two_c >= self.p {
+                *c += &self.p;
+            }
+        } else {
+            if two_c >= self.p {
+                *c -= &self.p;
+            }
+        }
+    }
+
+    /// Compute the inverse when `a` and the modulus are coprime,
+    /// otherwise panic.
+    pub fn try_inv(&self, a: &Integer) -> Option<Integer> {
+        if a.is_zero() {
+            return None;
+        }
+
+        let mut u1 = Integer::one();
+        let mut u3 = a.clone();
+        let mut v1 = Integer::zero();
+        let mut v3 = self.get_prime();
+        let mut even_iter: bool = true;
+
+        while !v3.is_zero() {
+            let (q, t3) = Z.quot_rem(&u3, &v3);
+            let t1 = &u1 + &(&q * &v1);
+            u1 = v1;
+            v1 = t1;
+            u3 = v3;
+            v3 = t3;
+            even_iter = !even_iter;
+        }
+
+        if !u3.is_one() {
+            return None;
+        }
+
+        if even_iter {
+            Some(u1)
+        } else {
+            Some(&self.p - &u1)
+        }
+    }
+}
+
 impl Ring for FiniteField<Integer> {
     type Element = Integer;
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        (a + b).symmetric_mod(&self.p)
+        self.normalize(a + b)
     }
 
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        (a - b).symmetric_mod(&self.p)
+        self.normalize(a - b)
     }
 
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -1391,12 +1448,13 @@ impl Ring for FiniteField<Integer> {
     }
 
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        // TODO: optimize
-        *a = self.add(a, b);
+        *a += b;
+        self.normalize_mut(a);
     }
 
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
-        *a = self.sub(a, b);
+        *a -= b;
+        self.normalize_mut(a);
     }
 
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
@@ -1404,15 +1462,15 @@ impl Ring for FiniteField<Integer> {
     }
 
     fn add_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        self.add_assign(a, &(b * c));
+        self.add_assign(a, &self.mul(b, c));
     }
 
     fn sub_mul_assign(&self, a: &mut Self::Element, b: &Self::Element, c: &Self::Element) {
-        self.sub_assign(a, &(b * c));
+        self.sub_assign(a, &self.mul(b, c));
     }
 
     fn neg(&self, a: &Self::Element) -> Self::Element {
-        a.neg().symmetric_mod(&self.p)
+        a.neg()
     }
 
     fn zero(&self) -> Self::Element {
@@ -1454,10 +1512,10 @@ impl Ring for FiniteField<Integer> {
     }
 
     fn try_div(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
-        if b.is_zero() {
-            None
+        if let Some(r) = self.try_inv(b) {
+            Some(self.mul(a, &r))
         } else {
-            Some(self.div(a, b))
+            None
         }
     }
 
@@ -1508,29 +1566,10 @@ impl Field for FiniteField<Integer> {
     /// Compute the inverse when `a` and the modulus are coprime,
     /// otherwise panic.
     fn inv(&self, a: &Self::Element) -> Self::Element {
-        assert!(!a.is_zero(), "0 is not invertible");
-
-        let mut u1 = Integer::one();
-        let mut u3 = a.clone();
-        let mut v1 = Integer::zero();
-        let mut v3 = self.get_prime();
-        let mut even_iter: bool = true;
-
-        while !v3.is_zero() {
-            let (q, t3) = Z.quot_rem(&u3, &v3);
-            let t1 = &u1 + &(&q * &v1);
-            u1 = v1;
-            v1 = t1;
-            u3 = v3;
-            v3 = t3;
-            even_iter = !even_iter;
-        }
-
-        assert!(u3.is_one(), "{} is not invertible mod {}", a, self.p);
-        if even_iter {
-            u1
+        if let Some(r) = self.try_inv(a) {
+            r
         } else {
-            &self.p - &u1
+            panic!("{} is not invertible mod {}", a, self.p);
         }
     }
 }

@@ -214,9 +214,13 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
         }
 
         // normalize the gcd
-        let l = d.coefficients.last().unwrap().clone();
-        for x in &mut d.coefficients {
-            self.ring.div_assign(x, &l);
+        if let Some(l) = d.coefficients.last() {
+            if !d.ring.is_one(l) {
+                let i = d.ring.inv(l);
+                for x in &mut d.coefficients {
+                    d.ring.mul_assign(x, &i);
+                }
+            }
         }
 
         d

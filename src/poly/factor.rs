@@ -1,9 +1,9 @@
 //! Factorization methods for multivariate polynomials
 //! that implement [Factorize].
 
-use std::cmp::Reverse;
+use std::{cmp::Reverse, sync::Arc};
 
-use ahash::HashMap;
+use ahash::{HashMap, HashSet, HashSetExt};
 use rand::{thread_rng, Rng};
 use tracing::debug;
 
@@ -19,7 +19,7 @@ use crate::{
         rational::{RationalField, Q},
         EuclideanDomain, Field, InternalOrdering, Ring,
     },
-    poly::gcd::LARGE_U32_PRIMES,
+    poly::Variable,
 };
 
 use super::{gcd::PolynomialGCD, polynomial::MultivariatePolynomial, LexOrder, PositiveExponent};
@@ -279,13 +279,50 @@ impl<E: PositiveExponent> Factorize for MultivariatePolynomial<IntegerRing, E, L
                     )
                 }
                 _ => {
+                    // select the variable with the smallest leading coefficient and the highest degree to be first
+                    let mut lcoeff_length = vec![0; self.nvars()];
+                    for x in self.exponents_iter() {
+                        for ((lc, e), d) in lcoeff_length.iter_mut().zip(x).zip(&degrees) {
+                            if e.to_i32() as usize == *d {
+                                *lc += 1;
+                            }
+                        }
+                    }
+
+                    let first = (0..self.nvars())
+                        .min_by(|a, b| {
+                            lcoeff_length[*a]
+                                .cmp(&lcoeff_length[*b])
+                                .then_with(|| degrees[*b].cmp(&degrees[*a]))
+                        })
+                        .unwrap();
+
                     // TODO: find better order
                     let mut order: Vec<_> = degrees
                         .iter()
                         .enumerate()
                         .filter(|(_, d)| **d > 0)
                         .collect();
-                    order.sort_by_key(|o| Reverse(o.1));
+                    order.sort_by_key(|o| {
+                        if o.0 == first {
+                            Reverse(&usize::MAX)
+                        } else {
+                            //*o.1
+                            Reverse(o.1)
+                        }
+                    });
+
+                    /*let mut r = thread_rng();
+                    for _ in 0..1000 {
+                        order.shuffle(&mut r);
+
+                        let t = Instant::now();
+
+                        let mut order: Vec<_> = order.clone().into_iter().map(|(v, _)| v).collect();
+
+                        f.multivariate_factorization(&mut order, 0, None);
+                        println!("{:?}: {:#?}", order, t.elapsed());
+                    }*/
 
                     let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
 
@@ -1616,21 +1653,26 @@ where
             debug!("Bivariate factor {} with true lcoeff {}", b, l);
         }
 
-        let (mut uni, delta) = MultivariatePolynomial::univariate_diophantine_field(
-            &sorted_biv_factors,
-            order,
-            &sample_points,
-        );
+        let factorization =
+            if let Some(f) = self.sparse_lifting(&sorted_biv_factors, &true_lcoeffs, order) {
+                f
+            } else {
+                let (mut uni, delta) = MultivariatePolynomial::univariate_diophantine_field(
+                    &sorted_biv_factors,
+                    order,
+                    &sample_points,
+                );
 
-        let factorization = self.multivariate_hensel_lifting(
-            &sorted_biv_factors,
-            &mut uni,
-            &delta,
-            &sample_points,
-            Some(&true_lcoeffs),
-            order,
-            2,
-        );
+                self.multivariate_hensel_lifting(
+                    &sorted_biv_factors,
+                    &mut uni,
+                    &delta,
+                    &sample_points,
+                    Some(&true_lcoeffs),
+                    order,
+                    2,
+                )
+            };
 
         // test the factorization
         let mut test = self.one();
@@ -1666,6 +1708,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         order: &[usize],
         sample_points: &[(usize, F::Element)],
         degrees: &[usize],
+        mod_vars: &[MultivariatePolynomial<F, E, LexOrder>],
     ) -> Vec<Self> {
         if order.len() == 1 {
             return univariate_deltas
@@ -1695,22 +1738,10 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
             &order[..order.len() - 1],
             sample_points,
             &degrees[..order.len() - 1],
+            &mod_vars[..order.len() - 1],
         );
 
-        // TODO: precompute
-        let mut mod_vars = Vec::with_capacity(order.len() - 2);
         let mut exp = vec![E::zero(); error.nvars()];
-        for r in order[1..order.len() - 1].iter().zip(&degrees[1..]) {
-            let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
-            exp[*r.0] = E::one();
-            let var_pow = error
-                .monomial(error.ring.one(), exp.clone())
-                .shift_var(*r.0, &error.ring.neg(shift))
-                .pow(r.1 + 1);
-            exp[*r.0] = E::zero();
-            mod_vars.push(var_pow);
-        }
-
         exp[last_var] = E::one();
         let var_pow = error
             .monomial(error.ring.one(), exp)
@@ -1727,7 +1758,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
                 debug!("delta {} p {}", d, p);
                 e = &e - &(d * p);
 
-                for m in &mod_vars {
+                for m in mod_vars {
                     // TODO: faster implementation for univariate divisor possible?
                     e = e.quot_rem(m, false).1;
                 }
@@ -1765,6 +1796,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
                 &order[..order.len() - 1],
                 sample_points,
                 &degrees[..order.len() - 1],
+                &mod_vars[..order.len() - 1],
             );
 
             for (d, nd) in deltas.iter_mut().zip(&mut new_deltas) {
@@ -1774,7 +1806,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
                 let nd = &*nd * &cur_exponent;
                 *d = &*d + &nd;
 
-                for m in &mod_vars {
+                for m in mod_vars {
                     e = e.quot_rem(m, false).1;
                 }
             }
@@ -1850,12 +1882,19 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
                 *f = f.shift_var(order[v], shift);
             }
 
-            let mut tot = self.one();
-            for b in &factors_with_true_lcoeff {
-                tot = tot * b;
+            let mut factor_products = vec![];
+            for i in 0..factors_with_true_lcoeff.len() {
+                // we cannot compute prod_i = prod_k(f_k)/f_i as the leading coefficient may
+                // not have an inverse in the almost-field p^k
+                let mut tot = self.one();
+                for (j, b) in factors_with_true_lcoeff.iter().enumerate() {
+                    if i != j {
+                        tot = tot * b;
+                    }
+                }
+
+                factor_products.push(tot);
             }
-            let factor_products: Vec<_> =
-                factors_with_true_lcoeff.iter().map(|f| &tot / f).collect();
 
             reconstructed_factors = f.multivariate_hensel_step(
                 univariate_deltas,
@@ -1927,6 +1966,23 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
         debug!("in shift {}", self);
         debug!("deg {:?}", degrees);
 
+        // create the polynomials (x_i-shift_i)^deg used for modding during Hensel lifting
+        let mut mod_vars = Vec::with_capacity(order.len() - 2);
+        let mut exp = vec![E::zero(); self.nvars()];
+        for r in order[1..order.len() - 1]
+            .iter()
+            .zip(&degrees[1..order.len() - 1])
+        {
+            let shift = &sample_points.iter().find(|s| s.0 == *r.0).unwrap().1;
+            exp[*r.0] = E::one();
+            let var_pow = self
+                .monomial(self.ring.one(), exp.clone())
+                .shift_var(*r.0, &self.ring.neg(shift))
+                .pow(r.1 + 1);
+            exp[*r.0] = E::zero();
+            mod_vars.push(var_pow);
+        }
+
         for k in 1..=last_degree {
             // extract the coefficient required to compute the error in y^k
             // computed using a convolution
@@ -1958,6 +2014,7 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
                 &order[..order.len() - 1],
                 sample_points,
                 &degrees[..order.len() - 1],
+                &mod_vars,
             );
 
             // update the coefficients with the new y^k contributions
@@ -1991,6 +2048,286 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E, LexOrder> {
                 new_poly
             })
             .collect()
+    }
+
+    /// Try to sparsely lift a bivariate factorization to a multivariate factorization.
+    /// Based on an algorithm by Lucks.
+    fn sparse_lifting(
+        &self,
+        factors: &[Self],
+        true_lcoeffs: &[Self],
+        order: &[usize],
+    ) -> Option<Vec<Self>> {
+        let variables: usize = factors.iter().map(|f| f.nterms()).sum();
+
+        // TODO: refine limit
+        if variables > 1000 {
+            return None;
+        }
+
+        // check if all bivariate monomials occur in the product of factors
+        let mut all_monomials = HashSet::with_capacity(self.nterms());
+        for e in self.exponents.chunks(self.nvars()) {
+            all_monomials.insert((e[order[0]], e[order[1]]));
+        }
+
+        let mut total = factors[0].clone();
+        for f in &factors[1..] {
+            total = &total * f;
+        }
+
+        let mut all_monomials_in_factors = HashSet::with_capacity(self.nterms());
+        for e in total.exponents.chunks(total.nvars()) {
+            all_monomials_in_factors.insert((e[order[0]], e[order[1]]));
+        }
+
+        if all_monomials != all_monomials_in_factors {
+            debug!("Not all monomials occur in the product of factors: cannot do sparse lifting");
+            return None;
+        }
+
+        // create a unique variable for every monomial
+        let vm = self.variables.as_ref();
+        let vars: Arc<Vec<_>> = Arc::new(
+            (0..self.nvars() + variables)
+                .map(|i| {
+                    if i < self.nvars() {
+                        vm[i].clone()
+                    } else {
+                        Variable::Temporary(i)
+                    }
+                })
+                .collect(),
+        );
+
+        // attach the proper lcoeff
+        let mut factors_with_true_lcoeff = Vec::with_capacity(factors.len());
+        for (b, l) in factors.iter().zip(true_lcoeffs) {
+            let b_one_coeff = MultivariatePolynomial {
+                exponents: b.exponents.clone(),
+                coefficients: vec![b.ring.one(); b.nterms()],
+                ring: b.ring.clone(),
+                variables: b.variables.clone(),
+                _phantom: b._phantom,
+            };
+
+            let mut bs = b_one_coeff.to_univariate_polynomial_list(order[0]);
+            bs.last_mut().unwrap().0 = l.clone();
+
+            let mut fixed_fac = self.zero();
+            let mut exp = vec![E::zero(); self.nvars()];
+            for (p, e) in bs {
+                exp[order[0]] = e;
+                fixed_fac = fixed_fac + p.mul_exp(&exp);
+            }
+
+            factors_with_true_lcoeff.push(fixed_fac);
+        }
+
+        let mut factors_grown = Vec::with_capacity(factors.len());
+        let mut index = 0;
+        for f in &factors_with_true_lcoeff {
+            let mut exponents = vec![E::zero(); (f.nvars() + variables) * f.nterms()];
+
+            let d = f.degree(order[0]);
+
+            for (ge, e) in exponents
+                .chunks_mut(f.nvars() + variables)
+                .zip(f.exponents.chunks(f.nvars()))
+            {
+                ge[..f.nvars()].copy_from_slice(e);
+
+                if d != e[order[0]] {
+                    ge[f.nvars() + index] = E::one();
+                    index += 1;
+                }
+            }
+
+            factors_grown.push(MultivariatePolynomial {
+                exponents,
+                coefficients: f.coefficients.clone(),
+                ring: f.ring.clone(),
+                variables: vars.clone(),
+                _phantom: f._phantom,
+            });
+        }
+
+        let mut total = factors_grown[0].one();
+        for f in &factors_grown {
+            debug!("Factor {}", f);
+            total = &total * f;
+        }
+
+        debug!("Total {}", total);
+
+        // find linear relations
+        let mut system = HashMap::default();
+        let mut exp = vec![E::zero(); total.nvars()];
+        for t in self {
+            let p = system
+                .entry((t.exponents[order[0]], t.exponents[order[1]]))
+                .or_insert_with(|| total.zero());
+
+            exp[..self.nvars()].copy_from_slice(t.exponents);
+            exp[order[0]] = E::zero();
+            exp[order[1]] = E::zero();
+
+            p.append_monomial(t.coefficient.clone(), &exp);
+        }
+
+        for t in &total {
+            let p = system
+                .entry((t.exponents[order[0]], t.exponents[order[1]]))
+                .or_insert_with(|| total.zero());
+
+            exp.copy_from_slice(t.exponents);
+            exp[order[0]] = E::zero();
+            exp[order[1]] = E::zero();
+
+            p.append_monomial(self.ring.neg(t.coefficient), &exp);
+        }
+
+        for (k, v) in &system {
+            debug!("({},{}) = {}", k.0, k.1, v);
+        }
+
+        let mut system: Vec<_> = system.into_values().collect();
+        system.retain(|x| !x.is_zero());
+
+        let mut solve_map = vec![self.zero(); variables];
+        'bigloop: while !system.is_empty() {
+            // solve all equations with a single variable
+
+            let mut has_sol = false;
+            'next: for (r, v) in system.iter().enumerate() {
+                let mut used_variables = vec![false; variables];
+
+                for e in v.exponents.chunks(v.nvars()) {
+                    for (vv, ee) in e[self.nvars()..].iter().enumerate() {
+                        if *ee == E::one() {
+                            used_variables[vv] = true;
+                        } else if *ee > E::one() {
+                            continue 'next;
+                        }
+                    }
+                }
+
+                match used_variables.iter().filter(|x| **x).count() {
+                    0 => {
+                        // this is a non-zero empty equation, therefore we have an inconsistency
+                        debug!("Inconsistent system");
+                        return None;
+                    }
+                    1 => {
+                        // solve the equation
+                        let mut coeff = self.zero();
+                        let mut rhs = self.zero();
+                        let var = used_variables.iter().position(|x| *x).unwrap();
+                        for (e, c) in v.exponents.chunks(v.nvars()).zip(&v.coefficients) {
+                            if e[self.nvars() + var] == E::one() {
+                                coeff.append_monomial(self.ring.neg(c), &e[..self.nvars()]);
+                            } else {
+                                rhs.append_monomial(c.clone(), &e[..self.nvars()]);
+                            }
+                        }
+
+                        system.remove(r);
+
+                        let (sol, r) = rhs.quot_rem(&coeff, false);
+                        if !r.is_zero() {
+                            debug!("Inconsistency in sol {}; rest = {}", sol, r);
+                            return None;
+                        }
+
+                        if !solve_map[var].is_zero() {
+                            if sol != solve_map[var] {
+                                debug!("Inconsistency in sol: {} vs {}", sol, solve_map[var]);
+                                return None;
+                            }
+                            continue 'bigloop;
+                        } else {
+                            debug!("Sol x{} = {}", self.nvars() + var, sol);
+                            solve_map[var] = sol;
+                            has_sol = true;
+                            break;
+                        }
+                    }
+                    _ => {
+                        continue 'next;
+                    }
+                }
+            }
+
+            if !has_sol {
+                debug!("No solution found: {}", system.len());
+                return None;
+            }
+
+            // we have a new solution so fill it in all equations
+            for row in system.iter_mut() {
+                let mut new_row = row.zero();
+
+                for t in &*row {
+                    if !t.exponents[self.nvars()..]
+                        .iter()
+                        .zip(&solve_map)
+                        .any(|(x, s)| *x > E::zero() && !s.is_zero())
+                    {
+                        new_row.append_monomial(t.coefficient.clone(), t.exponents);
+                        continue;
+                    }
+
+                    let mut exp = t.exponents.to_vec();
+                    let mut buffer = row.one();
+                    for (exp, sol) in exp[self.nvars()..].iter_mut().zip(&solve_map) {
+                        if *exp > E::zero() && !sol.is_zero() {
+                            // upgrade sol
+                            let mut sol_larger = sol.clone();
+                            buffer.unify_variables(&mut sol_larger);
+
+                            buffer = &buffer * &sol_larger.pow(exp.to_u32() as usize);
+                            *exp = E::zero();
+                        }
+                    }
+                    new_row = new_row + (&buffer * &row.monomial(t.coefficient.clone(), exp));
+                }
+                debug!("new eq {}", new_row);
+                *row = new_row;
+            }
+
+            system.retain(|x| !x.is_zero());
+        }
+
+        // construct the solution
+        let mut factors = vec![];
+        for f in factors_grown {
+            let mut new_factor = self.zero();
+
+            for t in &f {
+                if !t.exponents[self.nvars()..]
+                    .iter()
+                    .zip(&solve_map)
+                    .any(|(x, s)| *x > E::zero() && !s.is_zero())
+                {
+                    new_factor.append_monomial(t.coefficient.clone(), &t.exponents[..self.nvars()]);
+                    continue;
+                }
+
+                let mut buffer = self.one();
+                for (exp, sol) in t.exponents[self.nvars()..].iter().zip(&solve_map) {
+                    if *exp > E::zero() && !sol.is_zero() {
+                        buffer = &buffer * &sol.pow(exp.to_u32() as usize);
+                    }
+                }
+                new_factor = new_factor
+                    + (&buffer
+                        * &self
+                            .monomial(t.coefficient.clone(), t.exponents[..self.nvars()].to_vec()));
+            }
+            factors.push(new_factor);
+        }
+
+        Some(factors)
     }
 }
 
@@ -2219,7 +2556,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 let mut g = rest.constant(rest.lcoeff());
                 for (i, f) in factors.iter().enumerate() {
                     if cs.contains(&i) {
-                        g = (&g * f).map_coeff(|i| i.symmetric_mod(&max_p), Z);
+                        g = (&g * f).map_coeff(|i| i.clone().symmetric_mod(&max_p), Z);
                     }
                 }
                 let c = g.content();
@@ -2457,7 +2794,8 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             })
             .collect();
 
-        let mut f_mod = shifted_poly.map_coeff(|c| c.symmetric_mod(&max_p), mod_field.clone());
+        let mut f_mod =
+            shifted_poly.map_coeff(|c| c.clone().symmetric_mod(&max_p), mod_field.clone());
 
         // make sure the lcoeff is monic at y=0
         let inv_coeff = mod_field.inv(&uni_f.lcoeff());
@@ -3166,21 +3504,23 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         }
 
         // select a suitable prime
+        // we start small as we do not want to overshoot the coefficient bound too much
+        // however, the sparse lifting algorithm requires divisions, which means we
+        // can get unlucky with numbers being a multiple of the prime
+        let mut prime_iter = PrimeIteratorU64::new(1 << 22);
         let mut field;
-        let mut i = 0;
         'new_prime: loop {
-            i += 1;
-            if i == LARGE_U32_PRIMES.len() {
+            let p = prime_iter.next().unwrap();
+
+            if p > u32::MAX as u64 {
                 panic!("Ran out of primes during factorization of {}", self);
             }
 
-            let p = LARGE_U32_PRIMES[i];
-
-            if (&uni_f.lcoeff() % &Integer::Natural(p as i64)).is_zero() {
+            if (&uni_f.lcoeff() % &p.into()).is_zero() {
                 continue;
             }
 
-            field = Zp::new(p);
+            field = Zp::new(p as u32);
 
             // make sure the bivariate factors stay coprime
             let fs_p: Vec<_> = bivariate_factors
@@ -3308,15 +3648,22 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 .map(|(v, p)| (*v, p.to_finite_field(&small_field_mod)))
                 .collect();
 
-            let factorization_ff = poly_ff.multivariate_hensel_lifting(
-                &sorted_biv_factors_ff,
-                &mut uni_f,
-                &delta_f,
-                &sample_points,
-                Some(&true_lcoeffs_ff),
-                order,
-                2,
-            );
+            let factorization_ff = if let Some(f) =
+                poly_ff.sparse_lifting(&sorted_biv_factors_ff, &true_lcoeffs_ff, order)
+            {
+                f
+            } else {
+                poly_ff.multivariate_hensel_lifting(
+                    &sorted_biv_factors_ff,
+                    &mut uni_f,
+                    &delta_f,
+                    &sample_points,
+                    Some(&true_lcoeffs_ff),
+                    order,
+                    2,
+                )
+            };
+
             factorization_ff
                 .into_iter()
                 .map(|f| f.map_coeff(|c| small_field_mod.to_symmetric_integer(c), Z))
@@ -3331,15 +3678,22 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 .map(|f| f.map_coeff(|c| field_mod.to_element(c.clone()), field_mod.clone()))
                 .collect();
 
-            let factorization_ff = poly_ff.multivariate_hensel_lifting(
-                &sorted_biv_factors_ff,
-                &mut uni,
-                &delta,
-                &sample_points,
-                Some(&true_lcoeffs_ff),
-                order,
-                2,
-            );
+            let factorization_ff = if let Some(f) =
+                poly_ff.sparse_lifting(&sorted_biv_factors_ff, &true_lcoeffs_ff, order)
+            {
+                f
+            } else {
+                poly_ff.multivariate_hensel_lifting(
+                    &sorted_biv_factors_ff,
+                    &mut uni,
+                    &delta,
+                    &sample_points,
+                    Some(&true_lcoeffs_ff),
+                    order,
+                    2,
+                )
+            };
+
             factorization_ff
                 .into_iter()
                 .map(|f| f.map_coeff(|c| field_mod.to_symmetric_integer(c), Z))

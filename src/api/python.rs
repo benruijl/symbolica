@@ -4072,6 +4072,7 @@ impl PythonExpression {
     /// x^2 1
     /// 1 5
     /// ```
+    #[pyo3(signature = (*x,))]
     pub fn coefficient_list(
         &self,
         x: Bound<'_, PyTuple>,

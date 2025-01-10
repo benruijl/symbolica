@@ -288,6 +288,7 @@ impl<T: NumericalFloatLike + SingleFloat + Hash + Eq + InternalOrdering> Field f
     }
 }
 
+/// A number, that is potentially floating point.
 pub trait NumericalFloatLike:
     PartialEq
     + Clone
@@ -337,6 +338,7 @@ pub trait NumericalFloatLike:
     fn sample_unit<R: Rng + ?Sized>(&self, rng: &mut R) -> Self;
 }
 
+/// A number that behaves like a single number.
 pub trait SingleFloat: NumericalFloatLike {
     fn is_zero(&self) -> bool;
     fn is_one(&self) -> bool;
@@ -345,6 +347,7 @@ pub trait SingleFloat: NumericalFloatLike {
     fn from_rational(&self, rat: &Rational) -> Self;
 }
 
+/// A number that can be converted to a usize, f64, or rounded to the nearest integer.
 pub trait RealNumberLike: SingleFloat {
     fn to_usize_clamped(&self) -> usize;
     fn to_f64(&self) -> f64;
@@ -360,6 +363,8 @@ pub trait ConstructibleFloat: NumericalFloatLike {
     fn new_sample_unit<R: Rng + ?Sized>(rng: &mut R) -> Self;
 }
 
+/// A number that behaves like a real number, with constants like π and e
+/// and functions like sine and cosine.
 pub trait Real: NumericalFloatLike {
     /// The constant π, 3.1415926535...
     fn pi(&self) -> Self;
@@ -3051,6 +3056,7 @@ impl RealNumberLike for Rational {
     }
 }
 
+/// A complex number, `re + i * im`, where `i` is the imaginary unit.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Complex<T> {

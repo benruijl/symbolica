@@ -596,7 +596,7 @@ impl<E: PositiveExponent> Factorize for MultivariatePolynomial<IntegerRing, E, L
                     let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
 
                     factors.extend(
-                        f.multivariate_factorization(&mut order, 0, None)
+                        f.multivariate_factorization(&mut order, 10, None)
                             .into_iter()
                             .map(|ff| (ff, p)),
                     )
@@ -648,7 +648,7 @@ impl<E: PositiveExponent> Factorize for MultivariatePolynomial<IntegerRing, E, L
 
                 let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
 
-                f.multivariate_factorization(&mut order, 0, None).len() == 1
+                f.multivariate_factorization(&mut order, 10, None).len() == 1
             }
         }
     }
@@ -3445,8 +3445,12 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
         let mut sparse_fail = 0;
         let (bivariate_factors, sample_points, uni_f) = loop {
             // find a sample point with a small shift
-            let (bivariate_factors, sample_points, coeff_b, uni_f) =
-                self.find_sample(order, coefficient_upper_bound, max_bivariate_factors);
+            let (bivariate_factors, sample_points, coeff_b, uni_f) = self.find_sample(
+                order,
+                coefficient_upper_bound.max(10),
+                max_bivariate_factors,
+            );
+
             coefficient_upper_bound = coeff_b;
 
             if bivariate_factors.len() == 1 {

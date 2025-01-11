@@ -1591,6 +1591,25 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
             }
         };
 
+        // remove superfluous shifts: all variables should occur with exponent 1
+        for v in 0..a.nvars() {
+            let exp = a.degree_bounds(v).0;
+            if exp > E::zero() {
+                let pp = a.to_mut();
+                for e in pp.exponents_iter_mut() {
+                    e[v] = e[v] - exp;
+                }
+            }
+
+            let exp = b.degree_bounds(v).0;
+            if exp > E::zero() {
+                let pp = b.to_mut();
+                for e in pp.exponents_iter_mut() {
+                    e[v] = e[v] - exp;
+                }
+            }
+        }
+
         let mut base_degree: SmallVec<[Option<E>; INLINED_EXPONENTS]> = smallvec![None; a.nvars()];
 
         if let Some(g) = MultivariatePolynomial::simple_gcd(&a, &b) {
@@ -1778,8 +1797,46 @@ impl<R: EuclideanDomain + PolynomialGCD<E>, E: PositiveExponent> MultivariatePol
             .collect();
 
         // find better upper bounds for all variables
-        // these bounds could actually be wrong due to an unfortunate prime or sampling points
         let mut tight_bounds = R::get_gcd_var_bounds(&a, &b, &vars, &bounds);
+
+        // if all bounds are 0, the gcd is a constant
+        if tight_bounds.iter().all(|x| x.is_zero()) {
+            return rescale_gcd(
+                a.constant(a.ring.gcd(&a.content(), &b.content())),
+                &shared_degree,
+                &base_degree,
+                &a.one(),
+            );
+        }
+
+        // if some variables do not appear in the gcd, split the polynomials in these variables
+        if tight_bounds.iter().any(|x| x.is_zero()) {
+            let zero_bound: SmallVec<[_; INLINED_EXPONENTS]> = tight_bounds
+                .iter()
+                .enumerate()
+                .filter_map(|(i, v)| {
+                    if *v == E::zero() && a.degree(i) > E::zero() {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if zero_bound.len() > 0 {
+                let a1 = a.to_multivariate_polynomial_list(&zero_bound, true);
+                let b1 = b.to_multivariate_polynomial_list(&zero_bound, true);
+
+                let f = a1.into_values().chain(b1.into_values()).collect();
+
+                return rescale_gcd(
+                    PolynomialGCD::gcd_multiple(f),
+                    &shared_degree,
+                    &base_degree,
+                    &a.one(),
+                );
+            }
+        }
 
         // Determine a good variable ordering based on the estimated degree (decreasing) in the gcd.
         // If it is different from the input, make a copy and rearrange so that the
@@ -2510,27 +2567,59 @@ impl<E: PositiveExponent> PolynomialGCD<E> for IntegerRing {
     ) -> SmallVec<[E; INLINED_EXPONENTS]> {
         let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
         let mut i = 0;
-        loop {
-            let f = Zp::new(LARGE_U32_PRIMES[i]);
-            let ap = a.map_coeff(|c| c.to_finite_field(&f), f.clone());
-            let bp = b.map_coeff(|c| c.to_finite_field(&f), f.clone());
-            if ap.nterms() > 0
-                && bp.nterms() > 0
-                && ap.last_exponents() == a.last_exponents()
-                && bp.last_exponents() == b.last_exponents()
-            {
-                for var in vars.iter() {
-                    let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
-                        vars.iter().filter(|i| *i != var).cloned().collect();
-                    tight_bounds[*var] =
-                        MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
-                }
-                break;
-            } else {
-                debug!("Variable bounds failed due to unlucky prime");
-                i += 1;
+
+        let mut f = Zp::new(LARGE_U32_PRIMES[i]);
+        let mut ap = a.map_coeff(|c| c.to_finite_field(&f), f.clone());
+        let mut bp = b.map_coeff(|c| c.to_finite_field(&f), f.clone());
+
+        for var in vars.iter() {
+            if loose_bounds[*var] == E::zero() {
+                continue;
             }
+
+            while ap.degree(*var) != a.degree(*var) || bp.degree(*var) != b.degree(*var) {
+                debug!("Variable bounds failed due to bad prime");
+                i += 1;
+
+                f = Zp::new(LARGE_U32_PRIMES[i]);
+                ap = a.map_coeff(|c| c.to_finite_field(&f), f.clone());
+                bp = b.map_coeff(|c| c.to_finite_field(&f), f.clone());
+            }
+
+            let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
+                vars.iter().filter(|i| *i != var).cloned().collect();
+            tight_bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
+
+            // evaluate at every other variable at one, if they are present
+            /*if loose_bounds
+                .iter()
+                .enumerate()
+                .all(|(v, b)| *b == E::zero() || v == *var)
+            {
+                continue;
+            }
+
+            let mut a1 = a.zero();
+            let mut exp = vec![E::zero(); a.nvars()];
+            for m in a {
+                exp[*var] = m.exponents[*var];
+                a1.append_monomial(m.coefficient.clone(), &exp);
+            }
+
+            let mut b1 = b.zero();
+            for m in b {
+                exp[*var] = m.exponents[*var];
+                b1.append_monomial(m.coefficient.clone(), &exp);
+            }
+
+            if a1.degree(*var) == a.degree(*var) && b1.degree(*var) == b.degree(*var) {
+                let bound = a1.gcd(&b1).degree(*var);
+                if bound < tight_bounds[*var] {
+                    tight_bounds[*var] = bound;
+                }
+            }*/
         }
+
         tight_bounds
     }
 
@@ -2583,30 +2672,13 @@ impl<E: PositiveExponent> PolynomialGCD<E> for RationalField {
         vars: &[usize],
         loose_bounds: &[E],
     ) -> SmallVec<[E; INLINED_EXPONENTS]> {
-        let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
-        let mut i = 0;
-        loop {
-            let f = Zp::new(LARGE_U32_PRIMES[i]);
-            let ap = a.map_coeff(|c| c.to_finite_field(&f), f.clone());
-            let bp = b.map_coeff(|c| c.to_finite_field(&f), f.clone());
-            if ap.nterms() > 0
-                && bp.nterms() > 0
-                && ap.last_exponents() == a.last_exponents()
-                && bp.last_exponents() == b.last_exponents()
-            {
-                for var in vars.iter() {
-                    let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
-                        vars.iter().filter(|i| *i != var).cloned().collect();
-                    tight_bounds[*var] =
-                        MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
-                }
-                break;
-            } else {
-                debug!("Variable bounds failed due to unlucky prime");
-                i += 1;
-            }
-        }
-        tight_bounds
+        // remove the content so that the polynomials have integer coefficients
+        let content = a.ring.gcd(&a.content(), &b.content());
+
+        let a_int = a.map_coeff(|c| a.ring.div(c, &content).numerator(), Z);
+        let b_int = b.map_coeff(|c| b.ring.div(c, &content).numerator(), Z);
+
+        PolynomialGCD::get_gcd_var_bounds(&a_int, &b_int, vars, loose_bounds)
     }
 
     fn normalize(a: MultivariatePolynomial<Self, E>) -> MultivariatePolynomial<Self, E> {
@@ -3041,28 +3113,32 @@ impl<E: PositiveExponent> PolynomialGCD<E> for AlgebraicExtension<RationalField>
     ) -> SmallVec<[E; INLINED_EXPONENTS]> {
         let mut tight_bounds: SmallVec<[_; INLINED_EXPONENTS]> = loose_bounds.into();
         let mut i = 0;
-        loop {
-            let f = Zp::new(LARGE_U32_PRIMES[i]);
-            let algebraic_field_ff = a.ring.to_finite_field(&f);
-            let ap = a.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
-            let bp = b.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
-            if ap.nterms() > 0
-                && bp.nterms() > 0
-                && ap.last_exponents() == a.last_exponents()
-                && bp.last_exponents() == b.last_exponents()
-            {
-                for var in vars.iter() {
-                    let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
-                        vars.iter().filter(|i| *i != var).cloned().collect();
-                    tight_bounds[*var] =
-                        MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
-                }
-                break;
-            } else {
-                debug!("Variable bounds failed due to unlucky prime");
-                i += 1;
+
+        let mut f = Zp::new(LARGE_U32_PRIMES[i]);
+        let mut algebraic_field_ff = a.ring.to_finite_field(&f);
+        let mut ap = a.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
+        let mut bp = b.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
+
+        for var in vars.iter() {
+            if loose_bounds[*var] == E::zero() {
+                continue;
             }
+
+            while ap.degree(*var) != a.degree(*var) || bp.degree(*var) != b.degree(*var) {
+                debug!("Variable bounds failed due to bad prime");
+                i += 1;
+
+                f = Zp::new(LARGE_U32_PRIMES[i]);
+                algebraic_field_ff = a.ring.to_finite_field(&f);
+                ap = a.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
+                bp = b.map_coeff(|c| c.to_finite_field(&f), algebraic_field_ff.clone());
+            }
+
+            let vvars: SmallVec<[usize; INLINED_EXPONENTS]> =
+                vars.iter().filter(|i| *i != var).cloned().collect();
+            tight_bounds[*var] = MultivariatePolynomial::get_gcd_var_bound(&ap, &bp, &vvars, *var);
         }
+
         tight_bounds
     }
 

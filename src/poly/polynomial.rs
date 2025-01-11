@@ -1318,13 +1318,13 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             return E::zero();
         }
 
-        let mut max = E::zero();
+        let mut max = None;
         for e in self.exponents.iter().skip(x).step_by(self.nvars()) {
-            if max < *e {
-                max = *e;
+            if max.map(|max| max < *e).unwrap_or(true) {
+                max = Some(*e);
             }
         }
-        max
+        max.unwrap_or(E::zero())
     }
 
     /// Get the lowest and highest exponent of the variable `x`.
@@ -1334,17 +1334,17 @@ impl<F: Ring, E: Exponent, O: MonomialOrder> MultivariatePolynomial<F, E, O> {
             return (E::zero(), E::zero());
         }
 
-        let mut min = E::zero();
-        let mut max = E::zero();
+        let mut min = None;
+        let mut max = None;
         for e in self.exponents.iter().skip(x).step_by(self.nvars()) {
-            if max < *e {
-                max = *e;
+            if max.map(|max| max < *e).unwrap_or(true) {
+                max = Some(*e);
             }
-            if min > *e {
-                min = *e;
+            if min.map(|min| min > *e).unwrap_or(true) {
+                min = Some(*e);
             }
         }
-        (min, max)
+        (min.unwrap_or(E::zero()), max.unwrap_or(E::zero()))
     }
 
     // Get the highest degree of a variable in the leading monomial.

@@ -1294,8 +1294,9 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{AtomCore, Symbol},
+        atom::AtomCore,
         domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial, Ring},
+        parse, symb,
     };
 
     use super::RationalPolynomialField;
@@ -1310,8 +1311,7 @@ mod test {
 
     #[test]
     fn hermite_reduction() {
-        use crate::atom::Atom;
-        let p: RationalPolynomial<_, _> = Atom::parse("1/(v1 + 1)^5")
+        let p: RationalPolynomial<_, _> = parse!("1/(v1 + 1)^5")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
@@ -1319,7 +1319,7 @@ mod test {
 
         assert_eq!(
             r,
-            vec![Atom::parse("-1/(4+16*v1+24*v1^2+16*v1^3+4*v1^4)")
+            vec![parse!("-1/(4+16*v1+24*v1^2+16*v1^3+4*v1^4)")
                 .unwrap()
                 .to_rational_polynomial::<_, _, u8>(&Q, &Z, r[0].get_variables().clone().into())]
         );
@@ -1328,46 +1328,32 @@ mod test {
 
     #[test]
     fn constant() {
-        use crate::atom::Atom;
-        let p: RationalPolynomial<_, _> = Atom::parse("(v1^4+v2+v1*v2+2*v1)/(v2 + 1)")
+        let p: RationalPolynomial<_, _> = parse!("(v1^4+v2+v1*v2+2*v1)/(v2 + 1)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(
                 &Q,
                 &Z,
-                Some(Arc::new(vec![
-                    Symbol::new("v1").into(),
-                    Symbol::new("v2").into(),
-                ])),
+                Some(Arc::new(vec![symb!("v1").into(), symb!("v2").into()])),
             );
 
         let (r, l) = p.integrate(0);
         assert_eq!(
             r,
-            vec![
-                Atom::parse("(10*v1*v2+10*v1^2+5*v1^2*v2+2*v1^5)/(10+10*v2)")
-                    .unwrap()
-                    .to_rational_polynomial::<_, _, u8>(
-                        &Q,
-                        &Z,
-                        r[0].get_variables().clone().into()
-                    )
-            ]
+            vec![parse!("(10*v1*v2+10*v1^2+5*v1^2*v2+2*v1^5)/(10+10*v2)")
+                .unwrap()
+                .to_rational_polynomial::<_, _, u8>(&Q, &Z, r[0].get_variables().clone().into())]
         );
         assert_eq!(l, vec![]);
     }
 
     #[test]
     fn mixed_denominator() {
-        use crate::atom::Atom;
-        let p: RationalPolynomial<_, _> = Atom::parse("(v1^4+v2+v1*v2+2*v1)/(v1)/(v2 + 1)")
+        let p: RationalPolynomial<_, _> = parse!("(v1^4+v2+v1*v2+2*v1)/(v1)/(v2 + 1)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(
                 &Q,
                 &Z,
-                Some(Arc::new(vec![
-                    Symbol::new("v1").into(),
-                    Symbol::new("v2").into(),
-                ])),
+                Some(Arc::new(vec![symb!("v1").into(), symb!("v2").into()])),
             );
 
         let (r, l) = p.integrate(0);
@@ -1376,17 +1362,17 @@ mod test {
 
         assert_eq!(
             r,
-            vec![Atom::parse("(8*v1+4*v1*v2+v1^4)/(4+4*v2)")
+            vec![parse!("(8*v1+4*v1*v2+v1^4)/(4+4*v2)")
                 .unwrap()
                 .to_rational_polynomial::<_, _, u8>(&Q, &Z, r[0].get_variables().clone().into())]
         );
         assert_eq!(
             l,
             vec![(
-                Atom::parse("v2/(1+v2)")
+                parse!("v2/(1+v2)")
                     .unwrap()
                     .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                Atom::parse("v1")
+                parse!("v1")
                     .unwrap()
                     .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
             ),]
@@ -1395,9 +1381,8 @@ mod test {
 
     #[test]
     fn three_factors() {
-        use crate::atom::Atom;
         let p: RationalPolynomial<_, _> =
-            Atom::parse("(36v1^2+1167v1+3549/2)/(v1^3+23/30v1^2-2/15v1-2/15)")
+            parse!("(36v1^2+1167v1+3549/2)/(v1^3+23/30v1^2-2/15v1-2/15)")
                 .unwrap()
                 .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
@@ -1410,26 +1395,28 @@ mod test {
             l,
             vec![
                 (
-                    Atom::parse("-8000")
-                        .unwrap()
-                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                    Atom::parse("(1+2*v1)/2")
-                        .unwrap()
-                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                ),
-                (
-                    Atom::parse("91125/16")
-                        .unwrap()
-                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                    Atom::parse("(2+3*v1)/3")
+                    parse!("-8000").unwrap().to_rational_polynomial::<_, _, u8>(
+                        &Q,
+                        &Z,
+                        v.clone().into()
+                    ),
+                    parse!("(1+2*v1)/2")
                         .unwrap()
                         .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
                 ),
                 (
-                    Atom::parse("37451/16")
+                    parse!("91125/16")
                         .unwrap()
                         .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                    Atom::parse("(-2+5*v1)/5")
+                    parse!("(2+3*v1)/3")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                ),
+                (
+                    parse!("37451/16")
+                        .unwrap()
+                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    parse!("(-2+5*v1)/5")
                         .unwrap()
                         .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
                 )
@@ -1439,15 +1426,14 @@ mod test {
 
     #[test]
     fn multiple_residues() {
-        use crate::atom::Atom;
-        let p: RationalPolynomial<_, _> = Atom::parse(
-            "(7v1^13+10v1^8+4v1^7-7v1^6-4v1^3-4v1^2+3v1+3)/(v1^14-2v1^8-2v1^7-2v1^4-4v1^3-v1^2+2v1+1)",
+        let p: RationalPolynomial<_, _> = parse!(
+            "(7v1^13+10v1^8+4v1^7-7v1^6-4v1^3-4v1^2+3v1+3)/(v1^14-2v1^8-2v1^7-2v1^4-4v1^3-v1^2+2v1+1)"
         )
         .unwrap()
         .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
         let (r, mut l) = p.integrate(0);
-        let new_var = Symbol::new("v2");
+        let new_var = symb!("v2");
 
         // root sum in the answer, rename the temporary variable
         // TODO: add rename function
@@ -1464,10 +1450,10 @@ mod test {
         assert_eq!(
             l,
             vec![(
-                Atom::parse("-1-4*v2+4*v2^2")
+                parse!("-1-4*v2+4*v2^2")
                     .unwrap()
                     .to_rational_polynomial::<_, _, u8>(&Q, &Z, new_map.clone().into()),
-                Atom::parse("-1-2*v1*v2+v1^2-2*v1^2*v2+v1^7")
+                parse!("-1-2*v1*v2+v1^2-2*v1^2*v2+v1^7")
                     .unwrap()
                     .to_rational_polynomial::<_, _, u8>(&Q, &Z, new_map.clone().into()),
             )]
@@ -1476,8 +1462,7 @@ mod test {
 
     #[test]
     fn multi_factor() {
-        use crate::atom::Atom;
-        let p: RationalPolynomial<_, _> = Atom::parse("1/(v1^3+v1)")
+        let p: RationalPolynomial<_, _> = parse!("1/(v1^3+v1)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
@@ -1490,20 +1475,26 @@ mod test {
             l,
             vec![
                 (
-                    Atom::parse("-1/2")
-                        .unwrap()
-                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                    Atom::parse("1+v1^2")
+                    parse!("-1/2").unwrap().to_rational_polynomial::<_, _, u8>(
+                        &Q,
+                        &Z,
+                        v.clone().into()
+                    ),
+                    parse!("1+v1^2")
                         .unwrap()
                         .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
                 ),
                 (
-                    Atom::parse("1")
-                        .unwrap()
-                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                    Atom::parse("v1")
-                        .unwrap()
-                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    parse!("1").unwrap().to_rational_polynomial::<_, _, u8>(
+                        &Q,
+                        &Z,
+                        v.clone().into()
+                    ),
+                    parse!("v1").unwrap().to_rational_polynomial::<_, _, u8>(
+                        &Q,
+                        &Z,
+                        v.clone().into()
+                    ),
                 )
             ]
         );
@@ -1511,8 +1502,7 @@ mod test {
 
     #[test]
     fn multiple_variables() {
-        use crate::atom::Atom;
-        let p: RationalPolynomial<_, _> = Atom::parse("(v1^4+v2+v1*v2+2*v1)/((v1-v2)(v1-2)(v1-4))")
+        let p: RationalPolynomial<_, _> = parse!("(v1^4+v2+v1*v2+2*v1)/((v1-v2)(v1-2)(v1-4))")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
@@ -1522,7 +1512,7 @@ mod test {
 
         assert_eq!(
             r,
-            vec![Atom::parse("(12*v1+2*v1*v2+v1^2)/2")
+            vec![parse!("(12*v1+2*v1*v2+v1^2)/2")
                 .unwrap()
                 .to_rational_polynomial::<_, _, u8>(&Q, &Z, r[0].get_variables().clone().into())]
         );
@@ -1530,26 +1520,30 @@ mod test {
             l,
             vec![
                 (
-                    Atom::parse("(20+3*v2)/(-4+2*v2)")
+                    parse!("(20+3*v2)/(-4+2*v2)")
                         .unwrap()
                         .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                    Atom::parse("-2+v1")
-                        .unwrap()
-                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    parse!("-2+v1").unwrap().to_rational_polynomial::<_, _, u8>(
+                        &Q,
+                        &Z,
+                        v.clone().into()
+                    ),
                 ),
                 (
-                    Atom::parse("(-264-5*v2)/(-8+2*v2)")
+                    parse!("(-264-5*v2)/(-8+2*v2)")
                         .unwrap()
                         .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                    Atom::parse("-4+v1")
-                        .unwrap()
-                        .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
+                    parse!("-4+v1").unwrap().to_rational_polynomial::<_, _, u8>(
+                        &Q,
+                        &Z,
+                        v.clone().into()
+                    ),
                 ),
                 (
-                    Atom::parse("(3*v2+v2^2+v2^4)/(8-6*v2+v2^2)")
+                    parse!("(3*v2+v2^2+v2^4)/(8-6*v2+v2^2)")
                         .unwrap()
                         .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
-                    Atom::parse("-v2+v1")
+                    parse!("-v2+v1")
                         .unwrap()
                         .to_rational_polynomial::<_, _, u8>(&Q, &Z, v.clone().into()),
                 )

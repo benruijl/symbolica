@@ -1788,15 +1788,14 @@ impl<R: Ring, E: PositiveExponent> UnivariatePolynomial<PolynomialRing<R, E>> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
-        domains::{float::F64, rational::Q},
+        atom::AtomCore,
+        domains::{float::F64, integer::Z, rational::Q},
+        parse,
     };
 
     #[test]
     fn derivative_integrate() {
-        use crate::atom::Atom;
-        use crate::domains::rational::Q;
-        let a = Atom::parse("x^2+5x+x^7+3")
+        let a = parse!("x^2+5x+x^7+3")
             .unwrap()
             .to_polynomial::<_, u8>(&Q, None)
             .to_univariate_from_univariate(0);
@@ -1808,33 +1807,31 @@ mod test {
 
     #[test]
     fn test_uni() {
-        use crate::atom::Atom;
-        use crate::domains::integer::Z;
-        let a = Atom::parse("x^2+5x+x^7+3")
+        let a = parse!("x^2+5x+x^7+3")
             .unwrap()
             .to_polynomial::<_, u8>(&Z, None)
             .to_univariate_from_univariate(0);
-        let b = Atom::parse("x^2 + 6")
-            .unwrap()
-            .to_polynomial::<_, u8>(&Z, None)
-            .to_univariate_from_univariate(0);
-
-        let a_plus_b = Atom::parse("9+5*x+2*x^2+x^7")
+        let b = parse!("x^2 + 6")
             .unwrap()
             .to_polynomial::<_, u8>(&Z, None)
             .to_univariate_from_univariate(0);
 
-        let a_mul_b = Atom::parse("18+30*x+9*x^2+5*x^3+x^4+6*x^7+x^9")
+        let a_plus_b = parse!("9+5*x+2*x^2+x^7")
             .unwrap()
             .to_polynomial::<_, u8>(&Z, None)
             .to_univariate_from_univariate(0);
 
-        let a_quot_b = Atom::parse("1+36*x+-6*x^3+x^5")
+        let a_mul_b = parse!("18+30*x+9*x^2+5*x^3+x^4+6*x^7+x^9")
             .unwrap()
             .to_polynomial::<_, u8>(&Z, None)
             .to_univariate_from_univariate(0);
 
-        let a_rem_b = Atom::parse("-3+-211*x")
+        let a_quot_b = parse!("1+36*x+-6*x^3+x^5")
+            .unwrap()
+            .to_polynomial::<_, u8>(&Z, None)
+            .to_univariate_from_univariate(0);
+
+        let a_rem_b = parse!("-3+-211*x")
             .unwrap()
             .to_polynomial::<_, u8>(&Z, None)
             .to_univariate_from_univariate(0);
@@ -1850,7 +1847,7 @@ mod test {
     #[test]
     fn isolate() {
         let p =
-        Atom::parse("-13559717115*x^6+624134407779*x^7+-13046815434285*x^8+163110612017313*x^9+-1347733455544188*x^10+7635969738026784*x^11+-29444295941654904*x^12+71604709665043392*x^13+-77045857071990336*x^14+-99619711608972096*x^15+375578692434494208*x^16+66256662107418624*x^17+-1548072112541055488*x^18+800263217632600064*x^19+4816054475648851968*x^20+-4271696436901249024*x^21+-12066471810013724672*x^22+10894783995791278080*x^23+28270081588804452352*x^24+-17402041731641245696*x^25+-56047633173904883712*x^26+8535267319469834240*x^27+82086860869945262080*x^28+30788799964221800448*x^29+-66898313364436418560*x^30+-66318040948916879360*x^31+44159548067414016*x^32+31084367995645984768*x^33+20957883496015069184*x^34+6860635897973440512*x^35+1254041389990150144*x^36+123004564822556672*x^37+5066549580791808*x^38")
+        parse!("-13559717115*x^6+624134407779*x^7+-13046815434285*x^8+163110612017313*x^9+-1347733455544188*x^10+7635969738026784*x^11+-29444295941654904*x^12+71604709665043392*x^13+-77045857071990336*x^14+-99619711608972096*x^15+375578692434494208*x^16+66256662107418624*x^17+-1548072112541055488*x^18+800263217632600064*x^19+4816054475648851968*x^20+-4271696436901249024*x^21+-12066471810013724672*x^22+10894783995791278080*x^23+28270081588804452352*x^24+-17402041731641245696*x^25+-56047633173904883712*x^26+8535267319469834240*x^27+82086860869945262080*x^28+30788799964221800448*x^29+-66898313364436418560*x^30+-66318040948916879360*x^31+44159548067414016*x^32+31084367995645984768*x^33+20957883496015069184*x^34+6860635897973440512*x^35+1254041389990150144*x^36+123004564822556672*x^37+5066549580791808*x^38")
         .unwrap()
         .to_polynomial::<_, u32>(&Q, None)
         .to_univariate_from_univariate(0);
@@ -1892,7 +1889,7 @@ mod test {
 
     #[test]
     fn complex_roots() {
-        let p = Atom::parse("x^10+9x^7+4x^3+2x+1")
+        let p = parse!("x^10+9x^7+4x^3+2x+1")
             .unwrap()
             .to_polynomial::<_, u16>(&Q, None)
             .to_univariate_from_univariate(0);

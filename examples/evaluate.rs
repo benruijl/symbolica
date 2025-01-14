@@ -1,14 +1,15 @@
 use ahash::HashMap;
 use symbolica::atom::Atom;
-use symbolica::atom::{AtomCore, Symbol};
+use symbolica::atom::AtomCore;
 use symbolica::evaluate::EvaluationFn;
+use symbolica::{parse, symb};
 
 fn main() {
-    let x = Symbol::new("x");
-    let f = Symbol::new("f");
-    let g = Symbol::new("g");
-    let p0 = Atom::parse("p(0)").unwrap();
-    let a = Atom::parse("x*cos(x) + f(x, 1)^2 + g(g(x)) + p(0)").unwrap();
+    let x = symb!("x");
+    let f = symb!("f");
+    let g = symb!("g");
+    let p0 = parse!("p(0)").unwrap();
+    let a = parse!("x*cos(x) + f(x, 1)^2 + g(g(x)) + p(0)").unwrap();
 
     let mut const_map = HashMap::default();
     let mut fn_map: HashMap<_, _> = HashMap::default();

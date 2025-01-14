@@ -1,7 +1,7 @@
-use symbolica::atom::{Atom, AtomCore, Symbol};
+use symbolica::{atom::AtomCore, parse, symb};
 
 fn main() {
-    let x = Symbol::new("x");
+    let x = symb!("x");
     let inputs = [
         "(1+2*x)^(5+x)",
         "log(2*x) + exp(3*x) + sin(4*x) + cos(y*x)",
@@ -10,7 +10,7 @@ fn main() {
     ];
 
     for input in inputs {
-        let input = Atom::parse(input).unwrap();
+        let input = parse!(input).unwrap();
 
         let a = input.derivative(x);
 

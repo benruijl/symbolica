@@ -574,46 +574,40 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{representation::InlineVar, Atom, AtomCore, Symbol},
-        fun,
+        atom::{representation::InlineVar, Atom, AtomCore},
+        fun, parse, symb,
     };
 
     #[test]
     fn collect_num() {
-        let input = Atom::parse("2*v1+4*v1^2+6*v1^3").unwrap();
+        let input = parse!("2*v1+4*v1^2+6*v1^3").unwrap();
         let out = input.collect_num();
-        let ref_out = Atom::parse("2*(v1+2v1^2+3v1^3)").unwrap();
+        let ref_out = parse!("2*(v1+2v1^2+3v1^3)").unwrap();
         assert_eq!(out, ref_out);
 
-        let input = Atom::parse("(-3*v1+3*v2)(2*v3+2*v4)").unwrap();
+        let input = parse!("(-3*v1+3*v2)(2*v3+2*v4)").unwrap();
         let out = input.collect_num();
-        let ref_out = Atom::parse("-6*(v4+v3)*(v1-v2)").unwrap();
+        let ref_out = parse!("-6*(v4+v3)*(v1-v2)").unwrap();
         assert_eq!(out, ref_out);
 
-        let input = Atom::parse("v1+v2+2*(v1+v2)").unwrap();
+        let input = parse!("v1+v2+2*(v1+v2)").unwrap();
         let out = input.expand_num().collect_num();
-        let ref_out = Atom::parse("3*(v1+v2)").unwrap();
+        let ref_out = parse!("3*(v1+v2)").unwrap();
         assert_eq!(out, ref_out);
     }
 
     #[test]
     fn coefficient_list() {
-        let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
-        let x = Symbol::new("v1");
+        let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
+        let x = symb!("v1");
 
         let r = input.coefficient_list::<i8, InlineVar>(&[x.into()]);
 
         let res = vec![
-            (
-                Atom::parse("1").unwrap(),
-                Atom::parse("v2^2+f1(5,v1)+2").unwrap(),
-            ),
-            (
-                Atom::parse("v1").unwrap(),
-                Atom::parse("v3+5*v2+1").unwrap(),
-            ),
-            (Atom::parse("v1^2").unwrap(), Atom::parse("1").unwrap()),
-            (Atom::parse("v1^3").unwrap(), Atom::parse("1").unwrap()),
+            (parse!("1").unwrap(), parse!("v2^2+f1(5,v1)+2").unwrap()),
+            (parse!("v1").unwrap(), parse!("v3+5*v2+1").unwrap()),
+            (parse!("v1^2").unwrap(), parse!("1").unwrap()),
+            (parse!("v1^3").unwrap(), parse!("1").unwrap()),
         ];
 
         assert_eq!(r, res);
@@ -621,32 +615,32 @@ mod test {
 
     #[test]
     fn collect() {
-        let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
-        let x = Symbol::new("v1");
+        let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
+        let x = symb!("v1");
 
         let out = input.collect::<i8, InlineVar>(x.into(), None, None);
 
-        let ref_out = Atom::parse("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2").unwrap();
+        let ref_out = parse!("v1^2+v1^3+v2^2+f1(5,v1)+v1*(5*v2+v3+1)+2").unwrap();
         assert_eq!(out, ref_out)
     }
 
     #[test]
     fn collect_nested() {
-        let input = Atom::parse("(1+v1)^2*v1+(1+v2)^100").unwrap();
-        let x = Symbol::new("v1");
+        let input = parse!("(1+v1)^2*v1+(1+v2)^100").unwrap();
+        let x = symb!("v1");
 
         let out = input.collect::<i8, InlineVar>(x.into(), None, None);
 
-        let ref_out = Atom::parse("v1+2*v1^2+v1^3+(v2+1)^100").unwrap();
+        let ref_out = parse!("v1+2*v1^2+v1^3+(v2+1)^100").unwrap();
         assert_eq!(out, ref_out)
     }
 
     #[test]
     fn collect_wrap() {
-        let input = Atom::parse("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
-        let x = Symbol::new("v1");
-        let key = Symbol::new("f3");
-        let coeff = Symbol::new("f4");
+        let input = parse!("v1*(1+v3)+v1*5*v2+f1(5,v1)+2+v2^2+v1^2+v1^3").unwrap();
+        let x = symb!("v1");
+        let key = symb!("f3");
+        let coeff = symb!("f4");
         println!("> Collect in x with wrapping:");
         let out = input.collect::<i8, InlineVar>(
             x.into(),
@@ -660,22 +654,20 @@ mod test {
             })),
         );
 
-        let ref_out = Atom::parse(
-            "f3(1)*f4(v2^2+f1(5,v1)+2)+f3(v1)*f4(5*v2+v3+1)+f3(v1^2)*f4(1)+f3(v1^3)*f4(1)",
-        )
-        .unwrap();
+        let ref_out =
+            parse!("f3(1)*f4(v2^2+f1(5,v1)+2)+f3(v1)*f4(5*v2+v3+1)+f3(v1^2)*f4(1)+f3(v1^3)*f4(1)")
+                .unwrap();
 
         assert_eq!(out, ref_out);
     }
 
     #[test]
     fn together() {
-        let input = Atom::parse("v1^2/2+v1^3/v4*v2+v3/(1+v4)").unwrap();
+        let input = parse!("v1^2/2+v1^3/v4*v2+v3/(1+v4)").unwrap();
         let out = input.together();
 
         let ref_out =
-            Atom::parse("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)")
-                .unwrap();
+            parse!("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)").unwrap();
 
         assert_eq!(out, ref_out);
     }
@@ -683,11 +675,10 @@ mod test {
     #[test]
     fn apart() {
         let input =
-            Atom::parse("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)")
-                .unwrap();
-        let out = input.apart(Symbol::new("v4"));
+            parse!("(2*v4+2*v4^2)^-1*(2*v3*v4+v1^2*v4+v1^2*v4^2+2*v1^3*v2+2*v1^3*v2*v4)").unwrap();
+        let out = input.apart(symb!("v4"));
 
-        let ref_out = Atom::parse("1/2*v1^2+v3*(v4+1)^-1+v1^3*v2*v4^-1").unwrap();
+        let ref_out = parse!("1/2*v1^2+v3*(v4+1)^-1+v1^3*v2*v4^-1").unwrap();
 
         assert_eq!(out, ref_out);
     }
@@ -695,11 +686,10 @@ mod test {
     #[test]
     fn cancel() {
         let input =
-            Atom::parse("1/(v1+1)^2 + (v1^2 - 1)*(v2+1)^10/(v1 - 1)+ 5 + (v1+1)/(v1^2+2v1+1)")
-                .unwrap();
+            parse!("1/(v1+1)^2 + (v1^2 - 1)*(v2+1)^10/(v1 - 1)+ 5 + (v1+1)/(v1^2+2v1+1)").unwrap();
         let out = input.cancel();
 
-        let ref_out = Atom::parse("(v1+1)^-2+(v1+1)^-1+(v1+1)*(v2+1)^10+5").unwrap();
+        let ref_out = parse!("(v1+1)^-2+(v1+1)^-1+(v1+1)*(v2+1)^10+5").unwrap();
 
         assert_eq!(out, ref_out);
     }
@@ -707,26 +697,25 @@ mod test {
     #[test]
     fn factor() {
         let input =
-            Atom::parse("(6 + v1)/(7776 + 6480*v1 + 2160*v1^2 + 360*v1^3 + 30*v1^4 + v1^5)")
-                .unwrap();
+            parse!("(6 + v1)/(7776 + 6480*v1 + 2160*v1^2 + 360*v1^3 + 30*v1^4 + v1^5)").unwrap();
         let out = input.factor();
 
-        let ref_out = Atom::parse("(v1+6)^-4").unwrap();
+        let ref_out = parse!("(v1+6)^-4").unwrap();
 
         assert_eq!(out, ref_out);
     }
 
     #[test]
     fn coefficient_list_multiple() {
-        let input = Atom::parse(
-            "(v1+v2+v3)^2+v1+v1^2+ v2 + 5*v1*v2^2 + v3 + v2*(v4+1)^10 + v1*v5(1,2,3)^2 + v5(1,2)",
+        let input = parse!(
+            "(v1+v2+v3)^2+v1+v1^2+ v2 + 5*v1*v2^2 + v3 + v2*(v4+1)^10 + v1*v5(1,2,3)^2 + v5(1,2)"
         )
         .unwrap();
 
         let out = input.as_view().coefficient_list::<i16, _>(&[
-            Atom::new_var(Symbol::new("v1")),
-            Atom::new_var(Symbol::new("v2")),
-            Atom::parse("v5(1,2,3)").unwrap(),
+            Atom::new_var(symb!("v1")),
+            Atom::new_var(symb!("v2")),
+            parse!("v5(1,2,3)").unwrap(),
         ]);
 
         assert_eq!(out.len(), 8);

@@ -1,6 +1,6 @@
 //! Parsing of general expressions.
 //!
-//! Most users will want to use [Atom::parse] to parse an atom.
+//! Most users will want to use [parse!] to parse an atom.
 //!
 //! Use [Token::parse] to tokenize an expression, and
 //! [Token::to_polynomial], [Token::to_rational_polynomial] or [Token::to_factorized_rational_polynomial] for accelerated parsing of polynomials written
@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    atom::Atom,
+    atom::{Atom, NamespacedString, NamespacedSymbol},
     coefficient::{Coefficient, ConvertToRing},
     domains::{float::Float, integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, PositiveExponent, Variable},
@@ -376,13 +376,17 @@ impl Token {
     }
 
     /// Parse the token into an atom.
-    pub fn to_atom(&self, workspace: &Workspace) -> Result<Atom, String> {
+    pub fn to_atom(
+        &self,
+        namespace: &NamespacedString,
+        workspace: &Workspace,
+    ) -> Result<Atom, String> {
         let mut atom = workspace.new_atom();
 
         {
             let mut state = State::get_global_state().write().unwrap();
             // do not normalize to prevent potential deadlocks
-            self.to_atom_with_output_no_norm(&mut state, workspace, &mut atom)?;
+            self.to_atom_with_output_no_norm(namespace, &mut state, workspace, &mut atom)?;
         }
 
         let mut out = Atom::new();
@@ -394,6 +398,7 @@ impl Token {
     /// Parse the token into the atom `out`.
     fn to_atom_with_output_no_norm(
         &self,
+        namespace: &NamespacedString,
         state: &mut State,
         workspace: &Workspace,
         out: &mut Atom,
@@ -412,7 +417,12 @@ impl Token {
                 },
             },
             Token::ID(x) => {
-                out.to_var(state.get_symbol_impl(x));
+                out.to_var(state.get_symbol_impl(NamespacedSymbol {
+                    symbol: x.to_string().into(),
+                    namespace: namespace.namespace.clone(),
+                    file: namespace.file.clone(),
+                    line: namespace.line,
+                }));
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -420,7 +430,7 @@ impl Token {
 
                     let mut atom = workspace.new_atom();
                     for a in args {
-                        a.to_atom_with_output_no_norm(state, workspace, &mut atom)?;
+                        a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
                         mul.extend(atom.as_view());
                     }
                 }
@@ -429,7 +439,7 @@ impl Token {
 
                     let mut atom = workspace.new_atom();
                     for a in args {
-                        a.to_atom_with_output_no_norm(state, workspace, &mut atom)?;
+                        a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
                         add.extend(atom.as_view());
                     }
                 }
@@ -437,10 +447,10 @@ impl Token {
                     // pow is right associative
                     args.last()
                         .unwrap()
-                        .to_atom_with_output_no_norm(state, workspace, out)?;
+                        .to_atom_with_output_no_norm(namespace, state, workspace, out)?;
                     for a in args.iter().rev().skip(1) {
                         let mut cur_base = workspace.new_atom();
-                        a.to_atom_with_output_no_norm(state, workspace, &mut cur_base)?;
+                        a.to_atom_with_output_no_norm(namespace, state, workspace, &mut cur_base)?;
 
                         let mut pow_h = workspace.new_atom();
                         pow_h.to_pow(cur_base.as_view(), out.as_view());
@@ -452,7 +462,7 @@ impl Token {
                     debug_assert!(args.len() == 1);
 
                     let mut base = workspace.new_atom();
-                    args[0].to_atom_with_output_no_norm(state, workspace, &mut base)?;
+                    args[0].to_atom_with_output_no_norm(namespace, state, workspace, &mut base)?;
 
                     let num = workspace.new_num(-1);
 
@@ -464,7 +474,7 @@ impl Token {
                     debug_assert!(args.len() == 1);
 
                     let mut base = workspace.new_atom();
-                    args[0].to_atom_with_output_no_norm(state, workspace, &mut base)?;
+                    args[0].to_atom_with_output_no_norm(namespace, state, workspace, &mut base)?;
 
                     let num = workspace.new_num(-1);
 
@@ -477,10 +487,15 @@ impl Token {
                     _ => unreachable!(),
                 };
 
-                let fun = out.to_fun(state.get_symbol_impl(name));
+                let fun = out.to_fun(state.get_symbol_impl(NamespacedSymbol {
+                    symbol: name.to_string().into(),
+                    namespace: namespace.namespace.clone(),
+                    file: namespace.file.clone(),
+                    line: namespace.line,
+                }));
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
-                    a.to_atom_with_output_no_norm(state, workspace, &mut atom)?;
+                    a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
                     fun.add_arg(atom.as_view());
                 }
             }
@@ -664,7 +679,7 @@ impl Token {
 
         let ops = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
         let whitespace = [' ', '\t', '\n', '\r', '\\'];
-        let forbidden = [';', ':', '&', '!', '%', '.'];
+        let forbidden = [';', '&', '!', '%', '.'];
 
         let mut char_iter = input.chars();
         let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token
@@ -1313,44 +1328,46 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{Atom, AtomCore, Symbol},
+        atom::AtomCore,
         domains::integer::Z,
+        parse,
         parser::Token,
         printer::{AtomPrinter, PrintOptions},
+        symb,
     };
 
     #[test]
     fn pow() {
-        let input = Atom::parse("v1^v2^v3^3").unwrap();
+        let input = parse!("v1^v2^v3^3").unwrap();
         assert_eq!(format!("{}", input), "v1^v2^v3^3");
 
-        let input = Atom::parse("(v1^v2)^v3").unwrap();
+        let input = parse!("(v1^v2)^v3").unwrap();
         assert_eq!(format!("{}", input), "(v1^v2)^v3");
     }
 
     #[test]
     fn unary() {
-        let input = Atom::parse("-x^z").unwrap();
+        let input = parse!("-x^z").unwrap();
         assert_eq!(format!("{}", input), "-x^z");
 
-        let input = Atom::parse("(-x)^z").unwrap();
+        let input = parse!("(-x)^z").unwrap();
         assert_eq!(format!("{}", input), "(-x)^z");
     }
 
     #[test]
     fn liberal() {
-        let input = Atom::parse(
+        let input = parse!(
             "89233_21837281 x   
-            ^2 / y + 5 + 5x",
+            ^2 / y + 5 + 5x"
         )
         .unwrap();
-        let res = Atom::parse("8923321837281*x^2*y^-1+5+5x").unwrap();
+        let res = parse!("8923321837281*x^2*y^-1+5+5x").unwrap();
         assert_eq!(input, res);
     }
 
     #[test]
     fn float() {
-        let input = Atom::parse("1.2`20x+1e-5`20+1e+5 * 1.1234e23 +2exp(5)").unwrap();
+        let input = parse!("1.2`20x+1e-5`20+1e+5 * 1.1234e23 +2exp(5)").unwrap();
 
         let r = format!(
             "{}",
@@ -1361,22 +1378,22 @@ mod test {
 
     #[test]
     fn square_bracket_function() {
-        let input = Atom::parse("v1  [v1, v2]+5 + v1[]").unwrap();
-        let res = Atom::parse("v1(v1,v2)+5+v1()").unwrap();
+        let input = parse!("v1  [v1, v2]+5 + v1[]").unwrap();
+        let res = parse!("v1(v1,v2)+5+v1()").unwrap();
         assert_eq!(input, res);
     }
 
     #[test]
     fn poly() {
         let var_names = ["v1".into(), "v2".into()];
-        let var_map = Arc::new(vec![Symbol::new("v1").into(), Symbol::new("v2").into()]);
+        let var_map = Arc::new(vec![symb!("v1").into(), symb!("v2").into()]);
         let (rest, input) =
             Token::parse_polynomial::<_, u8>("#ABC*v1^2*v2+5".as_bytes(), &var_map, &var_names, &Z);
 
         assert!(rest.is_empty());
         assert_eq!(
             input,
-            Atom::parse("5+2748*v1^2*v2")
+            parse!("5+2748*v1^2*v2")
                 .unwrap()
                 .to_polynomial(&Z, var_map.clone().into())
         );

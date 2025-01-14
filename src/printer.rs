@@ -225,7 +225,7 @@ define_formatters!(
 /// ```
 /// use symbolica::atom::{Atom, AtomCore};
 /// use symbolica::printer::PrintOptions;
-/// let a = Atom::parse("x + y").unwrap();
+/// let a = parse!("x + y").unwrap();
 /// println!("{}", a.printer(PrintOptions::latex()));
 /// ```
 pub struct AtomPrinter<'a> {
@@ -955,14 +955,16 @@ mod test {
     use colored::control::ShouldColorize;
 
     use crate::{
-        atom::{Atom, AtomCore, FunctionAttribute, Symbol},
+        atom::{AtomCore, FunctionAttribute},
         domains::{finite_field::Zp, integer::Z, SelfRing},
+        parse,
         printer::{AtomPrinter, PrintOptions, PrintState},
+        symb, symb_with_attr,
     };
 
     #[test]
     fn atoms() {
-        let a = Atom::parse("f(x,y^2)^(x+z)/5+3").unwrap();
+        let a = parse!("f(x,y^2)^(x+z)/5+3").unwrap();
 
         if ShouldColorize::from_env().should_colorize() {
             assert_eq!(format!("{}", a), "1/5*f(x,y^2)^(x+z)\u{1b}[33m+\u{1b}[0m3");
@@ -986,7 +988,7 @@ mod test {
             "1/5 f[x,y^2]^(x+z)+3"
         );
 
-        let a = Atom::parse("8127389217 x^2").unwrap();
+        let a = parse!("8127389217 x^2").unwrap();
         assert_eq!(
             format!(
                 "{}",
@@ -1006,7 +1008,7 @@ mod test {
 
     #[test]
     fn polynomials() {
-        let a = Atom::parse("15 x^2")
+        let a = parse!("15 x^2")
             .unwrap()
             .to_polynomial::<_, u8>(&Zp::new(17), None);
 
@@ -1027,12 +1029,12 @@ mod test {
 
     #[test]
     fn rational_polynomials() {
-        let a = Atom::parse("15 x^2 / (1+x)")
+        let a = parse!("15 x^2 / (1+x)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert_eq!(format!("{}", a), "15*x^2/(1+x)");
 
-        let a = Atom::parse("(15 x^2 + 6) / (1+x)")
+        let a = parse!("(15 x^2 + 6) / (1+x)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert_eq!(format!("{}", a), "(6+15*x^2)/(1+x)");
@@ -1040,7 +1042,7 @@ mod test {
 
     #[test]
     fn factorized_rational_polynomials() {
-        let a = Atom::parse("15 x^2 / ((1+x)(x+2))")
+        let a = parse!("15 x^2 / ((1+x)(x+2))")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
@@ -1048,7 +1050,7 @@ mod test {
                 || format!("{}", a) == "15*x^2/((2+x)*(1+x))"
         );
 
-        let a = Atom::parse("(15 x^2 + 6) / ((1+x)(x+2))")
+        let a = parse!("(15 x^2 + 6) / ((1+x)(x+2))")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
@@ -1056,12 +1058,12 @@ mod test {
                 || format!("{}", a) == "3*(2+5*x^2)/((2+x)*(1+x))"
         );
 
-        let a = Atom::parse("1/(v1*v2)")
+        let a = parse!("1/(v1*v2)")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(format!("{}", a) == "1/(v1*v2)" || format!("{}", a) == "1/(v2*v1)");
 
-        let a = Atom::parse("-1/(2+v1)")
+        let a = parse!("-1/(2+v1)")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(format!("{}", a) == "-1/(2+v1)");
@@ -1069,7 +1071,7 @@ mod test {
 
     #[test]
     fn base_parentheses() {
-        let a = Atom::parse("(-1)^(x+1)-(1/2)^x").unwrap();
+        let a = parse!("(-1)^(x+1)-(1/2)^x").unwrap();
         assert_eq!(
             format!(
                 "{}",
@@ -1081,11 +1083,11 @@ mod test {
 
     #[test]
     fn canon() {
-        let _ = Symbol::new_with_attributes("canon_f", &[FunctionAttribute::Symmetric]).unwrap();
-        let _ = Symbol::new("canon_y");
-        let _ = Symbol::new("canon_x");
+        let _ = symb_with_attr!("canon_f", FunctionAttribute::Symmetric).unwrap();
+        let _ = symb!("canon_y");
+        let _ = symb!("canon_x");
 
-        let a = Atom::parse("canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)").unwrap();
+        let a = parse!("canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)").unwrap();
         assert_eq!(
             a.to_canonical_string(),
             "(canon_x+canon_y)*canon_y^2+2*canon_x*canon_y+canon_f(canon_x,canon_y)+canon_x^2"

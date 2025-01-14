@@ -1651,7 +1651,7 @@ mod test {
     use crate::{
         atom::Atom,
         domains::{atom::AtomField, integer::Z, rational::Q},
-        symb,
+        parse, symb,
         tensors::matrix::{Matrix, Vector},
     };
 
@@ -1883,9 +1883,9 @@ mod test {
     fn jacobian() {
         let a = Vector::new(
             vec![
-                Atom::parse("x^2+y+z").unwrap(),
-                Atom::parse("y+z").unwrap(),
-                Atom::parse("z+x").unwrap(),
+                parse!("x^2+y+z").unwrap(),
+                parse!("y+z").unwrap(),
+                parse!("z+x").unwrap(),
             ],
             AtomField::new(),
         );
@@ -1894,7 +1894,7 @@ mod test {
         assert_eq!(
             b.data,
             [
-                Atom::parse("2*x").unwrap(),
+                parse!("2*x").unwrap(),
                 Atom::new_num(1),
                 Atom::new_num(1),
                 Atom::new_num(0),

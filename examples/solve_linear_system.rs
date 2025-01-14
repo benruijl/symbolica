@@ -1,23 +1,25 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::{representation::InlineVar, Atom, AtomCore, AtomView, Symbol},
+    atom::{representation::InlineVar, AtomCore, AtomView},
     domains::{
         integer::Z,
         rational::Q,
         rational_polynomial::{RationalPolynomial, RationalPolynomialField},
     },
+    parse,
     poly::Variable,
+    symb,
     tensors::matrix::Matrix,
 };
 
 fn solve() {
-    let x = Symbol::new("x").into();
-    let y = Symbol::new("y").into();
-    let z = Symbol::new("z").into();
+    let x = symb!("x").into();
+    let y = symb!("y").into();
+    let z = symb!("z").into();
     let eqs = ["c*x + f(c)*y + z - 1", "x + c*y + z/c - 2", "(c-1)x + c*z"];
 
-    let system: Vec<_> = eqs.iter().map(|e| Atom::parse(e).unwrap()).collect();
+    let system: Vec<_> = eqs.iter().map(|e| parse!(e).unwrap()).collect();
 
     let sol = AtomView::solve_linear_system::<u8, _, InlineVar>(&system, &[x, y, z]).unwrap();
 
@@ -35,13 +37,13 @@ fn solve_from_matrix() {
         println!("\t ({}).x\u{20D7} = {}", r.join(","), v);
     }
 
-    let var_map = Arc::new(vec![Variable::Symbol(Symbol::new("c"))]);
+    let var_map = Arc::new(vec![Variable::Symbol(symb!("c"))]);
 
     let system_rat: Vec<RationalPolynomial<_, u8>> = system
         .iter()
         .flatten()
         .map(|s| {
-            Atom::parse(s)
+            parse!(s)
                 .unwrap()
                 .to_rational_polynomial(&Q, &Z, Some(var_map.clone()))
         })
@@ -50,7 +52,7 @@ fn solve_from_matrix() {
     let rhs_rat: Vec<RationalPolynomial<_, u8>> = rhs
         .iter()
         .map(|s| {
-            Atom::parse(s)
+            parse!(s)
                 .unwrap()
                 .to_rational_polynomial(&Q, &Z, Some(var_map.clone()))
         })

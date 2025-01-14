@@ -1,19 +1,20 @@
 use symbolica::{
-    atom::{Atom, AtomCore, AtomView, Symbol},
-    id::{Match, Pattern, WildcardRestriction},
+    atom::{Atom, AtomCore, AtomView},
+    id::{Match, WildcardRestriction},
+    parse, symb,
 };
 
 fn main() {
     // prepare all patterns
-    let pattern = Pattern::parse("f(x_)").unwrap();
-    let rhs = Pattern::parse("f(x_ - 1) + f(x_ - 2)").unwrap();
-    let lhs_zero_pat = Pattern::parse("f(0)").unwrap();
-    let lhs_one_pat = Pattern::parse("f(1)").unwrap();
+    let pattern = parse!("f(x_)").unwrap().to_pattern();
+    let rhs = parse!("f(x_ - 1) + f(x_ - 2)").unwrap().to_pattern();
+    let lhs_zero_pat = parse!("f(0)").unwrap().to_pattern();
+    let lhs_one_pat = parse!("f(1)").unwrap().to_pattern();
     let rhs_one = Atom::new_num(1).to_pattern();
 
     // prepare the pattern restriction `x_ > 1`
     let restrictions = (
-        Symbol::new("x_"),
+        symb!("x_"),
         WildcardRestriction::Filter(Box::new(|v: &Match| match v {
             Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
             _ => false,
@@ -21,7 +22,7 @@ fn main() {
     )
         .into();
 
-    let mut target = Atom::parse("f(10)").unwrap();
+    let mut target = parse!("f(10)").unwrap();
 
     println!(
         "> Repeated calls of f(x_) = f(x_ - 1) + f(x_ - 2) on {}:",

@@ -33,13 +33,13 @@ use super::{
 ///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring},
 /// };
 ///
-/// let extension = AlgebraicExtension::new(Atom::parse("x^2-2").unwrap().to_polynomial(&Q, None));
-/// let sqrt_2 = extension.to_element(Atom::parse("x").unwrap().to_polynomial::<_, u16>(&Q, None));
+/// let extension = AlgebraicExtension::new(parse!("x^2-2").unwrap().to_polynomial(&Q, None));
+/// let sqrt_2 = extension.to_element(parse!("x").unwrap().to_polynomial::<_, u16>(&Q, None));
 ///
 /// let square = extension.mul(&sqrt_2, &sqrt_2);
 /// assert_eq!(
 ///      square,
-///      extension.to_element(Atom::parse("2").unwrap().to_polynomial(&Q, None))
+///      extension.to_element(parse!("2").unwrap().to_polynomial(&Q, None))
 /// );
 ///```
 ///
@@ -51,7 +51,7 @@ use super::{
 ///     domains::{algebraic_number::AlgebraicExtension, finite_field::Zp, rational::Q, Ring},
 /// };
 ///
-/// let field = AlgebraicExtension::galois_field(Zp::new(17), 4, Symbol::new("x0").into());
+/// let field = AlgebraicExtension::galois_field(Zp::new(17), 4, symb!("x0").into());
 /// ```
 ///
 // TODO: make special case for degree two and three and hardcode the multiplication table
@@ -376,13 +376,13 @@ impl<R: Ring> std::fmt::Display for AlgebraicExtension<R> {
 ///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring},
 /// };
 ///
-/// let extension = AlgebraicExtension::new(Atom::parse("x^2-2").unwrap().to_polynomial(&Q, None));
-/// let sqrt_2 = extension.to_element(Atom::parse("x").unwrap().to_polynomial::<_, u16>(&Q, None));
+/// let extension = AlgebraicExtension::new(parse!("x^2-2").unwrap().to_polynomial(&Q, None));
+/// let sqrt_2 = extension.to_element(parse!("x").unwrap().to_polynomial::<_, u16>(&Q, None));
 ///
 /// let square = extension.mul(&sqrt_2, &sqrt_2);
 /// assert_eq!(
 ///      square,
-///      extension.to_element(Atom::parse("2").unwrap().to_polynomial(&Q, None))
+///      extension.to_element(parse!("2").unwrap().to_polynomial(&Q, None))
 /// );
 ///```
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -794,30 +794,31 @@ impl<R: Field + PolynomialGCD<E>, E: PositiveExponent>
 
 #[cfg(test)]
 mod tests {
-    use crate::atom::{Atom, AtomCore, Symbol};
+    use crate::atom::AtomCore;
     use crate::domains::algebraic_number::AlgebraicExtension;
     use crate::domains::finite_field::{PrimeIteratorU64, Zp, Z2};
     use crate::domains::integer::Z;
     use crate::domains::rational::Q;
     use crate::domains::Ring;
+    use crate::{parse, symb};
 
     #[test]
     fn gcd_number_field() -> Result<(), String> {
-        let ring = Atom::parse("a^3 + 3a^2 - 46*a + 1")?.to_polynomial(&Q, None);
+        let ring = parse!("a^3 + 3a^2 - 46*a + 1")?.to_polynomial(&Q, None);
         let ring = AlgebraicExtension::new(ring);
 
-        let a = Atom::parse("x^3-2x^2+(-2a^2+8a+2)x-a^2+11a-1")?
+        let a = parse!("x^3-2x^2+(-2a^2+8a+2)x-a^2+11a-1")?
             .to_polynomial::<_, u16>(&Q, None)
             .to_number_field(&ring);
 
-        let b = Atom::parse("x^3-2x^2-x+1")?
+        let b = parse!("x^3-2x^2-x+1")?
             .to_polynomial(&Q, a.variables.clone().into())
             .to_number_field(&ring);
 
         let r = a.gcd(&b).from_number_field();
 
         let expected =
-            Atom::parse("-50/91+x-23/91*a-1/91*a^2")?.to_polynomial(&Q, a.variables.clone().into());
+            parse!("-50/91+x-23/91*a-1/91*a^2")?.to_polynomial(&Q, a.variables.clone().into());
         assert_eq!(r, expected);
         Ok(())
     }
@@ -825,32 +826,26 @@ mod tests {
     #[test]
     fn galois() {
         for j in 1..10 {
-            let _ = AlgebraicExtension::galois_field(Z2, j, Symbol::new("v1").into());
+            let _ = AlgebraicExtension::galois_field(Z2, j, symb!("v1").into());
         }
 
         for i in PrimeIteratorU64::new(2).take(20) {
             for j in 1..10 {
-                let _ = AlgebraicExtension::galois_field(
-                    Zp::new(i as u32),
-                    j,
-                    Symbol::new("v1").into(),
-                );
+                let _ = AlgebraicExtension::galois_field(Zp::new(i as u32), j, symb!("v1").into());
             }
         }
     }
 
     #[test]
     fn norm() {
-        let a = Atom::parse("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2")
+        let a = parse!("z^4+z^3+(2+a-a^2)z^2+(1+a^2-2a^3)z-2")
             .unwrap()
             .to_polynomial::<_, u8>(&Q, None);
-        let f = Atom::parse("a^4-3")
-            .unwrap()
-            .to_polynomial::<_, u16>(&Q, None);
+        let f = parse!("a^4-3").unwrap().to_polynomial::<_, u16>(&Q, None);
         let f = AlgebraicExtension::new(f);
         let norm = a.to_number_field(&f).norm();
 
-        let res = Atom::parse("16-32*z-64*z^2-64*z^3-52*z^4-40*z^5-132*z^6-24*z^7-50*z^8+120*z^9+66*z^10+92*z^11+47*z^12+32*z^13+14*z^14+4*z^15+z^16")
+        let res = parse!("16-32*z-64*z^2-64*z^3-52*z^4-40*z^5-132*z^6-24*z^7-50*z^8+120*z^9+66*z^10+92*z^11+47*z^12+32*z^13+14*z^14+4*z^15+z^16")
         .unwrap()
         .to_polynomial::<_, u8>(&Q, a.variables.clone().into());
 
@@ -859,26 +854,26 @@ mod tests {
 
     #[test]
     fn extend() {
-        let a = Atom::parse("x^2-2").unwrap().to_polynomial(&Q, None);
+        let a = parse!("x^2-2").unwrap().to_polynomial(&Q, None);
         let ae = AlgebraicExtension::new(a);
 
-        let b = Atom::parse("y^2-3")
+        let b = parse!("y^2-3")
             .unwrap()
             .to_polynomial(&Q, None)
             .to_number_field(&ae);
 
         let (c, rep1, rep2) = ae.extend(&b);
 
-        let rf = Atom::parse("1-10*y^2+y^4").unwrap().to_polynomial(&Q, None);
+        let rf = parse!("1-10*y^2+y^4").unwrap().to_polynomial(&Q, None);
 
         assert_eq!(c.poly.as_ref(), &rf);
 
-        let r1 = Atom::parse("-9/2y+1/2y^3")
+        let r1 = parse!("-9/2y+1/2y^3")
             .unwrap()
             .to_polynomial::<_, u16>(&Q, None);
         assert_eq!(rep1.poly, r1);
 
-        let r2 = Atom::parse("11/2*y-1/2*y^3")
+        let r2 = parse!("11/2*y-1/2*y^3")
             .unwrap()
             .to_polynomial::<_, u16>(&Q, None);
         assert_eq!(rep2.poly, r2);
@@ -887,31 +882,29 @@ mod tests {
     #[test]
     fn simplify() {
         let poly = AlgebraicExtension::new(
-            Atom::parse("13-16v1+28v1^2+2v1^3+11v1^4+v1^6")
+            parse!("13-16v1+28v1^2+2v1^3+11v1^4+v1^6")
                 .unwrap()
                 .to_polynomial(&Q, None),
         );
 
         let a = poly.to_element(
-            Atom::parse(
-                "-295/1882 -2693/1882v1 -237/1882v1^2 -385/941v1^3 -9/1882v1^4  -33/941v1^5",
-            )
-            .unwrap()
-            .to_polynomial::<_, u16>(&Q, None),
+            parse!("-295/1882 -2693/1882v1 -237/1882v1^2 -385/941v1^3 -9/1882v1^4  -33/941v1^5")
+                .unwrap()
+                .to_polynomial::<_, u16>(&Q, None),
         );
 
         let r = poly.simplify(&a);
-        let res = Atom::parse("1+v1+v1^2").unwrap().to_polynomial(&Q, None);
+        let res = parse!("1+v1+v1^2").unwrap().to_polynomial(&Q, None);
         assert_eq!(*r.poly, res);
     }
 
     #[test]
     fn try_div() {
         let extension =
-            AlgebraicExtension::new(Atom::parse("v1^3-2v1+3").unwrap().to_polynomial(&Z, None));
+            AlgebraicExtension::new(parse!("v1^3-2v1+3").unwrap().to_polynomial(&Z, None));
 
-        let f1 = extension.to_element(Atom::parse("v1^2-2").unwrap().to_polynomial(&Z, None));
-        let f2 = extension.to_element(Atom::parse("v1-5").unwrap().to_polynomial(&Z, None));
+        let f1 = extension.to_element(parse!("v1^2-2").unwrap().to_polynomial(&Z, None));
+        let f2 = extension.to_element(parse!("v1-5").unwrap().to_polynomial(&Z, None));
         let prod = extension.mul(&f1, &f2);
 
         assert_eq!(extension.try_div(&prod, &f2).unwrap(), f1);

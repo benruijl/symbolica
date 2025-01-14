@@ -18,7 +18,7 @@
 //! let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
 //! .iter()
 //! .map(|x| {
-//!     let a = Atom::parse(x).unwrap();
+//!     let a = parse!(x).unwrap();
 //!     a.to_polynomial(&Zp::new(13), None)
 //! })
 //! .collect();
@@ -39,7 +39,7 @@
 //! let res: Vec<MultivariatePolynomial<_, u16>> = res
 //! .iter()
 //! .map(|x| {
-//!     let a = Atom::parse(x).unwrap();
+//!     let a = parse!(x).unwrap();
 //!     a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
 //! })
 //! .collect();
@@ -984,8 +984,9 @@ echelonize_impl!(AlgebraicExtension<RationalField>);
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore},
+        atom::AtomCore,
         domains::finite_field::Zp,
+        parse,
         poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
     };
 
@@ -1001,7 +1002,7 @@ mod test {
         let ideal: Vec<MultivariatePolynomial<_, u16>> = polys
             .iter()
             .map(|x| {
-                let a = Atom::parse(x).unwrap().expand();
+                let a = parse!(x).unwrap().expand();
                 a.to_polynomial(&Zp::new(13), None)
             })
             .collect();
@@ -1021,7 +1022,7 @@ mod test {
         let res: Vec<MultivariatePolynomial<_, u16>> = res
             .iter()
             .map(|x| {
-                let a = Atom::parse(x).unwrap().expand();
+                let a = parse!(x).unwrap().expand();
                 a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
             })
             .collect();
@@ -1045,7 +1046,7 @@ mod test {
         let res: Vec<MultivariatePolynomial<_, u16, _>> = res
             .iter()
             .map(|x| {
-                let a = Atom::parse(x).unwrap().expand();
+                let a = parse!(x).unwrap().expand();
                 a.to_polynomial(&Zp::new(13), ideal[0].variables.clone().into())
                     .reorder::<GrevLexOrder>()
             })

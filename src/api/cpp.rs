@@ -5,18 +5,17 @@ use std::sync::Arc;
 
 use smartstring::{LazyCompact, SmartString};
 
-use crate::atom::Symbol;
 use crate::domains::finite_field::{FiniteField, FiniteFieldCore, Mersenne64, Zp, Zp64};
 use crate::domains::integer::{IntegerRing, Z};
 use crate::domains::rational::Q;
 use crate::domains::SelfRing;
 use crate::parser::Token;
 use crate::poly::Variable;
-use crate::LicenseManager;
 use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
     domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, printer::PrintState,
 };
+use crate::{symb, LicenseManager};
 
 struct LocalState {
     buffer: String,
@@ -135,7 +134,7 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
     let mut var_map = vec![];
 
     for var in cstr.split(',') {
-        var_map.push(Variable::Symbol(Symbol::new(var)));
+        var_map.push(Variable::Symbol(symb!(var)));
         symbolica.local_state.var_name_map.push(var.into());
     }
 

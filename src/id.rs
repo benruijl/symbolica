@@ -8,15 +8,15 @@
 //! ```
 //! use symbolica::{atom::{Atom, AtomCore}, id::Pattern};
 //!
-//! let expr = Atom::parse("f(1,2,x) + f(1,2,3)").unwrap();
-//! let pat = Pattern::parse("f(1,2,y_)").unwrap();
-//! let rhs = Pattern::parse("f(1,2,y_+1)").unwrap();
+//! let expr = parse!("f(1,2,x) + f(1,2,3)").unwrap();
+//! let pat = parse!("f(1,2,y_)").unwrap().into();
+//! let rhs = parse!("f(1,2,y_+1)").unwrap().into();
 //!
 //! let out = expr.replace_all(&pat, &rhs, None, None);
-//! assert_eq!(out, Atom::parse("f(1,2,x+1)+f(1,2,4)").unwrap());
+//! assert_eq!(out, parse!("f(1,2,x+1)+f(1,2,4)").unwrap());
 //! ```
 
-use std::{ops::DerefMut, str::FromStr};
+use std::ops::DerefMut;
 
 use ahash::{HashMap, HashSet};
 use dyn_clone::DynClone;
@@ -37,13 +37,13 @@ use crate::{
 /// Patterns can be created from atoms:
 /// ```
 /// # use symbolica::atom::{Atom, AtomCore};
-/// Atom::parse("x_+1").unwrap().to_pattern();
+/// parse!("x_+1").unwrap().to_pattern();
 /// ```
 ///
 /// or by directly parsing them:
 /// ```
 /// # use symbolica::id::Pattern;
-/// Pattern::parse("x_+1").unwrap();
+/// parse!("x_+1").unwrap().into();
 /// ```
 #[derive(Clone)]
 pub enum Pattern {
@@ -54,6 +54,12 @@ pub enum Pattern {
     Mul(Vec<Pattern>),
     Add(Vec<Pattern>),
     Transformer(Box<(Option<Pattern>, Vec<Transformer>)>),
+}
+
+impl From<Atom> for Pattern {
+    fn from(atom: Atom) -> Self {
+        Pattern::new(atom)
+    }
 }
 
 impl std::fmt::Display for Pattern {
@@ -991,19 +997,10 @@ impl<'a> AtomView<'a> {
     }
 }
 
-impl FromStr for Pattern {
-    type Err = String;
-
-    /// Parse a pattern from a string.
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        Pattern::parse(input)
-    }
-}
-
 impl Pattern {
-    pub fn parse(input: &str) -> Result<Pattern, String> {
-        // TODO: use workspace instead of owned atom
-        Ok(Atom::parse(input)?.to_pattern())
+    /// Create a pattern from an expression.
+    pub fn new(atom: Atom) -> Pattern {
+        atom.to_pattern()
     }
 
     /// Convert the pattern to an atom, if there are not transformers present.
@@ -3664,18 +3661,17 @@ impl<'a: 'b, 'b> Iterator for ReplaceIterator<'a, 'b> {
 #[cfg(test)]
 mod test {
     use crate::{
-        atom::{Atom, AtomCore, Symbol},
+        atom::{Atom, AtomCore},
         id::{
             ConditionResult, MatchSettings, PatternOrMap, PatternRestriction, Replacement,
             WildcardRestriction,
         },
+        parse, symb,
     };
-
-    use super::Pattern;
 
     #[test]
     fn replace_map() {
-        let a = Atom::parse("v1 + f1(1,2, f1((1+v1)^2), (v1+v2)^2)").unwrap();
+        let a = parse!("v1 + f1(1,2, f1((1+v1)^2), (v1+v2)^2)").unwrap();
 
         let r = a.replace_map(&|arg, context, out| {
             if context.function_level > 0 {
@@ -3685,26 +3681,26 @@ mod test {
             }
         });
 
-        let res = Atom::parse("v1+f1(1,2,f1(2*v1+v1^2+1),v1^2+v2^2+2*v1*v2)").unwrap();
+        let res = parse!("v1+f1(1,2,f1(2*v1+v1^2+1),v1^2+v2^2+2*v1*v2)").unwrap();
         assert_eq!(r, res);
     }
 
     #[test]
     fn overlap() {
-        let a = Atom::parse("(v1*(v2+v2^2+1)+v2^2 + v2)").unwrap();
-        let p = Pattern::parse("v2+v2^v1_").unwrap();
-        let rhs = Pattern::parse("v2*(1+v2^(v1_-1))").unwrap();
+        let a = parse!("(v1*(v2+v2^2+1)+v2^2 + v2)").unwrap();
+        let p = parse!("v2+v2^v1_").unwrap().to_pattern();
+        let rhs = parse!("v2*(1+v2^(v1_-1))").unwrap().to_pattern();
 
         let r = a.replace_all(&p, &rhs, None, None);
-        let res = Atom::parse("v1*(v2+v2^2+1)+v2*(v2+1)").unwrap();
+        let res = parse!("v1*(v2+v2^2+1)+v2*(v2+1)").unwrap();
         assert_eq!(r, res);
     }
 
     #[test]
     fn level_restriction() {
-        let a = Atom::parse("v1*f1(v1,f1(v1))").unwrap();
-        let p = Pattern::parse("v1").unwrap();
-        let rhs = Pattern::parse("1").unwrap();
+        let a = parse!("v1*f1(v1,f1(v1))").unwrap();
+        let p = parse!("v1").unwrap().into();
+        let rhs = parse!("1").unwrap().to_pattern();
 
         let r = a.replace_all(
             &p,
@@ -3715,33 +3711,39 @@ mod test {
                 ..Default::default()
             }),
         );
-        let res = Atom::parse("v1*f1(1,f1(v1))").unwrap();
+        let res = parse!("v1*f1(1,f1(v1))").unwrap();
         assert_eq!(r, res);
     }
 
     #[test]
     fn multiple() {
-        let a = Atom::parse("f(v1,v2)").unwrap();
+        let a = parse!("f(v1,v2)").unwrap();
 
         let r = a.replace_all_multiple(&[
-            Replacement::new(Pattern::parse("v1").unwrap(), Pattern::parse("v2").unwrap()),
-            Replacement::new(Pattern::parse("v2").unwrap(), Pattern::parse("v1").unwrap()),
+            Replacement::new(
+                parse!("v1").unwrap().to_pattern(),
+                parse!("v2").unwrap().to_pattern(),
+            ),
+            Replacement::new(
+                parse!("v2").unwrap().to_pattern(),
+                parse!("v1").unwrap().to_pattern(),
+            ),
         ]);
 
-        let res = Atom::parse("f(v2,v1)").unwrap();
+        let res = parse!("f(v2,v1)").unwrap();
         assert_eq!(r, res);
     }
 
     #[test]
     fn map_rhs() {
-        let v1 = Symbol::new("v1_");
-        let v2 = Symbol::new("v2_");
-        let v4 = Symbol::new("v4_");
-        let v5 = Symbol::new("v5_");
-        let a = Atom::parse("v1(2,1)*v2(3,1)").unwrap();
-        let p = Pattern::parse("v1_(v2_,v3_)*v4_(v5_,v3_)").unwrap();
+        let v1 = symb!("v1_");
+        let v2 = symb!("v2_");
+        let v4 = symb!("v4_");
+        let v5 = symb!("v5_");
+        let a = parse!("v1(2,1)*v2(3,1)").unwrap();
+        let p = parse!("v1_(v2_,v3_)*v4_(v5_,v3_)").unwrap().into();
         let rhs = PatternOrMap::Map(Box::new(move |m| {
-            Atom::parse(&format!(
+            parse!(&format!(
                 "{}(mu{})*{}(mu{})",
                 m.get(v1).unwrap(),
                 m.get(v2).unwrap(),
@@ -3752,18 +3754,18 @@ mod test {
         }));
 
         let r = a.replace_all(&p, &rhs, None, None);
-        let res = Atom::parse("v1(mu2)*v2(mu3)").unwrap();
+        let res = parse!("v1(mu2)*v2(mu3)").unwrap();
         assert_eq!(r, res);
     }
 
     #[test]
     fn repeat_replace() {
-        let mut a = Atom::parse("f(10)").unwrap();
-        let p1 = Pattern::parse("f(v1_)").unwrap();
-        let rhs1 = Pattern::parse("f(v1_ - 1)").unwrap();
+        let mut a = parse!("f(10)").unwrap();
+        let p1 = parse!("f(v1_)").unwrap().to_pattern();
+        let rhs1 = parse!("f(v1_ - 1)").unwrap().to_pattern();
 
         let rest = (
-            Symbol::new("v1_"),
+            symb!("v1_"),
             WildcardRestriction::Filter(Box::new(|x| {
                 let n: Result<i64, _> = x.to_atom().try_into();
                 if let Ok(y) = n {
@@ -3777,15 +3779,15 @@ mod test {
 
         a.repeat_map(|e| e.replace_all(&p1, &rhs1, Some(&rest), None));
 
-        let res = Atom::parse("f(0)").unwrap();
+        let res = parse!("f(0)").unwrap();
         assert_eq!(a, res);
     }
 
     #[test]
     fn match_stack_filter() {
-        let a = Atom::parse("f(1,2,3,4)").unwrap();
-        let p1 = Pattern::parse("f(v1_,v2_,v3_,v4_)").unwrap();
-        let rhs1 = Pattern::parse("f(v4_,v3_,v2_,v1_)").unwrap();
+        let a = parse!("f(1,2,3,4)").unwrap();
+        let p1 = parse!("f(v1_,v2_,v3_,v4_)").unwrap().into();
+        let rhs1 = parse!("f(v4_,v3_,v2_,v1_)").unwrap().to_pattern();
 
         let rest = PatternRestriction::MatchStack(Box::new(|m| {
             for x in m.get_matches().windows(2) {
@@ -3803,66 +3805,66 @@ mod test {
         .into();
 
         let r = a.replace_all(&p1, &rhs1, Some(&rest), None);
-        let res = Atom::parse("f(4,3,2,1)").unwrap();
+        let res = parse!("f(4,3,2,1)").unwrap();
         assert_eq!(r, res);
 
-        let b = Atom::parse("f(1,2,4,3)").unwrap();
+        let b = parse!("f(1,2,4,3)").unwrap();
         let r = b.replace_all(&p1, &rhs1, Some(&rest), None);
         assert_eq!(r, b);
     }
 
     #[test]
     fn match_cache() {
-        let expr = Atom::parse("f1(1)*f1(2)+f1(1)*f1(2)*f2").unwrap();
-        let pat = Pattern::parse("v1_(id1_)*v2_(id2_)").unwrap();
+        let expr = parse!("f1(1)*f1(2)+f1(1)*f1(2)*f2").unwrap();
+        let pat = parse!("v1_(id1_)*v2_(id2_)").unwrap().to_pattern();
 
-        let expr = expr.replace_all(&pat, &Pattern::parse("f1(id1_)").unwrap(), None, None);
+        let expr = expr.replace_all(&pat, &parse!("f1(id1_)").unwrap().to_pattern(), None, None);
 
-        let res = Atom::parse("f1(1)+f2*f1(1)").unwrap();
+        let res = parse!("f1(1)+f2*f1(1)").unwrap();
         assert_eq!(expr, res);
     }
 
     #[test]
     fn match_cyclic() {
-        let rhs = Pattern::parse("1").unwrap();
+        let rhs = parse!("1").unwrap().to_pattern();
 
         // literal wrap
-        let expr = Atom::parse("fc1(1,2,3)").unwrap();
-        let p = Pattern::parse("fc1(v1__,v1_,1)").unwrap();
+        let expr = parse!("fc1(1,2,3)").unwrap();
+        let p = parse!("fc1(v1__,v1_,1)").unwrap().into();
         let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
 
         // multiple wildcard wrap
-        let expr = Atom::parse("fc1(1,2,3)").unwrap();
-        let p = Pattern::parse("fc1(v1__,2)").unwrap();
+        let expr = parse!("fc1(1,2,3)").unwrap();
+        let p = parse!("fc1(v1__,2)").unwrap().into();
         let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
 
         // wildcard wrap
-        let expr = Atom::parse("fc1(1,2,3)").unwrap();
-        let p = Pattern::parse("fc1(v1__,v1_,2)").unwrap();
+        let expr = parse!("fc1(1,2,3)").unwrap();
+        let p = parse!("fc1(v1__,v1_,2)").unwrap().into();
         let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
 
-        let expr = Atom::parse("fc1(v1,4,3,5,4)").unwrap();
-        let p = Pattern::parse("fc1(v1__,v1_,v2_,v1_)").unwrap();
+        let expr = parse!("fc1(v1,4,3,5,4)").unwrap();
+        let p = parse!("fc1(v1__,v1_,v2_,v1_)").unwrap().into();
         let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
 
         // function shift
-        let expr = Atom::parse("fc1(f1(1),f1(2),f1(3))").unwrap();
-        let p = Pattern::parse("fc1(f1(v1_),f1(2),f1(3))").unwrap();
+        let expr = parse!("fc1(f1(1),f1(2),f1(3))").unwrap();
+        let p = parse!("fc1(f1(v1_),f1(2),f1(3))").unwrap().into();
         let expr = expr.replace_all(&p, &rhs, None, None);
         assert_eq!(expr, Atom::new_num(1));
     }
 
     #[test]
     fn is_polynomial() {
-        let e = Atom::parse("v1^2 + (1+v5)^3 / v1 + (1+v3)*(1+v4)^v7 + v1^2 + (v1+v2)^3").unwrap();
+        let e = parse!("v1^2 + (1+v5)^3 / v1 + (1+v3)*(1+v4)^v7 + v1^2 + (v1+v2)^3").unwrap();
         let vars = e.as_view().is_polynomial(true, true).unwrap();
         assert_eq!(vars.len(), 5);
 
-        let e = Atom::parse("(1+v5)^(3/2) / v6 + (1+v3)*(1+v4)^v7 + (v1+v2)^3").unwrap();
+        let e = parse!("(1+v5)^(3/2) / v6 + (1+v3)*(1+v4)^v7 + (v1+v2)^3").unwrap();
         let vars = e.as_view().is_polynomial(false, false).unwrap();
         assert_eq!(vars.len(), 5);
     }

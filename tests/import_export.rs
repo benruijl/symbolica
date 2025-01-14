@@ -2,16 +2,17 @@ use std::io::Cursor;
 
 use smartstring::SmartString;
 use symbolica::{
-    atom::{Atom, FunctionAttribute, Symbol},
+    atom::{Atom, FunctionAttribute},
+    parse,
     state::State,
+    symb, symb_with_attr,
 };
 
 fn conflict() {
-    Symbol::new("x");
-    Symbol::new("y");
-    Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+    symb!("x", "y");
+    symb_with_attr!("f", FunctionAttribute::Symmetric).unwrap();
 
-    let a = Atom::parse("f(x, y)*x^2").unwrap();
+    let a = parse!("f(x, y)*x^2").unwrap();
 
     let mut a_export = vec![];
     a.as_view().write(&mut a_export).unwrap();
@@ -22,9 +23,9 @@ fn conflict() {
     // reset the state and create a conflict
     unsafe { State::reset() };
 
-    Symbol::new("y");
-    Symbol::new("x");
-    Symbol::new("f");
+    symb!("y");
+    symb!("x");
+    symb!("f");
 
     let state_map = State::import(
         &mut Cursor::new(&state_export),
@@ -34,15 +35,15 @@ fn conflict() {
 
     let a_rec = Atom::import_with_map(Cursor::new(&a_export), &state_map).unwrap();
 
-    let r = Atom::parse("x^2*f1(y, x)").unwrap();
+    let r = parse!("x^2*f1(y, x)").unwrap();
     assert_eq!(a_rec, r);
 }
 
 #[test]
 fn rational_rename() {
-    Symbol::new("x");
+    symb!("x");
 
-    let a = Atom::parse("x^2*coeff(x)").unwrap();
+    let a = parse!("x^2*coeff(x)").unwrap();
 
     let mut a_export = vec![];
     a.as_view().write(&mut a_export).unwrap();
@@ -53,13 +54,13 @@ fn rational_rename() {
     // reset the state and create a conflict
     unsafe { State::reset() };
 
-    Symbol::new("y");
+    symb!("y");
 
     let state_map = State::import(&mut Cursor::new(&state_export), None).unwrap();
 
     let a_rec = Atom::import_with_map(Cursor::new(&a_export), &state_map).unwrap();
 
-    let r = Atom::parse("x^2*coeff(x)").unwrap();
+    let r = parse!("x^2*coeff(x)").unwrap();
     assert_eq!(a_rec, r);
 
     unsafe { State::reset() };

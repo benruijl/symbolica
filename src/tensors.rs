@@ -423,16 +423,19 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::atom::{representation::InlineVar, Atom, AtomCore, Symbol};
+    use crate::{
+        atom::{representation::InlineVar, Atom, AtomCore},
+        parse, symb,
+    };
 
     #[test]
     fn index_group() {
         let mus: Vec<_> = (0..4)
-            .map(|i| InlineVar::new(Symbol::new(format!("mu{}", i + 1))))
+            .map(|i| InlineVar::new(symb!(format!("mu{}", i + 1))))
             .collect();
         let mu_ref = mus.iter().map(|x| x.as_view()).collect::<Vec<_>>();
 
-        let a1 = Atom::parse("fc1(mu1,mu2,mu1,mu3,mu4)*fs1(mu2,mu3,mu4)").unwrap();
+        let a1 = parse!("fc1(mu1,mu2,mu1,mu3,mu4)*fs1(mu2,mu3,mu4)").unwrap();
 
         let colors = vec![
             Atom::new_num(1),
@@ -444,7 +447,7 @@ mod test {
 
         let r1 = a1.canonize_tensors(&mu_ref, Some(&col_ref)).unwrap();
 
-        let a2 = Atom::parse("fc1(mu4,mu3,mu1,mu2,mu3)*fs1(mu2,mu1,mu4)").unwrap();
+        let a2 = parse!("fc1(mu4,mu3,mu1,mu2,mu3)*fs1(mu2,mu1,mu4)").unwrap();
 
         let r2 = a2.canonize_tensors(&mu_ref, Some(&col_ref)).unwrap();
 
@@ -458,20 +461,20 @@ mod test {
     #[test]
     fn canonize_tensors() {
         let mus: Vec<_> = (0..10)
-            .map(|i| InlineVar::new(Symbol::new(format!("mu{}", i + 1))))
+            .map(|i| InlineVar::new(symb!(format!("mu{}", i + 1))))
             .collect();
         let mu_ref = mus.iter().map(|x| x.as_view()).collect::<Vec<_>>();
 
         // fs1 is symmetric and fc1 is cyclesymmetric
-        let a1 = Atom::parse(
-                "fs1(k2,mu1,mu2)*fs1(mu1,mu3)*fc1(mu4,mu2,k1,mu4,k1,mu3)*(1+x)*f(k)*fs1(mu5,mu6)^2*f(mu7,mu9,k3,mu9,mu7)*h(mu8)*i(mu8)+fc1(mu4,mu5,mu6)*fc1(mu5,mu4,mu6)",
+        let a1 = parse!(
+                "fs1(k2,mu1,mu2)*fs1(mu1,mu3)*fc1(mu4,mu2,k1,mu4,k1,mu3)*(1+x)*f(k)*fs1(mu5,mu6)^2*f(mu7,mu9,k3,mu9,mu7)*h(mu8)*i(mu8)+fc1(mu4,mu5,mu6)*fc1(mu5,mu4,mu6)"
             )
             .unwrap();
 
         let r1 = a1.canonize_tensors(&mu_ref, None).unwrap();
 
-        let a2 = Atom::parse(
-                "fs1(k2,mu2,mu9)*fs1(mu2,mu5)*fc1(k1,mu8,k1,mu5,mu8,mu9)*(1+x)*f(k)*fs1(mu3,mu6)^2*f(mu7,mu1,k3,mu1,mu7)*h(mu4)*i(mu4)+fc1(mu1,mu4,mu6)*fc1(mu4,mu1,mu6)",
+        let a2 = parse!(
+                "fs1(k2,mu2,mu9)*fs1(mu2,mu5)*fc1(k1,mu8,k1,mu5,mu8,mu9)*(1+x)*f(k)*fs1(mu3,mu6)^2*f(mu7,mu1,k3,mu1,mu7)*h(mu4)*i(mu4)+fc1(mu1,mu4,mu6)*fc1(mu4,mu1,mu6)"
             )
             .unwrap();
 
@@ -483,15 +486,15 @@ mod test {
     #[test]
     fn canonize_antisymmetric() {
         let mus: Vec<_> = (0..4)
-            .map(|i| InlineVar::new(Symbol::new(format!("mu{}", i + 1))))
+            .map(|i| InlineVar::new(symb!(format!("mu{}", i + 1))))
             .collect();
         let mu_ref = mus.iter().map(|x| x.as_view()).collect::<Vec<_>>();
 
-        let a1 = Atom::parse("f1(mu3,mu2,mu3,mu1)*fa1(mu1,mu2)").unwrap();
+        let a1 = parse!("f1(mu3,mu2,mu3,mu1)*fa1(mu1,mu2)").unwrap();
 
         let r1 = a1.canonize_tensors(&mu_ref, None).unwrap();
 
-        let a2 = Atom::parse("-f1(mu1,mu2,mu1,mu3)*fa1(mu2,mu3)").unwrap();
+        let a2 = parse!("-f1(mu1,mu2,mu1,mu3)*fa1(mu2,mu3)").unwrap();
 
         let r2 = a2.canonize_tensors(&mu_ref, None).unwrap();
 
@@ -500,7 +503,7 @@ mod test {
 
     #[test]
     fn canonize_constant() {
-        let a1 = Atom::parse("x+5").unwrap();
+        let a1 = parse!("x+5").unwrap();
         let r1 = a1.canonize_tensors(&[], None).unwrap();
         assert_eq!(a1, r1);
     }

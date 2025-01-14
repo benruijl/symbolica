@@ -2528,14 +2528,14 @@ impl PythonExpression {
             if names.len() == 1 {
                 let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
 
-                let id = Symbol::new(name_check(&*name)?);
+                let id = symb!(name_check(&*name)?);
                 let r = PythonExpression::from(Atom::new_var(id));
                 return r.into_py_any(py);
             } else {
                 let mut result = vec![];
                 for a in names {
                     let name = a.extract::<PyBackedStr>()?;
-                    let id = Symbol::new(name_check(&*name)?);
+                    let id = symb!(name_check(&*name)?);
                     let r = PythonExpression::from(Atom::new_var(id));
                     result.push(r);
                 }
@@ -2584,7 +2584,7 @@ impl PythonExpression {
                         ))?;
                     }
 
-                    Symbol::new_with_attributes_and_function(
+                    symb!_with_attributes_and_function(
                         name,
                         &opts,
                         Box::new(move |input, out| {
@@ -2600,7 +2600,7 @@ impl PythonExpression {
                     return Err(exceptions::PyValueError::new_err("Transformer expected"));
                 }
             } else {
-                Symbol::new_with_attributes(name, &opts)
+                symb!_with_attributes(name, &opts)
             }
             .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
@@ -2621,7 +2621,7 @@ impl PythonExpression {
                         }
 
                         let t = t.1.clone();
-                        Symbol::new_with_attributes_and_function(
+                        symb!_with_attributes_and_function(
                             name,
                             &opts,
                             Box::new(move |input, out| {
@@ -2638,7 +2638,7 @@ impl PythonExpression {
                         return Err(exceptions::PyValueError::new_err("Transformer expected"));
                     }
                 } else {
-                    Symbol::new_with_attributes(name, &opts)
+                    symb!_with_attributes(name, &opts)
                 }
                 .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
                 let r = PythonExpression::from(Atom::new_var(id));
@@ -2776,7 +2776,7 @@ impl PythonExpression {
     ///
     #[classmethod]
     pub fn parse(_cls: &Bound<'_, PyType>, input: &str) -> PyResult<PythonExpression> {
-        let e = Atom::parse(input).map_err(exceptions::PyValueError::new_err)?;
+        let e = parse!(input).map_err(exceptions::PyValueError::new_err)?;
         Ok(e.into())
     }
 
@@ -6423,7 +6423,7 @@ impl PythonPolynomial {
             SmallVec::new();
 
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = symb!(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -6735,7 +6735,7 @@ impl PythonIntegerPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = symb!(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -7319,7 +7319,7 @@ impl PythonFiniteFieldPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = symb!(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -9843,7 +9843,7 @@ impl PythonRationalPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = symb!(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -10136,7 +10136,7 @@ impl PythonFiniteFieldRationalPolynomial {
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = Symbol::new(&*v);
+            let id = symb!(&*v);
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }

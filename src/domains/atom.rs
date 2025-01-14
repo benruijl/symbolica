@@ -24,6 +24,7 @@ impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> bool> Map for T {}
 /// use symbolica::{
 /// atom::Atom,
 /// domains::{atom::AtomField, Field},
+/// parse,
 /// };
 ///
 /// let field = AtomField {
@@ -32,10 +33,10 @@ impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> bool> Map for T {}
 /// };
 ///
 /// let r = field.div(
-///     &Atom::parse("x^2+2x+1").unwrap(),
-///     &Atom::parse("x+1").unwrap(),
+///     &parse!("x^2+2x+1").unwrap(),
+///     &parse!("x+1").unwrap(),
 /// );
-/// assert_eq!(r, Atom::parse("x+1").unwrap());
+/// assert_eq!(r, parse!("x+1").unwrap());
 /// ```
 #[derive(Clone)]
 pub struct AtomField {

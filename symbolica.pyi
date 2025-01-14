@@ -61,7 +61,7 @@ def N(num: int | float | str | Decimal, relative_error: Optional[float] = None) 
     """Shorthand notation for :func:`Expression.num`"""
 
 
-def E(input: str) -> Expression:
+def E(input: str, default_namespace: str = "python") -> Expression:
     """Shorthand notation for :func:`Expression.parse`"""
 
 
@@ -296,7 +296,7 @@ class Expression:
         """Return all defined symbol names (function names and variables)."""
 
     @classmethod
-    def parse(_cls, input: str) -> Expression:
+    def parse(_cls, input: str, default_namespace: str = "python") -> Expression:
         """
         Parse a Symbolica expression from a string.
 
@@ -390,7 +390,7 @@ class Expression:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
-        precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the expression into a human-readable string, with tunable settings.
@@ -2293,6 +2293,7 @@ class Series:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the series into a human-readable string.
@@ -2433,7 +2434,7 @@ class Polynomial:
     """A Symbolica polynomial with rational coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str]) -> Polynomial:
+    def parse(_cls, input: str, vars: Sequence[str], default_namespace: str = "python") -> Polynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -2476,6 +2477,7 @@ class Polynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2703,7 +2705,7 @@ class IntegerPolynomial:
     """A Symbolica polynomial with integer coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str]) -> IntegerPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], default_namespace: str = "python") -> IntegerPolynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -2746,6 +2748,7 @@ class IntegerPolynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2908,6 +2911,7 @@ class NumberFieldPolynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3076,7 +3080,7 @@ class FiniteFieldPolynomial:
     """A Symbolica polynomial with finite field coefficients."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str], prime: int) -> FiniteFieldPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], prime: int, default_namespace: str = "python") -> FiniteFieldPolynomial:
         """
         Parse a polynomial with integer coefficients from a string.
         The input must be written in an expanded format and a list of all
@@ -3119,6 +3123,7 @@ class FiniteFieldPolynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3289,7 +3294,7 @@ class RationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str]) -> RationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], default_namespace: str = "python") -> RationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -3390,7 +3395,7 @@ class FiniteFieldRationalPolynomial:
         """Create a new rational polynomial from a numerator and denominator polynomial."""
 
     @classmethod
-    def parse(_cls, input: str, vars: Sequence[str], prime: int) -> FiniteFieldRationalPolynomial:
+    def parse(_cls, input: str, vars: Sequence[str], prime: int, default_namespace: str = "python") -> FiniteFieldRationalPolynomial:
         """
         Parse a rational polynomial from a string.
         The list of all the variables must be provided.
@@ -3549,6 +3554,7 @@ class Matrix:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the matrix into a human-readable string, with tunable settings.

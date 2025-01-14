@@ -4818,19 +4818,20 @@ mod test {
     use ahash::HashMap;
 
     use crate::{
-        atom::{Atom, AtomCore, Symbol},
+        atom::{Atom, AtomCore},
         domains::{float::Float, rational::Rational},
         evaluate::{EvaluationFn, FunctionMap, OptimizationSettings},
         id::ConditionResult,
+        parse, symbol,
     };
 
     #[test]
     fn evaluate() {
-        let x = Symbol::new("v1");
-        let f = Symbol::new("f1");
-        let g = Symbol::new("f2");
-        let p0 = Atom::parse("v2(0)").unwrap();
-        let a = Atom::parse("v1*cos(v1) + f1(v1, 1)^2 + f2(f2(v1)) + v2(0)").unwrap();
+        let x = symbol!("v1");
+        let f = symbol!("f1");
+        let g = symbol!("f2");
+        let p0 = parse!("v2(0)").unwrap();
+        let a = parse!("v1*cos(v1) + f1(v1, 1)^2 + f2(f2(v1)) + v2(0)").unwrap();
 
         let v = Atom::new_var(x);
 
@@ -4864,8 +4865,8 @@ mod test {
 
     #[test]
     fn arb_prec() {
-        let x = Symbol::new("v1");
-        let a = Atom::parse("128731/12893721893721 + v1").unwrap();
+        let x = symbol!("v1");
+        let a = parse!("128731/12893721893721 + v1").unwrap();
 
         let mut const_map = HashMap::default();
 
@@ -4888,48 +4889,45 @@ mod test {
 
     #[test]
     fn nested() {
-        let e1 = Atom::parse("x + pi + cos(x) + f(g(x+1),h(x*2)) + p(1,x)").unwrap();
-        let e2 = Atom::parse("x + h(x*2) + cos(x)").unwrap();
-        let f = Atom::parse("y^2 + z^2*y^2").unwrap();
-        let g = Atom::parse("i(y+7)+x*i(y+7)*(y-1)").unwrap();
-        let h = Atom::parse("y*(1+x*(1+x^2)) + y^2*(1+x*(1+x^2))^2 + 3*(1+x^2)").unwrap();
-        let i = Atom::parse("y - 1").unwrap();
-        let p1 = Atom::parse("3*z^3 + 4*z^2 + 6*z +8").unwrap();
+        let e1 = parse!("x + pi + cos(x) + f(g(x+1),h(x*2)) + p(1,x)").unwrap();
+        let e2 = parse!("x + h(x*2) + cos(x)").unwrap();
+        let f = parse!("y^2 + z^2*y^2").unwrap();
+        let g = parse!("i(y+7)+x*i(y+7)*(y-1)").unwrap();
+        let h = parse!("y*(1+x*(1+x^2)) + y^2*(1+x*(1+x^2))^2 + 3*(1+x^2)").unwrap();
+        let i = parse!("y - 1").unwrap();
+        let p1 = parse!("3*z^3 + 4*z^2 + 6*z +8").unwrap();
 
         let mut fn_map = FunctionMap::new();
 
-        fn_map.add_constant(
-            Atom::new_var(Symbol::new("pi")),
-            Rational::from((22, 7)).into(),
-        );
+        fn_map.add_constant(Atom::new_var(symbol!("pi")), Rational::from((22, 7)).into());
         fn_map
             .add_tagged_function(
-                Symbol::new("p"),
+                symbol!("p"),
                 vec![Atom::new_num(1).into()],
                 "p1".to_string(),
-                vec![Symbol::new("z")],
+                vec![symbol!("z")],
                 p1,
             )
             .unwrap();
         fn_map
             .add_function(
-                Symbol::new("f"),
+                symbol!("f"),
                 "f".to_string(),
-                vec![Symbol::new("y"), Symbol::new("z")],
+                vec![symbol!("y"), symbol!("z")],
                 f,
             )
             .unwrap();
         fn_map
-            .add_function(Symbol::new("g"), "g".to_string(), vec![Symbol::new("y")], g)
+            .add_function(symbol!("g"), "g".to_string(), vec![symbol!("y")], g)
             .unwrap();
         fn_map
-            .add_function(Symbol::new("h"), "h".to_string(), vec![Symbol::new("y")], h)
+            .add_function(symbol!("h"), "h".to_string(), vec![symbol!("y")], h)
             .unwrap();
         fn_map
-            .add_function(Symbol::new("i"), "i".to_string(), vec![Symbol::new("y")], i)
+            .add_function(symbol!("i"), "i".to_string(), vec![symbol!("y")], i)
             .unwrap();
 
-        let params = vec![Atom::parse("x").unwrap()];
+        let params = vec![parse!("x").unwrap()];
 
         let evaluator =
             Atom::evaluator_multiple(&[e1, e2], &fn_map, &params, OptimizationSettings::default())
@@ -4942,10 +4940,10 @@ mod test {
 
     #[test]
     fn zero_test() {
-        let e = Atom::parse("(sin(v1)^2-sin(v1))(sin(v1)^2+sin(v1))^2 - (1/4 sin(2v1)^2-1/2 sin(2v1)cos(v1)-2 cos(v1)^2+1/2 sin(2v1)cos(v1)^3+3 cos(v1)^4-cos(v1)^6)").unwrap();
+        let e = parse!("(sin(v1)^2-sin(v1))(sin(v1)^2+sin(v1))^2 - (1/4 sin(2v1)^2-1/2 sin(2v1)cos(v1)-2 cos(v1)^2+1/2 sin(2v1)cos(v1)^3+3 cos(v1)^4-cos(v1)^6)").unwrap();
         assert_eq!(e.zero_test(10, f64::EPSILON), ConditionResult::Inconclusive);
 
-        let e = Atom::parse("x + (1+x)^2 + (x+2)*5").unwrap();
+        let e = parse!("x + (1+x)^2 + (x+2)*5").unwrap();
         assert_eq!(e.zero_test(10, f64::EPSILON), ConditionResult::False);
     }
 }

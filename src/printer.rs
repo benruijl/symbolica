@@ -5,7 +5,7 @@ use std::fmt::{self, Error, Write};
 use colored::Colorize;
 
 use crate::{
-    atom::{representation::FunView, AddView, Atom, AtomView, MulView, NumView, PowView, VarView},
+    atom::{representation::FunView, AddView, AtomView, MulView, NumView, PowView, VarView},
     coefficient::CoefficientView,
     domains::{finite_field::FiniteFieldCore, SelfRing},
     state::State,
@@ -28,9 +28,34 @@ pub struct PrintOptions {
     pub latex: bool,
     pub precision: Option<usize>,
     pub pretty_matrix: bool,
+    pub hide_namespace: Option<&'static str>,
+    pub hide_all_namespaces: bool,
+    pub color_namespace: bool,
 }
 
 impl PrintOptions {
+    pub const fn new() -> Self {
+        Self {
+            terms_on_new_line: false,
+            color_top_level_sum: true,
+            color_builtin_symbols: true,
+            print_finite_field: true,
+            symmetric_representation_for_finite_field: false,
+            explicit_rational_polynomial: false,
+            number_thousands_separator: None,
+            multiplication_operator: '*',
+            double_star_for_exponentiation: false,
+            square_brackets_for_function: false,
+            num_exp_as_superscript: false,
+            latex: false,
+            precision: None,
+            pretty_matrix: false,
+            hide_namespace: None,
+            hide_all_namespaces: true,
+            color_namespace: true,
+        }
+    }
+
     /// Print the output in a Mathematica-readable format.
     pub const fn mathematica() -> PrintOptions {
         Self {
@@ -48,6 +73,9 @@ impl PrintOptions {
             latex: false,
             precision: None,
             pretty_matrix: false,
+            hide_namespace: None,
+            hide_all_namespaces: true,
+            color_namespace: false,
         }
     }
 
@@ -68,6 +96,9 @@ impl PrintOptions {
             latex: true,
             precision: None,
             pretty_matrix: false,
+            hide_namespace: None,
+            hide_all_namespaces: true,
+            color_namespace: false,
         }
     }
 
@@ -88,6 +119,25 @@ impl PrintOptions {
             latex: false,
             precision: None,
             pretty_matrix: false,
+            hide_namespace: None,
+            hide_all_namespaces: false,
+            color_namespace: false,
+        }
+    }
+
+    /// Print the output suitable for a file without namespaces.
+    pub const fn file_no_namespace() -> PrintOptions {
+        Self {
+            hide_all_namespaces: true,
+            ..Self::file()
+        }
+    }
+
+    /// Print the output with namespaces suppressed.
+    pub const fn short() -> PrintOptions {
+        Self {
+            hide_all_namespaces: true,
+            ..Self::new()
         }
     }
 
@@ -102,34 +152,29 @@ impl PrintOptions {
     pub fn from_fmt(f: &std::fmt::Formatter) -> PrintOptions {
         PrintOptions {
             precision: f.precision(),
+            hide_all_namespaces: !f.alternate(),
+            terms_on_new_line: f.align() == Some(std::fmt::Alignment::Right),
             ..Default::default()
         }
     }
 
     pub fn update_with_fmt(mut self, f: &std::fmt::Formatter) -> Self {
         self.precision = f.precision();
+
+        if f.alternate() {
+            self.hide_all_namespaces = false;
+        }
+
+        if let Some(a) = f.align() {
+            self.terms_on_new_line = a == std::fmt::Alignment::Right;
+        }
         self
     }
 }
 
 impl Default for PrintOptions {
     fn default() -> Self {
-        Self {
-            terms_on_new_line: false,
-            color_top_level_sum: true,
-            color_builtin_symbols: true,
-            print_finite_field: true,
-            symmetric_representation_for_finite_field: false,
-            explicit_rational_polynomial: false,
-            number_thousands_separator: None,
-            multiplication_operator: '*',
-            double_star_for_exponentiation: false,
-            square_brackets_for_function: false,
-            num_exp_as_superscript: false,
-            latex: false,
-            precision: None,
-            pretty_matrix: false,
-        }
+        Self::new()
     }
 }
 
@@ -223,9 +268,9 @@ define_formatters!(
 /// # Examples
 ///
 /// ```
-/// use symbolica::atom::{Atom, AtomCore};
+/// use symbolica::{atom::AtomCore, parse};
 /// use symbolica::printer::PrintOptions;
-/// let a = Atom::parse("x + y").unwrap();
+/// let a = parse!("x + y").unwrap();
 /// println!("{}", a.printer(PrintOptions::latex()));
 /// ```
 pub struct AtomPrinter<'a> {
@@ -249,17 +294,12 @@ impl<'a> AtomPrinter<'a> {
 
 impl<'a> fmt::Display for AtomPrinter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let print_state = PrintState {
-            in_sum: false,
-            in_product: false,
-            in_exp: false,
-            suppress_one: false,
-            level: 0,
-            top_level_add_child: false,
-            superscript: false,
-        };
         self.atom
-            .format(f, &self.print_opts, print_state)
+            .format(
+                f,
+                &self.print_opts.update_with_fmt(f),
+                PrintState::from_fmt(f),
+            )
             .map(|_| ())
     }
 }
@@ -319,9 +359,10 @@ impl<'a> AtomView<'a> {
 
         match self {
             AtomView::Num(_) => write!(out, "{}", self).unwrap(),
-            AtomView::Var(v) => write!(out, "{}", v.get_symbol()).unwrap(),
+            AtomView::Var(v) => v.get_symbol().format(&PrintOptions::file(), out).unwrap(),
             AtomView::Fun(f) => {
-                write!(out, "{}(", f.get_symbol()).unwrap();
+                f.get_symbol().format(&PrintOptions::file(), out).unwrap();
+                out.push('(');
 
                 let mut args = vec![];
 
@@ -454,22 +495,7 @@ impl<'a> FormattedPrintVar for VarView<'a> {
         }
 
         let id = self.get_symbol();
-        let name = id.get_name();
-
-        if opts.latex {
-            match id {
-                Atom::E => f.write_char('e'),
-                Atom::PI => f.write_str("\\pi"),
-                Atom::I => f.write_char('i'),
-                _ => f.write_str(name),
-            }
-        } else if opts.color_builtin_symbols && name.ends_with('_') {
-            f.write_fmt(format_args!("{}", name.cyan().italic()))
-        } else if opts.color_builtin_symbols && State::is_builtin(id) {
-            f.write_fmt(format_args!("{}", name.purple()))
-        } else {
-            f.write_str(name)
-        }?;
+        id.format(opts, f)?;
 
         Ok(false)
     }
@@ -735,23 +761,11 @@ impl<'a> FormattedPrintFn for FunView<'a> {
         }
 
         let id = self.get_symbol();
-        let name = id.get_name();
+        id.format(opts, f)?;
 
         if opts.latex {
-            if name == "cos" || name == "sin" || name == "exp" || name == "log" {
-                f.write_fmt(format_args!("\\{}\\!\\left(", name))?;
-            } else {
-                f.write_fmt(format_args!("{}\\!\\left(", name))?;
-            }
+            f.write_str("\\!\\left(")?;
         } else {
-            if opts.color_builtin_symbols && name.ends_with('_') {
-                f.write_fmt(format_args!("{}", name.cyan().italic()))?;
-            } else if opts.color_builtin_symbols && State::is_builtin(id) {
-                f.write_fmt(format_args!("{}", name.purple()))?;
-            } else {
-                f.write_str(name)?;
-            }
-
             if opts.square_brackets_for_function {
                 f.write_char('[')?;
             } else {
@@ -931,7 +945,6 @@ impl<'a> FormattedPrintAdd for AddView<'a> {
         for x in self.iter() {
             if !first && print_state.top_level_add_child && opts.terms_on_new_line {
                 f.write_char('\n')?;
-                f.write_char('\t')?;
             }
             first = false;
 
@@ -955,19 +968,27 @@ mod test {
     use colored::control::ShouldColorize;
 
     use crate::{
-        atom::{Atom, AtomCore, FunctionAttribute, Symbol},
+        atom::AtomCore,
         domains::{finite_field::Zp, integer::Z, SelfRing},
+        parse,
         printer::{AtomPrinter, PrintOptions, PrintState},
+        symbol,
     };
 
     #[test]
     fn atoms() {
-        let a = Atom::parse("f(x,y^2)^(x+z)/5+3").unwrap();
+        let a = parse!("f(x,y^2)^(x+z)/5+3").unwrap();
 
         if ShouldColorize::from_env().should_colorize() {
-            assert_eq!(format!("{}", a), "1/5*f(x,y^2)^(x+z)\u{1b}[33m+\u{1b}[0m3");
+            assert_eq!(
+                format!("{}", a.printer(PrintOptions::short())),
+                "1/5*f(x,y^2)^(x+z)\u{1b}[33m+\u{1b}[0m3"
+            );
         } else {
-            assert_eq!(format!("{}", a), "1/5*f(x,y^2)^(x+z)+3");
+            assert_eq!(
+                format!("{}", a.printer(PrintOptions::short())),
+                "1/5*f(x,y^2)^(x+z)+3"
+            );
         }
 
         assert_eq!(
@@ -986,7 +1007,7 @@ mod test {
             "1/5 f[x,y^2]^(x+z)+3"
         );
 
-        let a = Atom::parse("8127389217 x^2").unwrap();
+        let a = parse!("8127389217 x^2").unwrap();
         assert_eq!(
             format!(
                 "{}",
@@ -1000,13 +1021,13 @@ mod test {
                     }
                 )
             ),
-            "812_738_921_7 x²"
+            "812_738_921_7 symbolica::x²"
         );
     }
 
     #[test]
     fn polynomials() {
-        let a = Atom::parse("15 x^2")
+        let a = parse!("15 x^2")
             .unwrap()
             .to_polynomial::<_, u8>(&Zp::new(17), None);
 
@@ -1027,12 +1048,12 @@ mod test {
 
     #[test]
     fn rational_polynomials() {
-        let a = Atom::parse("15 x^2 / (1+x)")
+        let a = parse!("15 x^2 / (1+x)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert_eq!(format!("{}", a), "15*x^2/(1+x)");
 
-        let a = Atom::parse("(15 x^2 + 6) / (1+x)")
+        let a = parse!("(15 x^2 + 6) / (1+x)")
             .unwrap()
             .to_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert_eq!(format!("{}", a), "(6+15*x^2)/(1+x)");
@@ -1040,7 +1061,7 @@ mod test {
 
     #[test]
     fn factorized_rational_polynomials() {
-        let a = Atom::parse("15 x^2 / ((1+x)(x+2))")
+        let a = parse!("15 x^2 / ((1+x)(x+2))")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
@@ -1048,7 +1069,7 @@ mod test {
                 || format!("{}", a) == "15*x^2/((2+x)*(1+x))"
         );
 
-        let a = Atom::parse("(15 x^2 + 6) / ((1+x)(x+2))")
+        let a = parse!("(15 x^2 + 6) / ((1+x)(x+2))")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(
@@ -1056,12 +1077,12 @@ mod test {
                 || format!("{}", a) == "3*(2+5*x^2)/((2+x)*(1+x))"
         );
 
-        let a = Atom::parse("1/(v1*v2)")
+        let a = parse!("1/(v1*v2)")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(format!("{}", a) == "1/(v1*v2)" || format!("{}", a) == "1/(v2*v1)");
 
-        let a = Atom::parse("-1/(2+v1)")
+        let a = parse!("-1/(2+v1)")
             .unwrap()
             .to_factorized_rational_polynomial::<_, _, u8>(&Z, &Z, None);
         assert!(format!("{}", a) == "-1/(2+v1)");
@@ -1069,11 +1090,11 @@ mod test {
 
     #[test]
     fn base_parentheses() {
-        let a = Atom::parse("(-1)^(x+1)-(1/2)^x").unwrap();
+        let a = parse!("(-1)^(x+1)-(1/2)^x").unwrap();
         assert_eq!(
             format!(
                 "{}",
-                AtomPrinter::new_with_options(a.as_view(), PrintOptions::file())
+                AtomPrinter::new_with_options(a.as_view(), PrintOptions::file_no_namespace())
             ),
             "(-1)^(x+1)-(1/2)^x"
         )
@@ -1081,14 +1102,14 @@ mod test {
 
     #[test]
     fn canon() {
-        let _ = Symbol::new_with_attributes("canon_f", &[FunctionAttribute::Symmetric]).unwrap();
-        let _ = Symbol::new("canon_y");
-        let _ = Symbol::new("canon_x");
+        let _ = symbol!("canon_f"; Symmetric).unwrap();
+        let _ = symbol!("canon_y");
+        let _ = symbol!("canon_x");
 
-        let a = Atom::parse("canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)").unwrap();
+        let a = parse!("canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)").unwrap();
         assert_eq!(
             a.to_canonical_string(),
-            "(canon_x+canon_y)*canon_y^2+2*canon_x*canon_y+canon_f(canon_x,canon_y)+canon_x^2"
+            "(symbolica::canon_x+symbolica::canon_y)*symbolica::canon_y^2+2*symbolica::canon_x*symbolica::canon_y+symbolica::canon_f(symbolica::canon_x,symbolica::canon_y)+symbolica::canon_x^2"
         );
     }
 }

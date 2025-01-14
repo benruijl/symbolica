@@ -1553,28 +1553,30 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::{Atom, AtomCore, Symbol},
+        atom::{Atom, AtomCore},
         domains::float::Float,
+        parse,
         printer::{AtomPrinter, PrintOptions},
+        symbol,
     };
 
     use super::Coefficient;
 
     #[test]
     fn coeff_conversion() {
-        let expr = Atom::parse("v1*coeff(v2+v3/v4)+v1*coeff(v2)").unwrap();
-        let res = Atom::parse("coeff((v3+2*v2*v4)/v4)*v1").unwrap();
+        let expr = parse!("v1*coeff(v2+v3/v4)+v1*coeff(v2)").unwrap();
+        let res = parse!("coeff((v3+2*v2*v4)/v4)*v1").unwrap();
         assert_eq!(expr - &res, Atom::new());
     }
 
     #[test]
     fn coeff_conversion_large() {
-        let expr = Atom::parse(
-            "coeff(-8123781237821378123128937128937211238971238*v2-1289378192371289372891378127893)",
+        let expr = parse!(
+            "coeff(-8123781237821378123128937128937211238971238*v2-1289378192371289372891378127893)"
         )
         .unwrap();
-        let res = Atom::parse(
-            "1289378192371289372891378127893+8123781237821378123128937128937211238971238*coeff(v2)",
+        let res = parse!(
+            "1289378192371289372891378127893+8123781237821378123128937128937211238971238*coeff(v2)"
         )
         .unwrap();
         assert_eq!(expr + &res, Atom::new());
@@ -1582,11 +1584,10 @@ mod test {
 
     #[test]
     fn coefficient_ring() {
-        let expr = Atom::parse("v1*v3+v1*(v2+2)^-1*(v2+v3+1)").unwrap();
+        let expr = parse!("v1*v3+v1*(v2+2)^-1*(v2+v3+1)").unwrap();
 
-        let v2 = Symbol::new("v2");
-        let expr_yz =
-            expr.set_coefficient_ring(&Arc::new(vec![v2.into(), Symbol::new("v3").into()]));
+        let v2 = symbol!("v2");
+        let expr_yz = expr.set_coefficient_ring(&Arc::new(vec![v2.into(), symbol!("v3").into()]));
 
         let a = ((&expr_yz + &Atom::new_num((1, 2))) * &Atom::new_num((3, 4))).expand();
 
@@ -1617,12 +1618,15 @@ mod test {
 
     #[test]
     fn float() {
-        let expr = Atom::parse("1/2 x + 5.8912734891723 + sin(1.2334)").unwrap();
+        let expr = parse!("1/2 x + 5.8912734891723 + sin(1.2334)").unwrap();
         let c = Coefficient::Float(Float::with_val(200, rug::float::Constant::Pi));
         let expr = expr * &Atom::new_num(c);
         let r = format!(
             "{}",
-            AtomPrinter::new_with_options(expr.expand().as_view(), PrintOptions::file())
+            AtomPrinter::new_with_options(
+                expr.expand().as_view(),
+                PrintOptions::file_no_namespace()
+            )
         );
         assert_eq!(
             r,
@@ -1632,21 +1636,20 @@ mod test {
 
     #[test]
     fn float_convert() {
-        let expr = Atom::parse("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
+        let expr = parse!("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
         let expr = expr.coefficients_to_float(60);
         let r = format!(
             "{}",
-            AtomPrinter::new_with_options(expr.as_view(), PrintOptions::file())
+            AtomPrinter::new_with_options(expr.as_view(), PrintOptions::file_no_namespace())
         );
         assert_eq!(r, "5.00000000000000000000000000000000000000000000000000000000000e-1*x+6.81640613709185816359170669566511987261485697756222332885129e-1");
     }
 
     #[test]
     fn float_to_rat() {
-        let expr = Atom::parse("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
+        let expr = parse!("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
         let expr = expr.coefficients_to_float(60);
         let expr = expr.rationalize_coefficients(&(1, 10000).into());
-        println!("expr {}", expr);
-        assert_eq!(expr, Atom::parse("1/2*x+137/201").unwrap());
+        assert_eq!(expr, parse!("1/2*x+137/201").unwrap());
     }
 }

@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
 use symbolica::{
-    atom::{Atom, AtomCore, Symbol},
+    atom::AtomCore,
     domains::{finite_field::Zp, integer::Z},
+    parse,
     poly::{factor::Factorize, polynomial::MultivariatePolynomial, Variable},
+    symbol,
 };
 
 fn factor_ff_univariate() {
-    let exp = Atom::parse("x^100-1").unwrap().expand();
+    let exp = parse!("x^100-1").unwrap().expand();
 
     let field = Zp::new(17);
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&field, None);
@@ -22,13 +24,13 @@ fn factor_ff_univariate() {
 
 fn factor_ff_bivariate() {
     let order = Arc::new(vec![
-        Variable::Symbol(Symbol::new("x")),
-        Variable::Symbol(Symbol::new("y")),
+        Variable::Symbol(symbol!("x")),
+        Variable::Symbol(symbol!("y")),
     ]);
 
     let input = "((y+1)*x^2+x*y+1)*((y^2+2)*x^2+y+1)";
 
-    let exp = Atom::parse(input).unwrap().expand();
+    let exp = parse!(input).unwrap().expand();
 
     let field = Zp::new(17);
     let poly: MultivariatePolynomial<Zp, u8> = exp.to_polynomial(&field, Some(order));
@@ -40,7 +42,7 @@ fn factor_ff_bivariate() {
 }
 
 fn factor_ff_square_free() {
-    let exp = Atom::parse("(1+x)*(1+x^2)^2*(x^4+1)^3").unwrap().expand();
+    let exp = parse!("(1+x)*(1+x^2)^2*(x^4+1)^3").unwrap().expand();
 
     let field = Zp::new(3);
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&field, None);
@@ -54,7 +56,7 @@ fn factor_ff_square_free() {
 }
 
 fn factor_square_free() {
-    let exp = Atom::parse("3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)")
+    let exp = parse!("3*(2*x^2+y)(x^3+y)^2(1+4*y)^2(1+x)")
         .unwrap()
         .expand();
 
@@ -69,7 +71,7 @@ fn factor_square_free() {
 }
 
 fn factor_univariate_1() {
-    let exp = Atom::parse("2*(4 + 3*x)*(3 + 2*x + 3*x^2)*(3 + 8*x^2)*(4 + x + x^16)")
+    let exp = parse!("2*(4 + 3*x)*(3 + 2*x + 3*x^2)*(3 + 8*x^2)*(4 + x + x^16)")
         .unwrap()
         .expand();
 
@@ -84,7 +86,7 @@ fn factor_univariate_1() {
 }
 
 fn factor_univariate_2() {
-    let exp = Atom::parse("(x+1)(x+2)(x+3)^3(x+4)(x+5)(x^2+6)(x^3+7)(x+8)^2(x^4+9)(x^5+x+10)")
+    let exp = parse!("(x+1)(x+2)(x+3)^3(x+4)(x+5)(x^2+6)(x^3+7)(x+8)^2(x^4+9)(x^5+x+10)")
         .unwrap()
         .expand();
 
@@ -100,13 +102,13 @@ fn factor_univariate_2() {
 
 fn factor_bivariate() {
     let order = Arc::new(vec![
-        Variable::Symbol(Symbol::new("x")),
-        Variable::Symbol(Symbol::new("y")),
+        Variable::Symbol(symbol!("x")),
+        Variable::Symbol(symbol!("y")),
     ]);
 
     let input = "(x^2+y+x+1)(3*x+y^2+4)*(6*x*(y+1)+y+5)*(7*x*y+4)";
 
-    let exp = Atom::parse(input).unwrap().expand();
+    let exp = parse!(input).unwrap().expand();
 
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, Some(order));
 
@@ -118,15 +120,15 @@ fn factor_bivariate() {
 
 fn factor_multivariate() {
     let order = Arc::new(vec![
-        Variable::Symbol(Symbol::new("x")),
-        Variable::Symbol(Symbol::new("y")),
-        Variable::Symbol(Symbol::new("z")),
-        Variable::Symbol(Symbol::new("w")),
+        Variable::Symbol(symbol!("x")),
+        Variable::Symbol(symbol!("y")),
+        Variable::Symbol(symbol!("z")),
+        Variable::Symbol(symbol!("w")),
     ]);
 
     let input = "(x*(2+2*y+2*z)+1)*(x*(4+z^2)+y+3)*(x*(w+w^2+4+y)+w+5)";
 
-    let exp = Atom::parse(input).unwrap().expand();
+    let exp = parse!(input).unwrap().expand();
 
     let poly: MultivariatePolynomial<_, u8> = exp.to_polynomial(&Z, Some(order));
 

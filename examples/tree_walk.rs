@@ -1,10 +1,11 @@
 use symbolica::{
     atom::Atom,
     id::{AtomTreeIterator, MatchSettings},
+    parse,
 };
 
 fn main() {
-    let expr: Atom = Atom::parse("f(z)*f(f(x),z)*f(y)").unwrap();
+    let expr: Atom = parse!("f(z)*f(f(x),z)*f(y)").unwrap();
 
     println!("> Tree walk of {}:", expr);
 

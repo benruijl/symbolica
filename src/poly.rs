@@ -660,7 +660,7 @@ pub enum Variable {
 impl std::fmt::Display for Variable {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Variable::Symbol(v) => f.write_str(v.get_name()),
+            Variable::Symbol(v) => f.write_str(v.get_stripped_name()),
             Variable::Temporary(t) => f.write_fmt(format_args!("_TMP_{}", *t)),
             Variable::Function(_, a) | Variable::Other(a) => std::fmt::Display::fmt(a, f),
         }
@@ -693,7 +693,7 @@ impl Variable {
 
     pub fn to_string(&self) -> String {
         match self {
-            Variable::Symbol(v) => v.get_name().to_string(),
+            Variable::Symbol(v) => v.get_stripped_name().to_string(),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Function(_, a) | Variable::Other(a) => format!("{}", a),
         }
@@ -701,7 +701,7 @@ impl Variable {
 
     fn format_string(&self, opts: &PrintOptions, state: PrintState) -> String {
         match self {
-            Variable::Symbol(v) => v.get_name().to_string(),
+            Variable::Symbol(v) => v.get_stripped_name().to_string(),
             Variable::Temporary(t) => format!("_TMP_{}", *t),
             Variable::Function(_, a) | Variable::Other(a) => a.format_string(opts, state),
         }

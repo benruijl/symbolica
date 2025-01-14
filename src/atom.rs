@@ -169,6 +169,24 @@ pub struct NamespacedString<'a> {
     pub line: usize,
 }
 
+impl NamespacedString<'_> {
+    /// Parse a string into a namespaced string.
+    pub fn namespaced_symbol(&self, s: &str) -> NamespacedSymbol {
+        if let Some(mut s) = NamespacedSymbol::try_parse(s) {
+            s.file = self.file.clone();
+            s.line = self.line;
+            s
+        } else {
+            NamespacedSymbol {
+                symbol: format!("{}::{}", self.namespace, s).into(),
+                namespace: self.namespace.clone(),
+                file: self.file.clone(),
+                line: self.line,
+            }
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! wrap_input {
     ($e:expr) => {{
@@ -274,7 +292,7 @@ impl Symbol {
     /// Get the symbol associated with `name` if it was already defined,
     /// otherwise define it without special attributes.
     ///
-    /// To register a symbol with attributes, use [symb!_with_attributes].
+    /// Use the [symb] macro instead to define symbols with the current namespace.
     ///
     /// # Examples
     ///
@@ -293,12 +311,14 @@ impl Symbol {
     /// This function will return an error when an existing symbol is redefined
     /// with different attributes.
     ///
+    /// Use the [symb] macro instead to define symbols with the current namespace.
+    ///
     /// # Examples
     ///
     /// ```
     /// use symbolica::atom::{Symbol, FunctionAttribute};
     ///
-    /// let f = symb!_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+    /// let f = Symbol::new_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
     /// ```
     pub fn new_with_attributes(
         name: NamespacedSymbol,
@@ -313,6 +333,8 @@ impl Symbol {
     /// normalization functions must be registered explicitly.
     ///
     /// If the symbol already exists, an error is returned.
+    ///
+    /// Use the [symb] macro instead to define symbols with the current namespace.
     ///
     /// # Examples
     ///
@@ -333,7 +355,7 @@ impl Symbol {
     ///     }
     /// });
     ///
-    /// let f = symb!_with_attributes_and_function("f", &[], normalize_fn).unwrap();
+    /// let f = Symbol::new_with_attributes_and_function("f", &[], normalize_fn).unwrap();
     /// ```
     pub fn new_with_attributes_and_function(
         name: NamespacedSymbol,
@@ -1305,21 +1327,64 @@ macro_rules! fun {
     };
 }
 
-// TODO: always allow attributes? this means you cannot simply fetch a symbol?
-
-/// Create a symbol that takes its existing attributes if already defined, or is defined
-/// without special attributes. Use [symb_with_attr!]
-/// to define symbols with attributes.
+/// Create a new symbol or fetch the existing one with the same name.
+/// If no namespace is specified, the symbol is created in the
+/// current namespace.
 ///
 /// For example:
 /// ```
 /// use symbolica::symb;
+/// let x = symb!("x");
 /// let (x, y, z) = symb!("x", "y", "z");
+/// let x_remote = symb!("remote::x");
+/// ```
+///
+/// Since no attributes were specified in the example above, the symbols
+/// will inherit the attributes if the symbol already exists or will be
+/// created with the default attributes.
+///
+/// You can specify attributes for the symbol, using `;` as a separator
+/// between symbol names and attributes. The options
+/// are [Symmetric](FunctionAttribute::Symmetric), [Antisymmetric](FunctionAttribute::Antisymmetric),
+/// [Cyclesymmetric](FunctionAttribute::Cyclesymmetric), and [Linear](FunctionAttribute::Linear).
+/// ```
+/// use symbolica::symb;
+/// let x = symb!("x"; Symmetric, Linear);
+/// let (x, y, z) = symb!("x", "y", "z"; Symmetric); // define all as symmetric
+/// ```
+///
+/// Explicitly specifying a symbol without attributes:
+/// ```
+/// use symbolica::symb;
+/// let x = symb!("x";);
+/// ```
+/// will throw an error if the symbol was previously defined with attributes.
+///
+/// You can specify a normalization function for the symbol, following its
+/// attributes with a `;`.
+/// ```
+/// use symbolica::symb;
+/// use symbolica::atom::AtomView;
+/// let x = symb!("f";; Box::new(|f, out| {
+///     if let AtomView::Fun(ff) = f {
+///         if ff.get_nargs() % 2 == 1 {
+///            out.to_num(0.into());
+///            return true;
+///         }
+///     }
+///     false
+/// }));
 /// ```
 #[macro_export]
 macro_rules! symb {
     ($id: expr) => {
         $crate::atom::Symbol::new($crate::wrap_symb!($id))
+    };
+    ($id: expr; $($attr: ident),*) => {
+        $crate::atom::Symbol::new_with_attributes($crate::wrap_symb!($id), &[$($crate::atom::FunctionAttribute::$attr,)*])
+    };
+    ($id: expr; $($attr: ident),*; $norm: expr) => {
+        $crate::atom::Symbol::new_with_attributes_and_function($crate::wrap_symb!($id), &[$($crate::atom::FunctionAttribute::$attr,)*], $norm)
     };
     ($($id: expr),*) => {
         {
@@ -1330,40 +1395,35 @@ macro_rules! symb {
             )
         }
     };
-}
+    ($($id: expr),*; $($attr: ident),*) => {
+        {
+            macro_rules! gen_attr {
+                () => {
+                    &[$($crate::atom::FunctionAttribute::$attr,)*]
+                };
+            }
 
-/// Create a new symbol with special attributes.
-///
-/// For example:
-/// ```
-/// use symbolica::symb_with_attr;
-/// let (x, y, z) = symb_with_attr!("x", FunctionAttribute::Symmetric);
-/// ```
-#[macro_export]
-macro_rules! symb_with_attr {
-    ($id: expr) => {
-        $crate::atom::Symbol::new_with_attributes($crate::wrap_symb!($id), &[])
+            (
+                $(
+                    $crate::atom::Symbol::new_with_attributes($crate::wrap_symb!($id), gen_attr!()),
+                )+
+            )
+        }
     };
-    ($id: expr, $($attr: expr),*) => {
-        $crate::atom::Symbol::new_with_attributes($crate::wrap_symb!($id), &[$($attr,)+])
-    };
-}
+    ($($id: expr),*; $($attr: ident),*; $norm: expr) => {
+        {
+            macro_rules! gen_attr {
+                () => {
+                    &[$($crate::atom::FunctionAttribute::$attr,)*]
+                };
+            }
 
-/// Create a new symbol with a custom normalization function
-/// and special attributes.
-///
-/// For example:
-/// ```
-/// use symbolica::symb_with_norm;
-/// let (x, y, z) = symb_with_norm!("x", "y", "z");
-/// ```
-#[macro_export]
-macro_rules! symb_with_norm {
-    ($id: expr, $norm: expr) => {
-        $crate::atom::Symbol::new_with_attributes_and_function($crate::wrap_symb!($id), &[], $norm)
-    };
-    ($id: expr, $norm: expr, $($attr: expr),+) => {
-        $crate::atom:::Symbol::new_with_attributes_and_function($crate::wrap_symb!($id), &[$($attr,)+], $norm)
+            (
+                $(
+                    $crate::atom::Symbol::new_with_attributes_and_function($crate::wrap_symb!($id), gen_attr!(), $norm),
+                )+
+            )
+        }
     };
 }
 
@@ -1393,6 +1453,7 @@ macro_rules! parse {
 }
 
 /// Parse an atom from literal code. Use [parse!] to parse from a string.
+/// Any new symbols are defined in the current namespace.
 ///
 /// # Examples
 /// ```

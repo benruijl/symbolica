@@ -877,7 +877,7 @@ mod tests {
 
     use crate::{
         atom::{Atom, AtomView},
-        parse, symb_with_norm,
+        parse, symb,
     };
 
     use super::State;
@@ -893,8 +893,8 @@ mod tests {
 
     #[test]
     fn custom_normalization() {
-        let _real_log = symb_with_norm!(
-            "custom_normalization_real_log",
+        let _real_log = symb!(
+            "custom_normalization_real_log";;
             Box::new(|input, out| {
                 if let AtomView::Fun(f) = input {
                     if f.get_nargs() == 1 {

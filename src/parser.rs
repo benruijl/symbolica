@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    atom::{Atom, NamespacedString, NamespacedSymbol},
+    atom::{Atom, NamespacedString},
     coefficient::{Coefficient, ConvertToRing},
     domains::{float::Float, integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, PositiveExponent, Variable},
@@ -417,12 +417,7 @@ impl Token {
                 },
             },
             Token::ID(x) => {
-                out.to_var(state.get_symbol_impl(NamespacedSymbol {
-                    symbol: x.to_string().into(),
-                    namespace: namespace.namespace.clone(),
-                    file: namespace.file.clone(),
-                    line: namespace.line,
-                }));
+                out.to_var(state.get_symbol_impl(namespace.namespaced_symbol(x)));
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -487,12 +482,7 @@ impl Token {
                     _ => unreachable!(),
                 };
 
-                let fun = out.to_fun(state.get_symbol_impl(NamespacedSymbol {
-                    symbol: name.to_string().into(),
-                    namespace: namespace.namespace.clone(),
-                    file: namespace.file.clone(),
-                    line: namespace.line,
-                }));
+                let fun = out.to_fun(state.get_symbol_impl(namespace.namespaced_symbol(name)));
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
                     a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;

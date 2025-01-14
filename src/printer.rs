@@ -955,11 +955,11 @@ mod test {
     use colored::control::ShouldColorize;
 
     use crate::{
-        atom::{AtomCore, FunctionAttribute},
+        atom::AtomCore,
         domains::{finite_field::Zp, integer::Z, SelfRing},
         parse,
         printer::{AtomPrinter, PrintOptions, PrintState},
-        symb, symb_with_attr,
+        symb,
     };
 
     #[test]
@@ -1083,7 +1083,7 @@ mod test {
 
     #[test]
     fn canon() {
-        let _ = symb_with_attr!("canon_f", FunctionAttribute::Symmetric).unwrap();
+        let _ = symb!("canon_f"; Symmetric).unwrap();
         let _ = symb!("canon_y");
         let _ = symb!("canon_x");
 

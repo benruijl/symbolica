@@ -1,16 +1,11 @@
 use std::io::Cursor;
 
 use smartstring::SmartString;
-use symbolica::{
-    atom::{Atom, FunctionAttribute},
-    parse,
-    state::State,
-    symb, symb_with_attr,
-};
+use symbolica::{atom::Atom, parse, state::State, symb};
 
 fn conflict() {
     symb!("x", "y");
-    symb_with_attr!("f", FunctionAttribute::Symmetric).unwrap();
+    symb!("f"; Symmetric).unwrap();
 
     let a = parse!("f(x, y)*x^2").unwrap();
 

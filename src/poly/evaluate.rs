@@ -1799,7 +1799,7 @@ impl ExpressionEvaluator {
     /// ```
     /// can be represented by:
     /// ```
-    /// # use symbolica::{parse, atom::Atom};
+    /// # use symbolica::{atom::Atom, parse, symb};
     /// vec![
     ///       vec![(symb!("x0"), vec![parse!("p1"), parse!("p2")])],
     ///       vec![(symb!("x1"), vec![parse!("x0(0) * x0(1) + 2")])],

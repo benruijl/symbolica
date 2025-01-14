@@ -258,7 +258,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// let expr = parse!("(x + 1)^2").unwrap();
     /// let expanded = expr.expand_via_poly::<u8, Atom>(None);
     /// let r = parse!("x^2 + 2 * x + 1").unwrap();
@@ -306,7 +306,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// let expr = parse!("(x + 1)^2").unwrap();
     /// let mut out = Atom::new();
     /// let changed = expr.expand_into::<Atom>(None, &mut out);
@@ -340,7 +340,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// let expr = parse!("x^2 + 2*x + 1").unwrap();
     /// let is_expanded = expr.is_expanded::<Atom>(None);
     /// assert!(is_expanded);
@@ -464,7 +464,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// let expr1 = parse!("2*x + y - 1").unwrap();
     /// let expr2 = parse!("x + y + 1").unwrap();
     /// let system = &[expr1, expr2];
@@ -486,7 +486,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::domains::Ring;
     /// let expr1 = parse!("2*x + y - 1").unwrap();
     /// let expr2 = parse!("x - y + 1").unwrap();
@@ -620,7 +620,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::evaluate::{FunctionMap, OptimizationSettings};
     /// let expr1 = parse!("x + y").unwrap();
     /// let expr2 = parse!("x - y").unwrap();
@@ -712,7 +712,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// let expr = parse!("1/3").unwrap();
     /// let mut out = Atom::new();
     /// expr.coefficients_to_float_into(2, &mut out);
@@ -752,7 +752,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::coefficient::{Coefficient, CoefficientView};
     /// use symbolica::domains::rational::Rational;
     /// let expr = parse!("0.33*x + 3").unwrap();
@@ -782,7 +782,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// let expr = parse!("0.333").unwrap();
     /// let result = expr.rationalize_coefficients(&(1, 100).into());
     /// assert_eq!(result, Atom::new_num((1, 3)));
@@ -1035,11 +1035,11 @@ pub trait AtomCore {
     /// Example
     /// -------
     /// ```
-    /// # use symbolica::atom::{Atom, AtomCore, FunctionAttribute, Symbol};
+    /// # use symbolica::{atom::{Atom, AtomCore}, symb, parse};
     /// #
     /// # fn main() {
-    /// let _ = symb!_with_attributes("fs", &[FunctionAttribute::Symmetric]).unwrap();
-    /// let _ = symb!_with_attributes("fc", &[FunctionAttribute::Cyclesymmetric]).unwrap();
+    /// let _ = symb!("fs"; Symmetric).unwrap();
+    /// let _ = symb!("fc"; Cyclesymmetric).unwrap();
     /// let a = parse!("fs(mu2,mu3)*fc(mu4,mu2,k1,mu4,k1,mu3)").unwrap();
     ///
     /// let mu1 = parse!("mu1").unwrap();
@@ -1178,7 +1178,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::id::Pattern;
     /// let expr = parse!("x + y").unwrap();
     /// let pattern = parse!("x").unwrap().to_pattern();
@@ -1228,7 +1228,7 @@ pub trait AtomCore {
     /// # Example
     ///
     /// ```
-    /// use symbolica::{atom::AtomCore, parse};
+    /// use symbolica::{atom::{Atom, AtomCore}, parse};
     /// use symbolica::id::{Pattern, Replacement};
     /// let expr = parse!("x + y").unwrap();
     /// let pattern1 = parse!("x").unwrap().to_pattern();

@@ -8,7 +8,7 @@ use symbolica::{
     domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial, SelfRing},
     parser::Token,
     printer::{PrintOptions, PrintState},
-    symb,
+    symbol,
 };
 
 fn main() {
@@ -36,7 +36,7 @@ fn main() {
         );
     }
 
-    let vars: Arc<Vec<_>> = Arc::new(var_names.iter().map(|v| symb!(v).into()).collect());
+    let vars: Arc<Vec<_>> = Arc::new(var_names.iter().map(|v| symbol!(v).into()).collect());
 
     let print_opt = PrintOptions::file();
 

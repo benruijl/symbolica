@@ -1548,7 +1548,7 @@ mod test {
         domains::float::Float,
         parse,
         printer::{AtomPrinter, PrintOptions},
-        symb,
+        symbol,
     };
 
     use super::Coefficient;
@@ -1577,8 +1577,8 @@ mod test {
     fn coefficient_ring() {
         let expr = parse!("v1*v3+v1*(v2+2)^-1*(v2+v3+1)").unwrap();
 
-        let v2 = symb!("v2");
-        let expr_yz = expr.set_coefficient_ring(&Arc::new(vec![v2.into(), symb!("v3").into()]));
+        let v2 = symbol!("v2");
+        let expr_yz = expr.set_coefficient_ring(&Arc::new(vec![v2.into(), symbol!("v3").into()]));
 
         let a = ((&expr_yz + &Atom::new_num((1, 2))) * &Atom::new_num((3, 4))).expand();
 

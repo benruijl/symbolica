@@ -15,7 +15,7 @@ use crate::{
     domains::factorized_rational_polynomial::FactorizedRationalPolynomial,
     domains::rational_polynomial::RationalPolynomial, printer::PrintOptions, printer::PrintState,
 };
-use crate::{symb, LicenseManager};
+use crate::{symbol, LicenseManager};
 
 struct LocalState {
     buffer: String,
@@ -134,7 +134,7 @@ unsafe extern "C" fn set_vars(symbolica: *mut Symbolica, vars: *const c_char) {
     let mut var_map = vec![];
 
     for var in cstr.split(',') {
-        var_map.push(Variable::Symbol(symb!(var)));
+        var_map.push(Variable::Symbol(symbol!(var)));
         symbolica.local_state.var_name_map.push(var.into());
     }
 

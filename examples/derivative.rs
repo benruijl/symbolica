@@ -1,7 +1,7 @@
-use symbolica::{atom::AtomCore, parse, symb};
+use symbolica::{atom::AtomCore, parse, symbol};
 
 fn main() {
-    let x = symb!("x");
+    let x = symbol!("x");
     let inputs = [
         "(1+2*x)^(5+x)",
         "log(2*x) + exp(3*x) + sin(4*x) + cos(y*x)",

@@ -959,7 +959,7 @@ mod test {
         domains::{finite_field::Zp, integer::Z, SelfRing},
         parse,
         printer::{AtomPrinter, PrintOptions, PrintState},
-        symb,
+        symbol,
     };
 
     #[test]
@@ -1083,9 +1083,9 @@ mod test {
 
     #[test]
     fn canon() {
-        let _ = symb!("canon_f"; Symmetric).unwrap();
-        let _ = symb!("canon_y");
-        let _ = symb!("canon_x");
+        let _ = symbol!("canon_f"; Symmetric).unwrap();
+        let _ = symbol!("canon_y");
+        let _ = symbol!("canon_x");
 
         let a = parse!("canon_x^2 + 2*canon_x*canon_y + canon_y^2*(canon_x+canon_y) + canon_f(canon_x,canon_y)").unwrap();
         assert_eq!(

@@ -32,7 +32,10 @@ use smartstring::{LazyCompact, SmartString};
 use pyo3::pymodule;
 
 use crate::{
-    atom::{Atom, AtomCore, AtomType, AtomView, FunctionAttribute, ListIterator, Symbol},
+    atom::{
+        Atom, AtomCore, AtomType, AtomView, FunctionAttribute, ListIterator, NamespacedSymbol,
+        Symbol,
+    },
     coefficient::CoefficientView,
     domains::{
         algebraic_number::AlgebraicExtension,
@@ -57,6 +60,7 @@ use crate::{
         Replacement, WildcardRestriction,
     },
     numerical_integration::{ContinuousGrid, DiscreteGrid, Grid, MonteCarloRng, Sample},
+    parse,
     parser::Token,
     poly::{
         factor::Factorize, groebner::GroebnerBasis, polynomial::MultivariatePolynomial,
@@ -212,9 +216,13 @@ fn number_shorthand(
 }
 
 /// Shorthand notation for :func:`Expression.parse`.
-#[pyfunction(name = "E")]
-fn expression_shorthand(expr: &str, py: Python) -> PyResult<PythonExpression> {
-    PythonExpression::parse(&PythonExpression::type_object(py), expr)
+#[pyfunction(name = "E", signature = (expr,default_namespace="python"))]
+fn expression_shorthand(
+    expr: &str,
+    default_namespace: &str,
+    py: Python,
+) -> PyResult<PythonExpression> {
+    PythonExpression::parse(&PythonExpression::type_object(py), expr, default_namespace)
 }
 
 /// Specifies the type of the atom.
@@ -2528,14 +2536,25 @@ impl PythonExpression {
             if names.len() == 1 {
                 let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
 
-                let id = symb!(name_check(&*name)?);
+                let id = Symbol::new(NamespacedSymbol {
+                    symbol: name_check(&*name)?.to_string().into(),
+                    namespace: "python".into(),
+                    file: "".into(),
+                    line: 0,
+                });
                 let r = PythonExpression::from(Atom::new_var(id));
                 return r.into_py_any(py);
             } else {
                 let mut result = vec![];
                 for a in names {
                     let name = a.extract::<PyBackedStr>()?;
-                    let id = symb!(name_check(&*name)?);
+                    let id = Symbol::new(NamespacedSymbol {
+                        symbol: name_check(&*name)?.to_string().into(),
+                        namespace: "python".into(),
+                        file: "".into(),
+                        line: 0,
+                    });
+
                     let r = PythonExpression::from(Atom::new_var(id));
                     result.push(r);
                 }
@@ -2574,7 +2593,12 @@ impl PythonExpression {
 
         if names.len() == 1 {
             let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
-            let name = name_check(&*name)?;
+            let name = NamespacedSymbol {
+                symbol: name_check(&*name)?.to_string().into(),
+                namespace: "python".into(),
+                file: "".into(),
+                line: 0,
+            };
 
             let id = if let Some(f) = custom_normalization {
                 if let Pattern::Transformer(t) = f.expr {
@@ -2584,7 +2608,7 @@ impl PythonExpression {
                         ))?;
                     }
 
-                    symb!_with_attributes_and_function(
+                    Symbol::new_with_attributes_and_function(
                         name,
                         &opts,
                         Box::new(move |input, out| {
@@ -2600,7 +2624,7 @@ impl PythonExpression {
                     return Err(exceptions::PyValueError::new_err("Transformer expected"));
                 }
             } else {
-                symb!_with_attributes(name, &opts)
+                Symbol::new_with_attributes(name, &opts)
             }
             .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
 
@@ -2610,7 +2634,12 @@ impl PythonExpression {
             let mut result = vec![];
             for a in names {
                 let name = a.extract::<PyBackedStr>()?;
-                let name = name_check(&*name)?;
+                let name = NamespacedSymbol {
+                    symbol: name_check(&*name)?.to_string().into(),
+                    namespace: "python".into(),
+                    file: "".into(),
+                    line: 0,
+                };
 
                 let id = if let Some(f) = &custom_normalization {
                     if let Pattern::Transformer(t) = &f.expr {
@@ -2621,7 +2650,7 @@ impl PythonExpression {
                         }
 
                         let t = t.1.clone();
-                        symb!_with_attributes_and_function(
+                        Symbol::new_with_attributes_and_function(
                             name,
                             &opts,
                             Box::new(move |input, out| {
@@ -2638,7 +2667,7 @@ impl PythonExpression {
                         return Err(exceptions::PyValueError::new_err("Transformer expected"));
                     }
                 } else {
-                    symb!_with_attributes(name, &opts)
+                    Symbol::new_with_attributes(name, &opts)
                 }
                 .map_err(|e| exceptions::PyTypeError::new_err(e.to_string()))?;
                 let r = PythonExpression::from(Atom::new_var(id));
@@ -2679,7 +2708,7 @@ impl PythonExpression {
             Ok(Atom::new_num(num).into())
         } else if let Ok(num) = num.downcast_bound::<PyInt>(py) {
             let a = format!("{}", num);
-            PythonExpression::parse(_cls, &a)
+            PythonExpression::parse(_cls, &a, "python")
         } else if let Ok(f) = num.extract::<PythonMultiPrecisionFloat>(py) {
             if let Some(relative_error) = relative_error {
                 let mut r: Rational = f.0.into();
@@ -2774,9 +2803,15 @@ impl PythonExpression {
     /// ValueError
     ///     If the input is not a valid Symbolica expression.
     ///
+    #[pyo3(signature = (input, default_namespace = "python"))]
     #[classmethod]
-    pub fn parse(_cls: &Bound<'_, PyType>, input: &str) -> PyResult<PythonExpression> {
-        let e = parse!(input).map_err(exceptions::PyValueError::new_err)?;
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        input: &str,
+        default_namespace: &str,
+    ) -> PyResult<PythonExpression> {
+        let e = parse!(input, default_namespace.to_string())
+            .map_err(exceptions::PyValueError::new_err)?;
         Ok(e.into())
     }
 
@@ -6416,14 +6451,25 @@ impl PythonPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica polynomial.
+    #[pyo3(signature = (arg, vars, default_namespace = "python"))]
     #[classmethod]
-    pub fn parse(_cls: &Bound<'_, PyType>, arg: &str, vars: Vec<PyBackedStr>) -> PyResult<Self> {
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        arg: &str,
+        vars: Vec<PyBackedStr>,
+        default_namespace: &str,
+    ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
             SmallVec::new();
 
         for v in vars {
-            let id = symb!(&*v);
+            let id = Symbol::new(NamespacedSymbol {
+                symbol: v.to_string().into(),
+                namespace: default_namespace.to_string().into(),
+                file: "".into(),
+                line: 0,
+            });
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -6729,13 +6775,24 @@ impl PythonIntegerPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica polynomial.
+    #[pyo3(signature = (arg, vars, default_namespace = "python"))]
     #[classmethod]
-    pub fn parse(_cls: &Bound<'_, PyType>, arg: &str, vars: Vec<PyBackedStr>) -> PyResult<Self> {
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        arg: &str,
+        vars: Vec<PyBackedStr>,
+        default_namespace: &str,
+    ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = symb!(&*v);
+            let id = Symbol::new(NamespacedSymbol {
+                symbol: v.to_string().into(),
+                namespace: default_namespace.to_string().into(),
+                file: "".into(),
+                line: 0,
+            });
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -7308,18 +7365,25 @@ impl PythonFiniteFieldPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica polynomial.
+    #[pyo3(signature = (arg, vars, prime, default_namespace = "python"))]
     #[classmethod]
     pub fn parse(
         _cls: &Bound<'_, PyType>,
         arg: &str,
         vars: Vec<PyBackedStr>,
         prime: u32,
+        default_namespace: &str,
     ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = symb!(&*v);
+            let id = Symbol::new(NamespacedSymbol {
+                symbol: v.to_string().into(),
+                namespace: default_namespace.to_string().into(),
+                file: "".into(),
+                line: 0,
+            });
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -9837,13 +9901,24 @@ impl PythonRationalPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica rational polynomial.
+    #[pyo3(signature = (arg, vars, default_namespace = "python"))]
     #[classmethod]
-    pub fn parse(_cls: &Bound<'_, PyType>, arg: &str, vars: Vec<PyBackedStr>) -> PyResult<Self> {
+    pub fn parse(
+        _cls: &Bound<'_, PyType>,
+        arg: &str,
+        vars: Vec<PyBackedStr>,
+        default_namespace: &str,
+    ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = symb!(&*v);
+            let id = Symbol::new(NamespacedSymbol {
+                symbol: v.to_string().into(),
+                namespace: default_namespace.to_string().into(),
+                file: "".into(),
+                line: 0,
+            });
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -10125,18 +10200,25 @@ impl PythonFiniteFieldRationalPolynomial {
     /// ------
     /// ValueError
     ///     If the input is not a valid Symbolica rational polynomial.
+    #[pyo3(signature = (arg, vars, prime, default_namespace = "python"))]
     #[classmethod]
     pub fn parse(
         _cls: &Bound<'_, PyType>,
         arg: &str,
         vars: Vec<PyBackedStr>,
         prime: u32,
+        default_namespace: &str,
     ) -> PyResult<Self> {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
         for v in vars {
-            let id = symb!(&*v);
+            let id = Symbol::new(NamespacedSymbol {
+                symbol: v.to_string().into(),
+                namespace: default_namespace.to_string().into(),
+                file: "".into(),
+                line: 0,
+            });
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }

@@ -417,7 +417,7 @@ impl Token {
                 },
             },
             Token::ID(x) => {
-                out.to_var(state.get_symbol_impl(namespace.namespaced_symbol(x)));
+                out.to_var(state.get_symbol_impl(namespace.attach_namespace(x)));
             }
             Token::Op(_, _, op, args) => match op {
                 Operator::Mul => {
@@ -482,7 +482,7 @@ impl Token {
                     _ => unreachable!(),
                 };
 
-                let fun = out.to_fun(state.get_symbol_impl(namespace.namespaced_symbol(name)));
+                let fun = out.to_fun(state.get_symbol_impl(namespace.attach_namespace(name)));
                 let mut atom = workspace.new_atom();
                 for a in args.iter().skip(1) {
                     a.to_atom_with_output_no_norm(namespace, state, workspace, &mut atom)?;
@@ -1323,7 +1323,7 @@ mod test {
         parse,
         parser::Token,
         printer::{AtomPrinter, PrintOptions},
-        symb,
+        symbol,
     };
 
     #[test]
@@ -1376,7 +1376,7 @@ mod test {
     #[test]
     fn poly() {
         let var_names = ["v1".into(), "v2".into()];
-        let var_map = Arc::new(vec![symb!("v1").into(), symb!("v2").into()]);
+        let var_map = Arc::new(vec![symbol!("v1").into(), symbol!("v2").into()]);
         let (rest, input) =
             Token::parse_polynomial::<_, u8>("#ABC*v1^2*v2+5".as_bytes(), &var_map, &var_names, &Z);
 

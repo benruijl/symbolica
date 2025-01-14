@@ -3757,7 +3757,7 @@ mod test {
         },
         parse,
         poly::factor::Factorize,
-        symb,
+        symbol,
     };
 
     #[test]
@@ -3989,9 +3989,9 @@ mod test {
             .to_polynomial::<_, u8>(
                 &Z,
                 Some(Arc::new(vec![
-                    symb!("v1").into(),
-                    symb!("v2").into(),
-                    symb!("v3").into(),
+                    symbol!("v1").into(),
+                    symbol!("v2").into(),
+                    symbol!("v3").into(),
                 ])),
             );
 
@@ -4023,9 +4023,9 @@ mod test {
             .to_polynomial::<_, u8>(
                 &Z,
                 Some(Arc::new(vec![
-                    symb!("v1").into(),
-                    symb!("v2").into(),
-                    symb!("v3").into(),
+                    symbol!("v1").into(),
+                    symbol!("v2").into(),
+                    symbol!("v3").into(),
                 ])),
             );
 

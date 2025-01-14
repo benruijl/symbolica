@@ -3,12 +3,12 @@ use symbolica::{
     domains::finite_field::Zp,
     parse,
     poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
-    symb,
+    symbol,
 };
 
 fn main() {
     for x in 'a'..='z' {
-        symb!(x.to_string());
+        symbol!(x.to_string());
     }
 
     // cyclic-4

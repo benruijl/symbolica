@@ -305,15 +305,15 @@ mod test {
         },
         parse,
         poly::Variable,
-        symb,
+        symbol,
         tensors::matrix::Matrix,
     };
 
     #[test]
     fn solve() {
-        let x = symb!("v1").into();
-        let y = symb!("v2").into();
-        let z = symb!("v3").into();
+        let x = symbol!("v1").into();
+        let y = symbol!("v2").into();
+        let z = symbol!("v3").into();
         let eqs = [
             "v4*v1 + f1(v4)*v2 + v3 - 1",
             "v1 + v4*v2 + v3/v4 - 2",
@@ -343,7 +343,7 @@ mod test {
         ];
         let rhs = ["1", "2", "-1"];
 
-        let var_map = Arc::new(vec![Variable::Symbol(symb!("v4"))]);
+        let var_map = Arc::new(vec![Variable::Symbol(symbol!("v4"))]);
 
         let system_rat: Vec<RationalPolynomial<_, u8>> = system
             .iter()
@@ -398,7 +398,7 @@ mod test {
 
     #[test]
     fn find_root() {
-        let x = symb!("x");
+        let x = symbol!("x");
         let a = parse!("x^2 - 2").unwrap();
         let a = a.as_view();
 
@@ -413,7 +413,7 @@ mod test {
 
         let r = AtomView::nsolve_system(
             &[a.as_view(), b.as_view()],
-            &[symb!("x"), symb!("y")],
+            &[symbol!("x"), symbol!("y")],
             &[F64::from(1.), F64::from(1.)],
             F64::from(1e-10),
             100,

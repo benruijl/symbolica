@@ -3,7 +3,7 @@ use symbolica::{
     coefficient::CoefficientView,
     domains::finite_field,
     id::{Condition, Match, MatchSettings, WildcardRestriction},
-    parse, symb,
+    parse, symbol,
 };
 fn main() {
     let expr = parse!("f(1,2,3,4,5,6,7)").unwrap();
@@ -11,10 +11,10 @@ fn main() {
 
     let pattern = pat_expr.as_view().to_pattern();
 
-    let x = symb!("x__");
-    let y = symb!("y__");
-    let z = symb!("z__");
-    let w = symb!("w__");
+    let x = symbol!("x__");
+    let y = symbol!("y__");
+    let z = symbol!("z__");
+    let w = symbol!("w__");
 
     let conditions = Condition::from((x, WildcardRestriction::Length(0, Some(2))))
         & (y, WildcardRestriction::Length(0, Some(4)))

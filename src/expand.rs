@@ -513,7 +513,7 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::atom::AtomCore;
-    use crate::{parse, symb};
+    use crate::{parse, symbol};
 
     #[test]
     fn expand_num() {
@@ -554,7 +554,7 @@ mod test {
     fn expand_in_var() {
         let exp = parse!("(1+v1)^2+(1+v2)^100")
             .unwrap()
-            .expand_in_symbol(symb!("v1"));
+            .expand_in_symbol(symbol!("v1"));
         let res = parse!("1+2*v1+v1^2+(v2+1)^100").unwrap();
         assert_eq!(exp, res);
     }
@@ -563,7 +563,7 @@ mod test {
     fn expand_with_poly() {
         let exp = parse!("(1+v1)^2+(1+v2)^100")
             .unwrap()
-            .expand_in_symbol(symb!("v1"));
+            .expand_in_symbol(symbol!("v1"));
         let res = parse!("1+2*v1+v1^2+(v2+1)^100").unwrap();
         assert_eq!(exp, res);
     }

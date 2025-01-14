@@ -4076,7 +4076,7 @@ impl<'a, F: Ring, E: Exponent, O: MonomialOrder> IntoIterator
 
 #[cfg(test)]
 mod test {
-    use crate::{atom::AtomCore, domains::integer::Z, parse, symb};
+    use crate::{atom::AtomCore, domains::integer::Z, parse, symbol};
 
     #[test]
     fn mul_packed() {
@@ -4158,10 +4158,10 @@ mod test {
         assert_eq!(
             r.get_vars_ref(),
             &[
-                symb!("v1").into(),
-                symb!("v2").into(),
-                symb!("v4").into(),
-                symb!("v3").into()
+                symbol!("v1").into(),
+                symbol!("v2").into(),
+                symbol!("v4").into(),
+                symbol!("v3").into()
             ]
         );
     }

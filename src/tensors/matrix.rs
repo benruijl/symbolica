@@ -1651,7 +1651,7 @@ mod test {
     use crate::{
         atom::Atom,
         domains::{atom::AtomField, integer::Z, rational::Q},
-        parse, symb,
+        parse, symbol,
         tensors::matrix::{Matrix, Vector},
     };
 
@@ -1890,7 +1890,11 @@ mod test {
             AtomField::new(),
         );
 
-        let b = a.jacobian(&[symb!("x").into(), symb!("y").into(), symb!("z").into()]);
+        let b = a.jacobian(&[
+            symbol!("x").into(),
+            symbol!("y").into(),
+            symbol!("z").into(),
+        ]);
         assert_eq!(
             b.data,
             [

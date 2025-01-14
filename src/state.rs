@@ -22,7 +22,7 @@ use smartstring::alias::String;
 use crate::atom::{FunctionAttribute, NamespacedSymbol, NormalizationFunction};
 use crate::domains::finite_field::Zp64;
 use crate::poly::Variable;
-use crate::wrap_symb;
+use crate::wrap_symbol;
 use crate::{
     atom::{Atom, Symbol},
     coefficient::Coefficient,
@@ -110,7 +110,7 @@ impl State {
         };
 
         for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol_impl(wrap_symb!(x));
+            state.get_symbol_impl(wrap_symbol!(x));
         }
 
         #[cfg(test)]
@@ -135,42 +135,42 @@ impl State {
         use crate::atom::FunctionAttribute;
 
         for i in 0..30 {
-            let _ = self.get_symbol_impl(wrap_symb!(format!("v{}", i)));
+            let _ = self.get_symbol_impl(wrap_symbol!(format!("v{}", i)));
         }
         for i in 0..30 {
-            let _ = self.get_symbol_impl(wrap_symb!(format!("f{}", i)));
+            let _ = self.get_symbol_impl(wrap_symbol!(format!("f{}", i)));
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
-                wrap_symb!(format!("fs{}", i)),
+                wrap_symbol!(format!("fs{}", i)),
                 &[FunctionAttribute::Symmetric],
                 None,
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
-                wrap_symb!(format!("fc{}", i)),
+                wrap_symbol!(format!("fc{}", i)),
                 &[FunctionAttribute::Cyclesymmetric],
                 None,
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
-                wrap_symb!(format!("fa{}", i)),
+                wrap_symbol!(format!("fa{}", i)),
                 &[FunctionAttribute::Antisymmetric],
                 None,
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
-                wrap_symb!(format!("fl{}", i)),
+                wrap_symbol!(format!("fl{}", i)),
                 &[FunctionAttribute::Linear],
                 None,
             );
         }
         for i in 0..5 {
             let _ = self.get_symbol_with_attributes_impl(
-                wrap_symb!(format!("fsl{}", i)),
+                wrap_symbol!(format!("fsl{}", i)),
                 &[FunctionAttribute::Symmetric, FunctionAttribute::Linear],
                 None,
             );
@@ -182,11 +182,11 @@ impl State {
     ///
     /// Example:
     /// ```
-    /// # use symbolica::symb;
+    /// # use symbolica::symbol;
     /// # use symbolica::state::State;
-    /// symb!("f"; Symmetric).unwrap();
+    /// symbol!("f"; Symmetric).unwrap();
     /// unsafe { State::reset(); }
-    /// symb!("f"; Antisymmetric).unwrap();
+    /// symbol!("f"; Antisymmetric).unwrap();
     /// ```
     pub unsafe fn reset() {
         let mut state = STATE.write().unwrap();
@@ -195,7 +195,7 @@ impl State {
         SYMBOL_OFFSET.store(ID_TO_STR.len(), Ordering::Relaxed);
 
         for x in Self::BUILTIN_SYMBOL_NAMES {
-            state.get_symbol_impl(wrap_symb!(x));
+            state.get_symbol_impl(wrap_symbol!(x));
         }
 
         #[cfg(test)]
@@ -233,7 +233,7 @@ impl State {
     /// Get the symbol for a certain name if the name is already registered,
     /// else register it and return a new symbol without attributes.
     ///
-    /// To register a symbol with attributes, use [`symb!_with_attributes`].
+    /// To register a symbol with attributes, use [`symbol!_with_attributes`].
     pub(crate) fn get_symbol(name: NamespacedSymbol) -> Symbol {
         STATE.write().unwrap().get_symbol_impl(name)
     }
@@ -877,7 +877,7 @@ mod tests {
 
     use crate::{
         atom::{Atom, AtomView},
-        parse, symb,
+        parse, symbol,
     };
 
     use super::State;
@@ -893,7 +893,7 @@ mod tests {
 
     #[test]
     fn custom_normalization() {
-        let _real_log = symb!(
+        let _real_log = symbol!(
             "custom_normalization_real_log";;
             Box::new(|input, out| {
                 if let AtomView::Fun(f) = input {

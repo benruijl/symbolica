@@ -1,7 +1,7 @@
 use symbolica::{
     atom::{Atom, AtomCore, AtomView},
     id::{Match, WildcardRestriction},
-    parse, symb,
+    parse, symbol,
 };
 
 fn main() {
@@ -14,7 +14,7 @@ fn main() {
 
     // prepare the pattern restriction `x_ > 1`
     let restrictions = (
-        symb!("x_"),
+        symbol!("x_"),
         WildcardRestriction::Filter(Box::new(|v: &Match| match v {
             Match::Single(AtomView::Num(n)) => !n.is_one() && !n.is_zero(),
             _ => false,

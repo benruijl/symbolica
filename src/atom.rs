@@ -20,9 +20,9 @@
 //! Create a new symbol and use it in an expression:
 //!
 //! ```
-//! use symbolica::{atom::Atom, parse, symb};
+//! use symbolica::{atom::Atom, parse, symbol};
 //!
-//! let x = symb!("x");
+//! let x = symbol!("x");
 //! let expr = Atom::new_var(x) + 1;
 //! let p = parse!("x + 1").unwrap();
 //! assert_eq!(expr, p);
@@ -31,10 +31,10 @@
 //! Define a function with attributes and use it in an expression:
 //!
 //! ```
-//! use symbolica::{fun, parse, symb};
+//! use symbolica::{fun, parse, symbol};
 //! use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
 //!
-//! let f = symb!("f"; Symmetric).unwrap();
+//! let f = symbol!("f"; Symmetric).unwrap();
 //! let expr = fun!(f, 3, 2) + (1, 4);
 //! let p = parse!("f(2,3) + 1/4").unwrap();
 //! assert_eq!(expr, p);
@@ -64,7 +64,7 @@ pub use self::representation::{
 use self::representation::{FunView, RawAtom};
 
 /// A symbol with a namespace, and optional positional data (file and line) of its definition.
-/// Can be created with the [wrap_symb!] macro or by converting from a string that is
+/// Can be created with the [wrap_symbol!] macro or by converting from a string that is
 /// written as `namespace::symbol`.
 pub struct NamespacedSymbol {
     pub namespace: Cow<'static, str>,
@@ -127,7 +127,7 @@ impl TryFrom<&str> for NamespacedSymbol {
 
 // rename to namespace or ns?
 #[macro_export]
-macro_rules! wrap_symb {
+macro_rules! wrap_symbol {
     ($e:literal) => {{
         if let Some(mut s) = $crate::atom::NamespacedSymbol::try_parse_lit($e) {
             s.file = file!().into();
@@ -171,7 +171,7 @@ pub struct DefaultNamespace<'a> {
 
 impl DefaultNamespace<'_> {
     /// Parse a string into a namespaced string.
-    pub fn namespaced_symbol(&self, s: &str) -> NamespacedSymbol {
+    pub fn attach_namespace(&self, s: &str) -> NamespacedSymbol {
         if let Some(mut s) = NamespacedSymbol::try_parse(s) {
             s.file = self.file.clone();
             s.line = self.line;
@@ -252,11 +252,11 @@ pub enum FunctionAttribute {
 /// # Examples
 ///
 /// ```
-/// use symbolica::symb;
+/// use symbolica::symbol;
 ///
-/// let x = symb!("x");
-/// let (x, y) = symb!("x", "y");
-/// let f = symb!("f"; Symmetric).unwrap();
+/// let x = symbol!("x");
+/// let (x, y) = symbol!("x", "y");
+/// let f = symbol!("f"; Symmetric).unwrap();
 /// ```
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Symbol {
@@ -293,9 +293,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::{atom::Symbol, wrap_symb};
+    /// use symbolica::{atom::Symbol, wrap_symbol};
     ///
-    /// let x = Symbol::new(wrap_symb!("x"));
+    /// let x = Symbol::new(wrap_symbol!("x"));
     /// ```
     pub fn new(name: NamespacedSymbol) -> Symbol {
         State::get_symbol(name)
@@ -312,9 +312,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::{atom::{Symbol, FunctionAttribute}, wrap_symb};
+    /// use symbolica::{atom::{Symbol, FunctionAttribute}, wrap_symbol};
     ///
-    /// let f = Symbol::new_with_attributes(wrap_symb!("f"), &[FunctionAttribute::Symmetric]).unwrap();
+    /// let f = Symbol::new_with_attributes(wrap_symbol!("f"), &[FunctionAttribute::Symmetric]).unwrap();
     /// ```
     pub fn new_with_attributes(
         name: NamespacedSymbol,
@@ -335,7 +335,7 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::{atom::{AtomView, Symbol, FunctionAttribute, NormalizationFunction}, wrap_symb};
+    /// use symbolica::{atom::{AtomView, Symbol, FunctionAttribute, NormalizationFunction}, wrap_symbol};
     ///
     /// let normalize_fn: NormalizationFunction = Box::new(|view, out| {
     ///     // Example normalization logic that sets odd-length function to 0
@@ -351,7 +351,7 @@ impl Symbol {
     ///     }
     /// });
     ///
-    /// let f = Symbol::new_with_attributes_and_function(wrap_symb!("f"), &[], normalize_fn).unwrap();
+    /// let f = Symbol::new_with_attributes_and_function(wrap_symbol!("f"), &[], normalize_fn).unwrap();
     /// ```
     pub fn new_with_attributes_and_function(
         name: NamespacedSymbol,
@@ -366,9 +366,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::symb;
+    /// use symbolica::symbol;
     ///
-    /// let x = symb!("test::x");
+    /// let x = symbol!("test::x");
     /// assert_eq!(x.get_name(), "test::x");
     /// ```
     pub fn get_name(&self) -> &str {
@@ -380,9 +380,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::symb;
+    /// use symbolica::symbol;
     ///
-    /// let x = symb!("x");
+    /// let x = symbol!("x");
     /// println!("id = {}", x.get_id());
     /// ```
     pub fn get_id(&self) -> u32 {
@@ -393,9 +393,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::symb;
+    /// use symbolica::symbol;
     ///
-    /// let x = symb!("test::x");
+    /// let x = symbol!("test::x");
     /// assert_eq!(x.get_namespace(), "test");
     /// ```
     pub fn get_namespace(&self) -> &'static str {
@@ -408,12 +408,12 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::symb;
+    /// use symbolica::symbol;
     ///
-    /// let x = symb!("x");
-    /// let x_ = symb!("x_");
-    /// let x__ = symb!("x__");
-    /// let x___ = symb!("x___");
+    /// let x = symbol!("x");
+    /// let x_ = symbol!("x_");
+    /// let x__ = symbol!("x__");
+    /// let x___ = symbol!("x___");
     /// assert_eq!(x.get_wildcard_level(), 0);
     /// assert_eq!(x_.get_wildcard_level(), 1);
     /// assert_eq!(x__.get_wildcard_level(), 2);
@@ -428,9 +428,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::symb;
+    /// use symbolica::symbol;
     ///
-    /// let f = symb!("f"; Symmetric).unwrap();
+    /// let f = symbol!("f"; Symmetric).unwrap();
     /// assert!(f.is_symmetric());
     /// ```
     pub fn is_symmetric(&self) -> bool {
@@ -442,9 +442,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::symb;
+    /// use symbolica::symbol;
     ///
-    /// let f = symb!("f"; Antisymmetric).unwrap();
+    /// let f = symbol!("f"; Antisymmetric).unwrap();
     /// assert!(f.is_antisymmetric());
     /// ```
     pub fn is_antisymmetric(&self) -> bool {
@@ -456,9 +456,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::symb;
+    /// use symbolica::symbol;
     ///
-    /// let f = symb!("f"; Cyclesymmetric).unwrap();
+    /// let f = symbol!("f"; Cyclesymmetric).unwrap();
     /// assert!(f.is_cyclesymmetric());
     /// ```
     pub fn is_cyclesymmetric(&self) -> bool {
@@ -470,9 +470,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::symb;
+    /// use symbolica::symbol;
     ///
-    /// let f = symb!("f"; Linear).unwrap();
+    /// let f = symbol!("f"; Linear).unwrap();
     /// assert!(f.is_linear());
     /// ```
     pub fn is_linear(&self) -> bool {
@@ -1214,10 +1214,10 @@ impl Atom {
 ///
 /// For example:
 /// ```
-/// # use symbolica::symb;
+/// # use symbolica::symbol;
 /// # use symbolica::atom::{Atom, AtomCore, FunctionBuilder};
 /// # fn main() {
-/// let f_id = symb!("f"; Symmetric).unwrap();
+/// let f_id = symbol!("f"; Symmetric).unwrap();
 /// let fb = FunctionBuilder::new(f_id);
 /// let a = fb
 ///     .add_arg(&Atom::new_num(3))
@@ -1324,8 +1324,8 @@ impl<'a, T: Into<Coefficient> + Clone> FunctionArgument for T {
 /// # Examples
 ///
 /// ```
-/// use symbolica::{atom::Atom, atom::Symbol, fun, symb, parse};
-/// let f_id = symb!("f");
+/// use symbolica::{atom::Atom, atom::Symbol, fun, symbol, parse};
+/// let f_id = symbol!("f");
 /// let f = fun!(f_id, Atom::new_num(3), parse!("x").unwrap());
 /// ```
 #[macro_export]
@@ -1347,10 +1347,10 @@ macro_rules! fun {
 ///
 /// For example:
 /// ```
-/// use symbolica::symb;
-/// let x = symb!("x");
-/// let (x, y, z) = symb!("x", "y", "z");
-/// let x_remote = symb!("remote::x");
+/// use symbolica::symbol;
+/// let x = symbol!("x");
+/// let (x, y, z) = symbol!("x", "y", "z");
+/// let x_remote = symbol!("remote::x");
 /// ```
 ///
 /// Since no attributes were specified in the example above, the symbols
@@ -1362,24 +1362,24 @@ macro_rules! fun {
 /// are [Symmetric](FunctionAttribute::Symmetric), [Antisymmetric](FunctionAttribute::Antisymmetric),
 /// [Cyclesymmetric](FunctionAttribute::Cyclesymmetric), and [Linear](FunctionAttribute::Linear).
 /// ```
-/// use symbolica::symb;
-/// let x = symb!("x"; Symmetric, Linear);
-/// let (x, y, z) = symb!("x", "y", "z"; Symmetric); // define all as symmetric
+/// use symbolica::symbol;
+/// let x = symbol!("x"; Symmetric, Linear);
+/// let (x, y, z) = symbol!("x", "y", "z"; Symmetric); // define all as symmetric
 /// ```
 ///
 /// Explicitly specifying a symbol without attributes:
 /// ```
-/// use symbolica::symb;
-/// let x = symb!("x";);
+/// use symbolica::symbol;
+/// let x = symbol!("x";);
 /// ```
 /// will throw an error if the symbol was previously defined with attributes.
 ///
 /// You can specify a normalization function for the symbol, following its
 /// attributes with a `;`.
 /// ```
-/// use symbolica::symb;
+/// use symbolica::symbol;
 /// use symbolica::atom::AtomView;
-/// let x = symb!("f";; Box::new(|f, out| {
+/// let x = symbol!("f";; Box::new(|f, out| {
 ///     if let AtomView::Fun(ff) = f {
 ///         if ff.get_nargs() % 2 == 1 {
 ///            out.to_num(0.into());
@@ -1390,21 +1390,21 @@ macro_rules! fun {
 /// }));
 /// ```
 #[macro_export]
-macro_rules! symb {
+macro_rules! symbol {
     ($id: expr) => {
-        $crate::atom::Symbol::new($crate::wrap_symb!($id))
+        $crate::atom::Symbol::new($crate::wrap_symbol!($id))
     };
     ($id: expr; $($attr: ident),*) => {
-        $crate::atom::Symbol::new_with_attributes($crate::wrap_symb!($id), &[$($crate::atom::FunctionAttribute::$attr,)*])
+        $crate::atom::Symbol::new_with_attributes($crate::wrap_symbol!($id), &[$($crate::atom::FunctionAttribute::$attr,)*])
     };
     ($id: expr; $($attr: ident),*; $norm: expr) => {
-        $crate::atom::Symbol::new_with_attributes_and_function($crate::wrap_symb!($id), &[$($crate::atom::FunctionAttribute::$attr,)*], $norm)
+        $crate::atom::Symbol::new_with_attributes_and_function($crate::wrap_symbol!($id), &[$($crate::atom::FunctionAttribute::$attr,)*], $norm)
     };
     ($($id: expr),*) => {
         {
             (
                 $(
-                    $crate::atom::Symbol::new($crate::wrap_symb!($id)),
+                    $crate::atom::Symbol::new($crate::wrap_symbol!($id)),
                 )+
             )
         }
@@ -1419,7 +1419,7 @@ macro_rules! symb {
 
             (
                 $(
-                    $crate::atom::Symbol::new_with_attributes($crate::wrap_symb!($id), gen_attr!()),
+                    $crate::atom::Symbol::new_with_attributes($crate::wrap_symbol!($id), gen_attr!()),
                 )+
             )
         }
@@ -1434,7 +1434,7 @@ macro_rules! symb {
 
             (
                 $(
-                    $crate::atom::Symbol::new_with_attributes_and_function($crate::wrap_symb!($id), gen_attr!(), $norm),
+                    $crate::atom::Symbol::new_with_attributes_and_function($crate::wrap_symbol!($id), gen_attr!(), $norm),
                 )+
             )
         }
@@ -2085,7 +2085,7 @@ mod test {
         );
         assert_eq!(
             x.get_all_symbols(true),
-            [symb!("v1"), symb!("v2"), symb!("f1")]
+            [symbol!("v1"), symbol!("v2"), symbol!("f1")]
                 .into_iter()
                 .collect(),
         );
@@ -2096,7 +2096,7 @@ mod test {
     fn composition() {
         let v1 = parse!("v1").unwrap();
         let v2 = parse!("v2").unwrap();
-        let f1_id = symb!("f1");
+        let f1_id = symbol!("f1");
 
         let f1 = fun!(f1_id, v1, v2, Atom::new_num(2));
 

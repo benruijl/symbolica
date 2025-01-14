@@ -3660,7 +3660,7 @@ mod test {
             ConditionResult, MatchSettings, PatternOrMap, PatternRestriction, Replacement,
             WildcardRestriction,
         },
-        parse, symb,
+        parse, symbol,
     };
 
     #[test]
@@ -3730,10 +3730,10 @@ mod test {
 
     #[test]
     fn map_rhs() {
-        let v1 = symb!("v1_");
-        let v2 = symb!("v2_");
-        let v4 = symb!("v4_");
-        let v5 = symb!("v5_");
+        let v1 = symbol!("v1_");
+        let v2 = symbol!("v2_");
+        let v4 = symbol!("v4_");
+        let v5 = symbol!("v5_");
         let a = parse!("v1(2,1)*v2(3,1)").unwrap();
         let p = parse!("v1_(v2_,v3_)*v4_(v5_,v3_)").unwrap().into();
         let rhs = PatternOrMap::Map(Box::new(move |m| {
@@ -3759,7 +3759,7 @@ mod test {
         let rhs1 = parse!("f(v1_ - 1)").unwrap().to_pattern();
 
         let rest = (
-            symb!("v1_"),
+            symbol!("v1_"),
             WildcardRestriction::Filter(Box::new(|x| {
                 let n: Result<i64, _> = x.to_atom().try_into();
                 if let Ok(y) = n {

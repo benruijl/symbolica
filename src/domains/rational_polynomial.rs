@@ -1296,7 +1296,7 @@ mod test {
     use crate::{
         atom::AtomCore,
         domains::{integer::Z, rational::Q, rational_polynomial::RationalPolynomial, Ring},
-        parse, symb,
+        parse, symbol,
     };
 
     use super::RationalPolynomialField;
@@ -1333,7 +1333,7 @@ mod test {
             .to_rational_polynomial::<_, _, u8>(
                 &Q,
                 &Z,
-                Some(Arc::new(vec![symb!("v1").into(), symb!("v2").into()])),
+                Some(Arc::new(vec![symbol!("v1").into(), symbol!("v2").into()])),
             );
 
         let (r, l) = p.integrate(0);
@@ -1353,7 +1353,7 @@ mod test {
             .to_rational_polynomial::<_, _, u8>(
                 &Q,
                 &Z,
-                Some(Arc::new(vec![symb!("v1").into(), symb!("v2").into()])),
+                Some(Arc::new(vec![symbol!("v1").into(), symbol!("v2").into()])),
             );
 
         let (r, l) = p.integrate(0);
@@ -1433,7 +1433,7 @@ mod test {
         .to_rational_polynomial::<_, _, u8>(&Q, &Z, None);
 
         let (r, mut l) = p.integrate(0);
-        let new_var = symb!("v2");
+        let new_var = symbol!("v2");
 
         // root sum in the answer, rename the temporary variable
         // TODO: add rename function

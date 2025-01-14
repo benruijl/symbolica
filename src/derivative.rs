@@ -738,12 +738,12 @@ impl Sub<&Atom> for &Series<AtomField> {
 mod test {
     use crate::{
         atom::{Atom, AtomCore},
-        parse, symb,
+        parse, symbol,
     };
 
     #[test]
     fn derivative() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
         let inputs = [
             "(1+2*v1)^(5+v1)",
             "log(2*v1) + exp(3*v1) + sin(4*v1) + cos(y*v1)",
@@ -765,7 +765,7 @@ mod test {
 
     #[test]
     fn series() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
 
         let input = parse!("exp(v1^2+1)*log(v1+3)/v1/(v1+1)").unwrap();
         let t = input
@@ -782,7 +782,7 @@ mod test {
 
     #[test]
     fn series_shift() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
         let input = parse!("1/(v1+1)").unwrap();
         let t = input
             .series(v1, Atom::new_num(-1).as_view(), 5.into(), true)
@@ -795,7 +795,7 @@ mod test {
 
     #[test]
     fn series_spurious_pole() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
         let input = parse!("(1-cos(v1))/sin(v1)").unwrap();
         let t = input
             .series(v1, Atom::new_num(0).as_view(), 5.into(), true)
@@ -808,7 +808,7 @@ mod test {
 
     #[test]
     fn series_logx() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
         let input = parse!("log(v1)*(1+v1)").unwrap();
         let t = input
             .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
@@ -821,7 +821,7 @@ mod test {
 
     #[test]
     fn series_sqrt() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
         let input = parse!("(v1^3+v1+1)^(1/2)").unwrap();
         let t = input
             .series(v1, Atom::new_num(0).as_view(), 4.into(), true)
@@ -834,7 +834,7 @@ mod test {
 
     #[test]
     fn series_fractions() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
         let input = parse!("1/v1^5").unwrap();
 
         let t = input
@@ -848,7 +848,7 @@ mod test {
 
     #[test]
     fn series_zero() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
 
         let input = parse!("1/v1^2+1/v1+v1").unwrap();
         let t = input
@@ -860,7 +860,7 @@ mod test {
 
     #[test]
     fn series_poles() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
         let input = parse!("1/(v1^10+v1^20)").unwrap();
 
         let t = input
@@ -873,7 +873,7 @@ mod test {
 
     #[test]
     fn series_user_function() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
 
         let input = parse!("f(exp(v1),sin(v1))").unwrap();
         let t = input
@@ -891,7 +891,7 @@ mod test {
 
     #[test]
     fn series_exp_log() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
 
         let input = parse!("1+2*log(v1^4)").unwrap();
         let t = input
@@ -905,7 +905,7 @@ mod test {
 
     #[test]
     fn series_sub_atom() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
 
         let input = parse!("1/(1-v1)").unwrap();
         let t = input
@@ -920,7 +920,7 @@ mod test {
 
     #[test]
     fn series_div_atom() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
 
         let input = parse!("v1").unwrap();
         let t = input
@@ -935,7 +935,7 @@ mod test {
 
     #[test]
     fn series_relative_order() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
 
         let input = parse!("exp(v1)/v1-1/6*v1^2").unwrap();
         let t = input
@@ -948,7 +948,7 @@ mod test {
 
     #[test]
     fn series_truncate() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
 
         let input = parse!("v1^10").unwrap();
         let t = input
@@ -964,7 +964,7 @@ mod test {
 
     #[test]
     fn series_empty() {
-        let v1 = symb!("v1");
+        let v1 = symbol!("v1");
 
         let input = parse!("v1").unwrap();
         let t = input

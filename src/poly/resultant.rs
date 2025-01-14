@@ -213,7 +213,7 @@ mod test {
         FromNumeratorAndDenominator, RationalPolynomial, RationalPolynomialField,
     };
     use crate::poly::polynomial::MultivariatePolynomial;
-    use crate::{parse, symb};
+    use crate::{parse, symbol};
 
     #[test]
     fn resultant() {
@@ -231,7 +231,7 @@ mod test {
 
     #[test]
     fn res_methods() {
-        let (x, y, z) = symb!("v1", "v2", "v3");
+        let (x, y, z) = symbol!("v1", "v2", "v3");
         let vars = Arc::new(vec![x.into(), y.into(), z.into()]);
         let a = parse!("2v1^2")
             .unwrap()

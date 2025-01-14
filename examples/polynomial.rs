@@ -6,13 +6,13 @@ use symbolica::{
         rational::Q,
     },
     poly::polynomial::MultivariatePolynomial,
-    symb,
+    symbol,
 };
 
 fn main() {
-    let x = symb!("x");
-    let y = symb!("y");
-    let z = symb!("z");
+    let x = symbol!("x");
+    let y = symbol!("y");
+    let z = symbol!("z");
     let vars = Arc::new(vec![x.into(), y.into(), z.into()]);
     let mut a = MultivariatePolynomial::<_, u8>::new(&Q, Some(3), vars.clone());
     a.append_monomial((3, 4).into(), &[1, 0, 0]);

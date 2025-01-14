@@ -1,11 +1,11 @@
 use std::io::Cursor;
 
 use smartstring::SmartString;
-use symbolica::{atom::Atom, parse, state::State, symb};
+use symbolica::{atom::Atom, parse, state::State, symbol};
 
 fn conflict() {
-    symb!("x", "y");
-    symb!("f"; Symmetric).unwrap();
+    symbol!("x", "y");
+    symbol!("f"; Symmetric).unwrap();
 
     let a = parse!("f(x, y)*x^2").unwrap();
 
@@ -18,9 +18,9 @@ fn conflict() {
     // reset the state and create a conflict
     unsafe { State::reset() };
 
-    symb!("y");
-    symb!("x");
-    symb!("f");
+    symbol!("y");
+    symbol!("x");
+    symbol!("f");
 
     let state_map = State::import(
         &mut Cursor::new(&state_export),
@@ -36,7 +36,7 @@ fn conflict() {
 
 #[test]
 fn rational_rename() {
-    symb!("x");
+    symbol!("x");
 
     let a = parse!("x^2*coeff(x)").unwrap();
 
@@ -49,7 +49,7 @@ fn rational_rename() {
     // reset the state and create a conflict
     unsafe { State::reset() };
 
-    symb!("y");
+    symbol!("y");
 
     let state_map = State::import(&mut Cursor::new(&state_export), None).unwrap();
 

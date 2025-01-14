@@ -9,14 +9,14 @@ use symbolica::{
     },
     parse,
     poly::Variable,
-    symb,
+    symbol,
     tensors::matrix::Matrix,
 };
 
 fn solve() {
-    let x = symb!("x").into();
-    let y = symb!("y").into();
-    let z = symb!("z").into();
+    let x = symbol!("x").into();
+    let y = symbol!("y").into();
+    let z = symbol!("z").into();
     let eqs = ["c*x + f(c)*y + z - 1", "x + c*y + z/c - 2", "(c-1)x + c*z"];
 
     let system: Vec<_> = eqs.iter().map(|e| parse!(e).unwrap()).collect();
@@ -37,7 +37,7 @@ fn solve_from_matrix() {
         println!("\t ({}).x\u{20D7} = {}", r.join(","), v);
     }
 
-    let var_map = Arc::new(vec![Variable::Symbol(symb!("c"))]);
+    let var_map = Arc::new(vec![Variable::Symbol(symbol!("c"))]);
 
     let system_rat: Vec<RationalPolynomial<_, u8>> = system
         .iter()

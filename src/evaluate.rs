@@ -4215,14 +4215,14 @@ mod test {
         domains::{float::Float, rational::Rational},
         evaluate::{EvaluationFn, FunctionMap, OptimizationSettings},
         id::ConditionResult,
-        parse, symb,
+        parse, symbol,
     };
 
     #[test]
     fn evaluate() {
-        let x = symb!("v1");
-        let f = symb!("f1");
-        let g = symb!("f2");
+        let x = symbol!("v1");
+        let f = symbol!("f1");
+        let g = symbol!("f2");
         let p0 = parse!("v2(0)").unwrap();
         let a = parse!("v1*cos(v1) + f1(v1, 1)^2 + f2(f2(v1)) + v2(0)").unwrap();
 
@@ -4258,7 +4258,7 @@ mod test {
 
     #[test]
     fn arb_prec() {
-        let x = symb!("v1");
+        let x = symbol!("v1");
         let a = parse!("128731/12893721893721 + v1").unwrap();
 
         let mut const_map = HashMap::default();
@@ -4292,27 +4292,32 @@ mod test {
 
         let mut fn_map = FunctionMap::new();
 
-        fn_map.add_constant(Atom::new_var(symb!("pi")), Rational::from((22, 7)).into());
+        fn_map.add_constant(Atom::new_var(symbol!("pi")), Rational::from((22, 7)).into());
         fn_map
             .add_tagged_function(
-                symb!("p"),
+                symbol!("p"),
                 vec![Atom::new_num(1).into()],
                 "p1".to_string(),
-                vec![symb!("z")],
+                vec![symbol!("z")],
                 p1,
             )
             .unwrap();
         fn_map
-            .add_function(symb!("f"), "f".to_string(), vec![symb!("y"), symb!("z")], f)
+            .add_function(
+                symbol!("f"),
+                "f".to_string(),
+                vec![symbol!("y"), symbol!("z")],
+                f,
+            )
             .unwrap();
         fn_map
-            .add_function(symb!("g"), "g".to_string(), vec![symb!("y")], g)
+            .add_function(symbol!("g"), "g".to_string(), vec![symbol!("y")], g)
             .unwrap();
         fn_map
-            .add_function(symb!("h"), "h".to_string(), vec![symb!("y")], h)
+            .add_function(symbol!("h"), "h".to_string(), vec![symbol!("y")], h)
             .unwrap();
         fn_map
-            .add_function(symb!("i"), "i".to_string(), vec![symb!("y")], i)
+            .add_function(symbol!("i"), "i".to_string(), vec![symbol!("y")], i)
             .unwrap();
 
         let params = vec![parse!("x").unwrap()];

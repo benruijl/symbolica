@@ -879,7 +879,7 @@ mod test {
         parse,
         printer::PrintOptions,
         state::Workspace,
-        symb,
+        symbol,
         transformer::StatsOptions,
     };
 
@@ -894,8 +894,8 @@ mod test {
             Transformer::execute_chain(
                 p.as_view(),
                 &[
-                    Transformer::Expand(Some(Atom::new_var(symb!("v1"))), false),
-                    Transformer::Derivative(symb!("v1")),
+                    Transformer::Expand(Some(Atom::new_var(symbol!("v1"))), false),
+                    Transformer::Derivative(symbol!("v1")),
                 ],
                 ws,
                 &mut out,
@@ -936,7 +936,7 @@ mod test {
                 p.as_view(),
                 &[
                     Transformer::Product,
-                    Transformer::Series(symb!("v1"), Atom::new_num(1), 3.into(), true),
+                    Transformer::Series(symbol!("v1"), Atom::new_num(1), 3.into(), true),
                 ],
                 ws,
                 &mut out,
@@ -966,7 +966,7 @@ mod test {
                     Transformer::Sort,
                     Transformer::Deduplicate,
                     Transformer::Map(Box::new(|x, out| {
-                        let mut f = FunctionBuilder::new(symb!("f1"));
+                        let mut f = FunctionBuilder::new(symbol!("f1"));
                         f = f.add_arg(x);
                         *out = f.finish();
                         Ok(())
@@ -1002,7 +1002,7 @@ mod test {
                             parse!("x_").unwrap().to_pattern(),
                             parse!("x_-1").unwrap().to_pattern().into(),
                             (
-                                symb!("x_"),
+                                symbol!("x_"),
                                 WildcardRestriction::Filter(Box::new(|x| {
                                     x != &Match::Single(Atom::new_num(0).as_view())
                                 })),
@@ -1026,7 +1026,7 @@ mod test {
     fn linearize() {
         let p = parse!("f1(v1+v2,4*v3*v4+3*v4/v3)").unwrap();
 
-        let out = Transformer::Linearize(Some(vec![symb!("v3")]))
+        let out = Transformer::Linearize(Some(vec![symbol!("v3")]))
             .execute(p.as_view())
             .unwrap();
 

@@ -2,9 +2,9 @@
 //!
 //! # Examples
 //! ```
-//! use symbolica::{atom::{Atom, AtomCore}, parse, symb};
+//! use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
 //!
-//! let x = symb!("x");
+//! let x = symbol!("x");
 //! let a = parse!("(1-cos(x))/sin(x)").unwrap();
 //!
 //! let out = a
@@ -42,9 +42,9 @@ use super::Variable;
 ///
 /// A series can be constructed from an [Atom]:
 /// ```
-/// use symbolica::{atom::{Atom, AtomCore}, parse, symb};
+/// use symbolica::{atom::{Atom, AtomCore}, parse, symbol};
 ///
-/// let x = symb!("x");
+/// let x = symbol!("x");
 /// let a = parse!("(1-cos(x))/sin(x)").unwrap();
 ///
 /// let out = a

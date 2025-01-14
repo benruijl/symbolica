@@ -621,7 +621,7 @@ mod test {
         id::WildcardRestriction,
         parse,
         streaming::{TermStreamer, TermStreamerConfig},
-        symb,
+        symbol,
     };
 
     #[test]
@@ -674,7 +674,13 @@ mod test {
             x.replace_all(
                 &pattern,
                 &rhs,
-                Some(&(symb!("v1_"), WildcardRestriction::IsAtomType(AtomType::Var)).into()),
+                Some(
+                    &(
+                        symbol!("v1_"),
+                        WildcardRestriction::IsAtomType(AtomType::Var),
+                    )
+                        .into(),
+                ),
                 None,
             )
             .expand()

@@ -50,10 +50,10 @@ use super::{
 /// use symbolica::{
 ///     atom::{Atom, AtomCore, Symbol},
 ///     domains::{algebraic_number::AlgebraicExtension, finite_field::Zp, rational::Q, Ring},
-///     symb,
+///     symbol,
 /// };
 ///
-/// let field = AlgebraicExtension::galois_field(Zp::new(17), 4, symb!("x0").into());
+/// let field = AlgebraicExtension::galois_field(Zp::new(17), 4, symbol!("x0").into());
 /// ```
 ///
 // TODO: make special case for degree two and three and hardcode the multiplication table
@@ -803,7 +803,7 @@ mod tests {
     use crate::domains::integer::Z;
     use crate::domains::rational::Q;
     use crate::domains::Ring;
-    use crate::{parse, symb};
+    use crate::{parse, symbol};
 
     #[test]
     fn gcd_number_field() -> Result<(), String> {
@@ -829,12 +829,13 @@ mod tests {
     #[test]
     fn galois() {
         for j in 1..10 {
-            let _ = AlgebraicExtension::galois_field(Z2, j, symb!("v1").into());
+            let _ = AlgebraicExtension::galois_field(Z2, j, symbol!("v1").into());
         }
 
         for i in PrimeIteratorU64::new(2).take(20) {
             for j in 1..10 {
-                let _ = AlgebraicExtension::galois_field(Zp::new(i as u32), j, symb!("v1").into());
+                let _ =
+                    AlgebraicExtension::galois_field(Zp::new(i as u32), j, symbol!("v1").into());
             }
         }
     }

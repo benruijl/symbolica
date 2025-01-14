@@ -223,7 +223,7 @@ define_formatters!(
 /// # Examples
 ///
 /// ```
-/// use symbolica::atom::{Atom, AtomCore};
+/// use symbolica::{atom::AtomCore, parse};
 /// use symbolica::printer::PrintOptions;
 /// let a = parse!("x + y").unwrap();
 /// println!("{}", a.printer(PrintOptions::latex()));

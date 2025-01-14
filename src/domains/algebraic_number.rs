@@ -31,6 +31,7 @@ use super::{
 /// use symbolica::{
 ///     atom::{Atom, AtomCore},
 ///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring},
+///     parse,
 /// };
 ///
 /// let extension = AlgebraicExtension::new(parse!("x^2-2").unwrap().to_polynomial(&Q, None));
@@ -49,6 +50,7 @@ use super::{
 /// use symbolica::{
 ///     atom::{Atom, AtomCore, Symbol},
 ///     domains::{algebraic_number::AlgebraicExtension, finite_field::Zp, rational::Q, Ring},
+///     symb,
 /// };
 ///
 /// let field = AlgebraicExtension::galois_field(Zp::new(17), 4, symb!("x0").into());
@@ -374,6 +376,7 @@ impl<R: Ring> std::fmt::Display for AlgebraicExtension<R> {
 /// use symbolica::{
 ///     atom::{Atom, AtomCore},
 ///     domains::{algebraic_number::AlgebraicExtension, rational::Q, Ring},
+///     parse,
 /// };
 ///
 /// let extension = AlgebraicExtension::new(parse!("x^2-2").unwrap().to_polynomial(&Q, None));

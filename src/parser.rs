@@ -15,7 +15,7 @@ use smallvec::SmallVec;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::{
-    atom::{Atom, NamespacedString},
+    atom::{Atom, DefaultNamespace},
     coefficient::{Coefficient, ConvertToRing},
     domains::{float::Float, integer::Integer, Ring},
     poly::{polynomial::MultivariatePolynomial, PositiveExponent, Variable},
@@ -378,7 +378,7 @@ impl Token {
     /// Parse the token into an atom.
     pub fn to_atom(
         &self,
-        namespace: &NamespacedString,
+        namespace: &DefaultNamespace,
         workspace: &Workspace,
     ) -> Result<Atom, String> {
         let mut atom = workspace.new_atom();
@@ -398,7 +398,7 @@ impl Token {
     /// Parse the token into the atom `out`.
     fn to_atom_with_output_no_norm(
         &self,
-        namespace: &NamespacedString,
+        namespace: &DefaultNamespace,
         state: &mut State,
         workspace: &Workspace,
         out: &mut Atom,

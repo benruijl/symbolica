@@ -121,7 +121,7 @@ impl<'a, R: ReadableNamedStream> Iterator for TermInputStream<'a, R> {
 /// ```
 /// # use std::io::BufWriter;
 /// # use std::fs::File;
-/// use symbolica::atom::{Atom, AtomCore};
+/// use symbolica::{atom::AtomCore, parse};
 /// use symbolica::streaming::TermStreamer;
 /// let input = parse!("(x+1)*y + (y+1)^2*z").unwrap();
 ///

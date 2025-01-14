@@ -6,11 +6,11 @@
 //! # Examples
 //!
 //! ```
-//! use symbolica::{atom::{Atom, AtomCore}, id::Pattern};
+//! use symbolica::{atom::AtomCore, id::Pattern, parse};
 //!
 //! let expr = parse!("f(1,2,x) + f(1,2,3)").unwrap();
-//! let pat = parse!("f(1,2,y_)").unwrap().into();
-//! let rhs = parse!("f(1,2,y_+1)").unwrap().into();
+//! let pat = parse!("f(1,2,y_)").unwrap().into().to_pattern();
+//! let rhs = parse!("f(1,2,y_+1)").unwrap().into().to_pattern();
 //!
 //! let out = expr.replace_all(&pat, &rhs, None, None);
 //! assert_eq!(out, parse!("f(1,2,x+1)+f(1,2,4)").unwrap());
@@ -36,14 +36,8 @@ use crate::{
 /// # Examples
 /// Patterns can be created from atoms:
 /// ```
-/// # use symbolica::atom::{Atom, AtomCore};
+/// # use symbolica::{atom::AtomCore, parse};
 /// parse!("x_+1").unwrap().to_pattern();
-/// ```
-///
-/// or by directly parsing them:
-/// ```
-/// # use symbolica::id::Pattern;
-/// parse!("x_+1").unwrap().into();
 /// ```
 #[derive(Clone)]
 pub enum Pattern {

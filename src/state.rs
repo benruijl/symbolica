@@ -182,11 +182,11 @@ impl State {
     ///
     /// Example:
     /// ```
-    /// # use symbolica::atom::{Symbol, FunctionAttribute};
+    /// # use symbolica::symb;
     /// # use symbolica::state::State;
-    /// symb!_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+    /// symb!("f"; Symmetric).unwrap();
     /// unsafe { State::reset(); }
-    /// symb!_with_attributes("f", &[FunctionAttribute::Antisymmetric]).unwrap();
+    /// symb!("f"; Antisymmetric).unwrap();
     /// ```
     pub unsafe fn reset() {
         let mut state = STATE.write().unwrap();

@@ -9,7 +9,7 @@
 //! Parse a new expression and expand it:
 //!
 //! ```
-//! use symbolica::atom::{Atom, AtomCore};
+//! use symbolica::{atom::AtomCore, parse};
 //!
 //! let a = parse!("(x+1)^2").unwrap();
 //! let b = a.expand();
@@ -20,7 +20,7 @@
 //! Create a new symbol and use it in an expression:
 //!
 //! ```
-//! use symbolica::atom::{Symbol, Atom};
+//! use symbolica::{atom::Atom, parse, symb};
 //!
 //! let x = symb!("x");
 //! let expr = Atom::new_var(x) + 1;
@@ -31,10 +31,10 @@
 //! Define a function with attributes and use it in an expression:
 //!
 //! ```
-//! use symbolica::fun;
+//! use symbolica::{fun, parse, symb};
 //! use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
 //!
-//! let f = symb!_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+//! let f = symb!("f"; Symmetric).unwrap();
 //! let expr = fun!(f, 3, 2) + (1, 4);
 //! let p = parse!("f(2,3) + 1/4").unwrap();
 //! assert_eq!(expr, p);
@@ -162,14 +162,14 @@ macro_rules! wrap_symb {
 
 /// A string representation of an expression with a namespace, and optional positional data (file and line).
 /// Can be created with the [wrap_input!] macro.
-pub struct NamespacedString<'a> {
+pub struct DefaultNamespace<'a> {
     pub namespace: Cow<'static, str>,
     pub data: &'a str,
     pub file: Cow<'static, str>,
     pub line: usize,
 }
 
-impl NamespacedString<'_> {
+impl DefaultNamespace<'_> {
     /// Parse a string into a namespaced string.
     pub fn namespaced_symbol(&self, s: &str) -> NamespacedSymbol {
         if let Some(mut s) = NamespacedSymbol::try_parse(s) {
@@ -191,9 +191,21 @@ impl NamespacedString<'_> {
 macro_rules! wrap_input {
     ($e:expr) => {{
         let ns = env!("CARGO_CRATE_NAME");
-        $crate::atom::NamespacedString {
+        $crate::atom::DefaultNamespace {
             data: $e.as_ref(),
             namespace: ns.into(),
+            file: file!().into(),
+            line: line!() as usize,
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! with_default_namespace {
+    ($e:expr, $namespace: expr) => {{
+        $crate::atom::DefaultNamespace {
+            data: $e.as_ref(),
+            namespace: $namespace.into(),
             file: file!().into(),
             line: line!() as usize,
         }
@@ -240,27 +252,11 @@ pub enum FunctionAttribute {
 /// # Examples
 ///
 /// ```
-/// use symbolica::atom::{Symbol, FunctionAttribute};
+/// use symbolica::symb;
 ///
 /// let x = symb!("x");
-/// let f = symb!_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
-/// ```
-///
-/// Definition through the [crate::symb!] macro:
-/// ```
-/// use symbolica::symb;
-/// let (x, y, z) = symb!("x", "y", "z");
-/// ```
-///
-/// Or with attributes:
-/// ```
-/// use symbolica::symb_with_attr;
-/// let x = symb_with_attr!("a", FunctionAttribute::Symmetric).unwrap();
-/// ```
-/// Or with attributes and a normalization function:
-/// ```
-/// use symbolica::symb_with_norm_attr;
-/// let x = symb_with_norm_attr!("a", FunctionAttribute::Symmetric).unwrap();
+/// let x, y = symb!("x", "y");
+/// let f = symb!("f"; Symmetric).unwrap();
 /// ```
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Symbol {
@@ -370,7 +366,7 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::atom::Symbol;
+    /// use symbolica::symb;
     ///
     /// let x = symb!("x");
     /// assert_eq!(x.get_name(), "x");
@@ -384,7 +380,7 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::atom::Symbol;
+    /// use symbolica::symb;
     ///
     /// let x = symb!("x");
     /// println!("id = {}", x.get_id());
@@ -404,7 +400,7 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::atom::Symbol;
+    /// use symbolica::symb;
     ///
     /// let x = symb!("x");
     /// let x_ = symb!("x_");
@@ -424,9 +420,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::atom::{Symbol, FunctionAttribute};
+    /// use symbolica::::symb;
     ///
-    /// let f = symb!_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+    /// let f = symb!("f"; Symmetric).unwrap();
     /// assert!(f.is_symmetric());
     /// ```
     pub fn is_symmetric(&self) -> bool {
@@ -438,9 +434,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::atom::{Symbol, FunctionAttribute};
+    /// use symbolica::::symb;
     ///
-    /// let f = symb!_with_attributes("f", &[FunctionAttribute::Antisymmetric]).unwrap();
+    /// let f = symb!("f"; Antisymmetric).unwrap();
     /// assert!(f.is_antisymmetric());
     /// ```
     pub fn is_antisymmetric(&self) -> bool {
@@ -452,9 +448,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::atom::{Symbol, FunctionAttribute};
+    /// use symbolica::::symb;
     ///
-    /// let f = symb!_with_attributes("f", &[FunctionAttribute::Cyclesymmetric]).unwrap();
+    /// let f = symb!("f"; Cyclesymmetric).unwrap();
     /// assert!(f.is_cyclesymmetric());
     /// ```
     pub fn is_cyclesymmetric(&self) -> bool {
@@ -466,9 +462,9 @@ impl Symbol {
     /// # Examples
     ///
     /// ```
-    /// use symbolica::atom::{Symbol, FunctionAttribute};
+    /// use symbolica::::symb;
     ///
-    /// let f = symb!_with_attributes("f", &[FunctionAttribute::Linear]).unwrap();
+    /// let f = symb!("f", Linear).unwrap();
     /// assert!(f.is_linear());
     /// ```
     pub fn is_linear(&self) -> bool {
@@ -1023,7 +1019,16 @@ impl Atom {
     }
 
     /// Parse an atom from a namespaced string. Prefer to use [parse!] instead.
-    pub fn parse(input: NamespacedString) -> Result<Atom, String> {
+    ///
+    /// # Examples
+    /// ```rust
+    /// use symbolica::{wrap_input, with_default_namespace};
+    /// use symbolica::atom::Atom;
+    /// let x = Atom::parse(wrap_input!("x")).unwrap();
+    /// let x_2 = Atom::parse(with_default_namespace!("x_2", "b")).unwrap();
+    /// assert!(x != x_2);
+    /// ```
+    pub fn parse(input: DefaultNamespace) -> Result<Atom, String> {
         Workspace::get_local().with(|ws| Token::parse(&input.data)?.to_atom(&input, ws))
     }
 
@@ -1201,9 +1206,10 @@ impl Atom {
 ///
 /// For example:
 /// ```
-/// # use symbolica::atom::{Atom, AtomCore, FunctionAttribute, FunctionBuilder, Symbol};
+/// # use symbolica::symb;
+/// # use symbolica::atom::{Atom, AtomCore, FunctionBuilder};
 /// # fn main() {
-/// let f_id = symb!_with_attributes("f", &[FunctionAttribute::Symmetric]).unwrap();
+/// let f_id = symb!("f"; Symmetric).unwrap();
 /// let fb = FunctionBuilder::new(f_id);
 /// let a = fb
 ///     .add_arg(&Atom::new_num(3))
@@ -1445,10 +1451,20 @@ macro_rules! symb {
 /// let a = parse!(s).unwrap();
 /// println!("{}", a);
 /// ```
+///
+/// Parse using another default namespace:
+/// ```
+/// use symbolica::parse;
+/// let a = parse!("test::x + y", "custom").unwrap();
+/// assert_eq!(a, parse!("test::x + custom::y").unwrap());
+/// ```
 #[macro_export]
 macro_rules! parse {
     ($s: expr) => {{
         $crate::atom::Atom::parse($crate::wrap_input!($s))
+    }};
+    ($s: expr, $ns: expr) => {{
+        $crate::atom::Atom::parse($crate::with_default_namespace!($s, $ns))
     }};
 }
 

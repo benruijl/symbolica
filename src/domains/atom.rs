@@ -24,6 +24,7 @@ impl<T: Clone + Send + Sync + Fn(AtomView<'_>, &mut Atom) -> bool> Map for T {}
 /// use symbolica::{
 /// atom::Atom,
 /// domains::{atom::AtomField, Field},
+/// parse,
 /// };
 ///
 /// let field = AtomField {

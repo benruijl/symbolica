@@ -5,6 +5,7 @@
 //! use symbolica::{
 //!   atom::{Atom, AtomCore},
 //!   domains::finite_field::Zp,
+//!   parse,
 //!   poly::{groebner::GroebnerBasis, polynomial::MultivariatePolynomial, GrevLexOrder},
 //! };
 //!

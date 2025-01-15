@@ -3660,7 +3660,9 @@ mod test {
             ConditionResult, MatchSettings, PatternOrMap, PatternRestriction, Replacement,
             WildcardRestriction,
         },
-        parse, symbol,
+        parse,
+        printer::PrintOptions,
+        symbol,
     };
 
     #[test]
@@ -3739,10 +3741,10 @@ mod test {
         let rhs = PatternOrMap::Map(Box::new(move |m| {
             parse!(&format!(
                 "{}(mu{})*{}(mu{})",
-                m.get(v1).unwrap(),
-                m.get(v2).unwrap(),
-                m.get(v4).unwrap(),
-                m.get(v5).unwrap()
+                m.get(v1).unwrap().to_atom().printer(PrintOptions::file()),
+                m.get(v2).unwrap().to_atom().printer(PrintOptions::file()),
+                m.get(v4).unwrap().to_atom().printer(PrintOptions::file()),
+                m.get(v5).unwrap().to_atom().printer(PrintOptions::file())
             ))
             .unwrap()
         }));

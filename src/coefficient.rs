@@ -1614,7 +1614,13 @@ mod test {
         let expr = expr * &Atom::new_num(c);
         let r = format!(
             "{}",
-            AtomPrinter::new_with_options(expr.expand().as_view(), PrintOptions::file())
+            AtomPrinter::new_with_options(
+                expr.expand().as_view(),
+                PrintOptions {
+                    suppress_namespace: true,
+                    ..PrintOptions::file()
+                }
+            )
         );
         assert_eq!(
             r,
@@ -1628,7 +1634,13 @@ mod test {
         let expr = expr.coefficients_to_float(60);
         let r = format!(
             "{}",
-            AtomPrinter::new_with_options(expr.as_view(), PrintOptions::file())
+            AtomPrinter::new_with_options(
+                expr.as_view(),
+                PrintOptions {
+                    suppress_namespace: true,
+                    ..PrintOptions::file()
+                }
+            )
         );
         assert_eq!(r, "5.00000000000000000000000000000000000000000000000000000000000e-1*x+6.81640613709185816359170669566511987261485697756222332885129e-1");
     }
@@ -1638,7 +1650,6 @@ mod test {
         let expr = parse!("1/2 x + 238947/128903718927 + sin(3/4)").unwrap();
         let expr = expr.coefficients_to_float(60);
         let expr = expr.rationalize_coefficients(&(1, 10000).into());
-        println!("expr {}", expr);
         assert_eq!(expr, parse!("1/2*x+137/201").unwrap());
     }
 }

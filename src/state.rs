@@ -54,12 +54,12 @@ impl StateMap {
     }
 }
 
-struct SymbolData {
-    name: String,
-    namespace: Cow<'static, str>,
-    file: Cow<'static, str>,
-    line: usize,
-    function: Option<NormalizationFunction>,
+pub(crate) struct SymbolData {
+    pub(crate) name: String,
+    pub(crate) namespace: Cow<'static, str>,
+    pub(crate) file: Cow<'static, str>,
+    pub(crate) line: usize,
+    pub(crate) function: Option<NormalizationFunction>,
 }
 
 static STATE: Lazy<RwLock<State>> = Lazy::new(|| RwLock::new(State::new()));
@@ -101,6 +101,10 @@ impl State {
     pub const BUILTIN_SYMBOL_NAMES: [&'static str; 11] = [
         "arg", "coeff", "exp", "log", "sin", "cos", "sqrt", "der", "𝑒", "𝑖", "𝜋",
     ];
+
+    pub fn is_builtin_name<S: AsRef<str>>(str: S) -> bool {
+        Self::BUILTIN_SYMBOL_NAMES.contains(&str.as_ref())
+    }
 
     fn new() -> State {
         LicenseManager::check();
@@ -410,6 +414,16 @@ impl State {
             .1
             .namespace
             .as_ref()
+    }
+
+    /// Get the name for a given symbol.
+    #[inline]
+    pub(crate) fn get_symbol_data(id: Symbol) -> &'static SymbolData {
+        if ID_TO_STR.len() == 0 {
+            let _ = *STATE; // initialize the state
+        }
+
+        &ID_TO_STR[id.get_id() as usize + SYMBOL_OFFSET.load(Ordering::Relaxed)].1
     }
 
     /// Get the user-specified normalization function for the symbol.

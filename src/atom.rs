@@ -43,6 +43,7 @@ mod coefficient;
 mod core;
 pub mod representation;
 
+use colored::Colorize;
 use representation::InlineVar;
 use smartstring::{LazyCompact, SmartString};
 
@@ -125,7 +126,6 @@ impl TryFrom<&str> for NamespacedSymbol {
     }
 }
 
-// rename to namespace or ns?
 #[macro_export]
 macro_rules! wrap_symbol {
     ($e:literal) => {{
@@ -134,7 +134,13 @@ macro_rules! wrap_symbol {
             s.line = line!() as usize;
             s
         } else {
-            let ns = env!("CARGO_CRATE_NAME");
+
+
+            let ns = if $crate::state::State::BUILTIN_SYMBOL_NAMES.contains(&$e) {
+                "symbolica"
+            } else {
+                env!("CARGO_CRATE_NAME")
+            };
             $crate::atom::NamespacedSymbol {
                 symbol: format!("{}::{}", ns, $e).into(),
                 namespace: ns.into(),
@@ -149,7 +155,11 @@ macro_rules! wrap_symbol {
             s.line = line!() as usize;
             s
         } else {
-            let ns = env!("CARGO_CRATE_NAME");
+            let ns = if $crate::state::State::is_builtin_name(&$e) {
+                "symbolica"
+            } else {
+                env!("CARGO_CRATE_NAME")
+            };
             $crate::atom::NamespacedSymbol {
                 symbol: format!("{}::{}", ns, $e).into(),
                 namespace: ns.into(),
@@ -177,11 +187,20 @@ impl DefaultNamespace<'_> {
             s.line = self.line;
             s
         } else {
-            NamespacedSymbol {
-                symbol: format!("{}::{}", self.namespace, s).into(),
-                namespace: self.namespace.clone(),
-                file: self.file.clone(),
-                line: self.line,
+            if State::BUILTIN_SYMBOL_NAMES.contains(&s) {
+                NamespacedSymbol {
+                    symbol: format!("symbolica::{}", s).into(),
+                    namespace: "symbolica".into(),
+                    file: "".into(),
+                    line: 0,
+                }
+            } else {
+                NamespacedSymbol {
+                    symbol: format!("{}::{}", self.namespace, s).into(),
+                    namespace: self.namespace.clone(),
+                    file: self.file.clone(),
+                    line: self.line,
+                }
             }
         }
     }
@@ -280,7 +299,7 @@ impl std::fmt::Debug for Symbol {
 
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.get_name().fmt(f)
+        self.format(&PrintOptions::default(), f)
     }
 }
 
@@ -373,6 +392,21 @@ impl Symbol {
     /// ```
     pub fn get_name(&self) -> &str {
         State::get_name(*self)
+    }
+
+    /// Get the name of the symbol without the namespace.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use symbolica::symbol;
+    ///
+    /// let x = symbol!("test::x");
+    /// assert_eq!(x.get_stripped_name(), "x");
+    /// ```
+    pub fn get_stripped_name(&self) -> &str {
+        let d = State::get_symbol_data(*self);
+        &d.name[d.namespace.len() + 2..]
     }
 
     /// Get the internal id of the symbol.
@@ -514,6 +548,52 @@ impl Symbol {
             is_antisymmetric,
             is_cyclesymmetric,
             is_linear,
+        }
+    }
+
+    pub fn format<W: std::fmt::Write>(
+        &self,
+        opts: &PrintOptions,
+        f: &mut W,
+    ) -> Result<(), std::fmt::Error> {
+        let data = State::get_symbol_data(*self);
+        let (namespace, name) = (&data.namespace, &data.name[data.namespace.len() + 2..]);
+
+        if opts.latex {
+            match *self {
+                Atom::E => f.write_char('e'),
+                Atom::PI => f.write_str("\\pi"),
+                Atom::I => f.write_char('i'),
+                Atom::COS => f.write_str("\\cos"),
+                Atom::SIN => f.write_str("\\sin"),
+                Atom::EXP => f.write_str("\\exp"),
+                Atom::LOG => f.write_str("\\log"),
+                _ => {
+                    f.write_str(name)?;
+                    if !opts.suppress_namespace {
+                        f.write_fmt(format_args!("_{{\\tiny \text{{{}}}}}", namespace))
+                    } else {
+                        Ok(())
+                    }
+                }
+            }
+        } else {
+            if !opts.suppress_namespace && !State::is_builtin(*self) {
+                if opts.color_namespace {
+                    f.write_fmt(format_args!("{}", namespace.dimmed().italic()))?;
+                    f.write_fmt(format_args!("{}", "::".dimmed()))?;
+                } else {
+                    f.write_fmt(format_args!("{}::", namespace))?;
+                }
+            }
+
+            if opts.color_builtin_symbols && name.ends_with('_') {
+                f.write_fmt(format_args!("{}", name.cyan().italic()))
+            } else if opts.color_builtin_symbols && State::is_builtin(*self) {
+                f.write_fmt(format_args!("{}", name.purple()))
+            } else {
+                f.write_str(name)
+            }
         }
     }
 }

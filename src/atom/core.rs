@@ -930,7 +930,7 @@ pub trait AtomCore {
     /// use symbolica::printer::{PrintOptions, PrintState};
     /// let expr = parse!("x + y").unwrap();
     /// let mut output = String::new();
-    /// expr.format(&mut output, &PrintOptions::default(), PrintState::default()).unwrap();
+    /// expr.format(&mut output, &PrintOptions::file_no_namespace(), PrintState::default()).unwrap();
     /// assert_eq!(output, "x+y");
     /// ```
     fn format<W: std::fmt::Write>(
@@ -952,6 +952,7 @@ pub trait AtomCore {
     /// let expr = parse!("x^2").unwrap();
     /// let opts = PrintOptions {
     ///     double_star_for_exponentiation: true,
+    ///     suppress_namespace: true,
     ///    ..Default::default()
     /// };
     /// let printer = expr.printer(opts);
@@ -971,7 +972,7 @@ pub trait AtomCore {
     /// use symbolica::{atom::AtomCore, parse};
     /// let expr = parse!("x + y").unwrap();
     /// let canonical_str = expr.to_canonical_string();
-    /// assert_eq!(canonical_str, "x+y");
+    /// assert_eq!(canonical_str, "symbolica::x+symbolica::y");
     /// ```
     fn to_canonical_string(&self) -> String {
         self.as_atom_view().to_canonical_string()
@@ -1263,7 +1264,7 @@ pub trait AtomCore {
     /// use symbolica::{atom::AtomCore, parse};
     /// let expr = parse!("x + y").unwrap();
     /// let result = expr.replace_map(&|term, _ctx, out| {
-    ///     if term.to_string() == "x" {
+    ///     if term.to_string() == "symbolica::x" {
     ///         *out = parse!("z").unwrap();
     ///         true
     ///     } else {

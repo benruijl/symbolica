@@ -1318,30 +1318,37 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
-        atom::AtomCore,
-        domains::integer::Z,
-        parse,
-        parser::Token,
-        printer::{AtomPrinter, PrintOptions},
-        symbol,
+        atom::AtomCore, domains::integer::Z, parse, parser::Token, printer::PrintOptions, symbol,
     };
 
     #[test]
     fn pow() {
         let input = parse!("v1^v2^v3^3").unwrap();
-        assert_eq!(format!("{}", input), "v1^v2^v3^3");
+        assert_eq!(
+            format!("{}", input.printer(PrintOptions::file_no_namespace())),
+            "v1^v2^v3^3"
+        );
 
         let input = parse!("(v1^v2)^v3").unwrap();
-        assert_eq!(format!("{}", input), "(v1^v2)^v3");
+        assert_eq!(
+            format!("{}", input.printer(PrintOptions::file_no_namespace())),
+            "(v1^v2)^v3"
+        );
     }
 
     #[test]
     fn unary() {
         let input = parse!("-x^z").unwrap();
-        assert_eq!(format!("{}", input), "-x^z");
+        assert_eq!(
+            format!("{}", input.printer(PrintOptions::file_no_namespace())),
+            "-x^z"
+        );
 
         let input = parse!("(-x)^z").unwrap();
-        assert_eq!(format!("{}", input), "(-x)^z");
+        assert_eq!(
+            format!("{}", input.printer(PrintOptions::file_no_namespace())),
+            "(-x)^z"
+        );
     }
 
     #[test]
@@ -1359,10 +1366,7 @@ mod test {
     fn float() {
         let input = parse!("1.2`20x+1e-5`20+1e+5 * 1.1234e23 +2exp(5)").unwrap();
 
-        let r = format!(
-            "{}",
-            AtomPrinter::new_with_options(input.as_view(), PrintOptions::file())
-        );
+        let r = format!("{}", input.printer(PrintOptions::file_no_namespace()));
         assert_eq!(r, "1.2000000000000000000*x+2*exp(5)+1.123400000000000e28");
     }
 

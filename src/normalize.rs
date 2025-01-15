@@ -1533,7 +1533,11 @@ impl<'a> AtomView<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::{atom::Atom, parse};
+    use crate::{
+        atom::{Atom, AtomCore},
+        parse,
+        printer::PrintOptions,
+    };
 
     #[test]
     fn pow_apart() {
@@ -1545,7 +1549,13 @@ mod test {
     #[test]
     fn pow_simplify() {
         assert_eq!(parse!("1^(1/2)"), parse!("1"));
-        assert_eq!(format!("{}", parse!("(v1^2)^v2").unwrap()), "(v1^2)^v2");
+        assert_eq!(
+            format!(
+                "{}",
+                parse!("(v1^2)^v2").unwrap().printer(PrintOptions::file())
+            ),
+            "(symbolica::v1^2)^symbolica::v2"
+        );
         assert_eq!(parse!("(v1^v2)^2"), parse!("v1^(2*v2)"));
         assert_eq!(parse!("(v1^(1/2))^2"), parse!("v1"));
     }

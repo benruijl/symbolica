@@ -1629,6 +1629,8 @@ impl PythonTransformer {
                 latex,
                 precision,
                 pretty_matrix: false,
+                suppress_namespace: false,
+                color_namespace: false,
             },)
         );
     }
@@ -2915,6 +2917,8 @@ impl PythonExpression {
                     latex,
                     precision,
                     pretty_matrix: false,
+                    suppress_namespace: false,
+                    color_namespace: false,
                 },
             )
         ))
@@ -5610,6 +5614,8 @@ impl PythonSeries {
                     latex,
                     precision,
                     pretty_matrix: false,
+                    suppress_namespace: false,
+                    color_namespace: false,
                 },
                 PrintState::new()
             )
@@ -6068,6 +6074,8 @@ impl PythonPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                suppress_namespace: false,
+                color_namespace: false,
             },
             PrintState::new(),
         ))
@@ -6909,6 +6917,8 @@ impl PythonFiniteFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                suppress_namespace: false,
+                color_namespace: false,
             },
             PrintState::new(),
         ))
@@ -7497,6 +7507,8 @@ impl PythonPrimeTwoPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                suppress_namespace: false,
+                color_namespace: false,
             },
             PrintState::new(),
         ))
@@ -8038,6 +8050,8 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                suppress_namespace: false,
+                color_namespace: false,
             },
             PrintState::new(),
         ))
@@ -8583,6 +8597,8 @@ impl PythonGaloisFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                suppress_namespace: false,
+                color_namespace: false,
             },
             PrintState::new(),
         ))
@@ -9129,6 +9145,8 @@ impl PythonNumberFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
+                suppress_namespace: false,
+                color_namespace: false,
             },
             PrintState::new(),
         ))
@@ -10908,6 +10926,8 @@ impl PythonMatrix {
                 latex,
                 precision,
                 pretty_matrix,
+                suppress_namespace: false,
+                color_namespace: false,
             },
             PrintState::default(),
         )

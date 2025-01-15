@@ -1590,10 +1590,20 @@ macro_rules! parse {
 /// let a = parse_lit!(x ^ 2 + 5 + f(x)).unwrap();
 /// println!("{}", a);
 /// ```
+///
+/// Parse using another default namespace:
+/// ```
+/// use symbolica::{parse, parse_lit};
+/// let a = parse_lit!(test::x + y, "custom").unwrap();
+/// assert_eq!(a, parse!("test::x + custom::y").unwrap());
+/// ```
 #[macro_export]
 macro_rules! parse_lit {
     ($s: expr) => {{
         $crate::atom::Atom::parse($crate::wrap_input!(stringify!($s)))
+    }};
+    ($s: expr, $ns: expr) => {{
+        $crate::atom::Atom::parse($crate::with_default_namespace!(stringify!($s), $ns))
     }};
 }
 

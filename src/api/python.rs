@@ -1631,7 +1631,7 @@ impl PythonTransformer {
                 pretty_matrix: false,
                 suppress_all_namespaces: false,
                 color_namespace: true,
-                suppress_namespace: None,
+                suppress_namespace: Some("python"),
             },)
         );
     }
@@ -2907,7 +2907,7 @@ impl PythonExpression {
                     pretty_matrix: false,
                     suppress_all_namespaces: false,
                     color_namespace: true,
-                    suppress_namespace: None,
+                    suppress_namespace: Some("python"),
                 },
             )
         ))
@@ -5605,7 +5605,7 @@ impl PythonSeries {
                     pretty_matrix: false,
                     suppress_all_namespaces: false,
                     color_namespace: true,
-                    suppress_namespace: None,
+                    suppress_namespace: Some("python"),
                 },
                 PrintState::new()
             )
@@ -6066,7 +6066,7 @@ impl PythonPolynomial {
                 pretty_matrix: false,
                 suppress_all_namespaces: false,
                 color_namespace: true,
-                suppress_namespace: None,
+                suppress_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -6914,7 +6914,7 @@ impl PythonFiniteFieldPolynomial {
                 pretty_matrix: false,
                 suppress_all_namespaces: false,
                 color_namespace: true,
-                suppress_namespace: None,
+                suppress_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -7507,7 +7507,7 @@ impl PythonPrimeTwoPolynomial {
                 pretty_matrix: false,
                 suppress_all_namespaces: false,
                 color_namespace: true,
-                suppress_namespace: None,
+                suppress_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -8051,7 +8051,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 pretty_matrix: false,
                 suppress_all_namespaces: false,
                 color_namespace: true,
-                suppress_namespace: None,
+                suppress_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -8599,7 +8599,7 @@ impl PythonGaloisFieldPolynomial {
                 pretty_matrix: false,
                 suppress_all_namespaces: false,
                 color_namespace: true,
-                suppress_namespace: None,
+                suppress_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -9148,7 +9148,7 @@ impl PythonNumberFieldPolynomial {
                 pretty_matrix: false,
                 suppress_all_namespaces: false,
                 color_namespace: true,
-                suppress_namespace: None,
+                suppress_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -10934,7 +10934,7 @@ impl PythonMatrix {
                 pretty_matrix,
                 suppress_all_namespaces: false,
                 color_namespace: true,
-                suppress_namespace: None,
+                suppress_namespace: Some("python"),
             },
             PrintState::default(),
         )

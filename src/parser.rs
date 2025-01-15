@@ -669,7 +669,7 @@ impl Token {
 
         let ops = ['\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']'];
         let whitespace = [' ', '\t', '\n', '\r', '\\'];
-        let forbidden = [';', '&', '!', '%', '.'];
+        let forbidden = [';', '&', '!', '%', '.', '"'];
 
         let mut char_iter = input.chars();
         let mut c = char_iter.next().unwrap_or('\0'); // add EOF as a token

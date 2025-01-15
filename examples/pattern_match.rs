@@ -12,6 +12,15 @@ fn main() {
 
     println!("> Matching pattern {} to {}:", pat_expr, expr.as_view());
 
+    // simple match
+    for m in expr.pattern_match(&pattern, None, None) {
+        for (wc, v) in m {
+            println!("\t{} = {}", wc, v);
+        }
+        println!();
+    }
+
+    // advanced match
     let mut it = expr.pattern_match(&pattern, None, None);
     while let Some(m) = it.next_detailed() {
         println!(

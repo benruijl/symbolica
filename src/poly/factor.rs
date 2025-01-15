@@ -886,7 +886,7 @@ where
                     let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
 
                     factors.extend(
-                        f.multivariate_factorization(&mut order, 0, None)
+                        f.multivariate_factorization(&mut order, 10, None)
                             .into_iter()
                             .map(|ff| (ff, p)),
                     )
@@ -950,7 +950,7 @@ where
 
                 let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
 
-                f.multivariate_factorization(&mut order, 0, None).len() == 1
+                f.multivariate_factorization(&mut order, 10, None).len() == 1
             }
         }
     }
@@ -1831,7 +1831,7 @@ where
             for ((v, s), rem_var) in sample_points[1..].iter().zip(&order[1..]).rev() {
                 biv_f = biv_f.replace(*v, s);
                 if biv_f.degree(*rem_var) != self.degree(*rem_var) {
-                    coefficient_upper_bound += 1;
+                    coefficient_upper_bound += 10;
                     continue 'new_sample;
                 }
             }
@@ -1842,7 +1842,7 @@ where
                     "Degree of x{} in leading coefficient of bivariate image is wrong",
                     order[1]
                 );
-                coefficient_upper_bound += 1;
+                coefficient_upper_bound += 10;
                 continue 'new_sample;
             }
 
@@ -1880,7 +1880,7 @@ where
                 }
             }
 
-            coefficient_upper_bound += 1;
+            coefficient_upper_bound += 10;
         }
 
         for (v, s) in &sample_points {
@@ -1912,7 +1912,7 @@ where
                     // try again with other sample points and a better bound
                     return self.multivariate_factorization(
                         order,
-                        coefficient_upper_bound + 1,
+                        coefficient_upper_bound + 10,
                         Some(max_biv),
                     );
                 }
@@ -1961,7 +1961,7 @@ where
             // the bivariate factorization has too many factors, try again with other sample points
             self.multivariate_factorization(
                 order,
-                coefficient_upper_bound + 1,
+                coefficient_upper_bound + 10,
                 Some(max_bivariate_factors.unwrap_or(bivariate_factors.len()) - 1),
             )
         }
@@ -3340,7 +3340,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             for ((v, s), rem_var) in cur_sample_points[1..].iter().zip(&order[1..]).rev() {
                 cur_biv_f = cur_biv_f.replace(*v, s);
                 if cur_biv_f.degree(*rem_var) != self.degree(*rem_var) {
-                    coefficient_upper_bound += 1;
+                    coefficient_upper_bound += 10;
                     continue 'new_sample;
                 }
             }
@@ -3352,7 +3352,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                     "Degree of x{} in leading coefficient of bivariate image is wrong",
                     order[1]
                 );
-                coefficient_upper_bound += 1;
+                coefficient_upper_bound += 10;
                 continue 'new_sample;
             }
 
@@ -3368,7 +3368,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             {
                 if !cur_biv_f.univariate_content(order[0]).is_one() {
                     content_fail_count += 1;
-                    coefficient_upper_bound += 1;
+                    coefficient_upper_bound += 10;
 
                     debug!("Univariate content is not one");
                     if content_fail_count == 4 {
@@ -3417,7 +3417,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 );
             }
 
-            coefficient_upper_bound += 1;
+            coefficient_upper_bound += 10;
             debug!("Growing bound {}", coefficient_upper_bound);
         }
 
@@ -3473,7 +3473,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             } else {
                 debug!("Bad sample for sparse lifting {:?}", sample_points);
                 sparse_fail += 1;
-                coefficient_upper_bound += 1;
+                coefficient_upper_bound += 10;
             }
         };
 
@@ -3553,7 +3553,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
                 // try again with other sample points and a better bound
                 return self.multivariate_factorization(
                     order,
-                    coefficient_upper_bound + 1,
+                    coefficient_upper_bound + 10,
                     Some(max_biv),
                 );
             }
@@ -3707,7 +3707,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
             );
 
             // the bivariate factorization has too many factors, try again with other sample points
-            self.multivariate_factorization(order, coefficient_upper_bound + 1, Some(new_bound))
+            self.multivariate_factorization(order, coefficient_upper_bound + 10, Some(new_bound))
         }
     }
 }

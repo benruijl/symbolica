@@ -5892,7 +5892,7 @@ impl PythonMatchIterator {
         self.with_dependent_mut(|_, i| {
             i.next().map(|m| {
                 m.into_iter()
-                    .map(|(k, v)| (Atom::new_var(k).into(), { v.to_atom().into() }))
+                    .map(|(k, v)| (Atom::new_var(k).into(), { v.into() }))
                     .collect()
             })
         })

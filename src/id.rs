@@ -3461,12 +3461,18 @@ impl<'a: 'b, 'b> PatternAtomTreeIterator<'a, 'b> {
 }
 
 impl<'a: 'b, 'b> Iterator for PatternAtomTreeIterator<'a, 'b> {
-    type Item = HashMap<Symbol, Match<'a>>;
+    type Item = HashMap<Symbol, Atom>;
 
     /// Get the match map. Use `[PatternAtomTreeIterator::next_detailed]` to get more information.
-    fn next(&mut self) -> Option<HashMap<Symbol, Match<'a>>> {
+    fn next(&mut self) -> Option<HashMap<Symbol, Atom>> {
         if let Some(_) = self.next_detailed() {
-            Some(self.match_stack.get_matches().iter().cloned().collect())
+            Some(
+                self.match_stack
+                    .get_matches()
+                    .iter()
+                    .map(|(key, m)| (*key, m.to_atom()))
+                    .collect(),
+            )
         } else {
             None
         }

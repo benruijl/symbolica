@@ -28,7 +28,8 @@ pub struct PrintOptions {
     pub latex: bool,
     pub precision: Option<usize>,
     pub pretty_matrix: bool,
-    pub suppress_namespace: bool,
+    pub suppress_namespace: Option<&'static str>,
+    pub suppress_all_namespaces: bool,
     pub color_namespace: bool,
 }
 
@@ -49,7 +50,8 @@ impl PrintOptions {
             latex: false,
             precision: None,
             pretty_matrix: false,
-            suppress_namespace: false,
+            suppress_namespace: None,
+            suppress_all_namespaces: false,
             color_namespace: true,
         }
     }
@@ -71,7 +73,8 @@ impl PrintOptions {
             latex: false,
             precision: None,
             pretty_matrix: false,
-            suppress_namespace: true, // FIXME
+            suppress_namespace: None,
+            suppress_all_namespaces: true,
             color_namespace: false,
         }
     }
@@ -93,7 +96,8 @@ impl PrintOptions {
             latex: true,
             precision: None,
             pretty_matrix: false,
-            suppress_namespace: true,
+            suppress_namespace: None,
+            suppress_all_namespaces: true,
             color_namespace: false,
         }
     }
@@ -115,7 +119,8 @@ impl PrintOptions {
             latex: false,
             precision: None,
             pretty_matrix: false,
-            suppress_namespace: false,
+            suppress_namespace: None,
+            suppress_all_namespaces: false,
             color_namespace: false,
         }
     }
@@ -123,7 +128,7 @@ impl PrintOptions {
     /// Print the output suitable for a file without namespaces.
     pub const fn file_no_namespace() -> PrintOptions {
         Self {
-            suppress_namespace: true,
+            suppress_all_namespaces: true,
             ..Self::file()
         }
     }
@@ -131,7 +136,7 @@ impl PrintOptions {
     /// Print the output with namespaces suppressed.
     pub const fn short() -> PrintOptions {
         Self {
-            suppress_namespace: true,
+            suppress_all_namespaces: true,
             ..Self::new()
         }
     }
@@ -279,17 +284,12 @@ impl<'a> AtomPrinter<'a> {
 
 impl<'a> fmt::Display for AtomPrinter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let print_state = PrintState {
-            in_sum: false,
-            in_product: false,
-            in_exp: false,
-            suppress_one: false,
-            level: 0,
-            top_level_add_child: false,
-            superscript: false,
-        };
         self.atom
-            .format(f, &self.print_opts, print_state)
+            .format(
+                f,
+                &self.print_opts.update_with_fmt(f),
+                PrintState::from_fmt(f),
+            )
             .map(|_| ())
     }
 }

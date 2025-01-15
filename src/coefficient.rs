@@ -1617,7 +1617,7 @@ mod test {
             AtomPrinter::new_with_options(
                 expr.expand().as_view(),
                 PrintOptions {
-                    suppress_namespace: true,
+                    suppress_all_namespaces: true,
                     ..PrintOptions::file()
                 }
             )
@@ -1637,7 +1637,7 @@ mod test {
             AtomPrinter::new_with_options(
                 expr.as_view(),
                 PrintOptions {
-                    suppress_namespace: true,
+                    suppress_all_namespaces: true,
                     ..PrintOptions::file()
                 }
             )

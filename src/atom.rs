@@ -139,7 +139,7 @@ macro_rules! wrap_symbol {
             let ns = if $crate::state::State::BUILTIN_SYMBOL_NAMES.contains(&$e) {
                 "symbolica"
             } else {
-                env!("CARGO_CRATE_NAME")
+                $crate::namespace!()
             };
             $crate::atom::NamespacedSymbol {
                 symbol: format!("{}::{}", ns, $e).into(),
@@ -158,7 +158,7 @@ macro_rules! wrap_symbol {
             let ns = if $crate::state::State::is_builtin_name(&$e) {
                 "symbolica"
             } else {
-                env!("CARGO_CRATE_NAME")
+                $crate::namespace!()
             };
             $crate::atom::NamespacedSymbol {
                 symbol: format!("{}::{}", ns, $e).into(),
@@ -209,7 +209,7 @@ impl DefaultNamespace<'_> {
 #[macro_export]
 macro_rules! wrap_input {
     ($e:expr) => {{
-        let ns = env!("CARGO_CRATE_NAME");
+        let ns = $crate::namespace!();
         $crate::atom::DefaultNamespace {
             data: $e.as_ref(),
             namespace: ns.into(),
@@ -228,6 +228,28 @@ macro_rules! with_default_namespace {
             file: file!().into(),
             line: line!() as usize,
         }
+    }};
+}
+
+/// Get the current namespace, based on the location of the macro invocation.
+#[macro_export]
+macro_rules! namespace {
+    () => {{
+        env!("CARGO_CRATE_NAME")
+    }};
+}
+
+/// Format an atom with the current namespace suppressed.
+#[macro_export]
+macro_rules! format_atom {
+    ($e:expr) => {{
+        $crate::atom::AtomCore::printer(
+            &$e,
+            $crate::printer::PrintOptions {
+                suppress_namespace: Some($crate::namespace!()),
+                ..$crate::printer::PrintOptions::new()
+            },
+        )
     }};
 }
 
@@ -299,7 +321,7 @@ impl std::fmt::Debug for Symbol {
 
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.format(&PrintOptions::default(), f)
+        self.format(&PrintOptions::from_fmt(f), f)
     }
 }
 
@@ -570,7 +592,7 @@ impl Symbol {
                 Atom::LOG => f.write_str("\\log"),
                 _ => {
                     f.write_str(name)?;
-                    if !opts.suppress_namespace {
+                    if !opts.suppress_all_namespaces {
                         f.write_fmt(format_args!("_{{\\tiny \text{{{}}}}}", namespace))
                     } else {
                         Ok(())
@@ -578,7 +600,10 @@ impl Symbol {
                 }
             }
         } else {
-            if !opts.suppress_namespace && !State::is_builtin(*self) {
+            if !opts.suppress_all_namespaces
+                && !State::is_builtin(*self)
+                && opts.suppress_namespace != Some(namespace)
+            {
                 if opts.color_namespace {
                     f.write_fmt(format_args!("{}", namespace.dimmed().italic()))?;
                     f.write_fmt(format_args!("{}", "::".dimmed()))?;

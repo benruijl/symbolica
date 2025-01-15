@@ -33,7 +33,7 @@ use pyo3::pymodule;
 
 use crate::{
     atom::{
-        Atom, AtomCore, AtomType, AtomView, FunctionAttribute, ListIterator, NamespacedSymbol,
+        Atom, AtomCore, AtomType, AtomView, DefaultNamespace, FunctionAttribute, ListIterator,
         Symbol,
     },
     coefficient::CoefficientView,
@@ -1629,8 +1629,9 @@ impl PythonTransformer {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_namespace: false,
-                color_namespace: false,
+                suppress_all_namespaces: false,
+                color_namespace: true,
+                suppress_namespace: None,
             },)
         );
     }
@@ -2511,7 +2512,7 @@ impl PythonExpression {
         fn name_check(name: &str) -> PyResult<&str> {
             let illegal_chars = [
                 '\0', '^', '+', '*', '-', '(', ')', '/', ',', '[', ']', ' ', '\t', '\n', '\r',
-                '\\', ';', ':', '&', '!', '%', '.',
+                '\\', ';', '&', '!', '%', '.',
             ];
 
             if name.is_empty() {
@@ -2529,6 +2530,13 @@ impl PythonExpression {
             }
         }
 
+        let namespace = DefaultNamespace {
+            namespace: "python".into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         if is_symmetric.is_none()
             && is_antisymmetric.is_none()
             && is_cyclesymmetric.is_none()
@@ -2538,24 +2546,14 @@ impl PythonExpression {
             if names.len() == 1 {
                 let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
 
-                let id = Symbol::new(NamespacedSymbol {
-                    symbol: name_check(&*name)?.to_string().into(),
-                    namespace: "python".into(),
-                    file: "".into(),
-                    line: 0,
-                });
+                let id = Symbol::new(namespace.attach_namespace(name_check(&*name)?));
                 let r = PythonExpression::from(Atom::new_var(id));
                 return r.into_py_any(py);
             } else {
                 let mut result = vec![];
                 for a in names {
                     let name = a.extract::<PyBackedStr>()?;
-                    let id = Symbol::new(NamespacedSymbol {
-                        symbol: name_check(&*name)?.to_string().into(),
-                        namespace: "python".into(),
-                        file: "".into(),
-                        line: 0,
-                    });
+                    let id = Symbol::new(namespace.attach_namespace(name_check(&*name)?));
 
                     let r = PythonExpression::from(Atom::new_var(id));
                     result.push(r);
@@ -2595,12 +2593,7 @@ impl PythonExpression {
 
         if names.len() == 1 {
             let name = names.get_item(0).unwrap().extract::<PyBackedStr>()?;
-            let name = NamespacedSymbol {
-                symbol: name_check(&*name)?.to_string().into(),
-                namespace: "python".into(),
-                file: "".into(),
-                line: 0,
-            };
+            let name = namespace.attach_namespace(name_check(&*name)?);
 
             let id = if let Some(f) = custom_normalization {
                 if let Pattern::Transformer(t) = f.expr {
@@ -2636,12 +2629,7 @@ impl PythonExpression {
             let mut result = vec![];
             for a in names {
                 let name = a.extract::<PyBackedStr>()?;
-                let name = NamespacedSymbol {
-                    symbol: name_check(&*name)?.to_string().into(),
-                    namespace: "python".into(),
-                    file: "".into(),
-                    line: 0,
-                };
+                let name = namespace.attach_namespace(name_check(&*name)?);
 
                 let id = if let Some(f) = &custom_normalization {
                     if let Pattern::Transformer(t) = &f.expr {
@@ -2917,8 +2905,9 @@ impl PythonExpression {
                     latex,
                     precision,
                     pretty_matrix: false,
-                    suppress_namespace: false,
-                    color_namespace: false,
+                    suppress_all_namespaces: false,
+                    color_namespace: true,
+                    suppress_namespace: None,
                 },
             )
         ))
@@ -5614,8 +5603,9 @@ impl PythonSeries {
                     latex,
                     precision,
                     pretty_matrix: false,
-                    suppress_namespace: false,
-                    color_namespace: false,
+                    suppress_all_namespaces: false,
+                    color_namespace: true,
+                    suppress_namespace: None,
                 },
                 PrintState::new()
             )
@@ -6074,8 +6064,9 @@ impl PythonPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_namespace: false,
-                color_namespace: false,
+                suppress_all_namespaces: false,
+                color_namespace: true,
+                suppress_namespace: None,
             },
             PrintState::new(),
         ))
@@ -6471,13 +6462,15 @@ impl PythonPolynomial {
         let mut var_name_map: SmallVec<[SmartString<LazyCompact>; INLINED_EXPONENTS]> =
             SmallVec::new();
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(NamespacedSymbol {
-                symbol: v.to_string().into(),
-                namespace: default_namespace.to_string().into(),
-                file: "".into(),
-                line: 0,
-            });
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -6794,13 +6787,15 @@ impl PythonIntegerPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(NamespacedSymbol {
-                symbol: v.to_string().into(),
-                namespace: default_namespace.to_string().into(),
-                file: "".into(),
-                line: 0,
-            });
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -6917,8 +6912,9 @@ impl PythonFiniteFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_namespace: false,
-                color_namespace: false,
+                suppress_all_namespaces: false,
+                color_namespace: true,
+                suppress_namespace: None,
             },
             PrintState::new(),
         ))
@@ -7387,13 +7383,15 @@ impl PythonFiniteFieldPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(NamespacedSymbol {
-                symbol: v.to_string().into(),
-                namespace: default_namespace.to_string().into(),
-                file: "".into(),
-                line: 0,
-            });
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -7507,8 +7505,9 @@ impl PythonPrimeTwoPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_namespace: false,
-                color_namespace: false,
+                suppress_all_namespaces: false,
+                color_namespace: true,
+                suppress_namespace: None,
             },
             PrintState::new(),
         ))
@@ -8050,8 +8049,9 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_namespace: false,
-                color_namespace: false,
+                suppress_all_namespaces: false,
+                color_namespace: true,
+                suppress_namespace: None,
             },
             PrintState::new(),
         ))
@@ -8597,8 +8597,9 @@ impl PythonGaloisFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_namespace: false,
-                color_namespace: false,
+                suppress_all_namespaces: false,
+                color_namespace: true,
+                suppress_namespace: None,
             },
             PrintState::new(),
         ))
@@ -9111,7 +9112,7 @@ impl PythonNumberFieldPolynomial {
         square_brackets_for_function = false,
         num_exp_as_superscript = true,
         latex = false,
-            precision = None)
+        precision = None)
     )]
     pub fn format(
         &self,
@@ -9145,8 +9146,9 @@ impl PythonNumberFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_namespace: false,
-                color_namespace: false,
+                suppress_all_namespaces: false,
+                color_namespace: true,
+                suppress_namespace: None,
             },
             PrintState::new(),
         ))
@@ -9930,13 +9932,15 @@ impl PythonRationalPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(NamespacedSymbol {
-                symbol: v.to_string().into(),
-                namespace: default_namespace.to_string().into(),
-                file: "".into(),
-                line: 0,
-            });
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -10230,13 +10234,15 @@ impl PythonFiniteFieldRationalPolynomial {
         let mut var_map = vec![];
         let mut var_name_map = vec![];
 
+        let namespace = DefaultNamespace {
+            namespace: default_namespace.to_string().into(),
+            data: "".into(),
+            file: "".into(),
+            line: 0,
+        };
+
         for v in vars {
-            let id = Symbol::new(NamespacedSymbol {
-                symbol: v.to_string().into(),
-                namespace: default_namespace.to_string().into(),
-                file: "".into(),
-                line: 0,
-            });
+            let id = Symbol::new(namespace.attach_namespace(&*v));
             var_map.push(id.into());
             var_name_map.push((*v).into());
         }
@@ -10926,8 +10932,9 @@ impl PythonMatrix {
                 latex,
                 precision,
                 pretty_matrix,
-                suppress_namespace: false,
-                color_namespace: false,
+                suppress_all_namespaces: false,
+                color_namespace: true,
+                suppress_namespace: None,
             },
             PrintState::default(),
         )

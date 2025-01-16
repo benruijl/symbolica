@@ -1594,7 +1594,8 @@ impl PythonTransformer {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn print(
         &self,
@@ -1611,6 +1612,7 @@ impl PythonTransformer {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<PythonTransformer> {
         return append_transformer!(
             self,
@@ -1629,9 +1631,9 @@ impl PythonTransformer {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_all_namespaces: false,
+                hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
-                suppress_namespace: Some("python"),
+                hide_namespace: Some("python"),
             },)
         );
     }
@@ -2868,7 +2870,8 @@ impl PythonExpression {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -2885,6 +2888,7 @@ impl PythonExpression {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(format!(
             "{}",
@@ -2905,9 +2909,9 @@ impl PythonExpression {
                     latex,
                     precision,
                     pretty_matrix: false,
-                    suppress_all_namespaces: false,
+                    hide_all_namespaces: !show_namespaces,
                     color_namespace: true,
-                    suppress_namespace: Some("python"),
+                    hide_namespace: Some("python"),
                 },
             )
         ))
@@ -5567,7 +5571,8 @@ impl PythonSeries {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -5584,6 +5589,7 @@ impl PythonSeries {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(format!(
             "{}",
@@ -5603,9 +5609,9 @@ impl PythonSeries {
                     latex,
                     precision,
                     pretty_matrix: false,
-                    suppress_all_namespaces: false,
+                    hide_all_namespaces: !show_namespaces,
                     color_namespace: true,
-                    suppress_namespace: Some("python"),
+                    hide_namespace: Some("python"),
                 },
                 PrintState::new()
             )
@@ -6030,7 +6036,8 @@ impl PythonPolynomial {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -6047,6 +6054,7 @@ impl PythonPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -6064,9 +6072,9 @@ impl PythonPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_all_namespaces: false,
+                hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
-                suppress_namespace: Some("python"),
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -6878,7 +6886,8 @@ impl PythonFiniteFieldPolynomial {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -6895,6 +6904,7 @@ impl PythonFiniteFieldPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -6912,9 +6922,9 @@ impl PythonFiniteFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_all_namespaces: false,
+                hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
-                suppress_namespace: Some("python"),
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -7471,7 +7481,8 @@ impl PythonPrimeTwoPolynomial {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -7488,6 +7499,7 @@ impl PythonPrimeTwoPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -7505,9 +7517,9 @@ impl PythonPrimeTwoPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_all_namespaces: false,
+                hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
-                suppress_namespace: Some("python"),
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -8015,7 +8027,8 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         square_brackets_for_function = false,
         num_exp_as_superscript = true,
         latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
     )]
     pub fn format(
         &self,
@@ -8032,6 +8045,7 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -8049,9 +8063,9 @@ impl PythonGaloisFieldPrimeTwoPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_all_namespaces: false,
+                hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
-                suppress_namespace: Some("python"),
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -8563,7 +8577,8 @@ impl PythonGaloisFieldPolynomial {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -8580,6 +8595,7 @@ impl PythonGaloisFieldPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -8597,9 +8613,9 @@ impl PythonGaloisFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_all_namespaces: false,
+                hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
-                suppress_namespace: Some("python"),
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -9112,7 +9128,8 @@ impl PythonNumberFieldPolynomial {
         square_brackets_for_function = false,
         num_exp_as_superscript = true,
         latex = false,
-        precision = None)
+        precision = None,
+            show_namespaces = false)
     )]
     pub fn format(
         &self,
@@ -9129,6 +9146,7 @@ impl PythonNumberFieldPolynomial {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> PyResult<String> {
         Ok(self.poly.format_string(
             &PrintOptions {
@@ -9146,9 +9164,9 @@ impl PythonNumberFieldPolynomial {
                 latex,
                 precision,
                 pretty_matrix: false,
-                suppress_all_namespaces: false,
+                hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
-                suppress_namespace: Some("python"),
+                hide_namespace: Some("python"),
             },
             PrintState::new(),
         ))
@@ -10903,7 +10921,8 @@ impl PythonMatrix {
             square_brackets_for_function = false,
             num_exp_as_superscript = true,
             latex = false,
-            precision = None)
+            precision = None,
+            show_namespaces = false)
         )]
     pub fn format(
         &self,
@@ -10915,6 +10934,7 @@ impl PythonMatrix {
         num_exp_as_superscript: bool,
         latex: bool,
         precision: Option<usize>,
+        show_namespaces: bool,
     ) -> String {
         self.matrix.format_string(
             &PrintOptions {
@@ -10932,9 +10952,9 @@ impl PythonMatrix {
                 latex,
                 precision,
                 pretty_matrix,
-                suppress_all_namespaces: false,
+                hide_all_namespaces: !show_namespaces,
                 color_namespace: true,
-                suppress_namespace: Some("python"),
+                hide_namespace: Some("python"),
             },
             PrintState::default(),
         )

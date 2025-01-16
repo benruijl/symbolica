@@ -28,8 +28,8 @@ pub struct PrintOptions {
     pub latex: bool,
     pub precision: Option<usize>,
     pub pretty_matrix: bool,
-    pub suppress_namespace: Option<&'static str>,
-    pub suppress_all_namespaces: bool,
+    pub hide_namespace: Option<&'static str>,
+    pub hide_all_namespaces: bool,
     pub color_namespace: bool,
 }
 
@@ -50,8 +50,8 @@ impl PrintOptions {
             latex: false,
             precision: None,
             pretty_matrix: false,
-            suppress_namespace: None,
-            suppress_all_namespaces: false,
+            hide_namespace: None,
+            hide_all_namespaces: true,
             color_namespace: true,
         }
     }
@@ -73,8 +73,8 @@ impl PrintOptions {
             latex: false,
             precision: None,
             pretty_matrix: false,
-            suppress_namespace: None,
-            suppress_all_namespaces: true,
+            hide_namespace: None,
+            hide_all_namespaces: true,
             color_namespace: false,
         }
     }
@@ -96,8 +96,8 @@ impl PrintOptions {
             latex: true,
             precision: None,
             pretty_matrix: false,
-            suppress_namespace: None,
-            suppress_all_namespaces: true,
+            hide_namespace: None,
+            hide_all_namespaces: true,
             color_namespace: false,
         }
     }
@@ -119,8 +119,8 @@ impl PrintOptions {
             latex: false,
             precision: None,
             pretty_matrix: false,
-            suppress_namespace: None,
-            suppress_all_namespaces: false,
+            hide_namespace: None,
+            hide_all_namespaces: false,
             color_namespace: false,
         }
     }
@@ -128,7 +128,7 @@ impl PrintOptions {
     /// Print the output suitable for a file without namespaces.
     pub const fn file_no_namespace() -> PrintOptions {
         Self {
-            suppress_all_namespaces: true,
+            hide_all_namespaces: true,
             ..Self::file()
         }
     }
@@ -136,7 +136,7 @@ impl PrintOptions {
     /// Print the output with namespaces suppressed.
     pub const fn short() -> PrintOptions {
         Self {
-            suppress_all_namespaces: true,
+            hide_all_namespaces: true,
             ..Self::new()
         }
     }
@@ -152,12 +152,22 @@ impl PrintOptions {
     pub fn from_fmt(f: &std::fmt::Formatter) -> PrintOptions {
         PrintOptions {
             precision: f.precision(),
+            hide_all_namespaces: !f.alternate(),
+            terms_on_new_line: f.align() == Some(std::fmt::Alignment::Right),
             ..Default::default()
         }
     }
 
     pub fn update_with_fmt(mut self, f: &std::fmt::Formatter) -> Self {
         self.precision = f.precision();
+
+        if f.alternate() {
+            self.hide_all_namespaces = false;
+        }
+
+        if let Some(a) = f.align() {
+            self.terms_on_new_line = a == std::fmt::Alignment::Right;
+        }
         self
     }
 }
@@ -935,7 +945,6 @@ impl<'a> FormattedPrintAdd for AddView<'a> {
         for x in self.iter() {
             if !first && print_state.top_level_add_child && opts.terms_on_new_line {
                 f.write_char('\n')?;
-                f.write_char('\t')?;
             }
             first = false;
 

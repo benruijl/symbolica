@@ -1616,10 +1616,7 @@ mod test {
             "{}",
             AtomPrinter::new_with_options(
                 expr.expand().as_view(),
-                PrintOptions {
-                    suppress_all_namespaces: true,
-                    ..PrintOptions::file()
-                }
+                PrintOptions::file_no_namespace()
             )
         );
         assert_eq!(
@@ -1634,13 +1631,7 @@ mod test {
         let expr = expr.coefficients_to_float(60);
         let r = format!(
             "{}",
-            AtomPrinter::new_with_options(
-                expr.as_view(),
-                PrintOptions {
-                    suppress_all_namespaces: true,
-                    ..PrintOptions::file()
-                }
-            )
+            AtomPrinter::new_with_options(expr.as_view(), PrintOptions::file_no_namespace())
         );
         assert_eq!(r, "5.00000000000000000000000000000000000000000000000000000000000e-1*x+6.81640613709185816359170669566511987261485697756222332885129e-1");
     }

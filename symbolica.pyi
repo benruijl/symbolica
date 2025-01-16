@@ -390,7 +390,7 @@ class Expression:
         square_brackets_for_function: bool = False,
         num_exp_as_superscript: bool = True,
         latex: bool = False,
-        precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the expression into a human-readable string, with tunable settings.
@@ -2294,6 +2294,7 @@ class Series:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the series into a human-readable string.
@@ -2477,6 +2478,7 @@ class Polynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2747,6 +2749,7 @@ class IntegerPolynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -2909,6 +2912,7 @@ class NumberFieldPolynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3120,6 +3124,7 @@ class FiniteFieldPolynomial:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the polynomial into a human-readable string, with tunable settings.
@@ -3550,6 +3555,7 @@ class Matrix:
         num_exp_as_superscript: bool = True,
         latex: bool = False,
         precision: Optional[int] = None,
+        show_namespaces: bool = False,
     ) -> str:
         """
         Convert the matrix into a human-readable string, with tunable settings.

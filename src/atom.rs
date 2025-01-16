@@ -65,7 +65,7 @@ pub use self::representation::{
 use self::representation::{FunView, RawAtom};
 
 /// A symbol with a namespace, and optional positional data (file and line) of its definition.
-/// Can be created with the [wrap_symbol!] macro or by converting from a string that is
+/// Can be created with the [wrap_symbol!](crate::wrap_symbol) macro or by converting from a string that is
 /// written as `namespace::symbol`.
 pub struct NamespacedSymbol {
     pub namespace: Cow<'static, str>,
@@ -171,7 +171,7 @@ macro_rules! wrap_symbol {
 }
 
 /// A string representation of an expression with a namespace, and optional positional data (file and line).
-/// Can be created with the [wrap_input!] macro.
+/// Can be created with the [wrap_input!](crate::wrap_input) macro.
 pub struct DefaultNamespace<'a> {
     pub namespace: Cow<'static, str>,
     pub data: &'a str,
@@ -239,14 +239,14 @@ macro_rules! namespace {
     }};
 }
 
-/// Format an atom with the current namespace suppressed.
+/// Hide the current namespace when printing an atom.
 #[macro_export]
-macro_rules! format_atom {
+macro_rules! hide_namespace {
     ($e:expr) => {{
         $crate::atom::AtomCore::printer(
             &$e,
             $crate::printer::PrintOptions {
-                suppress_namespace: Some($crate::namespace!()),
+                hide_namespace: Some($crate::namespace!()),
                 ..$crate::printer::PrintOptions::new()
             },
         )
@@ -290,6 +290,10 @@ pub enum FunctionAttribute {
 /// A symbol, for example the name of a variable or the name of a function,
 /// together with its properties.
 ///
+/// Every symbol has a namespace, which is either assigned explicitly
+/// as `namespace::symbol` or is assigned by the [symbol!](crate::symbol) or
+/// [parse!](crate::parse) macros based on the location of the macro invocation.
+///
 /// # Examples
 ///
 /// ```
@@ -329,7 +333,7 @@ impl Symbol {
     /// Get the symbol associated with `name` if it was already defined,
     /// otherwise define it without special attributes.
     ///
-    /// Use the [symb] macro instead to define symbols with the current namespace.
+    /// Use the [symbol!](crate::symbol) macro instead to define symbols with the current namespace.
     ///
     /// # Examples
     ///
@@ -348,7 +352,7 @@ impl Symbol {
     /// This function will return an error when an existing symbol is redefined
     /// with different attributes.
     ///
-    /// Use the [symb] macro instead to define symbols with the current namespace.
+    /// Use the [symbol!](crate::symbol) macro instead to define symbols with the current namespace.
     ///
     /// # Examples
     ///
@@ -371,7 +375,7 @@ impl Symbol {
     ///
     /// If the symbol already exists, an error is returned.
     ///
-    /// Use the [symb] macro instead to define symbols with the current namespace.
+    /// Use the [symbol!](crate::symbol) macro instead to define symbols with the current namespace.
     ///
     /// # Examples
     ///
@@ -592,7 +596,7 @@ impl Symbol {
                 Atom::LOG => f.write_str("\\log"),
                 _ => {
                     f.write_str(name)?;
-                    if !opts.suppress_all_namespaces {
+                    if !opts.hide_all_namespaces {
                         f.write_fmt(format_args!("_{{\\tiny \text{{{}}}}}", namespace))
                     } else {
                         Ok(())
@@ -600,9 +604,9 @@ impl Symbol {
                 }
             }
         } else {
-            if !opts.suppress_all_namespaces
+            if !opts.hide_all_namespaces
                 && !State::is_builtin(*self)
-                && opts.suppress_namespace != Some(namespace)
+                && opts.hide_namespace != Some(namespace)
             {
                 if opts.color_namespace {
                     f.write_fmt(format_args!("{}", namespace.dimmed().italic()))?;
@@ -986,6 +990,71 @@ impl<'a> AtomView<'a> {
 }
 
 /// A mathematical expression.
+///
+/// Most operations are implemented in the [AtomCore] trait.
+///
+/// # Examples
+///
+/// Parse a new expression and expand it:
+///
+/// ```
+/// use symbolica::{atom::AtomCore, parse};
+///
+/// let a = parse!("(x+1)^2").unwrap();
+/// let b = a.expand();
+/// let r = parse!("x^2+2x+1").unwrap();
+/// assert_eq!(b, r);
+/// ```
+///
+/// Create a new symbol and use it in an expression:
+///
+/// ```
+/// use symbolica::{atom::Atom, parse, symbol};
+///
+/// let x = symbol!("x");
+/// let expr = Atom::new_var(x) + 1;
+/// let p = parse!("x + 1").unwrap();
+/// assert_eq!(expr, p);
+/// ```
+///
+/// Define a function with attributes and use it in an expression:
+///
+/// ```
+/// use symbolica::{fun, parse, symbol};
+/// use symbolica::atom::{Symbol, FunctionAttribute, Atom, AtomCore};
+///
+/// let f = symbol!("f"; Symmetric).unwrap();
+/// let expr = fun!(f, 3, 2) + (1, 4);
+/// let p = parse!("f(2,3) + 1/4").unwrap();
+/// assert_eq!(expr, p);
+/// ```
+///
+/// # Output
+///
+/// The output can be controlled with
+/// ```
+/// use symbolica::{hide_namespace, parse};
+/// let a = parse!("x^2+cos(x)").unwrap();
+/// println!("{:+}", a); // print with a leading sign
+/// println!("{:#}", a); // print the namespace in front of every variable (e.g. `test::x`)
+/// println!("{}", hide_namespace!(a)); // hide the current namespace
+/// println!("{:>+}", a); // print with a leading sign and print every term on a new line
+/// ```
+///
+/// Advanced output options can be set using [PrintOptions]. Use [PrintOptions::file()]
+/// to print an expression in a format that can be parsed again.
+///
+/// ```
+/// use symbolica::{atom::AtomCore, parse, printer::PrintOptions};
+/// let a = parse!("x^2+cos(x)").unwrap();
+/// println!("{}", a.printer(PrintOptions::latex()));
+/// println!("{}", a.printer(PrintOptions::mathematica()));
+/// println!("{}", a.printer(PrintOptions::file()));
+/// println!("{}", a.printer(PrintOptions {
+///      color_builtin_symbols: true,
+///     ..PrintOptions::new()
+/// }));
+/// ```
 #[derive(Clone)]
 pub enum Atom {
     Num(Num),
@@ -1131,7 +1200,7 @@ impl Atom {
         Atom::default()
     }
 
-    /// Parse an atom from a namespaced string. Prefer to use [parse!] instead.
+    /// Parse an atom from a namespaced string. Prefer to use [parse!](crate::parse) instead.
     ///
     /// # Examples
     /// ```rust
@@ -1547,7 +1616,7 @@ macro_rules! symbol {
 }
 
 /// Parse an atom from a string.
-/// Use [parse_lit!] to parse from literal code.
+/// Use [parse_lit!](crate::parse_lit) to parse from literal code.
 ///
 /// # Examples
 /// Parse from a literal string:
@@ -1581,7 +1650,7 @@ macro_rules! parse {
     }};
 }
 
-/// Parse an atom from literal code. Use [parse!] to parse from a string.
+/// Parse an atom from literal code. Use [parse!](crate::parse) to parse from a string.
 /// Any new symbols are defined in the current namespace.
 ///
 /// # Examples

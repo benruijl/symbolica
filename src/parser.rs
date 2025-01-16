@@ -1,6 +1,6 @@
 //! Parsing of general expressions.
 //!
-//! Most users will want to use [parse!] to parse an atom.
+//! Most users will want to use [crate::parse] to parse an atom.
 //!
 //! Use [Token::parse] to tokenize an expression, and
 //! [Token::to_polynomial], [Token::to_rational_polynomial] or [Token::to_factorized_rational_polynomial] for accelerated parsing of polynomials written

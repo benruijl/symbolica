@@ -952,7 +952,7 @@ pub trait AtomCore {
     /// let expr = parse!("x^2").unwrap();
     /// let opts = PrintOptions {
     ///     double_star_for_exponentiation: true,
-    ///     suppress_namespace: true,
+    ///     hide_all_namespaces: true,
     ///    ..Default::default()
     /// };
     /// let printer = expr.printer(opts);

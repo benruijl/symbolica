@@ -1166,10 +1166,11 @@ impl PythonTransformer {
         py.allow_threads(|| {
             Workspace::get_local()
                 .with(|workspace| {
-                    self.expr.substitute_wildcards(
+                    self.expr.replace_wildcards_with_matches_impl(
                         workspace,
                         &mut out,
-                        &MatchStack::new(&Condition::default(), &MatchSettings::default()),
+                        &MatchStack::new(),
+                        true,
                         None,
                     )
                 })
@@ -2067,7 +2068,7 @@ impl TryFrom<Relation> for PatternRestriction {
                         WildcardRestriction::Filter(Box::new(move |m| {
                             m.to_atom()
                                 .pattern_match(&pattern, Some(&cond), Some(&settings))
-                                .next()
+                                .next_detailed()
                                 .is_some()
                         })),
                     )))

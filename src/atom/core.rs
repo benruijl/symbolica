@@ -1322,12 +1322,12 @@ pub trait AtomCore {
     ///     Atom::new_num(1)
     /// );
     /// ```
-    fn pattern_match<'a>(
+    fn pattern_match<'a: 'b, 'b>(
         &'a self,
-        pattern: &'a Pattern,
-        conditions: Option<&'a Condition<PatternRestriction>>,
-        settings: Option<&'a MatchSettings>,
-    ) -> PatternAtomTreeIterator<'a, 'a> {
+        pattern: &'b Pattern,
+        conditions: Option<&'b Condition<PatternRestriction>>,
+        settings: Option<&'b MatchSettings>,
+    ) -> PatternAtomTreeIterator<'a, 'b> {
         PatternAtomTreeIterator::new(pattern, self.as_atom_view(), conditions, settings)
     }
 }

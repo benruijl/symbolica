@@ -13,7 +13,7 @@ fn main() {
     println!("> Matching pattern {} to {}:", pat_expr, expr);
 
     for x in expr.pattern_match(&pattern, None, None) {
-        println!("\t x_ = {}", x.get(&symb!("x_")).unwrap().to_atom());
+        println!("\t x_ = {}", x.get(&symb!("x_")).unwrap());
     }
 
     println!("> Matching pattern {} to {}:", pat_expr, expr);

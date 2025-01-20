@@ -10,15 +10,15 @@ pub mod matrix;
 
 impl<'a> AtomView<'a> {
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
-    /// The tensors must be written as functions, with its indices are the arguments.
-    /// The repeated indices should be provided in `contracted_indices`.
+    /// The tensors must be written as functions, with its indices as the arguments.
+    /// Indices should be provided in `indices`.
     ///
     /// If the contracted indices are distinguishable (for example in their dimension),
     /// you can provide an optional group marker for each index using `index_group`.
     /// This makes sure that an index will not be renamed to an index from a different group.
     pub(crate) fn canonize_tensors(
         &self,
-        contracted_indices: &[AtomView],
+        indices: &[AtomView],
         index_group: Option<&[AtomView]>,
     ) -> Result<Atom, String> {
         if self.is_zero() {
@@ -26,7 +26,7 @@ impl<'a> AtomView<'a> {
         }
 
         if let Some(c) = index_group {
-            if c.len() != contracted_indices.len() {
+            if c.len() != indices.len() {
                 return Err(
                     "Index group must have the same length as contracted indices".to_owned(),
                 );
@@ -39,10 +39,7 @@ impl<'a> AtomView<'a> {
                 let add = aa.to_add();
 
                 for a in a.iter() {
-                    add.extend(
-                        a.canonize_tensor_product(contracted_indices, index_group)?
-                            .as_view(),
-                    );
+                    add.extend(a.canonize_tensor_product(indices, index_group)?.as_view());
                 }
 
                 let mut out = Atom::new();
@@ -50,7 +47,7 @@ impl<'a> AtomView<'a> {
                 Ok(out)
             } else {
                 Ok(self
-                    .canonize_tensor_product(contracted_indices, index_group)?
+                    .canonize_tensor_product(indices, index_group)?
                     .into_inner())
             }
         })
@@ -59,21 +56,42 @@ impl<'a> AtomView<'a> {
     /// Canonize a tensor product by relabeling repeated indices.
     fn canonize_tensor_product(
         &self,
-        contracted_indices: &[AtomView],
+        indices: &[AtomView],
         index_group: Option<&[AtomView]>,
     ) -> Result<RecycledAtom, String> {
         let mut g = Graph::new();
-        let mut connections = vec![vec![]; contracted_indices.len()];
+        let mut connections = vec![(vec![], false); indices.len()];
 
-        // TODO: strip all top-level products that do not have any contracted indices
-        // this ensures that graphs that are the same up to multiplication of constants
-        // map to the same graph
+        // strip all top-level factors that do not have any indices, so that
+        // they do not influence the canonization
+        let mut stripped = Atom::new();
+        if let AtomView::Mul(m) = self {
+            let mm = stripped.to_mul();
+            for a in m.iter() {
+                if indices.iter().any(|x| a.contains(*x)) {
+                    mm.extend(a);
+                }
+            }
 
-        self.tensor_to_graph_impl(contracted_indices, index_group, &mut connections, &mut g)?;
+            stripped.as_view().tensor_to_graph_impl(
+                indices,
+                index_group,
+                &mut connections,
+                &mut g,
+            )?;
+        } else {
+            self.tensor_to_graph_impl(indices, index_group, &mut connections, &mut g)?;
+        }
 
-        for (i, f) in contracted_indices.iter().zip(&connections) {
-            if !f.is_empty() {
-                return Err(format!("Index {} is not contracted", i));
+        let mut used_indices = vec![false; indices.len()];
+        let mut map = vec![None; indices.len()];
+
+        for (i, (ii, (f, used))) in indices.iter().zip(&connections).enumerate() {
+            if !f.is_empty() && *used {
+                return Err(format!("Index {} is contracted more than once", ii));
+            } else if f.len() == 1 && !used {
+                used_indices[i] = true;
+                map[i] = Some(i);
             }
         }
 
@@ -81,8 +99,6 @@ impl<'a> AtomView<'a> {
 
         // connect dummy indices
         // TODO: recycle dummy indices that are contracted on a deeper level?
-        let mut used_indices = vec![false; contracted_indices.len()];
-        let mut map = vec![None; contracted_indices.len()];
         for e in gc.edges() {
             if e.directed {
                 continue;
@@ -112,9 +128,9 @@ impl<'a> AtomView<'a> {
         // map the contracted indices
         Ok(self
             .replace_map(&|a, _ctx, out| {
-                if let Some(p) = contracted_indices.iter().position(|x| *x == a) {
+                if let Some(p) = indices.iter().position(|x| *x == a) {
                     if let Some(q) = map[p] {
-                        out.set_from_view(&contracted_indices[q]);
+                        out.set_from_view(&indices[q]);
                         true
                     } else {
                         unreachable!()
@@ -128,12 +144,12 @@ impl<'a> AtomView<'a> {
 
     fn tensor_to_graph_impl(
         &self,
-        contracted_indices: &[AtomView],
+        indices: &[AtomView],
         index_group: Option<&[AtomView<'a>]>,
-        connections: &mut [Vec<usize>],
+        connections: &mut [(Vec<usize>, bool)],
         g: &mut Graph<AtomOrView<'a>, (HiddenData<bool, usize>, Option<AtomOrView<'a>>)>,
     ) -> Result<usize, String> {
-        if !contracted_indices.iter().any(|a| self.contains(*a)) {
+        if !indices.iter().any(|a| self.contains(*a)) {
             let node = g.add_node(self.into());
             return Ok(node);
         }
@@ -150,7 +166,7 @@ impl<'a> AtomView<'a> {
                         let mut nodes = vec![];
                         for _ in 0..n {
                             nodes.push(b.tensor_to_graph_impl(
-                                contracted_indices,
+                                indices,
                                 index_group,
                                 connections,
                                 g,
@@ -184,7 +200,7 @@ impl<'a> AtomView<'a> {
                     let fff = ff.to_fun(f.get_symbol());
 
                     for a in f.iter() {
-                        if !contracted_indices.contains(&a) {
+                        if !indices.contains(&a) {
                             fff.add_arg(a);
                         }
                     }
@@ -192,11 +208,19 @@ impl<'a> AtomView<'a> {
 
                     let n = g.add_node(ff.into());
                     for a in f.iter() {
-                        if let Some(p) = contracted_indices.iter().position(|x| x == &a) {
-                            if connections[p].is_empty() {
-                                connections[p].push(n);
+                        if let Some(p) = indices.iter().position(|x| x == &a) {
+                            if connections[p].1 {
+                                return Err(format!(
+                                    "Index {} is contracted more than once",
+                                    indices[p]
+                                ));
+                            }
+
+                            if connections[p].0.is_empty() {
+                                connections[p].0.push(n);
                             } else {
-                                for n2 in connections[p].drain(..) {
+                                connections[p].1 = true;
+                                for n2 in connections[p].0.drain(..) {
                                     g.add_edge(
                                         n,
                                         n2,
@@ -225,14 +249,22 @@ impl<'a> AtomView<'a> {
                         let mut ff = Atom::new();
                         let fff = ff.to_fun(f.get_symbol());
 
-                        if let Some(p) = contracted_indices.iter().position(|x| x == &a) {
+                        if let Some(p) = indices.iter().position(|x| x == &a) {
                             ff.set_normalized(true);
                             g.add_node(Atom::Zero.into());
 
-                            if connections[p].is_empty() {
-                                connections[p].push(start + i);
+                            if connections[p].1 {
+                                return Err(format!(
+                                    "Index {} is contracted more than once",
+                                    indices[p]
+                                ));
+                            }
+
+                            if connections[p].0.is_empty() {
+                                connections[p].0.push(start + i);
                             } else {
-                                for n2 in connections[p].drain(..) {
+                                for n2 in connections[p].0.drain(..) {
+                                    connections[p].1 = true;
                                     g.add_edge(
                                         start + i,
                                         n2,
@@ -282,13 +314,11 @@ impl<'a> AtomView<'a> {
             }
             AtomView::Mul(m) => {
                 let mut nodes = vec![];
+
+                // TODO: check for a -1 and absorb it into an antisymmetric factor
+                // by rearranging its arguments
                 for a in m.iter() {
-                    nodes.push(a.tensor_to_graph_impl(
-                        contracted_indices,
-                        index_group,
-                        connections,
-                        g,
-                    )?);
+                    nodes.push(a.tensor_to_graph_impl(indices, index_group, connections, g)?);
                 }
                 let node = g.add_node(
                     Symbol::new_with_attributes("PROD", &[FunctionAttribute::Symmetric])
@@ -309,12 +339,8 @@ impl<'a> AtomView<'a> {
                 for arg in a {
                     let mut sub_connections = connections.to_vec();
 
-                    let node = arg.tensor_to_graph_impl(
-                        contracted_indices,
-                        index_group,
-                        &mut sub_connections,
-                        g,
-                    )?;
+                    let node =
+                        arg.tensor_to_graph_impl(indices, index_group, &mut sub_connections, g)?;
 
                     subgraphs.push((node, sub_connections));
                 }
@@ -322,7 +348,7 @@ impl<'a> AtomView<'a> {
                 if subgraphs.iter().any(|x| {
                     x.1.iter()
                         .zip(&subgraphs[0].1)
-                        .any(|(a, b)| a.len() != b.len())
+                        .any(|(a, b)| a.0.len() != b.0.len() || a.1 != b.1)
                 }) {
                     return Err(
                         "All components of nested sums must have the same open indices".to_owned(),
@@ -344,7 +370,7 @@ impl<'a> AtomView<'a> {
                     for c in connections.iter_mut().zip(cons) {
                         // add new open indices from this subgraph
                         if *c.0 != c.1 {
-                            c.0.extend(c.1);
+                            c.0 .0.extend(c.1 .0);
                         }
                     }
                 }

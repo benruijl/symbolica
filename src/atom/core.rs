@@ -1025,8 +1025,7 @@ pub trait AtomCore {
     }
 
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
-    /// The tensors must be written as functions, with its indices are the arguments.
-    /// The repeated indices should be provided in `contracted_indices`.
+    /// The tensors must be written as functions, with its indices as the arguments.
     ///
     /// If the contracted indices are distinguishable (for example in their dimension),
     /// you can provide an optional group marker for each index using `index_group`.
@@ -1054,11 +1053,10 @@ pub trait AtomCore {
     /// yields `fs(mu1,mu2)*fc(mu1,k1,mu3,k1,mu2,mu3)`.
     fn canonize_tensors(
         &self,
-        contracted_indices: &[AtomView],
+        indices: &[AtomView],
         index_group: Option<&[AtomView]>,
     ) -> Result<Atom, String> {
-        self.as_atom_view()
-            .canonize_tensors(contracted_indices, index_group)
+        self.as_atom_view().canonize_tensors(indices, index_group)
     }
 
     fn to_pattern(&self) -> Pattern {

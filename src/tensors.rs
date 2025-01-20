@@ -1,7 +1,7 @@
 //! Methods for tensor manipulation and linear algebra.
 
 use crate::{
-    atom::{representation::InlineNum, Atom, AtomOrView, AtomView, Mul},
+    atom::{Atom, AtomOrView, AtomView, FunctionAttribute, Symbol},
     graph::{Graph, HiddenData},
     state::{RecycledAtom, Workspace},
 };
@@ -33,24 +33,6 @@ impl<'a> AtomView<'a> {
             }
         }
 
-        // sort all contracted indices, this is required to canonize antisymmetric tensors
-        if !contracted_indices.windows(2).all(|w| w[0] < w[1]) {
-            if let Some(groups) = index_group {
-                let mut index = (0..contracted_indices.len()).collect::<Vec<_>>();
-                index.sort_by_key(|&i| contracted_indices[i]);
-                let c = index
-                    .iter()
-                    .map(|&i| contracted_indices[i])
-                    .collect::<Vec<_>>();
-                let g = index.iter().map(|&i| groups[i]).collect::<Vec<_>>();
-                return self.canonize_tensors(&c, Some(&g));
-            } else {
-                let mut c = contracted_indices.to_vec();
-                c.sort();
-                return self.canonize_tensors(&c, None);
-            }
-        }
-
         Workspace::get_local().with(|ws| {
             if let AtomView::Add(a) = self {
                 let mut aa = ws.new_atom();
@@ -58,7 +40,7 @@ impl<'a> AtomView<'a> {
 
                 for a in a.iter() {
                     add.extend(
-                        a.canonize_tensor_product(contracted_indices, index_group, ws)?
+                        a.canonize_tensor_product(contracted_indices, index_group)?
                             .as_view(),
                     );
                 }
@@ -68,7 +50,7 @@ impl<'a> AtomView<'a> {
                 Ok(out)
             } else {
                 Ok(self
-                    .canonize_tensor_product(contracted_indices, index_group, ws)?
+                    .canonize_tensor_product(contracted_indices, index_group)?
                     .into_inner())
             }
         })
@@ -79,217 +61,122 @@ impl<'a> AtomView<'a> {
         &self,
         contracted_indices: &[AtomView],
         index_group: Option<&[AtomView]>,
-        ws: &Workspace,
     ) -> Result<RecycledAtom, String> {
         let mut g = Graph::new();
-        let mut connections = vec![None; contracted_indices.len()];
+        let mut connections = vec![vec![]; contracted_indices.len()];
 
-        let mut t = ws.new_atom();
-        let mul = t.to_mul();
+        // TODO: strip all top-level products that do not have any contracted indices
+        // this ensures that graphs that are the same up to multiplication of constants
+        // map to the same graph
 
-        self.tensor_to_graph_impl(
-            contracted_indices,
-            index_group,
-            &mut connections,
-            &mut g,
-            mul,
-        )?;
+        self.tensor_to_graph_impl(contracted_indices, index_group, &mut connections, &mut g)?;
 
         for (i, f) in contracted_indices.iter().zip(&connections) {
-            if f.is_some() {
+            if !f.is_empty() {
                 return Err(format!("Index {} is not contracted", i));
             }
         }
 
         let gc = g.canonize().graph;
 
-        let mut funcs = vec![];
-        for n in gc.nodes() {
-            funcs.push((true, n.data.clone().as_mut().clone(), vec![]));
-        }
-
         // connect dummy indices
+        // TODO: recycle dummy indices that are contracted on a deeper level?
         let mut used_indices = vec![false; contracted_indices.len()];
+        let mut map = vec![None; contracted_indices.len()];
         for e in gc.edges() {
             if e.directed {
                 continue;
             }
 
-            // find first free index that belongs to the same group
-            let (index, used) = used_indices
-                .iter_mut()
-                .enumerate()
-                .find(|(p, x)| {
-                    !**x && index_group
-                        .map(|c| c[*p] == e.data.1.as_view())
-                        .unwrap_or(true)
-                })
-                .unwrap();
-            *used = true;
-
-            if let Atom::Fun(f) = &mut funcs[e.vertices.0].1 {
-                f.add_arg(contracted_indices[index]);
-
-                if f.to_fun_view().is_antisymmetric() {
-                    funcs[e.vertices.0].2.push(e.data.0.hidden);
-                }
-            } else {
-                unreachable!("Only functions should be left");
+            if !e.data.0.data {
+                continue; // not a dummy index
             }
 
-            if let Atom::Fun(f) = &mut funcs[e.vertices.1].1 {
-                f.add_arg(contracted_indices[index]);
-
-                if f.to_fun_view().is_antisymmetric() {
-                    funcs[e.vertices.1].2.push(e.data.0.hidden);
-                }
-            } else {
-                unreachable!("Only functions should be left");
+            let dummy_index = e.data.0.hidden;
+            if map[dummy_index].is_none() {
+                // find first free index that belongs to the same group
+                let (index, used) = used_indices
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(p, x)| {
+                        !**x && index_group
+                            .map(|c| c[*p] == e.data.1.as_ref().unwrap().as_view())
+                            .unwrap_or(true)
+                    })
+                    .unwrap();
+                *used = true;
+                map[dummy_index] = Some(index);
             }
         }
 
-        // now join all regular and cyclesymmetric functions
-        // the start of the cyclesymmetric function is determined by its
-        // first encountered node
-        for fi in 0..funcs.len() {
-            if !funcs[fi].0 {
-                continue;
-            }
-
-            if let AtomView::Fun(ff) = funcs[fi].1.as_view() {
-                if ff.get_symbol().is_symmetric() {
-                    funcs[fi].0 = false;
-                    mul.extend(funcs[fi].1.as_view());
-                    continue;
-                } else if ff.get_symbol().is_antisymmetric() {
-                    funcs[fi].0 = false;
-                    mul.extend(funcs[fi].1.as_view());
-
-                    // for antisymmetric functions, the original arguments were sorted
-                    // according to the contracted indices order (since that is sorted)
-                    // the original position is stored in the hidden data of the edge
-                    let mut order: Vec<_> = funcs[fi].2.iter().enumerate().collect();
-                    order.sort_by_key(|(_, x)| *x);
-
-                    // find the number of swaps needed to sort the arguments
-                    let mut order: Vec<_> = (0..order.len())
-                        .map(|i| order.iter().position(|(j, _)| *j == i).unwrap())
-                        .collect();
-                    let mut swaps = 0;
-                    for i in 0..order.len() {
-                        let pos = order[i..].iter().position(|&x| x == i).unwrap();
-                        order.copy_within(i..i + pos, i + 1);
-                        swaps += pos;
+        // map the contracted indices
+        Ok(self
+            .replace_map(&|a, _ctx, out| {
+                if let Some(p) = contracted_indices.iter().position(|x| *x == a) {
+                    if let Some(q) = map[p] {
+                        out.set_from_view(&contracted_indices[q]);
+                        true
+                    } else {
+                        unreachable!()
                     }
-
-                    if swaps % 2 == 1 {
-                        mul.extend(InlineNum::new(-1, 1).as_view());
-                    }
-
-                    continue;
-                } else if !ff.get_symbol().is_cyclesymmetric() {
-                    // check if the current index is the start of a regular function
-                    if gc.node(fi).edges.iter().any(|ei| {
-                        let e = gc.edge(*ei);
-                        e.directed && (e.vertices.0 != fi || e.data.0.data != 1)
-                    }) {
-                        continue;
-                    }
+                } else {
+                    false
                 }
-            }
-
-            let mut ff = funcs[fi].1.clone();
-            let mut cur_pos = fi;
-            'next: loop {
-                funcs[cur_pos].0 = false;
-
-                for ei in &gc.node(cur_pos).edges {
-                    let e = gc.edge(*ei);
-
-                    if e.directed && e.vertices.0 == cur_pos {
-                        debug_assert!(e.vertices.0 != e.vertices.1);
-
-                        if e.vertices.1 == fi {
-                            // cycle completed
-                            break 'next;
-                        }
-
-                        debug_assert!(funcs[e.vertices.1].0);
-
-                        if let Atom::Fun(ff) = &mut ff {
-                            if let AtomView::Fun(f) = funcs[e.vertices.1].1.as_view() {
-                                for a in f.iter() {
-                                    ff.add_arg(a);
-                                }
-                            }
-                        }
-
-                        cur_pos = e.vertices.1;
-
-                        continue 'next;
-                    }
-                }
-
-                break;
-            }
-
-            mul.extend(ff.as_view());
-        }
-
-        debug_assert!(funcs.iter().all(|f| !f.0));
-
-        let mut out = ws.new_atom();
-        t.as_view().normalize(ws, &mut out);
-
-        Ok(out)
+            })
+            .into())
     }
 
     fn tensor_to_graph_impl(
         &self,
         contracted_indices: &[AtomView],
         index_group: Option<&[AtomView<'a>]>,
-        connections: &mut [Option<usize>],
-        g: &mut Graph<AtomOrView<'a>, (HiddenData<usize, usize>, AtomOrView<'a>)>,
-        remainder: &mut Mul,
-    ) -> Result<(), String> {
+        connections: &mut [Vec<usize>],
+        g: &mut Graph<AtomOrView<'a>, (HiddenData<bool, usize>, Option<AtomOrView<'a>>)>,
+    ) -> Result<usize, String> {
+        if !contracted_indices.iter().any(|a| self.contains(*a)) {
+            let node = g.add_node(self.into());
+            return Ok(node);
+        }
+
         match self {
             AtomView::Num(_) | AtomView::Var(_) => {
-                remainder.extend(*self);
-                Ok(())
+                Err("Dummy index appears as variable instead of as a function argument".to_owned())
             }
             AtomView::Pow(p) => {
                 let (b, e) = p.get_base_exp();
 
-                if !contracted_indices.iter().any(|a| b.contains(*a)) {
-                    remainder.extend(*self);
-                    Ok(())
-                } else {
-                    if let Ok(n) = e.try_into() {
-                        if n > 0 {
-                            for _ in 0..n {
-                                b.tensor_to_graph_impl(
-                                    contracted_indices,
-                                    index_group,
-                                    connections,
-                                    g,
-                                    remainder,
-                                )?;
-                            }
-                            Ok(())
-                        } else {
-                            Err("Only tensors raised to positive powers are supported".to_owned())
+                if let Ok(n) = e.try_into() {
+                    if n > 0 {
+                        let mut nodes = vec![];
+                        for _ in 0..n {
+                            nodes.push(b.tensor_to_graph_impl(
+                                contracted_indices,
+                                index_group,
+                                connections,
+                                g,
+                            )?);
                         }
+
+                        let node = g.add_node(
+                            Symbol::new_with_attributes("PROD", &[FunctionAttribute::Symmetric])
+                                .unwrap()
+                                .into(),
+                        );
+
+                        for n in nodes {
+                            g.add_edge(n, node, false, (HiddenData::new(false, 0), None))
+                                .unwrap();
+                        }
+
+                        Ok(node)
                     } else {
                         Err("Only tensors raised to positive powers are supported".to_owned())
                     }
+                } else {
+                    Err("Only tensors raised to positive powers are supported".to_owned())
                 }
             }
             AtomView::Fun(f) => {
-                if !f.iter().any(|a| contracted_indices.contains(&a)) {
-                    remainder.extend(*self);
-                    return Ok(());
-                }
-
                 let nargs = f.get_nargs();
                 if f.is_symmetric() || f.is_antisymmetric() || nargs == 1 {
                     // collect all non-dummy arguments
@@ -306,29 +193,31 @@ impl<'a> AtomView<'a> {
                     let n = g.add_node(ff.into());
                     for a in f.iter() {
                         if let Some(p) = contracted_indices.iter().position(|x| x == &a) {
-                            if let Some(n2) = connections[p] {
-                                g.add_edge(
-                                    n,
-                                    n2,
-                                    false,
-                                    (
-                                        HiddenData::new(0, p),
-                                        index_group
-                                            .map(|c| c[p].into())
-                                            .unwrap_or(Atom::Zero.into()),
-                                    ),
-                                )
-                                .unwrap();
-                                connections[p] = None;
+                            if connections[p].is_empty() {
+                                connections[p].push(n);
                             } else {
-                                connections[p] = Some(n);
+                                for n2 in connections[p].drain(..) {
+                                    g.add_edge(
+                                        n,
+                                        n2,
+                                        false,
+                                        (
+                                            HiddenData::new(true, p),
+                                            index_group.map(|c| c[p].into()),
+                                        ),
+                                    )
+                                    .unwrap();
+                                }
                             }
                         }
                     }
 
-                    Ok(())
+                    Ok(n)
                 } else {
                     let is_cyclesymmetric = f.is_cyclesymmetric();
+
+                    // create function header node
+                    let header = g.add_node(f.get_symbol().into());
 
                     // add a node for every slot
                     let start = g.nodes().len();
@@ -338,29 +227,33 @@ impl<'a> AtomView<'a> {
 
                         if let Some(p) = contracted_indices.iter().position(|x| x == &a) {
                             ff.set_normalized(true);
-                            g.add_node(ff.into());
+                            g.add_node(Atom::Zero.into());
 
-                            if let Some(n2) = connections[p] {
-                                g.add_edge(
-                                    start + i,
-                                    n2,
-                                    false,
-                                    (
-                                        HiddenData::new(0, p),
-                                        index_group
-                                            .map(|c| c[p].into())
-                                            .unwrap_or(Atom::Zero.into()),
-                                    ),
-                                )
-                                .unwrap();
-                                connections[p] = None;
+                            if connections[p].is_empty() {
+                                connections[p].push(start + i);
                             } else {
-                                connections[p] = Some(start + i);
+                                for n2 in connections[p].drain(..) {
+                                    g.add_edge(
+                                        start + i,
+                                        n2,
+                                        false,
+                                        (
+                                            HiddenData::new(true, p),
+                                            index_group.map(|c| c[p].into()),
+                                        ),
+                                    )
+                                    .unwrap();
+                                }
                             }
                         } else {
                             fff.add_arg(a);
                             fff.set_normalized(true);
-                            g.add_node(ff.into());
+                            g.add_node(Atom::Zero.into());
+                        }
+
+                        if is_cyclesymmetric || i == 0 {
+                            g.add_edge(header, start + i, true, (HiddenData::new(false, 0), None))
+                                .unwrap();
                         }
 
                         if i != 0 {
@@ -368,14 +261,7 @@ impl<'a> AtomView<'a> {
                                 start + i - 1,
                                 start + i,
                                 true,
-                                (
-                                    if is_cyclesymmetric {
-                                        HiddenData::new(0, 0)
-                                    } else {
-                                        HiddenData::new(i, 0)
-                                    },
-                                    Atom::Zero.into(),
-                                ),
+                                (HiddenData::new(false, 0), None),
                             )
                             .unwrap();
                         }
@@ -386,36 +272,84 @@ impl<'a> AtomView<'a> {
                             start + nargs - 1,
                             start,
                             true,
-                            (HiddenData::new(0, 0), Atom::Zero.into()),
+                            (HiddenData::new(false, 0), None),
                         )
                         .unwrap();
                     }
 
-                    Ok(())
+                    Ok(header)
                 }
             }
             AtomView::Mul(m) => {
+                let mut nodes = vec![];
                 for a in m.iter() {
-                    a.tensor_to_graph_impl(
+                    nodes.push(a.tensor_to_graph_impl(
                         contracted_indices,
                         index_group,
                         connections,
                         g,
-                        remainder,
-                    )?;
+                    )?);
                 }
-                Ok(())
+                let node = g.add_node(
+                    Symbol::new_with_attributes("PROD", &[FunctionAttribute::Symmetric])
+                        .unwrap()
+                        .into(),
+                );
+
+                for n in nodes {
+                    g.add_edge(n, node, false, (HiddenData::new(false, 0), None))
+                        .unwrap();
+                }
+
+                Ok(node)
             }
-            AtomView::Add(_) => {
-                if !contracted_indices.iter().any(|a| self.contains(*a)) {
-                    remainder.extend(*self);
-                    Ok(())
-                } else {
-                    Err(
-                        "Nested additions containing contracted indices is not supported"
-                            .to_owned(),
-                    )
+            AtomView::Add(a) => {
+                let mut subgraphs = vec![];
+
+                for arg in a {
+                    let mut sub_connections = connections.to_vec();
+
+                    let node = arg.tensor_to_graph_impl(
+                        contracted_indices,
+                        index_group,
+                        &mut sub_connections,
+                        g,
+                    )?;
+
+                    subgraphs.push((node, sub_connections));
                 }
+
+                if subgraphs.iter().any(|x| {
+                    x.1.iter()
+                        .zip(&subgraphs[0].1)
+                        .any(|(a, b)| a.len() != b.len())
+                }) {
+                    return Err(
+                        "All components of nested sums must have the same open indices".to_owned(),
+                    );
+                }
+
+                let node = g.add_node(
+                    Symbol::new_with_attributes("PLUS", &[FunctionAttribute::Symmetric])
+                        .unwrap()
+                        .into(),
+                );
+
+                connections.clone_from_slice(&subgraphs[0].1);
+
+                for (n, cons) in subgraphs {
+                    g.add_edge(n, node, false, (HiddenData::new(false, 0), None))
+                        .unwrap();
+
+                    for c in connections.iter_mut().zip(cons) {
+                        // add new open indices from this subgraph
+                        if *c.0 != c.1 {
+                            c.0.extend(c.1);
+                        }
+                    }
+                }
+
+                Ok(node)
             }
         }
     }
@@ -424,6 +358,24 @@ impl<'a> AtomView<'a> {
 #[cfg(test)]
 mod test {
     use crate::atom::{representation::InlineVar, Atom, AtomCore, Symbol};
+
+    #[test]
+    fn nested_sum() {
+        let mus: Vec<_> = (0..4)
+            .map(|i| InlineVar::new(Symbol::new(format!("mu{}", i + 1))))
+            .collect();
+        let mu_ref = mus.iter().map(|x| x.as_view()).collect::<Vec<_>>();
+
+        let a1 =
+            Atom::parse("fs1(mu1,mu2)*(f1(mu2, mu1) + (m*fs2(mu1,mu2)+f3(mu2)*f4(mu1)))").unwrap();
+        let r1 = a1.canonize_tensors(&mu_ref, None).unwrap();
+
+        let a2 =
+            Atom::parse("fs1(mu1,mu2)*(f1(mu1, mu2) + (m*fs2(mu1,mu2)+f3(mu1)*f4(mu2)))").unwrap();
+        let r2 = a2.canonize_tensors(&mu_ref, None).unwrap();
+
+        assert_eq!(r1, r2);
+    }
 
     #[test]
     fn index_group() {

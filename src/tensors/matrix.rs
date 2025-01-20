@@ -1521,7 +1521,29 @@ impl<F: Field> Matrix<F> {
     /// Write the first `max_col` columns of the matrix in (non-reduced) echelon form.
     /// Returns the matrix rank.
     pub fn partial_row_reduce(&mut self, max_col: u32) -> u32 {
+        let (res, _) = self.partial_row_reduce_impl(max_col, false);
+        res
+    }
+
+    /// Write the first `max_col` columns of the matrix in (non-reduced) echelon form.
+    /// Returns the matrix rank, and optionally the history of manipulation.
+    fn partial_row_reduce_impl(
+        &mut self,
+        max_col: u32,
+        require_history: bool,
+    ) -> (u32, Option<(Vec<(u32, u32)>, Vec<Vec<F::Element>>)>) {
         let zero = self.field.zero();
+
+        let mut multipliers = if require_history {
+            Some(vec![vec![zero.clone(); self.nrows()]; self.nrows()])
+        } else {
+            None
+        };
+        let mut swaps = if require_history {
+            Some(Vec::new())
+        } else {
+            None
+        };
 
         let mut i = 0;
         for j in 0..max_col.min(self.ncols) {
@@ -1530,6 +1552,9 @@ impl<F: Field> Matrix<F> {
                 for k in i + 1..self.nrows {
                     if !F::is_zero(&self[(k, j)]) {
                         // Swap i-th row and k-th row.
+                        if let Some(ref mut s) = swaps {
+                            s.push((i, k));
+                        }
                         for l in j..self.ncols {
                             self.data
                                 .swap((self.ncols * i + l) as usize, (self.ncols * k + l) as usize);
@@ -1548,6 +1573,9 @@ impl<F: Field> Matrix<F> {
             for k in i + 1..self.nrows {
                 if !F::is_zero(&self[(k, j)]) {
                     let s = self.field.mul(&self[(k, j)], &inv_x);
+                    if let Some(ref mut m) = multipliers {
+                        m[k as usize][i as usize] = s.clone();
+                    };
                     self[(k, j)] = self.field.zero();
                     for l in j + 1..self.ncols {
                         let mut e = std::mem::replace(&mut self[(k, l)], zero.clone());
@@ -1563,7 +1591,12 @@ impl<F: Field> Matrix<F> {
             }
         }
 
-        i
+        let history = if require_history {
+            Some((swaps.unwrap(), multipliers.unwrap()))
+        } else {
+            None
+        };
+        (i, history)
     }
 
     /// Create a row-reduced matrix from a matrix in echelon form.

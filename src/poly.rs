@@ -1141,18 +1141,7 @@ impl<'a> AtomView<'a> {
                                         exp[id] = e;
                                         return poly.monomial(field.one(), exp);
                                     } else {
-                                        let mut var_map = var_map.as_ref().clone();
-                                        var_map.push(s);
-                                        let mut exp = vec![E::zero(); var_map.len()];
-                                        exp[var_map.len() - 1] = e;
-
-                                        return MultivariatePolynomial {
-                                            coefficients: vec![field.one()],
-                                            ring: field.clone(),
-                                            exponents: exp,
-                                            variables: Arc::new(var_map),
-                                            _phantom: poly._phantom,
-                                        };
+                                        return poly.constant(self.to_owned());
                                     }
                                 }
                             }

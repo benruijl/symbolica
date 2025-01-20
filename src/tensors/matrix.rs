@@ -28,7 +28,8 @@ use colored::{Color, Colorize};
 
 use crate::{
     domains::{
-        integer::Z,
+        finite_field::FiniteFieldWorkspace,
+        integer::{Integer, Z},
         rational::{Rational, Q},
         Derivable, EuclideanDomain, Field, InternalOrdering, Ring, SelfRing,
     },
@@ -967,6 +968,33 @@ impl<F: Ring> Matrix<F> {
         }
 
         Ok((m1, m2))
+    }
+
+    /// Permutes the rows of the matrix based on the provided permutation vector.
+    pub fn permute_rows(&self, pv: &[u32]) -> Self {
+        assert_eq!(
+            self.nrows as usize,
+            pv.len(),
+            "Permutation vector length must equal the number of rows."
+        );
+
+        let mut data = Vec::with_capacity(self.data.len());
+        for row_index in pv {
+            assert!(
+                row_index.lt(&Integer::from(self.nrows)),
+                "Row index out of bounds in permutation vector."
+            );
+            let start = row_index * self.ncols;
+            let end = &start + self.ncols;
+            data.extend_from_slice(&self.data[start.to_u64() as usize..end.to_u64() as usize]);
+        }
+
+        Matrix {
+            ncols: self.ncols,
+            nrows: self.nrows,
+            data: data,
+            field: self.field.clone(),
+        }
     }
 }
 
@@ -1951,5 +1979,43 @@ mod test {
 
         let r = a.solve_fraction_free(&rhs).unwrap();
         assert_eq!(r.data, [2, -1, 1]);
+    }
+
+    #[test]
+    fn test_matrix_permutation() {
+        let a = Matrix::from_linear(
+            vec![
+                1.1.into(),
+                1.2.into(),
+                1.3.into(),
+                2.1.into(),
+                2.2.into(),
+                2.3.into(),
+                3.1.into(),
+                3.2.into(),
+                3.3.into(),
+            ],
+            3,
+            3,
+            Q,
+        )
+        .unwrap();
+
+        let pv = vec![2 as u32, 0 as u32, 1 as u32];
+        let permuted = a.permute_rows(&pv);
+        assert_eq!(
+            permuted.data,
+            [
+                3.1.into(),
+                3.2.into(),
+                3.3.into(),
+                1.1.into(),
+                1.2.into(),
+                1.3.into(),
+                2.1.into(),
+                2.2.into(),
+                2.3.into()
+            ]
+        );
     }
 }

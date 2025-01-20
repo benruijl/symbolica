@@ -1705,13 +1705,67 @@ impl<F: Field> Matrix<F> {
     pub fn rank(&self) -> usize {
         self.clone().partial_row_reduce(self.ncols) as usize
     }
+
+    /// Compute an LU decomposition for a possibly non-square matrix A (size m x n).
+    ///
+    /// Returns (P, L, U) such that:
+    ///    A.permute_rows(P) = L * U
+    ///
+    /// - P is a vector of length m
+    /// - L is m x rank
+    /// - U is rank x n
+    ///
+    /// If rank < min(m, n), the matrix is rank-deficient and a MatrixError::Singluar is raised.
+    pub fn lu_decompose(&self) -> Result<(Vec<u32>, Matrix<F>, Matrix<F>), MatrixError<F>> {
+        let m = self.nrows;
+        let n = self.ncols;
+        let one = self.field.one();
+
+        let mut mat = self.clone();
+
+        let (rank, history) = mat.partial_row_reduce_impl(mat.nrows, true);
+        let (swaps, multipliers) = history.unwrap();
+
+        if rank < m.min(n) {
+            return Err(MatrixError::Singular);
+        }
+
+        let mut pv: Vec<u32> = (0..m).collect();
+        for &(i, k) in &swaps {
+            pv.swap(i as usize, k as usize);
+        }
+
+        let mut l = Matrix::new(m, rank, self.field.clone());
+        for i in 0..rank.min(m) {
+            l[(i, i)] = one.clone();
+        }
+        for r in 0..m {
+            for i in 0..r {
+                let val = &multipliers[r as usize][i as usize];
+                if !F::is_zero(val) {
+                    l[(r, i)] = val.clone();
+                }
+            }
+        }
+
+        let mut u = Matrix::new(rank, n, self.field.clone());
+        for i in 0..rank {
+            for j in 0..n {
+                u[(i, j)] = mat[(i, j)].clone();
+            }
+        }
+
+        Ok((pv, l, u))
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::ops::Mul;
+
     use crate::{
-        atom::Atom,
-        domains::{atom::AtomField, integer::Z, rational::Q},
+        atom::{Atom, AtomCore, AtomView},
+        domains::{atom::AtomField, integer::Z, rational::Q, Ring},
         symb,
         tensors::matrix::{Matrix, Vector},
     };
@@ -2050,5 +2104,89 @@ mod test {
                 2.3.into()
             ]
         );
+    }
+
+    #[test]
+    fn test_lu_decompose() {
+        let l = Matrix::from_nested_vec(
+            vec![
+                vec![1.into(), 0.into(), 0.into()],
+                vec![3.into(), 1.into(), 0.into()],
+                vec![(-5).into(), 7.into(), 1.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let u = Matrix::from_nested_vec(
+            vec![
+                vec![1.into(), (-10).into(), 8.into()],
+                vec![0.into(), 1.into(), 0.into()],
+                vec![0.into(), 0.into(), 1.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let m = l.mul(&u);
+        let (res_pv, res_l, res_u) = m.lu_decompose().unwrap();
+        assert_eq!(res_l, l);
+        assert_eq!(res_u, u);
+        assert_eq!(res_pv, [0, 1, 2]);
+
+        let m2 = Matrix::from_nested_vec(
+            vec![
+                vec![0.into(), 2.into(), 3.into()],
+                vec![4.into(), 5.into(), 6.into()],
+                vec![7.into(), 8.into(), 9.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let (res_pv, res_l, res_u) = m2.lu_decompose().unwrap();
+        assert_eq!(res_l.mul(&res_u), m2.permute_rows(&res_pv));
+
+        let field = AtomField {
+            cancel_check_on_division: true,
+            custom_normalization: Some(Box::new(|a: AtomView, out: &mut Atom| {
+                *out = a.expand().collect_num();
+                true
+            })),
+        };
+        let zero = &field.zero();
+        let m3 = Matrix::from_nested_vec(
+            vec![
+                vec![Atom::new_num(2), Atom::new_num(3), Atom::new_num(5)],
+                vec![
+                    Atom::parse("(x+3)^2-x^2-6*x-2").unwrap(),
+                    Atom::new_num(11),
+                    Atom::new_num(13),
+                ],
+                vec![Atom::new_num(17), Atom::new_num(23), Atom::new_num(31)],
+            ],
+            field.clone(),
+        )
+        .unwrap();
+        let (res_pv, res_l, res_u) = m3.lu_decompose().unwrap();
+
+        let prod = res_l.mul(&res_u);
+        let perm = m3.permute_rows(&res_pv);
+        for i in 0..3 {
+            for j in 0..3 {
+                let lhs = &prod[(i, j)];
+                let rhs = &perm[(i, j)];
+                assert_eq!(&zero.clone(), &field.sub(lhs, rhs));
+            }
+        }
+
+        let m4 = Matrix::from_nested_vec(
+            vec![
+                vec![0.into(), 2.into(), 3.into(), 4.into()],
+                vec![5.into(), 6.into(), 7.into(), 8.into()],
+                vec![9.into(), 10.into(), 11.into(), 12.into()],
+            ],
+            Q,
+        )
+        .unwrap();
+        let (res_pv, res_l, res_u) = m4.lu_decompose().unwrap();
+        assert_eq!(res_l.mul(&res_u), m4.permute_rows(&res_pv));
     }
 }

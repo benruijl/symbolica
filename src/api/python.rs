@@ -20,7 +20,7 @@ use pyo3::{
         PyTupleMethods, PyType, PyTypeMethods,
     },
     wrap_pyfunction, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, Py, PyAny, PyErr,
-    PyObject, PyRef, PyResult, PyTypeInfo, Python,
+    PyObject, PyRef, PyRefMut, PyResult, PyTypeInfo, Python,
 };
 use pyo3::{pyclass, types::PyModuleMethods};
 use rug::Complete;
@@ -10739,6 +10739,24 @@ impl PythonMatrix {
         PythonMatrix {
             matrix: self.matrix.primitive_part(),
         }
+    }
+
+    /// Permutes the rows of the matrix based on the provided permutation vector.
+    pub fn permute_rows(&self, permutation_vector: Vec<u32>) -> PyResult<Self> {
+        let permuted = self
+            .matrix
+            .permute_rows(&permutation_vector)
+            .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?;
+        Ok(Self { matrix: permuted })
+    }
+
+    /// Perform LU decomposition over the matrix.
+    pub fn lu_decompose(&self) -> PyResult<(Vec<u32>, Self, Self)> {
+        let (pv, l, u) = self
+            .matrix
+            .lu_decompose()
+            .map_err(|e| exceptions::PyValueError::new_err(format!("{}", e)))?;
+        Ok((pv, Self { matrix: l }, Self { matrix: u }))
     }
 
     /// Apply a function `f` to every entry of the matrix.

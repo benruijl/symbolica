@@ -971,30 +971,30 @@ impl<F: Ring> Matrix<F> {
     }
 
     /// Permutes the rows of the matrix based on the provided permutation vector.
-    pub fn permute_rows(&self, pv: &[u32]) -> Self {
-        assert_eq!(
-            self.nrows as usize,
-            pv.len(),
-            "Permutation vector length must equal the number of rows."
-        );
+    pub fn permute_rows(&self, pv: &[u32]) -> Result<Self, MatrixError<F>> {
+        if self.nrows as usize != pv.len() {
+            return Err(MatrixError::ShapeMismatch);
+        }
 
         let mut data = Vec::with_capacity(self.data.len());
         for row_index in pv {
-            assert!(
-                row_index.lt(&Integer::from(self.nrows)),
-                "Row index out of bounds in permutation vector."
-            );
+            if row_index.ge(&Integer::from(self.nrows)) {
+                return Err(MatrixError::IndexOutOfBounds {
+                    indices: vec![row_index.clone()],
+                    shape: vec![self.nrows],
+                });
+            }
             let start = row_index * self.ncols;
             let end = &start + self.ncols;
             data.extend_from_slice(&self.data[start.to_u64() as usize..end.to_u64() as usize]);
         }
 
-        Matrix {
+        Ok(Matrix {
             ncols: self.ncols,
             nrows: self.nrows,
             data: data,
             field: self.field.clone(),
-        }
+        })
     }
 }
 
@@ -1271,6 +1271,10 @@ pub enum MatrixError<F: Ring> {
     ShapeMismatch,
     RightHandSideIsNotVector,
     ResultNotInDomain,
+    IndexOutOfBounds {
+        indices: Vec<u32>,
+        shape: Vec<u32>,
+    },
 }
 
 impl<F: Ring> std::fmt::Display for MatrixError<F> {
@@ -1297,6 +1301,12 @@ impl<F: Ring> std::fmt::Display for MatrixError<F> {
             MatrixError::ResultNotInDomain => write!(
                 f,
                 "The result does not belong to the same domain as the matrix."
+            ),
+            MatrixError::IndexOutOfBounds { indices, shape } => write!(
+                f,
+                "Index out of bounds: tried to access element at {:?}, but the matrix has shape {:?}.",
+                indices,
+                shape
             ),
         }
     }
@@ -2072,38 +2082,26 @@ mod test {
     fn test_matrix_permutation() {
         let a = Matrix::from_linear(
             vec![
-                1.1.into(),
-                1.2.into(),
-                1.3.into(),
-                2.1.into(),
-                2.2.into(),
-                2.3.into(),
-                3.1.into(),
-                3.2.into(),
-                3.3.into(),
+                11.into(),
+                12.into(),
+                13.into(),
+                21.into(),
+                22.into(),
+                23.into(),
+                31.into(),
+                32.into(),
+                33.into(),
             ],
             3,
             3,
-            Q,
+            Z,
         )
         .unwrap();
 
         let pv = vec![2 as u32, 0 as u32, 1 as u32];
-        let permuted = a.permute_rows(&pv);
-        assert_eq!(
-            permuted.data,
-            [
-                3.1.into(),
-                3.2.into(),
-                3.3.into(),
-                1.1.into(),
-                1.2.into(),
-                1.3.into(),
-                2.1.into(),
-                2.2.into(),
-                2.3.into()
-            ]
-        );
+        let permuted = a.permute_rows(&pv).unwrap();
+        println!("{}", permuted);
+        assert_eq!(permuted.data, [31, 32, 33, 11, 12, 13, 21, 22, 23]);
     }
 
     #[test]
@@ -2142,7 +2140,7 @@ mod test {
         )
         .unwrap();
         let (res_pv, res_l, res_u) = m2.lu_decompose().unwrap();
-        assert_eq!(res_l.mul(&res_u), m2.permute_rows(&res_pv));
+        assert_eq!(res_l.mul(&res_u), m2.permute_rows(&res_pv).unwrap());
 
         let field = AtomField {
             cancel_check_on_division: true,
@@ -2168,7 +2166,7 @@ mod test {
         let (res_pv, res_l, res_u) = m3.lu_decompose().unwrap();
 
         let prod = res_l.mul(&res_u);
-        let perm = m3.permute_rows(&res_pv);
+        let perm = m3.permute_rows(&res_pv).unwrap();
         for i in 0..3 {
             for j in 0..3 {
                 let lhs = &prod[(i, j)];
@@ -2187,6 +2185,6 @@ mod test {
         )
         .unwrap();
         let (res_pv, res_l, res_u) = m4.lu_decompose().unwrap();
-        assert_eq!(res_l.mul(&res_u), m4.permute_rows(&res_pv));
+        assert_eq!(res_l.mul(&res_u), m4.permute_rows(&res_pv).unwrap());
     }
 }

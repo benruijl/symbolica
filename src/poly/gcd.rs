@@ -1032,7 +1032,11 @@ impl<F: Field, E: PositiveExponent> MultivariatePolynomial<F, E> {
                             return Err(GCDError::BadOriginalImage);
                         }
                         Err(
-                            MatrixError::NotSquare
+                            MatrixError::IndexOutOfBounds {
+                                indices: _,
+                                shape: _,
+                            }
+                            | MatrixError::NotSquare
                             | MatrixError::ShapeMismatch
                             | MatrixError::RightHandSideIsNotVector
                             | MatrixError::Singular

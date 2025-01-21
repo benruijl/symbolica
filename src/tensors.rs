@@ -3,6 +3,7 @@
 use crate::{
     atom::{Atom, AtomOrView, AtomView, FunctionAttribute, Symbol},
     graph::{Graph, HiddenData},
+printer::PrintOptions,
     state::{RecycledAtom, Workspace},
 };
 
@@ -348,11 +349,12 @@ impl<'a> AtomView<'a> {
                 if subgraphs.iter().any(|x| {
                     x.1.iter()
                         .zip(&subgraphs[0].1)
-                        .any(|(a, b)| a.0.len() != b.0.len() || a.1 != b.1)
+                        .any(|(a, b)| a.0.len() != b.0.len())
                 }) {
-                    return Err(
-                        "All components of nested sums must have the same open indices".to_owned(),
-                    );
+                    return Err(format!(
+                        "All components of {} must have the same open indices",
+                        self.printer(PrintOptions::file())
+                    ));
                 }
 
                 let node = g.add_node(
@@ -367,11 +369,12 @@ impl<'a> AtomView<'a> {
                     g.add_edge(n, node, false, (HiddenData::new(false, 0), None))
                         .unwrap();
 
-                    for c in connections.iter_mut().zip(cons) {
+                    for (con, sub_con) in connections.iter_mut().zip(cons) {
                         // add new open indices from this subgraph
-                        if *c.0 != c.1 {
-                            c.0 .0.extend(c.1 .0);
+                        if *con.0 != sub_con.0 {
+                            con.0.extend(sub_con.0);
                         }
+                        con.1 |= sub_con.1;
                     }
                 }
 

@@ -5263,11 +5263,12 @@ impl PythonExpression {
     }
 
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
-    /// The tensors must be written as functions, with its indices are the arguments.
-    /// The repeated indices should be provided in `contracted_indices`.
+    /// The tensors must be written as functions, with its indices as the arguments.
+    /// Subexpressions, constants and open indices are supported.
     ///
     /// If the contracted indices are distinguishable (for example in their dimension),
-    /// you can provide an optional group marker for each index using `index_group`.
+    /// you can provide a group marker as the second element in the tuple of the index
+    /// specification.
     /// This makes sure that an index will not be renamed to an index from a different group.
     ///
     /// Examples
@@ -5278,38 +5279,20 @@ impl PythonExpression {
     /// >>>
     /// >>> e = g(mu2, mu3)*fc(mu4, mu2, k1, mu4, k1, mu3)
     /// >>>
-    /// >>> print(e.canonize_tensors([mu1, mu2, mu3, mu4]))
+    /// >>> print(e.canonize_tensors([(mu1, 0), (mu2, 0), (mu3, 0), (mu4, 0)]))
     /// yields `g(mu1,mu2)*fc(mu1,mu3,mu2,k1,mu3,k1)`.
-    #[pyo3(signature = (contracted_indices, index_group=None))]
     fn canonize_tensors(
         &self,
-        contracted_indices: Vec<ConvertibleToExpression>,
-        index_group: Option<Vec<ConvertibleToExpression>>,
+        contracted_indices: Vec<(ConvertibleToExpression, ConvertibleToExpression)>,
     ) -> PyResult<Self> {
         let contracted_indices = contracted_indices
             .into_iter()
-            .map(|x| x.to_expression().expr)
+            .map(|x| (x.0.to_expression().expr, x.1.to_expression().expr))
             .collect::<Vec<_>>();
-        let contracted_indices = contracted_indices
-            .iter()
-            .map(|x| x.as_view())
-            .collect::<Vec<_>>();
-
-        let index_group = index_group.map(|x| {
-            x.into_iter()
-                .map(|x| x.to_expression().expr)
-                .collect::<Vec<_>>()
-        });
-        let index_group = index_group
-            .as_ref()
-            .map(|x| x.iter().map(|x| x.as_view()).collect::<Vec<_>>());
 
         let r = self
             .expr
-            .canonize_tensors(
-                &contracted_indices,
-                index_group.as_ref().map(|x| x.as_slice()),
-            )
+            .canonize_tensors(&contracted_indices)
             .map_err(|e| {
                 exceptions::PyValueError::new_err(format!("Could not canonize tensors: {}", e))
             })?;

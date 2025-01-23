@@ -1026,9 +1026,11 @@ pub trait AtomCore {
 
     /// Canonize (products of) tensors in the expression by relabeling repeated indices.
     /// The tensors must be written as functions, with its indices as the arguments.
+    /// Subexpressions, constants and open indices are supported.
     ///
     /// If the contracted indices are distinguishable (for example in their dimension),
-    /// you can provide an optional group marker for each index using `index_group`.
+    /// you can provide a group marker as the second element in the tuple of the index
+    /// specification.
     /// This makes sure that an index will not be renamed to an index from a different group.
     ///
     /// Example
@@ -1041,22 +1043,25 @@ pub trait AtomCore {
     /// let _ = Symbol::new_with_attributes("fc", &[FunctionAttribute::Cyclesymmetric]).unwrap();
     /// let a = Atom::parse("fs(mu2,mu3)*fc(mu4,mu2,k1,mu4,k1,mu3)").unwrap();
     ///
-    /// let mu1 = Atom::parse("mu1").unwrap();
-    /// let mu2 = Atom::parse("mu2").unwrap();
-    /// let mu3 = Atom::parse("mu3").unwrap();
-    /// let mu4 = Atom::parse("mu4").unwrap();
+    /// let mu1 = (Atom::parse("mu1").unwrap(), 0);
+    /// let mu2 = (Atom::parse("mu2").unwrap(), 0);
+    /// let mu3 = (Atom::parse("mu3").unwrap(), 0);
+    /// let mu4 = (Atom::parse("mu4").unwrap(), 0);
     ///
-    /// let r = a.canonize_tensors(&[mu1.as_view(), mu2.as_view(), mu3.as_view(), mu4.as_view()], None).unwrap();
+    /// let r = a.canonize_tensors(&[mu1, mu2, mu3 ,mu4]).unwrap();
     /// println!("{}", r);
     /// # }
     /// ```
     /// yields `fs(mu1,mu2)*fc(mu1,k1,mu3,k1,mu2,mu3)`.
-    fn canonize_tensors(
+    fn canonize_tensors<T: AtomCore, G: Ord + std::hash::Hash>(
         &self,
-        indices: &[AtomView],
-        index_group: Option<&[AtomView]>,
+        indices: &[(T, G)],
     ) -> Result<Atom, String> {
-        self.as_atom_view().canonize_tensors(indices, index_group)
+        let indices = indices
+            .iter()
+            .map(|(i, g)| (i.as_atom_view(), g))
+            .collect::<Vec<_>>();
+        self.as_atom_view().canonize_tensors(&indices)
     }
 
     fn to_pattern(&self) -> Pattern {
@@ -1316,8 +1321,8 @@ pub trait AtomCore {
     /// let mut iter = expr.pattern_match(&pattern, None, None);
     /// let result = iter.next().unwrap();
     /// assert_eq!(
-    ///     result.get(&Symbol::new("x_")).unwrap().to_atom(),
-    ///     Atom::new_num(1)
+    ///     result.get(&Symbol::new("x_")).unwrap(),
+    ///     &Atom::new_num(1)
     /// );
     /// ```
     fn pattern_match<'a: 'b, 'b>(

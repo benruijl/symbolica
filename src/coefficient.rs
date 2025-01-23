@@ -27,6 +27,7 @@ use crate::{
         atom::AtomField,
         finite_field::{
             FiniteField, FiniteFieldCore, FiniteFieldElement, FiniteFieldWorkspace, ToFiniteField,
+            Zp64,
         },
         float::{Float, NumericalFloatLike, Real, SingleFloat},
         integer::{Integer, IntegerRing, Z},
@@ -61,6 +62,14 @@ pub enum Coefficient {
     Float(Float),
     FiniteField(FiniteFieldElement<u64>, FiniteFieldIndex),
     RationalPolynomial(RationalPolynomial<IntegerRing, u16>),
+}
+
+impl Coefficient {
+    /// Construct a coefficient from a finite field element.
+    pub fn from_finite_field(field: Zp64, element: FiniteFieldElement<u64>) -> Self {
+        let index = State::get_or_insert_finite_field(field);
+        Coefficient::FiniteField(element, index)
+    }
 }
 
 impl From<i64> for Coefficient {

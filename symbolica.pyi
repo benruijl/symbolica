@@ -3606,11 +3606,13 @@ class Evaluator:
         function_name: str,
         filename: str,
         library_name: str,
-        inline_asm: bool = True,
+        inline_asm: str = 'default',
         optimization_level: int = 3,
         compiler_path: Optional[str] = None,
     ) -> CompiledEvaluator:
-        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it."""
+        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+        The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+        """
 
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
         """Evaluate the expression for multiple inputs and return the result."""
@@ -3628,7 +3630,7 @@ class Evaluator:
 
 
 class CompiledEvaluator:
-    """An compiled evaluator of an expression. This will give the highest performance of 
+    """An compiled evaluator of an expression. This will give the highest performance of
     all evaluators."""
 
     @classmethod
@@ -3682,18 +3684,18 @@ class NumericalIntegrator:
 
         Examples
         --------
-        >>> def integrand(samples: list[Sample]):
-        >>>     res = []
-        >>>     for sample in samples:
-        >>>         if sample.d[0] == 0:
-        >>>             res.append(sample.c[0]**2)
-        >>>         else:
-        >>>             res.append(sample.c[0]**1/2)
-        >>>     return res
-        >>>
-        >>> integrator = NumericalIntegrator.discrete(
-        >>>     [NumericalIntegrator.continuous(1), NumericalIntegrator.continuous(1)])
-        >>> integrator.integrate(integrand, True, 10, 10000)
+        >> > def integrand(samples: list[Sample]):
+        >> >     res = []
+        >> > for sample in samples:
+        >> > if sample.d[0] == 0:
+        >> >             res.append(sample.c[0]**2)
+        >> > else:
+        >> >             res.append(sample.c[0]**1/2)
+        >> > return res
+        >> >
+        >> > integrator = NumericalIntegrator.discrete(
+        >> >     [NumericalIntegrator.continuous(1), NumericalIntegrator.continuous(1)])
+        >> > integrator.integrate(integrand, True, 10, 10000)
         """
 
     @classmethod
@@ -3742,21 +3744,21 @@ class NumericalIntegrator:
         """Update the grid using the `discrete_learning_rate` and `continuous_learning_rate`.
         Examples
         --------
-        >>> from symbolica import NumericalIntegrator, Sample
-        >>>
-        >>> def integrand(samples: list[Sample]):
-        >>>     res = []
-        >>>     for sample in samples:
-        >>>         res.append(sample.c[0]**2+sample.c[1]**2)
-        >>>     return res
-        >>>
-        >>> integrator = NumericalIntegrator.continuous(2)
-        >>> for i in range(10):
-        >>>     samples = integrator.sample(10000 + i * 1000)
-        >>>     res = integrand(samples)
-        >>>     integrator.add_training_samples(samples, res)
-        >>>     avg, err, chi_sq = integrator.update(1.5, 1.5)
-        >>>     print('Iteration {}: {:.6} +- {:.6}, chi={:.6}'.format(i+1, avg, err, chi_sq))
+        >> > from symbolica import NumericalIntegrator, Sample
+        >> >
+        >> > def integrand(samples: list[Sample]):
+        >> >     res = []
+        >> > for sample in samples:
+        >> >         res.append(sample.c[0]**2+sample.c[1]**2)
+        >> > return res
+        >> >
+        >> > integrator = NumericalIntegrator.continuous(2)
+        >> > for i in range(10):
+        >> >     samples = integrator.sample(10000 + i * 1000)
+        >> >     res = integrand(samples)
+        >> >     integrator.add_training_samples(samples, res)
+        >> >     avg, err, chi_sq = integrator.update(1.5, 1.5)
+        >> > print('Iteration {}: {:.6} +- {:.6}, chi={:.6}'.format(i+1, avg, err, chi_sq))
         """
 
     def integrate(
@@ -3771,24 +3773,24 @@ class NumericalIntegrator:
         """Integrate the function `integrand` that maps a list of `Sample`s to a list of `float`s.
         The return value is the average, the statistical error, and chi-squared of the integral.
 
-        With `show_stats=True`, intermediate statistics will be printed. `max_n_iter` determines the number
+        With `show_stats = True`, intermediate statistics will be printed. `max_n_iter` determines the number
         of iterations and `n_samples_per_iter` determine the number of samples per iteration. This is
-        the same amount of samples that the integrand function will be called with.
+        the same amount of samples that the integrand function will be called with .
 
         For more flexibility, use `sample`, `add_training_samples` and `update`. See `update` for an example.
 
         Examples
         --------
-        >>> from symbolica import NumericalIntegrator, Sample
-        >>>
-        >>> def integrand(samples: list[Sample]):
-        >>>     res = []
-        >>>     for sample in samples:
-        >>>         res.append(sample.c[0]**2+sample.c[1]**2)
-        >>>     return res
-        >>>
-        >>> avg, err = NumericalIntegrator.continuous(2).integrate(integrand, True, 10, 100000)
-        >>> print('Result: {} +- {}'.format(avg, err))
+        >> > from symbolica import NumericalIntegrator, Sample
+        >> >
+        >> > def integrand(samples: list[Sample]):
+        >> >     res = []
+        >> > for sample in samples:
+        >> >         res.append(sample.c[0]**2+sample.c[1]**2)
+        >> > return res
+        >> >
+        >> > avg, err = NumericalIntegrator.continuous(2).integrate(integrand, True, 10, 100000)
+        >> > print('Result: {} +- {}'.format(avg, err))
         """
 
 
@@ -3800,14 +3802,14 @@ class Sample:
     first the discrete layer weights and then the continuous layer weight."""
     weights: List[float]
     d: List[int]
-    """ A sample point per (nested) discrete layer. Empty if not present."""
+    """ A sample point per(nested) discrete layer. Empty if not present."""
     c: List[float]
     """ A sample in the continuous layer. Empty if not present."""
 
 
 class RandomNumberGenerator:
     """A reproducible, fast, non-cryptographic random number generator suitable for parallel Monte Carlo simulations.
-    A `seed` has to be set, which can be any `u64` number (small numbers work just as well as large numbers).
+    A `seed` has to be set, which can be any `u64` number(small numbers work just as well as large numbers).
 
     Each thread or instance generating samples should use the same `seed` but a different `stream_id`,
     which is an instance counter starting at 0."""
@@ -3859,25 +3861,26 @@ class Graph:
         of vertex connections. The vertex signatures are given in terms of an edge direction (or `None` if
         there is no direction) and edge data.
 
-        Returns the canonical form of the graph and the size of its automorphism group (including edge permutations).
+        Returns the canonical form of the graph and the size of its automorphism group(including edge permutations).
 
         Examples
         --------
-        >>> from symbolica import *
-        >>> g, q, gh = S('g', 'q', 'gh')
-        >>> gp, qp, qbp, ghp, ghbp = (None, g), (True, q), (False, q), (True, gh), (False, gh)
-        >>> graphs = Graph.generate([(1, gp), (2, gp)],
-        >>>                         [[gp, gp, gp], [gp, gp, gp, gp],
-        >>>                         [qp, qbp, gp], [ghp, ghbp, gp]], max_loops=2)
-        >>> for (g, sym) in graphs.items():
-        >>>     print(f'Symmetry factor = 1/{sym}:')
-        >>>     print(g.to_dot())
+        >> > from symbolica import *
+        >> > g, q, gh = S('g', 'q', 'gh')
+        >> > gp, qp, qbp, ghp, ghbp = (None, g), (True, q), (False, q), (True, gh), (False, gh)
+        >> > graphs = Graph.generate([(1, gp), (2, gp)],
+        >> >                         [[gp, gp, gp], [gp, gp, gp, gp],
+        >> >                         [qp, qbp, gp], [ghp, ghbp, gp]], max_loops=2)
+        >> > for (g, sym) in graphs.items():
+        >> > print(f'Symmetry factor = 1/{sym}:')
+        >> > print(g.to_dot())
 
         generates all connected graphs up to 2 loops with the specified vertices.
 
         Parameters
         ----------
-        external_nodes: Sequence[tuple[Expression | int, Tuple[Optional[bool], Expression | int]]]
+        external_nodes: Sequence[tuple[Expression |
+            int, Tuple[Optional[bool], Expression | int]]]
             The external edges, consisting of a tuple of the node data and a tuple of the edge direction and edge data.
             If the node data is the same, flip symmetries will be recognized.
         vertex_signatures: Sequence[Sequence[Tuple[Optional[bool], Expression | int]]]
@@ -3960,10 +3963,10 @@ class Integer:
 
         Examples
         --------
-        Solve a `32.0177=b*pi+c*e` where `b` and `c` are integers:
+        Solve a `32.0177 = b*pi+c*e` where `b` and `c` are integers:
 
-        >>> r = Integer.solve_integer_relation([-32.0177, 3.1416, 2.7183], 1e-5, 100)
-        >>> print(r)
+        >> > r = Integer.solve_integer_relation([-32.0177, 3.1416, 2.7183], 1e-5, 100)
+        >> > print(r)
 
-        yields `[1,5,6]`.
+        yields `[1, 5, 6]`.
         """

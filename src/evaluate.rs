@@ -1396,6 +1396,68 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             };
         }
 
+        macro_rules! asm_load {
+            ($i:expr) => {
+                match asm_flavour {
+                    InlineASM::X64 => {
+                        format_addr!($i)
+                    }
+                    InlineASM::AArch64 => {
+                        if $i < self.param_count {
+                            let dest = $i * 8;
+
+                            if dest > 32760 {
+                                // maximum allowed shift is 12 bits
+                                let d = dest.ilog2();
+                                let shift = d.min(12);
+                                let coeff = dest / (1 << shift);
+                                let rest = dest - (coeff << shift);
+                                *out += &format!(
+                                    "\t\t\"add x8, %2, {}, lsl {}\\n\\t\"\n",
+                                    coeff, shift
+                                );
+                                format!("[x8, {}]", rest)
+                            } else {
+                                format!("[%2, {}]", dest)
+                            }
+                        } else if $i < self.reserved_indices {
+                            let dest = ($i - self.param_count) * 8;
+                            if dest > 32760 {
+                                let d = dest.ilog2();
+                                let shift = d.min(12);
+                                let coeff = dest / (1 << shift);
+                                let rest = dest - (coeff << shift);
+                                *out += &format!(
+                                    "\t\t\"add x8, %1, {}, lsl {}\\n\\t\"\n",
+                                    coeff, shift
+                                );
+                                format!("[x8, {}]", rest)
+                            } else {
+                                format!("[%1, {}]", dest)
+                            }
+                        } else {
+                            // TODO: subtract reserved indices
+                            let dest = $i * 8;
+                            if dest > 32760 {
+                                let d = dest.ilog2();
+                                let shift = d.min(12);
+                                let coeff = dest / (1 << shift);
+                                let rest = dest - (coeff << shift);
+                                *out += &format!(
+                                    "\t\t\"add x8, %0, {}, lsl {}\\n\\t\"\n",
+                                    coeff, shift
+                                );
+                                format!("[x8, {}]", rest)
+                            } else {
+                                format!("[%0, {}]", dest)
+                            }
+                        }
+                    }
+                    InlineASM::None => unreachable!(),
+                }
+            };
+        }
+
         macro_rules! format_addr {
             ($i:expr) => {
                 match asm_flavour {
@@ -1432,7 +1494,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
                         }
                         InlineASM::AArch64 => {
-                            *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
+                            *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_double), \"r\"(params)\n\t\t: \"memory\", \"x8\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
                         }
                         InlineASM::None => unreachable!(),
                     }
@@ -1646,17 +1708,17 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             },
                                             MemOrReg::Mem(k) => match asm_flavour {
                                                 InlineASM::X64 => {
+                                                    let addr = asm_load!(*k);
                                                     *out += &format!(
                                                         "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                        oper,
-                                                        format_addr!(*k),
-                                                        out_reg
+                                                        oper, addr, out_reg
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
+                                                    let addr = asm_load!(*k);
                                                     *out += &format!(
                                                         "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                        format_addr!(*k),
+                                                        addr,
                                                     );
 
                                                     *out += &format!(
@@ -1708,17 +1770,17 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                             },
                                             MemOrReg::Mem(k) => match asm_flavour {
                                                 InlineASM::X64 => {
+                                                    let addr = asm_load!(*k);
                                                     *out += &format!(
                                                         "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                        oper,
-                                                        format_addr!(*k),
-                                                        out_reg
+                                                        oper, addr, out_reg
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
+                                                    let addr = asm_load!(*k);
                                                     *out += &format!(
                                                         "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                        format_addr!(*k),
+                                                        addr,
                                                     );
 
                                                     *out += &format!(
@@ -1736,17 +1798,17 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                 if let MemOrReg::Mem(k) = &a[0] {
                                     match asm_flavour {
                                         InlineASM::X64 => {
+                                            let addr = asm_load!(*k);
                                             *out += &format!(
                                                 "\t\t\"movsd {}, %%xmm{}\\n\\t\"\n",
-                                                format_addr!(*k),
-                                                out_reg
+                                                addr, out_reg
                                             );
                                         }
                                         InlineASM::AArch64 => {
+                                            let addr = asm_load!(*k);
                                             *out += &format!(
                                                 "\t\t\"ldr d{}, {}\\n\\t\"\n",
-                                                out_reg,
-                                                format_addr!(*k),
+                                                out_reg, addr,
                                             );
                                         }
                                         InlineASM::None => unreachable!(),
@@ -1759,18 +1821,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                     if let MemOrReg::Mem(k) = i {
                                         match asm_flavour {
                                             InlineASM::X64 => {
+                                                let addr = asm_load!(*k);
                                                 *out += &format!(
                                                     "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                    oper,
-                                                    format_addr!(*k),
-                                                    out_reg
+                                                    oper, addr, out_reg
                                                 );
                                             }
                                             InlineASM::AArch64 => {
-                                                *out += &format!(
-                                                    "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                    format_addr!(*k),
-                                                );
+                                                let addr = asm_load!(*k);
+                                                *out +=
+                                                    &format!("\t\t\"ldr d31, {}\\n\\t\"\n", addr,);
 
                                                 *out += &format!(
                                                     "\t\t\"f{} d{}, d31, d{}\\n\\t\"\n",
@@ -1826,17 +1886,17 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                                 },
                                                 MemOrReg::Mem(k) => match asm_flavour {
                                                     InlineASM::X64 => {
+                                                        let addr = asm_load!(*k);
                                                         *out += &format!(
                                                             "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                            oper,
-                                                            format_addr!(*k),
-                                                            out_reg
+                                                            oper, addr, out_reg
                                                         );
                                                     }
                                                     InlineASM::AArch64 => {
+                                                        let addr = asm_load!(*k);
                                                         *out += &format!(
                                                             "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                            format_addr!(*k),
+                                                            addr,
                                                         );
 
                                                         *out += &format!(
@@ -1853,19 +1913,18 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                     }
                                 } else {
                                     if let MemOrReg::Mem(k) = &a[0] {
+                                        let addr = asm_load!(*k);
                                         match asm_flavour {
                                             InlineASM::X64 => {
                                                 *out += &format!(
                                                     "\t\t\"movsd {}, %%xmm{}\\n\\t\"\n",
-                                                    format_addr!(*k),
-                                                    out_reg
+                                                    addr, out_reg
                                                 );
                                             }
                                             InlineASM::AArch64 => {
                                                 *out += &format!(
                                                     "\t\t\"ldr d{}, {}\\n\\t\"\n",
-                                                    out_reg,
-                                                    format_addr!(*k),
+                                                    out_reg, addr,
                                                 );
                                             }
                                             InlineASM::None => unreachable!(),
@@ -1876,19 +1935,18 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                                     for i in &a[1..] {
                                         if let MemOrReg::Mem(k) = i {
+                                            let addr = asm_load!(*k);
                                             match asm_flavour {
                                                 InlineASM::X64 => {
                                                     *out += &format!(
                                                         "\t\t\"{}sd {}, %%xmm{}\\n\\t\"\n",
-                                                        oper,
-                                                        format_addr!(*k),
-                                                        out_reg
+                                                        oper, addr, out_reg
                                                     );
                                                 }
                                                 InlineASM::AArch64 => {
                                                     *out += &format!(
                                                         "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                        format_addr!(*k),
+                                                        addr,
                                                     );
 
                                                     *out += &format!(
@@ -1902,20 +1960,17 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                     }
                                 }
 
+                                let addr = asm_load!(*out_mem);
                                 match asm_flavour {
                                     InlineASM::X64 => {
                                         *out += &format!(
                                             "\t\t\"movsd %%xmm{}, {}\\n\\t\"\n",
-                                            out_reg,
-                                            format_addr!(*out_mem)
+                                            out_reg, addr
                                         );
                                     }
                                     InlineASM::AArch64 => {
-                                        *out += &format!(
-                                            "\t\t\"str d{}, {}\\n\\t\"\n",
-                                            out_reg,
-                                            format_addr!(*out_mem),
-                                        );
+                                        *out +=
+                                            &format!("\t\t\"str d{}, {}\\n\\t\"\n", out_reg, addr,);
                                     }
                                     InlineASM::None => unreachable!(),
                                 }
@@ -2010,17 +2065,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                         },
                                         MemOrReg::Mem(k) => match asm_flavour {
                                             InlineASM::X64 => {
+                                                let addr = asm_load!(*k);
                                                 *out += &format!(
                                                     "\t\t\"divsd {}, %%xmm{}\\n\\t\"\n",
-                                                    format_addr!(*k),
-                                                    out_reg,
+                                                    addr, out_reg,
                                                 );
                                             }
                                             InlineASM::AArch64 => {
-                                                *out += &format!(
-                                                    "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                    format_addr!(*k),
-                                                );
+                                                let addr = asm_load!(*k);
+                                                *out +=
+                                                    &format!("\t\t\"ldr d31, {}\\n\\t\"\n", addr,);
 
                                                 *out += &format!(
                                                     "\t\t\"fdiv d{}, d{}, d31\\n\\t\"\n",
@@ -2070,17 +2124,16 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                         },
                                         MemOrReg::Mem(k) => match asm_flavour {
                                             InlineASM::X64 => {
+                                                let addr = asm_load!(*k);
                                                 *out += &format!(
                                                     "\t\t\"divsd {}, %%xmm{}\\n\\t\"\n",
-                                                    format_addr!(*k),
-                                                    out_reg
+                                                    addr, out_reg
                                                 );
                                             }
                                             InlineASM::AArch64 => {
-                                                *out += &format!(
-                                                    "\t\t\"ldr d31, {}\\n\\t\"\n",
-                                                    format_addr!(*k),
-                                                );
+                                                let addr = asm_load!(*k);
+                                                *out +=
+                                                    &format!("\t\t\"ldr d31, {}\\n\\t\"\n", addr,);
 
                                                 *out += &format!(
                                                     "\t\t\"fdiv d{}, d{}, d31\\n\\t\"\n",
@@ -2091,19 +2144,18 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                                         },
                                     }
 
+                                    let addr = asm_load!(*out_mem);
                                     match asm_flavour {
                                         InlineASM::X64 => {
                                             *out += &format!(
                                                 "\t\t\"movsd %%xmm{}, {}\\n\\t\"\n",
-                                                out_reg,
-                                                format_addr!(*out_mem)
+                                                out_reg, addr
                                             );
                                         }
                                         InlineASM::AArch64 => {
                                             *out += &format!(
                                                 "\t\t\"str d{}, {}\\n\\t\"\n",
-                                                out_reg,
-                                                format_addr!(*out_mem),
+                                                out_reg, addr,
                                             );
                                         }
                                         InlineASM::None => unreachable!(),
@@ -2248,27 +2300,71 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
             };
         }
 
-        macro_rules! format_addr {
+        macro_rules! asm_load {
             ($i:expr) => {
                 match asm_flavour {
                     InlineASM::X64 => {
                         if $i < self.param_count {
-                            format!("{}(%2)", $i * 16)
+                            (format!("{}(%2)", $i * 16), "NA".to_owned())
                         } else if $i < self.reserved_indices {
-                            format!("{}(%1)", ($i - self.param_count) * 16)
+                            (
+                                format!("{}(%1)", ($i - self.param_count) * 16),
+                                "NA".to_owned(),
+                            )
                         } else {
                             // TODO: subtract reserved indices
-                            format!("{}(%0)", $i * 16)
+                            (format!("{}(%0)", $i * 16), "NA".to_owned())
                         }
                     }
                     InlineASM::AArch64 => {
                         if $i < self.param_count {
-                            format!("[%2, {}]", $i * 16)
+                            let dest = $i * 16;
+
+                            if dest > 32760 {
+                                // maximum allowed shift is 12 bits
+                                let d = dest.ilog2();
+                                let shift = d.min(12);
+                                let coeff = dest / (1 << shift);
+                                let rest = dest - (coeff << shift);
+                                *out += &format!(
+                                    "\t\t\"add x8, %2, {}, lsl {}\\n\\t\"\n",
+                                    coeff, shift
+                                );
+                                (format!("[x8, {}]", rest), format!("[x8, {}]", rest + 8))
+                            } else {
+                                (format!("[%2, {}]", dest), format!("[%2, {}]", dest + 8))
+                            }
                         } else if $i < self.reserved_indices {
-                            format!("[%1, {}]", ($i - self.param_count) * 16)
+                            let dest = ($i - self.param_count) * 16;
+                            if dest > 32760 {
+                                let d = dest.ilog2();
+                                let shift = d.min(12);
+                                let coeff = dest / (1 << shift);
+                                let rest = dest - (coeff << shift);
+                                *out += &format!(
+                                    "\t\t\"add x8, %1, {}, lsl {}\\n\\t\"\n",
+                                    coeff, shift
+                                );
+                                (format!("[x8, {}]", rest), format!("[x8, {}]", rest + 8))
+                            } else {
+                                (format!("[%1, {}]", dest), format!("[%1, {}]", dest + 8))
+                            }
                         } else {
                             // TODO: subtract reserved indices
-                            format!("[%0, {}]", $i * 16)
+                            let dest = $i * 16;
+                            if dest > 32760 {
+                                let d = dest.ilog2();
+                                let shift = d.min(12);
+                                let coeff = dest / (1 << shift);
+                                let rest = dest - (coeff << shift);
+                                *out += &format!(
+                                    "\t\t\"add x8, %0, {}, lsl {}\\n\\t\"\n",
+                                    coeff, shift
+                                );
+                                (format!("[x8, {}]", rest), format!("[x8, {}]", rest + 8))
+                            } else {
+                                (format!("[%0, {}]", dest), format!("[%0, {}]", dest + 8))
+                            }
                         }
                     }
                     InlineASM::None => unreachable!(),
@@ -2284,7 +2380,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"xmm0\", \"xmm1\", \"xmm2\", \"xmm3\", \"xmm4\", \"xmm5\", \"xmm6\", \"xmm7\", \"xmm8\", \"xmm9\", \"xmm10\", \"xmm11\", \"xmm12\", \"xmm13\", \"xmm14\", \"xmm15\");\n",  function_name);
                         }
                         InlineASM::AArch64 => {
-                            *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
+                            *out += &format!("\t\t:\n\t\t: \"r\"(Z), \"r\"({}_CONSTANTS_complex), \"r\"(params)\n\t\t: \"memory\", \"x8\", \"d0\", \"d1\", \"d2\", \"d3\", \"d4\", \"d5\", \"d6\", \"d7\", \"d8\", \"d9\", \"d10\", \"d11\", \"d12\", \"d13\", \"d14\", \"d15\", \"d16\", \"d17\", \"d18\", \"d19\", \"d20\", \"d21\", \"d22\", \"d23\", \"d24\", \"d25\", \"d26\", \"d27\", \"d28\", \"d29\", \"d30\", \"d31\");\n",  function_name);
                         }
                         InlineASM::None => unreachable!(),
                     }
@@ -2308,20 +2404,24 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 
                             // TODO: try loading in multiple registers for better instruction-level parallelism?
                             for i in a {
-                                *out +=
-                                    &format!("\t\t\"addpd {}, %%xmm0\\n\\t\"\n", format_addr!(*i));
+                                let (addr, _) = asm_load!(*i);
+                                *out += &format!("\t\t\"addpd {}, %%xmm0\\n\\t\"\n", addr);
                             }
-                            *out += &format!("\t\t\"movupd %%xmm0, {}\\n\\t\"\n", format_addr!(*o));
+                            let (addr, _) = asm_load!(*o);
+                            *out += &format!("\t\t\"movupd %%xmm0, {}\\n\\t\"\n", addr);
                         }
                         InlineASM::AArch64 => {
-                            *out += &format!("\t\t\"ldr q0, {}\\n\\t\"\n", format_addr!(a[0]));
+                            let (addr, _) = asm_load!(a[0]);
+                            *out += &format!("\t\t\"ldr q0, {}\\n\\t\"\n", addr);
 
                             for i in &a[1..] {
-                                *out += &format!("\t\t\"ldr q1, {}\\n\\t\"\n", format_addr!(*i));
+                                let (addr, _) = asm_load!(*i);
+                                *out += &format!("\t\t\"ldr q1, {}\\n\\t\"\n", addr);
                                 *out += &format!("\t\t\"fadd v0.2d, v1.2d, v0.2d\\n\\t\"\n",);
                             }
 
-                            *out += &format!("\t\t\"str q0, {}\\n\\t\"\n", format_addr!(*o));
+                            let (addr, _) = asm_load!(*o);
+                            *out += &format!("\t\t\"str q0, {}\\n\\t\"\n", addr);
                         }
                         InlineASM::None => unreachable!(),
                     }
@@ -2333,52 +2433,37 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             in_asm_block = true;
                         }
 
-                        // 2 mul
-                        //ldp     d5, d0, {}
-                        //ldp     d1, d2, {}
-                        //fmul    d3, d2, d0
-                        //fmul    d4, d1, d0
-                        //fnmsub  d0, d1, d5, d3
-                        //fmadd   d1, d2, d5, d4
-
-                        // rename:
-                        //ldp     d5, d0, {}
-                        //ldp     d1, d2, {}
-                        //fmul    d3, d2, d0
-                        //fmul    d4, d1, d0
-                        //fnmsub  d0, d1, d5, d3
-                        //fmadd   d1, d2, d5, d4
-
-                        // 3 mul
-                        // ldp     d4, d0, [x0, #48]
-                        // ldp     d1, d2, [x0, #96]
-                        // fmul    d3, d1, d0
-                        // fmul    d0, d2, d0
-                        // fmadd   d2, d2, d4, d3
-                        // ldp     d3, d5, [x0, #144]
-                        // fnmsub  d1, d1, d4, d0
-                        // fmul    d0, d5, d2
-                        // fmul    d2, d2, d3
-                        // fnmsub  d0, d1, d3, d0
-                        // fmadd   d1, d5, d1, d2
-
                         // optimized complex multiplication
                         for (i, r) in a.iter().enumerate() {
+                            let (addr_re, addr_im) = asm_load!(*r);
                             match asm_flavour {
                                 InlineASM::X64 => {
                                     *out += &format!(
                                         "\t\t\"movupd {}, %%xmm{}\\n\\t\"\n",
-                                        format_addr!(*r),
+                                        addr_re,
                                         i + 1,
                                     );
                                 }
                                 InlineASM::AArch64 => {
-                                    *out += &format!(
-                                        "\t\t\"ldp d{}, d{}, {}\\n\\t\"\n",
-                                        2 * (i + 1),
-                                        2 * (i + 1) + 1,
-                                        format_addr!(*r),
-                                    );
+                                    if *r * 16 < 450 {
+                                        *out += &format!(
+                                            "\t\t\"ldp d{}, d{}, {}\\n\\t\"\n",
+                                            2 * (i + 1),
+                                            2 * (i + 1) + 1,
+                                            addr_re,
+                                        );
+                                    } else {
+                                        *out += &format!(
+                                            "\t\t\"ldr d{}, {}\\n\\t\"\n",
+                                            2 * (i + 1),
+                                            addr_re,
+                                        );
+                                        *out += &format!(
+                                            "\t\t\"ldr d{}, {}\\n\\t\"\n",
+                                            2 * (i + 1) + 1,
+                                            addr_im,
+                                        );
+                                    }
                                 }
                                 InlineASM::None => unreachable!(),
                             }
@@ -2413,14 +2498,18 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             }
                         }
 
+                        let (addr_re, addr_im) = asm_load!(*o);
                         match asm_flavour {
                             InlineASM::X64 => {
-                                *out +=
-                                    &format!("\t\t\"movupd %%xmm1, {}\\n\\t\"\n", format_addr!(*o));
+                                *out += &format!("\t\t\"movupd %%xmm1, {}\\n\\t\"\n", addr_re);
                             }
                             InlineASM::AArch64 => {
-                                *out +=
-                                    &format!("\t\t\"stp d2, d3, {}\\n\\t\"\n", format_addr!(*o));
+                                if *o * 16 < 450 {
+                                    *out += &format!("\t\t\"stp d2, d3, {}\\n\\t\"\n", addr_re);
+                                } else {
+                                    *out += &format!("\t\t\"str d2, {}\\n\\t\"\n", addr_re);
+                                    *out += &format!("\t\t\"str d3, {}\\n\\t\"\n", addr_im);
+                                }
                             }
                             InlineASM::None => unreachable!(),
                         }
@@ -2445,6 +2534,8 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                             in_asm_block = true;
                         }
 
+                        let addr_b = asm_load!(*b);
+                        let addr_o = asm_load!(*o);
                         match asm_flavour {
                             InlineASM::X64 => {
                                 *out += &format!(
@@ -2456,24 +2547,34 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
 \t\t\"haddpd %%xmm2, %%xmm2\\n\\t\"
 \t\t\"divpd %%xmm2, %%xmm0\\n\\t\"
 \t\t\"movupd %%xmm0, {}\\n\\t\"\n",
-                                    format_addr!(*b),
+                                    addr_b.0,
                                     (self.reserved_indices - self.param_count) * 16,
-                                    format_addr!(*o)
+                                    addr_o.0
                                 );
                             }
                             InlineASM::AArch64 => {
+                                if *b * 16 < 450 {
+                                    *out += &format!("\t\t\"ldp d0, d1, {}\\n\\t\"", addr_b.0);
+                                } else {
+                                    *out += &format!("\t\t\"ldr d0, {}\\n\\t\"", addr_b.0);
+                                    *out += &format!("\t\t\"ldr d1, {}\\n\\t\"", addr_b.1);
+                                }
+
                                 *out += &format!(
                                     "
-\t\t\"ldp     d0, d1, {}\\n\\t\"
 \t\t\"fmul    d2, d0, d0\\n\\t\"
 \t\t\"fmadd   d2, d1, d1, d2\\n\\t\"
 \t\t\"fneg    d1, d1\\n\\t\"
 \t\t\"fdiv    d0, d0, d2\\n\\t\"
-\t\t\"fdiv    d1, d1, d2\\n\\t\"
-\t\t\"stp     d0, d1, {}\\n\\t\"\n",
-                                    format_addr!(*b),
-                                    format_addr!(*o)
+\t\t\"fdiv    d1, d1, d2\\n\\t\"\n"
                                 );
+
+                                if *o * 16 < 450 {
+                                    *out += &format!("\t\t\"stp d0, d1, {}\\n\\t\"", addr_o.0);
+                                } else {
+                                    *out += &format!("\t\t\"str d0, {}\\n\\t\"", addr_o.0);
+                                    *out += &format!("\t\t\"str d1, {}\\n\\t\"", addr_o.1);
+                                }
                             }
                             InlineASM::None => unreachable!(),
                         }
@@ -2527,7 +2628,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         *out += &format!("\t\t\"movupd {}(%3), %%xmm0\\n\\t\"\n", r * 16);
                     }
                     InlineASM::AArch64 => {
-                        *out += &format!("\t\t\"ldp d0, d1, [%3, {}]\\n\\t\"\n", r * 16);
+                        *out += &format!("\t\t\"ldr q0, [%3, {}]\\n\\t\"\n", r * 16);
                     }
                     InlineASM::None => unreachable!(),
                 }
@@ -2541,7 +2642,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     }
                     InlineASM::AArch64 => {
                         *out += &format!(
-                            "\t\t\"ldp d0, d1, [%2, {}]\\n\\t\"\n",
+                            "\t\t\"ldr q0, [%2, {}]\\n\\t\"\n",
                             (r - self.param_count) * 16
                         );
                     }
@@ -2554,7 +2655,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                         *out += &format!("\t\t\"movupd {}(%1), %%xmm0\\n\\t\"\n", r * 16);
                     }
                     InlineASM::AArch64 => {
-                        *out += &format!("\t\t\"ldp d0, d1, [%1, {}]\\n\\t\"\n", r * 16);
+                        *out += &format!("\t\t\"ldr q0, [%1, {}]\\n\\t\"\n", r * 16);
                     }
                     InlineASM::None => unreachable!(),
                 }
@@ -2565,7 +2666,7 @@ impl<T: std::fmt::Display> ExpressionEvaluator<T> {
                     *out += &format!("\t\t\"movupd %%xmm0, {}(%0)\\n\\t\"\n", i * 16);
                 }
                 InlineASM::AArch64 => {
-                    *out += &format!("\t\t\"stp d0, d1, [%0, {}]\\n\\t\"\n", i * 16);
+                    *out += &format!("\t\t\"str q0, [%0, {}]\\n\\t\"\n", i * 16);
                 }
                 InlineASM::None => unreachable!(),
             }

@@ -10339,7 +10339,7 @@ impl PythonExpressionEvaluator {
         (function_name,
         filename,
         library_name,
-        inline_asm = true,
+        inline_asm = "default",
         optimization_level = 3,
         compiler_path = None,
     ))]
@@ -10348,7 +10348,7 @@ impl PythonExpressionEvaluator {
         function_name: &str,
         filename: &str,
         library_name: &str,
-        inline_asm: bool,
+        inline_asm: &str,
         optimization_level: u8,
         compiler_path: Option<&str>,
     ) -> PyResult<PythonCompiledExpressionEvaluator> {
@@ -10358,19 +10358,22 @@ impl PythonExpressionEvaluator {
             options.compiler = compiler_path.to_string();
         }
 
+        let inline_asm = match inline_asm.to_lowercase().as_str() {
+            "default" => InlineASM::default(),
+            "x64" => InlineASM::X64,
+            "aarch64" => InlineASM::AArch64,
+            "none" => InlineASM::None,
+            _ => {
+                return Err(exceptions::PyValueError::new_err(
+                    "Invalid inline assembly type specified.",
+                ))
+            }
+        };
+
         Ok(PythonCompiledExpressionEvaluator {
             eval: self
                 .eval
-                .export_cpp(
-                    filename,
-                    function_name,
-                    true,
-                    if inline_asm {
-                        InlineASM::X64
-                    } else {
-                        InlineASM::None
-                    },
-                )
+                .export_cpp(filename, function_name, true, inline_asm)
                 .map_err(|e| exceptions::PyValueError::new_err(format!("Export error: {}", e)))?
                 .compile(library_name, options)
                 .map_err(|e| {

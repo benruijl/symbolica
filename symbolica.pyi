@@ -3605,11 +3605,13 @@ class Evaluator:
         function_name: str,
         filename: str,
         library_name: str,
-        inline_asm: bool = True,
+        inline_asm: str = 'default',
         optimization_level: int = 3,
         compiler_path: Optional[str] = None,
     ) -> CompiledEvaluator:
-        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it."""
+        """Compile the evaluator to a shared library using C++ and optionally inline assembly and load it.
+        The inline ASM option can be set to 'default', 'x64', 'aarch64' or 'none'.
+        """
 
     def evaluate(self, inputs: Sequence[Sequence[float]]) -> List[List[float]]:
         """Evaluate the expression for multiple inputs and return the result."""

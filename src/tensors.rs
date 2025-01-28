@@ -532,7 +532,8 @@ for ff in f {
                     subgraphs.push((node, sub_connections));
                 }
 
-                if subgraphs.iter().any(|x| {
+// FIXME: check used instead
+                /*                if subgraphs.iter().any(|x| {
                     x.1.iter()
                         .zip(&subgraphs[0].1)
                         .any(|(a, b)| a.0.len() != b.0.len())
@@ -541,7 +542,7 @@ for ff in f {
                         "All components of {} must have the same open indices",
                         self.printer(PrintOptions::file())
                     ));
-                }
+                }*/
 
                 let node = g.add_node(TensorGraphNode::Add);
 

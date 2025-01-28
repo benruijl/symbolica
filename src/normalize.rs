@@ -754,12 +754,12 @@ impl<'a> AtomView<'a> {
                 if !atom_test_buf.is_empty() {
                     let out_mul = out.to_mul();
 
-                    let mut last_buf = atom_test_buf.remove(0);
+                    atom_test_buf.reverse();
+                    let mut last_buf = atom_test_buf.pop().unwrap();
 
                     let mut tmp = workspace.new_atom();
                     let mut cur_len = 0;
 
-                    atom_test_buf.reverse();
                     while let Some(mut cur_buf) = atom_test_buf.pop() {
                         if !last_buf.merge_factors(&mut cur_buf, &mut tmp, workspace) {
                             // we are done merging
@@ -770,7 +770,6 @@ impl<'a> AtomView<'a> {
                                         // the number is not in the final position, which only happens when i*i merges to -1
                                         // add it to the first position in the reversed buffer
                                         atom_test_buf.insert(0, last_buf);
-                                        cur_len += 1;
                                     }
                                 } else {
                                     out_mul.extend(v);
